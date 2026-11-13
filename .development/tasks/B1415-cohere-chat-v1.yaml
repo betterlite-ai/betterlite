@@ -39,7 +39,6 @@ description: >-
   210 tests, 145 adapters and 90 fuzz/wiring lines fit the 800-line budget.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,cohere_chat_v1}.rs
     - crates/betterlite-openai/src/cohere_chat_v1.rs
     - crates/betterlite-openai/src/cohere_chat_v1/**
     - crates/betterlite-openai/fuzz/Cargo.toml

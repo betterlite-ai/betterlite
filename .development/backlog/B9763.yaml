@@ -1,0 +1,15 @@
+id: B9763
+milestone: M10 admin ui
+title: Cover agent creation, editing, identity and key assignment from the dashboard
+status: todo
+depends_on: [B860, B5076, B4781, B4784, B4785, B4786, B3191, B8647, B055, B782, B775, B9731, B9734, B9735, B9762, B9767]
+file: tasks/B9763-dashboard-agent-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/agents/**"
+  - "ui/litellm-dashboard/src/components/{agent_management,agents}/**"
+parent: B149
+split_from: B149
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

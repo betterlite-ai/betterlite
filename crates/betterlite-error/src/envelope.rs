@@ -1,3 +1,5 @@
+use crate::normalize::NormalizeError;
+use betterlite_redact::error::RedactionError;
 use std::collections::BTreeMap;
 
 mod tests;
@@ -132,4 +134,27 @@ pub fn allowed_response_headers(
     raw.into_iter()
         .filter(|(name, _)| !is_unsafe_header_name(name))
         .collect()
+}
+
+#[must_use]
+pub fn error_body_call_id(enabled: bool, call_id: Option<&str>) -> Option<&str> {
+    if enabled {
+        call_id.filter(|id| !id.is_empty())
+    } else {
+        None
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum EnvelopeError {
+    #[error(transparent)]
+    Normalize {
+        #[from]
+        source: NormalizeError,
+    },
+    #[error(transparent)]
+    Redaction {
+        #[from]
+        source: RedactionError,
+    },
 }

@@ -1,0 +1,14 @@
+id: B8291
+milestone: M5 api families
+title: Native compaction loopback executor
+status: todo
+depends_on: [B336, B188]
+file: tasks/B8291-compaction-loopback.yaml
+covers:
+  - "litellm/proxy/native_compaction.py"
+parent: B100
+split_from: B100
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

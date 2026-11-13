@@ -14,6 +14,10 @@ description: >-
   through config. B003 keeps stderr JSON as the gateway format; retain the JSON_LOGS flag for compatible callback/service
   formatting. B012 also wires LOGGING_WORKER_MAX_QUEUE_SIZE=50000, LOGGING_WORKER_CONCURRENCY=100 and LOGGING_WORKER_MAX_TIME_PER_COROUTINE=20
   into B191. Request Logging dispatch is supplied by the split B190 lifecycle tasks, not invented in this integration.
+  The success handler's StreamAssembler (B250's port) is built in exactly one place, in server.rs next to the clock,
+  sink and registry, as one `Arc<dyn StreamAssembler>` holding B252's ChatStreamAssembler, and every chat and
+  embeddings path reads that Arc. Chat and embeddings streams need nothing more; B8610 later
+  replaces that one value with B9840's LoggedStreamAssembler, so build no second assembler and no branch of your own.
   Write the behavior rstest functions logging_pipeline_logging_integration_tests_behavior in adjacent tests.rs files, with a
   named case for each behavior and failure in the DoD; corpus replay tests have separate names. The helper operation service_logging is already registered; each operation
   has its own Rust and Python adapter file and corpus seed. Budget 260 pipeline, 100 adapters, 250 tests and 120
@@ -21,10 +25,20 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-logging/**
-  - crates/betterlite-server/**
-  - crates/betterlite/**
-  - crates/betterlite-config/**
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/logging_service_events.rs
+  - crates/betterlite-logging/src/logging_service_events/**
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/server.rs
+  - crates/betterlite-server/src/routes/chat.rs
+  - crates/betterlite-server/src/routes/chat/streaming.rs
+  - crates/betterlite-server/src/routes/embeddings.rs
+  - crates/betterlite-server/tests/logging_integration.rs
+  - crates/betterlite-server/tests/logging_integration/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/sections/service_callback.rs
+  - crates/betterlite-config/src/sections/service_callback/**
+  - "crates/betterlite-config/fuzz/corpus/config_yaml/service_callback*"
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/logging/service_logging.rs
   - tools/oracle/src/helpers/logging/service_logging/**
@@ -114,13 +128,22 @@ deviations:
 out_of_scope:
 - Prometheus, OTel, Datadog, Sentry and other exporters remain in M5.
 - Python callbacks/hooks are B164-B165; spend persistence is B069.
+- The Responses and interaction stream assembly is B9840's, and swapping its LoggedStreamAssembler in for
+  ChatStreamAssembler belongs to B8610; B9840 depends on B1717, which already depends on this
+  task, so this task cannot build it.
 pitfalls:
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/service_logging-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as service_logging in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/service_logging.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/service_logging.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A callback failure must not recursively enqueue another callback failure indefinitely.
 - Call identity belongs to a request context, not a mutable global logger field.
+- A streamed chat request logs its complete response only when the logging state's stream is Some(true), since
+  ChatStreamAssembler gives None for any other value; set it from the request's stream flag before the first chunk.
 - >-
   Service failures and model failures are distinct events and must not be counted twice as a terminal model result.
+- >-
+  New pipeline code lives in crates/betterlite-logging/src/logging_service_events.rs and the config setting in
+  crates/betterlite-config/src/sections/service_callback.rs. Wiring edits land in server.rs, routes/chat.rs,
+  routes/chat/streaming.rs and routes/embeddings.rs; the server test belongs in its own tests/logging_integration.rs.
 review_level: standard
 budget:
   max_changed_lines: 1500

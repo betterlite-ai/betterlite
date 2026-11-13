@@ -1,0 +1,120 @@
+id: B8371
+title: Spend log cleanup schedule and settings-change hooks
+description: >-
+  LiteLLM decides in proxy_server.py when the spend log cleanup job runs: once at startup inside
+  initialize_scheduled_background_jobs, and again every time general settings change in the database, through
+  ProxyConfig._apply_retention_settings and _reschedule_spend_log_cleanup_job. B1741 builds the cleanup run itself and leaves
+  the trigger, the registration and the rescheduling here. The same settings-change path also applies a database
+  user_api_key_cache_max_size to the auth cache, which B733 leaves here. Build both in crates/betterlite/src/cleanup_schedule.rs
+  (declared in lib.rs by the skeleton), on top of B8370's ProxyScheduler and B4172's stagger.
+
+  Settings view. `CleanupScheduleKeys` is the tuple of the six general_settings keys in this order:
+  maximum_spend_logs_retention_period, maximum_autorouter_session_retention_period, maximum_health_check_retention_period,
+  maximum_daily_tag_spend_retention_period, maximum_spend_logs_cleanup_cron, maximum_spend_logs_retention_interval.
+  `cleanup_schedule_of(settings) -> CleanupSchedule` reads their raw values (each an `Option<serde_json::Value>`, absent and
+  null both None), the port of _cleanup_schedule_of. `wants_cleanup_job(&CleanupSchedule)` is true when any of the first four
+  is present.
+
+  Trigger. `cleanup_trigger(settings, stagger: &StaggerSettings) -> Option<Box<dyn Trigger>>` ports _spend_log_cleanup_trigger:
+  a truthy cron value goes through `CronTrigger::from_crontab` (local zone); a parse error, or a cron value that is not a
+  string, logs at error "Invalid maximum_spend_logs_cleanup_cron value: {value}" and returns None. Otherwise the retention
+  interval (default "1d" when absent) must be a string, or it logs "Invalid maximum_spend_logs_retention_interval value:
+  {value!r}" and returns None; it is converted with the duration parser B1740 uses for retention periods
+  (duration_in_seconds), and an error or overflow logs the same line. A valid interval becomes an IntervalTrigger wrapped by
+  B4172's stagger_trigger with job id spend_log_cleanup_job, period equal to the interval and the stagger settings parsed
+  from the same general settings.
+
+  Startup registration. `register_cleanup_job(scheduler, settings, job: CleanupJob, state: &mut CleanupScheduleState)` ports
+  L10862-L10911: when wants_cleanup_job is false it does nothing (and does not record an attempt). With a cron string it adds
+  job spend_log_cleanup_job with the cron trigger, replace_existing and the default misfire grace, and logs "Spend log
+  cleanup scheduled with cron: {cron}". Otherwise it adds an interval job of the parsed seconds plus a random 0 to 60 seconds
+  (inclusive, from an injected Rng) without the stagger wrapper. Both error branches log and register nothing. In every
+  case where the job is wanted it then records the attempt (`state.last_attempt = Some(schedule)`). `CleanupJob` is the job
+  handle B1741 exposes for cleanup_old_spend_logs.
+
+  Settings change. `CleanupScheduleState { last_attempt: Option<CleanupSchedule>, reschedule_failed: bool }` lives with the
+  proxy config. `on_settings_changed(scheduler, previous: &CleanupSchedule, current_settings, job, state)` ports
+  _apply_retention_settings and _reschedule_spend_log_cleanup_job: do nothing when the scheduler is Stopped. Let has_job be
+  whether spend_log_cleanup_job exists, baseline be last_attempt when has_job and it is set, else previous, and retry_due
+  be wants && (!has_job || reschedule_failed) && current != last_attempt. Act only when baseline != current, retry_due, or
+  has_job && !wants. Acting means: not wanted removes the job (logging "Removed existing spend log cleanup job") and returns;
+  otherwise build cleanup_trigger and, when it is Some, add the job with replace_existing and log "Spend log cleanup
+  rescheduled with trigger: {trigger}". An error sets reschedule_failed and logs "Spend log cleanup could not be rescheduled,
+  will retry on next sync: {error}"; success clears it and stores current as last_attempt.
+
+  Cache size. `on_cache_size_changed(db_values, cache_size_was_db: bool, store: &mut dyn GeneralSettingsView, cache)` ports
+  _apply_cache_size_setting: return when user_api_key_cache_max_size is neither in db_values nor previously sourced from the
+  database. Validate the effective value with B733's max-size rule (None resets to 200; zero, negative or non-integral
+  fails). An invalid value removes the key when the config file does not own it and logs a warning "Ignoring invalid
+  general_settings.user_api_key_cache_max_size={value!r} from the DB", and leaves the cache alone. A valid value is written
+  back (or removed for None) only when the config file does not own the key, and then the cache's in-memory max size is set.
+  `GeneralSettingsView` is a small trait (get, set, remove, owned_by_config) so the database settings sync can call both hooks.
+
+  Oracle cases are helper cases for the pure decisions (operation b8371 with an `operation:` field): cleanup_trigger on cron,
+  bad cron, interval, non-string interval and default interval; and the act-or-skip decision of _apply_retention_settings
+  for the baseline, retry and removal combinations, driven in LiteLLM by calling the ProxyConfig methods on a scheduler stub.
+  The worker writes them under tools/oracle/cases/helpers/cleanup-schedule/.
+scope:
+  paths:
+    - crates/betterlite/src/cleanup_schedule.rs
+    - crates/betterlite/src/cleanup_schedule/**
+    - tools/oracle/cases/helpers/cleanup-schedule/**
+    - tools/oracle/helpers/b8371.py
+    - tools/oracle/helpers/b8371/**
+    - tools/oracle/src/helpers/server/b8371.rs
+    - tools/oracle/src/helpers/server/b8371/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10862-L10911
+    why: Startup registration with the cron and interval branches, the 0 to 60 second offset and record_cleanup_schedule_attempt.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7761-L7853
+    why: _reschedule_spend_log_cleanup_job, _spend_log_cleanup_trigger with stagger_trigger, _resolved_cleanup_schedule and record_cleanup_schedule_attempt.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7924-L7995
+    why: _apply_cache_size_setting and _apply_retention_settings with the baseline and retry rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5313-L5324
+    why: _CLEANUP_SCHEDULE_KEYS order and _cleanup_schedule_of.
+dod:
+  - text: cleanup_trigger picks cron over interval, defaults the interval to 1d, wraps only the interval in the stagger and logs the two invalid-value lines.
+    proof: [cleanup-tests, oracle, helper-python]
+  - text: register_cleanup_job adds spend_log_cleanup_job only when a retention key is set, with the 0 to 60 second offset on the interval branch, and records the attempt.
+    proof: [cleanup-tests]
+  - text: on_settings_changed acts, removes, retries and records exactly in LiteLLM's baseline order and is a no-op on a stopped scheduler.
+    proof: [cleanup-tests, oracle, helper-python]
+  - text: on_cache_size_changed ignores an invalid database max size with the warning, respects config ownership and updates the cache size for a valid value.
+    proof: [cleanup-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cleanup-tests
+      why: The cleanup trigger, startup registration, reschedule decision or cache size hook is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^cleanup_schedule::/)'
+    - id: helper-python
+      why: The strict oracle adapter for the cleanup schedule cases fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8371)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8371 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8371/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/cleanup-schedule/cron-wins.yaml
+  - tools/oracle/cases/helpers/cleanup-schedule/bad-cron.yaml
+  - tools/oracle/cases/helpers/cleanup-schedule/default-interval.yaml
+  - tools/oracle/cases/helpers/cleanup-schedule/non-string-interval.yaml
+  - tools/oracle/cases/helpers/cleanup-schedule/retry-after-failure.yaml
+  - tools/oracle/cases/helpers/cleanup-schedule/remove-when-unwanted.yaml
+deviations: []
+out_of_scope:
+  - "SpendLogCleanup.cleanup_old_spend_logs and its constructor: B1741 and B1740 own the run this schedule calls."
+  - "Reading database general_settings rows and the rest of ProxyConfig._update_general_settings and _apply_general_settings_side_effects (alerting, pass-through, boolean, store_model_in_db, ssrf effects): not built here; the notes name the gap."
+  - "The trigger math and job store: B8370."
+pitfalls:
+  - Startup adds the interval job with a plain random 0 to 60 second offset, but the reschedule path wraps the interval in stagger_trigger instead and adds no random offset, so the two paths build different triggers for the same settings.
+  - The startup cron branch checks `cleanup_cron and not isinstance(cleanup_cron, str)` first, so a truthy non-string logs "%r" style, while the reschedule path passes any truthy value to from_crontab and logs it with "%s".
+  - record_cleanup_schedule_attempt runs after a failed parse too, so a bad cron at startup is recorded as attempted and is not retried until the settings change.
+  - retry_due compares against last_attempt, not baseline, so the same failed settings are not retried on every sync once recorded.
+  - _apply_retention_settings returns at once only for a scheduler in state Stopped; a scheduler that was never built (None) still runs the comparison and the reschedule call returns early.
+  - The cache size hook reads cache_size_was_db from before the database row was applied, so a database value that disappears still resets the cache.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,14 @@
+id: B7891
+milestone: M12 python
+title: Python decisions, SystemOne and sandbox functions
+status: todo
+depends_on: [B6040, B158, B167, B3513, B3515, B3519]
+file: tasks/B7891-python-decisions-sandbox.yaml
+covers:
+  - "litellm/{decisions,systemone,sandbox}/**"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

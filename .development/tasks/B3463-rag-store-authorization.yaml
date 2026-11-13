@@ -154,8 +154,8 @@ oracle_cases:
 
 deviations:
   - what: Caller request URL and file_id inputs bypass store authorization in
-      the route layer. The RAG ingest and query request handlers (owned by B3465
-      and B097) check only the ingest_options and retrieval_config payloads
+      the route layer. The RAG ingest and query request handlers (owned by B3465)
+      check only the ingest_options and retrieval_config payloads
       respectively; file_url and file_id fields do not participate in nested
       store discovery, delegated to the route handlers rather than this helper.
     why: Authorization applies only to managed store configuration, not to
@@ -165,7 +165,7 @@ deviations:
 
 out_of_scope:
   - The route handlers (rag_ingest, rag_query) that call these helpers; B3465
-    and B097 own those functions.
+    owns those functions.
   - The database lookup and schema for managed vector stores; B1061 owns the
     authorization check and B1067 owns the config extraction.
   - Provider-specific validation beyond get_ingestion_class; individual

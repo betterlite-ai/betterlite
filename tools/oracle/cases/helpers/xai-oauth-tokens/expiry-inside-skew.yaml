@@ -1,0 +1,7 @@
+kind: helper
+name: expiry_inside_skew
+call:
+  xai_oauth_tokens: {"expired": {"now": 1000, "expires_at": 1121.5}}
+env: {}
+compare:
+  ignore: []

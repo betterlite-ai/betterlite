@@ -1,0 +1,26 @@
+kind: helper
+name: vault-auth-target-null-and-empty-overrides
+env: {}
+compare: {ignore: []}
+call:
+  b4416:
+    env:
+      HCP_VAULT_TOKEN: token-1
+      HCP_VAULT_NAMESPACE: admin
+      HCP_VAULT_MOUNT_NAME: kv-prod
+      HCP_VAULT_PATH_PREFIX: myapp
+    routes: []
+    steps:
+      - op: target
+        name: DB_PASSWORD
+        params: {namespace: null, mount: null, path_prefix: null, data: null}
+      - op: target
+        name: DB_PASSWORD
+        params: {namespace: "", mount: "", path_prefix: "", data: ""}
+      - op: target
+        name: DB_PASSWORD
+        params: {namespace: " / ", mount: " // ", path_prefix: " / "}
+      - {op: target, name: DB_PASSWORD}
+      - op: target
+        name: DB_PASSWORD
+        params: null

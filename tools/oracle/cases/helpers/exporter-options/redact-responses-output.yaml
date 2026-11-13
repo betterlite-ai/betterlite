@@ -1,0 +1,26 @@
+kind: helper
+name: exporter-options-redact-responses-output
+call:
+  b3931:
+    operation: redact
+    turn_off_message_logging: true
+    excluded_fields: []
+    redacts_messages_itself: false
+    stamp: {id: chatcmpl-stamp, created: 1704067200}
+    details:
+      standard_logging_object:
+        id: slp-1
+        response:
+          id: resp-1
+          object: response
+          output:
+            - type: message
+              content:
+                - {type: output_text, text: secret}
+                - {type: refusal, refusal: "no"}
+            - type: reasoning
+              content:
+                - {type: reasoning_text, text: why}
+      proxy_server_request: {url: http://example.test/v1/responses}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,135 @@
+id: B9211
+title: Exercise aggregator Responses, decisions and search through the proxy
+description: >-
+  Add the HTTP evidence absent from B5832, B5834, B5836, B6080 and B6100's helper suites.
+  B8310 and B8311 construct their configs but list only chat and embedding HTTP cases;
+  B8634 mounts search and decisions with authentication and invalid-body proofs only.
+  Write eight HTTP fixtures in tools/oracle/cases/http/aggregator-structured, using these
+  already assigned transports and mounts. No native function, shared registry or Python
+  helper is changed. The referenced provider code is context for the cases, with zero
+  new implementation lines owned here; approximately 750 fixture lines are expected.
+
+  The four Responses cases use a configured master key and model_list deployments with
+  explicit dummy api_key and mock api_base. Set router_settings.num_retries to zero and
+  return complete, deterministic OpenAI Responses objects, including fixed ids, model,
+  created_at, output and usage. fireworks-responses-folding uses
+  fireworks_ai/accounts/fireworks/models/llama-v3p1-8b-instruct, instructions plus leading
+  developer/system input and a final user message. Assert the captured instructions join
+  and resource name. perplexity-responses-preset uses perplexity/preset/fast-search with
+  an input message lacking type: the upstream gets preset fast-search, type message and
+  /v1/responses, with no model key. openrouter-responses-auth uses
+  openrouter/anthropic/claude-3.5-sonnet and confirms /responses and the configured Bearer
+  key, without chat's HTTP-Referer or X-Title headers. edenai-responses-cost uses
+  edenai/openai/gpt-4.1-nano and a nonzero numeric usage.cost; retain the returned usage
+  and compare the x-litellm-response-cost header. Each case includes an
+  upstream error step with a valid provider error body, comparing the resulting status,
+  error type, param and code rather than assuming a bare provider exception is the client
+  envelope. Keep /error/message ignored solely because betterlite supplies its own words.
+
+  Responses create aliases are POST /v1/responses, /responses and /openai/v1/responses.
+  Spread them across the four cases. B080 owns these paths and the response-id wrapping;
+  use narrow ignores for process-generated ids only, and keep output, usage and upstream
+  JSON compared. GET and DELETE Responses operations stay with their route tests; this
+  task is the missing provider-selection proof for creation, not another lifecycle suite.
+
+  openrouter-decisions uses openrouter/typesafe/jev-1.13; perplexity-decisions uses
+  perplexity/pplx-decider-v1-27b; cloudflare-decisions uses cloudflare/@cf/cloudflare/clef.
+  Start from the checked pinned integration examples' predicate, choice and score question
+  shapes, with deterministic provider answers. Exercise both public formats: input plus
+  questions list for /decisions, and state plus named questions for /systemone. Compare
+  the translated answers, usage, upstream model and URL, rather than a helper's intermediate
+  record. OpenRouter posts /alpha/decisions and preserves provider usage.cost. Perplexity
+  posts /v1/decisions. Cloudflare with a mock base ending /ai/v1 posts
+  /ai/run/@cf/cloudflare/clef, sends model clef and unwraps result.answers. The supported
+  route pairs are POST /v1/decisions and /decisions, and POST /v1/systemone and /systemone;
+  exercise each once across these cases. Add a no-Authorization step with no upstream call
+  and retain the exact HTTP auth status and error fields.
+
+  perplexity-search uses a search_tools entry named research, litellm_params.search_provider
+  perplexity, a dummy api_key and a mock api_base; query and max_results are client fields.
+  Exercise POST /v1/search/research and /search/research with a conflicting body
+  search_tool_name to prove the URL-selected tool wins. Also exercise POST /v1/search and
+  /search with search_tool_name research. Capture only query and supported optional fields
+  upstream at /search, and return one result with a missing title/snippet and one populated
+  result so the public defaults are checked. Keep the distinct search credential policy:
+  server resolution recognizes PERPLEXITYAI_API_KEY, not the chat fallback
+  PERPLEXITY_API_KEY. The fixture uses the tool's explicit key, so neither public credential
+  nor environment fallback is needed. Include one mock 429 with retries disabled.
+
+  All bases stay inside the harness. Use the current HTTP schema, not SDK HTTP or helper
+  operations. Client content-type and captured upstream authorization/content-type are
+  compared by value; absence of the OpenRouter chat-only headers is compared too. Do not
+  ignore complete error, usage, answers, results or upstream-body subtrees. The existing
+  oracle decoders handle every fixture; this work requires no parser fuzz target.
+scope:
+  paths:
+    - tools/oracle/cases/http/aggregator-structured/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/responses/transformation.py#L37-L172
+    why: B5832's folding, authorization and resource-name transform exercised over HTTP.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/responses/transformation.py#L25-L125
+    why: B5834's preset request and native Responses URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/responses/transformation.py#L32-L77
+    why: B6080's Responses key and URL differ from its chat policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/responses/transformation.py#L29-L80
+    why: B6100's Responses adapter transfers provider usage cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/decisions/transformation.py#L7-L19
+    why: B6080's decisions URL and reported cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/decisions/transformation.py#L4-L10
+    why: B5834's decisions base and path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cloudflare/decisions/transformation.py#L15-L54
+    why: B5836's canonical model, ai/run URL and result wrapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/search/transformation.py#L43-L166
+    why: B5834's search credential, optional-field and result rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L194-L237
+    why: The three existing authenticated Responses creation aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/decisions_endpoints/endpoints.py#L173-L256
+    why: B8276's two format pairs, already mounted by B8634.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/endpoints.py#L17-L240
+    why: Four search aliases and the named tool overwrite before dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/integration/translation/decisions/bases/openrouter.py#L7-L73
+    why: Accepted question and provider answer shapes at the pin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/integration/translation/decisions/bases/cloudflare.py#L7-L61
+    why: The Cloudflare model and result envelope used by the HTTP fixture.
+dod:
+  - text: Four native aggregator Responses configs are selected by real creation routes, with distinct upstream payloads and matching handled errors.
+    proof: [responses-cases, oracle]
+  - text: OpenRouter, Perplexity and Cloudflare decisions succeed through both public formats and preserve their provider URLs and response projections.
+    proof: [decisions-cases, oracle]
+  - text: Perplexity named search wins over a conflicting body name, fills missing result fields and returns the pinned rate-limit envelope.
+    proof: [search-case, oracle]
+checks:
+  optional: []
+  commands:
+    - id: responses-cases
+      why: All four distinct Responses provider proofs must be added before this task can pass.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/aggregator-structured)" && test -f tools/oracle/cases/http/aggregator-structured/fireworks-responses-folding.yaml && test -f tools/oracle/cases/http/aggregator-structured/perplexity-responses-preset.yaml && test -f tools/oracle/cases/http/aggregator-structured/openrouter-responses-auth.yaml && test -f tools/oracle/cases/http/aggregator-structured/edenai-responses-cost.yaml
+    - id: decisions-cases
+      why: A mounted decisions router alone does not prove any of these provider adapters is reachable.
+      run: test -f tools/oracle/cases/http/aggregator-structured/openrouter-decisions.yaml && test -f tools/oracle/cases/http/aggregator-structured/perplexity-decisions.yaml && test -f tools/oracle/cases/http/aggregator-structured/cloudflare-decisions.yaml
+    - id: search-case
+      why: The existing search mount tests never execute a successful Perplexity search.
+      run: test -f tools/oracle/cases/http/aggregator-structured/perplexity-search.yaml
+oracle_cases:
+  - tools/oracle/cases/http/aggregator-structured/fireworks-responses-folding.yaml
+  - tools/oracle/cases/http/aggregator-structured/perplexity-responses-preset.yaml
+  - tools/oracle/cases/http/aggregator-structured/openrouter-responses-auth.yaml
+  - tools/oracle/cases/http/aggregator-structured/edenai-responses-cost.yaml
+  - tools/oracle/cases/http/aggregator-structured/openrouter-decisions.yaml
+  - tools/oracle/cases/http/aggregator-structured/perplexity-decisions.yaml
+  - tools/oracle/cases/http/aggregator-structured/cloudflare-decisions.yaml
+  - tools/oracle/cases/http/aggregator-structured/perplexity-search.yaml
+deviations: []
+out_of_scope:
+  - Every method and helper in the referenced transforms stays with B5832, B5834, B5836, B6080 or B6100; B8310 and B8311 keep all provider construction and dispatch code.
+  - B080 owns Responses handlers, B8275 search handlers and B8276 decisions handlers; B8634 owns the search/decisions mounts and selectors, with B8610's one area aggregator.
+  - B3271 through B3276 own search registration, routing, pricing and transport; B3510 through B3515 own decisions records, translation, preparation and execution.
+  - Responses retrieval, deletion, websocket transport and streaming regressions remain with B080 and their existing parts; Eden AI Messages already has B8580 HTTP proofs.
+pitfalls:
+  - Perplexity preset names replace model in the upstream body, so a generic Responses echo fixture misses the provider transform.
+  - Cloudflare's decisions response wraps answers under result while OpenRouter and Perplexity return answers at the root.
+  - OpenRouter Responses never adds chat referer defaults; comparing only authorization would miss accidental chat-config selection.
+  - Search without a configured named tool can fall through a different routing branch, so the successful case must install research in search_tools.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

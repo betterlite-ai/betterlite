@@ -1,0 +1,39 @@
+kind: helper
+name: anthropic-web-replay-unencrypted-search-result
+call:
+  anthropic_web_replay:
+    messages:
+      - role: assistant
+        content:
+          - {type: server_tool_use, id: s1, name: web_search, input: {query: "rust async"}}
+          - type: web_search_tool_result
+            tool_use_id: s1
+            content:
+              - {type: web_search_result, url: "https://a.example", title: A, snippet: first, extra: {keep: true}}
+              - {type: web_search_result, url: "https://b.example"}
+      - role: user
+        content:
+          - type: web_search_tool_result
+            tool_use_id: s2
+            content:
+              - {type: web_search_result}
+              - {type: web_search_result, title: T, snippet: S}
+      - role: assistant
+        content:
+          - {type: web_search_tool_result, tool_use_id: s3, content: {type: web_search_tool_result_error, error_code: too_many_requests}}
+          - {type: web_search_tool_result, tool_use_id: s4, content: {type: web_search_tool_result_error}}
+          - {type: web_search_tool_result, tool_use_id: 5, content: []}
+          - {type: web_search_tool_result, tool_use_id: s5, content: text}
+          - {type: {web_search_tool_result: null}, tool_use_id: s6, content: []}
+          - {type: web_search_tool_result, tool_use_id: s7, content: [[web_search_result]]}
+          - {type: web_search_tool_result, tool_use_id: s8, content: [{type: {web_search_result: null}}]}
+          - {type: web_search_tool_result, tool_use_id: s9, content: {type: {web_search_tool_result_error: null}}}
+          - [web_search_tool_result, s10, []]
+          - {type: web_search_tool_result, tool_use_id: s11, content: [{type: web_search_tool_result_error}]}
+          - {type: web_search_tool_result, tool_use_id: s12, content: {type: web_search_result}}
+          - {type: server_tool_use, tool_use_id: s13, content: []}
+          - {type: web_search_tool_result, content: []}
+          - {type: web_search_result, url: "https://c.example"}
+          - {type: text, text: unchanged}
+env: {}
+compare: {ignore: []}

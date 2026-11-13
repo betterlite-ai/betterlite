@@ -1,0 +1,39 @@
+kind: helper
+name: cache-passthrough-path
+call:
+  vertex_endpoint:
+    cache_passthrough_path:
+      urls:
+        - "https://us-central1-aiplatform.googleapis.com/v1/projects/proj-1/locations/us-central1/publishers/google/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+        - "https://h.example.com/v1beta1/projects/p/locations/l/cachedContents/abc"
+        - "https://h.example.com/x/models/a/b:generateContent"
+        - "https://h.example.com/nothing"
+        - "https://h.example.com/projects/first/locations/firstloc/x/projects/second/locations/secondloc/y"
+        - "https://h.example.com/projects//locations//models/:x"
+        - "https://h.example.com/x?next=/projects/p/locations/l"
+        - "https://h.example.com/v1/projects/p/locations/l/publishers/google/models/a/models/b:predict"
+      routes:
+        - {base_url: "https://us-central1-aiplatform.googleapis.com", route: "/projects/old/locations/oldloc/publishers/google/models/gemini-2.5-flash:generateContent", project: newproj, location: newloc}
+        - {base_url: "https://us-central1-aiplatform.googleapis.com", route: "/projects/old/locations/oldloc/publishers/google/models/gemini-2.5-flash:generateContent", project: null, location: newloc}
+        - {base_url: "https://us-central1-aiplatform.googleapis.com", route: "/projects/old/locations/oldloc/publishers/google/models/gemini-2.5-flash:generateContent", project: newproj, location: ""}
+        - {base_url: "https://h.example.com", route: "/v1/publishers/google/models/m:generateContent", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "/v1beta1/publishers/google/models/m:generateContent", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "/publishers/google/models/m:generateContent", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "/projects/old/locations/old/cachedContents", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "/v1/projects/old/locations/old/cachedContents", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "/v1beta1/projects/old/locations/old/publishers/google/models/m:generateContent", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "/cachedContents", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "/models/m:generateContent", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "/some/locations/x", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "publishers/google/models/m:generateContent", project: p, location: l}
+        - {base_url: "https://proxy.example.com/base?x=1", route: "/publishers/google/models/m:generateContent", project: p, location: l}
+        - {base_url: "https://h.example.com/", route: "/publishers/google/models/m:generateContent", project: p, location: l}
+        - {base_url: "https://h.example.com/base", route: "/x/../y", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "//evil.example.com/x", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "/projects/a/locations/b/x/projects/c/locations/d/y", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "/projects//locations/l/x", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "/projects/a/b/locations/l/x", project: p, location: l}
+        - {base_url: "https://h.example.com/base#frag", route: "/publishers/google/models/m:generateContent", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "/projects/projects/x/locations/y/z", project: p, location: l}
+env: {}
+compare: {ignore: []}

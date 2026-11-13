@@ -1,15 +1,15 @@
 id: B3909
 milestone: M7 observability
 title: Langfuse OpenTelemetry content attributes
-status: todo
-depends_on: [B3905, B002, B192]
+status: done
+depends_on: [B3905, B002, B192, B3844]
 file: tasks/B3909-langfuse-otel-attributes.yaml
 covers:
   - "litellm/integrations/langfuse/langfuse_otel.py"
   - "litellm/integrations/langfuse/langfuse_otel_attributes.py"
 parent: B112
 split_from: B112
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 933

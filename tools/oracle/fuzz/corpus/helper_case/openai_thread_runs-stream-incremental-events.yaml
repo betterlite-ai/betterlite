@@ -1,0 +1,5 @@
+kind: helper
+name: openai-thread-runs-seed-stream-incremental-events
+call: {openai_thread_runs: {stream_incremental_events: {options: {api_key: sk-seed}, rounds: []}}}
+env: {}
+compare: {ignore: []}

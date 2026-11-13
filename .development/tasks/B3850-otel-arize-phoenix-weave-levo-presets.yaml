@@ -1,0 +1,227 @@
+id: B3850
+title: OTel Arize Phoenix Weave and Levo presets
+description: >-
+  Build the vendor presets that turn a vendor's environment variables into an OpenTelemetry V2 destination, in betterlite-logging.
+  A preset takes the base `Settings` (the type B3842 builds in `otel/config.rs`) and returns a copy with one more exporter, the mapper names that vendor needs and some resource attributes.
+  A preset appends to `base.exporters`; it never removes or reorders what is already there. It never touches `base.mapper_names` except to append names that are missing (see `ensure_mappers`).
+  Five presets exist, one per file under `otel/presets/`: arize, phoenix, levo, weave and langtrace. The registry that maps a callback name to a preset, the dynamic-header tables and the other vendors (agentops, newrelic, signoz, langfuse) are B3851's, not this task's.
+
+  The vendor settings come first because the presets call them. Each one lives in its own file under `otel/integrations/` and reads the environment through the `EnvironmentLookup` trait of betterlite-config (crates/betterlite-config/src/loader.rs), passed in as `&dyn EnvironmentLookup`. Nothing here reads `std::env`.
+  `arize_settings.rs`: `OtlpProtocol` (`Grpc` or `Http`, with a method returning the exporter kind string `otlp_grpc` or `otlp_http`) and `ArizeConfig { space_id, space_key, api_key, protocol, endpoint, project_name }` with `ArizeConfig::from_env`. It reads ARIZE_SPACE_ID, ARIZE_SPACE_KEY, ARIZE_API_KEY, ARIZE_PROJECT_NAME, ARIZE_ENDPOINT and ARIZE_HTTP_ENDPOINT. ARIZE_ENDPOINT wins and means gRPC. Else ARIZE_HTTP_ENDPOINT means HTTP. Else the endpoint is `https://otlp.arize.com/v1` over gRPC. It cannot fail.
+  `phoenix_settings.rs`: `PhoenixConfig { otlp_auth_headers, protocol, endpoint, project_name }` with `PhoenixConfig::from_env`, which returns `Result<_, PhoenixSettingsError>`. It reads PHOENIX_API_KEY, PHOENIX_COLLECTOR_HTTP_ENDPOINT, PHOENIX_COLLECTOR_ENDPOINT and PHOENIX_PROJECT_NAME. The collector endpoint is the HTTP variable when set, else the plain one. With no collector endpoint the result is `http://localhost:6006/v1/traces` over HTTP. An endpoint that starts with `grpc://`, or contains `:4317` and does not contain `/v1/traces`, is used as given over gRPC. Any other endpoint is HTTP: one containing `app.phoenix.arize.com` is used as given; one already containing `/v1/traces` is used as given; otherwise `/traces` is appended when it ends with `/v1`, `v1/traces` when it ends with `/`, and `/v1/traces` in every other case. When the key is set, `otlp_auth_headers` is `authorization=Bearer <key>` for gRPC (lowercase name) and `Authorization=Bearer <key>` for HTTP. With no key and an endpoint containing `app.phoenix.arize.com` it fails with `PHOENIX_API_KEY must be set when using Phoenix Cloud (app.phoenix.arize.com).`, even if the endpoint is a gRPC one. With no key and any other endpoint, `otlp_auth_headers` is empty. `project_name` is PHOENIX_PROJECT_NAME or `default`.
+  `levo_settings.rs`: `LevoConfig { otlp_auth_headers, protocol, endpoint }` with `LevoConfig::from_env`, which returns `Result<_, LevoSettingsError>`. It reads LEVOAI_API_KEY, LEVOAI_ORG_ID, LEVOAI_WORKSPACE_ID and LEVOAI_COLLECTOR_URL and checks them in that order. The first missing one fails with the exact LiteLLM message (`LEVOAI_API_KEY environment variable is required for Levo integration.`, the same for ORG_ID and WORKSPACE_ID, and for the collector URL `LEVOAI_COLLECTOR_URL environment variable is required for Levo integration. Please contact Levo support to get your collector URL.`). The endpoint is the collector URL unchanged, the protocol is always HTTP, and the headers are `Authorization=Bearer <key>,x-levo-organization-id=<org>,x-levo-workspace-id=<workspace>`.
+  `weave_settings.rs`: `WeaveOtelConfig { otlp_auth_headers, endpoint, project_id, protocol }` with `WeaveOtelConfig::from_env` returning `Result<_, WeaveSettingsError>`, plus `weave_authorization_header(api_key)` (`Basic ` followed by base64 of `api:<key>`) and `weave_otel_endpoint(host: Option<&str>)`. It reads WANDB_API_KEY, WANDB_PROJECT_ID and WANDB_HOST. A missing WANDB_API_KEY fails first with `WANDB_API_KEY must be set for Weave OpenTelemetry integration.`, then a missing WANDB_PROJECT_ID with `WANDB_PROJECT_ID must be set for Weave OpenTelemetry integration. Format: <entity>/<project_name>`. The endpoint is `https://trace.wandb.ai/otel/v1/traces` without a host. With a host, it gets `https://` in front unless it starts with `http`, loses trailing slashes, and gets `/otel/v1/traces` added. The headers are `Authorization=<Basic header>,project_id=<id>` and the protocol is HTTP. Add `base64 = "0.23.1"` to crates/betterlite-logging/Cargo.toml, the version other crates in this workspace use.
+
+  The presets, each in `otel/presets/<name>.rs`, implement the `Preset` trait from `presets/base.rs`: `fn build(&self, env: &dyn EnvironmentLookup, base: Settings, allow_missing_credentials: bool) -> Result<Settings, PresetError>`. `PresetError` is in base.rs and wraps the three vendor errors with `#[from]`. Unit structs `ArizePreset`, `PhoenixPreset`, `LevoPreset`, `WeavePreset` and `LangtracePreset` implement it.
+  Arize adds an exporter of kind `ArizeConfig.protocol`, the config endpoint, owner `ExporterOwner::ArizeAx`, and mapper `openinference`. Headers are the pieces that exist, joined by commas: `space_id=<space_id, else space_key>` when either is set, then `api_key=<key>` when set. When neither piece exists the headers are the value of OTEL_EXPORTER_OTLP_TRACES_HEADERS, or empty. When ARIZE_PROJECT_NAME is set it adds resource attribute `model_id`, merged over the base attributes.
+  Phoenix adds an exporter with the config protocol, endpoint and `otlp_auth_headers`, owner `ExporterOwner::ArizePhoenix`, mapper `openinference`, and resource attribute `openinference.project.name`. That project name is read by the preset itself: PHOENIX_PROJECT_NAME, else PHOENIX_COLLECTOR_PROJECT_NAME, else `default`. This differs from `PhoenixConfig.project_name`, which ignores the second variable. Keep both.
+  Levo adds one HTTP exporter with the config endpoint and headers, owner `ExporterOwner::Levo`, and changes no mapper names.
+  Weave adds an exporter with the config protocol, endpoint and headers, owner `ExporterOwner::WeaveOtel`, and appends mappers `openinference` then `weave`. When the settings fail and `allow_missing_credentials` is true, it returns the base with mappers added and with `credential_gated_exporters` applied instead of an error. When the settings fail and it is false, the error is returned. Arize, Phoenix and Levo ignore `allow_missing_credentials`, and their credential errors always propagate.
+  Langtrace adds no exporter and no resource attribute; it only appends mapper `langtrace`.
+  `presets/utils.rs` holds `ensure_mappers(names, extra)` (append each missing name, keep order, no duplicates), `credential_gated_exporters(exporters, owner)` (drop the placeholder specs, then append `ExporterSpec { owner: Some(owner), requires_headers: true, ..default }`) and `is_unconfigured_placeholder(spec)`.
+  Unset or empty environment variables count as not set everywhere above, except PHOENIX_API_KEY, where an empty value still counts as a key (header `Authorization=Bearer `).
+  The three header builders for per-request credentials live in the same files as their presets and are plain functions over a `&BTreeMap<String, String>` of the dynamic parameters: `arize_dynamic_headers` (header `arize-space-id` from `arize_space_key`, else `arize_space_id`; header `api_key` from `arize_api_key`), `weave_dynamic_headers` (`Authorization` from `wandb_api_key` through `weave_authorization_header`; `project_id` from `weave_project_id`) and `phoenix_project_headers` (given the key/team auth metadata, header `x-project-name` from `phoenix_project_name_override`, else `phoenix_project_name`, trimmed, and an empty result when both are blank or the metadata is absent). An unset or empty parameter adds no header.
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/presets/base.rs
+    - crates/betterlite-logging/src/otel/presets/base/**
+    - crates/betterlite-logging/src/otel/presets/utils.rs
+    - crates/betterlite-logging/src/otel/presets/utils/**
+    - crates/betterlite-logging/src/otel/presets/arize.rs
+    - crates/betterlite-logging/src/otel/presets/arize/**
+    - crates/betterlite-logging/src/otel/presets/phoenix.rs
+    - crates/betterlite-logging/src/otel/presets/phoenix/**
+    - crates/betterlite-logging/src/otel/presets/levo.rs
+    - crates/betterlite-logging/src/otel/presets/levo/**
+    - crates/betterlite-logging/src/otel/presets/weave.rs
+    - crates/betterlite-logging/src/otel/presets/weave/**
+    - crates/betterlite-logging/src/otel/presets/langtrace.rs
+    - crates/betterlite-logging/src/otel/presets/langtrace/**
+    - crates/betterlite-logging/src/otel/integrations/arize_settings.rs
+    - crates/betterlite-logging/src/otel/integrations/arize_settings/**
+    - crates/betterlite-logging/src/otel/integrations/phoenix_settings.rs
+    - crates/betterlite-logging/src/otel/integrations/phoenix_settings/**
+    - crates/betterlite-logging/src/otel/integrations/levo_settings.rs
+    - crates/betterlite-logging/src/otel/integrations/levo_settings/**
+    - crates/betterlite-logging/src/otel/integrations/weave_settings.rs
+    - crates/betterlite-logging/src/otel/integrations/weave_settings/**
+    - crates/betterlite-logging/Cargo.toml
+    - tools/oracle/cases/helpers/otel-presets/**
+    - tools/oracle/helpers/b3850.py
+    - tools/oracle/helpers/b3850/**
+    - tools/oracle/src/helpers/logging/b3850.rs
+    - tools/oracle/src/helpers/logging/b3850/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/base.py#L1-L35
+    why: The Preset protocol, its two keyword arguments and the reason allow_missing_credentials exists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/utils.py#L1-L48
+    why: ensure_mappers, credential_gated_exporters and is_unconfigured_placeholder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/arize.py#L1-L78
+    why: arize_preset, the header assembly with its OTEL_EXPORTER_OTLP_TRACES_HEADERS fallback, and arize_dynamic_headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/phoenix.py#L1-L86
+    why: phoenix_preset, its own project-name settings class, the x-project-name header and phoenix_project_headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/levo.py#L1-L32
+    why: levo_preset, which adds an exporter and no mapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/weave.py#L1-L65
+    why: weave_preset with the allow_missing_credentials branch, and weave_dynamic_headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/langtrace.py#L1-L25
+    why: langtrace_preset, mapper only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize.py#L165-L204
+    why: get_arize_config and its endpoint and protocol choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix.py#L386-L445
+    why: get_arize_phoenix_config, endpoint normalization, header casing and the Phoenix Cloud key check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/levo/levo.py#L23-L86
+    why: LevoConfig and get_levo_config with the four required variables and their messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weave/weave_otel.py#L30-L35
+    why: WEAVE_BASE_URL and WEAVE_OTEL_ENDPOINT constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weave/weave_otel.py#L109-L170
+    why: Basic auth header, weave_otel_endpoint and get_weave_otel_config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/arize.py#L1-L17
+    why: Protocol and ArizeConfig.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/arize_phoenix.py#L1-L10
+    why: ArizePhoenixConfig.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/weave_otel.py#L1-L14
+    why: WeaveOtelConfig and its defaults (WeaveSpanAttributes below it is B3861's).
+dod:
+  - text: >-
+      ArizeConfig::from_env reads the six ARIZE_* variables. ARIZE_ENDPOINT wins and gives gRPC with that exact value. Without it ARIZE_HTTP_ENDPOINT gives HTTP with that exact value. With neither, the result is gRPC at `https://otlp.arize.com/v1`.
+    proof: [arize-settings-tests, helper-python]
+  - text: >-
+      PhoenixConfig::from_env picks the HTTP collector variable before the plain one, defaults to `http://localhost:6006/v1/traces`, and normalizes the path by the rules in the description: grpc:// and :4317 stay gRPC and unchanged, app.phoenix.arize.com stays unchanged, an endpoint ending in /v1 gets /traces, ending in / gets v1/traces, anything else without /v1/traces gets /v1/traces.
+    proof: [phoenix-settings-tests, helper-python]
+  - text: >-
+      PhoenixConfig::from_env builds `authorization=Bearer <key>` for gRPC and `Authorization=Bearer <key>` for HTTP, fails with the Phoenix Cloud message when there is no key and the endpoint contains app.phoenix.arize.com (gRPC form included), and leaves the headers empty without a key elsewhere.
+    proof: [phoenix-settings-tests, helper-python]
+  - text: >-
+      LevoConfig::from_env checks LEVOAI_API_KEY, LEVOAI_ORG_ID, LEVOAI_WORKSPACE_ID, LEVOAI_COLLECTOR_URL in that order, fails with the exact message of the first missing one, and otherwise returns the collector URL unchanged, HTTP and the three-part header string.
+    proof: [levo-settings-tests, helper-python]
+  - text: >-
+      WeaveOtelConfig::from_env checks WANDB_API_KEY before WANDB_PROJECT_ID with their exact messages. weave_otel_endpoint uses the cloud URL without a host, adds https:// unless the host starts with http, trims trailing slashes and appends /otel/v1/traces. The auth header is `Basic ` plus base64 of `api:<key>`.
+    proof: [weave-settings-tests, helper-python]
+  - text: >-
+      The Arize preset appends one exporter with the config protocol, endpoint and owner ArizeAx, appends mapper openinference once, builds `space_id=...,api_key=...` headers with space_id preferred over space_key, falls back to OTEL_EXPORTER_OTLP_TRACES_HEADERS when neither exists, and sets resource attribute model_id only when ARIZE_PROJECT_NAME is set.
+    proof: [arize-preset-tests, helper-python]
+  - text: >-
+      The Phoenix preset appends one exporter with owner ArizePhoenix, appends mapper openinference once, sets openinference.project.name from PHOENIX_PROJECT_NAME, then PHOENIX_COLLECTOR_PROJECT_NAME, then `default`, and returns the Phoenix Cloud error unchanged whatever allow_missing_credentials says.
+    proof: [phoenix-preset-tests, helper-python]
+  - text: >-
+      The Levo preset appends one HTTP exporter with owner Levo, leaves mapper_names exactly as given, and returns the missing-variable error whatever allow_missing_credentials says.
+    proof: [levo-preset-tests, helper-python]
+  - text: >-
+      The Weave preset appends one exporter with owner WeaveOtel and mappers openinference then weave. When the settings fail, allow_missing_credentials false returns the error, and true returns the base with those mappers and a gated spec (owner WeaveOtel, requires_headers true) in place of the placeholder.
+    proof: [weave-preset-tests, helper-python]
+  - text: >-
+      The Langtrace preset only appends mapper langtrace and leaves exporters and resource attributes untouched. ensure_mappers keeps order and adds no duplicates, and is_unconfigured_placeholder is true only for a spec equal to the default one.
+    proof: [langtrace-utils-tests, helper-python]
+  - text: >-
+      arize_dynamic_headers, weave_dynamic_headers and phoenix_project_headers build exactly the headers listed in the description, with arize_space_key beating arize_space_id, project override beating project name, and blank values adding nothing.
+    proof: [dynamic-headers-tests, helper-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: arize-settings-tests
+      why: ArizeConfig::from_env tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_settings::/)'
+    - id: phoenix-settings-tests
+      why: PhoenixConfig::from_env tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::phoenix_settings::/)'
+    - id: levo-settings-tests
+      why: LevoConfig::from_env tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::levo_settings::/)'
+    - id: weave-settings-tests
+      why: WeaveOtelConfig::from_env and weave_otel_endpoint tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::weave_settings::/)'
+    - id: arize-preset-tests
+      why: Arize preset tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::presets::arize::/) - test(/dynamic_headers/)'
+    - id: phoenix-preset-tests
+      why: Phoenix preset tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::presets::phoenix::/) - test(/project_headers/)'
+    - id: levo-preset-tests
+      why: Levo preset tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::presets::levo::/)'
+    - id: weave-preset-tests
+      why: Weave preset tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::presets::weave::/) - test(/dynamic_headers/)'
+    - id: langtrace-utils-tests
+      why: Langtrace preset and utils tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::presets::(langtrace|utils|base)::/)'
+    - id: dynamic-headers-tests
+      why: Dynamic header builder tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::presets::(arize|weave)::.*dynamic_headers/) + test(/^otel::presets::phoenix::.*project_headers/)'
+    - id: helper-python
+      why: The preset and settings results must match LiteLLM run on the same environment
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otel-presets)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3850::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/otel-presets/arize-config-default-grpc.yaml
+  - tools/oracle/cases/helpers/otel-presets/arize-config-grpc-endpoint-wins.yaml
+  - tools/oracle/cases/helpers/otel-presets/arize-config-http-endpoint.yaml
+  - tools/oracle/cases/helpers/otel-presets/arize-preset-space-id-and-api-key.yaml
+  - tools/oracle/cases/helpers/otel-presets/arize-preset-space-key-fallback.yaml
+  - tools/oracle/cases/helpers/otel-presets/arize-preset-otlp-headers-fallback.yaml
+  - tools/oracle/cases/helpers/otel-presets/arize-preset-project-resource.yaml
+  - tools/oracle/cases/helpers/otel-presets/arize-dynamic-headers-space-key-wins.yaml
+  - tools/oracle/cases/helpers/otel-presets/phoenix-config-default-local.yaml
+  - tools/oracle/cases/helpers/otel-presets/phoenix-config-grpc-scheme.yaml
+  - tools/oracle/cases/helpers/otel-presets/phoenix-config-port-4317.yaml
+  - tools/oracle/cases/helpers/otel-presets/phoenix-config-path-ends-v1.yaml
+  - tools/oracle/cases/helpers/otel-presets/phoenix-config-path-ends-slash.yaml
+  - tools/oracle/cases/helpers/otel-presets/phoenix-config-path-bare-host.yaml
+  - tools/oracle/cases/helpers/otel-presets/phoenix-config-cloud-endpoint-unchanged.yaml
+  - tools/oracle/cases/helpers/otel-presets/phoenix-config-cloud-without-key.yaml
+  - tools/oracle/cases/helpers/otel-presets/phoenix-config-http-variable-wins.yaml
+  - tools/oracle/cases/helpers/otel-presets/phoenix-config-header-casing-grpc.yaml
+  - tools/oracle/cases/helpers/otel-presets/phoenix-preset-project-alias.yaml
+  - tools/oracle/cases/helpers/otel-presets/phoenix-project-headers-override-wins.yaml
+  - tools/oracle/cases/helpers/otel-presets/levo-config-headers.yaml
+  - tools/oracle/cases/helpers/otel-presets/levo-config-missing-api-key.yaml
+  - tools/oracle/cases/helpers/otel-presets/levo-config-missing-collector-url.yaml
+  - tools/oracle/cases/helpers/otel-presets/levo-preset-keeps-mappers.yaml
+  - tools/oracle/cases/helpers/otel-presets/weave-config-cloud-default.yaml
+  - tools/oracle/cases/helpers/otel-presets/weave-config-host-without-scheme.yaml
+  - tools/oracle/cases/helpers/otel-presets/weave-config-host-with-scheme-and-slash.yaml
+  - tools/oracle/cases/helpers/otel-presets/weave-config-missing-project.yaml
+  - tools/oracle/cases/helpers/otel-presets/weave-preset-mappers.yaml
+  - tools/oracle/cases/helpers/otel-presets/weave-preset-gated-without-credentials.yaml
+  - tools/oracle/cases/helpers/otel-presets/weave-dynamic-headers.yaml
+  - tools/oracle/cases/helpers/otel-presets/langtrace-preset-mapper-only.yaml
+deviations:
+  - what: >-
+      The Weave settings do not write OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_HEADERS into the process environment. LiteLLM's get_weave_otel_config does, as a side effect of building the preset.
+    why: Rule `no reading the environment outside the config crate` leaves no place to set process variables, and the preset already returns the same endpoint and headers in the exporter spec. Any other exporter in the same process that relied on those two variables no longer sees Weave's values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weave/weave_otel.py#L158-L160
+  - what: >-
+      is_unconfigured_placeholder is true for any spec equal to the default spec (kind console, nothing else set). LiteLLM looks at which fields were set, so a spec the operator wrote as plain `console` survives there and is dropped here when a Weave preset has to gate its exporters.
+    why: B3842's `ExporterSpec` does not record which fields were set. The case only happens when a Weave preset runs without credentials and the operator also configured a bare console exporter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/utils.py#L38-L48
+  - what: >-
+      OTEL_EXPORTER_OTLP_TRACES_HEADERS, PHOENIX_PROJECT_NAME and PHOENIX_COLLECTOR_PROJECT_NAME are read under their upper-case names only. LiteLLM reads them through pydantic-settings with case_sensitive=False, so a lower-case spelling also works there.
+    why: Environment names on Linux are case-sensitive and every documented spelling is upper case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/phoenix.py#L21-L30
+out_of_scope:
+  - "PRESET_BY_CALLBACK, DYNAMIC_HEADERS_BY_CALLBACK, PROJECT_HEADERS_BY_CALLBACK, dynamic_otlp_headers, project_routing_headers and the other presets (agentops, newrelic, signoz, langfuse) are B3851's."
+  - "ArizeLogger, ArizePhoenixLogger, their sampling, per-project tracer cache, request context and health checks are B3862's. The two config getters it also lists, get_arize_config and get_arize_phoenix_config, are built here and B3862 calls them."
+  - "LevoLogger.async_health_check and WeaveOtelLogger (span handling, header method, attribute setters) are B3863's. get_levo_config and get_weave_otel_config are built here."
+  - "WeaveSpanAttributes, the Weave attribute setters and _utils.set_attributes are B3861's."
+  - "The openinference, weave and langtrace mapper implementations are B3846's; this task only names them."
+  - "OpenTelemetryV2Config, ExporterSpec and ExporterOwner themselves are B3842's."
+  - "ARIZE_HOSTED_PHOENIX_ENDPOINT in arize_phoenix.py has no caller at the pin."
+pitfalls:
+  - PHOENIX_COLLECTOR_HTTP_ENDPOINT is read first and, when empty, PHOENIX_COLLECTOR_ENDPOINT is used; LiteLLM's inner re-read of the HTTP variable changes nothing.
+  - The `:4317` test also requires that `/v1/traces` is absent, so `http://host:4317/v1/traces` stays HTTP.
+  - The Phoenix Cloud check runs on the final endpoint after the scheme and port decision, so `grpc://app.phoenix.arize.com:4317` without a key also fails.
+  - A Phoenix endpoint containing `app.phoenix.arize.com` is never given `/v1/traces`, even when it has no path.
+  - The Arize header key is `space_id`, not `arize-space-id`. The dynamic-header builder uses `arize-space-id`. The two are different on purpose.
+  - Arize prefers `space_id` over `space_key` in the preset headers but `arize_space_key` over `arize_space_id` in dynamic headers.
+  - The Arize preset never drops the placeholder console spec in `base.exporters`; it only appends.
+  - The Phoenix preset reads PHOENIX_COLLECTOR_PROJECT_NAME and the Phoenix config does not, so the preset project and `PhoenixConfig.project_name` can differ.
+  - Levo adds no mapper. Do not copy the Arize preset's `openinference`.
+  - The Weave endpoint is the host plus `/otel/v1/traces` only; the comment in LiteLLM about `/traces/otel/v1/traces` for dedicated cloud is not what the code does.
+  - A Weave host starting with `http` (even `httpbin.example`) is not given `https://`.
+  - "Weave header values are joined raw, for example Authorization=Basic xxx,project_id=entity/project, with no percent-encoding. Encoding happens later in the destination header string."
+  - The gated Weave spec keeps the owner so later per-request header stamping finds this backend; dropping the owner makes the tenant credentials land nowhere.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

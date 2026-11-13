@@ -1,0 +1,1 @@
+[{"function": null}, {"type": "function", "function": {"name": 7}}, {"type": "function", "function": {"name": "x", "parameters": "nope"}}, {"type": "function", "function": {"name": "y", "parameters": {"properties": []}}}, {"type": "function", "function": {"name": "z", "parameters": {"required": [1]}}}, {"type": "function", "function": {"name": "w", "strict": 1}}]

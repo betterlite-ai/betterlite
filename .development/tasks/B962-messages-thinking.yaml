@@ -29,8 +29,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_thinking.rs
   - crates/betterlite-core/src/api/messages_thinking/**
   - crates/betterlite-core/fuzz/Cargo.toml
@@ -44,7 +42,7 @@ scope:
   - tools/oracle/helpers/messages_thinking/**
   - tools/oracle/fuzz/corpus/helper_case/messages_thinking-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/messages_stream_factory.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/messages_stream_factory.py
   - tools/oracle/cases/helpers/messages-thinking/**

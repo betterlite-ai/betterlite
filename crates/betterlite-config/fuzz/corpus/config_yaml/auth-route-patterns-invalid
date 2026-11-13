@@ -1,0 +1,2 @@
+general_settings:
+  public_routes: [17, true, null]

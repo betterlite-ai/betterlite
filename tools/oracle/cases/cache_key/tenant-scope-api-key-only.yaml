@@ -1,0 +1,15 @@
+kind: helper
+name: tenant-scope-api-key-only
+call:
+  b4296:
+    get_cache_key:
+      cache_type: redis-semantic
+      semantic_cache_scope: key
+      params:
+        - {name: model, value: gpt-4}
+      metadata:
+        user_api_key: key-hash
+      litellm_params: {}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,16 @@
+kind: helper
+name: sort-key-priority-absent
+call:
+  b3241:
+    policy_memory_matching_attachment:
+      action: sort_key
+      attachments:
+        - policy: model
+          models: [gpt-4]
+        - policy: global
+          scope: "*"
+        - policy: mixed
+          tags: [prod]
+          keys: [key-a]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: provider-defaults-a-ai21-chat
+call:
+  provider_defaults_a:
+    provider: ai21
+    model: jamba-1.5
+    environment:
+      AI21_API_KEY: ai21-key
+    ai21_chat_models: [jamba-1.5]
+env: {}
+compare: {ignore: []}

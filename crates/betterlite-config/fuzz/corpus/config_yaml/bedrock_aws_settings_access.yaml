@@ -1,0 +1,9 @@
+model_list:
+  - model_name: bedrock/test
+    litellm_params:
+      model: bedrock/amazon.test
+      s3_access_key_id: access-value
+      s3_secret_access_key: secret-value
+litellm_settings:
+  s3_access_key_id: global-access
+  s3_secret_access_key: global-secret

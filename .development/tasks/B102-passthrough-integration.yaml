@@ -1,0 +1,182 @@
+id: B102
+title: Pass-through configuration and composed HTTP behavior
+description: >-
+  Finish the pass-through umbrella after its leaf handlers and area mounts are installed. The
+  uncovered executable remainder is accepting the open-source managed-ID flag and proving the
+  composed logging and optional stream-cost paths over the real server. B8930 builds cost
+  injection and B8931 constructs the logging graph. B8640 supplies that graph to its existing
+  PassThroughState, and B8606-B8609 already mount the provider families. This task registers no
+  route, builds no second handler graph, and changes no app or Shared module. Its server module
+  passthrough_integration contains integration fixtures and tests under tests.rs or tests/;
+  the skeleton declares the module. If B8640 has not acquired the runtime handoff recorded in
+  the planner report, report that missing dependency implementation rather than bypassing it
+  with a test-only router or expanding this task's scope.
+
+  Add the betterlite-config section passthrough_runtime. It parses the whole config's
+  general_settings.passthrough_managed_object_ids as a boolean defaulting to false and exposes
+  config.sections.passthrough_runtime.managed_object_ids. There is no environment override.
+  Both false and true are accepted, but neither enables managed IDs: at the pinned open-source
+  build the managed_files hook is absent, so path, query, body and response IDs stay raw and
+  GET files/batches lists still go upstream. Do not add a hook, codec, ownership table, enterprise
+  emulation, warning, or a parameter to B6510's prepare(). The flag is a supported inert setting,
+  not an unsupported-key exemption. All other unknown keys keep B002's startup error. Named
+  tests load absent, false and true through ConfigLoader::load; invalid declared types use the
+  existing config error. Extend the existing config_yaml fuzz corpus with passthrough-runtime-*
+  seeds. ConfigLoader::load is the only YAML decoder used; the existing config_yaml target and
+  replay exercise these seeds without another parser.
+
+  Native integration tests, a parameterized passthrough_app_behavior function under
+  passthrough_integration::tests, boot B8610's application with its normal mounts and the real B8931
+  runtime. Use deterministic resources and loopback upstreams, recording external callback and
+  network effects while leaving production dispatch, pricing and payload construction intact.
+  Verify that authenticated and public family mounts use the same runtime and Transcribe rate
+  source. A buffered Anthropic success, OpenAI success, Vertex predict success and Gemini stream
+  must produce the real usage and charge in exactly one callback. An upstream 4xx produces one
+  failure and no success; byte relay and successful SSE complete once; dropping a stream after
+  usage logs partial usage once, and shutting down accounts for delayed billing tasks. Exercise
+  TinyFish's early stream poller and end-of-stream fallback together to prove at-most-one
+  billing, and the Transcribe admission/logger pair to prove one shared live rate source. Reuse
+  B8931's graph and the application's injected external resources rather than testing another
+  hand-assembled graph. A transport fixture may preserve the real provider URL while serving
+  loopback bytes: endpoint classification checks the URL's host, so replacing api.openai.com
+  with localhost would silently stop testing the OpenAI collector. Callback assertions belong
+  in these native tests; the HTTP oracle cannot observe an in-process callback by itself.
+
+  Add HTTP oracle cases under server/pass-through-integration, using the harness's {{upstream}}
+  substitution and normal proxy startup. Exercise /openai/{endpoint:path} with a buffered
+  /v1/chat/completions reply, and /openai_passthrough/{endpoint:path} for all managed-ID cases,
+  including /v1/files, /v1/batches and /v1/responses suffixes. The dedicated alias avoids the
+  native provider files/batches routes that can capture /openai/v1/files and /openai/v1/batches.
+  Both aliases come from B8606's existing mount. OPENAI_API_BASE points at {{upstream}}, OPENAI_API_KEY is a
+  fixed fixture key, and requests use Bearer oracle-master. These env values are case inputs,
+  not new config defaults; their production resolution stays with B3628. Compare actual upstream
+  paths, query pairs and request bodies, selected forwarded headers, status, response body and
+  content-type; require x-litellm-call-id where the real relay supplies it. Preserve error type,
+  param and code when the proxy produces an error envelope, ignoring only unstable message text
+  or generated identifiers with an individual reason. Raw upstream error bodies remain compared.
+
+  The managed cases cover the default and explicit false setting, true with managed-looking
+  IDs in a request path, query and JSON body, true with raw IDs in a JSON response, both list
+  endpoints with true, and true with response IDs in SSE events. Use a fixed string fixture for
+  a managed-looking ID rather than implementing the excluded codec. The mock must receive the
+  literal input IDs; lists must consume their upstream script, not return an empty local list.
+  The unmounted-settings case sends an authenticated GET to
+  /config/pass_through_endpoints/settings and compares the pin's normal not-found result. It
+  must not acquire a route just because the unused source file has a decorator.
+
+  For the stream-cost cases, configure one ordinary pass_through_endpoints entry /oracle-cost
+  targeting {{upstream}}/v1/projects/oracle/locations/us-central1/publishers/anthropic/models/claude-3-5-sonnet-20240620:streamRawPredict.
+  This URL is classified as Vertex and is eligible for cost injection even on the loopback mock.
+  Set litellm_settings.include_cost_in_streaming_usage explicitly for on/off cases. Supply a
+  supported model in the request body and valid usage events: an Anthropic message_delta with
+  cache usage, and separately an OpenAI chat.completion.chunk with model gpt-4o-mini and detail
+  usage. Compare the inserted usage.cost as well as all other event fields. Include the same
+  stream with the flag false and a flag-true stream with an unpriceable model, both unchanged.
+  Do not expect an OpenAI URL rewritten to localhost to retain its provider classification.
+  Byte splitting, CRLF and disconnect behavior have deterministic native tests; the oracle's
+  events list is not a promise about network read boundaries. These cases prove the configured
+  fallback, B3609's eligibility and B8930's real injector are connected, without registering a
+  special test route.
+
+  Retain the existing config API contracts by booting with one configured endpoint and checking
+  that /config/pass_through_endpoint and /config/pass_through_endpoint/team/{team_id} still use
+  B8640's mounted reads and that its create/update/delete handlers are not registered twice.
+  The existing B8640/B8643 oracle suites own those APIs' CRUD and precedence behavior, so do not
+  duplicate them or alter their fixtures here. Roughly 500-750 changed lines, mostly integration
+  tests and case data, are expected; the only new production logic is the small config section.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/passthrough_runtime.rs
+    - crates/betterlite-config/src/sections/passthrough_runtime/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/passthrough-runtime-*
+    - crates/betterlite-server/src/passthrough_integration.rs
+    - crates/betterlite-server/src/passthrough_integration/**
+    - tools/oracle/cases/server/pass-through-integration/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1227-L1355
+    why: Default false flag, absent-hook input no-op and the guarded list interception that open-source startup never enables.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1665-L1744
+    why: No output ID rewriting without the hook, and success logging must not duplicate an upstream failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2744-L2771
+    why: Streamed ID ownership is also conditional on the absent managed_files hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/__init__.py#L18-L58
+    why: The MIT registry has no managed_files hook and merges enterprise hooks only if that package imports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/managed_id_codec.py#L27-L97
+    why: Audited exclusion; encode, decode, is_managed and new_managed_id are used only by the gated rewriter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/managed_id_rewriter.py#L721-L1374
+    why: Audited exclusion; response, stream, list, path, query and body rewriting all enter through managed_files gates, so this task builds none of them or their private helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/architecture.md#L51-L71
+    why: The documented header, URL, multipart and logging transformations already have leaf owners; only their composition is tested here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_management_endpoints/pass_through_endpoints.py#L17-L28
+    why: The decorated settings function is an unmounted pass stub, not a missing config API implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L382-L403
+    why: URL-based endpoint classification makes a rawPredict mock target eligible while localhost OpenAI is generic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1506-L1573
+    why: The existing handler passes the target URL into the stream logger and forwards status and response headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L2923-L2974
+    why: The existing /openai/{endpoint:path} route and its configured upstream, exercised without re-registering it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/openai_passthrough_endpoints.py#L15-L44
+    why: The dedicated /openai_passthrough/{endpoint:path} alias precedes the native provider files and batches routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L139-L275
+    why: HTTP and native integration proof for cost eligibility, deferred logging, disconnect accounting and reservation binding; B3609 owns the functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3551-L3604
+    why: Existing config read decorators and both paths, owned by B3617 and mounted by B8640.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3607-L3912
+    why: Existing create, update and delete decorators; B8520 supplies the handlers and B8640 mounts them exactly once.
+dod:
+  - text: ConfigLoader loads absent, false and true passthrough_managed_object_ids and rejects an unrelated unknown key, while both flag values preserve open-source ID and list behavior over HTTP.
+    proof: [config-tests, config-corpus, oracle]
+  - text: The booted app uses the shared production logging runtime for buffered responses, byte relay and streams, sends one callback per outcome, retains partial usage and accounts for delayed work on shutdown.
+    proof: [integration-tests]
+  - text: Eligible rawPredict streams include usage.cost only when enabled and priceable, without changing the other events, and native tests cover fragmented input and disconnects through the same production path.
+    proof: [integration-tests, oracle]
+  - text: Existing provider aliases and configured fallback answer through their owning mounts, config reads remain reachable and the unused plural settings path remains unmounted.
+    proof: [integration-tests, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-tests
+      why: The managed-ID flag is still rejected as unsupported or its default and typed values are wrong.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::passthrough_runtime::/)'
+    - id: integration-tests
+      why: The real app has an incomplete graph, duplicate callback, inconsistent shared rate source or disconnected stream-cost injector.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::passthrough_app_behavior(::|$)/)'
+    - id: config-corpus
+      why: No new managed-ID flag inputs reach the production YAML loader's replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/passthrough-runtime-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/server/pass-through-integration/openai-buffered-alias.yaml
+  - tools/oracle/cases/server/pass-through-integration/managed-default.yaml
+  - tools/oracle/cases/server/pass-through-integration/managed-false.yaml
+  - tools/oracle/cases/server/pass-through-integration/managed-true-path.yaml
+  - tools/oracle/cases/server/pass-through-integration/managed-true-request-and-response.yaml
+  - tools/oracle/cases/server/pass-through-integration/managed-true-file-list.yaml
+  - tools/oracle/cases/server/pass-through-integration/managed-true-batch-list.yaml
+  - tools/oracle/cases/server/pass-through-integration/managed-true-stream-ids.yaml
+  - tools/oracle/cases/server/pass-through-integration/unmounted-settings.yaml
+  - tools/oracle/cases/server/pass-through-integration/stream-cost-disabled.yaml
+  - tools/oracle/cases/server/pass-through-integration/stream-cost-anthropic-cache.yaml
+  - tools/oracle/cases/server/pass-through-integration/stream-cost-openai-details.yaml
+  - tools/oracle/cases/server/pass-through-integration/stream-cost-unpriceable.yaml
+deviations: []
+out_of_scope:
+  - "All managed_id_codec.py and managed_id_rewriter.py functions, and _own_streamed_managed_ids's rewriting branch, are enterprise-hook-only at the pin; no managed IDs are minted, decoded, stored or checked. The protocol types in types/passthrough_endpoints/managed_id_rewriter.py are B7953's Python surface, under B167."
+  - "config_management_endpoints/pass_through_endpoints.py::create_fine_tuning_job has no caller at the pin and its router is not included; no implementation or route is added. architecture.md describes transforms but supplies no executable remainder."
+  - "_make_non_streaming_http_request (L406-L434) and clear_all_pass_through_routes (L3145-L3147) have no caller at the pin; the latter's only apparent call is commented out. create_websocket_passthrough_route (L2159-L2207) is called only by create_generic_websocket_passthrough_endpoint, which has no caller at the pin, as B3612 already records."
+  - "B3600 owns get_response_body, get_response_headers, get_endpoint_type, URL/subpath/stream-flag helpers, _is_streaming_response and _should_buffer_passthrough_response. B3610 owns guardrail input preparation, kwargs, tags, trace IDs and upstream failure logging."
+  - "B3611 owns non_streaming_http_request_handler, is_multipart, _build_request_files_from_upload_file, make_multipart_http_request, _parse_request_data_by_content_type, WebSocket frame/close helpers and _extract_model_from_vertex_ai_setup. B6510 owns HTTP preparation and send; B3613 owns pass_through_request lifecycle and B3612 owns websocket_passthrough_request."
+  - "B3615 owns chat_completion_pass_through_endpoint and create_pass_through_route. B3607 owns _relay_passthrough_response_bytes; B3610 owns _relay_reporting_failures and its error-preview helpers and stream wrapper. B8930 and B8931 own the newly separated cost functions and production logger assembly."
+  - "B3614 owns _placed_ahead, SafeRouteAdder, remove_endpoint_routes and get_all_registered_pass_through_routes. B2302 owns _route_for_registry_lookup, is_registered_pass_through_route and get_registered_pass_through_route. B3616 owns set_env_variables_in_header, exact/subpath registration, route config combination and startup registration."
+  - "B3617 owns all config retrieval, database listing, team filtering and endpoint lookup functions. B8520 owns create/update/delete and initialize_pass_through_endpoints_in_db; B8374 and B8384 own boot installation. B8640-B8643 and B8606-B8609 own state adapters, socket bridging, fallback and every family mount."
+  - "B8610 owns Shared and the server composition root. HTTP route auth, headers, credential routing, transforms, payloads, provider polling and spend sinks remain with B052, B3601-B3609, B3618-B3629 and B3630-B3653. This task only proves those existing pieces together."
+pitfalls:
+  - Enabling passthrough_managed_object_ids without managed_files must not turn GET /v1/files into an empty database result.
+  - /config/pass_through_endpoints/settings is plural and unmounted, while /config/pass_through_endpoint is the real mounted config API.
+  - A localhost target for /openai does not classify as OpenAI merely because the incoming route starts with that name.
+  - An oracle event list cannot force an HTTP client to read the same transport chunks on both implementations.
+  - A successful HTTP response alone does not prove that delayed billing reached the lower logging sink exactly once.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

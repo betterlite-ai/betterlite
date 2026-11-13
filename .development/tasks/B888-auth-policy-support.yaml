@@ -34,12 +34,16 @@ description: >-
   string function.name, returning both in that order. Anthropic flattens these pairs. Ignore wrong
   object shapes and falsey names; retain truthy names after source string conversion, duplicates and
   order. Truthy noniterable tools/declarations propagate the source error rather than becoming an
-  allow-all result. B104 retains dynamic Python discovery and all other translation behavior.
+  allow-all result. B3679 and B3680 retain native registry binding and all other translation behavior, and B6032 owns the Python CustomGuardrail with callable loading in its Python loading tasks.
 
   _safe_fetch debug-logs and rethrows HTTPException, ProxyException and BudgetExceededError;
   other exceptions debug-log 'swallowed' and return None. The reconstructed cached team copies
-  team_id, max/soft/model budgets, spend, tpm/rpm/tpd, blocked, models via B753, metadata and
+  team_id, max/soft/model budgets, spend, tpm/rpm/tpd, blocked, models, metadata and
   object_permission_id; it does not synthesize organization_id or team_alias. Team id is required.
+  models is the token's own team_models list. LiteLLM reads it through the _token_team_models typing
+  shim (L344-L345), which only returns valid_token.team_models; in Rust that is the plain team_models
+  field B2314 put on UserAPIKeyAuth's VerificationTokenView (crates/betterlite-auth/src/resolved_key/view.rs),
+  so read the field directly and add no accessor or trait for it.
   For vouching, litellm-dashboard always wins, even over TeamNotFoundError; other missing teams
   never vouch. Otherwise truthy team_models vouch before B1217's outage setting is consulted.
   Empty team_models use that setting. The policy does not inspect the exception's transport class.
@@ -85,6 +89,7 @@ description: >-
   and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
   stage; the failure test asserts its public error translation and that the downstream handler was not
   called. These tests are part of the behavior-test allowance already budgeted above.
+  B1100 registers state/auth_policy_support.rs as a stub slot, so fill only crates/betterlite-server/src/state/auth_policy_support.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_policy_support.rs
@@ -99,10 +104,8 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/auth-policy-support-*
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
+    - crates/betterlite-server/src/state/auth_policy_support.rs
+    - crates/betterlite-server/src/state/auth_policy_support/**
     - tools/oracle/cases/auth/auth-policy-support/**
     - crates/betterlite-server/src/auth/auth_policy_support.rs
     - crates/betterlite-server/src/auth/auth_policy_support/**
@@ -128,6 +131,8 @@ references:
     why: Own _safe_fetch; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2654-L2673
     why: Own _team_obj_from_token; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L328-L345
+    why: The team_models protocol and accessor only return the token field, so the team copy reads it directly.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2676-L2703
     why: Own _token_can_vouch_for_team; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2706-L2744
@@ -203,9 +208,9 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-policy-support/organization-inheritance.yaml
 deviations: []
 out_of_scope:
-  - B104 owns the remaining guardrail_helpers functions, base translation utils except anthropic_tool_names,
+  - B3663 owns the remaining guardrail_helpers functions and base translation utils except anthropic_tool_names, B3667 to B3678 the translation handlers,
     and every translation-handler method except
-    the three extraction leaves explicitly moved here. It installs runtime guardrail execution later;
+    the three extraction leaves explicitly moved here. B3680 installs runtime guardrail execution later;
     tool allowlists already use this task's concrete built-in name extractors. B1217 owns outage setting loading and tests.
     B860 Postgres fixtures select POSTGRES_TEST_URL first, then testcontainers.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),

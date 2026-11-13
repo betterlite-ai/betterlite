@@ -1,0 +1,13 @@
+kind: helper
+name: naive-date-only-and-offset-window
+call:
+  ptu_pricing:
+    operation: terms
+    model_info:
+      ptu_count: 4
+      cost_per_ptu_per_hour: 0.5
+      team_id: team-capacity
+      ptu_effective_from: "2026-01-01"
+      ptu_effective_to: "2026-06-01T12:30:00+05:30"
+compare: {ignore: []}
+env: {}

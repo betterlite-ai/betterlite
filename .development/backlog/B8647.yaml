@@ -1,0 +1,13 @@
+id: B8647
+milestone: M9 agents and mcp
+title: Mount the agents API and the public agent fields route
+status: todo
+depends_on: [B002, B8610, B8611, B8612, B8631, B8645, B869, B3191, B4774, B4775, B4777, B4781, B4783, B4784, B4785, B4786, B8675]
+file: tasks/B8647-agent-api-mount.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,9 +1,9 @@
 id: B120
 milestone: M8 platform
 title: Every config key, config includes and config reloads
-status: todo
-depends_on: [B4140, B4141, B4142, B4143, B4144, B4145, B002, B2228, B176]
-file: null
+status: done
+depends_on: [B001, B004, B1630, B4142]
+file: tasks/B120-config-includes-http.yaml
 covers:
   - "litellm/proxy/read_model_list.py"
   - "litellm/proxy/dev_config.yaml"
@@ -11,7 +11,7 @@ covers:
   - ".env.example"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1321

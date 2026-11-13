@@ -1,0 +1,5 @@
+task: B4124
+deviations:
+  - what: A cache_control_injection_points value that is not a list of injection-point objects is a PlacementError that names the field, so the request fails as a client error instead of LiteLLM's 500.
+    why: LiteLLM indexes and calls .get on whatever the parameter holds, so a string or a list of scalars raises AttributeError or TypeError out of the prompt hook. No working setup sends that value; the declared type is a list of CacheControlInjectionPoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/anthropic_cache_control_hook.py#L222

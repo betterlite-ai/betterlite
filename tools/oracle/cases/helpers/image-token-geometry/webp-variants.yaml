@@ -1,0 +1,26 @@
+kind: helper
+name: image-token-geometry-webp-variants
+call:
+  image_tokens:
+    calls:
+      - function: get_image_type
+        data: "data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAKwEAxwAA"
+      - function: get_image_dimensions
+        data: "data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAAKwEAxwAA"
+      - function: get_image_dimensions
+        data: "data:image/webp;base64,UklGRhYAAABXRUJQVlA4IAoAAAAAAACdASosAcgA"
+      - function: get_image_dimensions
+        data: "data:image/webp;base64,UklGRhEAAABXRUJQVlA4TAUAAAAvK8ExAA=="
+      - function: get_image_dimensions
+        data: "data:image/webp;base64,UklGRhEAAABXRUJQVlA4TAUAAAAvK8ExEA=="
+      - function: calculate_img_tokens
+        data: "data:image/webp;base64,UklGRhEAAABXRUJQVlA4TAUAAAAvK8ExEA=="
+        mode: high
+      - function: calculate_img_tokens
+        data: "data:image/webp;base64,UklGRhYAAABXRUJQVlA4WAoAAAAAAAAA5wMA8wEA"
+        mode: high
+      - function: calculate_img_tokens
+        data: "data:image/webp;base64,UklGRhYAAABXRUJQVlA4IAoAAAAAAACdASosAcgA"
+        mode: high
+env: {}
+compare: {ignore: []}

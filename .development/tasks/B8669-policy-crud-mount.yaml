@@ -1,0 +1,81 @@
+id: B8669
+title: Mount the policy CRUD, attachment and version routes
+description: >-
+  B3244 (crates/betterlite-server/src/policy_version_routes) and B3248 (policy_crud_routes) build the policy and
+  attachment CRUD routes and the policy version lifecycle, and nothing mounts them, so /policies answers 404. LiteLLM
+  serves them under the policy_engine lazy feature (path prefix /policies), behind user_api_key_auth. This task fills
+  crates/betterlite-server/src/app/guardrails/policy_mount.rs, whose `mount(router, state, routes: &GuardrailRouteState)`
+  B8667 wrote as a stub and already calls, and puts any state code in app/guardrails/policy_mount/** (tests.rs at
+  least). Read both route modules before writing and use the route function and state type each exports.
+
+
+  State. B3248's `PolicyCrudState` and B3244's route state both take B3243's persistence handle as an Option, `None`
+  without a database: take it from `routes.policies`, the one handle B8667 built, and the rest of what each constructor
+  asks for from `state.shared` and the loaded config. Build everything once in mount.
+
+
+  Mount. Merge B3248's routes, then B3244's, each once. Static paths such as /policies/attachments win over /policies/{policy_id}
+  in axum on their own; do not register a path twice and do not call .fallback. Do not touch app/guardrails.rs.
+
+
+  HTTP oracle cases through the booted proxy. The cases below moved here from B3244 and B3248; write each from that
+  task's text, with the config its name implies (master key set, no database unless the name says db). Tests in
+  policy_mount/tests.rs (names start with `mount_`) assert that both states share the one persistence handle and that a
+  request without a key gets 401.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/guardrails/policy_mount.rs
+    - crates/betterlite-server/src/app/guardrails/policy_mount/**
+    - tools/oracle/cases/policies/versions/**
+    - tools/oracle/cases/policies/crud/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L74-L80
+    why: The first policy route decorator; the others start at L153, L222, L247, L282, L323, L354, L383, L419, L478, L527, L593, L656, L710, L802 and L841.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L80-L84
+    why: The policy_engine lazy feature and its /policies prefix.
+dod:
+  - text: The policy CRUD and version state is built once and both take the one B3243 handle from the shared route state.
+    proof: [mount-tests]
+  - text: The policy, attachment and version routes answer through the booted proxy as LiteLLM does, and a request without a key gets 401.
+    proof: [mount-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: mount-tests
+      why: a route family is not mounted, opens a second persistence handle or skips the auth layers
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::guardrails::policy_mount::/)'
+deviations: []
+out_of_scope:
+  - "The handlers and their unit tests: B3244 and B3248. The persistence: B3243."
+  - "The shared route state and the area file: B8667. The other policy routes: B8790."
+pitfalls:
+  - "Without a database the persistence handle is None and the routes answer from that; failing the mount instead would break the no-database cases."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+oracle_cases:
+  - tools/oracle/cases/policies/versions/list-versions-no-database-500.yaml
+  - tools/oracle/cases/policies/versions/create-version-no-database-500.yaml
+  - tools/oracle/cases/policies/versions/create-version-missing-body-422.yaml
+  - tools/oracle/cases/policies/versions/status-no-database-500.yaml
+  - tools/oracle/cases/policies/versions/status-missing-field-422.yaml
+  - tools/oracle/cases/policies/versions/compare-no-database-500.yaml
+  - tools/oracle/cases/policies/versions/compare-missing-query-422.yaml
+  - tools/oracle/cases/policies/versions/delete-all-no-database-500.yaml
+  - tools/oracle/cases/policies/versions/list-versions-no-auth-401.yaml
+  - tools/oracle/cases/policies/crud/list-policies-empty-200.yaml
+  - tools/oracle/cases/policies/crud/list-attachments-empty-200.yaml
+  - tools/oracle/cases/policies/crud/create-policy-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/create-policy-missing-name-422.yaml
+  - tools/oracle/cases/policies/crud/get-policy-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/update-policy-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/update-policy-bad-type-422.yaml
+  - tools/oracle/cases/policies/crud/delete-policy-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/resolved-guardrails-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/create-attachment-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/create-attachment-bad-priority-422.yaml
+  - tools/oracle/cases/policies/crud/get-attachment-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/delete-attachment-no-database-500.yaml
+  - tools/oracle/cases/policies/crud/list-policies-no-auth-401.yaml

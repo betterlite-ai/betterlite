@@ -7,7 +7,7 @@ description: >-
   eviction actions. Preserve local eviction before publication and warning-only transport failure without
   a dependency back to mutation endpoints.
 
-  Use B120 coordination_redis_cache and pubsub-capable client selection, B126 Redis transport,
+  Use B8377 coordination_redis_cache and pubsub-capable client selection, B126 Redis transport,
   B733 cache access and this
   task's LocalEviction interface. Channel is litellm_proxy.auth_cache_invalidation without a namespace;
   otherwise prefix namespace plus colon, including an empty namespace. JSON contains cache_key and

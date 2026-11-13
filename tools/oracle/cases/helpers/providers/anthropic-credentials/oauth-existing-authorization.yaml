@@ -1,0 +1,5 @@
+kind: helper
+name: oauth-existing-authorization
+call: {anthropic_credentials: {function: handle_oauth, headers: [{name: Authorization, value: "Bearer sk-ant-oat-token"}, {name: x-api-key, value: stale-key}, {name: anthropic-beta, value: " beta-b ,alpha ,, beta-b "}], api_key: raw-key, environment: {}}}
+env: {}
+compare: {ignore: []}

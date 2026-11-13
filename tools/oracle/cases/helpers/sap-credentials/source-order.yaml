@@ -1,0 +1,22 @@
+kind: helper
+name: sap-credentials-source-order
+call:
+  b5950:
+    function: credentials
+    environment:
+      vars:
+        AICORE_CLIENT_ID: env-client
+        AICORE_CLIENT_SECRET: env-secret
+        AICORE_BASE_URL: https://env.example.com
+        AICORE_RESOURCE_GROUP: env-rg
+        VCAP_SERVICES: '{"aicore": [{"label": "aicore", "credentials": {"clientid": "vcap-client"}}]}'
+      files:
+        /home/sap/.aicore/config.json: '{"client_id": "config-client", "base_url": "https://config.example.com"}'
+      home: /home/sap
+    service_key:
+      credentials:
+        clientid: key-client
+        clientsecret: key-secret
+      url: https://key.example.com
+env: {}
+compare: {ignore: []}

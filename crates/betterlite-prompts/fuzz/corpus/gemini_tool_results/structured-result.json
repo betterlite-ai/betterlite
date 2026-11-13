@@ -1,0 +1,1 @@
+{"role":"tool","tool_call_id":"call_1","name":"get_weather","content":"{\"temperature\":22.5,\"unit\":\"celsius\"}"}

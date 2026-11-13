@@ -1,0 +1,22 @@
+kind: helper
+name: llm-bodies-missing-schema
+call:
+  b123:
+    op: add_llm_request_bodies
+    document:
+      paths:
+        /v1/chat/completions: {post: {operationId: a}}
+        /v1/embeddings: {post: {operationId: e}}
+        /v1/responses: {post: {operationId: i}}
+      components: {schemas: {}}
+    schemas:
+      chat_completion:
+        type: object
+        properties:
+          model: {type: string}
+        required: [model]
+      embedding: null
+      responses: null
+env: {}
+compare:
+  ignore: []

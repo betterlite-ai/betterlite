@@ -1,0 +1,5 @@
+model_list: []
+general_settings:
+  database_url: os.environ/DATABASE_URL
+# DIRECT_URL, LITELLM_MIGRATION_LOCK_TIMEOUT, LITELLM_PRISMA_COMMAND_TIMEOUT and
+# LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT are read from the environment by the migration_ledger section

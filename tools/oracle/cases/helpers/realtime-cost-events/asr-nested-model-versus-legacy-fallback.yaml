@@ -1,0 +1,14 @@
+kind: helper
+name: realtime-cost-events-asr-nested-model-versus-legacy-fallback
+call:
+  realtime_cost_events:
+    function: transcription_model
+    events:
+      - type: session.created
+        session:
+          audio: {input: {transcription: {language: en}}}
+          input_audio_transcription: {model: legacy-asr}
+      - type: session.updated
+        session: {model: session-model}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: gcs-mock-delete-mocked-storage-url-returns-204-empty
+call:
+  b3996:
+    environment: {GCS_MOCK: "true"}
+    original: {status: 418, body: "original-response"}
+    requests:
+      - method: delete
+        url: https://storage.googleapis.com/storage/v1/b/mock-bucket/o/mock-object
+        headers: {authorization: "Bearer mock-gcs-token"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: watsonx-result-extract-empty
+call:
+  b4807:
+    operation: result_text
+    result: {}
+env: {}
+compare: {ignore: []}

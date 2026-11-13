@@ -1,0 +1,11 @@
+task: B8911
+deviations:
+  - what: A spend_logs row takes trace_id and span_id only from metadata.requester_custom_headers; LiteLLM also falls back to kwargs.litellm_params.proxy_server_request.headers.
+    why: B8740's LoggerEvent carries the typed payload and dynamic params, not the request kwargs, so the adapter hands B4001 no litellm_params. The request headers have to reach the payload metadata for trace association; B254's metadata setup and B110's handoff own that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L64-L74
+  - what: A spend_logs row's session_id skips LiteLLM's request-metadata fallback and goes straight from an empty payload.session_id to the payload trace_id, where LiteLLM first reads kwargs.litellm_params.metadata.session_id, so a request sending metadata.session_id s2 and litellm_trace_id t1 gets s2 there and t1 here.
+    why: B8740's LoggerEvent carries the typed payload and dynamic params, not the request kwargs, so the adapter cannot rebuild litellm_params.metadata. B254's metadata setup has to carry the request metadata into the payload before the adapter can restore the fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L95-L98
+  - what: A spend_logs row keeps the dispatch payload's redacted messages and response instead of writing empty strings while the global turn_off_message_logging is on.
+    why: The adapter has no global message-logging input and passes redact=false, so B4001 projects the payload B250 redacts per logger; the payload text is B3931's redaction, not the original content.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L113-L113

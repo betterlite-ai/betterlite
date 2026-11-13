@@ -1,0 +1,11 @@
+kind: helper
+name: cohere-embedding-group-indices-and-null-format
+call:
+  cohere_embedding:
+    function: response
+    model: embed-english-v3.0
+    requests:
+      - {input: [first, second], options: {encoding_format: null, dimensions: 128}, api_key: sk-test, body: '{"embeddings":{"float":[[0.5],[0.25]],"int8":[[1],[2],[3]]},"meta":{"billed_units":{"input_tokens":4,"images":2}}}'}
+      - {input: [only], body: '{"embeddings":{"float":[[0.5]]},"meta":{"billed_units":{"input_tokens":1,"images":0}}}'}
+compare: {ignore: []}
+env: {}

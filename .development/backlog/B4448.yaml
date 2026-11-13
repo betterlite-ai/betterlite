@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Readiness diagnostics, backlog counters and graceful drain routes
 status: todo
 depends_on: [B002, B003, B022, B052, B173, B189, B715, B731, B788, B872, B1217]
-file: null
+file: tasks/B4448-readiness-and-drain.yaml
 covers:
   - "litellm/proxy/health_endpoints/_health_endpoints.py"
 parent: B130

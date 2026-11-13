@@ -1,0 +1,27 @@
+kind: helper
+name: budget_reset_duration_fallbacks
+call:
+  budget_reset:
+    reset_now: "2024-01-01T10:00:00Z"
+    calendar_now: "2024-06-15T12:00:00Z"
+    calendar_timezone: null
+    calls:
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "abc"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "1hour"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "5x"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "5m!"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "0h"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "0d"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "0s"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "1mo"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "2mo"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "12mo"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "0mo"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "00:00"}, duration: "100000000d"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "00:00"}, duration: "99999999999999999999d"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "00:00"}, duration: "400000mo"}
+      - {function: get_budget_reset_time, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "abc"}
+      - {function: get_budget_reset_time, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "1hour"}
+      - {function: get_budget_reset_time, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "5x"}
+env: {}
+compare: {ignore: []}

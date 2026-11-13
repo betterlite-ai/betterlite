@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-discover-card-seed
+call: {b8202: {operation: card, base_url: https://agent.example, replies: [{status: 404, body: missing}, {status: 200, body: '{"name":"agent"}'}]}}
+env: {}
+compare: {ignore: []}

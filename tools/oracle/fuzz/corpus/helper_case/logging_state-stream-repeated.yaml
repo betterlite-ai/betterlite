@@ -1,0 +1,45 @@
+kind: helper
+name: logging-state-stream-repeated
+call:
+  logging_state:
+    instances:
+      - init:
+          model: gpt-4o
+          messages: "hello"
+          stream: true
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-stream
+          function_id: fn-stream
+          litellm_trace_id: trace-stream
+        operations:
+          - op: should_run_logging
+            event: sync_success
+          - op: has_run_logging
+            event: sync_success
+          - op: should_run_logging
+            event: sync_success
+          - op: has_run_logging
+            event: sync_success
+          - op: should_run_logging
+            event: sync_success
+      - init:
+          model: gpt-4o
+          messages: "hello"
+          stream: false
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-unary
+          function_id: fn-unary
+          litellm_trace_id: trace-unary
+        operations:
+          - op: should_run_logging
+            event: sync_success
+          - op: has_run_logging
+            event: sync_success
+          - op: should_run_logging
+            event: sync_success
+          - op: should_run_logging
+            event: async_success
+env: {}
+compare: {ignore: []}

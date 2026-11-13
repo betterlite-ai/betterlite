@@ -1,14 +1,14 @@
 id: B1435
 milestone: M3 providers
 title: Bytez media normalization, approximate usage and raw-text streaming
-status: todo
+status: done
 depends_on: [B004, B005, B173, B186, B249, B171]
 file: tasks/B1435-bytez-chat.yaml
 covers:
   - "litellm/llms/bytez/**"
 parent: B038
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1104

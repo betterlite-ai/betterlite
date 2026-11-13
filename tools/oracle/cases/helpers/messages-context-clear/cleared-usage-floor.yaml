@@ -1,0 +1,26 @@
+kind: helper
+name: messages-context-clear-cleared-usage-floor
+call:
+  messages_context_clear:
+    action: editor
+    model: gpt-4o-mini
+    messages:
+      - role: assistant
+        content:
+          - {type: tool_use, id: a}
+          - {type: tool_use, id: b}
+          - {type: tool_use, id: c}
+          - {type: tool_use, id: d}
+      - role: user
+        content:
+          - {type: tool_result, tool_use_id: a, content: result a}
+          - {type: tool_result, tool_use_id: b, content: result b}
+          - {type: tool_result, tool_use_id: c, content: result c}
+          - {type: tool_result, tool_use_id: d, content: result d}
+    tools: null
+    system: null
+    edit_spec:
+      trigger: {value: 70}
+    counter: {mode: scripted, values: [80, 130]}
+env: {}
+compare: {ignore: []}

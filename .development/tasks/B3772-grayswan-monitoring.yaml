@@ -24,7 +24,7 @@ description: >-
 
   GraySwanGuardrail extends CustomGuardrail and implements get_supported_event_hooks() returning [pre_call, during_call, post_call] and should_run_guardrail(data, event_type) calling parent and logging event_type, event_hook, has_apply_guardrail, class name. GraySwanGuardrailConfigModel.ui_friendly_name() returns "Gray Swan Guardrail".
 
-  These functions own the monitor transport and context collection; B3771 owns the decision/enforcement logic, and B107 owns lifecycle entry points.
+  These functions own the monitor transport and context collection; B3771 owns the decision/enforcement logic, B8521 registers the guardrail, and B3680's unified guardrail lifecycle calls apply_guardrail.
 
 scope:
   paths:
@@ -132,34 +132,34 @@ checks:
       run: grep -q "should_run_guardrail" crates/betterlite-guardrails/src/grayswan/*.rs
     - id: plain-dict-tests
       why: _as_plain_dict conversion tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::as_plain_dict/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::as_plain_dict/)'
     - id: threshold-resolve-tests
       why: Threshold resolution tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::resolve_threshold/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::resolve_threshold/)'
     - id: reasoning-mode-tests
       why: Reasoning mode resolution tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::resolve_reasoning_mode/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::resolve_reasoning_mode/)'
     - id: is-grayswan-exc-tests
       why: GraySwan exception check tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::is_grayswan_exception/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::is_grayswan_exception/)'
     - id: extract-headers-tests
       why: Inbound header extraction tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::extract_inbound_headers/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::extract_inbound_headers/)'
     - id: post-call-context-tests
       why: Post-call context extraction tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::post_call_context/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::post_call_context/)'
     - id: prepare-payload-tests
       why: Payload preparation tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::prepare_payload/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::prepare_payload/)'
     - id: prepare-headers-tests
       why: Header preparation tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::prepare_headers/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::prepare_headers/)'
     - id: api-call-tests
       why: API call integration tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::call_grayswan_api/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::call_grayswan_api/)'
     - id: log-failure-tests
       why: Failure logging tests must pass
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan_monitoring::log_guardrail_failure/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^grayswan::(.*::)?grayswan_monitoring::log_guardrail_failure/)'
     - id: config-ui-name-exists
       why: GraySwanGuardrailConfigModel.ui_friendly_name is missing or returns wrong string
       run: grep -q '"Gray Swan Guardrail"' crates/betterlite-guardrails/src/grayswan/*.rs
@@ -168,7 +168,7 @@ oracle_cases: []
 
 deviations:
   - what: "GraySwanGuardrail.__init__ calls get_async_httpx_client(llm_provider=httpxSpecialProvider.GuardrailCallback) directly to obtain the HTTP client; betterlite injects this client as a dependency rather than calling the factory."
-    why: "HTTP client creation is a boundary between guardrails and the transport layer. B104 owns the factory; this task receives the client as a constructor parameter."
+    why: "HTTP client creation is a boundary between guardrails and the transport layer. The hook dispatcher that runs the guardrail from its registry spec passes the shared client; this task receives the client as a constructor parameter."
   - what: "The violation_threshold default is 0.5; on_flagged_action default is monitor in the constructor and passthrough in the config model's optional params. The constructor and config must be kept separate so the normalizer can preserve which value actually reaches constructor initialization."
     why: "Config defaults (passthrough) and constructor defaults (monitor) diverge by design; the normalizer controls which is active."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/grayswan.py#L12-L13"
@@ -183,7 +183,7 @@ out_of_scope:
   - "GraySwanGuardrail.apply_guardrail body and decision/enforcement (belongs to B3771)"
   - "GraySwanGuardrail._process_response_internal and violation formatting (belongs to B3771)"
   - "Lifecycle entry points and callback registration (belong to B107)"
-  - "Frame dispatch and route registration (belong to B104 and gateway framework)"
+  - "Frame dispatch and route registration (belong to B8666 for live class dispatch and the gateway framework)"
 
 pitfalls:
   - >-

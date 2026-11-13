@@ -1,0 +1,23 @@
+[package]
+name = "betterlite-analytics-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-analytics = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "canonical_date"
+path = "fuzz_targets/canonical_date.rs"
+test = false
+doc = false
+bench = false

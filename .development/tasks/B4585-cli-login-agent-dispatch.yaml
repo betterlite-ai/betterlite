@@ -1,108 +1,191 @@
 id: B4585
 title: Login and agent command dispatch with shared command listings
 description: >-
-  Build the login command dispatcher, PKCE and SSO entry points, and the agent command factory
-  with environment variable routing. Implement login orchestration (discovery, browser, SSO polling, token storage);
-  agent command registration, dynamic help generation, and credential/key resolution for unattended launches.
-  Build the shared command listing shown after login and in interactive shell help. The login command accepts
-  --pkce (PKCE flow with refresh token) or SSO default, dispatches to _start_cli_sso_flow/_poll_for_authentication
-  or _pkce_login (run_pkce_login), handles PkceFailure/RevocationUnavailable, saves token via _replace_stored_token,
-  and displays agent commands on success via show_commands. The agent_commands() factory builds one Click command per
-  known agent (claude, codex, etc.), each invoking resolve_api_key to check for --api-key or stored credential (with
-  login fallback for interactive use), then run_agent with the proxy key in environment. show_commands displays the full
-  available command list filtered by hidden_command_names, recomputed after login so agent commands appear. These
-  dispatch/listing boundaries stay together because login success displays agents, while agent commands invoke login
-  before launching; splitting either breaks the cycle. Coordinate with B4573 (PKCE protocol), B4574 (credential storage/freshness/renewal),
-  B4575 (session backup), B4576 (SSO polling/team selection).
+  Build the login command, the per-agent command dispatcher and the shared command listing of
+  betterlite-cli, ported from LiteLLM's litellm/proxy/client/cli/commands/auth.py (login,
+  _pkce_login, _finish_login), commands/agents.py (resolve_api_key, _launch,
+  _make_agent_command, agent_commands) and interface.py (show_commands). login.rs lives in
+  crates/betterlite-cli/src/login.rs and login/**, agent_dispatch.rs in
+  crates/betterlite-cli/src/agent_dispatch.rs and agent_dispatch/**, and commands_listing.rs in
+  crates/betterlite-cli/src/commands_listing.rs and commands_listing/**. Each module exposes a
+  clap argument type and a run function the CLI root mounts; none of them touches main.rs, which
+  B134 owns.
+
+  run_login takes the --config-claude and --pkce flags, B4560's context, an injected secret
+  vault and HTTP transport, and a clock. When config_claude is set it resolves the settings path
+  with B4562's claude_settings_path and calls refuse_while_owned with settings_file_owners
+  before either login flow starts, turning a ClaudeSettingsError into betterlite's own error
+  carrying "Cannot configure Claude Code, so not logging in" and the cause (auth.py L876-890).
+  It then dispatches to _pkce_login when --pkce is set, otherwise to _sso_login, and turns a
+  caught cancellation into a plain message rather than an error exit (auth.py L955-964).
+
+  _pkce_login calls B4574's run_pkce_login with the injected HTTP transport (auth.py L845-852).
+  A PkceFailure answer, B4573's type, prints its reason and returns with nothing saved.
+  Otherwise it builds the token record with B4574's pkce_token_record, saves it through B4574's
+  stored-token replacement (which itself calls B4573's revocation path for the previous
+  credential), and calls _finish_login with the resulting save outcome.
+
+  _sso_login starts the proxy's CLI SSO flow through B4576, opens the verification URL with the
+  injected browser opener, shows the verification code and session id, and polls for completion
+  through B4576. On success it builds a B4591 CliTokenRecord directly from the result: the
+  context base_url with trailing slashes stripped, the returned api_key and user_id, "unknown"
+  for user_email, "cli" for user_role, "Authorization" for auth_header_name, an empty jwt_token
+  and the current timestamp, matching LiteLLM's placeholders (auth.py L924-946). It saves the
+  record the same way as the PKCE path and calls _finish_login. Polling that never completes
+  prints a timeout message and returns without an error exit (auth.py L947-953).
+
+  _finish_login prints the success message and a twenty-character token prefix, then B4574's
+  storage notice for the save outcome, then B4575's Claude Code configuration step when
+  config_claude is set (auth.py L811-828). When the save outcome is B4592's CredentialNotSaved
+  or CredentialNotRecorded it stops there; every other outcome, including every keychain-
+  unavailable fallback, continues to the "you can now use the CLI" line and calls
+  commands_listing::show_commands.
+
+  resolve_api_key returns the context's --api-key when present, otherwise B4574's stored key
+  lookup for the context base_url (agents.py L828-846). With neither available and the process
+  interactive, it prints a notice, runs run_login once, and re-reads the stored key; without a
+  terminal it is betterlite's own error naming LITELLM_PROXY_API_KEY or `lite login`, and a
+  login that still produces no key is a separate named error.
+
+  agent_commands builds one clap command per agent in B4564's known-agent table (agents.py
+  L895-897), hidden per that table's own hidden set (a clap-level hide, separate from B4560's
+  hidden_command_names), each taking --skip-verify and forwarded trailing arguments (agents.py
+  L849-870). Each command's run function resolves the key, prints the routing notice naming the
+  agent's display name and the base URL, calls B4568's run_agent with the resolved key and
+  skip_verify, and turns an AgentRunError from B4564 or B4568 into betterlite's own CLI-facing
+  error (agents.py L873-892).
+
+  commands_listing::show_commands lists login, logout, whoami, models, credentials, chat, http,
+  keys, teams and users with LiteLLM's own descriptions, appends every agent command's name and
+  short help from agent_commands, appends version, help and quit, filters the combined list
+  through B4560's hidden_command_names, and prints one line per visible command with LiteLLM's
+  column padding (interface.py L76-106).
 scope:
   paths:
-    - tools/management-cli/src/login.rs
-    - tools/management-cli/src/agent_dispatch.rs
-    - tools/management-cli/src/commands_listing.rs
+    - crates/betterlite-cli/src/login.rs
+    - crates/betterlite-cli/src/login/**
+    - crates/betterlite-cli/src/agent_dispatch.rs
+    - crates/betterlite-cli/src/agent_dispatch/**
+    - crates/betterlite-cli/src/commands_listing.rs
+    - crates/betterlite-cli/src/commands_listing/**
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L64-L121
+    why: CliTokenData, CliContextObj, CliPollData, CliSsoStartData and CliAuthResult, the declared shapes this task reads and the record it builds against them.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L811-L828
-    why: _finish_login displays success message, token prefix, storage_notice, optional _configure_claude_code, and show_commands output.
+    why: Own _finish_login; preserve the success message, token prefix, storage notice, optional Claude Code configuration and the show_commands call.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L845-L852
-    why: _pkce_login calls run_pkce_login, checks PkceFailure, calls _replace_stored_token, then _finish_login.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L855-L964
-    why: login command with --config-claude and --pkce flags, refuse_while_owned check, SSO and PKCE dispatch, browser/polling, storage, signal handling.
+    why: Own _pkce_login; preserve the run_pkce_login call, the PkceFailure check and the save-then-finish order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L855-L888
+    why: Own run_login's signature and the --config-claude preflight guard that must stop before either login flow starts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L890-L922
+    why: Own the PKCE/SSO dispatch, the SSO flow start, the browser open and the verification code and session id display.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L924-L946
+    why: Own _sso_login's success branch; preserve the inline token record fields and the save-then-finish call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L947-L964
+    why: Own the polling timeout message and the cancellation/ClickException/catch-all exception handling.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L828-L846
-    why: resolve_api_key returns --api-key, loads stored via get_stored_api_key, or invokes login interactively with ctx.invoke.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L852-L870
-    why: _launch resolves API key, prints routing notice with display_name and base_url, calls run_agent with terminal reattachment.
+    why: Own resolve_api_key; preserve the explicit-key, stored-key and interactive-login-fallback order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L849-L870
+    why: Own _SKIP_VERIFY_HELP and _launch; preserve the resolve-then-notice-then-run_agent order and terminal reattachment.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L873-L892
-    why: _make_agent_command factory creates Click command with --skip-verify and UNPROCESSED args, calls _launch, sets hidden flag.
+    why: Own _make_agent_command; preserve the --skip-verify option, forwarded arguments and the per-agent hidden flag.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L895-L897
-    why: agent_commands builds tuple of commands per known agent using _make_agent_command.
+    why: Own agent_commands; build one command per entry in the known-agent table.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/interface.py#L76-L106
-    why: show_commands builds static list, adds agent_commands(), filters by hidden_command_names(), prints with descriptions.
+    why: Own show_commands; preserve the static list, the appended agent commands, the trailing entries and the hidden-name filter.
 dod:
-  - text: login command accepts --pkce and --config-claude flags and dispatches to _pkce_login (PKCE flow) or SSO default (browser/polling flow).
+  - text: >-
+      run_login takes --config-claude and --pkce with the injected context, secret vault and HTTP transport; when
+      config_claude is set it resolves the settings path and calls refuse_while_owned with settings_file_owners
+      first, turning a ClaudeSettingsError into betterlite's own error naming "Cannot configure Claude Code, so
+      not logging in" before any network call; it then dispatches to _pkce_login or _sso_login and turns a caught
+      cancellation into a plain message rather than an error exit.
     proof: [login-dispatch]
-  - text: _pkce_login calls run_pkce_login, checks PkceFailure outcome, calls _replace_stored_token to persist token, calls _finish_login.
+  - text: >-
+      _pkce_login calls B4574's run_pkce_login, returns with the printed reason on a PkceFailure answer with
+      nothing saved, otherwise builds the record with B4574's pkce_token_record, saves it through B4574's
+      stored-token replacement, and calls _finish_login with the resulting save outcome.
     proof: [pkce-dispatch]
-  - text: _finish_login displays "Login successful!", prints token prefix, calls storage_notice, optionally calls _configure_claude_code, displays CLI usage and show_commands.
-    proof: [finish-login]
-  - text: resolve_api_key returns --api-key if present, loads stored token with get_stored_api_key when no key given, invokes login interactively for unattended fallback.
-    proof: [api-key-resolution]
-  - text: agent_commands() returns tuple of Click commands, one per known agent binary (claude, codex, etc.) with dynamic display name and hidden flag.
-    proof: [agent-commands-factory]
-  - text: Each agent command calls resolve_api_key, displays routing notice, calls run_agent with proxy base_url and api_key, passes _restore_controlling_terminal when interactive.
-    proof: [agent-launch]
-  - text: show_commands builds list of static commands (login, logout, whoami, etc.), adds agent commands from agent_commands(), filters by hidden_command_names(), prints each with description.
-    proof: [command-listing]
-  - text: Login success branch for SSO (non-PKCE) saves token via _replace_stored_token with SSO-derived api_key, user_id, timestamp; matches CliTokenData shape.
+  - text: >-
+      _sso_login starts the SSO flow through B4576, opens the verification URL, polls for completion, builds a
+      B4591 CliTokenRecord from the result with LiteLLM's placeholder fields on success, saves and finishes the
+      same way as the PKCE path, and prints a timeout message with no error exit when polling never completes.
     proof: [sso-token-save]
+  - text: >-
+      _finish_login prints the success message and token prefix, B4574's storage notice, and B4575's Claude Code
+      configuration step when requested; a B4592 CredentialNotSaved or CredentialNotRecorded outcome stops there,
+      and every other outcome continues to the usable-CLI line and calls commands_listing::show_commands.
+    proof: [finish-login]
+  - text: >-
+      resolve_api_key returns the context's --api-key when present, otherwise B4574's stored key lookup; with
+      neither available it runs run_login once and re-reads the key when the process is interactive, and returns
+      betterlite's own named error for a non-interactive miss or a login that still produces no key.
+    proof: [resolve-api-key]
+  - text: >-
+      agent_commands builds one clap command per entry in B4564's known-agent table, named and hidden per that
+      table, each taking --skip-verify and forwarded trailing arguments, with a short help string matching the
+      per-agent description commands_listing reuses.
+    proof: [agent-commands-factory]
+  - text: >-
+      Each agent command's run function resolves the key, prints the routing notice naming the display name and
+      base URL, calls B4568's run_agent with the resolved key and skip_verify, and turns an AgentRunError from
+      B4564 or B4568 into betterlite's own CLI-facing error without reclassifying a failure after a successful
+      login.
+    proof: [agent-dispatch-launch]
+  - text: >-
+      show_commands lists the static commands with LiteLLM's descriptions, appends every agent command's name and
+      short help from agent_commands, appends version, help and quit, filters the combined list through B4560's
+      hidden_command_names, and prints one line per visible command with LiteLLM's column padding.
+    proof: [command-listing]
 checks:
   optional: []
   commands:
     - id: login-dispatch
-      why: login command does not accept --pkce flag or does not dispatch to correct path
-      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^login_dispatch::/)'
+      why: run_login does not run the config-claude guard before either flow, or does not dispatch to the right flow
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^login::.*tests::login_dispatch_/)'
     - id: pkce-dispatch
-      why: _pkce_login does not orchestrate run_pkce_login, error handling or token persistence
-      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^pkce_dispatch::/)'
-    - id: finish-login
-      why: _finish_login does not display success message, storage notice or show_commands
-      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^finish_login::/)'
-    - id: api-key-resolution
-      why: resolve_api_key does not return explicit key, load stored, or invoke login
-      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^api_key_resolution::/)'
-    - id: agent-commands-factory
-      why: agent_commands does not build command tuple or does not use known agent binaries
-      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^agent_commands_factory::/)'
-    - id: agent-launch
-      why: agent command does not resolve key, display routing notice or call run_agent
-      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^agent_launch::/)'
-    - id: command-listing
-      why: show_commands does not build command list, filter hidden, or print descriptions
-      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^command_listing::/)'
+      why: _pkce_login does not check PkceFailure, does not save through the stored-token replacement, or skips _finish_login
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^login::.*tests::pkce_login_/)'
     - id: sso-token-save
-      why: SSO login does not save CliTokenData with correct fields or calls _replace_stored_token
-      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^sso_token_save::/)'
+      why: _sso_login does not build the token record with LiteLLM's placeholder fields, or does not save and finish the same way as PKCE
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^login::.*tests::sso_login_/)'
+    - id: finish-login
+      why: _finish_login does not print the storage notice, misses the CredentialNotSaved/CredentialNotRecorded stop, or skips show_commands
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^login::.*tests::finish_login_/)'
+    - id: resolve-api-key
+      why: resolve_api_key does not return the explicit key, the stored key, or the interactive login fallback in order
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^agent_dispatch::.*tests::resolve_api_key_/)'
+    - id: agent-commands-factory
+      why: agent_commands does not build one command per known agent, or drops the hidden flag or short help text
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^agent_dispatch::.*tests::agent_commands_/)'
+    - id: agent-dispatch-launch
+      why: the per-agent launch helper does not resolve the key, print the routing notice or call run_agent in order
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^agent_dispatch::.*tests::launch_/)'
+    - id: command-listing
+      why: show_commands does not build the full list, filter by hidden_command_names, or print LiteLLM's padding
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands_listing::.*tests::show_commands_/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - styled_prompt (interface.py:12-73); returns user input from a styled terminal box. Owned by B134 (interactive shell).
-  - setup_shell (interface.py:109-119); calls show_banner and show_commands to initialize interactive session. Owned by B134.
-  - handle_special_commands (interface.py:122-139); dispatches exit/quit/help/clear commands in interactive shell. Owned by B134.
-  - execute_command (interface.py:142-180); parses and invokes registered CLI commands within the interactive session. Owned by B134.
-  - interactive_shell (interface.py:183-211); main event loop that calls setup_shell, styled_prompt, handle_special_commands, execute_command. Owned by B134.
-  - _configure_claude_code (auth.py:786-810); configures Claude Code settings with base_url and api_key. Owned by B4575 (session/backup).
-  - _replace_stored_token (auth.py:831-842); loads previous token, saves new one, revokes old refresh token. Owned by B4574 (credential lifecycle).
-  - PKCE protocol details (registration, discovery, token exchange, revocation); owned by B4573.
-  - SSO team selection and polling orchestration (_start_cli_sso_flow, _poll_for_authentication); owned by B4576.
-  - Credential storage and freshness checking (get_stored_api_key, load_token, save_token, fresh_api_key); owned by B4574.
-  - Browser opening, terminal output, and logging infrastructure are injected dependencies in the test adapter.
+  - styled_prompt (interface.py:12-73), setup_shell (interface.py:109-119), handle_special_commands (interface.py:122-139), execute_command (interface.py:142-180) and interactive_shell (interface.py:183-211), the interactive shell loop and its banner, prompt and special-command handling. Owned by B134.
+  - _configure_claude_code (auth.py:786-810) and the settings.json write it makes, the Claude Code configuration step this task calls but does not implement. Owned by B4575 (session), which calls into B4563's configure_claude_settings.
+  - claude_settings_path, refuse_while_owned, settings_file_owners and ClaudeSettingsError. This task calls them for the preflight guard but does not define them. Owned by B4562.
+  - run_pkce_login, pkce_token_record and the stored-token replacement (auth.py:831-842), the credential orchestration this task calls. Owned by B4574 (credentials).
+  - The PKCE protocol itself (discovery, loopback callback, token exchange, revoke_credential) and the PkceFailure/RevocationUnavailable/Http types. Owned by B4573.
+  - The SSO flow and polling implementation (auth.py:575-784, start/poll/team selection). Owned by B4576.
+  - CliTokenRecord, its field defaults and freshness check. Owned by B4591. The save/clear outcome types (SecretSave, CredentialNotSaved, CredentialNotRecorded) are owned by B4592.
+  - Agent environment construction, key verification, process handoff and model sync, owned by B4564 and B4568. This task calls resolve_api_key and run_agent but does not build the environment or the launch pipeline.
+  - The CLI context type and hidden_command_names, owned by B4560.
+  - Browser opening, terminal output and the clock are injected dependencies.
 pitfalls:
-  - "resolve_api_key returns the explicit --api-key flag value immediately without any freshness check or login attempt; stored credentials are the only ones checked for renewal."
-  - "login command must handle LITELLM_CLI_SOURCE_IDENTIFIER and preserve SSO URL construction (source, key, user_code parameters) exactly as in source."
-  - "_finish_login must print storage_notice before displaying CLI usage, since the notice may report keyring failures that affect credential persistence."
-  - "show_commands must call hidden_command_names() to filter the static and dynamic command lists, since operators may hide commands via configuration."
-  - "agent_commands() returns a tuple; the Click command tree iterates and registers each command, so the factory must not call any Click decorators or registration itself."
-  - "Each agent command must check _is_interactive() before invoking login, so resolve_api_key can distinguish between --api-key requirements and login fallback."
-  - "Login cycle: _finish_login calls show_commands, which calls agent_commands(), which _make_agent_command creates commands that call resolve_api_key, which can call login. This is internal; the root CLI never directly calls show_commands."
+  - The config-claude preflight guard must stop before either login flow starts, so a refusal (another `lite up` or `lite autoroute start` already holding the backup) never follows a completed SSO or PKCE exchange.
+  - "_finish_login must branch on the save outcome's specific variant. CredentialNotSaved and CredentialNotRecorded both stop before the usable-CLI line, while every keychain fallback variant still counts as a successful save and continues."
+  - _sso_login's inline token record uses LiteLLM's placeholder fields ("unknown", "cli", an empty jwt_token); a record read back later treats an empty string the same as an absent field, matching B4591's own defaults rather than a distinct unset value.
+  - agent_commands' per-agent hidden flag only changes clap's own help listing; commands_listing's filter is B4560's separate, operator-configured hidden_command_names, and an agent absent from one list can still appear in the other.
+  - resolve_api_key's interactive fallback re-reads the stored key after running run_login rather than trusting whatever run_login prints, so a login that saves for a different base_url still leaves resolve_api_key with its own named error, not a crash.
+  - The per-agent launch helper prints the routing notice before run_agent's own key verification, so the message can appear even when the key is rejected a moment later.
+  - show_commands' order (static commands, then every agent command, then version/help/quit) and column padding must match LiteLLM exactly, since the interactive shell's help output is this list verbatim.
 review_level: security
 budget:
   max_changed_lines: 1500

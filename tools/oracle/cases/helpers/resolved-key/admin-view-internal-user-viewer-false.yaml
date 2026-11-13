@@ -1,0 +1,9 @@
+kind: helper
+name: admin-view-internal-user-viewer-false
+call:
+  resolved_key:
+    function: admin_view
+    value:       {user_role: internal_user_viewer}
+env: {}
+compare:
+  ignore: []

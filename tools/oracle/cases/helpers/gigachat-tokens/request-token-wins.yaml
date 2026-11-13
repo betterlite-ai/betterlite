@@ -1,0 +1,13 @@
+kind: helper
+name: gigachat-request-token-wins
+call:
+  b7325:
+    operation: access_token
+    request:
+      access_token: request-token
+      auth_url: http://127.0.0.1:9/api/v2/oauth
+    environment:
+      GIGACHAT_ACCESS_TOKEN: environment-token
+      GIGACHAT_CREDENTIALS: Y2xpZW50OnNlY3JldA==
+env: {}
+compare: {ignore: []}

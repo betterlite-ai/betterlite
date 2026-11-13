@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-beta-header-forms
+call: {"bedrock_event_frames": {"operation": "beta", "params": {"headers": {"anthropic-beta": ["x", " y ", "z,w"]}}}}
+env: {}
+compare: {ignore: []}

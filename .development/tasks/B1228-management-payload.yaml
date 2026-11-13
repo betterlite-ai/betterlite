@@ -22,7 +22,7 @@ description: >-
 
 
   Compare the pure redaction helpers under B856 Management::models using B171 helper_case. Native tests
-  exercise alert/span orchestration with B110 span and B4030 alert transports and B1100's production request parsing;
+  exercise alert/span orchestration with B3858 span and B4030 alert transports and B1100's production request parsing;
   helper adapters must not invoke handlers or emulate asynchronous transport behavior.
 
 
@@ -52,8 +52,8 @@ description: >-
   wrapper's suppression/logging policy. This function performs no extra credential redaction on alert kwargs.
 
 
-  For spans, no logger or B110 is_otel_v2_enabled=true skips payload building, body parsing and sending.
-  B110 owns LITELLM_OTEL_V2 (default false) parsing and cached resolution. With http_request, use B741
+  For spans, no logger or B3842 is_otel_v2_enabled=true skips payload building, body parsing and sending.
+  B3842 owns LITELLM_OTEL_V2 (default false) parsing and cached resolution. With http_request, use B741
   get_request_route and await B1100 _read_request_body; otherwise use the function name and {}. Only on
   success with non-null result try dict(result), remove top-level key/token/api_key/secret/password/
   access_token/refresh_token/private_key/service_account_key, then redact env slots. Any conversion/redaction
@@ -61,7 +61,7 @@ description: >-
   recurse into unrelated nested credentials or change the response returned to the route caller.
   ManagementEndpointLoggingPayload preserves route, request_data, start_time, end_time and exception;
   send the success or failure hook exactly once with parent_otel_span, even when that span is None.
-  Body-parser and hook failures escape this function; only response conversion has a local catch. B110/B4030
+  Body-parser and hook failures escape this function; only response conversion has a local catch. B3858/B4030
   own transport formatting and final log redaction; B865 owns invocation order relative to cache eviction.
 scope:
   paths:
@@ -136,7 +136,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/management-payload/nonrecursive-malformed-env-slots.yaml
 deviations: []
 out_of_scope:
-  - B110 owns is_otel_v2_enabled and OTel hooks; B4030 owns send_virtual_key_event_slack and B4020 owns the AlertType values.
+  - B3842 owns is_otel_v2_enabled and B3858 the OTel management hooks; B4030 owns send_virtual_key_event_slack and B4020 owns the AlertType values.
   - B1100 owns request body decoding; B741 owns route normalization. No new parser is introduced here.
   - 'litellm/proxy/management_helpers/utils.py: B862 owns handle_budget_for_entity (L180-L264), _clone_team_default_budget_for_member
     (L283-L333), _resolve_member_budget_id (L336-L390).'
@@ -158,6 +158,7 @@ pitfalls:
     name.
   - OTel v2 skips the legacy payload entirely; do not emit it twice.
   - Strip top-level credential fields before nested env-var redaction and never mutate the caller response.
+  - "send_virtual_key_event_slack swallows its errors."
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

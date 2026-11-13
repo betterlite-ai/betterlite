@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-converse-content-wrapped-properties-seed
+call:
+  bedrock_converse_content:
+    wrapped_properties:
+      value: '{"properties": {"a": [1, null], "b": "héllo"}}'
+env: {}
+compare: {ignore: []}

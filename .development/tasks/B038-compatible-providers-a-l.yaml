@@ -68,20 +68,21 @@ description: >-
   not a live service-account exchange. The nine dispatchers contain 356 nonblank/noncomment
   lines; allow 275 binding/orchestration, 290 tests, 105 configuration and 105 shared
   exports/operation wiring lines, capped at 800. All byte parsers remain in the leaves.
+
+  B010 registers Provider::Compatible and the Compatible variants of OperationRequest, OperationResult and
+  PreparedRequest as stubs in crates/betterlite-provider/src/compatible_providers.rs. Fill them there and leave
+  provider.rs, operation.rs and prepared.rs as they are.
 scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/{lib,provider,operation,prepared,bedrock_dispatch_contract,compatible_providers}.rs
     - crates/betterlite-provider/src/compatible_providers.rs
     - crates/betterlite-provider/src/compatible_providers/**
     - crates/betterlite-core/Cargo.toml
-    - crates/betterlite-core/src/{lib,dispatch,operation,compatible_providers}.rs
+    - crates/betterlite-core/src/{dispatch,operation}.rs
     - crates/betterlite-core/src/compatible_providers.rs
     - crates/betterlite-core/src/compatible_providers/**
-    - crates/betterlite-core/src/api/{responses_routes,anthropic_messages_routes,image_generation_call,rerank_call}.rs
-    - crates/betterlite-server/src/{state,routes}.rs
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,compatible_providers}.rs
+    - crates/betterlite-config/src/sections/compatible_provider_settings.rs
+    - crates/betterlite-config/src/sections/compatible_provider_settings/**
     - crates/betterlite-config/tests/compatible_provider_settings.rs
     - Cargo.lock
     - tools/oracle/cases/providers/compatible-a-l/**

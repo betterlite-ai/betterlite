@@ -1,7 +1,5 @@
 use std::error::Error as StdError;
-use std::future::Future;
 
-use serde::de::DeserializeOwned;
 use thiserror::Error;
 
 use crate::models::execution::{Execution, ExecutionContent, Sample};
@@ -14,7 +12,7 @@ use crate::sources::execution_row::ExecutionRow;
 use crate::sources::parameters::parameters;
 use crate::sources::parse_execution::ParseExecutionError;
 use crate::sources::part_row::PartRow;
-use crate::sources::row_decode::{RowsError, decode_rows};
+use crate::sources::row_decode::RowsError;
 use crate::sources::selection_id::selection_id;
 use crate::sources::source_reader_content::{self, CONTENT_PAGE_SIZE};
 use crate::sources::source_reader_sample::{self, SampleWindow};
@@ -41,18 +39,10 @@ impl<S> SourceReader<S>
 where
     S: Storage + Sync,
 {
-    async fn query_rows<T, F>(call: F) -> Result<Vec<T>, SourceError<S::Error>>
-    where
-        F: Future<Output = Result<Vec<u8>, S::Error>>,
-        T: DeserializeOwned,
-    {
-        let bytes = call.await.map_err(SourceError::Query)?;
-        Ok(decode_rows(&bytes)?)
-    }
-
     pub async fn agents(&self, scope: &Scope) -> Result<Vec<String>, SourceError<S::Error>> {
-        let rows: Vec<AgentRow> =
-            Self::query_rows(self.storage.lens_agents(parameters(scope, &[]))).await?;
+        let query = self.storage.lens_agents(parameters(scope, &[]));
+        let bytes = query.await.map_err(SourceError::Query)?;
+        let rows: Vec<AgentRow> = serde_json::from_slice(&bytes).map_err(RowsError)?;
         Ok(rows.into_iter().map(|row| row.agent_name).collect())
     }
 
@@ -60,9 +50,14 @@ where
         &self,
         scope: &Scope,
     ) -> Result<ActivityAvailability, SourceError<S::Error>> {
-        let rows: Vec<ActivityAvailability> =
-            Self::query_rows(self.storage.lens_availability(parameters(scope, &[]))).await?;
-        Ok(rows.into_iter().next().unwrap_or_default())
+        let query = self.storage.lens_availability(parameters(scope, &[]));
+        let bytes = query.await.map_err(SourceError::Query)?;
+        let [first, ..]: &[ActivityAvailability] =
+            &serde_json::from_slice::<Vec<_>>(&bytes).map_err(RowsError)?
+        else {
+            return Ok(ActivityAvailability::default());
+        };
+        Ok(*first)
     }
 
     pub async fn sample(
@@ -76,7 +71,12 @@ where
             execution_ids.push(selection_id(value)?);
         }
         let params = source_reader_sample::sample_params(scope, settings, &window, execution_ids);
-        let rows: Vec<ExecutionRow> = Self::query_rows(self.storage.lens_sample(params)).await?;
+        let bytes = self
+            .storage
+            .lens_sample(params)
+            .await
+            .map_err(SourceError::Query)?;
+        let rows: Vec<ExecutionRow> = serde_json::from_slice(&bytes).map_err(RowsError)?;
         let eligible = rows.first().map_or(0, |row| row.eligible);
         let selected = rows.first().map_or(0, |row| row.selected);
         let (next_offset, next_cursor) = source_reader_sample::paging(&rows, &window);
@@ -109,7 +109,12 @@ where
             cursor: cursor.to_owned(),
             offset: offset.saturating_add(1),
         };
-        let rows: Vec<PartRow> = Self::query_rows(self.storage.lens_content(params)).await?;
+        let bytes = self
+            .storage
+            .lens_content(params)
+            .await
+            .map_err(SourceError::Query)?;
+        let rows: Vec<PartRow> = serde_json::from_slice(&bytes).map_err(RowsError)?;
         let truncated_any = rows.iter().any(|row| row.truncated != 0);
         let next_cursor = (rows.len() == CONTENT_PAGE_SIZE)
             .then(|| rows.last())
@@ -144,7 +149,7 @@ where
             .lens_evidence(params)
             .await
             .map_err(SourceError::Query)?;
-        let rows: Vec<CountRow> = decode_rows(&bytes)?;
+        let rows: Vec<CountRow> = serde_json::from_slice(&bytes).map_err(RowsError)?;
         let found = rows.first().is_some_and(|row| row.count > 0);
         Ok(found)
     }

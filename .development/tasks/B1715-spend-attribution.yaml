@@ -55,8 +55,6 @@ scope:
     - crates/betterlite-provider/src/identity/**
     - crates/betterlite-provider/src/identity/spend_proxy.rs
     - crates/betterlite-provider/src/identity/spend_proxy/**
-    - crates/betterlite-server/src/spend.rs
-    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/attribution.rs
     - crates/betterlite-server/src/spend/attribution/**
     - crates/betterlite-config/src/spend_attribution.rs

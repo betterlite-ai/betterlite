@@ -1,0 +1,45 @@
+kind: helper
+name: message-utilities-fix-messages-and-tools
+call:
+  b5366:
+    calls:
+      - function: fix_openai_messages
+        messages:
+          - {content: no role, name: null}
+          - {role: user, content: hi, function: null}
+      - function: fix_openai_messages
+        messages:
+          - {role: assistant, tool_calls: [{id: c}, x, 5]}
+      - function: fix_openai_messages
+        messages:
+          - {role: assistant, tool_calls: x}
+      - function: validate_and_fix_openai_tools
+        tools:
+          - {type: function}
+          - x
+          - 5
+      - function: validate_and_fix_openai_tools
+        tools: null
+      - function: fix_thinking_param
+        thinking: true
+      - function: fix_thinking_param
+        thinking: {type: enabled, budgetTokens: 5}
+      - function: cleanup_none_field_in_message
+        message: {a: null, b: 0, c: false, d: "", e: []}
+      - function: convert_list_message_to_dict
+        messages:
+          - {role: null, content: x, name: null}
+      - function: validate_tool_choice
+        tool_choice: {type: auto}
+      - function: validate_tool_choice
+        tool_choice: {type: function, function: {name: f}}
+      - function: validate_optional_params
+        stop: [a, b, c, d, e]
+      - function: validate_optional_params
+        stop: [a, b, c, d, e]
+        disable_stop_sequence_limit: true
+      - function: validate_openai_user_messages
+        messages:
+          - {role: user, content: [{type: text, text: t}, {type: image_url, image_url: {url: u}}]}
+env: {}
+compare: {ignore: []}

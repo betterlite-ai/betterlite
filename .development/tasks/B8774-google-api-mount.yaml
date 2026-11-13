@@ -1,0 +1,108 @@
+id: B8774
+title: Mount the Google GenAI, interactions and agent collection routes with the interaction release port
+description: >-
+  Three route tasks under the Google API umbrella (B098) build their routers in betterlite-server and nothing mounts
+  them, since no B1100 entry merges them, so the paths answer 404. B3506 (crates/betterlite-server/src/api/genai_routes)
+  serves the generateContent, streamGenerateContent and countTokens routes under /v1beta/models/{model_name} and
+  /models/{model_name}. B3507 (api/interaction_routes) serves create, get, delete and cancel under /interactions and
+  /v1beta/interactions. B3508 (api/agents/collection_routes) serves POST and GET /v1beta/agents. The create path of
+  B3507 also needs a production value for B3499's ReservationRelease port: B3499's acreate takes it so a background
+  interaction can release its budget reservation, and B8660 implements it as
+  `app::spend::budget::interaction_release(shared: &Shared)` over the shared budget settlement. This task mounts the
+  three routers inside the auth layers, passes that port into B3507's routes and takes their HTTP cases.
+
+
+  Where. Module `app::inference::google` (crates/betterlite-server/src/app/inference/google.rs and google/tests.rs). In
+  crates/betterlite-server/src/app/inference.rs add one line to `mount` that calls `google::mount(router, state)`,
+  after the lines B8634 and B8635 wrote, and the `mod google;` line. google::mount merges, each once and in this
+  order, `api::genai_routes::routes(..)`, `api::interaction_routes::routes(..)` with
+  `app::spend::budget::interaction_release(&state.shared)` as its release argument, and
+  `api::agents::collection_routes::routes(..)`. B3507's and B3508's route states keep B8801's
+  `Arc<dyn PreCall<UserAPIKeyAuth>>`: build `app::inference::pre_call_step(state)` (B8802) once in google::mount and
+  hand the same Arc to both. Pass each routes function whatever else its task gives it, and register no path here.
+
+
+  Tests in app::inference::google::tests build a ServerState without a database, call mount on an empty Router and,
+  with tower's oneshot, check that POST /v1beta/interactions and POST /interactions without a key are the auth 401,
+  that GET /v1beta/agents with the master key reaches the handler, and that the release value handed to the
+  interaction routes is the one built from the shared budget (a recording settlement in the shared state sees one
+  release call when the route's release is called).
+
+
+  HTTP oracle cases through the booted proxy. The cases below moved here from B3506, B3507 and B3508, whose tasks now
+  test their handlers with tower's oneshot over their own routers only. Write each case from that task's text, with
+  the mock Gemini upstream those tasks name. When a case shows a product bug, the fix goes to the owning task's module
+  in a follow-up.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference.rs
+    - crates/betterlite-server/src/app/inference/google.rs
+    - crates/betterlite-server/src/app/inference/google/**
+    - tools/oracle/cases/genai/**
+    - tools/oracle/cases/interactions/**
+    - tools/oracle/cases/agents/collection-routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L221-L460
+    why: The interaction routes with both prefixes and their auth dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L120-L133
+    why: The route types the three routers hand to the request pipeline.
+dod:
+  - text: The GenAI, interaction and agent collection routes answer inside the auth layers, each registered once.
+    proof: [google-mount-tests, oracle]
+  - text: B3507's create path gets the interaction release port built from the shared budget.
+    proof: [google-mount-tests]
+  - text: Over HTTP, the moved GenAI, interaction and agent collection cases answer as LiteLLM does.
+    proof: [google-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: google-mount-tests
+      why: a router is not mounted, is mounted outside the key check, or the interaction routes get another release value
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::google::/)'
+    - id: google-cases
+      why: a moved family has no booted-proxy case on this branch
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/genai)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/interactions)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agents/collection-routes)"
+oracle_cases:
+  - tools/oracle/cases/genai/generate-content-basic.yaml
+  - tools/oracle/cases/genai/generate-content-with-body-model-override.yaml
+  - tools/oracle/cases/genai/stream-generate-content-no-done-marker.yaml
+  - tools/oracle/cases/genai/stream-generate-content-raw-sse.yaml
+  - tools/oracle/cases/genai/count-tokens-original-response.yaml
+  - tools/oracle/cases/genai/count-tokens-total-tokens-fallback.yaml
+  - tools/oracle/cases/genai/count-tokens-none-response.yaml
+  - tools/oracle/cases/genai/count-tokens-adapter-translation.yaml
+  - tools/oracle/cases/interactions/create-basic.yaml
+  - tools/oracle/cases/interactions/create-with-body-data.yaml
+  - tools/oracle/cases/interactions/get-basic.yaml
+  - tools/oracle/cases/interactions/get-with-path-param.yaml
+  - tools/oracle/cases/interactions/delete-basic.yaml
+  - tools/oracle/cases/interactions/delete-with-path-param.yaml
+  - tools/oracle/cases/interactions/cancel-basic.yaml
+  - tools/oracle/cases/interactions/cancel-with-path-param.yaml
+  - tools/oracle/cases/agents/collection-routes/create-basic.yaml
+  - tools/oracle/cases/agents/collection-routes/create-with-litellm-params-template.yaml
+  - tools/oracle/cases/agents/collection-routes/create-non-admin-no-api-key-401.yaml
+  - tools/oracle/cases/agents/collection-routes/create-admin-no-api-key-allowed.yaml
+  - tools/oracle/cases/agents/collection-routes/create-malformed-template-becomes-empty.yaml
+  - tools/oracle/cases/agents/collection-routes/list-basic.yaml
+  - tools/oracle/cases/agents/collection-routes/list-with-query-param-template.yaml
+  - tools/oracle/cases/agents/collection-routes/list-non-admin-no-api-key-401.yaml
+  - tools/oracle/cases/agents/collection-routes/list-admin-no-api-key-allowed.yaml
+  - tools/oracle/cases/agents/collection-routes/get-by-name.yaml
+  - tools/oracle/cases/agents/collection-routes/delete-by-name.yaml
+  - tools/oracle/cases/agents/collection-routes/list-versions.yaml
+deviations: []
+out_of_scope:
+  - "The handlers: B3506, B3507 and B3508. The create call and the port trait: B3499. The port implementation: B8660."
+  - "The get, delete and list versions agent handlers: B3508 registers them in the routes() this part mounts. The three item cases here prove them with a non-admin key and a litellm_params_template api_key."
+pitfalls:
+  - "Each interaction path has a /v1beta and an unversioned form; both come from B3507's router, so merging only one prefix loses half the cases."
+  - "B3507's routes must get the release built from state.shared, not a fresh one per request, so the background poll releases against the same settlement."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

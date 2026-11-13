@@ -1,0 +1,46 @@
+kind: helper
+name: empty-text-content
+call:
+  anthropic_message_replay:
+    function: strip_empty_content
+    messages:
+    - pass-through
+    - role: assistant
+      content:
+      - type: text
+        text: ''
+      - type: text
+        text: kept
+      - type: thinking
+        thinking: '  '
+      - type: tool_use
+        id: a
+    - role: assistant
+      content:
+      - type: text
+        text: ''
+    - role: assistant
+      content: []
+    - role: assistant
+      content: string
+    - role: user
+      content:
+      - type: redacted_thinking
+        data: x
+      - type: text
+        text: null
+    - role: assistant
+      content:
+      - type: thinking
+        thinking: real
+      - type: text
+        text: '   '
+      - type: text
+        text: x
+    - role: assistant
+      content:
+      - type: thinking
+        thinking: ''
+env: {}
+compare:
+  ignore: []

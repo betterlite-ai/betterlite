@@ -1,0 +1,10 @@
+kind: helper
+name: response-usage-missing-total
+call:
+  b3860:
+    function: set_response
+    response:
+      usage:
+        prompt_tokens: 5
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-message-replay-tool-use-ids
+call:
+  anthropic_message_replay:
+    function: tool_use_ids
+    messages:
+    - {role: assistant, content: [ {type: tool_use, id: "functions.Bash:0"} ]}
+    - {role: user, content: [ {type: tool_result, tool_use_id: "call.1"} ]}
+env: {}
+compare: {ignore: []}

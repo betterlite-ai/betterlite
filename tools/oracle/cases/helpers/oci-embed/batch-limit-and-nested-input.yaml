@@ -1,0 +1,32 @@
+kind: helper
+name: oci-embed-batch-limit-and-nested-input
+call:
+  b5941:
+    steps:
+      - method: request
+        model: cohere.embed-v4.0
+        input: [a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a]
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: [[1, 2], [3]]
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: [a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a, a]
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: [1, 2, 3]
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+      - method: request
+        model: cohere.embed-v4.0
+        input: ""
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..cccc
+env: {}
+compare: {ignore: []}

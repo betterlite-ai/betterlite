@@ -1,0 +1,13 @@
+kind: helper
+name: websocket-stub-braced-path
+call:
+  b123:
+    op: inject_websocket_stubs
+    document: {paths: {}}
+    routes:
+      - path: "/openai/deployments/{model}/realtime?token=abc?"
+        name: null
+        query_params: [{name: model, required: false}]
+env: {}
+compare:
+  ignore: []

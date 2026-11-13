@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use crate::agent_policy::caller::AgentCaller;
 use crate::agent_policy::{AgentResponse, ManagedAgentContext};
 use crate::budget_snapshots::{OrgBudgetSnapshot, TeamBudgetSnapshot, UserBudgetSnapshot};
-use crate::resolved_key::materialize;
 use crate::resolved_key::view::{VerificationTokenView, ViewError};
 use crate::user_roles::UserRole;
 
@@ -185,7 +184,9 @@ impl UserAPIKeyAuth {
         strip_server_only_fields(&mut fields);
         hash_api_key_and_token(&mut fields)?;
         let view = VerificationTokenView::construct(fields.clone())?;
-        let extra = materialize(fields).map_err(AuthError::Json)?;
+        let extra = serde_json::to_string(&JsonData::Object(fields))
+            .and_then(|text| serde_json::from_str(&text))
+            .map_err(AuthError::Json)?;
         Ok(Self {
             view,
             extra,
@@ -198,6 +199,27 @@ impl UserAPIKeyAuth {
         let verified = self.managed_delegation_verified;
         self.managed_delegation_verified = false;
         verified
+    }
+
+    #[must_use]
+    pub fn allowed_cache_controls(&self) -> Option<Vec<&str>> {
+        let controls = self.view.token.allowed_cache_controls.0.as_deref()?;
+        if controls.is_empty() {
+            return None;
+        }
+        Some(
+            controls
+                .iter()
+                .filter_map(|control| match control {
+                    JsonData::String(value) => Some(value.as_str()),
+                    JsonData::Null
+                    | JsonData::Bool(_)
+                    | JsonData::Number(_)
+                    | JsonData::Array(_)
+                    | JsonData::Object(_) => None,
+                })
+                .collect(),
+        )
     }
 }
 

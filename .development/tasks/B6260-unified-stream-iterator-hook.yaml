@@ -1,0 +1,222 @@
+id: B6260
+title: Unified guardrail streaming iterator hook with buffering and sampling
+description: >-
+  Port `UnifiedLLMGuardrails.async_post_call_streaming_iterator_hook` and `resolve_streaming_flag`'s use
+  (litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py, lines 971-1309). The hook wraps the
+  upstream response stream of one guardrail and decides, chunk by chunk, what the client receives: the raw chunks, the
+  raw chunks after a scan, a block message, or (for `incremental_diff`) text that the guardrail rewrote. Nothing in this
+  task scans text itself. It calls the translation (B3661's `BaseTranslation`), the pure helpers of B3679, the loop of
+  B6164 and the gate of B3665.
+
+  Code goes in crates/betterlite-server/src/guardrails/unified_stream_hook.rs and unified_stream_hook/. Files:
+  settings.rs, run.rs, block_only.rs, end_scan.rs, stream_end.rs and error.rs. Each file that can fail owns its error
+  type, and error.rs holds `StreamHookError`. The hook is generic over a translation `T` with the bound
+  `BaseTranslation + StreamEndCheck` and a guardrail `G: GuardrailContract`. It takes both by reference. The registry
+  stays with the caller: params hold `&TranslationRegistry<T>` (B3679).
+
+  Entry point in run.rs: `run_streaming_iterator_hook(params: StreamHookParams<'_, T, G>, source: impl Stream<Item =
+  serde_json::Value>) -> impl Stream<Item = Result<StreamOutput, StreamLoopError>>`. Use the stream helper crate that
+  B6164 uses and add no crate. `StreamOutput` and `StreamLoopError` are B6164's, so the caller handles one output type
+  for both loops. `StreamHookParams` holds: `guardrail: Option<&G>`, `guardrail_name: Option<&str>`,
+  `registry`, `request_data: &BTreeMap<String, GuardrailValue>`, `user_api_key_dict`, `request_route: Option<&str>`,
+  `flags: StreamFlagSources` and `buffer_until_moderated_default: bool`. `StreamFlagSources` holds the three places a
+  flag can come from: `attributes: BTreeMap<String, GuardrailValue>` (the guardrail's own `streaming_*` fields, built by
+  the caller from its settings, empty when it has none), `guardrail_config: Option<BTreeMap<String, GuardrailValue>>`,
+  `optional_params: BTreeMap<String, GuardrailValue>` and `mask_response_content: bool`. GuardrailContract has no name
+  accessor, so the name travels as the `Option<&str>` argument and is used in every log line.
+
+  `stream_end.rs`: trait `StreamEndCheck { fn streaming_has_ended(&self, items: &[serde_json::Value]) -> bool }`.
+  LiteLLM probes `_check_streaming_has_ended` with `hasattr` on the translation. Three handlers have it and the rest
+  do not. Implement the trait for B3680's `UnifiedTranslation<S, H>` enum in this file (the trait is local, so the
+  impl is allowed): the chat variant is true when any item of any choice has a non-null `finish_reason` (use B3679's
+  `chunk_has_finish_reason` over the items); the Responses variant forwards to B3672's `streaming_has_ended`; the
+  Anthropic variant forwards to B3673's `streaming_has_ended`; every other variant is listed by name and gives false.
+  Do not use a wildcard arm, so a new variant forces a decision. Read B3680's translation.rs for the variant names.
+
+  `settings.rs`: `StreamSettings::resolve(params) -> Result<StreamSettings, StreamHookError>` reads five flags with B3679's
+  `resolve_streaming_flag(attribute, guardrail_config, optional_params, name, default)`, later source wins: default,
+  then the guardrail attribute, then `guardrail_config`, then `optional_params`. Names and defaults: `streaming_sampling_rate`
+  5 (integer), `streaming_end_of_stream_only` false, `streaming_transform_mode` "block_only", `streaming_buffer_until_moderated`
+  `buffer_until_moderated_default`, `streaming_buffer_release_on_scan` false. A value of the wrong type, or a sampling rate
+  below 1, is `StreamHookError::InvalidFlag { name }` and is the first item of the stream. Any transform mode other than
+  "incremental_diff" is block-only, as in LiteLLM. Then two rules, in this order. First: when buffering is on, a guardrail is
+  present and `mask_response_content` is true, log a warning with the exact text "UnifiedLLMGuardrails:
+  streaming_buffer_until_moderated is disabled for {name} because mask_response_content=True -- buffered replay would
+  release unredacted original chunks instead of the moderated output." and turn buffering off. Second: when buffering is
+  still on and `release_on_scan` is false, set `end_of_stream_only` to true.
+
+  Start of `run_streaming_iterator_hook`, in order. (1) No guardrail: send every source item unchanged and end. (2) Ask
+  B3665's `should_run_guardrail(data, post_call, empty suppressed set)`. An `Err` is the first item of the stream and the
+  stream ends. A false answer logs at debug "UnifiedLLMGuardrails: Post-call streaming scanning disabled for {name}", sends
+  every item unchanged and ends. (3) When the mode is "incremental_diff", call B3679's `resolve_transform_call_type(registry,
+  request_route)`. With a call type, take the translation of that registry entry and hand the whole source to B6164's
+  `run_incremental_transform_stream` with `sampling_rate` and `end_of_stream_only` from the settings, and forward its
+  items. Without one, log a warning "UnifiedLLMGuardrails: streaming_transform_mode=incremental_diff is only supported for the
+  OpenAI chat completions streaming path with a resolvable request route; falling back to block_only for {name}" and go on
+  to the block-only loop. (4) Block-only loop.
+
+  Block-only loop (`block_only.rs`). State: `call_type: Option<CallType>`, `chunk_counter`, `responses_so_far`,
+  `responses_yielded`, `withheld_items`, `pending_end_of_stream_items`, `chunks_yielded: bool`, `last_scan_key:
+  Option<StreamingScanKey>` and `tool_calls_in_flight: bool`. Items are `serde_json::Value`, so "deep copy" is `clone`.
+  For each source item, in order:
+  1. Add one to `chunk_counter` and push the item to `responses_so_far`.
+  2. While `call_type` is unset, set it with B3679's `resolve_endpoint_translation` order: the first call type of the
+     route when `request_route` is set and the route has call types, else B3679's `infer_call_type(ResponseKind::of_stream_item(item))`.
+  3. No call type, or a call type with no registry entry: send this item, then every remaining source item unchanged, and
+     end. Nothing is scanned.
+  4. `end_of_stream_only` is true: when not buffering, take the translation and ask `streaming_has_ended(responses_so_far)`.
+     If `pending_end_of_stream_items` is not empty or the stream has ended, push the item to `pending_end_of_stream_items`
+     (it is held for the final scan). Otherwise set `chunks_yielded`, push the item to `responses_yielded` and send it.
+     When buffering, push the item to `withheld_items`. Go to the next item.
+  5. When buffering, push the item to `withheld_items`.
+  6. When `chunk_counter % sampling_rate == 0`: get the scan key with the translation's `get_streaming_scan_key(responses_so_far)`.
+     A key sets `tool_calls_in_flight` from its field. `hold_window` is `buffering && (key is None || tool_calls_in_flight)`.
+     If B3679's `is_redundant_scan(key, last_scan_key)`: log at debug that the chunk is skipped because nothing new is
+     left to scan. If buffering and `hold_window`, go to the next item. If buffering and not `hold_window`, send every
+     withheld item (setting `chunks_yielded` and pushing each to `responses_yielded`) and clear the list. If not buffering,
+     set `chunks_yielded`, push the item to `responses_yielded` and send it. Go to the next item.
+     Otherwise take `original_items` (a clone of `withheld_items` when buffering, else a one item list with a clone of
+     this item) and call `process_output_streaming_response(responses_so_far, guardrail, logging target from
+     request_data["litellm_logging_obj"], user_api_key_dict, request_data, None)`. On `GuardrailFailure::ModifyResponse`:
+     when `original_response` is unset, set it to `responses_so_far`; send B3679's `handle_streaming_block(translation, failure,
+     chunks_yielded, responses_yielded)` output and end the stream. The current item is not in `responses_yielded` on purpose,
+     because the continuation must show only what the client already got. On `GuardrailFailure::Http`: send
+     B3679's `emit_streaming_http_error(call_type, error, responses_so_far, request_data, Some(translation), chunks_yielded,
+     Some(responses_yielded))` output and end. When that function returns `Err`, the error leaves the stream as the item.
+     Any other failure leaves the stream as an error item. After a pass: store `last_scan_key` when the key exists. When
+     `hold_window`, log at debug that the window is held, set `withheld_items` to `original_items` and go to the next item.
+     Otherwise send every item of `original_items` (setting `chunks_yielded`, pushing to `responses_yielded`) and clear `withheld_items`.
+  7. When the sampling test fails and the hook is not buffering: set `chunks_yielded`, push the item to `responses_yielded`, send it.
+     When buffering, send nothing.
+
+  End of stream (`end_scan.rs`), only when `call_type` is set and has a registry entry (the pass-through case in step 3
+  already ended). Take `buffered_items`: a clone of `withheld_items` when buffering with `release_on_scan` and not
+  `end_of_stream_only`; the plain `withheld_items` when buffering otherwise; none when not buffering. Get the end key with
+  `get_streaming_scan_key(responses_so_far)`. If `is_redundant_scan(end_key, last_scan_key)`: log at debug, send the buffered
+  items, then send each pending end-of-stream item (pushing to `responses_yielded`) and end. Otherwise call
+  `process_output_streaming_response` with the same arguments as a round. On success send the buffered items, then
+  the pending items (pushing those to `responses_yielded`). On `ModifyResponse`: set `original_response` as above and
+  send `handle_streaming_block` output with `stream_started = !responses_yielded.is_empty()` and `responses_so_far =
+  responses_yielded`; the withheld originals are never sent. On `Http`: send `emit_streaming_http_error` output with the same
+  started flag. Any other failure leaves the stream as an error item.
+
+  HTTP oracle cases, in tools/oracle/cases/guardrails/unified-stream-hook/. They run a streamed chat request through the booted
+  proxy with a `generic_guardrail_api` guardrail (B3771) whose `api_base` is the oracle mock, and compare the SSE body,
+  status and headers of LiteLLM and betterlite. LiteLLM sends a `generic_guardrail_api` guardrail through this hook
+  because that class implements `apply_guardrail` and has no iterator hook of its own (litellm/proxy/utils.py, lines 2831-2835 and 3963-3981). The
+  cases are named in oracle_cases below. Read tools/oracle/cases/chat/openai-stream.yaml for the stream case shape.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/unified_stream_hook.rs
+    - crates/betterlite-server/src/guardrails/unified_stream_hook/**
+    - tools/oracle/cases/guardrails/unified-stream-hook/**
+    - tools/oracle/helpers/b6260.py
+    - tools/oracle/helpers/b6260/**
+    - tools/oracle/src/helpers/server/b6260.rs
+    - tools/oracle/src/helpers/server/b6260/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L963-L1081
+    why: Flag resolution, the mask_response_content rule, the buffering rules, the gate and the incremental_diff branch with its fallback warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L1083-L1237
+    why: The block-only per-item loop, with end_of_stream_only, withholding, sampling, redundant scans and block handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L1239-L1309
+    why: The end-of-stream scan, the release of buffered and pending items and the block paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3936-L3995
+    why: The caller that picks this hook, its buffer_until_moderated_default and the apply_guardrail kind.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2826-L2836
+    why: Which callbacks get the unified hook (apply_guardrail without an iterator override of their own).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L1281-L1293
+    why: The chat variant of the stream-ended probe.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1305-L1311
+    why: The Responses variant of the stream-ended probe.
+
+dod:
+  - text: The five streaming flags resolve in the order default, guardrail attribute, guardrail_config, optional_params, a wrong type or a sampling rate below 1 is refused, and any mode other than incremental_diff is block-only.
+    proof: [settings-tests]
+  - text: Buffering is turned off with the warning when mask_response_content is true, and buffering without release_on_scan forces end_of_stream_only.
+    proof: [settings-tests]
+  - text: No guardrail, a false gate and an unmapped call type send every chunk unchanged, and a gate error is the first stream item.
+    proof: [passthrough-tests, oracle]
+  - text: Sampling scans every Nth chunk, skips a redundant scan, and holds a buffered window while tool calls are in flight or the key is missing.
+    proof: [sampling-tests, oracle]
+  - text: A block or HTTP failure during a sampled scan sends the translation's block chunks or error items, measured against only the chunks already sent, and ends the stream.
+    proof: [block-tests, oracle]
+  - text: The end-of-stream scan releases buffered and pending chunks after a pass, sends only the block message after a block, and skips a redundant scan.
+    proof: [end-scan-tests, oracle]
+  - text: With incremental_diff and a chat route the stream goes to B6164's loop, and any other route logs the fallback warning and runs the block-only loop.
+    proof: [transform-route-tests, oracle]
+  - text: The stream-ended probe is true for chat, Responses and Anthropic exactly as their handlers say and false for every other variant.
+    proof: [stream-end-tests]
+  - text: Streamed requests through the booted proxy match LiteLLM for a clean stream, a mid-stream block, an end-of-stream block, buffered release and the incremental_diff fallback.
+    proof: [oracle, http-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: settings-tests
+      why: a flag source, a default, the type check or one of the two buffering rules is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream_hook::tests::settings_/)'
+    - id: passthrough-tests
+      why: a no-guardrail, gate or unmapped-call-type exit scans or drops chunks
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream_hook::tests::passthrough_/)'
+    - id: sampling-tests
+      why: the sampling modulo, the redundant-scan skip or the window hold is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream_hook::tests::sampling_/)'
+    - id: block-tests
+      why: a block or HTTP failure in a sampled scan sends the wrong chunks or keeps the stream open
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream_hook::tests::block_/)'
+    - id: end-scan-tests
+      why: the final scan releases, withholds or skips the wrong chunks
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream_hook::tests::end_scan_/)'
+    - id: transform-route-tests
+      why: incremental_diff picks the wrong loop or loses the fallback warning
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream_hook::tests::transform_route_/)'
+    - id: stream-end-tests
+      why: a variant of the stream-ended probe is wrong or missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream_hook::stream_end::tests::/)'
+    - id: http-case-corpus
+      why: the HTTP cases are not added in this change
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/guardrails/unified-stream-hook)"
+
+oracle_cases:
+  - tools/oracle/cases/guardrails/unified-stream-hook/clean-stream-sampled.yaml
+  - tools/oracle/cases/guardrails/unified-stream-hook/mid-stream-block.yaml
+  - tools/oracle/cases/guardrails/unified-stream-hook/end-of-stream-block.yaml
+  - tools/oracle/cases/guardrails/unified-stream-hook/buffered-release.yaml
+  - tools/oracle/cases/guardrails/unified-stream-hook/incremental-diff-fallback.yaml
+
+deviations:
+  - what: The guardrail to apply is the typed `guardrail` field of the hook params, not the "guardrail_to_apply" key that LiteLLM pops from the request data when the argument is missing.
+    why: The same choice as B3680; clients see no difference.
+  - what: A streaming flag of the wrong type, or a sampling rate below 1, ends the stream with an error item before the first chunk. LiteLLM fails on the first chunk with ZeroDivisionError or a type error.
+    why: Rust types are checked up front; the declared flag types are the only supported input.
+  - what: An empty call type list for a route counts as unresolved and falls back to inferring from the chunk. LiteLLM would raise IndexError on `call_types[0]`.
+    why: The same rule as B3679's `resolve_endpoint_translation`; the route table never maps a route to an empty list.
+
+out_of_scope:
+  - The incremental transform loop and its rounds; B6164 owns it.
+  - The registry type, `resolve_endpoint_translation`, `infer_call_type`, `is_redundant_scan`, `resolve_streaming_flag`, `handle_streaming_block` and `emit_streaming_http_error`; B3679 owns them.
+  - The pre-call, moderation and post-call success hooks and the registry content; B3680 owns them.
+  - The scan key, process_output_streaming_response and block chunk builders of each translation; B3669, B3672, B3673 and B3676 own them.
+  - "`ProxyLogging`'s streaming wrapper that chooses between a guardrail's own iterator hook and this one (litellm/proxy/utils.py): not in this task, see notes."
+  - "`GUARDRAIL_NAME` in unified_guardrail.py: no caller at the pin."
+
+pitfalls:
+  - The flags are read before the guardrail check, but the mask_response_content warning needs a guardrail, so skip it when there is none.
+  - The sampling test is `chunk_counter % sampling_rate == 0` on the count of all items so far, including the one that set the call type.
+  - On a sampled block the current item is in `responses_so_far` but not in `responses_yielded`, and the block continuation uses the second list.
+  - With `buffer_until_moderated` on, a redundant scan releases the withheld items only when `hold_window` is false, and otherwise the loop goes to the next item with the window kept.
+  - The end-of-stream path with `release_on_scan` clones the withheld items before the scan, because the scan may rewrite them; without it the originals are sent.
+  - A pass-through for an unmapped call type sends the current item first and then the rest of the source, and never runs the end-of-stream scan.
+  - The Anthropic stream-ended probe reads the SSE `event:` line, so a bytes chunk with only a `data:` line never ends the stream (B3673).
+  - Pending end-of-stream items are pushed to `responses_yielded` only when they are actually sent, after the final scan.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

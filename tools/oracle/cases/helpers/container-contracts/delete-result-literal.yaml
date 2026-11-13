@@ -1,0 +1,10 @@
+kind: helper
+name: delete-result-literal
+call:
+  b3360:
+    operation: record_decode
+    records:
+      - {kind: delete_result, value: {id: container_abc, object: container.deleted, deleted: true, unknown_key: ignored}}
+      - {kind: delete_result, value: {id: container_abc, object: container.deleted, deleted: false}}
+env: {}
+compare: {ignore: []}

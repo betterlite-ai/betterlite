@@ -56,16 +56,14 @@ fn case_slices<'slices>(
             .second
             .get(response_offset..response_end)
             .unwrap_or_default(),
-        super::request_slice(
-            &captures.first_requests,
-            request_offset,
-            case.upstream.len(),
-        ),
-        super::request_slice(
-            &captures.second_requests,
-            request_offset,
-            case.upstream.len(),
-        ),
+        captures
+            .first_requests
+            .get(request_offset..request_offset.saturating_add(case.upstream.len()))
+            .unwrap_or_default(),
+        captures
+            .second_requests
+            .get(request_offset..request_offset.saturating_add(case.upstream.len()))
+            .unwrap_or_default(),
     )
 }
 

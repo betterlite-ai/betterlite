@@ -1,0 +1,11 @@
+kind: helper
+name: secret-lookup-oidc-env
+env: {}
+compare: {ignore: []}
+call:
+  b8500:
+    function: get_secret
+    secret_name: oidc/env/OIDC_TOKEN
+    environment:
+      OIDC_TOKEN: env-token
+    default_value: null

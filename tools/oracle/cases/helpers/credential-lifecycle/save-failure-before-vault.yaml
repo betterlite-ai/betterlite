@@ -1,0 +1,16 @@
+kind: helper
+name: save-failure-before-vault
+call:
+  b4592:
+    operation: save
+    file: '{"base_url":"https://gateway.example","key":"sk-old","user_id":"u-1","timestamp":1000.0}'
+    record:
+      base_url: https://gateway.example
+      key: sk-new
+      user_id: u-1
+      timestamp: 2000.0
+    vault: {}
+    failures:
+      stage: always
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: route-metadata-multi-segment-tail
+call:
+  route_metadata:
+    {
+      "function": "get_call_types",
+      "route": "/models/org/model:generateContent"
+    }
+env: {}
+compare:
+  ignore: []

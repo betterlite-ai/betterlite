@@ -8,7 +8,7 @@ use libfuzzer_sys::fuzz_target;
 use std::str;
 
 fuzz_target!(|bytes: &[u8]| {
-    if bytes.len() > 65_536 {
+    if bytes.len() > 0x0001_0000 {
         return;
     }
     if let Ok(arguments) = str::from_utf8(bytes) {

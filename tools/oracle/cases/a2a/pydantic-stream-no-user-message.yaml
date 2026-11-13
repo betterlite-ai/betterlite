@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-stream-no-user-message
+call: {b4805: {operation: stream, response: {result: {message: {role: agent, messageId: m1, parts: [{kind: text, text: answer}]}}}}}
+env: {}
+compare: {ignore: []}

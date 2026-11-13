@@ -1,0 +1,14 @@
+id: B5849
+milestone: M12 python
+title: Wire the real MCP loop into the Python completion call
+status: todo
+depends_on: [B956, B957, B5656, B5659]
+file: tasks/B5849-python-mcp-loop.yaml
+covers:
+  - "litellm/main.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

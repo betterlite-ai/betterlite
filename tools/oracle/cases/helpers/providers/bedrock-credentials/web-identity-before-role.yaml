@@ -1,0 +1,36 @@
+kind: helper
+name: bedrock-credentials-web-identity-before-role
+call:
+  bedrock_credentials:
+    get_credentials:
+      environment:
+        AWS_ACCESS_KEY_ID: ambient
+        AWS_SECRET_ACCESS_KEY: ambient-secret
+        AWS_EC2_METADATA_DISABLED: 'true'
+      resolved_token: resolved-token
+      steps:
+        - params:
+            aws_role_name: 'arn:aws:iam::123456789012:role/TargetRole'
+            aws_session_name: bedrock
+            aws_web_identity_token: web-token-ref
+        - params:
+            aws_role_name: 'arn:aws:iam::123456789012:role/TargetRole'
+            aws_session_name: bedrock
+            aws_web_identity_token: web-token-ref
+        - params:
+            aws_role_name: 'arn:aws:iam::123456789012:role/TargetRole'
+            aws_web_identity_token: web-token-ref
+        - params:
+            aws_role_name: 'arn:aws:iam::123456789012:role/TargetRole'
+            aws_session_name: ''
+            aws_web_identity_token: web-token-ref
+      answers:
+        assume_role_with_web_identity:
+          - credentials: {access_key_id: ASIAWEB, secret_access_key: web-secret, session_token: web-token, expiration: '2026-01-01T01:00:00Z', packed_policy_size: 10}
+          - credentials: {access_key_id: ASIAEMPTY, secret_access_key: web-secret, session_token: web-token, expiration: '2026-01-01T01:00:00Z', packed_policy_size: 10}
+        get_caller_identity:
+          - error: {status: 403, code: AccessDenied, message: the fixture identity call is denied}
+        assume_role:
+          - credentials: {access_key_id: ASIAROLE, secret_access_key: role-secret, session_token: role-token, expiration: '2026-01-01T01:00:00Z'}
+env: {}
+compare: {ignore: []}

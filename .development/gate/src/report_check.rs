@@ -1,3 +1,4 @@
+pub(crate) mod mutants;
 mod tests;
 
 use std::collections::BTreeSet;

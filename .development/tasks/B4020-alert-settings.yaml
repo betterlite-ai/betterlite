@@ -22,6 +22,7 @@ description: >-
   behavior matching the source.
 scope:
   paths:
+    - "crates/betterlite-logging/src/alert_settings/**"
     - crates/betterlite-logging/src/alert_settings.rs
     - crates/betterlite-logging/src/alert_settings/
     - crates/betterlite-config/src/sections/alert_settings/

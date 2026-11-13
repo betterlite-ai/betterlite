@@ -1,0 +1,10 @@
+kind: helper
+name: a2a-discover-langgraph-missing-assistant
+call:
+  b8202:
+    operation: urls
+    base_url: https://agent.example
+    mode: langgraph_platform
+    params: {}
+env: {}
+compare: {ignore: []}

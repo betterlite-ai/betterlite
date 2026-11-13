@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use super::{
-    check_is_function_call, custom_tool_to_chat_shape, custom_tool_to_responses_shape,
-    get_tool_call_names, is_function_call, with_prompt_cache_breakpoint,
+    check_is_function_call, custom_tool_to_chat_shape, get_tool_call_names, is_function_call,
+    nested_custom_grammar, nested_to_flat_grammar, with_prompt_cache_breakpoint,
 };
 use crate::arguments::json::{Json, Object};
 use rstest::rstest;
@@ -51,7 +51,9 @@ fn run(operation: Operation) -> Json {
             Json::Object(custom_tool_to_chat_shape(&object(format_obj)))
         }
         Operation::ToResponsesShape(format_obj) => {
-            Json::Object(custom_tool_to_responses_shape(&object(format_obj)))
+            let format_object = object(format_obj);
+            let nested = nested_custom_grammar(&format_object);
+            Json::Object(nested.map_or_else(|| format_object.clone(), nested_to_flat_grammar))
         }
         Operation::CacheBreakpoint(target, marker_literal) => {
             let marker = marker_literal.map(json);

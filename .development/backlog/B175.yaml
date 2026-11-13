@@ -1,7 +1,7 @@
 id: B175
 milestone: M1 openai data plane
 title: Provider parameter capabilities and mapping
-status: todo
+status: done
 depends_on: [B174, B006, B212, B2230]
 file: tasks/B175-provider-params.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/utils.py"
 parent: B010
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1224

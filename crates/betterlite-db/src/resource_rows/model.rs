@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{ResourceRowsError, convert};
+use super::{MAX_JSON_DEPTH, ResourceRowsError, convert};
 use crate::budget_permission_rows::{JsonData, Timestamp};
 use crate::identity_rows::Payload;
 
@@ -63,7 +63,7 @@ impl TryFrom<JsonData> for ProxyModelTable {
     fn try_from(mut value: JsonData) -> Result<Self, Self::Error> {
         decode_nested_json_fields(&mut value)?;
         Ok(Self {
-            fields: convert(&value)?,
+            fields: convert(&value, MAX_JSON_DEPTH + 1)?,
         })
     }
 }

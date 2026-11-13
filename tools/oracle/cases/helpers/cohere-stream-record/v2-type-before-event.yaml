@@ -1,0 +1,8 @@
+kind: helper
+name: cohere-stream-record-v2-type-before-event
+call:
+  cohere_stream_record:
+    version: v2
+    record: '{"type":"content-delta","event":"message-end","delta":{"message":{"content":{"text":"type wins"}}}}'
+compare: {ignore: []}
+env: {}

@@ -6,19 +6,38 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+betterlite-env = { path = "../betterlite-env" }
 betterlite-redact = { path = "../betterlite-redact" }
+futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
+hex.workspace = true
+indexmap = { version = "2.14.2", features = ["serde"] }
+num-traits = "0.2.19"
+percent-encoding.workspace = true
 prometheus-client = "0.25.1"
 py_literal = "0.4.0"
+rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
+redis = { workspace = true, features = ["cluster-async", "connection-manager", "script", "tls-rustls-insecure", "tokio-rustls-comp", "token-based-authentication"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_with = "3.24.0"
+sha2.workspace = true
+socket2 = "0.6.5"
 thiserror.workspace = true
+tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
+tracing.workspace = true
 url = "2.5.8"
 
 [dev-dependencies]
+crc16 = "0.4.0"
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rstest = "=0.27.0"
-tokio = { workspace = true, features = ["rt", "macros"] }
+rustls = { workspace = true, features = ["std", "tls12"] }
+tempfile = "3.27.0"
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "test-util", "time"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true

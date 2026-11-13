@@ -1,0 +1,43 @@
+kind: helper
+name: provider-params-drop-params
+call:
+  provider_params:
+    steps:
+      - function: map_parameters
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: gpt-4o
+          config: gpt
+          capabilities: [catalog_model]
+        parameters:
+          reasoning_effort: low
+          temperature: 0.5
+          vendor_flag: {a: 1}
+        policy:
+          drop_params: true
+      - function: map_parameters
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: gpt-4o
+          config: gpt
+          capabilities: [catalog_model]
+        parameters:
+          temperature: 0.5
+          vendor_flag: {a: 1}
+        policy:
+          additional_drop_params: [temperature, vendor_flag]
+      - function: map_parameters
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: gpt-4o
+          config: gpt
+          capabilities: [catalog_model]
+        parameters:
+          reasoning_effort: low
+        policy:
+          additional_drop_params: [reasoning_effort]
+env: {}
+compare: {ignore: []}

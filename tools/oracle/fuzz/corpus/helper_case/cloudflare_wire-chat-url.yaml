@@ -1,0 +1,8 @@
+kind: helper
+name: cloudflare-wire-chat-url-seed
+call:
+  b5836:
+    chat_urls:
+      - {api_base: null, env: {CLOUDFLARE_ACCOUNT_ID: acct}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-a-deepinfra
+call:
+  provider_defaults_a:
+    provider: deepinfra
+    model: meta-llama/Meta-Llama-3-70B
+env: {}
+compare: {ignore: []}

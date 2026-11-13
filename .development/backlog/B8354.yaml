@@ -1,0 +1,14 @@
+id: B8354
+milestone: M12 python
+title: Router call type table and generic branches
+status: todo
+depends_on: [B016, B303, B310, B1058, B2489, B3273, B370, B6021, B6460, B7430, B903]
+file: tasks/B8354-router-call-types.yaml
+covers:
+  - "litellm/router.py"
+parent: B162
+split_from: B162
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

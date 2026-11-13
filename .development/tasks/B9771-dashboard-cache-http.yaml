@@ -1,0 +1,102 @@
+id: B9771
+title: Exercise response-cache and coordination Redis forms against running proxies
+description: >-
+  Cover the caching page's requests identified in B150-route-audit.md without moving B4307,
+  B4308, B4309, B8502 or B1653 route ownership. B8650 mounts the response-cache routes and
+  B8482 mounts B3099's cache-activity read. Existing planned cache cases check no-database,
+  marker restoration and failure paths; they do not submit the UI's omitted-secret forms
+  to a live database. No matching HTTP corpus exists on disk at planning time.
+
+  Create multi-step B1630 cases using B860/B5076 databases and B1653's typed redis_url fixture,
+  isolated per gateway. Redis success must reach this disposable server, never a developer's
+  REDIS_HOST. Enable general_settings.store_model_in_db for saves; ordinary tests use the
+  existing master-key/fixture-role authentication. Keep config defaults with the route owners.
+  GET /cache/settings has no query and reads current_values. POST /cache/settings/test and
+  POST /cache/settings wrap the selected fields in cache_settings. Reproduce cacheSettingsUtils:
+  blank strings and untouched secrets are absent, numeric controls are numbers, node controls
+  become arrays and booleans remain explicit. Include url or host/port/db as the selected mode
+  dictates, ssl/ssl_cert_reqs/ssl_check_hostname, username/password, namespace, ttl and
+  max_connections. Cluster/sentinel selections use redis_startup_nodes, sentinel_nodes,
+  service_name and sentinel_password; GCP fields are gcp_service_account/gcp_ssl_ca_certs.
+  A semantic save selects type=redis-semantic with similarity_threshold,
+  redis_semantic_cache_embedding_model and semantic_cache_scope, but its Test button still
+  sends type=redis. Exercise that difference with supported local Redis config; topology-only
+  fields can use the existing controlled connection-failure response rather than requiring a
+  fabricated cluster. Keep the complete exact form body even in the failed-probe case.
+
+  Save, refetch and edit a previously configured password without retyping it. The request
+  omits password, unlike B1653's echoed-redaction-marker case; observe the real stored/read
+  result rather than assuming all settings APIs preserve omissions. GET /cache/ping then
+  consumes status,cache_type,ping_response,set_cache_response,litellm_cache_params and
+  health_check_cache_params. Compare secret redaction and error.message when a probe fails.
+  The cache-settings test reports status=success; this must not be confused with coordination.
+
+  GET /coordination_redis/settings returns values and source. POST this path and POST
+  /coordination_redis/settings/test use settings, not cache_settings. Exercise url then the
+  host/port/username/password/ssl projection, blank-password omission, and parsed startup_nodes
+  or sentinel_nodes/service_name/sentinel_password. The test response uses healthy/unhealthy
+  and can be HTTP 200 on connection failure. Save returns success with a restart requirement;
+  do not pretend that an immediate GET /cache/ping tests a newly installed coordination client.
+
+  The activity tab GETs /global/activity/cache_hits with start_date/end_date as YYYY-MM-DD.
+  Empty filter arrays disappear from the URL; selected key_aliases and models are repeated
+  query keys, not comma-joined values. Supply two values for each and an inclusive date pair.
+  Check groups,totals,filter_options and error_breakdown, including their empty collection
+  shapes against an empty fixture DB. Populated aggregation is already B3099's SQL fixture
+  responsibility; this task does not invent daily-spend seed fields. The embedding selector
+  uses fetchAvailableModels, GET /model_group/info with no query, reading data[].model_group
+  and filtering mode=embedding; reuse B9735's populated model-group case. It does not mount
+  ModelSelect or call /v2/user/info. About 650 authored case lines are expected;
+  no new cache client, binary parser, fixture implementation or callback is introduced.
+scope:
+  paths:
+    - tools/oracle/cases/ui/cache-settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/caching/_components/cache_settings/cacheSettingsUtils.ts#L51-L102
+    why: Visible cache fields, secret omission, node lists and type selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3180-L3260
+    why: Separate cache_settings and settings wrappers for the two Redis forms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/caching/useCacheActivity.ts#L15-L32
+    why: Date and repeated-filter query construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L442-L675
+    why: All three response-cache decorators and their existing route owners.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L26-L119
+    why: The /cache prefix and ping decorator with its response fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/coordination_redis_endpoints.py#L292-L441
+    why: Dedicated Redis settings source, restart-only save and disposable probe routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/analytics_endpoints/analytics_endpoints.py#L25-L61
+    why: Authenticated cache activity handler accepts the page's date and list query parameters.
+dod:
+  - text: The cache tabs submit their distinct form projections, save/read through real storage and report the correct live probe envelopes.
+    proof: [cache-form-cases, oracle]
+  - text: Activity dates and repeated selections reach the mounted handler and preserve its collection, error and authorization contracts.
+    proof: [cache-form-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: cache-form-cases
+      why: Redis helper tests pass without any request that the dashboard actually emits.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/cache-settings)"
+oracle_cases:
+  - tools/oracle/cases/ui/cache-settings/redis-save-edit-and-ping.yaml
+  - tools/oracle/cases/ui/cache-settings/semantic-test-versus-save-type.yaml
+  - tools/oracle/cases/ui/cache-settings/cluster-and-sentinel-form-probes.yaml
+  - tools/oracle/cases/ui/cache-settings/coordination-source-save-and-test.yaml
+  - tools/oracle/cases/ui/cache-settings/coordination-omitted-secret-edit.yaml
+  - tools/oracle/cases/ui/cache-settings/activity-empty-and-repeated-filters.yaml
+  - tools/oracle/cases/ui/cache-settings/viewer-probe-and-save-permissions.yaml
+  - tools/oracle/cases/ui/management-selectors/model-groups-for-router-fallbacks.yaml
+deviations: []
+out_of_scope:
+  - B9090 retains all cache components, layouts and field converters, while B4307/B4308/B4309/B8502/B8650 supply the existing response-cache API.
+  - B1653 owns coordination handlers and Redis fixture lifetime; B3099/B8482 own activity aggregation and its mount, including populated SQL fixtures.
+  - B060 owns model-group metadata and B9735 covers the unscoped embedding selector request.
+pitfalls:
+  - The coordination form sends startup_nodes but the response-cache form sends redis_startup_nodes.
+  - HTTP 200 with status=unhealthy is a probe result, not evidence that a Redis connection succeeded.
+  - A saved coordination configuration must not be mistaken for an immediately replaced runtime cache.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

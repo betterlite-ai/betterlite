@@ -1,0 +1,178 @@
+id: B8806
+title: Oracle helper groups as crates, the redact group first
+description: >-
+  Why. The oracle crate (tools/oracle, package betterlite-oracle) holds every helper group in one crate of about
+  120,000 lines that needs 48 other workspace crates. A task that edits one helper file makes clippy and the test
+  build go through all of it. Each helper group becomes its own small crate, so a change in one group lints and
+  builds that group. This task builds the shared pieces and moves the first and smallest group, redact. The other 45
+  groups stay as they are and follow in later tasks, so nothing here may depend on all groups moving.
+
+
+  The shared crate. Create package betterlite-oracle-helper-api in tools/oracle/helper-api (Cargo.toml, src/lib.rs
+  and modules as needed). It is a leaf: it depends on no other workspace crate. Move into it, from
+  tools/oracle/src/helpers/mod.rs, the `Helper` trait with its `decode_and_run`, `check` and `not_built` default
+  methods, the `HelperResult` type and the `Group` struct, and from tools/oracle/src/compare/helper.rs the
+  `HelperError` struct and the `ErrorCode` enum with their serde attributes unchanged. Everything a group crate
+  touches is `pub` there, fields included. It also exports a `helper_group!` macro with the same call syntax as the
+  one in helpers/mod.rs today (`"operation" => module` pairs). Called at the root of a group crate it declares the
+  operation modules, defines `pub const GROUP: Group` with the same `invoke` and `check` matches, and makes the paths
+  `crate::helpers::Helper`, `crate::helpers::HelperResult` and `crate::helpers::HelperError` resolve inside that
+  crate. That last part is the point of the design: operation files moved into a group crate compile without an edit,
+  and so do files that tasks running right now are still writing against the old paths.
+
+
+  The oracle crate keeps working for the 45 groups that stay. tools/oracle/src/helpers/mod.rs keeps its own
+  `helper_group!` for them, and `Helper`, `HelperResult`, `Group` and `HelperError` there become the shared crate's
+  types, re-exported under the names and visibility they have now. tools/oracle/src/compare/helper.rs re-exports
+  `HelperError` and `ErrorCode` the same way, so `crate::compare::helper::HelperError` and every other existing path
+  in the oracle crate still resolves and no file outside this task's scope changes. The JSON a helper prints stays
+  byte for byte the same.
+
+
+  The group crate. Create package betterlite-oracle-redact in place, in tools/oracle/src/helpers/redact, so no
+  operation file moves: add tools/oracle/src/helpers/redact/Cargo.toml with `[lib] path = "lib.rs"`, and move
+  tools/oracle/src/helpers/redact.rs to tools/oracle/src/helpers/redact/lib.rs with `git mv`, where it calls the
+  shared macro with the same three pairs (redaction, sentry_scrubbing, structured_redaction). Its dependencies are
+  betterlite-oracle-helper-api, betterlite-redact and the serde crates its files use, never betterlite-oracle. The
+  three operation files redaction.rs, sentry_scrubbing.rs and structured_redaction.rs stay byte for byte as they are;
+  a check enforces that. List both new packages by path in the root Cargo.toml `members` (the `tools/*` glob doesn't
+  reach them). In helpers/mod.rs drop `mod redact;` and take the redact entry of `GROUPS` from the new crate, in the
+  same position, and add both crates to tools/oracle/Cargo.toml.
+
+
+  The group's tests stay with the group. redaction/tests.rs and structured_redaction/tests.rs keep their test
+  functions (`matches_pinned_redaction`, `matches_pinned_masking`) and call the oracle's runner through a
+  dev-dependency on betterlite-oracle: Cargo allows a dev-dependency back on a crate that depends on this one, and
+  `cargo metadata` resolves this exact layout. For that, tools/oracle/src/lib.rs declares `pub mod helpers;` and
+  helpers/mod.rs makes `run_case` and `HelperRun` `pub`; nothing else gets wider. The tests then import
+  `betterlite_oracle::case::HelperCase` and `betterlite_oracle::helpers::{HelperRun, run_case}`. The rstest `#[files]`
+  glob is read from the manifest folder of the crate that holds the test, so each of the two tests adds
+  `#[base_dir = "../../.."]` and keeps its glob (`cases/helpers/redaction/*.yaml`,
+  `cases/helpers/structured-redaction/*.yaml`). The case files don't move. sentry_scrubbing has no tests.rs today and
+  gets none here; its cases run through the oracle check.
+
+
+  Lints. Both new crates inherit the workspace lints (`[lints] workspace = true`). The exceptions that
+  tools/oracle/src/lib.rs carries today for helper code (`clippy::disallowed_types` at the crate root, and
+  `clippy::mod_module_files`, `clippy::disallowed_methods`, `clippy::absolute_paths` and `clippy::map_err_ignore` on
+  `mod helpers`) don't reach a new crate, so each new crate root repeats, with a reason, only the ones that fire in
+  it. An `#[expect]` that never fires is itself an error. The budget allows 4 new expect attributes for this: one
+  attribute may list several lints.
+
+
+  Nothing a helper case can observe changes: same operations, same inputs, same output, same case files. No test is
+  deleted and no operation is renamed.
+scope:
+  paths:
+  - "tools/oracle/src/helpers/tests.rs"
+  - "tools/oracle/src/helpers/openai/workload_identity.rs"
+  - "tools/oracle/src/helpers/openai/credentials.rs"
+  - "tools/oracle/src/helpers/mcp/b4654.rs"
+  - "tools/oracle/src/helpers/context/local_ttl_cache/dual.rs"
+  - "tools/oracle/src/helpers/config/b3900.rs"
+  - "tools/oracle/src/helpers/azure/arc_identity.rs"
+  - "tools/oracle/src/helpers/server/assets.rs"
+  - "tools/oracle/src/helpers/redis/b4329/operations.rs"
+  - "tools/oracle/src/helpers/openai/provider_base_helpers.rs"
+  - "tools/oracle/src/helpers/openai/b3360.rs"
+  - "tools/oracle/src/helpers/mcp/b4654/support.rs"
+  - "tools/oracle/src/helpers/logging/private_json.rs"
+  - "tools/oracle/src/helpers/context/local_ttl_cache.rs"
+  - "tools/oracle/src/helpers/context/cloud_storage.rs"
+  - "tools/oracle/src/case.rs"
+  - Cargo.toml
+  - tools/oracle/Cargo.toml
+  - tools/oracle/helper-api/**
+  - tools/oracle/src/lib.rs
+  - tools/oracle/src/compare/helper.rs
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/redact.rs
+  - tools/oracle/src/helpers/redact/Cargo.toml
+  - tools/oracle/src/helpers/redact/lib.rs
+  - tools/oracle/src/helpers/redact/redaction/tests.rs
+  - tools/oracle/src/helpers/redact/structured_redaction/tests.rs
+  lint_tables: false
+references:
+- url: https://doc.rust-lang.org/cargo/reference/workspaces.html#the-members-and-exclude-fields
+  why: A workspace member is listed by path, and the tools/* glob matches only direct children of tools.
+- url: https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-path-field
+  why: "`[lib] path` lets the group crate keep its files where they are instead of under src/."
+- url: https://doc.rust-lang.org/cargo/reference/specifying-dependencies.html#development-dependencies
+  why: Dev-dependencies are used only by tests, so the group's tests may depend on the crate that depends on the group.
+- url: https://docs.rs/rstest/0.27.0/rstest/attr.rstest.html#files-path-as-input-arguments
+  why: "`#[base_dir]` moves the folder a `#[files]` glob starts from, relative to the crate root."
+- url: https://doc.rust-lang.org/reference/macros-by-example.html#path-based-scope
+  why: "`#[macro_export]` and `$crate` are how the shared crate hands `helper_group!` to the group crates."
+dod:
+- text: >-
+    betterlite-oracle-helper-api and betterlite-oracle-redact are workspace packages at tools/oracle/helper-api and
+    tools/oracle/src/helpers/redact, the shared crate depends on no workspace crate, the redact crate doesn't depend
+    on betterlite-oracle outside its tests, tools/oracle/src/helpers/redact.rs is gone and the three operation files
+    are unchanged.
+  proof:
+  - crate-layout
+- text: The redact group's own tests run in betterlite-oracle-redact and match the pinned LiteLLM answers.
+  proof:
+  - redact-tests
+- text: >-
+    The oracle still decodes and runs every registered operation, the redact ones through the new crate, and the
+    redaction, structured-redaction and sentry-scrubbing cases still match LiteLLM.
+  proof:
+  - registry-tests
+  - oracle
+- text: Both new crates pass the workspace lints, the dependency policy and the unused-dependency check.
+  proof:
+  - clippy
+  - deny
+  - shear
+  - hooks
+checks:
+  optional: []
+  commands:
+  - id: crate-layout
+    why: a new package is missing or in the wrong folder, the shared crate or the redact crate depends on a crate it must not, the old group file is still there, or an operation file was edited
+    run: >-
+      test ! -e tools/oracle/src/helpers/redact.rs &&
+      test -z "$(git diff --name-only "$GATE_BASE" -- tools/oracle/src/helpers/redact/redaction.rs tools/oracle/src/helpers/redact/sentry_scrubbing.rs tools/oracle/src/helpers/redact/structured_redaction.rs)" &&
+      cargo metadata --locked --offline --no-deps --format-version 1 | jq -e '
+      (.packages | map(select(.name == "betterlite-oracle-helper-api")) | first) as $api |
+      (.packages | map(select(.name == "betterlite-oracle-redact")) | first) as $redact |
+      (.packages | map(select(.name == "betterlite-oracle")) | first) as $oracle |
+      ($api.manifest_path | endswith("/tools/oracle/helper-api/Cargo.toml")) and
+      ($redact.manifest_path | endswith("/tools/oracle/src/helpers/redact/Cargo.toml")) and
+      ([$api.dependencies[] | select(.name | startswith("betterlite"))] | length == 0) and
+      ([$redact.dependencies[] | select(.kind == null) | .name] | (index("betterlite-oracle-helper-api") != null) and (index("betterlite-oracle") == null)) and
+      ([$oracle.dependencies[] | select(.kind == null) | .name] | (index("betterlite-oracle-helper-api") != null) and (index("betterlite-oracle-redact") != null))'
+  - id: redact-tests
+    why: the redact group's tests are missing from its crate or no longer match the pinned LiteLLM answers
+    run: >-
+      list=$(cargo nextest list --locked -p betterlite-oracle-redact -E 'test(/::tests::/)' --message-format oneline) &&
+      for name in redaction::tests::matches_pinned_redaction structured_redaction::tests::matches_pinned_masking; do grep -q "$name" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+      cargo nextest run --locked -p betterlite-oracle-redact --no-tests=fail -E 'test(/^redaction::tests::/) | test(/^structured_redaction::tests::/)'
+  - id: registry-tests
+    why: the oracle's registry no longer decodes or runs an operation after the redact group left the crate
+    run: >-
+      test -f tools/oracle/src/helpers/redact/lib.rs &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::tests::/) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/redaction
+- tools/oracle/cases/helpers/structured-redaction
+- tools/oracle/cases/helpers/sentry-scrubbing
+deviations: []
+out_of_scope:
+- The other 45 helper groups stay modules of betterlite-oracle. Later tasks move them one group at a time with the pieces this task builds.
+- The helper runner (run_case, run_pair, invoke, the answer cache and the Python side) stays in betterlite-oracle.
+- HelperOutput, HelperWarning, HelperEffect and ManagementEffectFields stay in tools/oracle/src/compare/helper.rs, since no group code names them.
+- Case files, the Python adapters under tools/oracle/helpers and the fuzz crate don't change.
+pitfalls:
+- "The operation files write full paths (`impl crate::helpers::Helper for Op`, `Box<crate::helpers::HelperError>`), so the macro has to give the group crate a real `crate::helpers` module; a `use` at the crate root isn't enough."
+- "`Op` and `Input` in the operation files are `pub(crate)`. A `pub const GROUP` built from plain `fn` pointers doesn't expose them, so they need no change."
+- "`HelperError` uses `serde_with::rust::double_option` for type, param and code. The shared crate needs serde_with with the features tools/oracle/Cargo.toml turns on, or absent and null stop being told apart."
+- "tools/oracle/Cargo.toml lists `src/helpers/*/*.rs` under `[package.metadata.cargo-shear] ignored-paths`, since cargo shear can't see modules a macro declares. The redact crate declares its modules through the same macro, so check what `cargo shear` says about its files and give it the same kind of entry if it needs one."
+- "A package named betterlite-oracle-fuzz already exists (tools/oracle/fuzz). `-p betterlite-oracle` still selects only the oracle crate, and a jq or grep test on package names has to compare the whole name."
+- "`cargo nextest run -p betterlite-oracle-redact` builds betterlite-oracle as a dependency, so the first run takes as long as an oracle build."
+- "helpers/mod.rs holds 46 `mod` lines and a `GROUPS` array of 46; the array stays at 46 entries in the same order, with only the redact entry coming from the new crate."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 4
+review_level: standard

@@ -97,50 +97,50 @@ checks:
   commands:
     - id: message-parsing-tests
       why: _as_str_object_dict, _as_object_list and _safe_response_text tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_message_parsing::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_message_parsing::/)'
     - id: protection-tests
       why: _protected_indices tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_protected_indices::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_protected_indices::/)'
     - id: truncation-tests
       why: _truncate_for_state tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_truncation::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_truncation::/)'
     - id: instruction-tests
       why: _question_instructions tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_instructions::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_instructions::/)'
     - id: tool-extraction-tests
       why: _tool_call_entry and _tool_call_entries tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_tool_extraction::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_tool_extraction::/)'
     - id: candidate-selection-tests
       why: _candidate_exchanges tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_candidate_exchanges::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_candidate_exchanges::/)'
     - id: text-extraction-tests
       why: _exchange_tool_text tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_text_extraction::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_text_extraction::/)'
     - id: state-building-tests
       why: _build_state tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_state_building::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_state_building::/)'
     - id: api-call-tests
       why: _call_systemone tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_api_call::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_api_call::/)'
     - id: failure-handling-tests
       why: _handle_failure tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_failure_handling::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_failure_handling::/)'
     - id: config-tests
       why: TypeSafeGuardrailConfigModel and ui_friendly_name tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe_config::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^typesafe::(.*::)?typesafe_config::/)'
 
 oracle_cases: []
 
 deviations:
   - what: >-
       TypeSafe integration does not implement __init__, apply_guardrail or get_config_model in this task.
-      Those functions remain in the final assembly (B108) which may depend on this task's helpers. The
+      Those functions remain in the final assembly (B9461) which may depend on this task's helpers. The
       separation preserves modularity: helpers and orchestration are independent, while the orchestrator
       method depends on both.
     why: >-
       The outline allocates __init__, apply_guardrail and get_config_model to the final assembly to avoid
       a circular dependency: apply_guardrail calls the helpers owned here, but gets registered as a guardian
-      hook by the initializer owned in B108. Rust forces this split more sharply than Python.
+      hook by the initializer owned in B9461. Rust forces this split more sharply than Python.
   - what: >-
       The protected-indices expansion is computed from LiteLLM's get_protected_indices, which will be provided by
       B005 (compression module). Until that task is merged, protected_indices calls a stub that returns empty.
@@ -157,7 +157,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L53-56
 
 out_of_scope:
-  - __init__, apply_guardrail and get_config_model, owned by the final assembly B108.
+  - __init__, apply_guardrail and get_config_model, owned by the final assembly B9461.
   - Configuration resolution and environment variable lookup, owned by B002.
   - HTTP client provisioning and pooling, owned by B173.
   - Tool-exchange grouping, owned by B224 (group_tool_exchanges is injected).

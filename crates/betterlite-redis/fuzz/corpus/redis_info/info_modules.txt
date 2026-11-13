@@ -1,0 +1,3 @@
+# Modules
+module:name=search,ver=20805,api=1,filters=0,usedby=[],using=[],options=[]
+module:name=ReJSON,ver=20803,api=1,filters=0,usedby=[],using=[search],options=[]

@@ -4,8 +4,8 @@ description: >-
   Extract the read-only agent lookup and rate-limit error context into lower services consumed by the session hook.
 
   Build betterlite-auth::agent_service with `get_agent_by_id(registry: &AgentRegistry, id: &str) -> Option<AgentRef>`
-  checking exact ID first, then legacy ID mapping. Accept an injected registry view carrying a list of agent entries
-  (agent_id, litellm_params) plus a separate legacy_id_map: HashMap<String, String>.
+  checking exact ID first, then legacy ID mapping. The registry is B4776's AgentRegistry (crates/betterlite-auth/src/agent_registry), passed in by reference
+  and read through its own get_agent_by_id and legacy id map; define no second registry type or view.
 
   Add betterlite-auth::provider_resolution module with `resolve_rate_limit_provider(model: Option<&str>) -> (String, String)`
   that attempts `B174::get_llm_provider(model)` first, falls back to router `model_list` alias scanning for deployments
@@ -19,9 +19,10 @@ description: >-
   Add `_coerce_message(detail: &dyn Any) -> String` that stringifies error objects by attempting JSON serialization,
   extracting "error" or "message" keys from mappings, and falling back to Display when JSON fails.
 
-  Use betterlite-server state to access the optional router for alias resolution. Never depend on agent feature assembly or
+  Take the optional router for alias resolution as an injected dependency. Never depend on agent feature assembly or
   the v3 rate limiter policy; inject the agent registry and router as dependencies. The ProxyRateLimitError Prometheus
   exception_class_name stays "HTTPException" to preserve existing dashboard labels.
+  This task adds no server state, so leave state.rs to B1100.
 
 scope:
   paths:
@@ -31,7 +32,6 @@ scope:
     - crates/betterlite-auth/src/provider_resolution/**
     - crates/betterlite-error/src/rate_limit.rs
     - crates/betterlite-error/src/rate_limit/**
-    - crates/betterlite-server/src/state.rs
     - tools/oracle/cases/rate-limit/**
     - tools/oracle/helpers/b3017.py
     - tools/oracle/helpers/b3017/**
@@ -160,14 +160,14 @@ deviations:
       Agent registry is accepted as a read-only injected view,
       not as a mutable registry with DB access or cache population.
     why: >-
-      Registry mutation, database reads and startup population are responsibilities of B141 (agent feature owner).
+      Registry mutation, database reads and startup population are not built here; B8590 through B8612 loads config agents and B8384 loads database agents at startup.
       B3017 consumes an already-populated registry snapshot to support rate-limit context in session hooks.
 
 out_of_scope:
-  - Agent registry mutation, database loading or cache population (B141).
-  - Agent route definitions, dispatch or pre-call hook assembly (B141).
-  - Rate limiter policy, admission decisions or v3 limiter internals (B072).
-  - The full rate limiter implementations that call ProxyRateLimitError (B3007, B072).
+  - Agent registry mutation, database loading or cache population (B8590 through B8612 for config agents, B8384 for database agents).
+  - Agent route definitions (B4784 to B4787, B8647), dispatch (B8589) or pre-call hook assembly.
+  - Rate limiter policy (B3040), admission decisions and limiter assembly (B3055, B5660) or v3 limiter internals.
+  - The full rate limiter implementations that call ProxyRateLimitError (B3007, B3040, B3055).
   - The other LiteLLM rate limiter utility functions convert_priority_to_percent and map_v3_rate_limit_type.
 
 pitfalls:

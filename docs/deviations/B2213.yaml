@@ -1,0 +1,5 @@
+task: B2213
+deviations:
+  - what: The Token request error text for a rejected token reply replaces the key file secret and the reply's access_token value with [redacted] when the reply body is valid JSON that carries them.
+    why: MSAL puts response.text into the error unchanged, which can echo the Authorization secret or a token into logs and error bodies; betterlite never shows a secret.
+    link: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.37.0/msal/managed_identity.py#L695-L700

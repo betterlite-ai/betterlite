@@ -1,0 +1,10 @@
+task: B2324
+deviations:
+  - what: >-
+      Encoded resource IDs above 65536 bytes or decoded payloads above 49152 bytes yield no model
+      hint and one DEBUG record.
+    why: >-
+      The external decoder needs a bound. native_resource_hint_limits proves the size fallback for
+      both resource kinds, and the no-hint answer matches what the unbounded decoder gives when it
+      finds no provider or model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L59-L115

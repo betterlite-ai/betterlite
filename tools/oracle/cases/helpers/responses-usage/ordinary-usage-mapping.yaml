@@ -1,0 +1,7 @@
+kind: helper
+name: responses-usage-ordinary-usage-mapping
+call:
+  responses_usage:
+    usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 99, custom: 7}
+env: {}
+compare: {ignore: []}

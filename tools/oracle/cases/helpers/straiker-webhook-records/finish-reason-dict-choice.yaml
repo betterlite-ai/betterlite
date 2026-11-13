@@ -1,0 +1,14 @@
+kind: helper
+name: finish-reason-dict-choice
+call:
+  b3795:
+    finish_reason:
+      response:
+        choices:
+          - index: 0
+            finish_reason: null
+            stop_reason: max_tokens
+          - index: 1
+            finish_reason: tool_calls
+env: {}
+compare: {ignore: []}

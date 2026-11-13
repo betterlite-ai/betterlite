@@ -26,7 +26,6 @@ description: >-
   170 tests, 90 adapters and 90 fuzz lines within 700.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,vertex_fine_tuning}.rs
     - crates/betterlite-vertex/src/vertex_fine_tuning.rs
     - crates/betterlite-vertex/src/vertex_fine_tuning/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

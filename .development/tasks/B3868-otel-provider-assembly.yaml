@@ -2,8 +2,9 @@ id: B3868
 title: OTel provider assembly and legacy initialization
 description: >-
   Assemble tracer, meter and logger providers from already-built exporters and processor policies, including tenant/operator suppression filters. Construct the legacy OpenTelemetry logger's initialization, reuse-or-create provider semantics, and global-publication behavior to match LiteLLM.
-  Cover the OpenTelemetry class initialization that configures capture modes, caches, and metric attribute filters; the _init_otel_logger_on_litellm_proxy method that registers the logger and guards against overwrite; the _get_or_create_provider orchestration that reuses existing global providers, creates new ones when needed, and respects skip_set_global for isolation; and the _init_tracing, _init_metrics, _init_logs factory methods that build TracerProvider with span processors, MeterProvider with metric readers, and LoggerProvider with log processors. Also build build_tracer_provider, which assembles providers from exporter specs, adds baggage processors for identity attributes, applies tenant overrides and operator scoping through _OverriddenBackendFilter, and gates headers-required exporters.
+  Cover the OpenTelemetry class initialization that applies the baggage key overrides and configures capture modes and the provider caches; the _init_otel_logger_on_litellm_proxy method that registers the logger and guards against overwrite; the _get_or_create_provider orchestration that reuses existing global providers, creates new ones when needed, and respects skip_set_global for isolation; and the _init_tracing, _init_metrics, _init_logs factory methods that build TracerProvider with span processors, MeterProvider with metric readers, and LoggerProvider with log processors. Also build build_tracer_provider, which assembles providers from exporter specs, adds baggage processors for identity attributes, applies tenant overrides and operator scoping through _OverriddenBackendFilter, and gates headers-required exporters.
   The legacy logger shares opentelemetry.py with B3854/B3855/B3857/B3859, so scope paths name only the ranges in that file owned by B3868; other tasks' ranges in the same file stay out of scope.
+  The init takes no `attributes` input and never reads OpenTelemetryConfig.attributes. In LiteLLM's __init__ the `attributes` setting (L395, L402-L403) and the metric attribute filter fields with their eager resolution (L407-L415) belong to the metric recorder: the code that builds the logger copies the setting into OpenTelemetryConfig.attributes and builds the filter before it calls this init, so a bad otel.attributes still fails before any provider is built or the logger is registered.
 scope:
   paths:
     - crates/betterlite-logging/src/otel_provider_assembly.rs
@@ -15,7 +16,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L105-L107
     why: LITELLM_TRACER_NAME, LITELLM_METER_NAME, LITELLM_LOGGER_NAME with env var overrides
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L381-L445
-    why: OpenTelemetry class declaration and __init__ with config customization, metric attribute filter, provider caching, and initialization of all three provider types
+    why: OpenTelemetry class declaration and __init__ with the baggage key overrides, provider caching and initialization of all three provider types; L395, L402-L403 and L407-L415 (attributes setting and metric filter) are out of scope
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L478-L585
     why: _init_otel_logger_on_litellm_proxy service callback registration, _get_or_create_provider generic orchestration with fallback creation, and _skip_set_global check for langfuse_otel
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L639-L754
@@ -37,8 +38,6 @@ dod:
     proof: [provider-init-tests]
   - text: _init_otel_logger_on_litellm_proxy adds the logger to litellm.service_callback unless already present, and sets proxy_server.open_telemetry_logger only if not already set (first-registered-wins).
     proof: [provider-init-tests]
-  - text: Metric attribute filter initialization is deferred to first record unless config.attributes is set explicitly, in which case _ensure_metric_attribute_filter resolves it at construction.
-    proof: [provider-init-tests]
   - text: Every mutant in provider assembly is caught by a test.
     proof: [mutants]
 checks:
@@ -46,24 +45,22 @@ checks:
   commands:
     - id: provider-init-tests
       why: provider assembly and initialization tests fail, do not exist, or have snapshots that were not accepted
-      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_provider_assembly::/) or test(/^legacy_otel_init::/) or test(/^tracer_provider_assembly::/)' --
+      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_provider_assembly::/) or test(/^otel_provider_assembly::(.*::)?legacy_otel_init::/) or test(/^otel_provider_assembly::(.*::)?tracer_provider_assembly::/)' --
     - id: provider-init-behavior
       why: the legacy logger does not reuse global providers correctly
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^opentelemetry_legacy_provider::/)' --
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel_provider_assembly::(.*::)?opentelemetry_legacy_provider::/)' --
 oracle_cases: []
 deviations:
   - what: OTel provider assembly uses static resource configuration, not environment auto-discovery at every initialization call.
     why: B2 configures resource once at startup. OTel auto-discovery via OTELResourceDetector would fire repeatedly in multi-tenant fanout. The resource is attached to providers at build time and reused.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L447-L464
-  - what: Metric attribute filtering is opt-in via explicit config or env var, not auto-applied to every metric. betterlite resolves early if config is explicit, to fail fast on bad config.
-    why: LiteLLM resolves the filter lazily to preserve callback_settings edits before the first metric record. Early resolution makes config errors visible at startup instead of hiding them until the first metric record.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L404-L415
 out_of_scope:
   - Behavior inside span processors, metric readers or log exporters. B3848/B3849 own those.
   - Behavior inside individual exporter creation (_exporter_from_spec, _processor_for). B3848 owns those callees.
   - Span attribute mapping and injection (owned by B3844, B3845, B3846). Provider init does not do mapping.
   - Metrics recording (owned by B3869). Provider init only creates the instruments; recording happens elsewhere.
   - Event log recording (owned by B3857). Provider init only creates the logger and batch processor.
+  - "The `attributes` setting and the metric attribute filter state in __init__ (L395, L402-L403, L407-L415): B3857 builds the filter and resolves it at construction when OpenTelemetryConfig.attributes is set; B8746's legacy arms build it before they call this init."
   - The service callback dispatch loop. B189 owns service_callback registration and iteration.
 pitfalls:
   - "The OrderedDict for _tracer_provider_cache requires a bounded size limit (_max_dynamic_tracer_providers) to prevent unbounded memory growth when many tenants request unique providers. Evict LRU entries when the cache fills."
@@ -74,6 +71,7 @@ pitfalls:
   - "The tenant_overrides flag in build_tracer_provider only applies _OverriddenBackendFilter when owner is not None; a per-tenant provider built from the same config must pass tenant_overrides=false to avoid double-filtering (the filter exists to skip delivery, not to suppress reception)."
   - "Thread safety: _tracer_provider_cache_lock guards the cache in dynamic provider reuse; do not hold it across I/O (exporter creation, resource build)."
   - "Provider.add_span_processor is not thread-safe across concurrent provider builds. Serialize provider construction per tenant if needed."
+  - "Call B3855's legacy_resource, legacy_tracer_name(env), LegacyExporterBuilder::span_processor, log_exporter, metric_reader and the three plan functions; do not rebuild them."
 review_level: standard
 budget:
   max_changed_lines: 1500

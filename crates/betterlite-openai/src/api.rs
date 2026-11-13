@@ -1,6 +1,7 @@
 pub mod audio_file_input;
 pub mod audio_subtitles;
 pub mod batch_records;
+pub mod container_contracts;
 pub mod file_type_records;
 pub mod image_contracts;
 pub mod rerank_contracts;

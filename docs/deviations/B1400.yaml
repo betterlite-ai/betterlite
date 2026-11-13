@@ -1,0 +1,16 @@
+task: B1400
+deviations:
+  - what: Refresh and discovery failures name the stage and the HTTP status but carry neither the response body nor the rejected endpoint URL.
+    why: A response body or a URL from a token endpoint can hold tokens or codes, and error text reaches logs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L356-L359
+  - what: Endpoint checks parse the URL with WHATWG rules, so a URL that parses in Python but not here (a port above 65535, for example) is rejected.
+    why: The request is sent with the same parser, and one parser for the check and the request leaves no gap between them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L287-L292
+  - what: An expires_at string that spells inf, infinity or nan counts as unconvertible, so the token is expired.
+    why: Python float() accepts those words and the comparison then never reports expiry, which keeps a dead token in use forever.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L256-L263
+  - what: >-
+      Documents above 1 MiB are rejected and a non-UTF-8 auth file reads as no login; transport, non-object discovery
+      and write failures are typed XaiOauthError values, while LiteLLM lets those exceptions escape as a 500.
+    why: A fixed bound caps allocation, and a typed failure keeps the authentication envelope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L265-L276

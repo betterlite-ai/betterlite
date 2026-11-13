@@ -1,0 +1,290 @@
+id: B5115
+title: Cohere re-raise answer and native error clause order tests
+description: >-
+  B241 ported LiteLLM's Cloudflare, Cohere, Hugging Face and AI21 error mappers into
+  crates/betterlite-error/src/native_errors_a/. An Opus review after merge found one test that can't
+  fail and three mappers whose clause order no test pins. The B242 planner found one behavior gap in
+  the Cohere re-raise. This task fixes them in that module, in the native_errors_a oracle adapter and
+  in the native-errors-a case folder. native.rs, dispatch.rs and the Rust oracle adapter don't change.
+
+
+  Gap one. LiteLLM's _map_cohere_exception re-raises the original exception when no clause matches
+  and the exception has no status_code
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1474-L1483).
+  exception_type sets exception_mapping_worked to False before the provider chain and never sets it
+  on the Cohere arm
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2560-L2569).
+  So its outer handler turns the re-raise into APIConnectionError with llm_provider "" and model ""
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2711-L2737).
+  APIConnectionError always has status 500
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L853-L872).
+  It hands the openai base class no body, so type and param are None
+  (https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_exceptions.py#L48-L80,
+  https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_exceptions.py#L107-L109).
+  map_cohere_exception in cohere.rs returns ErrorClass::Unclassified there today, with model and
+  provider None. Its metadata writes type and param as the string "None" and model and provider as
+  null. The fix returns Some(ErrorClass::ApiConnection) with model Some(String::new()) and provider
+  Some(String::new()). That is the identity unmappable_identity in dispatch.rs already builds for the
+  same outer handler, and the one B5113 uses for Aleph Alpha. The message stays error_str. This
+  copies a fallback LiteLLM chose on purpose, so it needs no deviation. The Outcome variant and the
+  two comments that call this path Unclassified are renamed to say it is the outer handler's answer.
+  In cohere/tests.rs, totally_unmatched_input_is_unclassified and
+  unclassified_carries_the_raw_message_and_no_identity pin the wrong answer. One test,
+  unmatched_input_answers_the_outer_api_connection, replaces both. It passes model
+  Some("command-r") and asserts ApiConnection with the raw message, model Some(""), provider Some("")
+  and metadata status 500 with type and param WireField::Null.
+
+
+  Gap two. The oracle adapter hides gap one. _run_cohere in tools/oracle/helpers/native_errors_a.py
+  catches the re-raised _ProviderCauseError and returns _unclassified(), the same shape betterlite
+  answers today. So branch-1475.yaml compares Unclassified with Unclassified and passes on main. The
+  adapter returns the outer handler's answer there instead, _classified("api_connection", "", ""),
+  with a link comment that cites L2711-L2737 next to L1474-L1483, and _unclassified goes.
+  branch-1475.yaml keeps its /value/result/message ignore. A new case, cohere-dispatch-reraise.yaml,
+  calls the full dispatch through the native_error operation (kind raw, model command-r,
+  custom_llm_provider cohere, error_str "a completely unrelated failure", exception_type
+  SomeOtherError, no status_code, compare {ignore: []}). That checks the status 500, the null type
+  and param and the empty model and provider against LiteLLM's real exception_type, not only against
+  the adapter. It fails on main.
+
+
+  Gap three. LiteLLM checks "invalid type: parameter" in the head of the Cohere chain (L1409), ahead
+  of the status block, and "invalid type:" again in the tail (L1460), after it
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1402-L1473).
+  Both raise BadRequestError. The rstest row invalid_type_parameter and branch-1409.yaml send
+  "invalid type: parameter 'model'" with no status and an empty exception_type. Deleting the head
+  clause in cohere.rs still answers bad_request through the tail clause, so both pass on main
+  whatever the head clause does. The row becomes invalid_type_parameter_on_403 with status
+  Some(403), and branch-1409.yaml gains status_code 403. With a status the tail never runs, so a
+  missing head clause answers None. LiteLLM answers BadRequestError with status 403 there, since
+  BadRequestError keeps a passed response that carries a request
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219-L251).
+
+
+  Gap four. The Cohere mapper is one elif chain. Four text clauses run first (L1402-L1429), then the
+  status block (L1430-L1450), then three tail clauses (L1451-L1473), all in the Cohere link above.
+  Every row in cohere/tests.rs holds one phrase, and every text row has no status. So swapping two
+  head clauses or two tail clauses, moving a head clause behind the status block or moving a tail
+  clause ahead of it still passes. New rows in native_errors_a_behavior_tests_behavior pin each
+  neighbor pair with no status. auth_before_invalid_type_parameter sends "invalid api token; invalid
+  type: parameter 'model'" and expects authentication. invalid_type_parameter_before_too_many_tokens
+  sends "invalid type: parameter 'model'; too many tokens" and expects bad_request.
+  too_many_tokens_before_internal_server_error sends "too many tokens; internal server error" and
+  expects context_window_exceeded. connection_error_before_invalid_type sends "invalid type: of
+  request" with exception_type CohereConnectionError and expects rate_limit.
+  invalid_type_before_unexpected_server_error sends "invalid type: of request; Unexpected server
+  error" with SomeOtherError and expects bad_request. Two more rows pin head clauses ahead of a
+  status: too_many_tokens_on_429 ("too many tokens in prompt", 429, context_window_exceeded) and
+  internal_server_error_on_403 ("Internal Server Error", 403, internal_server).
+  text_predicate_wins_over_status_code already does this for the auth clause, and gap three for the
+  invalid type clause. The plain test status_present_but_unmatched_returns_none_even_with_matching_text_later
+  becomes the rstest unmatched_status_skips_the_tail_clauses. Its cases connection_error_on_403
+  ("connection reset", CohereConnectionError), invalid_type_on_403 ("invalid type: of request",
+  SomeOtherError) and unexpected_server_error_on_403 (the old input) all send 403 and expect None.
+
+
+  Gap five. LiteLLM's Hugging Face mapper checks "length limit exceeded", then "A valid user token is
+  required", then "Rate limit reached", all ahead of the status block
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1486-L1559).
+  Every row in huggingface/tests.rs holds one phrase. text_predicate_wins_even_when_status_code_is_present
+  pins only "Rate limit reached" ahead of a status. The row length_limit_exceeded_on_500 in
+  response_branches_answer_the_provider_status checks only the status number, and the Api fallback
+  answers 500 too, so it pins nothing about order. New rows: length_limit_before_user_token
+  ("length limit exceeded; A valid user token is required", context_window_exceeded),
+  user_token_before_rate_limit ("A valid user token is required, Rate limit reached", bad_request),
+  length_limit_before_rate_limit ("length limit exceeded, Rate limit reached",
+  context_window_exceeded), length_limit_on_401 ("length limit exceeded for this model", 401,
+  context_window_exceeded) and user_token_on_429 ("A valid user token is required", 429,
+  bad_request). The review named the second and third. The first is the neighbor pair it missed.
+
+
+  Gap six. LiteLLM's AI21 mapper checks "Prompt has too many tokens" before "Bad or missing API
+  token.", both ahead of the status block
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1562-L1622).
+  message_predicate_wins_over_a_competing_status_code pins the first phrase ahead of a status. No row
+  sends both phrases, and none sends the second phrase with a status. New rows:
+  too_many_tokens_before_bad_token (message "Prompt has too many tokens. Bad or missing API token.",
+  context_window_exceeded) and bad_token_on_401 (message "Bad or missing API token.", 401,
+  bad_request).
+
+
+  Each new row in gaps four, five and six gets a matching helper case in the native-errors-a folder
+  with the same input, named after the row. The code on main already runs these clauses in LiteLLM's
+  order, so cohere.rs changes only for gap one, and huggingface.rs and ai21.rs don't change.
+scope:
+  paths:
+    - crates/betterlite-error/src/native_errors_a/cohere.rs
+    - crates/betterlite-error/src/native_errors_a/cohere/tests.rs
+    - crates/betterlite-error/src/native_errors_a/huggingface/tests.rs
+    - crates/betterlite-error/src/native_errors_a/ai21/tests.rs
+    - tools/oracle/helpers/native_errors_a.py
+    - tools/oracle/cases/helpers/native-errors-a/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1392-L1483
+    why: _map_cohere_exception, with its four head clauses, the status block, the three tail clauses and the re-raise when there is no status_code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2560-L2569
+    why: The Cohere arm of the provider chain calls the mapper with no exception_mapping_worked = True in front of it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2711-L2737
+    why: The outer handler that turns an unmapped re-raise into APIConnectionError with llm_provider "" and model "".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L853-L872
+    why: APIConnectionError fixes status_code at 500 and passes no body to openai.APIConnectionError.
+  - url: https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_exceptions.py#L48-L80
+    why: APIError sets code, param and type to None when it gets no body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219-L251
+    why: BadRequestError keeps a passed response that carries a request, so the head "invalid type" clause answers the provider's 403.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1486-L1559
+    why: _map_huggingface_exception and the order of its three text checks ahead of the status block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1562-L1622
+    why: _map_ai21_exception and the order of its two message checks ahead of the status block.
+dod:
+  - text: >-
+      map_cohere_exception returns ErrorClass::ApiConnection with the raw error_str, model Some("") and
+      provider Some("") when no clause matches and there is no status, so its metadata answers status
+      500 with type and param null. cohere.rs no longer names Unclassified. The test
+      unmatched_input_answers_the_outer_api_connection replaces totally_unmatched_input_is_unclassified
+      and unclassified_carries_the_raw_message_and_no_identity, and the native and dispatch tests still
+      pass.
+    proof:
+      - cohere-reraise
+      - oracle
+  - text: >-
+      _run_cohere in the native_errors_a adapter answers the re-raise with the api_connection shape and
+      an empty model and provider, and _unclassified is gone. branch-1475.yaml and
+      cohere-dispatch-reraise.yaml match LiteLLM, and the dispatch case calls the native_error
+      operation.
+    proof:
+      - cohere-reraise-cases
+      - helper-python
+      - oracle
+  - text: >-
+      cohere/tests.rs has the row invalid_type_parameter_on_403 in place of invalid_type_parameter, and
+      branch-1409.yaml sends status_code 403 and matches LiteLLM. Deleting the head "invalid type:
+      parameter" clause in cohere.rs fails both.
+    proof:
+      - cohere-head-clause
+      - oracle
+  - text: >-
+      cohere/tests.rs has the rows auth_before_invalid_type_parameter,
+      invalid_type_parameter_before_too_many_tokens, too_many_tokens_before_internal_server_error,
+      connection_error_before_invalid_type, invalid_type_before_unexpected_server_error,
+      too_many_tokens_on_429 and internal_server_error_on_403, and the rstest
+      unmatched_status_skips_the_tail_clauses with the cases connection_error_on_403,
+      invalid_type_on_403 and unexpected_server_error_on_403 in place of the old plain test. The nine
+      matching cohere cases match LiteLLM. Swapping two head or two tail clauses, or moving a clause
+      across the status block, fails a row.
+    proof:
+      - cohere-clause-order
+      - oracle
+  - text: >-
+      huggingface/tests.rs has the rows length_limit_before_user_token, user_token_before_rate_limit,
+      length_limit_before_rate_limit, length_limit_on_401 and user_token_on_429, and the five matching
+      huggingface cases match LiteLLM. Swapping two of the three text checks, or moving one behind the
+      status block, fails a row.
+    proof:
+      - huggingface-clause-order
+      - oracle
+  - text: >-
+      ai21/tests.rs has the rows too_many_tokens_before_bad_token and bad_token_on_401, and the two
+      matching ai21 cases match LiteLLM. Swapping the two message checks, or moving the bad token check
+      behind the status block, fails a row.
+    proof:
+      - ai21-clause-order
+      - oracle
+checks:
+  optional: [mutants]
+  commands:
+    - id: cohere-reraise
+      why: the Cohere re-raise still answers Unclassified, or a test that pinned Unclassified is still there
+      run: >-
+        list=$(cargo nextest list --locked -p betterlite-error -E 'test(/^native_errors_a::cohere::tests::/)' --message-format oneline) &&
+        for name in unmatched_input_answers_the_outer_api_connection; do grep -qE " native_errors_a::cohere::tests::${name}$" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+        ! grep -q 'Unclassified' crates/betterlite-error/src/native_errors_a/cohere.rs &&
+        ! grep -qE 'fn (totally_unmatched_input_is_unclassified|unclassified_carries_the_raw_message_and_no_identity)\(' crates/betterlite-error/src/native_errors_a/cohere/tests.rs &&
+        cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^native_errors_a::cohere::/) | test(/^native::/) | test(/^dispatch::/)'
+    - id: cohere-reraise-cases
+      why: the adapter still answers unclassified for the re-raise, or the dispatch case is missing
+      run: >-
+        for case in branch-1475 cohere-dispatch-reraise; do test -f "tools/oracle/cases/helpers/native-errors-a/$case.yaml" || { echo "missing case $case"; exit 1; }; done &&
+        grep -qx '  native_error:' tools/oracle/cases/helpers/native-errors-a/cohere-dispatch-reraise.yaml &&
+        grep -q '"api_connection"' tools/oracle/helpers/native_errors_a.py &&
+        ! grep -q '_unclassified' tools/oracle/helpers/native_errors_a.py
+    - id: helper-python
+      why: the changed adapter fails ruff or basedpyright
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: cohere-head-clause
+      why: the head "invalid type parameter" clause can still be deleted with every row and case green
+      run: >-
+        list=$(cargo nextest list --locked -p betterlite-error -E 'test(/^native_errors_a::cohere::tests::/)' --message-format oneline) &&
+        for row in invalid_type_parameter_on_403; do grep -qE " native_errors_a::cohere::tests::native_errors_a_behavior_tests_behavior::case_[0-9]+_${row}$" <<< "$list" || { echo "missing row $row"; exit 1; }; done &&
+        ! grep -qF '#[case::invalid_type_parameter(' crates/betterlite-error/src/native_errors_a/cohere/tests.rs &&
+        grep -qx '    status_code: 403' tools/oracle/cases/helpers/native-errors-a/branch-1409.yaml &&
+        cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^native_errors_a::cohere::/)'
+    - id: cohere-clause-order
+      why: a reorder of the Cohere clauses, or a move across the status block, still passes every row, or a case is missing
+      run: >-
+        for case in cohere-auth-before-invalid-type-parameter cohere-invalid-type-parameter-before-too-many-tokens cohere-too-many-tokens-before-internal-server-error cohere-connection-error-before-invalid-type cohere-invalid-type-before-unexpected-server-error cohere-too-many-tokens-on-429 cohere-internal-server-error-on-403 cohere-connection-error-on-403 cohere-invalid-type-on-403; do test -f "tools/oracle/cases/helpers/native-errors-a/$case.yaml" || { echo "missing case $case"; exit 1; }; done &&
+        list=$(cargo nextest list --locked -p betterlite-error -E 'test(/^native_errors_a::cohere::tests::/)' --message-format oneline) &&
+        for row in auth_before_invalid_type_parameter invalid_type_parameter_before_too_many_tokens too_many_tokens_before_internal_server_error connection_error_before_invalid_type invalid_type_before_unexpected_server_error too_many_tokens_on_429 internal_server_error_on_403; do grep -qE " native_errors_a::cohere::tests::native_errors_a_behavior_tests_behavior::case_[0-9]+_${row}$" <<< "$list" || { echo "missing row $row"; exit 1; }; done &&
+        for row in connection_error_on_403 invalid_type_on_403 unexpected_server_error_on_403; do grep -qE " native_errors_a::cohere::tests::unmatched_status_skips_the_tail_clauses::case_[0-9]+_${row}$" <<< "$list" || { echo "missing row $row"; exit 1; }; done &&
+        ! grep -q 'fn status_present_but_unmatched_returns_none_even_with_matching_text_later' crates/betterlite-error/src/native_errors_a/cohere/tests.rs &&
+        cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^native_errors_a::cohere::/)'
+    - id: huggingface-clause-order
+      why: a reorder of the Hugging Face text checks, or a move behind the status block, still passes every row, or a case is missing
+      run: >-
+        for case in huggingface-length-limit-before-user-token huggingface-user-token-before-rate-limit huggingface-length-limit-before-rate-limit huggingface-length-limit-on-401 huggingface-user-token-on-429; do test -f "tools/oracle/cases/helpers/native-errors-a/$case.yaml" || { echo "missing case $case"; exit 1; }; done &&
+        list=$(cargo nextest list --locked -p betterlite-error -E 'test(/^native_errors_a::huggingface::tests::/)' --message-format oneline) &&
+        for row in length_limit_before_user_token user_token_before_rate_limit length_limit_before_rate_limit length_limit_on_401 user_token_on_429; do grep -qE " native_errors_a::huggingface::tests::native_errors_a_behavior_tests_behavior::case_[0-9]+_${row}$" <<< "$list" || { echo "missing row $row"; exit 1; }; done &&
+        cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^native_errors_a::huggingface::/)'
+    - id: ai21-clause-order
+      why: a swap of the AI21 message checks, or a move behind the status block, still passes every row, or a case is missing
+      run: >-
+        for case in ai21-too-many-tokens-before-bad-token ai21-bad-token-on-401; do test -f "tools/oracle/cases/helpers/native-errors-a/$case.yaml" || { echo "missing case $case"; exit 1; }; done &&
+        list=$(cargo nextest list --locked -p betterlite-error -E 'test(/^native_errors_a::ai21::tests::/)' --message-format oneline) &&
+        for row in too_many_tokens_before_bad_token bad_token_on_401; do grep -qE " native_errors_a::ai21::tests::native_errors_a_behavior_tests_behavior::case_[0-9]+_${row}$" <<< "$list" || { echo "missing row $row"; exit 1; }; done &&
+        cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^native_errors_a::ai21::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/native-errors-a/branch-1475.yaml
+  - tools/oracle/cases/helpers/native-errors-a/cohere-dispatch-reraise.yaml
+  - tools/oracle/cases/helpers/native-errors-a/branch-1409.yaml
+  - tools/oracle/cases/helpers/native-errors-a/cohere-auth-before-invalid-type-parameter.yaml
+  - tools/oracle/cases/helpers/native-errors-a/cohere-invalid-type-parameter-before-too-many-tokens.yaml
+  - tools/oracle/cases/helpers/native-errors-a/cohere-too-many-tokens-before-internal-server-error.yaml
+  - tools/oracle/cases/helpers/native-errors-a/cohere-connection-error-before-invalid-type.yaml
+  - tools/oracle/cases/helpers/native-errors-a/cohere-invalid-type-before-unexpected-server-error.yaml
+  - tools/oracle/cases/helpers/native-errors-a/cohere-too-many-tokens-on-429.yaml
+  - tools/oracle/cases/helpers/native-errors-a/cohere-internal-server-error-on-403.yaml
+  - tools/oracle/cases/helpers/native-errors-a/cohere-connection-error-on-403.yaml
+  - tools/oracle/cases/helpers/native-errors-a/cohere-invalid-type-on-403.yaml
+  - tools/oracle/cases/helpers/native-errors-a/huggingface-length-limit-before-user-token.yaml
+  - tools/oracle/cases/helpers/native-errors-a/huggingface-user-token-before-rate-limit.yaml
+  - tools/oracle/cases/helpers/native-errors-a/huggingface-length-limit-before-rate-limit.yaml
+  - tools/oracle/cases/helpers/native-errors-a/huggingface-length-limit-on-401.yaml
+  - tools/oracle/cases/helpers/native-errors-a/huggingface-user-token-on-429.yaml
+  - tools/oracle/cases/helpers/native-errors-a/ai21-too-many-tokens-before-bad-token.yaml
+  - tools/oracle/cases/helpers/native-errors-a/ai21-bad-token-on-401.yaml
+deviations: []
+out_of_scope:
+  - Padded one-line functions in these files. They belong to B5094, and B5094 clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task does not touch .ast-grep/rules/.
+  - The fixed status per error class. B5102 owns it and has merged.
+  - Cloudflare. The review found no gap there, so cloudflare.rs and cloudflare/tests.rs stay as they are.
+  - huggingface.rs and ai21.rs. They already run LiteLLM's order, and only their tests change.
+  - native.rs, dispatch.rs and tools/oracle/src/helpers/error/native_errors_a.rs. dispatch_native returns the mapper's class before the catchall runs, and the Rust adapter serializes whatever class the mapper returns.
+  - ErrorClass::Unclassified itself. The litellm_proxy branch still uses it.
+  - The helper case fuzz corpus under tools/oracle/fuzz/corpus/helper_case.
+pitfalls:
+  - The re-raise answer carries model Some(String::new()) and provider Some(String::new()), not the request's model and "cohere", because LiteLLM's outer handler builds APIConnectionError(llm_provider="", model="").
+  - ErrorClass::Unclassified is no stand-in, since its metadata writes type and param as the string "None" where APIConnectionError has null.
+  - describe in cohere/tests.rs panics on ApiConnection today. It gains an api_connection arm, and Unclassified moves into the panic list.
+  - The new order rows pass on main, since the code is already right. Prove each one by moving its clause in a scratch edit, watching the row and its case fail, and reverting before you commit.
+  - rstest numbers cases once a function has more than nine, as case_01_name, so the filters match case_[0-9]+_name.
+  - rate_limit and api results nest the message under context, so those cases ignore /value/result/context/message. Every other classified case ignores /value/result/message. A null result and the native_error dispatch case use an empty ignore list, as generic-fallback.yaml does.
+  - Hugging Face cases use model hf/model-a and error_str. AI21 cases use model ai21/model-a and message, not error_str. Cohere cases use model command-r and always send exception_type.
+  - B5094 also edits cohere.rs and cohere/tests.rs. Merge main before you start and keep whatever shape it left.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

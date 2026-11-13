@@ -1,0 +1,5 @@
+kind: helper
+name: config-defaults
+call: {"mcp_search_primitives": {"settings": {"config": {}}}}
+env: {}
+compare: {ignore: []}

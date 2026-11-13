@@ -1,7 +1,7 @@
 id: B063
 title: Assemble OAuth, CLI and SAML login services
 description: >-
-  Assemble the completed SSO routers in betterlite-server::sso and expose them from the real
+  Assemble the completed SSO routers in betterlite-server::sso as `pub fn routes(..)` for the key-protected routes and `pub fn public_routes(..)` for the public ones, which B8770 mounts, and expose them from the real
   proxy application. Supply one request-scoped view of current B002 settings, overlaid with
   B1646's RuntimeEnvironment snapshot for native SSO environment lookups, plus the existing
   DB, cache and outbound services; a management settings refresh must be visible to the next
@@ -35,7 +35,6 @@ scope:
     - crates/betterlite-config/src/sso.rs
     - crates/betterlite-config/src/sso/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-services-*
-    - tools/oracle/cases/sso/services/**
     - tools/oracle/helpers/b063.py
     - tools/oracle/helpers/b063/**
     - tools/oracle/src/helpers/server/b063.rs
@@ -53,8 +52,10 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_sso_handler.py#L9-L43
     why: Header-based custom-UI implementation with no reachable open-source caller.
 dod:
+  - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; B8770 mounts the composed routers and proves them over HTTP.
+    proof: [sso-composition-tests]
   - text: All twelve SSO routes are composed exactly once with their intended public/authenticated boundaries.
-    proof: [sso-composition-tests, oracle]
+    proof: [sso-composition-tests]
   - text: Provider credentials and cache namespaces stay isolated, and newly loaded settings apply on the next login.
     proof: [sso-composition-tests, sso-snapshot-config]
   - text: No free-user query or enterprise-only custom-UI execution enters the assembled service graph.
@@ -71,11 +72,7 @@ checks:
     - id: sso-snapshot-corpus
       why: The composed provider configuration has no newly added loader replay example.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-services-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-oracle_cases:
-  - tools/oracle/cases/sso/services/route-auth-boundaries.yaml
-  - tools/oracle/cases/sso/services/cli-then-browser-login.yaml
-  - tools/oracle/cases/sso/services/provider-precedence-with-saml-configured.yaml
-  - tools/oracle/cases/sso/services/password-fallback-keeps-return-target.yaml
+oracle_cases: []
 deviations:
   - what: SSO composition never queries billable-user count to decide whether login is permitted.
     why: _raise_if_sso_exceeds_free_user_limit enforces a paid-tier ceiling that the README explicitly removes.

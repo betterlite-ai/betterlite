@@ -1,0 +1,7 @@
+kind: helper
+name: proxy-base-with-root-and-route
+call:
+  b7323: {"function":"get_custom_url","proxy_base_url":"https://api.example.com","request_base_url":"https://request.example.com","request_root_path":"/proxy","route":"/v1/chat"}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,12 @@
+kind: helper
+name: host-model-identity-seed-datarobot
+call:
+  host_model_identity:
+    calls:
+      - kind: identity
+        host: datarobot
+        env: {DATAROBOT_ENDPOINT: https://tenant.example/api/v2, DATAROBOT_API_TOKEN: env-token}
+        api_base: null
+        api_key: null
+env: {}
+compare: {ignore: []}

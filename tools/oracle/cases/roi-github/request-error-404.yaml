@@ -1,0 +1,5 @@
+kind: helper
+name: request-error-404
+call: {"b3152": {"operation": "request", "method": "GET", "path": "repos/octo/missing", "replies": [{"status": 404}]}}
+env: {}
+compare: {ignore: []}

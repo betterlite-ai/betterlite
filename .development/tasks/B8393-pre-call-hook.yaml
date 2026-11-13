@@ -1,0 +1,60 @@
+id: B8393
+title: ProxyLogging pre-call hook and guardrail pipelines
+description: >-
+  `ProxyLogging.pre_call_hook` (utils.py L2368-L2581) is the step every LLM route runs before the provider call: it applies a prompt template, runs pre-call guardrail pipelines, then walks the callback list so guardrails and proxy hooks (rate limits, budgets, cache control) can change or reject the request. This task ports the walk and the pipeline helpers it uses. Code goes in crates/betterlite-server/src/guardrails/pre_call_hook.rs and pre_call_hook/ (walk.rs, pipelines.rs, metadata.rs, prompt.rs, tests.rs).
+
+  walk.rs. `PreCallHook::run(user_api_key_dict, data: Option<Map>, call_type, mode, endpoint_type)` where `mode` is `Full`, `GuardrailsOnly` or `SkipGuardrails` (LiteLLM's two flags, which may not both be true: the enum makes the error at L2398 impossible). In order: in Full and SkipGuardrails mode start the hanging-request check through the `AlertHooks` port (B8395 implements it); None data returns None; in Full and SkipGuardrails mode, with a logging object, a prompt_id and call type completion, acompletion or aresponses, run prompt.rs; take a raw snapshot of the data only when some guardrail has scan_raw_request; unless skipping guardrails, run pre_call pipelines; compute the pipeline-managed names; short-cut when (no guardrails or skipping) and no content enforcer and (guardrails-only or no pre-call override), returning the data after metadata.rs. Otherwise walk B8390's resolved callbacks in order: guardrails (not skipped, not pipeline-managed, not run_in_parallel) go through B8392's `run_sequential`; any other callback with its own async_pre_call_hook runs when not guardrails-only or when it enforces request content, is skipped for an MCP call type without auth, and passes `endpoint_type` only to the v3 parallel request limiter; its answer goes through B8392's `process_pre_call_response`. A SensitiveDataRoute error in the loop is kept (the first one) and the walk goes on; it is applied after the loop through B8392's `handle_sensitive_data_route`. Each callback taking more than 0.01 s is reported to service logging as `proxy_pre_call` with the class name. Then the parallel guardrails run, metadata.rs runs, and the data is returned. On any error metadata.rs still runs before the error goes up; a SensitiveDataRoute that escapes is handled the same way as a deferred one.
+
+  pipelines.rs. `maybe_execute_pipelines(data, user_api_key_dict, call_type, event_hook, raw_snapshot, response)` (L2183-L2238) runs every pipeline from B8391's `policy_pipelines` whose mode equals event_hook through B3247's `PipelineExecutor::execute_steps`, chains a replacement response from `modified_data.response`, and returns the data plus the replacement only when it changed. `handle_pipeline_result` (L2241-L2317): allow merges modified data (fully on pre-call, metadata buckets only when an original response is given); block records the blocking step's guardrail, re-raises an original exception that does not change the request flow, else fails with HTTP 400 `{"error": {"message": "Content blocked by guardrail pipeline '{policy}'", "type": "guardrail_pipeline_error", "pipeline_context": {"policy", "step_results": [{"guardrail", "outcome", "action"}]}}}`; modify_response fails with ModifyResponse, guardrail name `pipeline:{policy}`. `has_pre_call_guardrails(request_metadata)` (L2319-L2341): true with `_guardrail_pipelines`, with a content enforcer, or when a guardrail's gate says pre_call for `{"metadata": request_metadata}`.
+
+  metadata.rs. `process_guardrail_metadata(data)` (L2154-L2181): names listed in `metadata.guardrails` (or `litellm_metadata.guardrails` when metadata has none) that are not yet in applied_guardrails are added through B3680's `AppliedGuardrailRecorder`.
+
+  prompt.rs. `process_prompt_template` (L2079-L2152) resolves the prompt spec by id, version and `prompt_environment` and, when a prompt callback exists, merges the compiled messages (or Responses input) and params into the data and removes the prompt_* keys. The registry and the compile call reach this file through a `PromptTemplates` trait that B8399 implements over B4058.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/pre_call_hook.rs
+    - crates/betterlite-server/src/guardrails/pre_call_hook/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2345-L2581
+    why: pre_call_hook with its overloads, modes and the callback walk.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2079-L2341
+    why: Prompt templates, guardrail metadata, pipeline execution, pipeline results and has_pre_call_guardrails.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py
+    why: The guardrails-only caller and has_pre_call_guardrails, ported by B1023.
+dod:
+  - text: The walk runs guardrails and proxy hooks in list order with the skip rules for each mode, MCP auth and pipeline-managed names.
+    proof: [pre-call-tests]
+  - text: A SensitiveDataRoute in the loop is deferred and applied once after it; metadata guardrails reach the applied list on success and on error.
+    proof: [pre-call-tests]
+  - text: Pipelines run by mode, chain replacement responses, and allow, block and modify_response map to LiteLLM's data, error body and exception.
+    proof: [pre-call-tests]
+  - text: has_pre_call_guardrails answers true for pipelines, content enforcers and pre_call guardrails only.
+    proof: [pre-call-tests]
+  - text: A prompt template replaces messages or Responses input and removes the prompt keys.
+    proof: [pre-call-tests]
+checks:
+  optional: []
+  commands:
+    - id: pre-call-tests
+      why: the pre-call walk, a pipeline helper, guardrail metadata or prompt templating is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::pre_call_hook::/)'
+oracle_cases: []
+deviations:
+  - what: guardrails_only and skip_guardrails are one enum, so asking for both cannot happen.
+    why: LiteLLM raises ValueError for a combination no caller sends; the type rules it out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2397-L2398
+out_of_scope:
+  - "Running one guardrail, the parallel runner and rerouting: B8392."
+  - "Post-call pipelines and hooks: B8394. The hanging-request alert itself: B8395."
+  - "The HTTP oracle cases and the routes that call pre_call_hook: B8399 wires them."
+pitfalls:
+  - The short-cut at L2448-L2455 still runs process_guardrail_metadata before returning.
+  - A content-enforcing CustomLogger runs even in guardrails-only mode, while other proxy hooks do not.
+  - handle_pipeline_result on block re-raises the original exception only when it neither reroutes nor modifies the response; otherwise the generic 400 is raised.
+  - Allow on the post-call path merges only metadata buckets, so the already-sent request body stays as it was.
+  - The service timing threshold is 0.01 seconds per callback, and it is reported as success even when the callback changed the data.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

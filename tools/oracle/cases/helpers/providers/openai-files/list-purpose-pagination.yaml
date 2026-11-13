@@ -1,0 +1,21 @@
+kind: helper
+name: openai-files-list-purpose-pagination
+call:
+  openai_files:
+    action: list_files
+    client: {api_key: sk-files, api_base: 'https://files.test/v1', supplied: null, is_async: true}
+    request:
+      list_purpose: ''
+    reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      json:
+        object: list
+        data:
+          - {id: file-1, object: file, bytes: 3, created_at: 1700000001, filename: a.txt, purpose: batch, status: processed}
+          - {id: file-2, object: file, bytes: 4, created_at: 1700000002, filename: b.txt, purpose: batch, status: uploaded}
+        has_more: true
+        first_id: file-1
+        last_id: file-2
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: responses-shapes-websocket-defaults
+call:
+  responses_shapes:
+    operation: websocket_defaults
+    fill_missing: {model: a, temperature: 1}
+    request: {model: b, input: hi}
+    overrides: {model: c}
+env: {}
+compare:
+  ignore: []

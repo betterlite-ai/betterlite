@@ -1,0 +1,13 @@
+kind: helper
+name: provider-defaults-a-explicit-overrides
+call:
+  provider_defaults_a:
+    provider: groq
+    model: llama-3
+    api_base: https://explicit.example/v1
+    api_key: explicit-key
+    environment:
+      GROQ_API_BASE: https://env.example/v1
+      GROQ_API_KEY: env-key
+env: {}
+compare: {ignore: []}

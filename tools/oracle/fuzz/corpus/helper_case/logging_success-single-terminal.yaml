@@ -1,0 +1,17 @@
+kind: helper
+name: logging-success-single-terminal-seed
+call:
+  logging_success:
+    operations:
+      - operation: dispatch
+        probes:
+          - litellm_params: {acompletion: true}
+            stream: true
+            result: {kind: chat}
+            dispatches: 2
+            loggers: [{name: streamer}]
+      - operation: sync_callbacks
+        probes:
+          - {dynamic_success: [legacy_hook], known: [], loggers: []}
+env: {}
+compare: {ignore: []}

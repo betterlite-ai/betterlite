@@ -42,21 +42,21 @@ const fn allow_verdict() -> CiscoVerdict {
 }
 
 fn bool_field(fields: &Fields, key: &str) -> Option<bool> {
-    match Json::field(fields, key) {
+    match Json::parse(fields.get(key).map_or("null", |raw| raw.get())) {
         Json::Bool(value) => Some(value),
         Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
 
 fn text_field(fields: &Fields, key: &str) -> Option<String> {
-    match Json::field(fields, key) {
+    match Json::parse(fields.get(key).map_or("null", |raw| raw.get())) {
         Json::Text(value) => Some(value),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
 }
 
 fn list_field(fields: &Fields, key: &str) -> Vec<Box<RawValue>> {
-    match Json::field(fields, key) {
+    match Json::parse(fields.get(key).map_or("null", |raw| raw.get())) {
         Json::List(items) => items,
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
             Vec::new()
@@ -74,7 +74,7 @@ fn classifications_from(fields: &Fields) -> Vec<String> {
 }
 
 fn single_classification(fields: &Fields) -> Vec<String> {
-    match Json::field(fields, "classification") {
+    match Json::parse(fields.get("classification").map_or("null", |raw| raw.get())) {
         Json::Text(value) if !value.is_empty() => vec![value],
         Json::Null
         | Json::Bool(_)
@@ -107,7 +107,7 @@ fn rules_from(fields: &Fields) -> Vec<Fields> {
 }
 
 fn action_from(fields: &Fields) -> Action {
-    match Json::field(fields, "action") {
+    match Json::parse(fields.get("action").map_or("null", |raw| raw.get())) {
         Json::Text(raw_action) if !raw_action.trim().is_empty() => {
             cisco_verdict::normalize_action(&raw_action)
         }

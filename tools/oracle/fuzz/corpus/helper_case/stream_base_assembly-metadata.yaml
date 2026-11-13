@@ -1,0 +1,10 @@
+kind: helper
+name: stream-base-assembly-metadata
+call:
+  stream_base_assembly:
+    function: base_metadata
+    chunks:
+      - {object: chat.completion.chunk, id: '', created: 4, model: orig, choices: []}
+      - {object: chat.completion.chunk, id: b, created: 4, model: real, choices: [{delta: {role: user}}], _hidden_params: {provider_response_model: real}}
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

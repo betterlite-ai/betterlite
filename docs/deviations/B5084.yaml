@@ -1,0 +1,5 @@
+task: B5084
+deviations:
+  - what: The template cache holds at most 1024 fetched models next to the three built-in ones; once full, a new model is fetched on every call and not stored.
+    why: LiteLLM's known_tokenizer_config grows with every model name it sees, and the final generic branch fetches for any name a request sends, so its memory has no bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L521-L527

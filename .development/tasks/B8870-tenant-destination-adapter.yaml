@@ -1,0 +1,111 @@
+id: B8870
+title: Connect authenticated tenant destinations to the live OTel fan-out
+description: >-
+  B855 orders destination seeding during authentication but supplies only a TenantDestinations
+  port. B1109 resolves key/team callback metadata, B3851 builds destinations, and B3849 filters
+  out destinations the published fan-out cannot deliver. Build the concrete adapter between
+  those services in betterlite-server::app::callbacks::tenant_destinations, with its own
+  TenantDestinationError. It accepts resolved settings and B8910's shared LoggerRuntime, implements
+  B855's port, and writes B3847's RequestTraceContext for this request. Do not create another
+  tracer provider, fan-out registry, auth object or process-global context.
+
+  Call B1109's resolve_tenant_otel_destinations with the authenticated identity and B1100's safe
+  headers, supplying B3851's destination_for where that resolver asks for its backend resolver.
+  Then call deliverable_destinations with the same published TenantFanOutRegistry that the
+  logger exports through. Set the request destinations only after both operations succeed.
+  An empty successful result replaces an earlier list with empty; an error leaves the current
+  context alone and goes back to B855's existing debug-and-continue boundary. Call the runtime's
+  fan_out_provider for each request, not once before logger initialization. A provider without
+  a fan-out has no deliverable destinations. B8910 owns published/registered/SDK provider
+  selection; this adapter must not invent a second fallback or suppress an operator exporter
+  on behalf of an unavailable destination.
+
+  Consume the already loaded LITELLM_OTEL_V2 flag (default false, B3842),
+  litellm_settings.allow_dynamic_callback_disabling (default true, B1109), destination host
+  policy and preset settings (B3851). This module introduces no config key or environment
+  read. The no-paid-tier decision makes the native callback-disabling eligibility true;
+  keep allow_dynamic_callback_disabling as the operator's switch. Key-level logging=[]
+  suppresses team fallback, duplicate callback variables merge last-wins, and a failure-only
+  entry contributes variables only when another entry makes that backend eligible. These
+  decisions stay in B1109; tests exercise them through the real adapter and resolver rather
+  than reproducing them in the adapter. Service names likewise come from B1109's authenticated
+  metadata lookup, never from an arbitrary body metadata object.
+
+  Request context must remain request-local across await and the spawned logging work that
+  closes the auth/LLM spans. Use the existing B3847 context handle supplied by the server;
+  finish the seed while the auth phase is open. A database span already ended before identity
+  resolution keeps its original operator destinations. Test concurrent requests with two
+  distinct keys using a real B3849 fan-out and recording destination processors: neither
+  credentials nor suppression decisions may cross requests. Reuse the tracing and processor
+  types already in betterlite-logging; this is composition, not another exporter implementation.
+
+  Native tests live in app/callbacks/tenant_destinations/tests.rs and tests/. Cover v2_off,
+  key_empty_blocks_team, team_fallback, last_callback_vars_win, failure_only_is_not_eligible,
+  failure_vars_merge_into_eligible_backend, unbuildable_destination_keeps_operator,
+  provider_published_after_construction, successful_empty_clears_context,
+  resolution_error_keeps_auth_running, auth_span_inherits_destinations,
+  earlier_database_span_keeps_operator and concurrent_tenants_are_isolated. A separate
+  callback_disabling test covers header precedence over the key list, no team disable list,
+  and the operator switch false; it proves the recorded license deviation without enabling
+  the enterprise package in the oracle.
+
+  The architect installs this adapter in B855's state/auth_admission slot using the shared
+  logging runtime, before B732 validates configured ports. That small shared constructor
+  change is a prerequisite, not permission to edit state.rs or a logging registry. B124 owns
+  the booted HTTP comparisons after this installation; no pure helper can observe these
+  context and exporter effects. All inputs here are typed records, so no new decoder or
+  fuzz target is needed. Allow about 230 production lines and 300 native test lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/callbacks/tenant_destinations.rs
+    - crates/betterlite-server/src/app/callbacks/tenant_destinations/**
+    - crates/betterlite-server/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3395-L3429
+    why: Resolve, filter, then set while auth remains open, with a best-effort error boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1034-L1170
+    why: The existing metadata resolver this adapter connects to destination_for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L970-L990
+    why: The published provider accessor belongs to the logging runtime, not a per-auth provider.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/destinations.py#L96-L159
+    why: Only a usable backend destination can reach the deliverability filter.
+dod:
+  - text: Auth destination seeding uses the real metadata resolver and the currently published fan-out, replacing context only after successful resolution and filtering.
+    proof: [adapter-tests]
+  - text: Concurrent tenants remain isolated, auth spans inherit their destinations, and already closed database spans retain the operator destination.
+    proof: [context-tests]
+  - text: Callback disabling follows the operator switch and header/key precedence without a paid-license gate.
+    proof: [disabling-tests]
+checks:
+  optional: []
+  commands:
+    - id: adapter-tests
+      why: The real resolver, deliverability filtering or best-effort boundary is absent.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::tenant_destinations::tests::resolution::/)'
+    - id: context-tests
+      why: Destination state leaks between requests or is attached at the wrong span boundary.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::tenant_destinations::tests::context::/)'
+    - id: disabling-tests
+      why: Native callback eligibility ignores the operator switch or retains the paid-tier gate.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::tenant_destinations::tests::callback_disabling::/)'
+oracle_cases: []
+deviations:
+  - what: With allow_dynamic_callback_disabling true, native tenant destinations honor x-litellm-disable-callbacks and the key's stored disable list without a license; MIT LiteLLM ignores them when premium_user is false.
+    why: The README removes paid-tier checks for code present in the open-source tree; the operator can still turn dynamic disabling off.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1047-L1072
+out_of_scope:
+  - B855 owns all four auth admission functions, their ordering and the exception boundary; this task implements its telemetry port only, and B8544 implements its managed-agent port.
+  - B1100 owns safe request headers, and B1109 owns every metadata-selection, callback-merge and service-name function in litellm_pre_call_utils.py L1034-L1170; no copy moves into this adapter.
+  - B3842 owns OTel settings, B3847 request context and span emission, B3849 processor construction and filtering, and B3851 destination presets and destination URL validation.
+  - B3853 owns V2 callback methods; B8910 owns fan_out_provider, provider selection and publication, and B110 installs that runtime after callback initialization. This adapter reads the same runtime.
+  - B124 owns HTTP integration cases; B732 and B855 retain auth installation and rejection of a configured capability without its port.
+pitfalls:
+  - Filtering after writing context can suppress the operator exporter even though the tenant exporter cannot be built.
+  - A successfully resolved empty key logging list is different from a missing key list and must not fall back to the team.
+  - Capturing an empty provider during startup would leave tenant routing disabled after the logger publishes its provider.
+  - Never log callback_vars or destination headers; they contain tenant exporter credentials.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

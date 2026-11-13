@@ -1,0 +1,31 @@
+kind: helper
+name: gdc-request-policy-bool-aliases-and-original-ca-path
+call:
+  gdc_request_policy:
+    scenarios:
+      - config:
+          model_list:
+            - litellm_params: {ssl_verify: false, gdc_token_caching: "yes"}
+            - litellm_params: {ssl_verify: true, gdc_token_caching: ca.pem}
+            - litellm_params: {}
+            - litellm_params: {ssl_verify: ca.pem}
+        environment: {SSL_VERIFY: "off", GDC_TOKEN_CACHING: "true"}
+        settings:
+          - {deployment: 0}
+          - {deployment: 1}
+          - {deployment: 2}
+          - {deployment: 3}
+      - config:
+          model_list:
+            - litellm_params: {}
+        environment: {}
+        settings:
+          - {deployment: 0}
+      - config:
+          model_list:
+            - litellm_params: {}
+        environment: {SSL_VERIFY: ca.pem}
+        settings:
+          - {deployment: 0}
+env: {SSL_VERIFY: "off", GDC_TOKEN_CACHING: "true"}
+compare: {ignore: []}

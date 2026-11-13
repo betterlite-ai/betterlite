@@ -1,0 +1,10 @@
+kind: helper
+name: value_and_other_receive_failures
+call:
+  compatible_line_chunk:
+    mode: async
+    events:
+      - {kind: value_error, message: broken value}
+env: {}
+compare:
+  ignore: []

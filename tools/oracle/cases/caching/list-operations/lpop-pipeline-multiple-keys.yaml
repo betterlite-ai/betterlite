@@ -1,0 +1,19 @@
+kind: helper
+name: caching-list-operations-lpop-pipeline-multiple-keys
+call:
+  b4329:
+    operation: lpop_pipeline
+    namespace: ns
+    redis_version: "6.2.0"
+    lists:
+      "ns:a": ["a1", "a2"]
+      "ns:c": ["c1"]
+    operations:
+      - key: a
+        count: 2
+      - key: b
+        count: 2
+      - key: c
+        count: 1
+env: {}
+compare: {ignore: []}

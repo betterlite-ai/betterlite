@@ -102,15 +102,15 @@ fn ui_messages(items: &[Json]) -> Option<Vec<UiMessage>> {
             None => message,
         })
         .collect();
-    if unwrapped.is_empty() || !unwrapped.iter().all(is_message) {
+    if unwrapped.is_empty()
+        || !unwrapped.iter().all(|message| {
+            (message.role.is_some() || message.kind.and_then(ChatRole::from_name).is_some())
+                && (message.content.is_some() || !message.tool_calls.is_empty())
+        })
+    {
         return None;
     }
     Some(unwrapped.into_iter().map(ui_message).collect())
-}
-
-fn is_message(message: &RawMessage<'_>) -> bool {
-    let has_role = message.role.is_some() || message.kind.and_then(ChatRole::from_name).is_some();
-    has_role && (message.content.is_some() || !message.tool_calls.is_empty())
 }
 
 fn ui_message(message: RawMessage<'_>) -> UiMessage {

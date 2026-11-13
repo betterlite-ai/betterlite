@@ -180,14 +180,16 @@ pub fn parse_token(body: &[u8]) -> Result<TokenResponse, PkceFailure> {
 }
 
 // Shared by every parser here that deserializes a response body and then rejects one invariant the type itself can't express.
-pub(super) fn parse_and_require<T>(
+pub(super) fn parse_and_require<T, ToError, Invalid>(
     body: &[u8],
-    to_error: impl FnOnce(serde_json::Error) -> PkceFailure,
-    invalid: impl FnOnce(&T) -> bool,
+    to_error: ToError,
+    invalid: Invalid,
     message: &str,
 ) -> Result<T, PkceFailure>
 where
     T: DeserializeOwned,
+    ToError: FnOnce(serde_json::Error) -> PkceFailure,
+    Invalid: FnOnce(&T) -> bool,
 {
     let value: T = serde_json::from_slice(body).map_err(to_error)?;
     if invalid(&value) {

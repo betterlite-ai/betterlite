@@ -1,0 +1,9 @@
+kind: helper
+name: arize-config-default-grpc
+call:
+  b3850:
+    function: arize_config
+    environment: {}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,7 @@
+kind: helper
+name: mounted-sub-route-info-no-endpoint
+call:
+  b4262: {"function":"mounted_sub_route_info","mount_path":"/v1","route":{"path":"/models"}}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,4 @@
+general_settings:
+  max_in_flight_requests_per_worker: 0
+  max_queued_requests_per_worker: -1
+  admission_queue_timeout_seconds: -0.5

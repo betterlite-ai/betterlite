@@ -1,0 +1,174 @@
+id: B3094
+title: Resolve user and team analytics query scopes
+description: >-
+  Port the shared scope types of daily_activity_scopes.py plus the user and team halves of the file into
+  betterlite-server as the module `daily_activity_scopes`. The daily activity routes (B3096 to B3098) take one
+  resolver per entity, read its query shape, call its resolve step and pass the resulting scope to the repository.
+  This task builds the types every resolver shares and the two resolvers for users and teams. B3095 builds
+  the tag, organization, customer and agent resolvers on top of these types.
+
+  Types, all in this module. `EntityQuery` has entity_ids (Option<Vec<String>>), exclude_entity_ids (Vec<String>),
+  api_key, start_date, end_date, model (all Option<String>), timezone_offset_minutes (Option<i64>) and
+  include_current_utc_day (bool). `ResolvedScope` has `scope: DailyActivityScope` (B2312, betterlite-db) and
+  `entity_metadata: Option<BTreeMap<String, serde_json::Map<String, Value>>>`. `Entity` is an enum of
+  user, team, tag, organization, customer and agent (all six variants, so B3095 adds no variant).
+  `OperationNames` is a struct with aggregated, search, key_page, model_top_keys, export (all &'static str) and
+  cache_leakage_keys (Option<&'static str>, set only for users). `EntityScopeResolver` has entity, table
+  (DailyActivityTable), entity_id_field, route_prefixes (&'static [&'static str]), tags (&'static [&'static str]),
+  include_entity_breakdown (bool) and operation_names. These are plain data: no closures and no trait objects.
+  The Python `query` and `resolve` fields become plain functions that B3095's dispatch function calls
+  by matching on `Entity`; this task does not write that dispatch.
+
+  Id lists. `split_ids(value: Option<&str>) -> Option<Vec<String>>` returns None for None or "" and otherwise
+  splits on "," with no trimming, no deduplication and no dropping of empty segments ("a,,b" gives "a", "", "b").
+  `split_excluded_ids` does the same but returns an empty Vec for None or "". Both are `_query_ids` and
+  `_query_excluded_ids`.
+
+  Query shapes. `UserQueryParams` has start_date, end_date, model, api_key, user_id (Option<String>),
+  timezone (Option<i64>) and include_current_utc_day (bool, default false). `user_entity_query` turns it into an
+  EntityQuery: entity_ids is `Some(vec![user_id])` when user_id is present (an empty string stays `[""]`),
+  exclude_entity_ids is empty, and the other fields are copied. `TeamQueryParams` has team_ids, start_date,
+  end_date, model, api_key, exclude_team_ids and timezone, all optional. `team_entity_query` splits team_ids and
+  exclude_team_ids with the two functions above and always sets include_current_utc_day to false, because the
+  team route has no such parameter. B3096 to B3098 deserialize the HTTP query string into these structs and
+  return their own 422 for a malformed timezone or boolean; this task does no HTTP parsing. The public
+  descriptions FastAPI shows in /openapi.json for the six user parameters (L220-L240) are `pub const &str` values
+  in the same file as UserQueryParams, copied byte for byte; the route tasks read them.
+
+  `build_scope(resolver, query, entity_ids, exclude_entity_ids, api_key_filter, entity_metadata)` returns
+  `Result<ResolvedScope, ScopesError>`. It makes a DailyActivityScope through the fallible conversion from
+  B2312's `DailyActivityScopeInput` (the error is a #[from] variant of `ScopesError`; the constant resolvers can
+  never trigger it). start_date and end_date fall back to "" when None. The api_key_filter is a two-variant enum
+  `ApiKeyFilter { Single(String), Many(Vec<String>) }` wrapped in Option, so None and Single("") both give
+  api_keys None, Single(k) gives `Some(vec![k])`, and Many(list) gives `Some(list)` even when the list is empty
+  (an empty list is a restrictive filter that matches nothing, not "no filter"). Model, timezone and
+  include_current_utc_day are copied from the query. B815 declares the team scope's api_key filter type;
+  if it already has an equivalent enum, use it instead of declaring a second one.
+
+  User resolver. `resolve_user(auth, query)` calls B798's `resolve_user_daily_activity_entity_ids` with
+  user_id = the first element of query.entity_ids (None when entity_ids is None) and the caller's UserAPIKeyAuth
+  (B2314). A ScopeDenied (B3090, betterlite-analytics) comes back unchanged as the error. Otherwise it builds the
+  scope with the USER resolver, exclude_entity_ids from the query (always empty for users), api_key from
+  query.api_key as a Single filter and no entity metadata. It never touches the database.
+
+  Team resolver. `resolve_team(auth, query, ...)` calls B815's `resolve_team_daily_activity_scope`. It passes
+  team_ids as the entity_ids re-joined with "," (None when entity_ids is None), exclude_team_ids as the exclusions
+  re-joined with "," (None when the list is empty), the query api_key and the caller's auth, plus the database,
+  user key cache and logging handle that Python imports from proxy_server inside the function (here they arrive
+  through the dependency type B815 exposes; take it as a parameter, generic over B815's trait if it has one, and
+  do not read any global). The returned team scope maps to build_scope with TEAM resolver, the scope's team_ids
+  as entity_ids, its exclude_team_ids or an empty Vec when None, its api_key_filter, and its team alias metadata
+  as entity_metadata (an empty map stays `Some(empty)`, not None). Errors B815 raises (404 and 403 style
+  HTTPException cases) pass through as a #[from] variant of `ScopesError`; this task does not translate them.
+
+  Constants. `USER_RESOLVER` and `TEAM_RESOLVER` are `pub const EntityScopeResolver` values with the exact
+  strings from L358-L396: user has table litellm_dailyuserspend, entity_id_field user_id, route prefix /user,
+  tags "Budget & Spend Tracking" and "Internal User management", no entity breakdown and six operation names
+  including get_user_daily_activity_cache_leakage_keys; team has table litellm_dailyteamspend, entity_id_field
+  team_id, route prefix /team, tag "team management", entity breakdown on and five operation names.
+scope:
+  paths:
+    - crates/betterlite-server/src/daily_activity_scopes.rs
+    - crates/betterlite-server/src/daily_activity_scopes/**
+    - tools/oracle/cases/helpers/daily-activity-scopes/**
+    - "tools/oracle/fuzz/corpus/helper_case/daily-activity-scopes-*"
+    - tools/oracle/helpers/b3094.py
+    - tools/oracle/helpers/b3094/**
+    - tools/oracle/src/helpers/server/b3094.rs
+    - tools/oracle/src/helpers/server/b3094/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L23-L100
+    why: EntityQuery, ResolvedScope, the Entity literal, EntityScopeResolver, _query_ids, _query_excluded_ids and _build_scope with its api_key_filter normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L103-L143
+    why: _resolve_user and _resolve_team, including the comma re-join of the id lists before B815's resolver runs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L219-L272
+    why: _user_query (with the public parameter descriptions) and _team_query, the two query shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L358-L396
+    why: USER_RESOLVER and TEAM_RESOLVER constants with route prefixes, tags and operation names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2866-L2875
+    why: resolve_user_daily_activity_entity_ids, built by B798; this task only calls it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6518-L6623
+    why: _TeamDailyActivityScope and resolve_team_daily_activity_scope, built by B815; this task only calls it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L9-L46
+    why: DailyActivityTable and DailyActivityScope, built by B2312, including the entity_id_field check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L76-L95
+    why: How the routes call resolver.resolve and raise ScopeDenied through raise_public, so the error shapes line up.
+dod:
+  - text: split_ids returns None for None and "", and splits "a,,b" into "a", "", "b" without trimming or deduplicating; split_excluded_ids returns an empty Vec where split_ids returns None.
+    proof: [query-tests, helper-case-corpus]
+  - text: user_entity_query turns user_id Some("") into entity_ids Some([""]), keeps include_current_utc_day from the input, and leaves exclusions empty.
+    proof: [query-tests, helper-case-corpus]
+  - text: team_entity_query splits team_ids and exclude_team_ids on commas and always sets include_current_utc_day to false.
+    proof: [query-tests, helper-case-corpus]
+  - text: build_scope turns a None or empty-string api key filter into api_keys None, a single key into one entry, and an empty list into Some(empty).
+    proof: [build-tests, helper-case-corpus]
+  - text: build_scope turns missing start_date and end_date into empty strings and copies model, timezone offset and include_current_utc_day.
+    proof: [build-tests, helper-case-corpus]
+  - text: resolve_user passes the first requested id and the caller to B798, returns its ScopeDenied unchanged, and otherwise builds a user-table scope with no metadata.
+    proof: [user-resolve-tests, helper-case-corpus]
+  - text: resolve_team passes comma-joined ids (None for an absent team list or empty exclusions) to B815, builds a team-table scope from the result, keeps an empty alias map as Some, and passes B815's error through.
+    proof: [team-resolve-tests]
+  - text: USER_RESOLVER and TEAM_RESOLVER carry the exact table, entity field, route prefix, tags, breakdown flag and operation names, and only the user resolver has a cache leakage operation name.
+    proof: [resolver-const-tests, helper-case-corpus]
+  - text: The six user parameter descriptions match the LiteLLM text byte for byte.
+    proof: [query-tests]
+checks:
+  optional: []
+  commands:
+    - id: query-tests
+      why: id splitting, the user and team query shapes or the parameter descriptions are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_scopes::tests::query_/)'
+    - id: build-tests
+      why: build_scope api key filter handling, date defaults or field copying is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_scopes::tests::build_/)'
+    - id: user-resolve-tests
+      why: the user resolver does not call B798 with the first requested id, does not pass its denial through, or builds the wrong scope
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_scopes::tests::user_resolve_/)'
+    - id: team-resolve-tests
+      why: the team resolver mishandles the comma re-join, the alias metadata, the key filter or B815's errors
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_scopes::tests::team_resolve_/)'
+    - id: resolver-const-tests
+      why: USER_RESOLVER or TEAM_RESOLVER differs from LiteLLM's constants
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_scopes::tests::resolver_const_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3094)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3094 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3094/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added scope cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/daily-activity-scopes-*")" &&
+        grep -lE '^[[:space:]]+b3094:' tools/oracle/fuzz/corpus/helper_case/daily-activity-scopes-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/daily-activity-scopes/id-splitting.yaml
+  - tools/oracle/cases/helpers/daily-activity-scopes/query-shapes.yaml
+  - tools/oracle/cases/helpers/daily-activity-scopes/api-key-filter.yaml
+  - tools/oracle/cases/helpers/daily-activity-scopes/user-resolution.yaml
+  - tools/oracle/cases/helpers/daily-activity-scopes/resolver-constants.yaml
+deviations:
+  - what: The six Python resolver constants and their query and resolve callables become plain data plus functions, and the choice of resolver is a match on the Entity enum. FastAPI Query defaults and 422 responses for a malformed timezone or boolean are produced by the route tasks.
+    why: rules.yaml requires a build-time set to be an enum matched exhaustively, not a registry of callables, and HTTP parsing belongs to the routes.
+out_of_scope:
+  - "B3095 owns _resolve_tag, _resolve_organization, _resolve_customer, _resolve_agent, _tag_query, _organization_query, _customer_query, _agent_query and the TAG, ORGANIZATION, CUSTOMER and AGENT resolver constants (L146-L216, L275-L355, L397-L472), plus the dispatch function that matches on Entity and calls the right resolve step."
+  - "B798 owns resolve_user_daily_activity_entity_ids and B815 owns resolve_team_daily_activity_scope and _TeamDailyActivityScope; this task only calls them."
+  - "B2312 owns DailyActivityScope, DailyActivityTable and the entity_id_field check; B3090 owns ScopeDenied and raise_public."
+  - "B3096 to B3098 own the routes that use these resolvers and add the HTTP oracle cases through the booted proxy, since no route reaches this module yet."
+  - "Date validation, timezone extension of end_date and key-filter enforcement in SQL are done later, by the route date check and by B727's builders."
+pitfalls:
+  - An empty api key list from the team resolver must stay Some(empty) in the scope, because it means "this caller sees no keys"; only None and "" mean no filter.
+  - The team resolver gets its ids back as comma-joined strings, so ids containing "," would split differently the second time; keep the join and do not pass the vector through directly.
+  - resolve_user reads only entity_ids[0] and ignores any later ids; user_entity_query never builds more than one.
+  - A user_id of "" is a real value, so it gives entity_ids [""] and B798 treats it as a requested user, not as absent.
+  - TEAM_RESOLVER has no cache_leakage_keys operation name, so a route task asking for it on a team must see None, not a made-up name.
+  - Only the user query reads include_current_utc_day from the request; the team query has no such parameter and sets false.
+  - The team alias map goes into entity_metadata even when empty; None means "this entity has no metadata field" and is only for users.
+  - 'The oracle helper for this task is b3094. Cases call it as `b3094:` under `call`; the Python adapter builds a real `_build_scope`, `_user_query` equivalent and `_resolve_user` input and prints plain JSON.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

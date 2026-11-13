@@ -1,0 +1,19 @@
+kind: helper
+name: status-mapping
+call:
+  b7811:
+    calls:
+      - call: mongodb_status_error
+        input: {message: "sidecar text", status_code: 400}
+      - call: mongodb_status_error
+        input: {message: "sidecar text", status_code: 401}
+      - call: mongodb_status_error
+        input: {message: "sidecar text", status_code: 408}
+      - call: mongodb_status_error
+        input: {message: "sidecar text", status_code: 500}
+      - call: mongodb_status_error
+        input: {message: "sidecar text", status_code: 503}
+      - call: mongodb_status_error
+        input: {message: "sidecar text", status_code: 418}
+env: {}
+compare: {ignore: []}

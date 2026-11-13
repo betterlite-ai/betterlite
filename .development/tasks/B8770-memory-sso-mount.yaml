@@ -1,0 +1,126 @@
+id: B8770
+title: Mount the memory API and the SSO routes and prove the login entry and callbacks over HTTP
+description: >-
+  Two route families are built and never mounted, so their paths answer 404. B8541 builds the memory API router
+  (`memory_routes(state) -> Router` in crates/betterlite-server/src/memory_routes) for POST and GET /v1/memory and GET,
+  PUT and DELETE /v1/memory/{*key}. B063 composes the SSO routers in crates/betterlite-server/src/sso from the route
+  owners B1613, B1614, B1615, B1625, B1626, B1627 and B1628, keeping the routes LiteLLM serves without a key apart
+  from the ones behind it: GET /sso/key/generate, GET /sso/callback, POST /sso/saml/callback, the SAML login and
+  metadata routes and the CLI start, complete and poll routes are public; /sso/get/ui_settings, /sso/readiness and the
+  two debug routes need a key. No B1100 entry merges either family. This task mounts both and takes the HTTP cases
+  of the memory routes, of B063 and of the login entry and both callbacks; B8771 takes the other SSO cases.
+
+
+  Where. Module `app::management::memory_sso` (crates/betterlite-server/src/app/management/memory_sso.rs and
+  memory_sso/tests.rs). In crates/betterlite-server/src/app/management.rs add one line to `mount` that merges
+  `memory_sso::mount(router, state)` and one to `mount_public` that merges `memory_sso::mount_public(router, state)`,
+  after the lines B8670 and B8671 wrote, plus the `mod memory_sso;` line. Keep each merge on its own line.
+
+
+  memory_sso::mount merges the memory router, built once with the state B8541's memory_routes takes (the database is
+  `state.shared.db`, None without one, which is how its handlers answer LiteLLM's db_not_connected_error), and
+  B063's authenticated SSO router. memory_sso::mount_public merges B063's public SSO router, outside the auth layers,
+  since LiteLLM checks no key on those paths. Build B063's SSO services once from what its constructor takes: the
+  loaded Config, `state.shared.db`, the Redis usage cache in `state.shared.redis`, the user cache in
+  `state.shared.cache` and the outbound client `state.shared.http`. Read B063's module for the exact function names
+  and pass what it asks for; do not register any SSO or memory path here.
+
+
+  Tests in app::management::memory_sso::tests build a ServerState without a database, call mount and mount_public on
+  an empty Router and send one request per family with tower's oneshot: POST /v1/memory without a key is the auth
+  401 and GET /v1/memory/a/b/c with the master key reaches the handler; GET /sso/key/generate with no key is not a
+  401; GET /sso/readiness with no key is.
+
+
+  HTTP oracle cases through the booted proxy. The cases below moved here from B8541, B063, B1628, B1615 and B1626,
+  whose tasks now test their handlers with tower's oneshot over their own routers only. Write each case from that
+  task's text: the memory cases from B8541's description, the login entry cases from B1628's, the OAuth callback
+  cases from B1615's, the SAML callback cases from B1626's, the composition cases from B063's. Use the SSO fixtures
+  B1630 and B1631 provide; do not add another fixture. When a case shows a product bug, fix the owning task's module
+  in a follow-up, not here.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/management.rs
+    - crates/betterlite-server/src/app/management/memory_sso.rs
+    - crates/betterlite-server/src/app/management/memory_sso/**
+    - tools/oracle/cases/memory/**
+    - tools/oracle/cases/sso/services/**
+    - tools/oracle/cases/sso/login-entry/**
+    - tools/oracle/cases/sso/oauth-callback/**
+    - tools/oracle/cases/sso/saml-callback/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19995
+    why: The memory router is included without a prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L998-L1010
+    why: GET /sso/key/generate has no auth dependency, so it is served outside the key check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2020-L2030
+    why: GET /sso/callback, also public.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2149-L2175
+    why: The SAML login, metadata and callback routes, all public.
+dod:
+  - text: The memory routes and B063's authenticated SSO routes answer inside the auth layers and the public SSO routes outside them.
+    proof: [memory-sso-mount-tests, oracle]
+  - text: Over HTTP, the memory, SSO composition, login entry, OAuth callback and SAML callback routes answer as LiteLLM does.
+    proof: [memory-sso-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: memory-sso-mount-tests
+      why: a family is not mounted, is mounted twice, or a public SSO route sits behind the key check
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::management::memory_sso::/)'
+    - id: memory-sso-cases
+      why: a moved family has no booted-proxy case on this branch
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/memory)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sso/login-entry)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sso/oauth-callback)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sso/saml-callback)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sso/services)"
+oracle_cases:
+  - tools/oracle/cases/memory/create-no-database.yaml
+  - tools/oracle/cases/memory/get-nested-key-no-database.yaml
+  - tools/oracle/cases/memory/create-missing-value.yaml
+  - tools/oracle/cases/memory/list-page-size-too-large.yaml
+  - tools/oracle/cases/memory/create-no-key.yaml
+  - tools/oracle/cases/sso/services/route-auth-boundaries.yaml
+  - tools/oracle/cases/sso/services/cli-then-browser-login.yaml
+  - tools/oracle/cases/sso/services/provider-precedence-with-saml-configured.yaml
+  - tools/oracle/cases/sso/services/password-fallback-keeps-return-target.yaml
+  - tools/oracle/cases/sso/login-entry/disabled-ui-before-configuration.yaml
+  - tools/oracle/cases/sso/login-entry/local-password-form-return-cookie.yaml
+  - tools/oracle/cases/sso/login-entry/generic-authorization-with-pkce.yaml
+  - tools/oracle/cases/sso/login-entry/plain-oauth-preserves-pkce-cookie.yaml
+  - tools/oracle/cases/sso/login-entry/microsoft-common-tenant-authorization.yaml
+  - tools/oracle/cases/sso/login-entry/invalid-cli-session.yaml
+  - tools/oracle/cases/sso/login-entry/saml-only-provider.yaml
+  - tools/oracle/cases/sso/oauth-callback/oauth-error-before-db.yaml
+  - tools/oracle/cases/sso/oauth-callback/database-before-master-key.yaml
+  - tools/oracle/cases/sso/oauth-callback/empty-google-id-wins.yaml
+  - tools/oracle/cases/sso/oauth-callback/generic-login-to-dashboard.yaml
+  - tools/oracle/cases/sso/oauth-callback/pkce-cookie-mismatch.yaml
+  - tools/oracle/cases/sso/oauth-callback/cli-code-and-browser-token-required.yaml
+  - tools/oracle/cases/sso/oauth-callback/multiple-team-selection.yaml
+  - tools/oracle/cases/sso/oauth-callback/restricted-group-denial.yaml
+  - tools/oracle/cases/sso/saml-callback/signed-browser-login.yaml
+  - tools/oracle/cases/sso/saml-callback/unsigned-wrong-key-and-expired.yaml
+  - tools/oracle/cases/sso/saml-callback/wrong-audience-and-destination.yaml
+  - tools/oracle/cases/sso/saml-callback/subject-confirmation-request-id.yaml
+  - tools/oracle/cases/sso/saml-callback/wrong-browser-cookie.yaml
+  - tools/oracle/cases/sso/saml-callback/reused-assertion.yaml
+  - tools/oracle/cases/sso/saml-callback/unsolicited-disabled-without-redis.yaml
+  - tools/oracle/cases/sso/saml-callback/attribute-overrides-and-nameid-fallback.yaml
+  - tools/oracle/cases/sso/saml-callback/missing-and-oversize-form.yaml
+  - tools/oracle/cases/sso/saml-callback/relative-relay-state-ignored.yaml
+deviations: []
+out_of_scope:
+  - "The memory handlers: B8541 over B4530. The SSO handlers: B1613, B1614, B1615, B1625, B1626, B1627 and B1628. Their composition and service graph: B063."
+  - "The CLI flow, CLI poll, SAML provider and status and debug cases: B8771."
+pitfalls:
+  - "The SSO login entry, callbacks, SAML and CLI routes carry no auth dependency in LiteLLM; mounting them inside the key check turns every browser login into a 401."
+  - "/sso/get/ui_settings and /sso/readiness do need a key, so B063's two routers must not be merged into one place."
+  - "The memory key path keeps slashes, so the router B8541 returns must be merged as is, never nested under a prefix."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

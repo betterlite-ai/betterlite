@@ -1,0 +1,25 @@
+kind: helper
+name: inline-media-data-image
+call:
+  inline_media:
+    call: inline
+    mode: sequential
+    messages:
+      - role: user
+        content:
+          - type: text
+            text: hello
+          - type: image_url
+            image_url:
+              url: "https://cdn.example.com/cat.png"
+              detail: high
+      - role: user
+        content:
+          - type: image_url
+            image_url: "https://cdn.example.com/dog.png"
+    data_urls:
+      "https://cdn.example.com/cat.png": "data:image/png;base64,Y2F0"
+      "https://cdn.example.com/dog.png": "data:image/png;base64,ZG9n"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,18 @@
+kind: helper
+name: rubrik-moderation-moderate-response-logging-obj-empty-context
+call:
+  b3978:
+    environment: {}
+    init: {api_base: "https://rubrik.test", api_key: test-key, guardrail_name: safety}
+    clock: [1700000000.0, 1700000001.0]
+    replies:
+      - status: 200
+        body: '{"choices":[{"message":{"content":"hello"}}]}'
+    logging_obj:
+      model_call_details: {}
+    request_data: {litellm_call_id: call-1}
+    input_type: response
+    inputs:
+      texts: [hello]
+env: {}
+compare: {ignore: []}

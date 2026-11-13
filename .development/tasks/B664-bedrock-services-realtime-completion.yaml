@@ -211,7 +211,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_multiple_content_blocks$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_completion.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_completion.py tools/oracle/helpers/bedrock_services_realtime_completion)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -224,7 +224,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_realtime_completion)"
       && grep -q 'decode_realtime_tool_input' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_realtime_completion.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_realtime_completion_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_realtime_completion_corpus(::|$)/)'
   - id: case-output-item-completion
     why: With valid ids ALWAYS then emit response.output_item.done with event_UUID,output_index0,response_id,item{id,object:realtime.item,type:message,status:completed,role:assistant,content:[]};
       return delta_chunks=None. ContentEnd stopReason does not affect this helper or trigger response.done here;

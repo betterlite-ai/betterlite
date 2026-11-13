@@ -1,0 +1,9 @@
+kind: helper
+name: special-tokens
+call:
+  tokenizer_engine:
+    operation: encode
+    engine: cl100k_base
+    text: "<|endoftext|><|fim_prefix|><|im_start|><|endofprompt|>"
+env: {}
+compare: {ignore: []}

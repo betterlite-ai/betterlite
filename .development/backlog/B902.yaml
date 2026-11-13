@@ -1,7 +1,7 @@
 id: B902
 milestone: M5 api families
 title: Responses shapes
-status: todo
+status: done
 depends_on: [B004, B171]
 file: tasks/B902-responses-shapes.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/base_llm/responses/transformation.py"
 parent: B080
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 621

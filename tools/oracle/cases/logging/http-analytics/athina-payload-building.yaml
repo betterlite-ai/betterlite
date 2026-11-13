@@ -1,0 +1,53 @@
+# athina payload: response_time, prompt from messages, tools and functions, extra metadata keys
+kind: helper
+name: athina-payload-building
+call:
+  b3961:
+    function: log
+    scenarios:
+      - logger: athina
+        environment: {ATHINA_API_KEY: athina-key-1}
+        kwargs:
+          model: gpt-4o
+          messages: [{role: user, content: Hello}]
+          optional_params:
+            temperature: 0.2
+            tools: [{type: function, function: {name: get_weather}}]
+            functions: [{name: legacy}]
+          litellm_params:
+            metadata:
+              environment: prod
+              prompt_slug: welcome
+              customer_id: cust-1
+              customer_user_id: user-1
+              session_id: session-1
+              external_reference_id: ext-1
+              context: {page: 1}
+              expected_response: expected
+              user_query: query
+              tags: [a]
+              user_feedback: good
+              model_options: {temperature: 0.2}
+              custom_attributes: {tier: gold}
+              unknown_key: dropped
+        response:
+          id: chatcmpl-1
+          created: 1700000000
+          model: gpt-4o
+          object: chat.completion
+          system_fingerprint: null
+          choices:
+            - finish_reason: stop
+              index: 0
+              message: {content: hi, role: assistant, tool_calls: null, function_call: null}
+          usage:
+            completion_tokens: 2
+            prompt_tokens: 3
+            total_tokens: 5
+            completion_tokens_details: null
+            prompt_tokens_details: null
+        start_time: "2026-01-02T03:00:00Z"
+        end_time: "2026-01-02T03:00:01.250000Z"
+        answers: [{status: 200, body: {ok: true}}]
+env: {}
+compare: {ignore: []}

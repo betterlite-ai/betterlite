@@ -1,0 +1,18 @@
+kind: helper
+name: common-request-processing-error-payload-merged-fields
+call:
+  b7324:
+    function: error_payload
+    failures:
+      - detail: {error: blocked, code: guardrail}
+        provider_specific_fields: {code: provider, extra: 1}
+      - detail: {message: top}
+        provider_specific_fields: {}
+      - detail: plain
+        provider_specific_fields: {provider: openai}
+      - status_code: 502
+      - status_code: 400
+        detail: {}
+        provider_specific_fields: {provider: anthropic}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: logging-fields-system-messages
+call:
+  logging_fields:
+    function: system_messages
+    system: be nice
+    messages:
+      - {role: user, content: hi}
+      - {role: assistant, content: hello}
+env: {}
+compare: {ignore: []}

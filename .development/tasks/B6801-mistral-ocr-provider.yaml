@@ -1,0 +1,77 @@
+id: B6801
+title: Mistral OCR provider
+description: >-
+  Add module `mistral_ocr` to betterlite-ocr with `MistralOcrConfig`, an implementation of B6800's
+  `OcrProviderConfig` that ports litellm-rust mistral/ocr/transformation.rs. The request body is
+  `MistralOcrRequest` with model, the document and the mapped options. Supported option names are
+  pages, image_limit, image_min_size, bbox_annotation_format, document_annotation_format,
+  document_annotation_prompt, extract_header, extract_footer, table_format,
+  confidence_scores_granularity and include_blocks (req_format is read by the shared layer).
+  The URL is the api_base (default https://api.mistral.ai/v1) completed with the path v1/ocr, so a
+  base that already ends in v1 or v1/ocr is not doubled. The API key comes from the request, then
+  MISTRAL_API_KEY. A supplied authorization header wins over both. Without a key, fail with the
+  provider authentication error naming Mistral. Secret names include MISTRAL_AZURE_API_KEY and
+  MISTRAL_AZURE_API_BASE as the Rust file lists them. The document is sent to Mistral as given, with no download. The
+  response decoder reads the Mistral JSON into the OCRResponse type from B3300. A response with no
+  model field gets the request model, and a response whose model is an explicit null fails with
+  ResponseField path model. Unknown fields are kept.
+  Mistral hosted on Azure and Vertex reuses this type through B6804 and B6802, so make
+  `map_ocr_params`, `transform_ocr_request` and `transform_ocr_response` public.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-ocr/Cargo.toml
+    - crates/betterlite-ocr/src/mistral_ocr.rs
+    - crates/betterlite-ocr/src/mistral_ocr/**
+    - tools/oracle/cases/ocr/mistral/**
+    - tools/oracle/helpers/b6801.py
+    - tools/oracle/helpers/b6801/**
+    - tools/oracle/src/helpers/ocr/b6801.rs
+    - tools/oracle/src/helpers/ocr/b6801/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/mistral/ocr/transformation.rs#L1-L662
+    why: URL building, header rules, option mapping, request body and response decoding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/ocr/transformation.py#L1-L102
+    why: The OCRResponse shape this decoder must produce.
+
+dod:
+  - text: A POST to the mock server carries the Mistral body (model, document, only the supported options) and Authorization Bearer key, and the OCRResponse matches LiteLLM's for the same mock answer.
+    proof: [mistral-tests, oracle]
+  - text: The URL builder completes a bare base, a base ending in v1 and a base ending in v1/ocr to one URL, and keeps a query string.
+    proof: [mistral-tests]
+  - text: Key lookup order is request key, then MISTRAL_API_KEY, a supplied authorization header wins over both, and a missing key returns the Mistral authentication error.
+    proof: [mistral-tests]
+  - text: Unsupported option names are dropped by map_ocr_params and supported ones pass through with their JSON value unchanged.
+    proof: [mistral-tests, oracle]
+  - text: A response with no model field uses the request model, and an explicit null model fails with ResponseField path model.
+    proof: [mistral-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: mistral-tests
+      why: Mistral request, URL, header or response behavior is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^mistral_ocr::tests::/)'
+
+oracle_cases:
+  - tools/oracle/cases/ocr/mistral/document-url.yaml
+  - tools/oracle/cases/ocr/mistral/options-and-pages.yaml
+
+deviations: []
+
+out_of_scope:
+  - Choosing Mistral from a model name is B6808. The Mistral guardrail translation is B036.
+  - Mistral on Azure is B6804 and Mistral on Vertex is B6802. They call the public functions of this module.
+
+pitfalls:
+  - Do not send req_format or other non-Mistral names to the provider.
+  - Port the Rust file as it is for a request-supplied api_base. Do not add a refusal the Rust file lacks.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

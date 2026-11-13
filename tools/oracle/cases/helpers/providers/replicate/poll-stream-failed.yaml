@@ -1,0 +1,39 @@
+kind: helper
+name: replicate-poll-stream-failed
+env: {}
+compare: {ignore: []}
+call:
+  b5847:
+    op: stream
+    requests:
+      - policy: strict
+        url: https://poll/1
+        polls:
+          - {body: '{"status":"failed","error":"bad","output":["x"]}'}
+      - policy: strict
+        url: https://poll/2
+        polls:
+          - {body: '{"status":"failed"}'}
+      - policy: strict
+        url: https://poll/3
+        polls:
+          - {body: '{"status":"processing","output":null}'}
+      - policy: lenient
+        url: https://poll/4
+        polls:
+          - {body: '{"status":"failed","error":"bad","output":["x"]}'}
+      - policy: strict
+        url: https://poll/5
+        headers: {x-a: b}
+        polls:
+          - {body: '{"status":"processing","output":["a",1]}'}
+      - policy: lenient
+        url: https://poll/6
+        headers: {x-a: b}
+        polls:
+          - {body: '{"status":"processing","output":["a",1]}'}
+      - policy: strict
+        url: https://poll/7
+        headers: {x-a: b}
+        polls:
+          - {body: '{"status":"processing","output":5}'}

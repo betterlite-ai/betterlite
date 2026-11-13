@@ -1,0 +1,6 @@
+kind: helper
+name: xai-usage-ticks-and-booleans
+call:
+  xai_usage: {action: ticks, ticks: 12500000000}
+env: {}
+compare: {ignore: []}

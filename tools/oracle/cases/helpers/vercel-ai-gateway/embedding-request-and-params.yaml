@@ -1,0 +1,27 @@
+kind: helper
+name: vercel-ai-gateway-embedding-request-and-params
+call:
+  b5835:
+    steps:
+      - kind: embedding_request_and_params
+        model: vercel_ai_gateway/text-embedding-3-small
+        input: hello
+        non_default_params:
+          timeout: 30
+          dimensions: 8
+          encoding_format: float
+          user: reader
+          bogus: 1
+        optional_params:
+          input: option
+      - kind: embedding_request_and_params
+        model: openai/vercel_ai_gateway/model
+        input: [a, b]
+      - kind: embedding_request_and_params
+        model: model
+        input: [[1, 2], [3]]
+      - kind: embedding_request_and_params
+        model: vercel_ai_gateway/vercel_ai_gateway/model
+        input: twice
+env: {}
+compare: {ignore: []}

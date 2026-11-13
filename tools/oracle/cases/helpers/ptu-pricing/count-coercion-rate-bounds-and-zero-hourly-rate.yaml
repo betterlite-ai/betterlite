@@ -1,0 +1,12 @@
+kind: helper
+name: count-coercion-rate-bounds-and-zero-hourly-rate
+call:
+  ptu_pricing:
+    operation: terms
+    model_info:
+      ptu_count: "12"
+      cost_per_ptu_per_hour: 0
+      team_id: team-capacity
+      ptu_effective_from: "2026-01-01T00:00:00Z"
+compare: {ignore: []}
+env: {}

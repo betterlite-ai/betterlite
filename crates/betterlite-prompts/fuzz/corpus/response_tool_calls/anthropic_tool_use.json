@@ -1,0 +1,1 @@
+{"id":"msg_1","role":"assistant","content":[{"type":"text","text":"searching"},{"type":"tool_use","id":"toolu_1","name":"search","input":{"query":"weather"}},{"type":"tool_use","id":"toolu_2","name":"search","input":"not an object"}]}

@@ -1,0 +1,9 @@
+kind: helper
+name: password-policy-scrypt-compatible-hash
+call:
+  password_policy:
+    function: hash
+    password: Tr0ub4dor&3-horse
+env: {}
+compare:
+  ignore: []

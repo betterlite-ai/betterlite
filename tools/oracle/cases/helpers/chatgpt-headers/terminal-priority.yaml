@@ -2,6 +2,10 @@ kind: helper
 name: chatgpt-headers-terminal-priority
 call:
   chatgpt_headers:
+    platform:
+      system: "Linux"
+      release: "6.1.0-oracle"
+      machine: "x86_64"
     environment:
       TERM_PROGRAM: "iTerm.app"
       TERM_PROGRAM_VERSION: "3.5.0"

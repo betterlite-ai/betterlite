@@ -1,0 +1,8 @@
+kind: helper
+name: common-request-processing-coerce-seed
+call:
+  b7324:
+    function: coerce
+    settings: [5, " 2.5 ", null]
+env: {}
+compare: {ignore: []}

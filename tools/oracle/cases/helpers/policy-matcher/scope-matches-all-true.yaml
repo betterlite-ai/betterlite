@@ -1,0 +1,18 @@
+kind: helper
+name: scope-matches-all-true
+call:
+  b3241:
+    policy_memory_matching_matcher:
+      action: scope_matches
+      scope:
+        teams: [team-a]
+        keys: [key-*]
+        models: [gpt-*]
+        tags: [prod*]
+      context:
+        team_alias: team-a
+        key_alias: key-1
+        model: gpt-4
+        tags: [prod-eu]
+env: {}
+compare: {ignore: []}

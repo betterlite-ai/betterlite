@@ -11,7 +11,8 @@ description: >-
   handling both string and list content. Apply guardrails to completed
   ModelResponse objects: extract text, images, and tool calls per choice,
   apply guardrail responses by choice index, and update message content
-  in place.
+  The completed-response pass is `pub async fn process_output_response(response: &mut ChatResponse, guardrail: &impl GuardrailContract, principal: &Principal) -> Result<(), GuardrailFailure>` in
+  rewrites.rs, and B3251 calls it.
 
   Support ended-stream reconstruction: gather all text from completed-stream
   responses grouped by choice, build standalone choice contents lists,
@@ -57,6 +58,7 @@ dod:
       process_output_response extracts text, images, and tool calls from completed response
       choices, applies guardrail to all extracted content, and rewrites response choices
       in place by choice index.
+      It is `pub async fn process_output_response(response: &mut ChatResponse, guardrail: &impl GuardrailContract, principal: &Principal) -> Result<(), GuardrailFailure>`.
     proof: [output-process-cases]
   - text: >-
       _apply_guardrail_responses_to_output_texts applies text responses back to

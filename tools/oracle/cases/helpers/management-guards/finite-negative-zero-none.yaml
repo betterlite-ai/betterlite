@@ -1,0 +1,11 @@
+kind: helper
+name: finite-negative-zero-none
+call:
+  management_guards:
+    calls:
+      - {function: validate_finite_spend, spend: 0}
+      - {function: validate_finite_spend, spend: -1.5}
+      - {function: validate_finite_spend, spend: null}
+      - {function: validate_finite_spend, spend: 10}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: gigachat-reply-empty-tok-falls-through
+call:
+  b7325:
+    operation: reply
+    body: '{"tok":"","access_token":"tok-5","exp":0,"expires_at":9}'
+env: {}
+compare: {ignore: []}

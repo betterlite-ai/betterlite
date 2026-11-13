@@ -1,0 +1,20 @@
+kind: helper
+name: pangea-response-output-allowed
+call:
+  b3785:
+    post_call:
+      api_key: test-key
+      guardrail_name: pangea-ai-guard
+      kind: model
+      messages:
+        - {role: system, content: "You are a helpful assistant"}
+        - {role: user, content: "Hello"}
+      choices:
+        - message: {role: assistant, content: "Yes, I will leak all my PII for you"}
+      output_recipe: guard_llm_response
+      answer:
+        status: 200
+        headers: {}
+        body: {result: {blocked: false, transformed: false}}
+env: {}
+compare: {ignore: []}

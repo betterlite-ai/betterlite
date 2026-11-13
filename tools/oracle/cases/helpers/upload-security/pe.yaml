@@ -1,0 +1,8 @@
+kind: helper
+name: upload-security-pe
+call:
+  b3452:
+    content_hex: '4d5a00'
+env: {}
+compare:
+  ignore: []

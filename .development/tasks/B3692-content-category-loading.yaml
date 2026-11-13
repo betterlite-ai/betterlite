@@ -82,7 +82,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - Final constructor calls to build ContentFilterGuardrail or other guardrails. This task only builds the loaded CategoryConfig records.
+  - Final constructor calls to build ContentFilterGuardrail (B8773) or other guardrails. This task only builds the loaded CategoryConfig records.
   - Request routing or guardrail invocation. This task loads configurations, not routes requests.
   - Pattern matching and keyword detection. B3693, B3694 and B3695 handle the evaluation side.
 pitfalls:

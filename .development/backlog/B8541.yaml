@@ -1,0 +1,14 @@
+id: B8541
+milestone: M8 platform
+title: Memory API routes
+status: todo
+depends_on: [B052, B726, B732, B4530]
+file: tasks/B8541-memory-routes.yaml
+covers:
+  - "litellm/proxy/memory/memory_endpoints.py"
+parent: B133
+split_from: B133
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

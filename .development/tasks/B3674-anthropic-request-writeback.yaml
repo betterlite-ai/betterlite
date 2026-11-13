@@ -1,0 +1,317 @@
+id: B3674
+title: Anthropic guardrail request writeback
+description: >-
+  Build the functions that put a guardrail's answer back into an Anthropic Messages
+  request. Three kinds of answer come back: rewritten texts (one string per scanned
+  piece of text), rewritten tool calls, and a whole rewritten list of chat-format
+  structured messages. The input scan task (B3675) decides which of the three paths
+  runs and calls these functions. Nothing here calls a guardrail, a provider or the
+  network. Every function edits the request body it is given, a
+  `serde_json::Map<String, Value>`, and returns a typed `Result`.
+
+  Plain write-back goes in
+  crates/betterlite-server/src/guardrails/anthropic_translation/write_back.rs. The
+  scan targets, `ScannedText`, `ScannedToolCall` and the shape helpers come from B3670;
+  use them as they are. `write_back_system_block(system: &mut Value, block_idx: usize,
+  response: &str)` does nothing unless `system` is an array. It counts only blocks that
+  are objects with `type` equal to "text", and sets `text` on the one at `block_idx` among
+  those. An index past the end is ignored. `write_back_message_text(message: &mut
+  Map<String, Value>, target: &MessageTextTarget, response: &str) -> Result<(), WriteBackError>`
+  reads `content`; a missing or null `content` returns Ok with no change. Per target:
+  `MessageContent` sets `content` only when it is a string; `ContentBlockText` sets
+  `content[content_idx].text` when `content` is an array; `ToolResultString` sets
+  `content[content_idx].content` when `content` is an array (whatever the old value was);
+  `ToolResultBlockText` sets `content[content_idx].content[block_idx].text`. When the
+  container type does not fit the target (a string target against an array, an array
+  target against a string), nothing changes. When the container fits but the index or
+  the inner object is missing, return `WriteBackError::TargetMissing` naming the target.
+  LiteLLM raises IndexError or TypeError there and the request fails, so a rewrite is
+  never dropped silently.
+
+  `rewritten_tool_use_input(arguments: &str) -> Option<Map<String, Value>>` returns the
+  parsed JSON object, and None for anything that is not valid JSON or not an object
+  (an array, a string, null, an empty string). `write_back_tool_use(message, target:
+  &ToolUseInputTarget, shape: &ToolCallShape, rewritten_input: Map<String, Value>)`
+  finds `content[content_idx]`; if `content` is not an array or the block is not an
+  object it returns without a change. Otherwise it sets the block's `input` to
+  `rewritten_input` and sets `name` only when `shape.name` is Some and differs from the
+  block's current `name`. Do not use B3670's `tool_call_rewrite` here: that is the
+  Responses rule, and this side compares and writes the whole `after` shape.
+
+  `apply_guardrail_tool_calls_to_input(messages: &mut [Value], scanned_tool_calls:
+  &[ScannedToolCall], pre_guardrail_tool_calls: &[ToolCallShape], returned_tool_calls:
+  Option<&[Value]>, guardrail_name: Option<&str>) -> Result<(), ApplyError>` builds the
+  after shapes with B3670's `tool_call_shapes`, over the returned calls when they are
+  present and the same count as `pre_guardrail_tool_calls`, otherwise over the scanned
+  originals (so a wrong-length answer changes nothing and logs nothing). It pairs
+  scanned call, before and after in order and stops at the shortest of the three. A pair
+  whose before and after shapes differ is a rewrite, and its `after.arguments` must pass
+  `rewritten_tool_use_input`. If any rewrite fails that test, return the B3663
+  `UnappliableRequestRewrite` error (its constructor `unappliable_request_rewrite(guardrail_name)`
+  turns None into "unknown") and write nothing at all, not even the earlier good
+  rewrites. Otherwise write every rewrite with `write_back_tool_use` into
+  `messages[target.msg_idx]`. `apply_guardrail_responses_to_input(data: &mut Map<String,
+  Value>, responses: &[String], scanned: &[ScannedText]) -> Result<(), WriteBackError>`
+  pairs responses with scanned texts and stops at the shorter list. `SystemString`
+  sets `data.system` only if it is currently a string; `SystemBlockText` calls
+  `write_back_system_block`; a `Message` target calls `write_back_message_text` on
+  `data.messages[msg_idx]`, with `messages` taken as empty when it is not an array, so an
+  index then gives `TargetMissing`.
+
+  Structured write-back goes in
+  crates/betterlite-server/src/guardrails/anthropic_translation/structured_write_back.rs.
+  It is used when the guardrail returns a full `structured_messages` list in chat format.
+  The rows are JSON the guardrail may have changed freely, so they stay
+  `serde_json::Value`. `is_system(message)` is true for an object whose `role` is a string
+  equal to "system" after lowercasing. `is_hoisted_top_level_system(message, hoisted:
+  Option<&Value>)` is false when `hoisted` is None, else true when the two values are
+  equal. `translate_to_openai(data: &Map<String, Value>)` calls B967's
+  `translate_anthropic_to_openai` on a copy of `data` with mid-turn system rows preserved
+  (LiteLLM passes `preserve_midturn_system=True`), keeps the request half of the result and
+  drops the tool name map. `hoisted_top_level_system_message(data)` returns None when
+  `data.system` is missing or empty (null, "", []). Otherwise it runs `translate_to_openai`
+  on `{model: data.model or "", messages: [], system: data.system}` and returns the first
+  message of the result, or None. B3675 calls both `translate_to_openai` and
+  `hoisted_top_level_system_message` and never reimplements them.
+
+  `openai_system_message_to_anthropic(message) -> Option<Map<String, Value>>` turns a
+  chat system row into the client's Anthropic-shaped row `{role: "system", content: ...}`.
+  A string `content` gives the row only when it is not empty. An array `content` keeps the
+  blocks that are objects with `type` "text" and a non-empty string `text`, each rebuilt as
+  `{type, text}` plus a deep copy of `cache_control` when it is truthy (non-null, non-empty),
+  and gives the row only when at least one block survives. Any other `content` gives None.
+  `fold_leading_systems_into_top_level(data, leading_systems: &[Value],
+  include_existing_system: bool)` rebuilds `data.system` as an array: first the existing
+  system (a non-empty string becomes one text block, an array is copied as it is, anything
+  else gives nothing; all of it only when `include_existing_system` is true), then, for
+  each leading row that is an object and converts with the function above, its blocks (a
+  string content becomes one text block). If the array has anything in it, set
+  `data.system` to it; otherwise remove the `system` key.
+  `defer_systems_inside_tool_exchanges(messages: &[Value]) -> Vec<Value>` keeps a system
+  row from splitting a tool call from its results. It runs the B224 `group_tool_exchanges`
+  (betterlite-prompts, anthropic_history) over the rows that are not system rows,
+  maps each group of two or more to the original index of its first row and of its last
+  row, then walks all rows in order with `open_end` starting at -1. A system row at an
+  index below `open_end` is held back. Every other row sets `open_end` to its group's
+  last index when it starts a group, is emitted, and then, if its index is at or past
+  `open_end`, the held rows are emitted right after it. Rows still held at the end are
+  emitted last. `open_end` is never reset, which is harmless because it only ever
+  compares against later indexes.
+
+  `write_back_structured_messages(data: &mut Map<String, Value>, structured_messages:
+  &[Value], hoisted_system_message: Option<&Value>, preserve_system_messages: bool) ->
+  Result<(), StructuredWriteBackError>` follows this order. (1) `model` is `data.model` as
+  a string, else "". (2) Reorder with `defer_systems_inside_tool_exchanges`. (3) The
+  leading system rows are the rows before the first non-system row (all rows if there is
+  none). `hoisted_in_leading` is true if any leading row is the hoisted prompt. (4) If
+  there are leading system rows and not (exactly one leading row and it is the hoisted
+  prompt), call `fold_leading_systems_into_top_level` with `include_existing_system` true
+  only when `hoisted_system_message` is None. When the one leading row is the unchanged
+  hoisted prompt, `data.system` is left exactly as the client sent it. (5) Walk the rest
+  with a `run` of non-system rows. A non-system row joins the run. A system row first
+  converts and clears the run. Then, if the hoisted prompt has not been dropped yet and
+  this row is it, the row is dropped and the flag is set (the flag starts as
+  `hoisted_in_leading`). Otherwise, when `preserve_system_messages` is true, the row goes
+  through `openai_system_message_to_anthropic` and is appended when that gives Some; when
+  it is false the row is dropped. (6) Convert the last run. To convert a run, split it
+  with `group_tool_exchanges` and call B180's `anthropic_messages_pt` on each group
+  separately with the model and provider "anthropic", appending every result. (7) If no
+  converted row is a non-system row, append the result of `anthropic_messages_pt` on an
+  empty list (the placeholder user turn it returns). (8) Remove `cache_control` from every
+  block with `type` "thinking" in any converted row whose `content` is an array. (9) Set
+  `data.messages` to the converted rows. The prompts crate has its own `Json` type; it
+  derives serde, so move rows between the two with serde and do not write a new
+  converter module. A conversion failure propagates as `StructuredWriteBackError::Conversion`
+  with `#[source]`.
+
+  Cargo: betterlite-server does not depend on betterlite-core, betterlite-prompts or
+  betterlite-guardrails today. Add the ones this task imports to
+  crates/betterlite-server/Cargo.toml (B3670 adds betterlite-core for B909's converter; the
+  one for B967 is the same crate, so whichever task merges second finds the line there).
+  None of those crates depends on betterlite-server, so no cycle forms.
+
+  Each module that can fail owns its error enum in its own file with `thiserror`:
+  `WriteBackError` and `ApplyError` in write_back/error.rs, `StructuredWriteBackError` in
+  structured_write_back/error.rs. Tests live in `tests.rs` of each module and are named so
+  the filters below match: `system_block_*`, `message_text_*`, `tool_use_*`, `tool_calls_*`,
+  `responses_to_input_*` in write_back; `hoisting_*`, `system_conversion_*`, `fold_*`,
+  `defer_*`, `structured_*`, `conversion_error_*` in structured_write_back.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/guardrails/anthropic_translation/write_back.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/write_back/**
+    - crates/betterlite-server/src/guardrails/anthropic_translation/structured_write_back.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/structured_write_back/**
+    - tools/oracle/cases/helpers/anthropic-guardrail-write-back/**
+    - tools/oracle/helpers/b3674.py
+    - tools/oracle/helpers/b3674/**
+    - tools/oracle/src/helpers/server/b3674.rs
+    - tools/oracle/src/helpers/server/b3674/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L197-L247
+    why: The system block, message text and tool_use write-back functions and the JSON object check for rewritten arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L496-L505
+    why: _translate_to_openai, with preserve_midturn_system=True.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L686-L700
+    why: How the top-level system prompt is hoisted through a probe translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L714-L821
+    why: System row conversion, folding into the top-level system, the hoisted-prompt match, is_system and the deferral around tool exchanges.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L822-L891
+    why: write_back_structured_messages, step by step, including the placeholder turn and the thinking cache_control strip.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1066-L1118
+    why: Text write-back by target and the all-or-nothing tool call write-back.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L648-L682
+    why: Call site that chooses between structured write-back and the text and tool call path, and what it passes in.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L269-L279
+    why: The lenient shape reader that builds the before and after shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2203-L2250
+    why: group_tool_exchanges, which the deferral and the run conversion both call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L429-L430
+    why: unappliable_request_rewrite, which maps a missing guardrail name to "unknown".
+dod:
+  - text: >-
+      write_back_system_block changes only the nth text block of an array system prompt, and
+      ignores a string system value, a missing index and non-text blocks when counting.
+    proof: [system-block-tests, oracle]
+  - text: >-
+      write_back_message_text writes each of the four targets to its own place, does nothing
+      for null content or a container that does not fit the target, and returns a typed error
+      when the container fits but the index or inner object is missing.
+    proof: [message-text-tests, oracle]
+  - text: >-
+      apply_guardrail_responses_to_input writes the system string only over a string, pairs
+      responses and scanned texts to the shorter list, and sends message targets to the right
+      message.
+    proof: [responses-to-input-tests, oracle]
+  - text: >-
+      rewritten_tool_use_input accepts only a JSON object, and write_back_tool_use replaces
+      the block input and renames the block only when the new name is present and different.
+    proof: [tool-use-tests, oracle]
+  - text: >-
+      apply_guardrail_tool_calls_to_input ignores a returned list of the wrong length, writes
+      only pairs whose shape changed, and writes nothing and returns the unappliable-rewrite
+      error when any changed call has arguments that are not a JSON object.
+    proof: [tool-calls-tests, oracle]
+  - text: >-
+      hoisted_top_level_system_message returns the first translated message for a non-empty
+      string or block system prompt and None for a missing or empty one.
+    proof: [hoisting-tests, oracle]
+  - text: >-
+      openai_system_message_to_anthropic keeps only non-empty text blocks, copies a truthy
+      cache_control and returns None for an empty string or no surviving block.
+    proof: [system-conversion-tests, oracle]
+  - text: >-
+      fold_leading_systems_into_top_level puts the existing system first only when asked,
+      turns a string into one text block and removes the system key when nothing is left.
+    proof: [fold-tests, oracle]
+  - text: >-
+      defer_systems_inside_tool_exchanges holds a system row that sits inside a tool call and
+      its results until the exchange ends, and emits rows still held at the end last.
+    proof: [defer-tests, oracle]
+  - text: >-
+      write_back_structured_messages leaves data.system alone when the one leading row is the
+      unchanged hoisted prompt, folds changed leading system rows into it otherwise, drops the
+      hoisted prompt once, keeps other system rows only when preserve_system_messages is true,
+      adds the placeholder turn when no non-system row remains and strips cache_control from
+      thinking blocks.
+    proof: [structured-tests, oracle]
+  - text: >-
+      A conversion failure inside write_back_structured_messages returns the typed conversion
+      error and leaves data.messages as it was.
+    proof: [structured-error-tests]
+checks:
+  optional: []
+  commands:
+    - id: system-block-tests
+      why: the system block write-back tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::write_back::tests::system_block_/)'
+    - id: message-text-tests
+      why: the per-target message text write-back tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::write_back::tests::message_text_/)'
+    - id: responses-to-input-tests
+      why: the pairing of responses with scanned texts is not tested
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::write_back::tests::responses_to_input_/)'
+    - id: tool-use-tests
+      why: the tool_use input and name write-back tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::write_back::tests::tool_use_/)'
+    - id: tool-calls-tests
+      why: the all-or-nothing tool call rewrite tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::write_back::tests::tool_calls_/)'
+    - id: hoisting-tests
+      why: the top-level system hoisting tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::structured_write_back::tests::hoisting_/)'
+    - id: system-conversion-tests
+      why: the system row conversion tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::structured_write_back::tests::system_conversion_/)'
+    - id: fold-tests
+      why: the folding of leading system rows into the top-level system is not tested
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::structured_write_back::tests::fold_/)'
+    - id: defer-tests
+      why: the deferral of system rows inside tool exchanges is not tested
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::structured_write_back::tests::defer_/)'
+    - id: structured-tests
+      why: the structured message write-back order, placeholder turn or thinking strip is not tested
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::structured_write_back::tests::structured_/)'
+    - id: structured-error-tests
+      why: a conversion failure is swallowed or changes data.messages
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::structured_write_back::tests::conversion_error_/)'
+    - id: helper-cases-added
+      why: the helper cases for this task were not added on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/anthropic-guardrail-write-back)"
+oracle_cases:
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/system-block-nth-text-block.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/system-block-string-system-ignored.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/message-text-four-targets.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/message-text-container-mismatch-unchanged.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/responses-to-input-shorter-list-wins.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/responses-to-input-system-string-only-over-string.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/tool-use-name-only-when-changed.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/tool-calls-wrong-length-answer-ignored.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/tool-calls-array-arguments-rejected-whole.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/hoisted-system-from-string-and-blocks.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/hoisted-system-empty-is-none.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/system-row-to-anthropic-blocks.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/fold-leading-systems-with-existing-system.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/fold-nothing-left-removes-system.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/defer-system-inside-tool-exchange.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/structured-unchanged-hoisted-prompt-keeps-system.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/structured-rewritten-hoisted-prompt-folds.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/structured-midturn-system-preserved.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/structured-midturn-system-dropped.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/structured-only-system-rows-gets-placeholder.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-write-back/structured-thinking-cache-control-stripped.yaml
+deviations:
+  - what: A target whose container has the right type but whose index or inner object is missing returns a typed `TargetMissing` error and the request fails. LiteLLM raises IndexError, KeyError or TypeError there.
+    why: The guardrail's rewrite would otherwise be lost and the unredacted text sent on; failing the request is what LiteLLM does in practice, now with a named error. The caller maps it to the same 500 LiteLLM returns.
+  - what: The hoisted prompt is recognised by value equality only. LiteLLM also matches by object identity.
+    why: Rust has no shared object identity for JSON rows, and an identical object is always equal, so the result is the same for every row that LiteLLM matches by identity.
+  - what: "`translate_to_openai` returns the request half of the B967 result and drops the tool name map."
+    why: LiteLLM's handler never reads the map from this call.
+out_of_scope:
+  - "B3675 owns the Anthropic process_input_messages, the text, image and tool_result extractors, extract_request_tool_names, process_output_response and the output extraction helpers, and with them get_structured_messages, _extract_top_level_system_text and _extract_midturn_system_text. It decides which write-back path runs and calls this task's functions."
+  - "B3676 owns the Anthropic streaming and SSE rewrite helpers (_SSEFieldRewrite and its rewriters). B3673 owns the Anthropic block continuation and SSE event helpers."
+  - "B3670 owns the Anthropic scan targets, ScannedText, ScannedToolCall, ExtractedInput, is_client_tool_use and the shared tool call shape helpers. This task uses them."
+  - "B3663 owns unappliable_request_rewrite, merge_guardrailed_scoped_messages, merge_returned_tools_into_request_tools and scoped_structured_message_indices. process_input_messages, in B3675, calls them."
+  - "The Anthropic typing helpers _as_str_mapping, _content_block_at, _ModelDumpBlock, _TextAttrBlock, _WritableMessage and _as_writable only narrow Python types and have no Rust counterpart."
+  - "B967 owns translate_anthropic_to_openai, B180 owns anthropic_messages_pt and B224 owns group_tool_exchanges. This task only calls them."
+  - "The tools conversion in process_input_messages (AnthropicConfig._map_tool_helper and the tools merge) belongs to B3675 with the rest of that function."
+pitfalls:
+  - "`write_back_system_block` counts only blocks whose `type` is \"text\", but the scan that produced `SystemBlockText { block_idx }` numbered every block with a string `text` in the hoisted chat row. Keep both rules as they are; do not unify them."
+  - "A `ToolResultString` target overwrites `content[content_idx].content` whatever it held before, including an array, because LiteLLM only checks that the outer `content` is an array."
+  - "Tool call rewrites are checked for every changed call before any is written. One call with `\"arguments\": \"[]\"` or an empty string makes the whole request fail with the unappliable-rewrite error, so earlier good rewrites must not be applied first."
+  - "A returned tool call list of a different length is ignored without a warning on this side, unlike the Responses side. The after shapes then equal the scanned ones, so nothing is rewritten."
+  - "The tool call write-back compares whole shapes, so a returned call with a missing `function.name` has name None, differs from a named original, and counts as rewritten. `write_back_tool_use` then keeps the block's name because a None name is never written."
+  - "When the one leading row is the unchanged hoisted prompt, `data.system` must stay byte for byte what the client sent (a string stays a string, `cache_control` stays), because folding rebuilds it as an array of text blocks."
+  - "`include_existing_system` is true only when there was no hoisted prompt. With a hoisted prompt the old system is already inside the structured rows, so folding it again would duplicate it."
+  - "A system row is dropped, not converted, when `preserve_system_messages` is false. That flag is true only when the client's request had a mid-turn system row, so a plain request never gets system rows in `messages`, which Anthropic rejects."
+  - "Each tool exchange group is passed to `anthropic_messages_pt` on its own, not the whole run, so two separate user turns are not merged by one call."
+  - "The placeholder turn is added only when every converted row is a system row, and it comes from converting an empty message list, not from a hard-coded string. Use B180's output as it is."
+  - "The `cache_control` strip touches only blocks whose `type` is \"thinking\" and only in rows whose `content` is an array; text blocks keep their breakpoints."
+  - "`defer_systems_inside_tool_exchanges` runs `group_tool_exchanges` over the non-system rows only, so the group indexes must be mapped back to positions in the full list before the walk."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

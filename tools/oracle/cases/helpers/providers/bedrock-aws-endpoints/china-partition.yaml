@@ -1,0 +1,12 @@
+kind: helper
+name: china-partition
+call:
+  bedrock_aws_endpoints:
+    default_endpoint:
+      cases:
+        - {endpoint_type: runtime, region: cn-north-1}
+        - {endpoint_type: agent, region: cn-northwest-1}
+        - {endpoint_type: agentcore, region: cn-north-1}
+        - {endpoint_type: runtime, region: us-gov-west-1}
+env: {}
+compare: {ignore: []}

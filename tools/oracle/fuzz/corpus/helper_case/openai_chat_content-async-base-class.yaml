@@ -1,0 +1,16 @@
+kind: helper
+name: openai-chat-content-seed-async-base-class
+call:
+  openai_chat_content:
+    transform_requests:
+      requests:
+        - model: gpt-4o
+          provider: openai
+          mode: async_base_class
+          messages:
+            - {role: user, content: hi}
+          optional_params:
+            max_retries: 3
+            tool_choice: none
+env: {}
+compare: {ignore: []}

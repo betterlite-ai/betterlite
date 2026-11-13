@@ -1,0 +1,8 @@
+kind: helper
+name: oci-chat-wire-finish-reason-seed
+call:
+  b5942:
+    function: finish_reason
+    reasons: [COMPLETE, null]
+env: {}
+compare: {ignore: []}

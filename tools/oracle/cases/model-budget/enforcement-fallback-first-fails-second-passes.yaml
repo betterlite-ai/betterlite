@@ -1,0 +1,30 @@
+kind: helper
+name: enforcement-fallback-first-fails-second-passes
+call:
+  b3006:
+    uptime_seconds: 0.0
+    memory:
+      "virtual_key_spend:key-1:gpt-4o:1d": 2.0
+      "virtual_key_spend:key-1:gpt-4o-nano:1d": 2.0
+    calls:
+      - kind: fallback
+        entity_id: key-1
+        key_alias: fallback-key
+        model: gpt-4o
+        budget:
+          gpt-4o:
+            max_budget: 1.0
+            budget_duration: 1d
+          gpt-4o-mini:
+            max_budget: 1.0
+            budget_duration: 1d
+          gpt-4o-nano:
+            max_budget: 1.0
+            budget_duration: 1d
+        fallbacks:
+          gpt-4o:
+            - gpt-4o-nano
+            - gpt-4o-mini
+env: {}
+compare:
+  ignore: []

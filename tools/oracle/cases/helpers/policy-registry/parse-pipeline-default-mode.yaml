@@ -1,0 +1,13 @@
+kind: helper
+name: parse-pipeline-default-mode
+call:
+  b3241:
+    policy_memory_matching_registry:
+      action: parse_pipeline
+      pipeline:
+        steps:
+          - guardrail: pii-blocker
+          - guardrail: audit
+            on_fail: next
+env: {}
+compare: {ignore: []}

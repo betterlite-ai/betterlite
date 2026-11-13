@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-history-repair-indices
+call:
+  anthropic_history:
+    function: repair_indices
+    modify_params: true
+    messages:
+      - {role: assistant, content: "not returned", tool_calls: [{id: call-a}]}
+      - {role: tool, tool_call_id: call-a, content: result}
+      - {role: user, content: following}
+env: {}
+compare:
+  ignore: []

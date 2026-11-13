@@ -1,0 +1,26 @@
+task: B3850
+deviations:
+  - what: >-
+      WeaveOtelConfig::from_env does not write OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_HEADERS
+      into the process environment. LiteLLM's get_weave_otel_config does, as a side effect of building
+      the preset.
+    why: >-
+      Configuration enters through the config crate and std::env is banned there, and the preset already
+      returns the same endpoint and headers in the exporter spec. Any other exporter in the same process
+      that relied on those two variables no longer sees Weave's values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weave/weave_otel.py#L158-L160
+  - what: >-
+      is_unconfigured_placeholder is true for any spec equal to the default one: kind console and every
+      other field empty. LiteLLM checks which fields were set, so a spec the operator wrote as plain
+      `console` survives there and is dropped here when a Weave preset has to gate its exporters.
+    why: >-
+      Betterlite's ExporterSpec does not record which fields were set. The case only happens when a Weave
+      preset runs without credentials and the operator also configured a bare console exporter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/utils.py#L38-L48
+  - what: >-
+      OTEL_EXPORTER_OTLP_TRACES_HEADERS, PHOENIX_PROJECT_NAME and PHOENIX_COLLECTOR_PROJECT_NAME are read
+      under their upper-case names only. LiteLLM reads them through pydantic-settings with
+      case_sensitive=False, so a lower-case spelling also works there.
+    why: >-
+      Environment names on Linux are case-sensitive and every documented spelling is upper case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/phoenix.py#L21-L30

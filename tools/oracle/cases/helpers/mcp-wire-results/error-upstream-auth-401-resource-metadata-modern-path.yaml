@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8190_error_upstream_auth_401_resource_metadata_modern_path","call":{"b8190":{"function":"upstream_auth","server_name":"srv","status_code":401,"base_url":"https://gw.example","request_path":"/mcp/srv"}},"env":{},"compare":{"ignore":[]}}

@@ -1,0 +1,14 @@
+kind: helper
+name: bucket-owner-video
+call:
+  bedrock_other_marengo_three:
+    required_bucket_owner:
+      model: marengo-embed-3-0-v1:0
+      input: s3://bucket/clip.mp4
+      inference_params:
+        inputType: video
+        bucketOwner: "123456789012"
+        startSec: 1.5
+env: {}
+compare:
+  ignore: []

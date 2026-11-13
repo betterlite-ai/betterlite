@@ -1,0 +1,66 @@
+kind: helper
+name: database-urls-reader-fallbacks
+call:
+  database_urls:
+    function: batch
+    calls:
+      - function: build_reader_url
+        settings:
+          database_host: db.example
+          database_user: user
+          database_name: name
+      - function: build_reader_url
+        settings:
+          database_host: db.example
+          database_user: user
+          database_name: name
+          database_host_read_replica: replica.example
+          database_url_read_replica: postgresql://pinned/reader
+      - function: build_reader_url
+        settings:
+          database_host: db.example
+          database_port: "5432"
+          database_user: user
+          database_name: name
+          database_schema: writer_schema
+          database_password: writer_pass
+          database_host_read_replica: replica.example
+          database_port_read_replica: ""
+          database_user_read_replica: ""
+          database_name_read_replica: ""
+          database_schema_read_replica: ""
+          database_password_read_replica: ""
+      - function: build_reader_url
+        settings:
+          database_host: db.example
+          database_user: user
+          database_name: name
+          database_password: writer_pass
+          database_host_read_replica: replica.example
+          database_port_read_replica: "6543"
+          database_user_read_replica: reader_user
+          database_name_read_replica: reader_db
+          database_schema_read_replica: reader_schema
+          database_password_read_replica: reader_pass
+      - function: build_reader_url
+        settings:
+          database_host: db.example
+          database_user: user
+          database_name: name
+          database_password: writer_pass
+          database_host_read_replica: replica.example
+          database_password_read_replica: ""
+      - function: build_reader_url
+        settings:
+          database_url: postgresql://url_user:url_pass@pinned.example/db
+          database_host_read_replica: replica.example
+      - function: build_reader_url
+        settings:
+          database_host: db.example
+          database_user: user
+          database_name: name
+          database_host_read_replica: replica.example
+          database_password_read_replica: ""
+          database_password: writer_pass
+env: {}
+compare: {ignore: []}

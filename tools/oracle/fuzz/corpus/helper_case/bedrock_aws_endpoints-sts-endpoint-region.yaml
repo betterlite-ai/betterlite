@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-aws-endpoints-sts-endpoint-region-seed
+call:
+  bedrock_aws_endpoints:
+    sts_endpoint_region:
+      endpoints: ['https://sts.eu-west-1.amazonaws.com', 'https://example.com']
+env: {}
+compare: {ignore: []}

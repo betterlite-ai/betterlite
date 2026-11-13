@@ -1,0 +1,40 @@
+kind: helper
+name: resource-hints-provider-paths
+call:
+  auth_resource_hints:
+    steps:
+      - kind: azure
+        endpoint: "/chat/gpt-4/chat/completions"
+        router_models: ["chat", "gpt-4"]
+      - kind: azure
+        endpoint: "gpt-4"
+        router_models: ["gpt-4"]
+      - kind: azure
+        endpoint: "/GPT-4/chat"
+        router_models: ["gpt-4"]
+      - kind: nim_deployment
+        custom_llm_provider: nvidia_nim
+      - kind: nim_deployment
+        model: "nvidia_nim/meta/llama-3"
+      - kind: nim_deployment
+        model: "NVIDIA_NIM/meta/llama-3"
+      - kind: nim_groups
+        deployments:
+          - {model_name: shared, custom_llm_provider: nvidia_nim}
+          - {model_name: shared, custom_llm_provider: openai}
+          - {model_name: nim-only, model: "nvidia_nim/meta"}
+      - kind: nim_path
+        path: "/NVIDIA_NIM/meta/llama-3/v1/chat/completions"
+        deployments:
+          - {model_name: meta}
+          - {model_name: meta/llama-3, custom_llm_provider: nvidia_nim}
+          - {model_name: other, custom_llm_provider: openai}
+      - kind: nim_path
+        path: "nvidia_nim/meta/llama-3"
+        deployments:
+          - {model_name: meta/llama-3, custom_llm_provider: nvidia_nim}
+      - kind: nim_endpoint
+        endpoint: "/a//b/c"
+        router_models: ["a", "a/b"]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: compatible-line-chunk-seed-malformed
+call:
+  compatible_line_chunk:
+    mode: sync
+    events:
+      - {kind: line, line: 'malformed seed'}
+env: {}
+compare: {ignore: []}

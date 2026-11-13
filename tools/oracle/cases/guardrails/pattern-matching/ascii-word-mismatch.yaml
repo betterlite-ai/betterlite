@@ -1,0 +1,1 @@
+{"kind":"helper","name":"ascii-word-mismatch","call":{"b3693":{"function":"spans","pattern":"(?a:(1)\\1)","keyword":null,"allow_word_numbers":true,"text":"one-two"}},"env":{},"compare":{"ignore":[]}}

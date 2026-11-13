@@ -1,0 +1,8 @@
+kind: helper
+name: hook-name-enum-coercion
+call:
+  b3795:
+    configured_modes:
+      event_hook: [post_call, pre_call, post_call]
+env: {}
+compare: {ignore: []}

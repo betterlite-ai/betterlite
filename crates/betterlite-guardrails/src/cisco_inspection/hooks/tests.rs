@@ -29,6 +29,27 @@ fn obj(json: &str) -> Fields {
     fields
 }
 
+#[rstest::rstest]
+#[case::completion(r#"{"choices":[{"text":"hello"}]}"#)]
+#[case::responses(
+    r#"{"output":[{"type":"message","content":[{"type":"output_text","text":"hello"}]}]}"#
+)]
+fn extracts_non_chat_response_messages(#[case] response: &str) {
+    let messages = super::extract_response_messages(&obj(response));
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0].content, "hello");
+}
+
+#[test]
+fn recording_applied_guardrails_preserves_names_without_duplicates() {
+    let mut data = obj(r#"{"metadata":{"applied_guardrails":["other","cisco-ai-defense"]}}"#);
+    super::record_applied_guardrail(&mut data, "cisco-ai-defense");
+    assert_eq!(
+        serde_json::to_string(&data).unwrap(),
+        r#"{"metadata":{"applied_guardrails":["other","cisco-ai-defense"]}}"#
+    );
+}
+
 fn guardrail(inspection_type: InspectionType, api_base: String) -> CiscoInspectionGuardrail {
     let settings = Configured {
         guardrail_name: "cisco-ai-defense".to_owned(),
@@ -69,8 +90,12 @@ fn applied_guardrails(request_data: &Fields) -> Vec<String> {
     } else {
         "metadata"
     };
-    match Json::field(request_data, bucket_key) {
-        Json::Object(bucket) => match Json::field(&bucket, "applied_guardrails") {
+    match Json::parse(request_data.get(bucket_key).map_or("null", |raw| raw.get())) {
+        Json::Object(bucket) => match Json::parse(
+            bucket
+                .get("applied_guardrails")
+                .map_or("null", |raw| raw.get()),
+        ) {
             Json::List(items) => items
                 .iter()
                 .filter_map(|item| match Json::parse(item.get()) {
@@ -187,20 +212,21 @@ async fn async_post_call_success_hook_dispatches_the_output_direction() {
         async_post_call_success_hook(&guardrail, &mut request_data, &mut response, args).await;
     assert!(matches!(outcome, Some(FinalizeOutcome::Redacted(_))));
     assert_eq!(applied_guardrails(&request_data), vec!["cisco-ai-defense"]);
-    let choice = &Json::field(&response, "choices").objects()[0];
-    let message = match Json::field(choice, "message") {
+    let choice = &Json::parse(response.get("choices").map_or("null", |raw| raw.get())).objects()[0];
+    let message = match Json::parse(choice.get("message").map_or("null", |raw| raw.get())) {
         Json::Object(fields) => fields,
         other @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
             panic!("expected message to be an object, got {other:?}")
         }
     };
     assert!(matches!(
-        Json::field(&message, "content"),
+        Json::parse(message.get("content").map_or("null", |raw| raw.get())),
         Json::Text(content) if content == "[REDACTED]"
     ));
-    let request_message = &Json::field(&request_data, "messages").objects()[0];
+    let request_message =
+        &Json::parse(request_data.get("messages").map_or("null", |raw| raw.get())).objects()[0];
     assert!(matches!(
-        Json::field(request_message, "content"),
+        Json::parse(request_message.get("content").map_or("null", |raw| raw.get())),
         Json::Text(content) if content == "hi"
     ));
     server.shutdown().await;

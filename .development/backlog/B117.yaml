@@ -2,10 +2,9 @@ id: B117
 milestone: M7 observability
 title: Prompt management and prompt registries
 status: todo
-depends_on: [B4050, B4051, B4052, B4053, B4054, B4055, B4056, B4057, B4058, B4059, B4060, B4061, B4062, B002, B884]
-file: null
+depends_on: [B002, B189, B247, B4052, B4058, B4059, B5655, B5656, B6020, B8393, B8399, B8466, B8560, B8610, B8630, B8672, B8742, B8747, B8803, B8804, B931, B932, B9010, B9810]
+file: tasks/B117-prompt-runtime.yaml
 covers:
-  - "litellm/proxy/prompts/{__init__,init_prompts,prompt_endpoints}.py"
   - "litellm/proxy/custom_prompt_management.py"
   - "litellm/proxy/test_prompts/**"
 parent: null

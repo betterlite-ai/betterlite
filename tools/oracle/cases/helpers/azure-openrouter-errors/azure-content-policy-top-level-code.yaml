@@ -1,0 +1,14 @@
+kind: helper
+name: azure-openrouter-errors-azure-content-policy-top-level-code
+call:
+  azure_openrouter_errors:
+    provider: azure
+    model: gpt-4
+    custom_llm_provider: azure
+    error_str: "boom"
+    exception_provider: Azure
+    status_code: 500
+    body:
+      code: content_policy_violation
+env: {}
+compare: {ignore: []}

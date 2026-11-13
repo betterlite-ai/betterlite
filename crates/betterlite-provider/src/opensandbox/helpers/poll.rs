@@ -1,0 +1,249 @@
+use std::collections::BTreeMap;
+use std::time::Duration;
+
+use betterlite_models::sandbox::read_capped_lines;
+use http::{HeaderMap, Method};
+use serde::Deserialize;
+use serde_json::value::RawValue;
+use url::Url;
+
+use super::constants::EXECD_PORT;
+use super::request::as_str_dict;
+use super::{OpenSandbox, OpenSandboxError, PollClock, SandboxHttp, SandboxRequest, output_error};
+
+#[derive(Debug, Clone, Copy)]
+pub struct GetEndpoint<'request> {
+    pub sandbox_id: &'request str,
+    pub api_base: &'request str,
+    pub headers: &'request HeaderMap,
+    pub use_server_proxy: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WaitForEndpoint<'request> {
+    pub endpoint: GetEndpoint<'request>,
+    pub ready_timeout: Duration,
+    pub poll_interval: Duration,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WaitUntilRunning<'request> {
+    pub sandbox_id: &'request str,
+    pub api_base: &'request str,
+    pub headers: &'request HeaderMap,
+    pub ready_timeout: Duration,
+    pub poll_interval: Duration,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Endpoint {
+    pub url: String,
+    pub headers: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SandboxDocument {
+    #[serde(default)]
+    status: Option<SandboxStatus>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SandboxStatus {
+    #[serde(default)]
+    state: Option<String>,
+}
+
+#[must_use]
+pub fn sandbox_state(document: &RawValue) -> Option<String> {
+    let Ok(parsed) = serde_json::from_str::<SandboxDocument>(document.get()) else {
+        return None;
+    };
+    parsed.status?.state
+}
+
+impl<Http, Environment, Clock> OpenSandbox<Http, Environment, Clock>
+where
+    Http: SandboxHttp,
+    Environment: Sync,
+    Clock: PollClock,
+{
+    pub async fn wait_until_running(
+        &self,
+        sandbox: &WaitUntilRunning<'_>,
+        http: Option<&Http>,
+    ) -> Result<(), OpenSandboxError> {
+        let deadline = self.clock.now().saturating_add(sandbox.ready_timeout);
+        loop {
+            let state = self.poll_state(*sandbox, http).await?;
+            if state == PollState::Running {
+                return Ok(());
+            }
+            if let PollState::Terminal(terminal) = state {
+                return Err(OpenSandboxError::UnexpectedState {
+                    sandbox_id: sandbox.sandbox_id.to_owned(),
+                    state: terminal,
+                });
+            }
+            match deadline.checked_sub(self.clock.now()) {
+                None | Some(Duration::ZERO) => {
+                    return Err(OpenSandboxError::NotRunning {
+                        timeout: sandbox.ready_timeout,
+                        sandbox_id: sandbox.sandbox_id.to_owned(),
+                    });
+                }
+                Some(_) => {}
+            }
+            self.clock.sleep(sandbox.poll_interval).await;
+        }
+    }
+
+    async fn poll_state(
+        &self,
+        request: WaitUntilRunning<'_>,
+        client: Option<&Http>,
+    ) -> Result<PollState, OpenSandboxError> {
+        let url = Url::parse(&format!(
+            "{}/sandboxes/{}",
+            request.api_base, request.sandbox_id
+        ))
+        .map_err(|source| OpenSandboxError::Url { source })?;
+        let body = self.get_body(url, request.headers, client).await?;
+        let document: Box<RawValue> =
+            serde_json::from_str(&body).map_err(|source| OpenSandboxError::Decode { source })?;
+        match sandbox_state(&document).as_deref() {
+            Some("Running") => Ok(PollState::Running),
+            Some(terminal @ ("Failed" | "Stopping" | "Terminated")) => {
+                Ok(PollState::Terminal(terminal.to_owned()))
+            }
+            _ => Ok(PollState::Waiting),
+        }
+    }
+
+    pub async fn wait_for_execd_endpoint(
+        &self,
+        request: WaitForEndpoint<'_>,
+        client: Option<&Http>,
+    ) -> Result<Endpoint, OpenSandboxError> {
+        let limit = request.ready_timeout.saturating_add(self.clock.now());
+        loop {
+            if let EndpointStep::Done(endpoint) =
+                attempt_endpoint(self, &request, limit, client).await?
+            {
+                return Ok(endpoint);
+            }
+        }
+    }
+
+    pub async fn get_execd_endpoint(
+        &self,
+        request: GetEndpoint<'_>,
+        client: Option<&Http>,
+    ) -> Result<Endpoint, OpenSandboxError> {
+        let mut url = Url::parse(&format!(
+            "{}/sandboxes/{}/endpoints/{}",
+            request.api_base, request.sandbox_id, EXECD_PORT
+        ))
+        .map_err(|source| OpenSandboxError::Url { source })?;
+        url.query_pairs_mut().append_pair(
+            "use_server_proxy",
+            if request.use_server_proxy {
+                "true"
+            } else {
+                "false"
+            },
+        );
+        let body = self.get_body(url, request.headers, client).await?;
+        let document: BTreeMap<String, Box<RawValue>> =
+            serde_json::from_str(&body).map_err(|source| OpenSandboxError::Decode { source })?;
+        let endpoint = document
+            .get("endpoint")
+            .and_then(|raw| serde_json::from_str::<String>(raw.get()).ok())
+            .filter(|endpoint| !endpoint.is_empty())
+            .ok_or_else(|| OpenSandboxError::MissingEndpoint {
+                sandbox_id: request.sandbox_id.to_owned(),
+            })?;
+        let headers = document.get("headers").and_then(|raw| {
+            serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(raw.get()).ok()
+        });
+        Ok(Endpoint {
+            url: endpoint,
+            headers: as_str_dict(headers.as_ref()),
+        })
+    }
+
+    async fn get_body(
+        &self,
+        url: Url,
+        headers: &HeaderMap,
+        client: Option<&Http>,
+    ) -> Result<String, OpenSandboxError> {
+        let response = client
+            .unwrap_or(&self.http)
+            .send(SandboxRequest {
+                method: Method::GET,
+                url,
+                headers: headers.clone(),
+                body: Vec::new(),
+                timeout: None,
+            })
+            .await?;
+        // LiteLLM reads every GET answer whatever its status; only the body decides.
+        let lines = read_capped_lines(response.body)
+            .await
+            .map_err(output_error)?;
+        Ok(lines.join("\n"))
+    }
+}
+
+#[derive(PartialEq, Eq)]
+enum PollState {
+    Running,
+    Terminal(String),
+    Waiting,
+}
+
+enum EndpointStep {
+    Done(Endpoint),
+    Retry,
+}
+
+async fn attempt_endpoint<Http, Environment, Clock>(
+    sandbox: &OpenSandbox<Http, Environment, Clock>,
+    wait: &WaitForEndpoint<'_>,
+    limit: Duration,
+    client: Option<&Http>,
+) -> Result<EndpointStep, OpenSandboxError>
+where
+    Http: SandboxHttp,
+    Environment: Sync,
+    Clock: PollClock,
+{
+    match sandbox.get_execd_endpoint(wait.endpoint, client).await {
+        Ok(endpoint) => return Ok(EndpointStep::Done(endpoint)),
+        Err(error) if is_retryable(&error) => {
+            if limit
+                .checked_sub(sandbox.clock.now())
+                .is_none_or(|left| left.is_zero())
+            {
+                return Err(OpenSandboxError::EndpointNotReady {
+                    timeout: wait.ready_timeout,
+                    sandbox_id: wait.endpoint.sandbox_id.to_owned(),
+                    last: Box::new(error),
+                });
+            }
+        }
+        Err(error) => return Err(error),
+    }
+    sandbox.clock.sleep(wait.poll_interval).await;
+    Ok(EndpointStep::Retry)
+}
+
+fn is_retryable(error: &OpenSandboxError) -> bool {
+    if matches!(error, OpenSandboxError::MissingEndpoint { .. }) {
+        return true;
+    }
+    if matches!(error, OpenSandboxError::OutputNotUtf8 { .. }) {
+        return true;
+    }
+    matches!(error, OpenSandboxError::Decode { source } if source.is_syntax() || source.is_eof())
+}

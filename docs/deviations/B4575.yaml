@@ -1,0 +1,14 @@
+task: B4575
+deviations:
+  - what: >-
+      whoami's token-age and remaining-hours figures are computed with a fused multiply-add by
+      the reciprocal of 3600, so at the exact decimal tie points Python's correct-rounding
+      division rounds the other way by one tenth: a credential stamped 180 seconds before now
+      prints "Token age: 0.0 hours" where LiteLLM prints "0.1 hours".
+    why: >-
+      The lint table denies clippy::float_arithmetic and clippy::integer_division, and the
+      existing codebase computes such ratios with f64::mul_add and recip for the same reason.
+      The two differ by at most one unit in the last place of the hour count, which changes the
+      one-decimal text only when the exact value sits on a .x5 tie, and no script or user input
+      can rely on that digit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/auth.py#L1083-L1102

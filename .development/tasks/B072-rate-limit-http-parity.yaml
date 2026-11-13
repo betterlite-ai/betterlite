@@ -1,0 +1,235 @@
+id: B072
+title: Prove proxy rate limits across admission, callbacks and HTTP
+description: >-
+  Finish the rate-limit umbrella with integration evidence. The function audit leaves no live limiter
+  algorithm to implement: B3030 through B3055 and B5660 already own them. B3055 reaches the default
+  limiter from a server hook, B8399 installs the default hooks, B8749 installs the two named dynamic
+  callbacks, B8803 supplies the production chat pre-call and B8804 supplies it to Messages. B9250
+  supplies the legacy, dynamic and session HTTP cases that this final task runs alongside its own. Their
+  helper and unit cases do not prove that the same request state survives admission, logging,
+  response headers and cleanup. Add that proof through the booted application without registering
+  a route, changing a callback registry or rebuilding any limiter.
+
+  Write the HTTP cases below under tools/oracle/cases/http/proxy-rate-limits/. Use the current
+  untagged HTTP Case format with steps, database fixtures and secret captures; the current loader
+  treats a kind field as a helper operation, so do not spell kind: http. Each case starts an isolated
+  pair of proxies and compares betterlite with the pinned MIT proxy, never --self-check. Provision
+  the minimal user with the existing database.seed format. That format has no quota or metadata
+  fields: create limited virtual keys through B055's POST /key/generate and teams through B804's
+  POST /team/new, as the master key. Capture generated keys with secret: true, ignore only their
+  generated values and timestamps with specific reasons, and use the captured bearer for inference.
+  Management steps must succeed before the test can reach its rate-limit assertion.
+
+  Use model_name limited-chat with litellm_params.model openai/gpt-4o-mini, api_base {{upstream}}
+  and an inert configured api_key. Disable router retries and fallbacks for rejection cases.
+  Leave deployment rpm/tpm unset except in dynamic-model cases, so a router rejection cannot stand
+  in for a proxy-hook rejection. Use a fixed mock response with known prompt_tokens, completion_tokens
+  and total_tokens. Every denial compares status, error type, param and code; ignore /error/message
+  because betterlite writes its own message. Compare the upstream transcript as well, including
+  the absence of a provider request on rejection. Compare deterministic quota headers exactly;
+  reset_at and legacy retry-after depend on wall time, so require their presence in oracle cases
+  and verify their format and range in the native tests rather than ignoring all response headers.
+
+  Defaults come from the existing config owners. LEGACY_MULTI_INSTANCE_RATE_LIMITING defaults to
+  false and selects legacy only when its lowercase text equals true. LITELLM_RATE_LIMIT_WINDOW_SIZE
+  defaults to 60, LITELLM_TPM_TOKEN_RESERVATION_ENABLED to true, and
+  general_settings.fail_closed_rate_limit_enforcement to false (B3031).
+  general_settings.token_rate_limit_type defaults or falls back to total (B3044).
+  B9250 documents the dynamic and session settings in its cases. This task reads existing settings
+  through the booted config and does not introduce a config section or a byte decoder.
+
+  v3-scope-order: create a key with rpm_limit 3, make three successful chat requests and then a 429;
+  check x-ratelimit-api_key-limit-requests and remaining-requests and the requests rejection type.
+  v3-model-team-tags: create a team with a model_rpm_limit metadata map and two keys, one inheriting
+  and one supplying its own model_rpm_limit; exercise the independent counters and add a key
+  tag_rpm_limit map with repeated request metadata.tags to prove a tag is charged once.
+  v3-output-reservation: omit max_tokens under a small positive key TPM limit, compare the implicit
+  upstream output cap, then repeat with an explicit max_tokens; verify token headers. The native
+  usage_settles_before_next_call test drains success callbacks before proving that a later
+  admission sees actual usage below the reservation. v3-reservation-disabled sets the reservation
+  environment flag to false and proves the upstream body gains no implicit cap;
+  usage_settles_before_next_call also checks the next request's token limit in this mode.
+  v3-parallel-zero: max_parallel_requests 0 rejects before any upstream request with
+  rate_limit_type max_parallel_requests. v3-success-releases: max_parallel_requests 1 permits
+  two sequential successful requests, proving that the post-call path releases capacity.
+  v3-failure-refunds: the first upstream answers 500 with retries disabled, the next request under
+  the same key succeeds; set both a parallel limit and a TPM limit to expose a stranded slot or
+  reservation. v3-proxy-rejection-refunds: key metadata max_iterations 0 and a session cause the
+  later session hook to reject after parallel/TPM admission; a following request without the
+  session can still reserve the same capacity and reach the provider. v3-stream-settlement consumes
+  a chat stream with an explicit final usage event and compares its wire headers and events;
+  stream_usage_is_settled drains its callbacks before a later request checks quota consumption.
+
+  default-selection: with the flag absent, and in a separate native table case with the text 1,
+  select v3 and its descriptor header names. Run B9250's cases too, without changing their files.
+  summary-token-charge: send POST /v1/messages through B8804 with a valid compact_20260112 edit,
+  trigger input_tokens 50000 and history strictly above it, using two OpenAI-compatible model
+  aliases and general_settings.context_management_summary_model for the summary alias. Set
+  context_management_summary_max_tokens 16 and disable TPM reservations for this case. The summary
+  upstream returns <summary>short</summary> with distinct nonzero usage and the main upstream
+  returns its own fixed usage. Compare both upstream calls and the parent's compaction/usage response.
+  In summary_usage_is_charged, run the same HTTP flow, drain callbacks, then send a chat request
+  on the summary alias under the parent's model_tpm_limit and assert the summary usage was charged.
+  Reuse B2432's valid compaction input shape;
+  do not mock the token counter, editor or logging callbacks. auth-before-limits: missing and
+  invalid bearer requests get the normal auth error before any quota or provider activity.
+
+  HTTP paths exercised here are POST /v1/chat/completions, /chat/completions,
+  /engines/{model}/chat/completions and /openai/deployments/{model}/chat/completions, plus
+  /v1/messages and /messages for compaction and the two management setup paths. Chat aliases
+  share one key's quota; cover them in the scope-order sequence with a cap chosen to reach each.
+  The handlers, aliases and mounts already exist in their owners; this task adds none.
+
+  Add a test-only module app::inference::limit_parity in betterlite-server, with tests.rs beside it.
+  Boot the real application using B8610's startup inputs and call app::start before requests.
+  Named tests held_request_releases_slot and dropped_stream_releases use a local upstream
+  latch to hold the first request, then assert a second request is rejected and a third succeeds
+  after completion or body drop; all waits have deadlines and the task tracker is drained.
+  proxy_rejection_refunds runs a real later hook rejection after admission and verifies that the
+  next request can reserve the same capacity. child_keeps_parent_stash passes a distinct
+  child call id through B3046's success callback with B3031's parent stash: charge child usage but
+  leave the parent's reservation and parallel slot intact. selection_and_header_contracts loads
+  the flag variations, checks only one parallel_request_limiter registration, and validates the
+  v3 UTC reset format and legacy retry-after in (0, 60]. Do not use the routing scenario concurrent
+  barrier for a rejected request: it waits for every request to reach the provider and would hang.
+  The success logger is asynchronous in LiteLLM, so cases compare the immediate HTTP contract
+  and native tests explicitly drain tracked work before asserting a settled next-request quota.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/limit_parity.rs
+    - crates/betterlite-server/src/app/inference/limit_parity/**
+    - tools/oracle/cases/http/proxy-rate-limits/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3488-L3537
+    why: B3030's rejection headers; B072 owns HTTP integration evidence, not this error builder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3968-L4191
+    why: B3055's admission, reservation and implicit-cap composition whose effects must reach HTTP.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4882-L5053
+    why: B3045 and B3046 account foreground compaction and preserve call-id ownership during success logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L5105-L5411
+    why: Existing failure, disconnect and post-call settlement must share admission state in the booted application.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/__init__.py#L20-L45
+    why: B8399 owns the hook map and legacy selector; these tests distinguish the selected implementations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1349-L1381
+    why: One hook object is registered as a callback and stored in the proxy hook map.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L67-L202
+    why: B3047's legacy zero-limit rejection and retry-after calculation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L803-L855
+    why: B3048's legacy header names and conditional insertion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter.py#L85-L271
+    why: B3050's available-capacity decision and post-call headers, exposed by B8749.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L126-L352
+    why: B3051's team/key priority precedence, normalized weights and default pool.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L420-L570
+    why: B3052's enforced and tracked-only descriptors and distinct model/priority errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L659-L780
+    why: B3053's priority headers and actual success-token charge use different priority sources.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_iterations_limiter.py#L71-L172
+    why: B3054's session extraction, counter admission and agent/key max_iterations precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L1019-L1083
+    why: B2432's summary request carries parent attribution through litellm_metadata and a separate completion call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L12016
+    why: Existing chat decorators and all four aliases; no route ownership transfers here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4193-L4217
+    why: The sole uncovered function, _create_pipeline_operations, has no caller at the pin and is excluded below.
+dod:
+  - text: The v3 scope, reservation, failure and stream cases compare actual proxy responses and upstream traffic, including quota headers and absence of provider calls for denials.
+    proof: [new-http-cases, oracle]
+  - text: Foreground summary charging has HTTP evidence and the completed limiter suite also runs B9250's legacy, dynamic and session cases.
+    proof: [new-http-cases, oracle, summary-usage]
+  - text: Ordinary and streamed usage settle reserved and unreserved counters before a later admission, including the reservation-disabled mode.
+    proof: [usage-settlement, stream-usage, oracle]
+  - text: Held requests and dropped streams release their real admission slots, later hook rejections refund capacity, and child callbacks cannot settle the parent's stash.
+    proof: [held-request, dropped-stream, proxy-rejection, child-stash]
+  - text: Startup chooses one parallel limiter with LiteLLM's flag semantics and the time-dependent headers retain their wire format and bounds.
+    proof: [selection-headers, oracle]
+checks:
+  optional: []
+  commands:
+    - id: new-http-cases
+      why: no new HTTP evidence exists for the umbrella remainder
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/proxy-rate-limits)"
+    - id: held-request
+      why: admission does not hold capacity until the real request completes
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::limit_parity::tests::held_request_releases_slot($|::)/)'
+    - id: dropped-stream
+      why: disconnect cleanup leaves a slot occupied
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::limit_parity::tests::dropped_stream_releases($|::)/)'
+    - id: proxy-rejection
+      why: a later hook rejection strands admitted capacity
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::limit_parity::tests::proxy_rejection_refunds($|::)/)'
+    - id: child-stash
+      why: a child callback incorrectly releases or reconciles its parent reservation
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::limit_parity::tests::child_keeps_parent_stash($|::)/)'
+    - id: selection-headers
+      why: startup selection or the time-dependent header contract is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::limit_parity::tests::selection_and_header_contracts($|::)/)'
+    - id: usage-settlement
+      why: actual token usage is not reconciled before the next request reads its quota
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::limit_parity::tests::usage_settles_before_next_call($|::)/)'
+    - id: stream-usage
+      why: stream success accounting is missing or charged twice
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::limit_parity::tests::stream_usage_is_settled($|::)/)'
+    - id: summary-usage
+      why: summary tokens do not reach the parent key's model quota
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::limit_parity::tests::summary_usage_is_charged($|::)/)'
+oracle_cases:
+  - tools/oracle/cases/http/proxy-rate-limits/v3-scope-order.yaml
+  - tools/oracle/cases/http/proxy-rate-limits/v3-model-team-tags.yaml
+  - tools/oracle/cases/http/proxy-rate-limits/v3-output-reservation.yaml
+  - tools/oracle/cases/http/proxy-rate-limits/v3-reservation-disabled.yaml
+  - tools/oracle/cases/http/proxy-rate-limits/v3-parallel-zero.yaml
+  - tools/oracle/cases/http/proxy-rate-limits/v3-success-releases.yaml
+  - tools/oracle/cases/http/proxy-rate-limits/v3-failure-refunds.yaml
+  - tools/oracle/cases/http/proxy-rate-limits/v3-proxy-rejection-refunds.yaml
+  - tools/oracle/cases/http/proxy-rate-limits/v3-stream-settlement.yaml
+  - tools/oracle/cases/http/proxy-rate-limits/default-selection.yaml
+  - tools/oracle/cases/http/proxy-rate-limits/summary-token-charge.yaml
+  - tools/oracle/cases/http/proxy-rate-limits/auth-before-limits.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/legacy-selection.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/legacy-zero-cap.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/dynamic-legacy.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/dynamic-model-cap.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/dynamic-priority-pools.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/dynamic-priority-headers.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/dynamic-token-accounting.yaml
+  - tools/oracle/cases/http/legacy-dynamic-limits/session-iterations.yaml
+  - tools/oracle/cases/limiter/rpm-limit-429.yaml
+  - tools/oracle/cases/limiter/within-limit-headers.yaml
+  - tools/oracle/cases/limiter/fail-closed-503.yaml
+  - tools/oracle/cases/limiter/fail-open-passes.yaml
+deviations: []
+out_of_scope:
+  - "B072 owns integration tests only; every referenced live implementation stays with its existing owner, and no new LiteLLM function is ported."
+  - "v3 records, constants, protocols, fail-closed policy, key helpers, stash helpers, _as_counter_values, _get_current_time and the typed replacement of _call_id_from_callback_kwargs: B3031."
+  - "v3 __init__, _get_batch_rate_limiter, get_rate_limiter_for_call_type and _resolve_model_group_alias_via_proxy_router: B5660; the batch algorithm is B1047."
+  - "v3 _is_redis_cluster, both sliding-window functions, keyslot_for_redis_cluster, _pipeline_scripts, _group_keys_by_hash_tag, _batch_get_counter_values and both counter-read functions: B3032."
+  - "v3 atomic payload construction, atomic-response construction, local atomic evaluation and CHECK_AND_INCREMENT_BY_N_SCRIPT: B3033; atomic_check_and_increment_by_n, descriptor Lua invocation, pipelined settlement and all descriptor-group refund functions: B3034."
+  - "v3 gauge reads/statuses, _check_parallel_request_gauges, local acquisition, every parallel-slot release/defer/mirror function and the gauge scripts: B3035; is_cache_list_over_limit, _execute_redis_batch_rate_limiter_script, _refund_later_pipelined_groups, should_rate_limit and _collect_windowed_keys_and_gauges: B3036."
+  - "v3 token scripts, token increment/defer functions, both window-guarded increment functions, reservation-aware increments, _build_reservation_aware_tpm_ops and both project reservation-op builders: B3037."
+  - "v3 RateLimitedModel.limit_in is B3031; _rate_limited_model, organization/key/team/project model descriptors, all key-owns/inherited-model predicates and project I/O descriptors: B3038."
+  - "v3 tag lookup/descriptor helpers, MCP key/team descriptors, agent registry/id/session helpers and agent/session/tag descriptor builders: B3039."
+  - "v3 _should_enforce_rate_limit, _get_enforced_limit, _is_dynamic_rate_limiting_enabled, _create_rate_limit_descriptors and _check_model_has_recent_failures: B3040."
+  - "v3 _parse_output_cap_value, no_max_tokens_output_floor, embedding/native-request detection and translation, all output-cap/candidate helpers and every token/audio/Responses/rerank input estimate helper: B3041."
+  - "v3 reserve_tpm_tokens, _refund_reserved_tokens, reserve_io_tokens and enforce_project_io_token_quota_for_frame: B3042; _reserve_project_io_tokens_or_raise: B3043."
+  - "v3 usage extraction/filtering, aggregate-only fallback, rerank and I/O usage resolution, get_rate_limit_type and _recovered_partial_usage_tokens: B3044; _build_io_token_reservation_ops, _collect_tpm_scope_targets and _build_success_event_pipeline_operations: B3045."
+  - "v3 header merge/mirroring, logging success/failure, disconnect release, both post-call hooks and _handle_batch_enqueued_post_call: B3046; _handle_rate_limit_error and provider/priority utilities: B3030, with the auth-side provider projection in B2327."
+  - "v3 _build_request_rate_limit_descriptors, _release_request_capacity_when_admitted, request_capacity and async_pre_call_hook: B3055."
+  - "v3 _create_pipeline_operations L4193-L4217 has no caller at the pin: a checkout-wide rg finds only its definition; do not build it or add a helper case."
+  - "Legacy constructor, verbose/error/minute/cache-object helpers and check_key_in_limits: B3047; _response_total_tokens and success/failure/header callbacks: B3048; async_pre_call_hook: B3049; legacy get_internal_user_object has no caller at the pin."
+  - "All dynamic_rate_limiter.py functions: B3050. In dynamic_rate_limiter_v3.py, construction, settings, priority, saturation and descriptor helpers are B3051, _check_rate_limits and async_pre_call_hook are B3052, and response/success hooks are B3053. All max_iterations_limiter.py functions and TTL config: B3054."
+  - "Default proxy-hook construction, selection, registration and callback adapters: B8399. Named dynamic adapters and their shared hook/logger instance: B8749. Request preparation and call metadata: B8802/B8805; chat and Messages handover: B8803/B8804."
+  - "Realtime disconnect dispatch: B2400, called by B1125; stream cleanup: B8605/B8633. Compaction invocation/metadata are B2432/B971, while its quota-charge operation is B3045/B3046 and spend settlement is B8481."
+  - "Server composition and existing area mounts are B8610 and their area tasks, including B8626, B8701 and B8728 for MCP; none is mounted again here. Management setup handlers remain B055/B804 and authentication remains its existing owners."
+pitfalls:
+  - "The default parallel limiter and dynamic_rate_limiter_v3 share request-local stash state in LiteLLM, so integration tests must preserve hook order rather than allocate one stash per callback."
+  - "Dynamic priority admission and headers read team priority first, but success token accounting reads user_api_key_auth_metadata.priority, so using one unified priority would change charging."
+  - "A stream's wire headers are fixed before its final usage arrives, so verify settlement with a later request instead of expecting final quota values to appear retroactively."
+  - "Generated key values differ between the two proxy databases, so only secret captures may carry them into later Authorization headers."
+  - "B3055's existing four HTTP cases remain its files; this task runs them but must not rewrite them or use --self-check as parity evidence."
+  - "B9250's case directory is a dependency input to this final suite, so new legacy or dynamic cases and their fixes belong to B9250 rather than this task's writable directory."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

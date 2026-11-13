@@ -1,0 +1,235 @@
+id: B076
+title: Compose workflow routes and prove the remaining ROI management flows over HTTP
+description: >-
+  B3159 and B3160 build eight workflow handlers but no task merges their routers into the
+  application. LiteLLM includes workflow_management_router at proxy_server.py L19994.
+  Build that composition in betterlite-server::app::management::workflows, using the two
+  existing routers and the production database repositories. Separately, add booted HTTP
+  coverage for the ROI demo report, identity-map persistence, setup reset and idle cancellation,
+  which B8677's case list does not exercise. B8677 already mounts every ROI route, builds the
+  shared SyncManager and runs the refresh job; use that application unchanged.
+
+  The architect predeclares app/management/workflows.rs and installs one call to
+  workflows::mount(router, state) in app::management::mount before this task runs. Those
+  shared registry edits are outside scope. Implement pub fn mount(router: Router,
+  state: &Arc<ServerState>) -> Router in the module. Build the states exported by workflow_runs
+  and workflow_events from the same state.shared.db, and merge each router exactly once.
+  Use B726's WorkflowRunRepository, WorkflowEventRepository and WorkflowMessageRepository
+  over B700's PostgresStore/session contracts, preserving the event handler's transaction
+  boundary. Read the merged modules for their concrete state signatures. If a module exposes
+  a repository port, implement its production adapter here using those repositories; leave
+  handler logic in its owner. Put fallible adapter errors in this module's own error enum.
+  An absent shared.db must reach the handlers' existing database-not-connected response,
+  not omit the routes or stop startup. Do not build another pool, install a fallback or
+  authenticate again inside an adapter. The management area runs inside B8610's auth layers,
+  and the original authenticated principal must reach the handlers unchanged.
+
+  The complete workflow surface is POST and GET /v1/workflows/runs, GET and PATCH
+  /v1/workflows/runs/{run_id}, POST and GET /v1/workflows/runs/{run_id}/events, and POST and
+  GET /v1/workflows/runs/{run_id}/messages. There are no unversioned or /openai/v1 aliases.
+  B3159 owns request decoding, ownership and run operations; B3160 owns event/message
+  sequence allocation, retries and writes. This task adds no decoder, config section,
+  environment variable or fuzz target. Keep DATABASE_URL/general_settings.database_url
+  handling in the existing startup path; missing database is a supported server state.
+
+  Write adjacent tests in app/management/workflows/tests.rs. mounted_methods builds the
+  production application and exercises all eight method/path pairs with valid bodies and
+  no database, asserting the database error rather than 404 or 405. authenticated_principal
+  uses a real fixture database and two keys, grants their workflow access through the same
+  /key/update setup described below, verifies the persisted created_by hash and a foreign-run
+  refusal, and must fail if the mount substitutes a master principal.
+  shared_repositories creates a run through the run router, appends an event and a message
+  through the other router, then reads the run and both ordered collections. Check that the
+  event changes the run status, that event and message sequences both start at zero, and
+  that no unrelated database or in-memory store can satisfy the reads. Use B860's fixture
+  lifecycle and existing server test builders; POSTGRES_TEST_URL or testcontainers failures
+  fail the test. No #[ignore] or skipped database assertion.
+
+  All new oracle files are kind: http and drive the real binary against the pinned open-source
+  proxy. Use B1630's steps and per-proxy captures for generated run IDs, with path substitution
+  {{capture:run_id:query}}. B5076 supplies the generated Prisma client for booting LiteLLM
+  against B860's independent databases. Seed only the users and keys the existing fixture
+  supports; create workflow and ROI records through HTTP. Config uses
+  general_settings.master_key: oracle-master. Database cases use database: {seed: ...};
+  the no-database cases omit it and omit database_url. Do not introduce fixture-only
+  production flags, call FastAPI handlers from helpers, seed both proxies into one database,
+  or use --self-check as the parity proof. Compare content-type, status and the complete
+  response body at each step. Ignore /error/message on errors with the reason that betterlite
+  supplies its own wording, retaining type, param and code. Ignore only explicitly named
+  generated IDs and timestamps otherwise, never complete run/event/message/report objects.
+
+  Workflow cases live in tools/oracle/cases/http/workflow-composition/. round-trip.yaml creates
+  a run as a seeded proxy_admin key with workflow_type "roi-audit" and nonempty input/metadata,
+  captures its run_id, appends step.started and hook.waiting events with distinct step names
+  and data, and appends two messages including session_id "conversation-one" on one. GET the
+  run and both collections: the run is paused with only its latest event, the events have
+  sequence numbers 0 and 1 and messages have their independent 0 and 1. Read each collection
+  with limit=1, then PATCH status completed with output and metadata and GET again. Exercise
+  status=running,completed and workflow_type=roi-audit on the list endpoint. The native test
+  also checks generated identifiers agree within one proxy; an oracle ignore is not that proof.
+
+  role-scope.yaml seeds separate internal_user keys for Alice and Bob, a proxy_admin key and
+  a proxy_admin_viewer key. Before an ordinary key is used, the master calls B775's POST
+  /key/update with {key: <seeded raw key>, allowed_routes: ["/v1/workflows/*"]}. The pin's
+  general route policy otherwise rejects this family before handler ownership runs. Each
+  ordinary key creates its own run. Alice's list contains only hers; Bob cannot GET or PATCH
+  Alice's run or POST its events/messages (404). Full admin can read and modify that foreign
+  run. Viewer can list/get foreign runs and read their events/messages, but its writes are
+  refused by the real auth policy with 403. Never replace those booted checks with auth
+  dependency overrides. Pin L296-L299 explicitly exempts admin-view reads; _require_run
+  L182 exempts full admin writes, despite contrary sentences in the earlier task summaries.
+
+  boundary-errors.yaml covers a nonexistent run (404), an empty PATCH against that nonexistent
+  run (400 before lookup), invalid run limit 0 and event/message limit 501 (422), and the
+  unregistered /workflows/runs alias (404), with a master key and a database. no-key.yaml
+  requests the run list without authorization through the booted application and compares
+  the actual auth envelope. no-database.yaml sends all eight valid workflow requests with
+  the master key and asserts the handler's 500 database error for each, including PATCH with
+  a nonempty status and POSTs with required fields; body validation must not mask the branch.
+
+  ROI cases live in tools/oracle/cases/http/roi-remainder/. demo-report.yaml boots with a
+  database and GETs /roi-calculator/report?mode=demo as proxy_admin_viewer. Compare the three
+  sample pulls, the people, match methods, cohort totals and ratios from B8273 through B3151;
+  this proves the demo takes the sample branch rather than the empty live report. Only the
+  clock-derived synced_at and date fields may be ignored individually, with reasons for the
+  two independent clocks; keep all monetary fields and counts exact. demo-no-database.yaml
+  sends the same request with the master key and no database and compares 500, since the
+  repository dependency runs before the demo branch. demo-no-key.yaml omits the key and
+  compares the auth response, so the sample never becomes public.
+
+  identity-reset.yaml uses a database and master key. PUT /roi-calculator/settings with
+  repos ["example/gateway"], estimator_model "not-configured", github_token "fixture-github",
+  estimator_key "fixture-estimator" and update_interval_minutes 0. No network request is
+  made: the estimator name is deliberately absent from the router. PUT
+  /roi-calculator/identity-map with github_login "Alex" and email "alex@example.com", GET
+  settings to prove persistence, then remove it with email null and read again. Add the
+  mapping again, POST /roi-calculator/setup/reset, GET settings and GET the live report.
+  Reset clears repos and the report while preserving the identity map and both secret-present
+  flags; ready is false and the report is null. Raw secrets must never appear in any body.
+  idle-cancel.yaml DELETEs /roi-calculator/sync with the master key and an empty database,
+  then GETs sync to verify the cancellation response and next_update null without starting
+  a GitHub request. These paths are only the B8677-mounted routers, not new route definitions.
+
+  Sizing: the new owned LiteLLM composition is the single include at L19994; the cited handler
+  spans are reused contracts and HTTP parity targets, not functions to port again. Allow
+  roughly 100-180 implementation lines and 500-650 fixture lines, with adjacent tests outside
+  the gate's source budget. No split is needed under the 750-line LiteLLM logic threshold.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/management/workflows.rs
+    - crates/betterlite-server/src/app/management/workflows/**
+    - tools/oracle/cases/http/workflow-composition/**
+    - tools/oracle/cases/http/roi-remainder/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19993-L19995
+    why: Own the workflow router include at L19994; adjacent tag and memory includes stay with their existing mount owners.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L156-L350
+    why: Reused B3159 sequence/ownership helpers and the four run routes, including their decorators; HTTP composition parity only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/workflow_management_endpoints.py#L353-L530
+    why: Reused B3160 event and message routes, decorator paths, distinct sequence domains and transaction behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L320-L388
+    why: B3158 settings routes used to configure the identity/reset flow without arbitrary SQL fixtures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L419-L542
+    why: B8588 sync status, cancellation, demo report and identity-map routes, reused through B8677's mount.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L620-L652
+    why: B8588 reset route preserves settings and secrets while emptying repos and clearing the report.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sample.py#L7-L64
+    why: B8273's deterministic demo values, exercised through the report route rather than rebuilt.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L260-L373
+    why: Context for fixture setup; ordinary keys need an explicit workflow allowed_routes grant to reach handler ownership checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L835-L950
+    why: Context for the viewer HTTP case; safe methods pass while workflow writes are refused before the handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/workflows/README.md#L15-L125
+    why: Public workflow contracts and examples for creating runs, appending events/messages and reading status.
+dod:
+  - text: Both workflow routers are composed once from shared production repositories and all eight methods reach their handlers through the application auth layers, including without a database.
+    proof: [mounted-methods, workflow-cases, oracle]
+  - text: A run, its latest event, status transitions and independent ordered message history survive separate HTTP requests through the composed routers.
+    proof: [shared-repositories, workflow-cases, oracle]
+  - text: The real auth policy and handler ownership together preserve scoped ordinary-key access, foreign-run admin/viewer reads, full-admin writes and viewer write refusal.
+    proof: [authenticated-principal, workflow-cases, oracle]
+  - text: The mounted ROI routes expose the demo summary only behind auth and a database, persist and remove identities, preserve secrets and mappings on reset, and cancel an idle sync consistently.
+    proof: [roi-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: mounted-methods
+      why: The workflow module is not reached from the production application or misses a method when no database is configured.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::management::workflows::tests::mounted_methods($|::)/)'
+    - id: authenticated-principal
+      why: The composition drops or replaces the authenticated caller before persisting or checking ownership.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::management::workflows::tests::authenticated_principal($|::)/)'
+    - id: shared-repositories
+      why: The two workflow routers do not share persistent runs, event status updates and independently ordered messages.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::management::workflows::tests::shared_repositories($|::)/)'
+    - id: behavior-tests
+      why: A behavior test added beside a workflow composition submodule fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::management::workflows::/)'
+    - id: workflow-cases
+      why: No new booted workflow transcript was added, so existing part checks cannot prove the composition.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/workflow-composition)"
+    - id: roi-cases
+      why: The ROI demo, identity/reset and idle-cancel HTTP gaps still have no new cases.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/roi-remainder)"
+oracle_cases:
+  - tools/oracle/cases/http/workflow-composition/round-trip.yaml
+  - tools/oracle/cases/http/workflow-composition/role-scope.yaml
+  - tools/oracle/cases/http/workflow-composition/boundary-errors.yaml
+  - tools/oracle/cases/http/workflow-composition/no-key.yaml
+  - tools/oracle/cases/http/workflow-composition/no-database.yaml
+  - tools/oracle/cases/http/roi-remainder/demo-report.yaml
+  - tools/oracle/cases/http/roi-remainder/demo-no-database.yaml
+  - tools/oracle/cases/http/roi-remainder/demo-no-key.yaml
+  - tools/oracle/cases/http/roi-remainder/identity-reset.yaml
+  - tools/oracle/cases/http/roi-remainder/idle-cancel.yaml
+deviations: []
+out_of_scope:
+  - >-
+    roi_calculator_endpoints.py: _read_admin, _write_admin, get_roi_config_repository,
+    _estimator_models_from_deployments, _estimator_model, _router_estimator_models, _router_models,
+    _load_stored_settings, _load_settings, _save_settings, _load_report, _public_settings,
+    get_roi_calculator_settings and update_roi_calculator_settings, plus their models: B3158.
+  - >-
+    roi_calculator_endpoints.py: get_github_transport, _gateway_key, _gateway_http_client,
+    _gateway_transport, _completion_caller and nested complete, _test_estimator_access,
+    _spend_reader and nested get_spend, get_roi_calculator_repositories and
+    test_roi_calculator_connections, plus gateway models: B3161.
+  - >-
+    roi_calculator_endpoints.py: get_roi_calculator_sync_status, start_roi_calculator_sync,
+    cancel_roi_calculator_sync, get_roi_calculator_report, update_roi_calculator_identity_map,
+    _next_update, run_scheduled_sync and reset_roi_calculator_setup: B8588. This task adds
+    their missing HTTP compositions without changing those implementations.
+  - >-
+    get_roi_sync_manager, _SYNC_MANAGER lifetime, register_scheduled_sync, all ROI router
+    mounts and their production collaborators: B8677. Its existing settings, repository and
+    connection HTTP cases remain there. B3157 owns the analysis runner, B3155 its lease store.
+  - >-
+    sample.py: sample_report and its nested pull function are complete in B8273.
+    roi_calculator/__init__.py is empty at the pin and has no function to implement.
+  - >-
+    workflow_management_endpoints.py: _json, _is_admin, _read_scope_caller, _caller_key,
+    _get_next_sequence_number, _require_run, protocol properties created_by and sequence_number,
+    create_workflow_run, list_workflow_runs, get_workflow_run and update_workflow_run,
+    request/row models and _EVENT_STATUS_MAP: B3159. append_workflow_event,
+    list_workflow_events, append_workflow_message and list_workflow_messages: B3160.
+    Deterministic collision/retry/rollback tests remain with B3160; no helper calls its handlers.
+  - >-
+    proxy_server.py apart from the workflow include at L19994: B124 and its concrete parts;
+    B8610 owns the application aggregator and shared server state. This task neither registers
+    a workflow handler again nor takes ownership of another area's route include.
+  - >-
+    Auth route admission and admin-viewer policy: B742 and B883. The POST /key/update setup
+    request is B775's existing route. Fixture databases, Prisma bootstrap and transcript
+    capture/decoding are B860, B5076 and B1630; their shared schemas and registries are unchanged.
+pitfalls:
+  - An internal_user key without allowed_routes ["/v1/workflows/*"] tests the generic route-policy 403, not workflow ownership.
+  - Full proxy admins bypass _require_run ownership, and proxy_admin_viewer reads bypass get_workflow_run ownership; do not reproduce the earlier summaries' contrary claims.
+  - A demo report still resolves get_roi_config_repository first, so mode=demo needs a database even though sample_report is pure.
+  - Setup reset preserves identity_map, estimator settings and both encrypted secrets; replacing all settings with defaults loses working setup data.
+  - Event and message sequence numbers each begin at zero; sharing one counter changes the persisted API contract.
+  - The area aggregator already applies auth and a fallback; a second fallback or a duplicate method/path merge can panic during server construction.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

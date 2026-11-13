@@ -1,0 +1,171 @@
+id: B4683
+title: OpenAPI specs to MCP tool schemas and upstream tool calls
+description: >-
+  Build the OpenAPI side of the MCP gateway in betterlite-mcp, module openapi_tools. It reads an OpenAPI or Swagger JSON document, turns each operation into an MCP tool name, description and input schema, and later runs a tool call as one HTTP request to the described API.
+  LiteLLM keeps this in openapi_to_mcp_generator.py. Callers on the manager side (registering tools, the preview route) are other tasks; this one gives them the functions.
+
+  Spec loading. load_openapi_spec_async(location, max_bytes) takes a location. If it starts with "http://" or "https://", fetch it with betterlite_http::user_url::fetch::UserUrlFetcher::fetch (LiteLLM's async_safe_get) through the pooled betterlite_http::proxy::ProxiedClient, read the body with StreamResponse::buffered(limit) where the limit is max_bytes or, when absent, the client's own body limit, fail on a status of 400 or more (httpx raise_for_status) and parse the body as JSON. Anything else is a local file: if it does not exist, fail with "OpenAPI spec not found at {location}", otherwise read it as UTF-8 and parse JSON. YAML is not accepted, as in LiteLLM. Add the betterlite-http dependency and the tokio fs feature to crates/betterlite-mcp/Cargo.toml.
+  parse_openapi_document(bytes) is the decoder for bytes from outside. It returns a typed OpenApiDocument (servers, host, schemes, basePath, paths in file order, components.parameters). Keep paths and the methods inside a path item in file order, since tool order follows the file; indexmap with serde is already in the workspace.
+
+  get_base_url(spec, spec_path). OpenAPI 3: when servers is present and non-empty, take servers[0].url. If that url starts with "/" and spec_path is an http(s) URL, return scheme://netloc of spec_path plus the url (log at info). Otherwise return the url as written, so a relative url with a local spec_path stays relative. Swagger 2: when host is present, return "{schemes[0] or https}://{host}{basePath or empty}". Otherwise, for an http(s) spec_path ending in /openapi.json, /openapi.yaml, /swagger.json or /swagger.yaml (checked in that order), cut the suffix; else if the last path segment ends in .json, .yaml or .yml, drop that segment; else return "". Server variables like {region} are not expanded.
+
+  sanitize_openapi_tool_name(raw): empty stays empty; every character outside [a-zA-Z0-9_-] becomes "_", then lowercase, then keep at most 128 characters (OPENAPI_TOOL_NAME_MAX_LEN).
+
+  resolve_operation_params(operation, path_item, components) returns a copy of the operation whose parameters are path-level plus operation-level, with refs resolved. A parameter whose $ref starts with "#/components/parameters/" is replaced by components.parameters[last segment]; a missing target, or a resolved parameter with an empty or absent name, is dropped. A $ref with another prefix is kept as is and then dropped if it has no name. Path-level parameters whose (name, in) pair also appears at operation level are removed; the result is the remaining path-level ones first, then every operation-level one. The copy always carries a parameters list, even when empty.
+
+  extract_parameters(operation) returns three name lists. Parameters without a name are skipped. in=path, in=query and in=body go to their lists; any other "in" (header, cookie, missing) lands in none. A requestBody, even an empty one, appends "body" to the body list.
+
+  build_input_schema(operation) returns {"type":"object","properties":...,"required":[...]}, with "required" always present (empty list when nothing is required). Every named parameter becomes properties[name] = {"type": schema.type or "string", "description": description or ""} (header and cookie parameters included), and a parameter with required=true appends its name. A requestBody whose content has the exact key "application/json" adds properties["body"] = {"type":"object","description": requestBody.description or "Request body","properties": schema.properties or {}}, and requestBody.required=true appends "body". Other content types (including "application/json; charset=utf-8" and "*/*") add nothing.
+
+  Calling a tool. OpenApiTool::new(path, method, operation, base_url, headers, server_label, relays_upstream_auth, auth_type, upstream_token_header) keeps the extracted parameter lists, the lowercase method and the static headers. OpenApiTool::call(arguments, context, transport) runs one call and returns Result<OpenApiToolOutput, OpenApiToolError>. LiteLLM passes per-request values through four ContextVars; here OpenApiCallContext carries them explicitly: auth_header (the BYOK Authorization override), extra_headers (caller headers allowed by the server's extra_headers list), resolved_auth_headers (the gateway-resolved upstream credential). No global state.
+  Step 1, merge headers (merge_request_headers). Start from extra_headers minus any name that case-insensitively equals a static header name, then add all static headers. If auth_header is set and non-empty, remove every header named authorization (any case) and set "Authorization" to it. Then for each resolved header, remove every header with the same name ignoring case and set it. Precedence from lowest to highest is extra, static, BYOK, resolved.
+  Step 2, when auth_type is set, run betterlite-mcp's validate_static_credential (B4667) on the merged headers with upstream_token_header and the static header names; on an error return OpenApiToolError::Credential before anything is sent.
+  Step 3, URL. url = base_url + path. For each path parameter whose argument is present and truthy (not null, "", false, 0, empty list or object), sanitize it and replace "{name}" and then "{{name}}" in the url. Sanitize: str() of the value, replace "\" with "/", reject any "/" with the error text "Path parameter '{name}' must not contain path separators", reject a ".." segment with "Path parameter '{name}' cannot include '.' or '..' segments", then percent-encode everything except letters, digits, "_", ".", "-" and "~" (Python quote with safe=""). A rejected value does not fail the call: return OpenApiToolOutput::Text("Invalid path parameter: " + message). A missing or falsy path argument leaves the placeholder in the url.
+  Step 4, query: every query parameter whose argument is truthy is sent under its own name.
+  Step 5, body, only when the body list is non-empty: take argument "body"; if it is falsy, try each name in the body list in order and take the first truthy one. A JSON object is the body. A string is parsed as JSON and the parsed value is the body (any JSON type); when parsing fails the body is {"data": the string}. Any other truthy value becomes {"data": value}. A falsy value sends no body.
+  Step 6, send. GET and DELETE send no body; POST, PUT and PATCH send the JSON body when there is one. Any other method returns Text("Unsupported HTTP method: {method}"). Requests go through the injected transport (the OpenApiTransport trait, with the real implementation over ProxiedClient::send_buffered). Redirects are followed by the transport implementation up to 20 hops (httpx default), because the pooled client never follows them. When resolved_auth_headers carries a credential outside Authorization (credential_slot: first resolved header name that is not "Authorization" ignoring case), build betterlite_mcp::client::sessions::factory::RedirectGuard::new(url, slot) and apply it to the headers on every hop; Authorization is already stripped across origins by redirect_headers in betterlite-http.
+  Step 7, classify the response (raise_for_upstream_failure): status below 400 is fine; 401 with relays_upstream_auth=true gives OpenApiToolError::UpstreamAuth {status, www_authenticate (the www-authenticate response header), server}; every other 400+ gives OpenApiToolError::UpstreamStatus {status, server} and never carries the upstream body. server is server_label, or "{METHOD} {path}" in uppercase when there is no label.
+  Step 8, a 2xx body goes through parse_http_body: blank or whitespace-only text, invalid JSON, and the JSON value null all give OpenApiToolOutput::Text(body); any other valid JSON gives OpenApiToolOutput::Json {value, original_text}.
+
+  Tests live in crates/betterlite-mcp/src/openapi_tools/tests.rs and tests/. Use module names naming, spec_loading, base_url, parameters, input_schema, path_values, request_headers, tool_call and upstream_errors under openapi_tools::, and a corpus replay test named replays_the_openapi_spec_corpus that feeds every file in fuzz/corpus/openapi_spec through parse_openapi_document, get_base_url and the tool derivation without a panic. Add the cargo-fuzz target crates/betterlite-mcp/fuzz/fuzz_targets/openapi_spec.rs with its [[bin]] entry and a committed corpus.
+scope:
+  paths:
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/src/openapi_tools.rs
+    - crates/betterlite-mcp/src/openapi_tools/**
+    - crates/betterlite-mcp/fuzz/Cargo.toml
+    - crates/betterlite-mcp/fuzz/fuzz_targets/openapi_spec.rs
+    - crates/betterlite-mcp/fuzz/corpus/openapi_spec/**
+    - tools/oracle/cases/helpers/mcp-openapi/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-openapi-*
+    - tools/oracle/helpers/b4683.py
+    - tools/oracle/helpers/b4683/**
+    - tools/oracle/src/helpers/mcp/b4683.rs
+    - tools/oracle/src/helpers/mcp/b4683/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L24-L44
+    why: Tool name character class, the 128 limit and sanitize_openapi_tool_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L131-L184
+    why: Path parameter sanitizing and spec loading from a URL (async_safe_get with max_bytes) or a local file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L187-L235
+    why: get_base_url for OpenAPI 3 servers, Swagger 2 host, and the spec_path fallbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L238-L361
+    why: Ref resolution, path-level merge, extract_parameters and build_input_schema.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L364-L465
+    why: Credential redirect guard, upstream client choice, header merge precedence and upstream failure classification.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/openapi_to_mcp_generator.py#L468-L594
+    why: create_tool_function and the tool_function it returns (credential check, URL, query, body, send, parse).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2745-L2870
+    why: The production caller. It resolves parameters, builds the schema and creates the tool function for each operation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_outcome.py#L35-L55
+    why: TextResult, JsonResult and parse_http_body, the result shape a tool call returns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/exceptions.py#L22-L107
+    why: MCPUpstreamAuthError and MCPOpenApiUpstreamError, the two failures a tool call raises.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/adapter.py#L425-L447
+    why: validate_static_credential, called before the request is built.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L359-L380
+    why: custom_credential_slot and credential_redirect_hook, the guard that drops a custom credential header on a cross-origin redirect.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L745
+    why: AsyncHTTPHandler.get, which follows redirects by default, so tool calls follow them too.
+dod:
+  - text: parse_openapi_document and load_openapi_spec_async read a local JSON file, report a missing file with "OpenAPI spec not found at {location}", fetch http(s) locations through UserUrlFetcher with the max_bytes limit and fail on a 400 or higher status.
+    proof: [openapi-tools-tests]
+  - text: get_base_url follows servers[0].url, the relative-url rule with an http(s) spec_path, the Swagger 2 host form and both spec_path fallbacks, and returns "" when nothing applies.
+    proof: [openapi-tools-tests, oracle]
+  - text: sanitize_openapi_tool_name replaces invalid characters with "_", lowercases and cuts to 128 characters, and leaves an empty name empty.
+    proof: [openapi-tools-tests, oracle]
+  - text: resolve_operation_params resolves component refs, drops unresolvable or nameless parameters, lets operation-level parameters win on (name, in) and keeps path-level ones first; extract_parameters and build_input_schema give LiteLLM's lists and schema for the same operations.
+    proof: [openapi-tools-tests, oracle]
+  - text: merge_request_headers applies the order extra, static, BYOK Authorization, resolved credential, comparing names without case.
+    proof: [openapi-tools-tests, oracle]
+  - text: >-
+      A call rejects path values with separators or ".." segments as Text("Invalid path parameter: ..."), percent-encodes the rest, sends truthy query values, builds the body from "body" or the body parameter names, and refuses an unusable static credential before sending.
+    proof: [openapi-tools-tests, oracle]
+  - text: A 401 with relays_upstream_auth gives UpstreamAuth with the www-authenticate value, any other 400+ gives UpstreamStatus without the body, and a 2xx body becomes Text or Json by parse_http_body.
+    proof: [openapi-tools-tests, oracle]
+  - text: A credential in a custom header slot is dropped when a redirect hop leaves the origin of the request url, and redirects stop after 20 hops.
+    proof: [openapi-tools-tests]
+  - text: The spec decoder has a cargo-fuzz target with a committed corpus that replays without a panic.
+    proof: [openapi-fuzz]
+  - text: The oracle helper adapter passes strict Python checks and its seeds replay.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: openapi-tools-tests
+      why: the openapi_tools behavior tests fail, do not exist, or the filter selects nothing
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^openapi_tools::/) - test(replays_the_openapi_spec_corpus)'
+    - id: openapi-clippy
+      why: clippy catches issues in the new module and its fuzz target
+      run: cargo clippy --locked -p betterlite-mcp --all-targets -- -D warnings
+    - id: openapi-fuzz
+      why: the fuzz target, its added corpus or its replay test is missing or fails
+      run: test -f crates/betterlite-mcp/fuzz/fuzz_targets/openapi_spec.rs && grep -q openapi_spec crates/betterlite-mcp/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-mcp/fuzz/corpus/openapi_spec)" && cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(replays_the_openapi_spec_corpus)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/b4683.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-openapi-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-openapi/tool-name.yaml
+  - tools/oracle/cases/helpers/mcp-openapi/base-url-servers.yaml
+  - tools/oracle/cases/helpers/mcp-openapi/base-url-swagger2.yaml
+  - tools/oracle/cases/helpers/mcp-openapi/base-url-spec-path.yaml
+  - tools/oracle/cases/helpers/mcp-openapi/resolve-params.yaml
+  - tools/oracle/cases/helpers/mcp-openapi/extract-params.yaml
+  - tools/oracle/cases/helpers/mcp-openapi/input-schema.yaml
+  - tools/oracle/cases/helpers/mcp-openapi/merge-headers.yaml
+  - tools/oracle/cases/helpers/mcp-openapi/call-path-values.yaml
+  - tools/oracle/cases/helpers/mcp-openapi/call-query-body.yaml
+  - tools/oracle/cases/helpers/mcp-openapi/call-methods.yaml
+  - tools/oracle/cases/helpers/mcp-openapi/call-static-credential.yaml
+  - tools/oracle/cases/helpers/mcp-openapi/call-upstream-errors.yaml
+  - tools/oracle/cases/helpers/mcp-openapi/call-result-parse.yaml
+deviations:
+  - what: The per-request header values travel in an OpenApiCallContext argument, not in module-level context variables.
+    why: The repository forbids module-level state. The merge order and results are the same.
+  - what: Redirects on a tool call are followed by the OpenApiTransport implementation, up to 20 hops, not by the HTTP client.
+    why: The pooled ProxiedClient never follows redirects. httpx follows up to 20 by default, and the credential guard needs to see each hop.
+out_of_scope:
+  - "register_tools_from_openapi, load_openapi_spec (the sync wrapper) and the module constants BASE_URL and HEADERS: no caller at the pin outside tests, since the manager at mcp_server_manager.py:2745 does its own registration. Their cases are not written."
+  - "Registering tools in the local tool registry, server name prefixes, openapi_tool_name and the manager's header building (strip_auth_scheme, to_basic_credentials): B4680 owns the registry, the rest belongs to the B136 manager parts."
+  - "Setting the four per-request values from the MCP request (operations.py and mcp_server_manager.py:6629): B136 manager parts. This task only reads them from OpenApiCallContext."
+  - "The preview route in rest_endpoints.py:1625: B4730 calls the functions built here."
+  - "validate_static_credential, CredError and raise_public: B4667. The user URL fetcher: B5082. The pooled client: B173. RedirectGuard: B4744."
+  - "MCP result conversion (result_conversion.py, WireCompat): B136 manager parts. This task returns OpenApiToolOutput and the manager part converts it."
+pitfalls:
+  - >-
+    A path value of "." is accepted. Python's PurePosixPath(".").parts is empty, so only ".." is rejected, and quote keeps "." as is.
+  - >-
+    Replacing "{name}" first turns "{{name}}" into "{value}" (the inner pair matches), so the second replace for "{{name}}" never matches. Keep both replaces in this order and keep the leftover braces.
+  - >-
+    A rejected path value returns a normal Text result "Invalid path parameter: ..." and the call carries on as a success. It is not an error.
+  - >-
+    Header and cookie parameters appear in the input schema but are never sent, because extract_parameters only knows path, query and body.
+  - >-
+    A requestBody with only a non-"application/json" content key adds no "body" property, yet the call still reads the "body" argument and sends it, since extract_parameters adds "body" for any requestBody.
+  - >-
+    build_input_schema copies only the top-level "properties" of the body schema. $ref, allOf, items and required inside the body schema are dropped.
+  - >-
+    Truthiness decides what is sent. An argument of 0, false, "" or an empty list is treated as absent for path, query and body alike.
+  - >-
+    A string body is parsed as JSON, so "[1,2]" is sent as the array [1,2] and "5" as the number 5. Only a failed parse wraps the string as {"data": ...}.
+  - >-
+    The static headers beat the caller's forwarded headers on a name clash, compared without case. The resolved credential beats everything, including BYOK. Never let a forwarded header replace an operator header.
+  - >-
+    The 401 relay applies only when relays_upstream_auth is true. Without it a 401 is an UpstreamStatus with no challenge.
+  - >-
+    The upstream response body must never reach the error or the logs for a 400+ status. Only the status code and the server label are kept.
+  - >-
+    Swagger 2 "in: body" parameters count as body parameters, so "body" may be missing from the arguments while the parameter's own name carries the body.
+  - >-
+    A relative servers[0].url with a local spec path is returned relative, and the call then builds a URL with no host. Do not invent a base.
+  - >-
+    Log the spec-derived base url at info only when it is derived from spec_path, as LiteLLM does; never log header values.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-endpoint-cache-passthrough-path-seed
+call:
+  vertex_endpoint:
+    cache_passthrough_path:
+      urls:
+        - "https://h.example.com/v1/projects/p/locations/l/publishers/google/models/m:generateContent"
+      routes:
+        - {base_url: "https://h.example.com", route: "/v1/publishers/google/models/m:generateContent", project: p, location: l}
+        - {base_url: "https://h.example.com", route: "/projects/old/locations/old/cachedContents", project: p, location: l}
+env: {}
+compare: {ignore: []}

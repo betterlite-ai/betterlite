@@ -1,0 +1,12 @@
+kind: helper
+name: signed-audio-and-image-lower-the-reasoning-excess
+call:
+  modality_cost:
+    operation: completion
+    completion_tokens: 5
+    text_tokens: 5
+    reasoning_tokens: 5
+    audio_tokens: -3
+    image_tokens: -1
+compare: {ignore: []}
+env: {}

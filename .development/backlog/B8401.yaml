@@ -1,0 +1,14 @@
+id: B8401
+milestone: M8 platform
+title: MCP tool call payloads for guardrail hooks
+status: todo
+depends_on: [B1106]
+file: tasks/B8401-mcp-hook-payloads.yaml
+covers:
+  - "litellm/proxy/utils.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

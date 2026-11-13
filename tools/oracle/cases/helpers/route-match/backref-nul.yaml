@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-nul",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/\u0000\u0000",
+      "pattern": "/(?i:(\\x00)\\1)"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

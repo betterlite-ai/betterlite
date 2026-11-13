@@ -1,0 +1,119 @@
+id: B5970
+title: Watsonx credentials, IAM token, endpoints and shared payload fields
+description: >-
+  Build watsonx_auth in betterlite-openai (crates/betterlite-openai/src/watsonx_auth.rs and its folder). It holds
+  everything the other watsonx.ai tasks share: common_utils.py without the two prompt conversion functions
+  (B5972 owns those), and types/llms/watsonx.py. No other watsonx task re-implements any of it.
+
+  Types: WatsonxError {status_code, message, headers} (WatsonXAIError, built by get_error_class for any status);
+  WatsonxApiParams {project_id, space_id, region_name}; WatsonxCredentials {api_key, api_base, token}; the
+  WatsonxEndpoint enum with the twelve paths of WatsonXAIEndpoint (text/generation, text/generation_stream, text/chat,
+  text/chat_stream, the four deployments/{deployment_id}/... variants, text/embeddings, prompts, foundation_model_specs,
+  text/rerank);
+  WatsonxAudioRequestFields (the typed form of WatsonXAudioTranscriptionRequestBody);
+  and DEFAULT_API_VERSION "2024-03-13" (litellm.WATSONX_DEFAULT_API_VERSION). Every function takes the version as an
+  argument and uses that default when it is None.
+
+  Environment: LiteLLM reads names through get_secret_str. Betterlite takes one WatsonxEnvironment struct of optional
+  strings passed in by the caller, one field per name: WATSONX_IAM_URL, WX_API_KEY, WATSONX_API_KEY, WATSONX_APIKEY,
+  WATSONX_ZENAPIKEY, WATSONX_TOKEN, WATSONX_API_BASE, WATSONX_URL, WX_URL, WML_URL, WATSONX_PROJECT_ID, WX_PROJECT_ID,
+  PROJECT_ID, WATSONX_REGION, WX_REGION, REGION, WATSONX_DEPLOYMENT_SPACE_ID, WATSONX_SPACE_ID, WX_SPACE_ID, SPACE_ID.
+  Do not read the process environment and do not add a config section. A name counts as set only when its value is
+  non-empty, like get_secret_str.
+
+  IAM token (generate_iam_token, _generate_watsonx_token, get_watsonx_iam_url): the URL is WATSONX_IAM_URL or
+  https://iam.cloud.ibm.com/identity/token. A token argument that is not None wins and is returned as is, empty string
+  included. Otherwise look the explicit api_key up in a B2226 TTL cache. On a miss resolve the key from WX_API_KEY,
+  WATSONX_API_KEY, WATSONX_APIKEY, WATSONX_ZENAPIKEY in that order (this order differs from get_watsonx_credentials),
+  fail with a plain "API key is required" error when none is set, POST the form body grant_type
+  urn:ibm:params:oauth:grant-type:apikey plus apikey with Content-Type application/x-www-form-urlencoded and Accept
+  application/json through B173's pooled client, fail on a non-2xx status, then store access_token under the resolved
+  key with ttl expires_in minus 10 seconds. decode_iam_token_response(bytes) is the typed decoder for that body; a body
+  without access_token or expires_in is an error, never a default.
+
+  Credential resolvers: get_api_params pops project_id (falling back to the popped watsonx_project), space_id, then
+  region_name (popped region_name, else popped region, else popped watsonx_region_name, else popped watsonx_region),
+  then fills missing values from the env lists in the order above. It fails with WatsonxError 401 "Error: Watsonx
+  project_id and space_id not set. Set WX_PROJECT_ID or WX_SPACE_ID in environment variables or pass in as a
+  parameter." only when both ids are missing, the model is given and it does not start with deployment/.
+  get_watsonx_credentials pops apikey, then url (else api_base, else base_url), then wx_credentials (else
+  watsonx_credentials); wx_credentials url, apikey/api_key and token/watsonx_token override the arguments; a missing or
+  non-string key or base is WatsonxError 401 with LiteLLM's two messages; token comes only from wx_credentials.
+  validate_environment: an Authorization header already present returns the two defaults (Content-Type and Accept
+  application/json) overlaid with the caller headers; otherwise a truthy optional_params token or WATSONX_TOKEN gives
+  Bearer, else a popped zen_api_key or WATSONX_ZENAPIKEY gives "ZenApiKey <key>", else Bearer with the IAM token.
+  get_base_url, add_api_version_to_url (always appends ?version=, even when the URL has a query) and prepare_payload
+  (deployment/ models return an empty map; otherwise model_id plus project_id, or space_id when project_id is None)
+  follow the source line for line.
+scope:
+  paths:
+    - crates/betterlite-openai/src/watsonx_auth.rs
+    - crates/betterlite-openai/src/watsonx_auth/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/watsonx_iam_token.rs
+    - crates/betterlite-openai/fuzz/corpus/watsonx_iam_token/**
+    - tools/oracle/cases/helpers/watsonx-auth/**
+    - tools/oracle/helpers/b5970.py
+    - tools/oracle/helpers/b5970/**
+    - tools/oracle/src/helpers/openai/b5970.rs
+    - tools/oracle/src/helpers/openai/b5970/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/common_utils.py#L15-L77
+    why: Error type, IAM URL, token request, cache ttl and the token-argument shortcut.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/common_utils.py#L80-L120
+    why: Nested pops in get_api_params, env fallbacks and the 401 rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/common_utils.py#L224-L345
+    why: Mixin auth headers, base URL, version suffix, credentials and payload ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/watsonx.py#L1-L88
+    why: Typed dicts, endpoint paths and model patterns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L357-L358
+    why: The default API version.
+dod:
+  - text: Authorization headers follow the token, zen key and IAM order, and an existing Authorization header is kept.
+    proof: [watsonx-auth-tests, oracle]
+  - text: The IAM token is fetched once per key, cached for expires_in minus 10 seconds, and a missing key is an error.
+    proof: [watsonx-auth-tests, oracle]
+  - text: Project, space, region, API key and base resolution pop the same keys in the same order and raise the same 401s.
+    proof: [watsonx-auth-tests, oracle]
+  - text: The IAM token decoder rejects malformed bodies without panicking and its corpus replays.
+    proof: [watsonx-iam-corpus]
+  - text: New helper cases for these functions exist.
+    proof: [watsonx-auth-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: watsonx-auth-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^watsonx_auth::/) - test(replays_the_watsonx_iam_token_corpus)'
+      why: Header order, nested pops, env order and cache ttl are only visible in these unit tests.
+    - id: watsonx-iam-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/watsonx_iam_token.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/watsonx_iam_token)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_watsonx_iam_token_corpus)'
+      why: The IAM reply is bytes from outside and needs a fuzz target with a replayed corpus.
+    - id: watsonx-auth-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/watsonx-auth)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/helpers/watsonx-auth/authorization-order.yaml
+  - tools/oracle/cases/helpers/watsonx-auth/api-params-nested-pops.yaml
+  - tools/oracle/cases/helpers/watsonx-auth/missing-project-and-space.yaml
+  - tools/oracle/cases/helpers/watsonx-auth/credentials-wx-credentials-override.yaml
+  - tools/oracle/cases/helpers/watsonx-auth/base-url-env-order.yaml
+  - tools/oracle/cases/helpers/watsonx-auth/prepare-payload-deployment.yaml
+deviations:
+  - what: The IAM request is logged without the apikey form value.
+    why: LiteLLM's debug line prints the whole form body including the key. Betterlite redacts secrets in logs (B187).
+  - what: Environment names arrive in a WatsonxEnvironment value, not from get_secret_str.
+    why: No code outside the config crate reads the environment (rule on injected dependencies). Secret-manager lookups for these names stay with B8500.
+out_of_scope:
+  - B5972 owns aconvert_watsonx_messages_to_prompt, convert_watsonx_messages_to_prompt, their two core helpers from common_utils.py and the WatsonXModelPattern strings.
+  - B5971 owns the chat config and handler, B5972 the text generation config, and B5842 the embedding, rerank, audio and passthrough configs. Each calls the functions here.
+  - B8331 owns the main.py call site (the watsonx embedding arm) and wires everything into dispatch; B1079 owns the rerank_api/main.py call site.
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as b5970 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task''s to edit.'
+  - The nested pop in project_id = params.pop("project_id", params.pop("watsonx_project", None)) always removes watsonx_project, even when project_id is present. The region chain does the same.
+  - generate_iam_token looks the cache up with the argument but stores under the resolved key, so a call with no api_key never hits the cache.
+  - The API key env order is WX_API_KEY first in generate_iam_token and WATSONX_APIKEY first in get_watsonx_credentials.
+  - validate_environment reads token with get (not popped) and pops zen_api_key, so a later step still sees token.
+  - The IAM missing-key error is a plain ValueError, while every other failure here is WatsonxError.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: security

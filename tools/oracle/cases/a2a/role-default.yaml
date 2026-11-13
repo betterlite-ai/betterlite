@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-role-default
+call: {"b4803": {"operation": "roles"}}
+env: {}
+compare: {ignore: []}

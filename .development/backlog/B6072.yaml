@@ -1,0 +1,14 @@
+id: B6072
+milestone: M3 providers
+title: Fireworks AI chat request, response, stream chunk and model list transforms
+status: todo
+depends_on: [B6070, B2202, B2222, B217, B219, B503, B504, B171]
+file: tasks/B6072-fireworks-chat-wire.yaml
+covers:
+  - "litellm/llms/fireworks_ai/chat/transformation.py"
+parent: B5832
+split_from: B5832
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

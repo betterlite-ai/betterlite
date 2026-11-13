@@ -1,0 +1,15 @@
+kind: helper
+name: video-tokens-fall-back-to-the-input-token-price
+call:
+  modality_cost:
+    operation: prompt
+    prompt_tokens: 10
+    text_tokens: 10
+    video_tokens: 4
+    model_info: {input_cost_per_token: "0.5"}
+    prompt_base_cost: "0.5"
+    cache_read_cost: "0"
+    cache_creation_cost: "0"
+    cache_creation_cost_above_1hr: "0"
+compare: {ignore: []}
+env: {}

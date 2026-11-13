@@ -1,0 +1,1 @@
+data: {"orchestration_result": {"id": "r1", "created": 1700000000, "model": "m", "choices": [{"index": 0, "delta": {"content": "a"}, "finish_reason": null}]}}

@@ -40,9 +40,6 @@ scope:
   paths:
     - crates/betterlite-server/src/user_agent_analytics.rs
     - crates/betterlite-server/src/user_agent_analytics/**
-    - tools/oracle/cases/analytics/user-agent-mau*.yaml
-    - tools/oracle/cases/analytics/user-agent-summary*.yaml
-    - tools/oracle/cases/analytics/user-agent-per-user*.yaml
     - tools/oracle/helpers/b3101.py
     - tools/oracle/helpers/b3101/**
     - tools/oracle/src/helpers/server/b3101.rs
@@ -59,49 +56,40 @@ references:
     why: Row types _TagSummaryRow for parsing SQL results, TypeAdapter for validation, null coalescing in response construction.
 dod:
   - text: "get_monthly_active_users returns active users per tag for last 7 months (210 days), groups by 30-day period, generates month labels with ordinal and abbreviation (e.g., \"Month 1 (Nov)\"), includes period_start and period_end dates, ordered with most recent month first."
-    proof: [oracle, behavior-tests]
+    proof: [behavior-tests]
   - text: "get_monthly_active_users calculates month_offset using FLOOR((end_date - tag_date) / 30) and supports both exact-match tag_filters (takes precedence) and substring tag_filter legacy mode."
-    proof: [oracle, behavior-tests]
+    proof: [behavior-tests]
   - text: "get_tag_summary accepts start_date and end_date as required YYYY-MM-DD parameters, validates with strptime and returns HTTP 400 on invalid format, aggregates across all matching records in date range."
-    proof: [oracle, behavior-tests]
+    proof: [behavior-tests]
   - text: "get_tag_summary uses LEFT JOIN with VerificationToken to retain api_keys without matching user_id, sums api_requests/successful_requests/failed_requests, totals (prompt_tokens + completion_tokens) as total_tokens, sums spend."
-    proof: [oracle, behavior-tests]
+    proof: [behavior-tests]
   - text: "get_tag_summary coalesces null aggregates to 0 (int) or 0.0 (float) in response, ordered by total_requests descending."
-    proof: [oracle, behavior-tests]
+    proof: [behavior-tests]
   - text: "get_per_user_analytics returns immediately with zero results, zero total_count, and zero total_pages when no api_keys match the date and tag filters, without querying user or repository tables."
-    proof: [oracle, behavior-tests]
+    proof: [behavior-tests]
   - text: "get_per_user_analytics fetches DailyTagSpend records for last 30 days ending UTC tomorrow, extracts unique api_keys, joins with VerificationToken to map to user_ids, fetches UserRepository for emails."
     proof: [behavior-tests]
   - text: "get_per_user_analytics aggregates metrics by user_id: user_agent stores the first observed tag (unchanged if already set), counts and totals accumulate across all records for that user."
     proof: [behavior-tests]
   - text: "get_per_user_analytics accepts page (default 1, ge 1) and page_size (default 50, ge 1 le 1000), returns paginated results sorted by successful_requests descending, with total_pages = ceil((total_count + page_size - 1) / page_size)."
-    proof: [oracle, behavior-tests]
+    proof: [behavior-tests]
   - text: "Tag filtering respects exact-list precedence (tag_filters with exact match before tag_filter substring search) and empty filter lists mean no filtering across all three endpoints."
-    proof: [oracle, behavior-tests]
-  - text: "GET /tag/mau returns HTTP 500 with \"Database not connected\" error when prisma_client is unavailable."
-    proof: [oracle]
-  - text: "GET /tag/summary returns HTTP 500 with \"Database not connected\" error when prisma_client is unavailable."
-    proof: [oracle]
-  - text: "GET /tag/user-agent/per-user-analytics returns HTTP 500 with \"Database not connected\" error when prisma_client is unavailable."
-    proof: [oracle]
+    proof: [behavior-tests]
+  - text: "GET /tag/mau returns HTTP 500 with \"Database not connected\" error when prisma_client is unavailable. Tested with tower's oneshot here; B8661 proves it over HTTP."
+    proof: [behavior-tests]
+  - text: "GET /tag/summary returns HTTP 500 with \"Database not connected\" error when prisma_client is unavailable. Tested with tower's oneshot here; B8661 proves it over HTTP."
+    proof: [behavior-tests]
+  - text: "GET /tag/user-agent/per-user-analytics returns HTTP 500 with \"Database not connected\" error when prisma_client is unavailable. Tested with tower's oneshot here; B8661 proves it over HTTP."
+    proof: [behavior-tests]
+  - text: The three handlers answer through tower's oneshot over the module's own Router with fake ports; B8661 mounts the routes and proves them over HTTP.
+    proof: [behavior-tests]
 checks:
   optional: []
   commands:
     - id: behavior-tests
       why: Response types, tag/date filtering, pagination logic, or null coalescing is broken
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_agent_analytics::(monthly_|summary_|per_user_)/)'
-oracle_cases:
-  - tools/oracle/cases/analytics/user-agent-mau.yaml
-  - tools/oracle/cases/analytics/user-agent-summary.yaml
-  - tools/oracle/cases/analytics/user-agent-per-user.yaml
-  - tools/oracle/cases/analytics/user-agent-mau-query-error.yaml
-  - tools/oracle/cases/analytics/user-agent-summary-query-error.yaml
-  - tools/oracle/cases/analytics/user-agent-per-user-query-error.yaml
-  - tools/oracle/cases/analytics/user-agent-summary-invalid-dates.yaml
-  - tools/oracle/cases/analytics/user-agent-per-user-empty-keyset.yaml
-  - tools/oracle/cases/analytics/user-agent-mau-prisma-unavailable.yaml
-  - tools/oracle/cases/analytics/user-agent-summary-prisma-unavailable.yaml
-  - tools/oracle/cases/analytics/user-agent-per-user-prisma-unavailable.yaml
+oracle_cases: []
 deviations:
   - what: SQL parameter injection uses Rust's native parameterized query API instead of string formatting for MAU query. Tag filter parameters are built dynamically with count-based indices.
     why: Prevents SQL injection and matches betterlite's database abstraction patterns.

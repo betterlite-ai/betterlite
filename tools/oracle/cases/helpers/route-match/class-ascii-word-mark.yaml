@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "class-ascii-word-mark",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/models/ͅ",
+      "allowed_routes": [
+        "/models/(?ai:[\\w-])"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

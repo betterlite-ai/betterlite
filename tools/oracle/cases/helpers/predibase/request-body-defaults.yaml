@@ -1,0 +1,32 @@
+kind: helper
+name: predibase-request-body-defaults
+env: {}
+compare: {ignore: []}
+call:
+  b5846:
+    op: payload
+    max_new_tokens: 123
+    requests:
+      - model: meta-llama/llama-2-7b-chat
+        messages:
+          - {role: user, content: hi}
+        options: {}
+      - model: meta-llama/llama-2-7b-chat
+        messages:
+          - {role: user, content: hi}
+        options: {details: false, max_new_tokens: 0, return_full_text: false}
+      - model: meta-llama/llama-2-7b-chat
+        messages:
+          - {role: user, content: hi}
+        options: {stream: true, temperature: 0.2, n: 2}
+      - model: meta-llama/llama-2-7b-chat
+        messages:
+          - {role: system, content: be brief}
+          - {role: user, content: hi}
+          - {role: assistant, content: done}
+          - {role: user, content: again}
+        options: {top_p: 0.5}
+      - model: tiiuae/falcon-7b
+        messages:
+          - {role: user, content: hi}
+        options: {}

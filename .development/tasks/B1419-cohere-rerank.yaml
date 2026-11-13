@@ -20,7 +20,7 @@ description: >-
   with upstream status. Neither variant checks status inside its response transformation.
   get_error_class drops passed headers, and inherited cost computation stays in B1013.
 
-  In betterlite-core::cohere_rerank_guardrail implement CohereRerankHandler through B104.
+  In betterlite-core::cohere_rerank_guardrail implement CohereRerankHandler for the registry that B3679 and B3680 bind.
   Scan query followed by instruction when each is a string, including empty strings;
   documents never enter the hook. Include a truthy model, pass the original request_data,
   and replace only returned positions. A short texts result preserves unreturned fields;
@@ -36,14 +36,12 @@ description: >-
   and 100 configuration/export lines, maximum 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,cohere_rerank}.rs
     - crates/betterlite-openai/src/cohere_rerank.rs
     - crates/betterlite-openai/src/cohere_rerank/**
-    - crates/betterlite-core/src/{lib,cohere_rerank_guardrail}.rs
     - crates/betterlite-core/src/cohere_rerank_guardrail.rs
     - crates/betterlite-core/src/cohere_rerank_guardrail/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,cohere_rerank}.rs
+    - crates/betterlite-config/src/sections/cohere_rerank_settings.rs
+    - crates/betterlite-config/src/sections/cohere_rerank_settings/**
     - crates/betterlite-config/tests/cohere_rerank_settings.rs
     - tools/oracle/src/helpers/core_ops/cohere_rerank_plan.rs
     - tools/oracle/src/helpers/core_ops/cohere_rerank_plan/**
@@ -83,7 +81,7 @@ checks:
       run: test -f tools/oracle/helpers/cohere_rerank_plan.py && test -f tools/oracle/helpers/rerank_guardrail_fields.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The two adapters must call the actual config and guardrail translation methods.
     - id: rerank-helper-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_rerank_plan*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/rerank_guardrail_fields*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::cohere_rerank_plan::/) | test(/^helpers::core_ops::rerank_guardrail_fields::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_rerank_plan*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/rerank_guardrail_fields*')" && cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^cohere_rerank_plan::/) | test(/^rerank_guardrail_fields::/)'
       why: Neither a config-only seed nor a guardrail-only seed proves both operations are wired.
 oracle_cases:
   - tools/oracle/cases/helpers/cohere-rerank-plan/versioned-limits-and-suffix.yaml
@@ -95,7 +93,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B085 owns rerank HTTP aliases and B1014 call orchestration; B037 composes this provider and the two guardrail mappings.
-  - B104 retains the general guardrail interface/registry and B1013 retains common rerank validation, decoding and inherited search-unit pricing.
+  - B3679 and B3680 retain the general guardrail interface/registry binding and B1013 retains common rerank validation, decoding and inherited search-unit pricing.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as cohere_rerank_plan and rerank_guardrail_fields in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/cohere_rerank_plan.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/cohere_rerank_plan.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Passing an already versioned base ending in /v1 appends another /v1/rerank in the V1 implementation.

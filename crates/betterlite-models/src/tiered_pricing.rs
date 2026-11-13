@@ -86,7 +86,13 @@ fn is_python_float_literal(text: &str) -> bool {
         Some((mantissa, exponent)) => (mantissa, Some(exponent)),
         None => (body, None),
     };
-    is_decimal_mantissa(mantissa) && exponent.is_none_or(is_signed_digits)
+    is_decimal_mantissa(mantissa)
+        && exponent.is_none_or(|exponent_text| {
+            let digits = exponent_text
+                .strip_prefix(['+', '-'])
+                .unwrap_or(exponent_text);
+            is_underscored_digits(digits)
+        })
 }
 
 fn is_decimal_mantissa(text: &str) -> bool {
@@ -96,11 +102,6 @@ fn is_decimal_mantissa(text: &str) -> bool {
     (!int_part.is_empty() || !frac_part.is_empty())
         && (int_part.is_empty() || is_underscored_digits(int_part))
         && (frac_part.is_empty() || is_underscored_digits(frac_part))
-}
-
-fn is_signed_digits(text: &str) -> bool {
-    let digits = text.strip_prefix(['+', '-']).unwrap_or(text);
-    is_underscored_digits(digits)
 }
 
 // PEP 515: a digit run may carry single underscores between two digits, never leading, trailing or doubled.

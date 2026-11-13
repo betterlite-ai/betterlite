@@ -37,8 +37,8 @@ description: >-
   request metadata); emit reservation-aware TPM ops on all (filtered) charged targets; log
   release of unused budget when actual < reserved. Return the built pipeline operations list.
 
-  Depends on B206 for get_litellm_metadata_from_kwargs; B3031 for get_request_stash_for_call,
-  _call_id_from_callback_kwargs; B3037 for _build_reservation_aware_tpm_ops, _build_project_reservation_ops;
+  Depends on B206 for get_litellm_metadata_from_kwargs; B3031 for get_request_stash_for_call
+  (_call_id_from_callback_kwargs is not ported: read litellm_call_id from the typed callback record and pass it to for_call); B3037 for _build_reservation_aware_tpm_ops, _build_project_reservation_ops;
   B3038 for _rate_limited_model, _key_owns_model_tpm_limit_from_request_metadata; B3044 for
   _resolve_io_token_reconcile_usage, _aggregate_only_total_tokens, _response_usage, _get_total_tokens_from_usage.
 
@@ -150,7 +150,7 @@ checks:
       run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::success_ops_emission(::|$)/)'"
     - id: oracle-cases-tests
       why: Oracle cases verify reconciliation across missing usage, aggregate-only, release-guarded, and reserved-vs-actual paths
-      run: "cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/reconciliation_operations -k 'b3045'"
+      run: "cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/reconciliation_operations"
 
 oracle_cases:
   - tools/oracle/cases/reconciliation_operations/io-token-missing-usage.yaml

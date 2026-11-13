@@ -1,0 +1,10 @@
+kind: helper
+name: print-verbose-guards-console
+call:
+  b4296:
+    print_verbose:
+      message: "LiteLLM: Enabling Cache"
+      set_verbose: true
+env: {}
+compare:
+  ignore: []

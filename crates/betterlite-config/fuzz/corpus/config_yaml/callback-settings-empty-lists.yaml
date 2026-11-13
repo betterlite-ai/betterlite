@@ -1,0 +1,4 @@
+litellm_settings:
+  callbacks: []
+  success_callback: []
+  failure_callback: []

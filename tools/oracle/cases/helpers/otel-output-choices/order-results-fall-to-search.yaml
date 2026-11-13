@@ -1,0 +1,9 @@
+kind: helper
+name: order-results-fall-to-search
+call:
+  b5240:
+    function: "output_choices"
+    response: {"results": [{"title": "Doc"}]}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,68 @@
+kind: helper
+name: openai-decisions-probability-order
+call:
+  openai_decisions:
+    ir_to_response:
+      - requested_model: requested-model
+        target:
+          input: the input
+          questions:
+            - type: choice
+              name: pick
+              instructions: pick
+              choices:
+                - {value: true}
+                - {value: b}
+                - {value: c}
+                - {value: d}
+            - type: score
+              name: rate
+              instructions: rate
+              levels:
+                - {label: low}
+                - {label: mid}
+                - {label: high}
+        source:
+          openai:
+            request:
+              input: the input
+              questions:
+                - type: choice
+                  name: pick
+                  instructions: pick
+                  choices:
+                    - {value: true}
+                    - {value: b}
+                    - {value: c}
+                    - {value: d}
+                - type: score
+                  name: rate
+                  instructions: rate
+                  levels:
+                    - {label: low}
+                    - {label: mid}
+                    - {label: high}
+            response:
+              model: gpt-4o
+              answers:
+                - type: choice
+                  name: pick
+                  choice: true
+                  confidence: 1.0
+                  probabilities:
+                    - {value: c, probability: 0.5}
+                    - {value: "true", probability: 0.1}
+                    - {value: b, probability: 0.2}
+                    - {value: true, probability: 0.9}
+                - type: score
+                  name: rate
+                  score: 2.0
+                  confidence: 1.0
+                  probabilities:
+                    - {value: 2, label: high, probability: 0.3}
+                    - {value: 0, label: low, probability: 0.4}
+                    - {value: 0, label: low, probability: 0.5}
+                    - {value: 7, label: beyond, probability: 0.9}
+              usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
+env: {}
+compare: {ignore: []}

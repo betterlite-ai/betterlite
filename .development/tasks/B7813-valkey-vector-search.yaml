@@ -1,0 +1,97 @@
+id: B7813
+title: Valkey direct vector search
+description: >-
+  Build the Valkey vector store (valkey/vector_stores/transformation.py, 318 lines, and valkey/common_utils.py) as the module
+  valkey_vector_store in betterlite-rag. It is a direct store: it runs an FT.SEARCH KNN query over RESP and returns the
+  response, so there is no HTTP request or response transform. Document hashes sit in an FT index named like the store id.
+
+  Helpers. build_valkey_url(host, port, password, ssl) returns "<scheme>://<creds><host>:<port>", where scheme is rediss when
+  ssl is true else redis and creds is ":<percent-encoded password>@" for a non-empty password (everything unsafe encoded) else
+  nothing. It reads no environment. pack_vector turns floats into little-endian f32 bytes. B8296 uses both, so they
+  are public.
+
+  Ports. Define the trait ValkeySearchPort with one async method that runs FT.SEARCH on an index with the query string,
+  the return fields, the offset and count, dialect 2, and a params map holding "vec" bytes, and returns document rows (id plus
+  string fields). Define the trait ValkeyEmbedder with one async method that embeds one text with a model name and a config
+  map and returns the vectors. A third item, ValkeyConnector, opens a ValkeySearchPort from a URL and the two timeouts. The
+  production ValkeySearchPort and ValkeyConnector are implemented on B5220's live async client, in this module. The caller
+  supplies an embedder that adapts B1058's executor, and an optional ready port. Without a ready port the search builds the
+  URL from the params, connects with the timeouts, searches and closes the connection on success and on error.
+
+  Search steps in order. 1. Read litellm_params into the typed view (litellm_embedding_model, litellm_embedding_config,
+  valkey_host, valkey_port, valkey_password, valkey_ssl, valkey_text_field, valkey_embedding_field; others ignored; a wrong
+  type is a config error). 2. query_text: a string is used as is, even empty; a list joins by one space and an empty list
+  fails with "query must not be empty". 3. Build the KNN query: filters not null fails with "Valkey vector store does not
+  support the filters parameter yet"; max_num_results defaults to 10 and must be 1 to 50 ("max_num_results must be between 1
+  and 50, got N"); the expression is "*=>[KNN {k} @{embedding_field} $vec AS vector_distance]", return fields are the text
+  field and vector_distance, paging 0 to k, dialect 2. Text field defaults to "text" and embedding field to "embedding".
+  4. Require litellm_embedding_model (message from the pin) and embed the query text with the config map. 5. Pack the first
+  embedding. 6. Run the search on the ready port, else connect. valkey_host is required with its message, the port defaults
+  to 6379, and the timeouts are (connect or 5.0, read or 30.0) for a timeout object, (min(t, 5.0), t) for a number and
+  (5.0, 30.0) for none. 7. Build the reply: each document gives one text part from the text field (empty string when
+  absent), score 1.0 minus vector_distance, and file_id and filename both set to the document id. Sort by score descending
+  (a missing score counts as 0.0), keep ties in input order. search_query is the query text, object
+  "vector_store.search_results.page". A document without vector_distance is an error. Create-store request and response both
+  fail with "Valkey vector store is search-only; create indexes with FT.CREATE directly". About 291 LiteLLM lines.
+scope:
+  paths:
+    - crates/betterlite-rag/src/valkey_vector_store.rs
+    - crates/betterlite-rag/src/valkey_vector_store/**
+    - tools/oracle/cases/helpers/valkey-vector-store/**
+    - tools/oracle/helpers/b7813.py
+    - tools/oracle/helpers/b7813/**
+    - tools/oracle/src/helpers/bedrock/b7813.rs
+    - tools/oracle/src/helpers/bedrock/b7813/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/valkey/vector_stores/transformation.py#L41-L124
+    why: Constants, the typed parameter view, required-field messages and the connection URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/valkey/vector_stores/transformation.py#L140-L208
+    why: Query text, socket timeouts, KNN limit and expression, result conversion and sorting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/valkey/vector_stores/transformation.py#L210-L318
+    why: Sync and async execution flow, the injected client path, connection cleanup and the search-only create calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/valkey/common_utils.py#L1-L18
+    why: build_valkey_url and pack_vector.
+dod:
+  - text: build_valkey_url and pack_vector match LiteLLM, including the percent-encoded password and the rediss scheme.
+    proof: [valkey-tests, oracle]
+  - text: The KNN query string, return fields, limit rules and the filters error match LiteLLM.
+    proof: [valkey-tests, oracle]
+  - text: Documents become results with 1.0 minus distance, sorted by score descending with stable ties.
+    proof: [valkey-tests, oracle]
+  - text: A search with no ready port builds the URL, uses the right timeouts and closes the connection even after an error.
+    proof: [valkey-tests]
+  - text: The production port runs FT.SEARCH through B5220's live client.
+    proof: [valkey-tests]
+checks:
+  optional: []
+  commands:
+    - id: valkey-tests
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^valkey_vector_store::/)'
+      why: Fixtures cover the URL, the query, the order of validation, the timeouts, cleanup and the client adapter.
+oracle_cases:
+  - tools/oracle/cases/helpers/valkey-vector-store/url-password-encoding.yaml
+  - tools/oracle/cases/helpers/valkey-vector-store/url-ssl-scheme.yaml
+  - tools/oracle/cases/helpers/valkey-vector-store/pack-vector-bytes.yaml
+  - tools/oracle/cases/helpers/valkey-vector-store/knn-expression.yaml
+  - tools/oracle/cases/helpers/valkey-vector-store/limit-out-of-range.yaml
+  - tools/oracle/cases/helpers/valkey-vector-store/filters-rejected.yaml
+  - tools/oracle/cases/helpers/valkey-vector-store/results-sorted-by-score.yaml
+  - tools/oracle/cases/helpers/valkey-vector-store/socket-timeouts.yaml
+deviations:
+  - what: A litellm_params value of the wrong type (for example valkey_port as text) gives a short config error naming the key, not a pydantic validation report.
+    why: pydantic's message text is a Python library format and no client depends on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/valkey/vector_stores/transformation.py#L82-L94
+out_of_scope:
+  - B1064 and B2484 call the search entry and pass the ready port when the proxy holds a shared client.
+  - B8296 calls build_valkey_url and pack_vector and need this task first (see the notes to the architect).
+  - The sync and async variants are one async function here.
+  - The pip install hint for a missing redis package has no meaning in Rust.
+pitfalls:
+  - A query given as a string is not checked for empty text. Only an empty list fails.
+  - The filters check runs before the limit check, and both run before the embedding call.
+  - A ready port skips URL building, so valkey_host is not required then.
+  - build_valkey_url never reads VALKEY or REDIS env vars, so a password from the environment is never sent to a caller-chosen host.
+  - The connection closes in a finally, so a failed search still closes it.
+budget: {max_changed_lines: 1500, max_new_expects: 1}
+review_level: security

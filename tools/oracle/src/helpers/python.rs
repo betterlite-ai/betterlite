@@ -6,17 +6,8 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use super::{HelperCall, HelperOutput};
+use super::HelperCall;
 use crate::OracleError;
-
-pub(super) fn run_python(
-    root: &Path,
-    call: &HelperCall,
-    case_env: &BTreeMap<String, String>,
-) -> Result<HelperOutput, OracleError> {
-    let stdout_output = python_stdout(root, call, case_env)?;
-    serde_json::from_slice(&stdout_output).map_err(OracleError::HelperJson)
-}
 
 pub(super) fn python_stdout(
     root: &Path,

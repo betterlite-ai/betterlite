@@ -1,0 +1,5 @@
+task: B1681
+deviations:
+  - what: Realtime usage and money have checked finite bounds; overflow is a typed pricing failure and retains the source's candidate-fallback boundaries.
+    why: Session accumulation must not create rounded or infinite spend while testing alternate model prices.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2920-L2981

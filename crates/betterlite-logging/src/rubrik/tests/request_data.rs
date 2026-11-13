@@ -4,6 +4,7 @@ use betterlite_logging::rubrik::request_data::{
 };
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 
 #[test]
 fn extract_request_data_returns_none_when_both_sources_are_absent() {
@@ -24,6 +25,43 @@ fn extract_request_data_falls_back_to_optional_params_tools_when_request_data_la
         Some(Json::List(vec![Json::Text("search".to_owned())]))
     );
     assert_eq!(payload.model, Some("gpt-4".to_owned()));
+    assert_eq!(payload.messages, Some(Json::Text("hi".to_owned())));
+}
+
+#[rstest]
+#[case::from_call_details(
+    Some(RequestContextSource {
+        messages: Some(Json::Text("hi".to_owned())),
+        model: Some("gpt-4".to_owned()),
+        tools: TrackedField::Missing,
+        optional_params_tools: None,
+    }),
+    None,
+    Some(Json::Text("hi".to_owned())),
+    Some("gpt-4"),
+)]
+#[case::never_from_request_data(
+    None,
+    Some(RequestContextSource {
+        messages: Some(Json::Text("other".to_owned())),
+        model: Some("other-model".to_owned()),
+        tools: TrackedField::Missing,
+        optional_params_tools: None,
+    }),
+    None,
+    None,
+)]
+fn extract_request_data_forwards_messages_and_model_from_call_details_only(
+    #[case] call_details: Option<RequestContextSource>,
+    #[case] request_data: Option<RequestContextSource>,
+    #[case] expected_messages: Option<Json>,
+    #[case] expected_model: Option<&str>,
+) {
+    let payload = extract_request_data(call_details.as_ref(), request_data.as_ref())
+        .expect("one source is present");
+    assert_eq!(payload.messages, expected_messages);
+    assert_eq!(payload.model.as_deref(), expected_model);
+    assert_eq!(payload.tools, None);
 }
 
 #[test]

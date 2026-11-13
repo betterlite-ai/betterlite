@@ -1,0 +1,16 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-kind-call-type",
+  "call": {
+    "b3844": {
+      "function": "payload_kind",
+      "payload": {
+        "call_type": "call_mcp_tool"
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

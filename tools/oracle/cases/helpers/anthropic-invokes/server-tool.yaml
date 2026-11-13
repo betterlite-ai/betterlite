@@ -1,0 +1,39 @@
+kind: helper
+name: anthropic-invokes-server-tool
+call:
+  anthropic_invokes:
+    function: convert_to_anthropic_tool_invoke
+    tool_calls:
+      - id: srvtoolu_alpha
+        type: function
+        function:
+          name: web_search
+          arguments: '{"query": "weather"}'
+      - id: call_plain
+        type: function
+        function:
+          name: get_weather
+          arguments: '{"city": "Boston"}'
+      - id: srvtoolu_beta
+        type: function
+        function:
+          name: code_execution
+          arguments: '{"code": "1+1"}'
+      - id: srvtoolu_missing
+        type: function
+        function:
+          name: web_search
+          arguments: '{"query": "none"}'
+    web_search_results:
+      - tool_use_id: srvtoolu_alpha
+        type: web_search_tool_result
+        content:
+          - type: text
+            text: search result
+    tool_results:
+      - tool_use_id: srvtoolu_beta
+        type: code_execution_tool_result
+        content: ok
+env: {}
+compare:
+  ignore: []

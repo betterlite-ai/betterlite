@@ -1,0 +1,1 @@
+{"id":"ft_1","created_at":1,"error":null,"fine_tuned_model":null,"finished_at":null,"hyperparameters":{"batch_size":"auto","learning_rate_multiplier":0.5,"n_epochs":3},"model":"gpt-4o-mini","object":"fine_tuning.job","organization_id":"org","result_files":[],"seed":5,"status":"queued","trained_tokens":null,"training_file":"file_a","validation_file":null}

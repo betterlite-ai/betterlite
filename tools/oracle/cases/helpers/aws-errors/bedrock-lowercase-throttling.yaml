@@ -1,0 +1,14 @@
+kind: helper
+name: aws-errors-bedrock-lowercase-throttling
+call:
+  aws_errors:
+    provider: bedrock
+    model: claude-3
+    custom_llm_provider: bedrock_mantle
+    error_str: "throttlingException: rate exceeded"
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/context/message
+      why: betterlite writes its own message

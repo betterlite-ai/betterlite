@@ -1,0 +1,11 @@
+kind: helper
+name: model-from-body
+call:
+  b3608:
+    operation: extract_model
+    request_body: {model: gpt-4o}
+    model_call_details_model: log-model
+    url_route: https://api.anthropic.com/v1/messages
+    endpoint_type: anthropic
+env: {}
+compare: {ignore: []}

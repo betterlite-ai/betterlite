@@ -1,0 +1,5 @@
+task: B1708
+deviations:
+  - what: Reject collector capacities beyond Tokio's semaphore limit and timeouts outside the positive u64 nanosecond range.
+    why: These settings cannot be represented by this bounded producer without panics, overflow, or a zero-duration timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_event_producer.py#L58-L61

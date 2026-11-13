@@ -1,0 +1,36 @@
+kind: helper
+name: below_cache_minimum_sends_every_prompt_token_as_text
+call:
+  baseline_history:
+    groups:
+    - - request_id: below
+        started_at: 10000.0
+        available_at: 10000.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 5
+          total_tokens: 105
+          prompt_tokens_details:
+            text_tokens: 100
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 0
+              ephemeral_1h_input_tokens: 0
+        plan:
+          total_tokens: 100
+          breakpoints:
+          - fingerprint: small
+            ttl_seconds: 300
+            prefix_tokens: 50
+            lookback_fingerprints:
+            - small
+            content_fingerprint: c
+            lookback_content_fingerprints:
+            - c
+        minimum_cache_tokens: 100
+compare:
+  ignore: []
+env: {}

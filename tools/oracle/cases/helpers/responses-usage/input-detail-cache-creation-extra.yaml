@@ -1,0 +1,7 @@
+kind: helper
+name: responses-usage-input-detail-cache-creation-extra
+call:
+  responses_usage:
+    usage: {input_tokens: 2, output_tokens: 3, input_tokens_details: {cache_creation_tokens: 7}}
+env: {}
+compare: {ignore: []}

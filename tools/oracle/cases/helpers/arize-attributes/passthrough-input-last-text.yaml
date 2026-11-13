@@ -1,0 +1,17 @@
+kind: helper
+name: passthrough-input-last-text
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      additional_args:
+        complete_input_dict:
+          messages:
+            - {role: user, content: first}
+            - {role: assistant, content: second}
+            - {role: user, content: third}
+      standard_logging_object:
+        call_type: llm_passthrough_route
+    response: null
+env: {}
+compare: {ignore: []}

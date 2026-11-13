@@ -1,0 +1,38 @@
+kind: helper
+name: lemonade-model-metadata-model-query-and-defaults
+call:
+  lemonade_model_metadata:
+    operation: model_info
+    queries:
+      - model: lemonade/org/model
+        environment:
+          LEMONADE_API_BASE: "http://env:8000/api/v1"
+          LEMONADE_API_KEY: env-key
+      - model: model
+        reply: {status: 500}
+      - model: model
+        reply: {status: 404}
+      - model: model
+        reply: {status: 200, raw: "not json"}
+      - model: model
+        reply: {status: 200, raw: '{"max_input_tokens":12'}
+      - model: lemonade/lemonade/deep
+        api_base: "http://explicit:9000/"
+        api_key: lemonade
+        reply: {status: 200, body: {}}
+      - model: "mödel name_b.c-d~e"
+        api_base: ""
+        environment:
+          LEMONADE_API_BASE: "http://env:8000/api/v1"
+          LEMONADE_API_KEY: env-key
+        reply: {status: 200, body: {}}
+      - model: model
+        global_keys:
+          lemonade_key: global-key
+        reply: {status: 201, body: {max_input_tokens: 8}}
+      - model: model
+        environment:
+          LEMONADE_API_KEY: ""
+        reply: {status: 200, body: {max_input_tokens: 8}}
+env: {}
+compare: {ignore: []}

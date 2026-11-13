@@ -1,0 +1,149 @@
+kind: probe
+name: redis-circuit-timeout-streak
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      redis_failure_policy:
+        settings:
+          enabled: true
+          failure_threshold: 3
+          recovery_timeout_seconds: 30
+          timeout_min_duration_millis: 5000
+          timeout_log_interval_millis: 1000
+        steps:
+          - {kind: failure, now_millis: 1000, outer: timeout}
+          - {kind: failure, now_millis: 2000, outer: timeout}
+          - {kind: failure, now_millis: 4000, outer: timeout}
+          - {kind: failure, now_millis: 5999, outer: timeout}
+          - {kind: failure, now_millis: 6000, outer: timeout}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      redis_failure_policy:
+        settings:
+          enabled: true
+          failure_threshold: 3
+          recovery_timeout_seconds: 30
+          timeout_min_duration_millis: 5000
+          timeout_log_interval_millis: 1000
+        steps:
+          - {kind: failure, now_millis: 0, outer: timeout}
+          - {kind: failure, now_millis: 1000, outer: timeout}
+          - {kind: failure, now_millis: 2000, outer: connection}
+          - {kind: failure, now_millis: 3000, outer: timeout}
+          - {kind: failure, now_millis: 7000, outer: timeout}
+          - {kind: failure, now_millis: 9000, outer: timeout}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      redis_failure_policy:
+        settings:
+          enabled: true
+          failure_threshold: 3
+          recovery_timeout_seconds: 30
+          timeout_min_duration_millis: 5000
+          timeout_log_interval_millis: 1000
+        steps:
+          - {kind: failure, now_millis: 0, outer: connection, causes: [timeout]}
+          - {kind: failure, now_millis: 10, outer: command, causes: [timeout]}
+          - {kind: failure, now_millis: 20, outer: os}
+          - {kind: failure, now_millis: 30, outer: busy_loading}
+          - {kind: failure, now_millis: 40, outer: cluster_down}
+          - {kind: failure, now_millis: 50, outer: other}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      redis_failure_policy:
+        settings:
+          enabled: true
+          failure_threshold: 1
+          recovery_timeout_seconds: 30
+          timeout_min_duration_millis: 5000
+          timeout_log_interval_millis: 1000
+        steps:
+          - kind: failure
+            now_millis: 0
+            outer: connection
+            causes:
+              [
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                timeout
+              ]
+          - kind: failure
+            now_millis: 0
+            outer: connection
+            causes:
+              [
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                command,
+                timeout
+              ]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      redis_failure_policy:
+        settings:
+          enabled: false
+          failure_threshold: 1
+          recovery_timeout_seconds: 30
+          timeout_min_duration_millis: 5000
+          timeout_log_interval_millis: 1000
+        steps:
+          - {kind: failure, now_millis: 0, outer: connection}
+          - {kind: failure, now_millis: 1, outer: connection}
+          - {kind: admit, now_millis: 2, operation: get_cache}
+          - {kind: finish, admission: 2}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      redis_failure_policy:
+        settings:
+          enabled: true
+          failure_threshold: 3
+          recovery_timeout_seconds: 30
+          timeout_min_duration_millis: 5000
+          timeout_log_interval_millis: 1000
+        steps:
+          - {kind: throttle, now_millis: 0}
+          - {kind: throttle, now_millis: 500}
+          - {kind: throttle, now_millis: 900}
+          - {kind: throttle, now_millis: 1000}
+          - {kind: throttle, now_millis: 1500}
+          - {kind: throttle, now_millis: 2000}
+compare:
+  ignore: []

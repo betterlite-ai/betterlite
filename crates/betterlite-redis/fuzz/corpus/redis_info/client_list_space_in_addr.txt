@@ -1,0 +1,1 @@
+id=5 addr=/tmp/redis sock/redis.sock laddr=/tmp/redis sock/redis.sock fd=10 name= age=1 idle=0 flags=N db=0 cmd=client|list user=default

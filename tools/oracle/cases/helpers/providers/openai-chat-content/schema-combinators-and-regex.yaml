@@ -1,0 +1,92 @@
+kind: helper
+name: openai-chat-content-schema-combinators-and-regex
+call:
+  openai_chat_content:
+    transform_requests:
+      requests:
+        - model: gpt-4o
+          provider: openai
+          messages:
+            - {role: user, content: hi}
+          optional_params:
+            tools:
+              - type: function
+                function:
+                  name: automation_update
+                  parameters:
+                    type: object
+                    anyOf:
+                      - properties: {id: {type: string}, enabled: {type: boolean}}
+                        required: [id, enabled]
+                      - properties: {id: {type: string}, schedule: {type: string}}
+                        required: [id, schedule]
+                    properties:
+                      id: {type: string, pattern: '^\p{Cc}+$'}
+                      name: {type: string, pattern: '^[a-z]+$'}
+                    required: [id]
+                    enum: [a]
+                    const: b
+                    not: {type: string}
+        - model: gpt-4o
+          provider: openai
+          api_base: http://localhost:8000/v1
+          messages:
+            - {role: user, content: hi}
+          optional_params:
+            tools:
+              - type: function
+                function:
+                  name: automation_update
+                  parameters:
+                    type: object
+                    anyOf:
+                      - properties: {id: {type: string}, enabled: {type: boolean}}
+                        required: [id, enabled]
+                      - properties: {id: {type: string}, schedule: {type: string}}
+                        required: [id, schedule]
+                    properties:
+                      id: {type: string, pattern: '^\p{Cc}+$'}
+                      name: {type: string, pattern: '^[a-z]+$'}
+                    required: [id]
+                    enum: [a]
+                    const: b
+                    not: {type: string}
+              - plain entry
+        - model: some-oss-model
+          provider: groq
+          messages:
+            - {role: user, content: hi}
+          optional_params:
+            tools:
+              - type: function
+                function:
+                  name: automation_update
+                  parameters:
+                    type: object
+                    anyOf:
+                      - properties: {id: {type: string}, enabled: {type: boolean}}
+                        required: [id, enabled]
+                      - properties: {id: {type: string}, schedule: {type: string}}
+                        required: [id, schedule]
+                    properties:
+                      id: {type: string, pattern: '^\p{Cc}+$'}
+                      name: {type: string, pattern: '^[a-z]+$'}
+                    required: [id]
+                    enum: [a]
+                    const: b
+                    not: {type: string}
+        - model: gpt-4o
+          provider: openai
+          api_base: http://localhost:8000/v1
+          messages:
+            - {role: user, content: hi}
+          optional_params:
+            tools: {type: function}
+        - model: gpt-4o
+          provider: openai
+          messages:
+            - {role: user, content: hi}
+          optional_params:
+            tools: []
+env: {}
+compare: {ignore: []}

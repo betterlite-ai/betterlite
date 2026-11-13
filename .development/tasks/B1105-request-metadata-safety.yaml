@@ -59,7 +59,7 @@ description: >-
   _extract_bare_session_id_from_headers (L731-L743); litellm/proxy/litellm_pre_call_utils.py: get_chain_id_from_headers
   (L746-L773); litellm/proxy/litellm_pre_call_utils.py: _get_anthropic_session_id_from_metadata (L776-L797); litellm/proxy/litellm_pre_call_utils.py:
   _is_llm_inference_route (L800-L804); litellm/proxy/litellm_pre_call_utils.py: apply_missing_session_id_policy
-  (L807-L834); litellm/proxy/litellm_pre_call_utils.py: refresh_proxy_server_request_body_snapshot (L1951-L1990).
+  (L807-L834); litellm/proxy/litellm_pre_call_utils.py: refresh_proxy_server_request_body_snapshot (L1951-L1990), including its GuardrailRequestSnapshot.capture call (L1986-L1990, B4082's type).
   Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
   partial function span is the explicit preparation/transition stage described above, with typed values passed to
   the following stage.
@@ -80,8 +80,6 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/request_metadata_safety.rs
   - crates/betterlite-core/src/api/request_metadata_safety/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml

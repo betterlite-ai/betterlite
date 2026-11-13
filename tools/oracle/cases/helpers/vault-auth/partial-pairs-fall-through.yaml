@@ -1,0 +1,15 @@
+kind: helper
+name: vault-auth-partial-pairs-fall-through
+env: {}
+compare: {ignore: []}
+call:
+  b4416:
+    env:
+      HCP_VAULT_APPROLE_ROLE_ID: role-id
+      HCP_VAULT_CLIENT_CERT: /certs/client.crt
+      HCP_VAULT_TOKEN: token-1
+    routes: []
+    steps:
+      - {op: token}
+      - {op: token_blocking}
+      - {op: namespaces}

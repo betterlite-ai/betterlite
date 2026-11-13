@@ -1,0 +1,288 @@
+id: B3607
+title: Pass-through success completion and byte relay
+description: >-
+  Build two modules in betterlite-server: success_completion (crates/betterlite-server/src/pass_through_logging/success_completion.rs and its folder)
+  and byte_relay (crates/betterlite-server/src/pass_through_logging/byte_relay.rs and its folder). success_completion is LiteLLM's
+  PassThroughEndpointLogging.pass_through_async_success_handler. It runs after a pass-through response has been sent (or is being
+  relayed), decides whether the call is logged at all, asks B3606 for the provider's response object, applies the per-request cost rule and
+  hands the finished call to B3605's log dispatcher. byte_relay is _relay_passthrough_response_bytes: it streams the upstream body to
+  the client without keeping it, then runs the same success completion with no body. B3612 (WebSocket) and B3613 (HTTP request
+  lifecycle) call both. Neither module has an HTTP route yet, so the cases are helper cases and native tests.
+
+  Inputs. `UpstreamExchange` holds what the handler reads from LiteLLM's httpx.Response: status_code (u16), response_headers
+  (`http::HeaderMap`), request_method (`http::Method`; the WebSocket path uses the extension method WEBSOCKET), request_url (`url::Url`),
+  request_headers (`http::HeaderMap`, the headers the proxy sent upstream) and `body: ExchangeBody`, an enum Bytes(bytes::Bytes), Text(String)
+  or NotRead. Bytes is a buffered HTTP body, Text is the fixed text of the WebSocket stand-in ("WebSocket connection successful"), NotRead is
+  a relayed body. `decode_response_text(headers: &http::HeaderMap, body: &ExchangeBody) -> UpstreamBodyText` follows httpx's Response.text:
+  NotRead gives B3605's UpstreamBodyText::NotRead; Text gives Read(text); Bytes gives Read of the decoded bytes, where the charset is the
+  `charset` parameter of Content-Type (case-insensitive, quotes stripped), an unknown label falls back to utf-8, an empty body is the empty
+  string, and bytes that are not valid in the charset become U+FFFD (httpx decodes with errors="replace"). Use the encoding_rs crate for
+  the labels and decoding; record the choice in prior_art. It is the one function that reads bytes from outside, so it gets the fuzz target below.
+
+  `PassThroughRequestState { call: PassThroughCallState, payload: PassthroughStandardLoggingPayload }` is the per-request record. `call`
+  is B3605's PassThroughCallState embedded as it is, never redefined: B3613 fills it with apply_upstream_reported_usage on the live
+  response before it enqueues the completion. `payload` is B3600's record. `record_on_logging_object(state, logging_obj)` is the one place
+  that maps the record onto the logging object's model_call_details (LiteLLM's dict): key "passthrough_logging_payload" gets the payload,
+  key "response_cost" gets state.call.response_cost when it is Some, the upstream-reported-usage marker key (B3605's constant for LiteLLM's UPSTREAM_REPORTED_USAGE_KEY) gets the record when state.call.upstream_reported_usage is Some, and key "combined_usage_object" gets a usage object with only total_tokens set (the merged Usage type) when state.call.combined_usage_total_tokens is Some. LiteLLM's apply_upstream_reported_usage writes all three on the logging object, and B3613 only fills the state. Read the merged B3604 and B3646 code for the logging object's
+  model_call_details update call and use that one; do not add a second way to write to it.
+
+  Completion input and the path choice. `CompletionInput<'a>` holds: logging_obj (the handle type B3606's ProviderLogInput declares),
+  `call_log: &'a mut CallLog` (B247's per-call log; B3606's ProviderLogInput borrows it and B3642 writes to it), upstream: &UpstreamExchange,
+  response_body: Option<PassThroughResponseBody> (B3606's enum: Object, List or None), url_route, result: &str, start_time, end_time (the
+  time type B3606's ProviderLogInput declares), cache_hit, request_body (serde_json::Map), custom_llm_provider: Option<&str>, state: &mut
+  PassThroughRequestState and kwargs (B3605's typed kwargs map). `select_completion_path(route: &CompletionRoute) -> CompletionPath` is pure.
+  CompletionRoute holds url_route, custom_llm_provider, request_method and request_headers. CompletionPath is an enum in LiteLLM's
+  order: TinyfishSkip, TinyfishAsyncRun, AssemblyAiSkip, AssemblyAiLog, LangfuseSkip, TranscribeSchedule, Normalize. The order is the
+  if-chain at success_handler.py L428-L495, and it is not one elif chain. The TinyFish block is its own `if` and only returns in two cases:
+  when should_log_request is false (TinyfishSkip), and when is_run_async_route is true (TinyfishAsyncRun). Any other TinyFish request falls
+  through to the second chain, which is an if/elif/elif/else: AssemblyAI (`is_assemblyai_route` and not `is_azure_speech_route`) first, then
+  Langfuse, then Transcribe (`is_transcribe_route` and the upstream request's is_priced_job_start), and Normalize otherwise. Inside the
+  AssemblyAI arm a non-POST request is AssemblyAiSkip and a POST is AssemblyAiLog. The predicates are B3605's (anthropic-style route
+  helpers on PassThroughEndpointLogging), B3606's is_tinyfish_route and B3646's is_priced_job_start. The TinyFish should_log_request,
+  is_run_async_route and the AssemblyAI POST-only test come from B3648, B3649 and B3647 through the traits below.
+
+  Collaborators. `EarlyExitHandlers { tinyfish: Arc<dyn TinyfishRunBilling>, assemblyai: Arc<dyn AssemblyAiRelayLogging>, transcribe: Arc<dyn
+  TranscribeJobScheduler> }` are trait objects so tests inject fakes, and `EarlyExitHandlers::production(...)` builds one adapter each over
+  the merged leaf code: tinyfish over B3648 (should_log_request, is_run_async_route) and B3649 (start_async_run_billing), assemblyai over B3647's
+  logging handler, transcribe over B3646's TranscribeLogger::schedule_priced_job_logging. Read each leaf's public function in the merged
+  code and call it; copy none of its logic. Each adapter is a short function that reshapes CompletionInput; test each one once with the
+  leaf stubbed at its input. The traits are TinyfishRunBilling { should_log_request(&self, method: &http::Method, url_route: &str) -> bool;
+  is_run_async_route(&self, url_route: &str) -> bool; start_async_run_billing(&self, call: TinyfishRunStart<'_>) }, AssemblyAiRelayLogging
+  { should_log_request(&self, method: &http::Method) -> bool; log(&self, call: AssemblyAiCall<'_>) } and TranscribeJobScheduler {
+  schedule(&self, call: TranscribeScheduleCall<'_>) }. Define the three call records here with exactly the fields LiteLLM passes: TinyFish
+  gets the object body or None, the logging object, result, start_time, cache_hit and the kwargs (no end_time, no request_body); AssemblyAI
+  gets the exchange, the object body or an empty object, the logging object, url_route, result, both times, cache_hit and the kwargs;
+  Transcribe gets the exchange, the object body or None, the logging object, url_route, result, both times, cache_hit, request_body,
+  the log dispatcher (the same one the normal path uses, `log_dispatch()` of B3605) and the kwargs and the payload (LiteLLM passes
+  it as standard_pass_through_logging_payload). B3606's ProviderLogDispatcher and B3605's PassThroughEndpointLogging are passed to
+  `PassThroughSuccessCompletion::new(logger, dispatcher, early_exit)` and used from it.
+
+  The handler, `PassThroughSuccessCompletion::complete(&self, input: CompletionInput<'_>) -> Result<(), SuccessCompletionError>`, in order:
+  (1) record_on_logging_object with the payload, before anything can fail; (2) select the path; TinyfishSkip, AssemblyAiSkip and LangfuseSkip
+  return Ok at once; TinyfishAsyncRun calls start_async_run_billing and returns; AssemblyAiLog calls the AssemblyAI logger and returns;
+  TranscribeSchedule calls the scheduler and returns, writing nothing itself; (3) Normalize builds B3606's ProviderLogInput and calls
+  `ProviderLogDispatcher::normalize_llm_passthrough_logging_payload`; (4) when the response object is None it becomes
+  StandardPassThroughResponseObject holding the decoded response text (decode_response_text, so an unread body gives the empty string);
+  (5) call B3605's set_cost_per_request with the state, the kwargs response_cost slot and the payload's cost_per_request (take it from the typed kwargs map as
+  an Option<f64>, run the function, write the slot back only when it became Some), then record_on_logging_object again so the logging
+  object sees the cost; (6) hand the call to B3605's log_dispatch() with the response object, result, start_time, end_time, cache_hit
+  and the kwargs plus the payload under the key standard_pass_through_logging_payload. An error from B3606 or from the dispatcher is returned
+  as it is (LiteLLM has no try here, the logging worker B191 logs it). The original kwargs are replaced by the handler's kwargs after step 3, as B3606 says.
+
+  Filling ProviderLogInput. B3606's ProviderLogInput is the handoff, and its fields were widened so B3642 and B3646 get what they read. Fill
+  every field: the logging object, the response view (status_code, response_headers, decode_response_text of the body), request_method,
+  request_url and request_headers from the exchange (the upstream request, never the response headers), `call_log` reborrowed from
+  CompletionInput, response_body, request_body, url_route, result, start_time, end_time, cache_hit, custom_llm_provider and the
+  kwargs. Read the merged B3606 code for the exact field and type names before writing; if a field is missing there, stop and report it as a blocker.
+
+  Byte relay. `relay_response_bytes(input: RelayInput) -> RelayedBody` where RelayedBody implements `futures::Stream<Item = Result<Bytes,
+  RelayError>>` and the caller (B3613) gives it to the response. RelayInput holds the upstream response body stream (the type B3611's
+  non-streaming and streaming helpers return; use a boxed `Stream<Item = Result<Bytes, reqwest::Error>>` at the boundary), the exchange
+  (body NotRead), request_body, url_route, start_time, the logging object, `call_log: CallLog` (owned, since the completion runs after the handler returns), custom_llm_provider, the
+  PassThroughRequestState, the kwargs, `Arc<PassThroughSuccessCompletion>`, the B191 worker handle and a budget binder `Arc<dyn
+  ReservationBinder>` (one method over B1719's bind function in betterlite-auth::reservation_state; read the merged name). Each chunk is
+  yielded unchanged and its length is added to a bytes_relayed counter (use usize::checked_add; on overflow stop counting and keep going).
+  The completion runs exactly once, when the stream ends (clean end, upstream read error or the client dropping the body). The end is
+  either poll_next returning None or Some(Err), or Drop of RelayedBody, whichever comes first. If the upstream was not fully read, log
+  at warn level the text "Passthrough stream for <url_route> ended before upstream body was fully relayed; <bytes_relayed> bytes were sent to the client". Then enqueue the
+  completion on the B191 worker as one event with response_body None, result "", end_time now, cache_hit false and the saved request_body,
+  start_time and kwargs. After a successful admission call the budget binder with the request's litellm_params. A rejected admission
+  (the worker's queue is full) binds nothing, so the request-end release still returns the reservation (see deviations). Dropping the
+  upstream stream closes the connection (LiteLLM's aclose). An upstream read error is yielded to the client once as RelayError::Upstream
+  and still triggers the success completion, because LiteLLM's finally block logs a success row for it.
+
+  Tests live in pass_through_logging::success_completion::tests and pass_through_logging::byte_relay::tests, named by group (see checks). Add the fuzz target
+  passthrough_response_text in crates/betterlite-server/fuzz that feeds arbitrary bytes and an arbitrary Content-Type value to decode_response_text,
+  with a committed corpus and the test replays_the_passthrough_response_text_corpus.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/success_completion.rs
+    - crates/betterlite-server/src/pass_through_logging/success_completion/**
+    - crates/betterlite-server/src/pass_through_logging/byte_relay.rs
+    - crates/betterlite-server/src/pass_through_logging/byte_relay/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/passthrough_response_text.rs
+    - crates/betterlite-server/fuzz/corpus/passthrough_response_text/**
+    - tools/oracle/cases/server/pass-through-logging/success-completion/**
+    - "tools/oracle/fuzz/corpus/helper_case/success_completion-*"
+    - tools/oracle/helpers/b3607.py
+    - tools/oracle/helpers/b3607/**
+    - tools/oracle/src/helpers/server/b3607.rs
+    - tools/oracle/src/helpers/server/b3607/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L412-L517
+    why: pass_through_async_success_handler, the whole function. Read the payload write, both chains, the response-object fallback, the cost step and the final dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L55-L64
+    why: _safe_response_text, the empty-string fallback for an unread body (B3605 builds the type, this task builds the text decoding behind it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L644-L673
+    why: _set_cost_per_request, called from step 5 (B3605 owns the function).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2796-L2843
+    why: _relay_passthrough_response_bytes, the byte counter, the finally block, the warning text, the enqueue and the reservation bind.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1575-L1604
+    why: Call site of the relay, which shows what the success handler receives (custom_llm_provider, success_handler_kwargs, request body). B3613 owns it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1730-L1746
+    why: Call site for the buffered path, the status < 400 guard and the reservation bind after enqueue. B3613 owns it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2642-L2671
+    why: Call site for the WebSocket path, with the stand-in response (status 200, text "WebSocket connection successful", method WEBSOCKET). B3612 owns it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L134-L140
+    why: should_log_request and is_run_async_route, the two TinyFish early-exit tests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L176-L184
+    why: start_async_run_billing signature, which takes no end_time and no request_body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L282-L286
+    why: _should_log_request, POST only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L393-L401
+    why: bind_budget_reservation_to_callbacks, the call the relay makes after the enqueue.
+  - url: https://github.com/encode/httpx/blob/master/httpx/_models.py
+    why: Response.text, Response.encoding and charset_encoding (httpx 0.28), the decoding rules decode_response_text copies.
+dod:
+  - text: select_completion_path returns the path LiteLLM takes for each route kind, including a TinyFish request that does not return early and then goes through the second chain.
+    proof: [path-tests, completion-oracle]
+  - text: A TinyFish route that should not be logged returns without a dispatch, and a run-async route calls start_async_run_billing with the object body or None and no end_time or request_body.
+    proof: [tinyfish-tests, completion-oracle]
+  - text: An AssemblyAI route logs only for POST and not for an azure_speech provider, passing an empty object when the body is not an object, and never reaches the normalize step.
+    proof: [assemblyai-tests, completion-oracle]
+  - text: A Langfuse route returns without a dispatch, and a Transcribe priced job start schedules the job with the normal dispatcher and writes no log itself.
+    proof: [langfuse-transcribe-tests, completion-oracle]
+  - text: Every other route is normalized by B3606, and a None response object becomes the pass-through response object holding the decoded response text.
+    proof: [normalize-tests, completion-oracle]
+  - text: The cost-per-request rule runs after normalize, an upstream-reported cost wins, and the logging object sees the final response_cost.
+    proof: [cost-tests, completion-oracle]
+  - text: The final dispatch carries the response object, result, both times, cache_hit, the handler's kwargs and standard_pass_through_logging_payload, and the payload is recorded on the logging object first.
+    proof: [dispatch-tests, completion-oracle]
+  - text: ProviderLogInput is filled with the upstream request method, URL and headers (not the response headers), call_log, the decoded response view and every other field named in the description.
+    proof: [provider-input-tests]
+  - text: Each early-exit adapter reshapes CompletionInput into the leaf's arguments, and an error from B3606 or the dispatcher is returned.
+    proof: [adapter-tests, normalize-tests]
+  - text: decode_response_text follows httpx for utf-8, a declared charset, an unknown charset, invalid bytes, an empty body and an unread body.
+    proof: [text-tests, completion-oracle, response-text-corpus]
+  - text: PassThroughRequestState embeds B3605's PassThroughCallState and maps the payload and cost onto the logging object.
+    proof: [state-tests]
+  - text: record_on_logging_object also writes the upstream-reported-usage marker and combined_usage_object when the state holds them, and writes neither when it does not (test state_usage_marker).
+    proof: [state-tests]
+  - text: The relay yields every chunk unchanged and runs the completion once after a clean end, a read error or a client drop, with no body, an empty result and cache_hit false.
+    proof: [relay-tests]
+  - text: An incomplete relay logs the byte-count warning, the reservation is bound only after an accepted enqueue, and a rejected enqueue binds nothing.
+    proof: [relay-tests]
+  - text: The decoder survives arbitrary bytes and Content-Type values and its committed corpus replays.
+    proof: [response-text-corpus]
+  - text: Newly added helper cases replay through the shared helper-case parser and the strict Python adapter lints clean.
+    proof: [helper-case-corpus, helper-python]
+checks:
+  optional: []
+  commands:
+    - id: path-tests
+      why: the path choice order, or the TinyFish fall-through into the second chain, is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::success_completion::tests::path_/)'
+    - id: tinyfish-tests
+      why: the TinyFish early exits or the arguments of start_async_run_billing are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::success_completion::tests::tinyfish_/)'
+    - id: assemblyai-tests
+      why: the AssemblyAI POST-only exit, the azure_speech exclusion or the empty-object default is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::success_completion::tests::assemblyai_/)'
+    - id: langfuse-transcribe-tests
+      why: the Langfuse skip or the Transcribe scheduling is missing or logs too early
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::success_completion::tests::(langfuse|transcribe)_/)'
+    - id: normalize-tests
+      why: the normalize step, the response-text fallback or the error pass-through is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::success_completion::tests::normalize_/)'
+    - id: cost-tests
+      why: the cost-per-request step or its place after normalize is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::success_completion::tests::cost_/)'
+    - id: dispatch-tests
+      why: the final dispatch fields or the payload write on the logging object are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::success_completion::tests::dispatch_/)'
+    - id: provider-input-tests
+      why: ProviderLogInput is missing a field or gets the response headers where the request headers belong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::success_completion::tests::provider_input_/)'
+    - id: adapter-tests
+      why: an early-exit adapter passes the leaf the wrong arguments
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::success_completion::tests::adapter_/)'
+    - id: state-tests
+      why: the request state does not embed PassThroughCallState or does not map onto the logging object
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::success_completion::tests::state_/)'
+    - id: text-tests
+      why: response text decoding is missing a charset, fallback or empty-body rule
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::success_completion::tests::text_/) - test(replays_the_passthrough_response_text_corpus)'
+    - id: relay-tests
+      why: the byte relay, its once-only completion, the warning or the reservation binding is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::byte_relay::tests::relay_/)'
+    - id: response-text-corpus
+      why: the response text fuzz target or its fresh replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/passthrough_response_text.rs &&
+        grep -q 'name = "passthrough_response_text"' crates/betterlite-server/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/passthrough_response_text)" &&
+        grep -q 'decode_response_text' crates/betterlite-server/fuzz/fuzz_targets/passthrough_response_text.rs &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_passthrough_response_text_corpus)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3607)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3607 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3607/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/success_completion-*")" &&
+        grep -lE '^[[:space:]]+b3607:' tools/oracle/fuzz/corpus/helper_case/success_completion-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: completion-oracle
+      why: newly added helper cases are absent or betterlite and LiteLLM disagree on them
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/server/pass-through-logging/success-completion)" &&
+        grep -rlE '^[[:space:]]+b3607:' tools/oracle/cases/server/pass-through-logging/success-completion &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/server/pass-through-logging/success-completion
+oracle_cases:
+  - tools/oracle/cases/server/pass-through-logging/success-completion/path-tinyfish-skip-and-async.yaml
+  - tools/oracle/cases/server/pass-through-logging/success-completion/path-tinyfish-falls-through.yaml
+  - tools/oracle/cases/server/pass-through-logging/success-completion/path-assemblyai-post-only.yaml
+  - tools/oracle/cases/server/pass-through-logging/success-completion/path-assemblyai-azure-speech-excluded.yaml
+  - tools/oracle/cases/server/pass-through-logging/success-completion/path-langfuse-skip.yaml
+  - tools/oracle/cases/server/pass-through-logging/success-completion/path-transcribe-priced-start.yaml
+  - tools/oracle/cases/server/pass-through-logging/success-completion/path-transcribe-other-operation.yaml
+  - tools/oracle/cases/server/pass-through-logging/success-completion/normalize-none-uses-response-text.yaml
+  - tools/oracle/cases/server/pass-through-logging/success-completion/normalize-unread-body-empty-text.yaml
+  - tools/oracle/cases/server/pass-through-logging/success-completion/cost-per-request-after-normalize.yaml
+  - tools/oracle/cases/server/pass-through-logging/success-completion/cost-upstream-reported-wins.yaml
+  - tools/oracle/cases/server/pass-through-logging/success-completion/dispatch-kwargs-and-payload.yaml
+  - tools/oracle/cases/server/pass-through-logging/success-completion/text-charset-matrix.yaml
+deviations:
+  - what: A rejected enqueue on the B191 logging worker (queue full) skips the reservation bind, so the request-end release returns the budget reservation.
+    why: LiteLLM's worker never rejects, and binding to a callback that never runs would leak the reservation. Spend for that call is dropped either way, and the worker counts the drop.
+  - what: The relay yields an upstream read error to the client as one RelayError::Upstream item and the stream ends, where Python re-raises the httpx exception from the generator.
+    why: A Rust stream carries errors as items. The success completion still runs after it, as in LiteLLM's finally block.
+  - what: Charset labels follow the WHATWG list from encoding_rs, not Python's codec registry. A label only Python knows (for example "utf-8-sig" spelled as a codec alias) is treated as unknown and decodes as utf-8.
+    why: encoding_rs is the maintained crate for this job, and real upstreams send standard labels.
+  - what: The completion runs as an async function that returns Result, and the B191 worker logs a returned error. LiteLLM lets the exception reach the worker's task.
+    why: Rust has no exceptions; the error reaches the same logger at the same point.
+  - what: The decoded response text is read once, before the normalize step, and handed to B3606 as UpstreamBodyText. LiteLLM decodes the body lazily when a handler asks for it.
+    why: A buffered body is already in memory, so the text is the same; only the moment of the work differs.
+out_of_scope:
+  - "PassThroughEndpointLogging's constructor, the route tables, the log dispatch choice, _handle_logging, _safe_response_text's type, _set_cost_per_request and the route predicates that need no provider handler (success_handler.py L55-L149, L519-L594, L644-L673) belong to B3605; this task calls them."
+  - "normalize_llm_passthrough_logging_payload and the five provider-handler predicates (success_handler.py L151-L410 and L595-L642) belong to B3606."
+  - "_is_streaming_response, _should_buffer_passthrough_response and get_response_body belong to B3600; B3613 decides between the buffered and the relayed path."
+  - "Calling apply_upstream_reported_usage, the status < 400 guard, enqueuing the buffered-path completion and reading the response (pass_through_endpoints.py L1575-L1746) belong to B3613; the WebSocket call site at L2642-L2671 belongs to B3612."
+  - "The failure path of the relay (_relay_reporting_failures, _log_passthrough_upstream_failure, the error preview) belongs to B3610. This relay is only for responses that are not buffered."
+  - "_own_streamed_managed_ids (pass_through_endpoints.py L2744-L2771) wraps a stream in the managed-id rewriter and reads proxy_server globals. It has no owner among B3600 to B3613 and B3613 calls it on the SSE path, so nothing here builds it."
+  - "The TinyFish, AssemblyAI and Transcribe handlers (polling, billing, pricing) belong to B3648 and B3649, B3647 and B3646; this task only decides when to call them."
+  - "The logging worker, its queue and its enqueue call belong to B191, and bind_budget_reservation_to_callbacks to B1719."
+pitfalls:
+  - "The TinyFish block is a plain `if`, not part of the chain. A TinyFish POST to /v1/automation/run (not run-async) falls through, is tested for AssemblyAI, Langfuse and Transcribe, and ends in Normalize where B3606's Tinyfish branch prices it."
+  - "A Transcribe request whose x-amz-target operation is not StartTranscriptionJob is not an early exit; it takes the else branch and goes through normalize like any other route."
+  - "is_priced_job_start reads the headers of the upstream request the proxy sent, not the response headers, so ProviderLogInput and the Transcribe scheduler must get request_headers from the exchange."
+  - "The AssemblyAI branch returns after logging and never reaches set_cost_per_request, so payload.cost_per_request is not applied to AssemblyAI calls. The same holds for TinyFish async runs and Transcribe scheduled jobs."
+  - "set_cost_per_request runs only after the normalize step, on the handler's kwargs, so a handler's own response_cost is overwritten by cost_per_request, including 0, unless the upstream reported usage."
+  - "The final dispatch gets result as the caller's string (\"\" for HTTP, \"websocket_connection_successful\" for WebSocket); B3605's default dispatcher then ignores it, so do not branch on it."
+  - "Step 1 writes passthrough_logging_payload before any skip, so a skipped Langfuse or TinyFish poll still leaves the payload on the logging object."
+  - "The WebSocket call has custom_llm_provider None, request method WEBSOCKET and body Text, so decode_response_text must accept Text and the fallback text is \"WebSocket connection successful\"."
+  - "The relay's completion runs on a dropped body too (client disconnect), so it lives in Drop as well as at the stream end, and it must run once. Drop cannot await, so it only enqueues, which the worker does without waiting."
+  - "The relay passes response_body None, not an empty object, so B3606's Tinyfish adapter sees None and the Anthropic, Cohere and OpenAI adapters see an empty object."
+  - "httpx decodes with errors=\"replace\" and falls back to utf-8 for an unknown charset instead of failing, so a bad Content-Type charset never makes the response text fail."
+  - "The reservation bind happens in the relay's finally block even though the completion only runs later on the worker; do it right after the enqueue, not after the completion."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

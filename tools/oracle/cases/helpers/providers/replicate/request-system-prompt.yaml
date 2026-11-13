@@ -1,0 +1,37 @@
+kind: helper
+name: replicate-request-system-prompt
+env: {}
+compare: {ignore: []}
+call:
+  b5847:
+    op: request
+    requests:
+      - model: meta-llama/llama-2-70b-chat
+        messages:
+          - role: system
+            content: [{type: text, text: "be "}, {type: text, text: nice}]
+          - {role: user, content: hi}
+        optional_params: {supports_system_prompt: true, temperature: 0.2}
+      - model: meta-llama/llama-2-70b-chat
+        messages:
+          - {role: system, content: s}
+          - {role: user, content: u}
+        optional_params: {supports_system_prompt: false}
+      - model: meta-llama/llama-2-70b-chat
+        messages:
+          - {role: user, content: u}
+        optional_params: {temperature: 9}
+        defaults: {system_prompt: s, max_new_tokens: 7, temperature: 1, debug: false}
+      - model: "x/y:z"
+        messages:
+          - {role: user, content: u}
+        custom_prompt_dict:
+          "x/y:z":
+            roles: {user: {pre_message: "U:", post_message: "\n"}}
+            initial_prompt_value: I
+            final_prompt_value: F
+            bos_token: B
+            eos_token: E
+      - model: tiiuae/falcon-7b
+        messages:
+          - {role: user, content: u}

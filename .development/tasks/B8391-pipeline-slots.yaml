@@ -1,0 +1,65 @@
+id: B8391
+title: Policy pipeline slots, streaming gates and model-level guardrails
+description: >-
+  The policy engine writes its resolved guardrail pipelines into the request's metadata, and ProxyLogging reads them back in several places: which pipelines run now, which guardrails a pipeline already handles, which post-call pipelines a stream can be gated through, and what to withdraw when a background response cannot be checked yet. This task ports those readers and the model-level guardrail merge, as plain functions over `serde_json::Map<String, Value>` request data. Code goes in crates/betterlite-server/src/guardrails/pipeline_slots.rs and pipeline_slots/ (slots.rs, streaming.rs, deferral.rs, model_guardrails.rs, tests.rs). Pipelines are B3247's `GuardrailPipeline` values with `mode` and `steps`.
+
+  slots.rs. `policy_state_metadata(data)` (L547-L566) returns the first of `metadata` and `litellm_metadata` that is a map holding `_guardrail_pipelines` or `_pipeline_managed_guardrails`, else an empty map. `policy_pipelines(data)` (L569-L575) reads `_guardrail_pipelines` from it as (policy name, pipeline) pairs. `step_guardrail_names(pipelines)` (L578-L579), `pipeline_managed_names(data, mode)` (L582-L587, pre_call or post_call) and `post_call_pipelines(data)` (L652-L655). `merge_pipeline_metadata_writes(data, modified)` (L610-L636) copies each of the two buckets from the pipeline's working copy back onto the request, skipping the `guardrails` key; a bucket that is not a map is ignored, and a missing bucket on the request is created. `is_pending_background_response(response)` (L658-L662) is true for a Responses API object whose status is `queued` or `in_progress`.
+
+  streaming.rs. `step_supports_streaming(name, translation, finder)` (L639-L649) asks B3247's `PipelineExecutor` lookups (find_guardrail_callback, supports_unified_execution, supports_streaming_execution) through a small `PipelineCallbacks` trait: no callback is false, unified execution is true, else it needs a translation that assembles streamed responses and a callback with streaming execution. `unsupported_streaming_guardrails` (L777-L786) keeps first-seen order without repeats. `pipeline_is_streamable` (L789-L803) warns with the policy name and the names when anything is unsupported. `stream_gated_guardrail_names(data, translation)` (L811-L823) and `streamable_post_call_pipelines(data, translation, route)` (L826-L858): no post-call pipelines gives none; no translation warns once with the route and the policy names and gives none. The translation comes from B3679's `resolve_endpoint_translation(user_api_key_dict, None)`, taken by the caller and passed in.
+
+  deferral.rs. `defer_post_call_pipelines(data, response_id, status, policies)` (L722-L753) runs when a background response is still pending: it logs at debug, warns when a deferred policy was matched through a request tag (`policy_sources` value containing `tag:`, L756-L766) and when one was selected by the request body (no `policy_sources` entry, L769-L774), then withdraws the claims (L697-L719): policies with no guardrail outside the pipeline leave `applied_policies` and `policy_sources`, and step guardrails that do not run elsewhere (pre-call pipelines, standalone pre-call guardrails, or outside the deferred pipeline) leave `applied_guardrails`. `without_names` (L682-L694) removes the slot entirely when the list ends empty. The two lookups it needs, the policy's resolved guardrail set (`PolicyResolver.resolve_policy_guardrails` in the policy engine; B8399 implements the trait over the policy registry) and the standalone pre-call guardrail names (L672-L679), come in through a `DeferralContext` trait. The metadata bucket is the one `get_or_create_metadata_bucket` picks (B3247 uses the same rule).
+
+  model_guardrails.rs. `check_and_merge_model_level_guardrails(data, router, trust_client_model_info, model_alias)` (L8013-L8097) and `merge_guardrails_with_existing` (L8100-L8125). With no router, return the data unchanged. With a trusted `metadata.model_info.id`, read that deployment's `litellm_params.guardrails` (a list, or one value wrapped); an unknown id returns the data unchanged. Otherwise use the alias (model_alias or data.model), union the guardrails of every deployment in that group for the team id from `metadata` or `litellm_metadata` `user_api_key_team_id`, in first-seen order. The merge works on a copy, sets `metadata.guardrails` to the set union of the existing and model-level names, and never touches the original. The router reaches this file through a `DeploymentGuardrails` trait (get_deployment by id, get_model_list by name and team) that B8399 implements over the router.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/pipeline_slots.rs
+    - crates/betterlite-server/src/guardrails/pipeline_slots/**
+    - tools/oracle/cases/helpers/pipeline-slots/**
+    - tools/oracle/helpers/b8391.py
+    - tools/oracle/helpers/b8391/**
+    - tools/oracle/src/helpers/server/b8391.rs
+    - tools/oracle/src/helpers/server/b8391/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L547-L858
+    why: Every pipeline slot, streaming gate and deferral function this task ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8013-L8125
+    why: The model-level guardrail lookup and merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/policy_engine/pipeline_executor.py
+    why: The PipelineExecutor lookups the streaming checks ask, owned by B3247.
+dod:
+  - text: policy_state_metadata, policy_pipelines, pipeline_managed_names and merge_pipeline_metadata_writes read and write the buckets like LiteLLM.
+    proof: [slots-tests, oracle]
+  - text: The streaming gate keeps a pipeline only when every step can run on the stream, and warns when it drops one or the route has no translation.
+    proof: [slots-tests]
+  - text: Deferring a pending background response warns for tag and body matches and withdraws only claims that nothing else backs.
+    proof: [slots-tests]
+  - text: Model-level guardrails come from the trusted deployment id or the union over the alias group, and merge into a copy.
+    proof: [slots-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: slots-tests
+      why: a pipeline slot reader, streaming gate, deferral step or model guardrail merge is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::pipeline_slots::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/pipeline-slots/merge-metadata-writes.yaml
+  - tools/oracle/cases/helpers/pipeline-slots/merge-guardrails-with-existing.yaml
+  - tools/oracle/cases/helpers/pipeline-slots/policy-state-bucket-choice.yaml
+deviations:
+  - what: The router, policy registry and pipeline executor reach these functions through traits instead of module globals.
+    why: betterlite keeps no globals; the results are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8037-L8040
+out_of_scope:
+  - "_maybe_execute_pipelines and _handle_pipeline_result: B8393. _pipeline_gated_stream: B6370."
+  - "PipelineExecutor and its lookups: B3247. resolve_endpoint_translation: B3679. PolicyResolver: B3243."
+pitfalls:
+  - merge_guardrails_with_existing builds a set, so the order of metadata.guardrails is not kept; tests compare as sets.
+  - The alias union compares non-string guardrail entries by their text form, so two equal maps count once.
+  - With trust_client_model_info false the deployment id is ignored even when present, which is the pre-call path's spoofing guard.
+  - merge_pipeline_metadata_writes must not copy the guardrails key, since that is the executor's per-step activation flag.
+  - A pending background response defers only post_call pipelines; pre_call pipeline names count as running elsewhere.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

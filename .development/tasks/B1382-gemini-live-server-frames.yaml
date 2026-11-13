@@ -35,7 +35,6 @@ description: >-
   110 adapters and 100 fuzz/seed lines within 750.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,gemini_live_frames}.rs
     - crates/betterlite-vertex/src/gemini_live_frames.rs
     - crates/betterlite-vertex/src/gemini_live_frames/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

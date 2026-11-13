@@ -1,0 +1,20 @@
+kind: helper
+name: response-shapes
+call:
+  b5991:
+    steps:
+      - {kind: response, model: "BAAI/bge-small-en-v1.5", input: ["hello world", "a   b\n\tc"], embeddings: [[0.1, 0.2], [0.3, 0.4]]}
+      - {kind: response, model: "model", input: ["hello world"], embeddings: [0.5, 0.25]}
+      - {kind: response, model: "model", input: ["hello world"], embeddings: [[[0.1, 0.2]], [[0.3, 0.4]]]}
+      - {kind: response, model: "model", input: ["hello world"], embeddings: [0.5, [0.1, 0.2], [[0.3, 0.4]]]}
+      - {kind: response, model: "model", input: ["hello world"], embeddings: {similarities: [[0, [0.1, 0.2]], [1, 0.5]]}}
+      - {kind: response, model: "model", input: [], embeddings: {similarities: []}}
+      - {kind: response, model: "model", input: ["hello world"], embeddings: {error: "model is loading"}}
+      - {kind: response, model: "model", input: ["hello world"], embeddings: [[]]}
+      - {kind: response, model: "model", input: ["hello world"], embeddings: [[[]]]}
+      - {kind: response, model: "model", input: ["hello world"], embeddings: [[], [0.1]]}
+      - {kind: response, model: "model", input: ["second text", "third"], embeddings: [[0.1]]}
+      - {kind: response, model: "model", input: ["hello world"], embeddings: [0.5]}
+      - {kind: response, model: "model", input: ["hello world"], embeddings: [[0.1, 0.2]]}
+env: {}
+compare: {ignore: []}

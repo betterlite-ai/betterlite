@@ -1,0 +1,15 @@
+kind: helper
+name: cyberark-api-key-authentication
+env: {}
+compare: {ignore: []}
+call:
+  b4418:
+    env: {CYBERARK_API_KEY: key-1, CYBERARK_ACCOUNT: acme, CYBERARK_USERNAME: host/app, CYBERARK_API_BASE: "https://conjur.example.com"}
+    routes:
+      - route: "POST https://conjur.example.com/authn/acme/host/app/authenticate"
+        replies: [{status: 200, body: '{"protected":"abc","payload":"def"}'}]
+      - route: "GET https://conjur.example.com/secrets/acme/variable/db"
+        replies: [{status: 200, body: s3cret}]
+    steps:
+      - {op: read, name: db}
+      - {op: read, name: db}

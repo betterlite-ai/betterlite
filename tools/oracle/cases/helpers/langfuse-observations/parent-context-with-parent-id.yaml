@@ -1,0 +1,18 @@
+kind: helper
+name: langfuse-parent-context-with-parent-id
+call:
+  b3901:
+    steps:
+      - function: parent_context
+        trace_id: "0102030405060708090a0b0c0d0e0f10"
+        parent_observation_id: "0000000000000005"
+        existing_trace: true
+        fallback_span_id: "0000000000000002"
+      - function: parent_context
+        trace_id: "0102030405060708090a0b0c0d0e0f10"
+        parent_observation_id: null
+        existing_trace: true
+        fallback_span_id: "0000000000000003"
+env: {}
+compare:
+  ignore: []

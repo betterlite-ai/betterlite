@@ -1,0 +1,17 @@
+task: B3795
+deviations:
+  - what: >-
+      A custom_llm_provider, api_base or api_key read from request_data that is not a string is ignored, and the
+      string value from litellm_params or the model is used instead.
+    why: >-
+      LiteLLM takes the raw value from request_data first: a non-string custom_llm_provider reaches
+      StraikerWebhookContext and fails validation, so the guardrail fails closed, and a non-string api_base reaches
+      get_llm_provider. betterlite reads only strings from request state and keeps the context fields strings; no
+      working LiteLLM setup sends these as other types.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L222-L248
+  - what: >-
+      A usage token count outside the i64 range is not read as a count, so the Anthropic key is used instead.
+    why: >-
+      _as_optional_int accepts any Python int, while betterlite token counts are i64, the type the rest of the crate
+      uses. No provider reports a token count near 2^63, and the fallback key still projects a usage record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L352-L370

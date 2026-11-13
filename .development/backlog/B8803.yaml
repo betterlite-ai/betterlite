@@ -1,0 +1,14 @@
+id: B8803
+milestone: M8 platform
+title: Chat and embeddings routes run the shared pre-call step
+status: todo
+depends_on: [B8800, B8801, B8802, B1103, B1137, B8633, B014]
+file: tasks/B8803-chat-runs-pre-call.yaml
+covers:
+  - "litellm/proxy/common_request_processing.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

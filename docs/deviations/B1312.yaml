@@ -1,0 +1,14 @@
+task: B1312
+deviations:
+  - what: "A message whose role is not user, system, assistant, tool or function, and a file block with no file_id or file_data, return HTTP 400 naming the field where LiteLLM raises a bare Exception and answers HTTP 500."
+    why: "A 500 is the wrong answer for caller error, and rule owned-behavior-is-built fixes a crash no working setup can rely on with a 4xx."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L722-L1075
+  - what: "A tool call or tool result the converters reject returns HTTP 400 naming the field, where LiteLLM wraps every factory conversion failure in a bare Exception and answers HTTP 500."
+    why: "The typed errors of the two conversion helpers already say which field is wrong."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1343-L1345
+  - what: "A thinking_blocks[].thinking string over 1048576 bytes, or JSON serde_json cannot read such as an over-deep nest, NaN or Infinity, replays as the literal signed text part where LiteLLM's json.loads parses any size and accepts NaN and Infinity."
+    why: "Rule bounded-inputs caps untrusted JSON parsing, and the fallback is LiteLLM's own malformed-JSON path."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L893-L906
+  - what: "A history with more than 1024 messages, or a message list (content, thinking_blocks, images, server_side_tool_invocations) with more than 256 entries, returns HTTP 400, where LiteLLM converts any number."
+    why: "Rule bounded-inputs gives each traversal a ceiling, the same ones the media traversal uses."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L722-L724

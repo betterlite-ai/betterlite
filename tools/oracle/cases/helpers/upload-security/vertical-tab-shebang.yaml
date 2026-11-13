@@ -1,0 +1,8 @@
+kind: helper
+name: upload-security-vertical-tab-shebang
+call:
+  b3452:
+    content_hex: '0b2321'
+env: {}
+compare:
+  ignore: []

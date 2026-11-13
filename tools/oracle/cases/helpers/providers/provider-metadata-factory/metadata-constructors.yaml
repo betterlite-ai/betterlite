@@ -1,0 +1,29 @@
+kind: helper
+name: provider-metadata-factory-metadata-constructors
+call:
+  provider_metadata_factory:
+    metadata_constructors:
+      fireworks:
+        - {}
+        - {temperature: 0, max_tokens: 0, n: 0}
+        - {stop: ""}
+        - {tools: [], response_format: {}}
+        - {top_k: 5, user: "u", context_length_exceeded_behavior: "truncate", tool_choice: {type: function}}
+        - {top_p: 2, frequency_penalty: 1, presence_penalty: 3, logprobs: 2, prompt_truncate_len: 9}
+        - {stop: ["a", "b"], reasoning_effort: "high", tool_choice: "auto"}
+        - {max_tokens: 7, temperature: 1, n: 2, response_format: {type: text}}
+        - {}
+      lemonade:
+        - {}
+        - {repeat_penalty: 0.5, max_completion_tokens: 0}
+        - {functions: [], logit_bias: {}}
+        - {temperature: 1, stop: ["a", "b"]}
+        - {max_tokens: 0, n: 0, presence_penalty: 0, top_p: 0, top_k: 0, response_format: {}, tools: []}
+        - {repeat_penalty: 0.0}
+        - {}
+      foundry:
+        - null
+        - "gpt-x"
+        - ""
+env: {}
+compare: {ignore: []}

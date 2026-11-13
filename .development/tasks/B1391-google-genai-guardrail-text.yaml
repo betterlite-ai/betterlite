@@ -4,7 +4,7 @@ description: >-
   Build google_genai_guardrail in betterlite-vertex for the 216 nonblank noncomment
   handler lines and 16 registration lines under gemini/google_genai/guardrail_translation.
   Expose provider-local text locations, rewrite results and an injected guardrail callback;
-  B104 will bind its guardrail policy/user-metadata service without a reverse crate import.
+  B3679 and B3680 will bind the guardrail policy/user-metadata service without a reverse crate import.
   Advertise generate_content, agenerate_content, generate_content_stream and
   agenerate_content_stream. Use B1368 native records and an SDK-object projection seam
   rather than requiring Python. Request extraction checks root then config, camelCase then
@@ -32,7 +32,6 @@ description: >-
   95 adapters and 95 fuzz/seed lines within 700.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,google_genai_guardrail}.rs
     - crates/betterlite-vertex/src/google_genai_guardrail.rs
     - crates/betterlite-vertex/src/google_genai_guardrail/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
@@ -86,8 +85,8 @@ oracle_cases:
   - tools/oracle/cases/helpers/google-guardrail-text/per-chunk-utf8-replacement.yaml
 deviations: []
 out_of_scope:
-  - B104 owns guardrail selection/execution policy and BaseTranslation user-metadata normalization; this leaf receives the resolved callback and metadata.
-  - B098 owns native GenAI routes and B160 SDK object exposure; neither route registration nor Python runtime integration is introduced here.
+  - B3665 owns guardrail selection/execution policy and B3661 BaseTranslation user-metadata normalization; this leaf receives the resolved callback and metadata.
+  - B3506 owns native GenAI routes and B160 SDK object exposure; neither route registration nor Python runtime integration is introduced here.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as google_guardrail_text in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/google_guardrail_text.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/google_guardrail_text.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Existing context keys are preserved even when their value is None.

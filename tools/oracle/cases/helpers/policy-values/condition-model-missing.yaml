@@ -1,0 +1,9 @@
+kind: helper
+name: condition-model-missing
+call:
+  b3240:
+    function: evaluate_condition
+    condition: {model: gpt-4}
+    context: {}
+env: {}
+compare: {ignore: []}

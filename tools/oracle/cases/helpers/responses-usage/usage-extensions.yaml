@@ -1,0 +1,7 @@
+kind: helper
+name: responses-usage-usage-extensions
+call:
+  responses_usage:
+    usage: {input_tokens: 2, output_tokens: 3, total_tokens: 5, server_side_tool_usage_details: {web_search: 2}, custom: 7, cost: 0.125}
+env: {}
+compare: {ignore: []}

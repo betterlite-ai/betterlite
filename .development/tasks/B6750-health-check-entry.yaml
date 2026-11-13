@@ -1,0 +1,189 @@
+id: B6750
+title: Health check entry point flow and error result
+description: >-
+  Build `health_check_entry` in betterlite-server: the Rust form of LiteLLM's `ahealth_check` (main.py L8725-L8831).
+  It is the one function B4443 calls to probe a deployment. It sets up the logging object and the tracking
+  metadata, finds the mode, picks the wildcard or mode path through B4440's functions, reads the response headers
+  and turns every failure into the error result. It talks to no provider: the calls go through B4440's
+  `HealthProbeBackend`, which B4449 implements. Write the public function
+  `check_health(params: HealthProbeParams, mode: Option<String>, prompt: Option<String>, input: Option<Vec<String>>)
+  -> HealthCheckOutcome` on a `HealthCheckEntry` struct. LiteLLM's default mode "chat" is only for a caller that
+  leaves the argument out. The Rust function has no default: B4443 always passes the mode it resolved, so `None`
+  means "no mode known".
+
+  Types. `HealthCheckOutcome` is an enum: `Healthy(HealthCheckResponse)` (B4440's type) or `Failed(HealthCheckFailure)`.
+  `HealthCheckFailure` has `error: String`, `raw_request: Option<RawRequestRecord>` (None for the missing-mode
+  result), and `exception: HealthEntryError`. `HealthEntryError` is this module's error enum: `ModelNotSet`,
+  `Resolution` (source: B174's resolution error), `UnsupportedMode { mode }`, `Probe` (source: B4440's
+  `HealthProbeError`). Each variant's Display text is the exact Python message listed below. The struct is built
+  with constructor injection: `HealthProbeBackend`, `CheapestChatModels`, `OcrHealthDocuments`, B174's provider
+  resolver, B193's catalog (model mode lookup), a clock, an id source for uuid4 strings, and a `redact_secrets: bool`
+  setting. `redact_secrets` is true unless env `LITELLM_DISABLE_REDACT_SECRETS` equals "true" ignoring case
+  (_logging.py L71-L78); the config layer reads the env var, this module never does.
+
+  Flow, in this order.
+  1. Build the logging object with B247's constructor: model "", messages [], stream false, call_type
+  "acompletion", litellm_call_id and function_id each a fresh uuid4 string, start_time now, log_raw_request_response
+  true. Store it in the params under `litellm_logging_obj` (B4440's passthrough map).
+  2. Call B4440's `add_tracking_information` on the params. This runs before everything that can fail, so even a
+  missing-model failure has the tracking metadata.
+  3. Everything below is inside the failure handler. `model` is the params `model`; None fails with exactly
+  "model not set".
+  4. If `mode` is None and `model` (the original string, prefix included) is a key of the B193 catalog, take that
+  entry's `mode` field (it can be absent, which leaves None).
+  5. Resolve with B174 using the params `custom_llm_provider`, `api_base` and `api_key`. The resolved model and
+  provider replace the local `model` only. The params keep the original `model` string. Resolution failure goes to
+  the failure handler.
+  6. If `mode` is still None and the resolved model is a catalog key, take its catalog `mode` again.
+  7. Set params `cache` to {"no-cache": true}. This happens after resolution, so a resolution failure leaves
+  `cache` unset.
+  8. `mode = mode or "chat"`: None and the empty string both become "chat". This line is after step 3 to 7, so
+  the missing-mode failure text below only appears when a failure happened before it.
+  9. If the resolved model contains "*", return B4440's `probe_wildcard_model` result as `Healthy` directly, with
+  no header processing, for the resolved model, resolved provider, params and logging object.
+  10. Otherwise call B4440's `plan_health_probe(mode, model, provider, params, prompt, input)`. `None` fails with
+  `UnsupportedMode`, whose text is "Mode {mode} not supported. See modes here: https://docs.litellm.ai/docs/proxy/health".
+  11. Run the plan with B4440's `run_health_probe` and the backend. Take the reply's `hidden_headers` field (B4440's `HealthProbeReply`, the `hidden_params.headers` map; missing or null is already an empty map), and return `Healthy(health_check_response(headers))`. Only
+  the three headers B4440 keeps survive.
+
+  Failure result. Build the stack text from the error and its `source()` chain, one cause per line, run it through
+  B187's `redact_string` when `redact_secrets` is true, then cut it to the first 1000 characters (characters, not
+  bytes). Betterlite has no Python traceback; see deviations. If `mode` is None at this point (the failure came
+  before step 8), `error` is
+  "error:{e}. Missing `mode`. Set the `mode` for the model - https://docs.litellm.ai/docs/proxy/health#embedding-models  \nstacktrace: {stack}"
+  with two spaces before the newline and the word "stacktrace" as one word, and `raw_request` is None. Otherwise
+  `error` is "{e}\nstack trace: {stack}" with the word "stack trace" as two words, and `raw_request` is the logging
+  object's `raw_request_typed_dict` entry from B247's state (None when nothing wrote one). `{e}` is the error's
+  Display text.
+
+  Tests live in `health_check_entry::tests` with name prefixes `flow_` (steps 1 to 11 with a recording fake
+  backend), `mode_` (catalog lookups before and after resolution, None and empty mode), `error_` (both failure
+  texts, redaction on and off, 1000 character cut, raw request), `wildcard_` (star models skip the header step)
+  and `headers_` (missing, null and partial hidden params). The oracle helper cases drive Python's `ahealth_check`
+  with stubbed `litellm.a*` calls and compare the result. Because Python's traceback text cannot match, the
+  Python adapter returns only the part of `error` before "stack trace: " or "stacktrace: " (whichever
+  appears), whether a stack text followed, and its length at most 1000.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/health_check_entry.rs
+    - crates/betterlite-server/src/health_check_entry/**
+    - tools/oracle/cases/helpers/health-check-entry/**
+    - "tools/oracle/fuzz/corpus/helper_case/health_check_entry-*"
+    - tools/oracle/helpers/b6750.py
+    - tools/oracle/helpers/b6750/**
+    - tools/oracle/src/helpers/server/b6750.rs
+    - tools/oracle/src/helpers/server/b6750/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8725-L8831
+    why: ahealth_check, the whole function this task builds, including the two failure texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L71-L78
+    why: _redact_string and the LITELLM_DISABLE_REDACT_SECRETS switch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L556-L600
+    why: Logging.__init__ arguments used for the probe's logging object.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1360-L1400
+    why: Where raw_request_typed_dict is written when log_raw_request_response is true.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_utils.py#L1-L30
+    why: _create_health_check_response, the header filter B4440 owns and this task calls.
+  - url: https://docs.litellm.ai/docs/proxy/health
+    why: The mode list the unsupported-mode error links to.
+
+dod:
+  - text: The flow builds the logging object with the exact constructor arguments, stores it under litellm_logging_obj and applies the tracking metadata before any step that can fail.
+    proof: [flow-tests, oracle, helper-python]
+  - text: A missing model fails with "model not set"; a None mode takes the catalog mode first for the original model string and again for the resolved one, and None or an empty mode finally becomes "chat".
+    proof: [mode-tests, oracle, helper-python]
+  - text: "The params model stays the original string, `cache` is {\"no-cache\": true} only after resolution succeeds, and the resolved model and provider go to the wildcard and mode functions."
+    proof: [flow-tests, oracle, helper-python]
+  - text: A resolved model containing "*" returns the wildcard probe result with no header processing.
+    proof: [wildcard-tests, oracle, helper-python]
+  - text: A mode outside the 14 names fails with the exact unsupported-mode message.
+    proof: [flow-tests, oracle, helper-python]
+  - text: Success returns only the three allowed headers from the reply's hidden_params.headers, and a missing or null headers value gives an empty result.
+    proof: [headers-tests, oracle, helper-python]
+  - text: Failures return the error text with the stack text redacted unless disabled and cut to 1000 characters, the missing-mode variant when mode was None, and the raw request record otherwise.
+    proof: [error-tests, oracle, helper-python]
+  - text: Helper corpus cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: flow-tests
+      why: logging object setup, tracking order, params handling or the unsupported-mode error is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_check_entry::tests::flow_/)'
+    - id: mode-tests
+      why: the catalog mode lookups, the chat default or the model not set error is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_check_entry::tests::mode_/)'
+    - id: wildcard-tests
+      why: the star model path or its skipped header step is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_check_entry::tests::wildcard_/)'
+    - id: headers-tests
+      why: header extraction from hidden params or the empty fallback is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_check_entry::tests::headers_/)'
+    - id: error-tests
+      why: a failure text, the redaction switch, the 1000 character cut or the raw request record is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_check_entry::tests::error_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6750)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b6750 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b6750/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added health entry cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/health_check_entry-*")" &&
+        grep -lE '^[[:space:]]+b6750:' tools/oracle/fuzz/corpus/helper_case/health_check_entry-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/health-check-entry/flow.yaml
+  - tools/oracle/cases/helpers/health-check-entry/mode-lookup.yaml
+  - tools/oracle/cases/helpers/health-check-entry/wildcard.yaml
+  - tools/oracle/cases/helpers/health-check-entry/headers.yaml
+  - tools/oracle/cases/helpers/health-check-entry/errors.yaml
+
+deviations:
+  - what: The stack text in the error string is the error's cause chain, one cause per line, not a Python traceback.
+    why: Rust has no Python traceback. The redaction and the 1000 character cut are the same, and the prefix before the stack text matches LiteLLM exactly.
+  - what: "`exception` is a typed HealthEntryError, not a Python exception object."
+    why: B4443 only reads its text and its type tag; the error texts match LiteLLM.
+  - what: The mode argument has no "chat" default.
+    why: The only caller, B4443, always passes a resolved mode, and None must stay distinguishable for the missing-mode failure text.
+
+out_of_scope:
+  - "The mode call arguments, wildcard probe, tracking metadata step, batch and image edit probes and health_check_response: B4440 owns them and this task calls them."
+  - "Implementing HealthProbeBackend with the real call operations, and the CheapestChatModels and OcrHealthDocuments wiring: B4449."
+  - "get_llm_provider: B174. Catalog lookup: B193. Logging constructor and model_call_details: B247. redact_string: B187."
+  - "_run_model_health_check and the health cycle that call this function: B4443."
+  - "print_verbose and the other helper functions after main.py L8834: not part of ahealth_check."
+
+pitfalls:
+  - "The wildcard and mode functions get the resolved model, but the params dict still holds the original `model` string; do not write the resolved value back."
+  - "`cache` {\"no-cache\": true} is set after resolution and before the wildcard check, so wildcard probes carry it too and a resolution failure does not."
+  - "The catalog lookup runs twice, once for the original string and once for the resolved one, and only while mode is still None; a mode of \"\" is not None and skips both."
+  - "Missing-mode text uses \"stacktrace: \" with two spaces before \\n, the other text uses \"\\nstack trace: \"; the missing-mode result has no raw request key at all."
+  - "`getattr(_response, \"_hidden_params\", {}).get(\"headers\", {}) or {}`: a reply with no hidden params, a null headers value and an empty map all give {}."
+  - "Redaction runs on the stack text only, never on the leading error text, and is skipped when LITELLM_DISABLE_REDACT_SECRETS is \"true\"."
+  - "The wildcard branch returns before the `mode in mode_handlers` check, so a wildcard model with a bogus mode still succeeds."
+  - "The tracking step runs before the try block in Python, so it can never produce a failure result; keep it outside the failure handling."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

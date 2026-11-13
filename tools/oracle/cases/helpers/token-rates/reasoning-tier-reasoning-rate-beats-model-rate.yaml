@@ -1,0 +1,17 @@
+kind: helper
+name: reasoning-tier-reasoning-rate-beats-model-rate
+call:
+  token_rates:
+    operation: base
+    model_info:
+      output_cost_per_reasoning_token: "0.000009"
+    usage:
+      prompt_tokens: 1
+    service_tier: null
+    provider: null
+    tiered_pricing:
+      - range: [0, 1000]
+        input_cost_per_token: "0.000001"
+        output_cost_per_reasoning_token: "0.000007"
+compare: {ignore: []}
+env: {}

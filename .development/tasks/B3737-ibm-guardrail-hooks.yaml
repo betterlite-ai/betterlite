@@ -150,7 +150,7 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/ibm-hooks-*")" && grep -rlq "ibm_hooks" tools/oracle/fuzz/corpus/helper_case/ibm-hooks-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: ibm-hooks-oracle
       why: Oracle cases exercising all event hooks, violations and error handling are missing or fail
-      run: test -d tools/oracle/cases/helpers/ibm-hooks && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/ibm-hooks)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/ibm-hooks
+      run: test -d tools/oracle/cases/helpers/ibm-hooks && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/ibm-hooks)" && cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/ibm-hooks
     - id: docs-present
       why: Configuration documentation or examples missing from docs/ibm-guardrails/
       run: test -f docs/ibm-guardrails/README.md && test -f docs/ibm-guardrails/example_config.yaml

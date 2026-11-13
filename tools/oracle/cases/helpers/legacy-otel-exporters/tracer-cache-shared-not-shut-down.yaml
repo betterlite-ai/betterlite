@@ -1,0 +1,17 @@
+kind: helper
+name: tracer-cache-shared-not-shut-down
+call:
+  b3855:
+    function: tracer_cache_sequence
+    max_providers: 1
+    config:
+      exporter: console
+    requests:
+      - key:
+          headers: {authorization: "Bearer shared"}
+        owns_exporter: false
+      - key:
+          headers: {authorization: "Bearer own"}
+        owns_exporter: true
+env: {}
+compare: {ignore: []}

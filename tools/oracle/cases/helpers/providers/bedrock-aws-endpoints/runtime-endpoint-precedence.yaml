@@ -1,0 +1,58 @@
+kind: helper
+name: runtime-endpoint-precedence
+call:
+  bedrock_aws_endpoints:
+    runtime_endpoint:
+      cases:
+        - api_base: 'https://api.example'
+          aws_bedrock_runtime_endpoint: null
+          environment: {}
+          region: us-east-1
+          endpoint_type: runtime
+        - api_base: null
+          aws_bedrock_runtime_endpoint: 'https://runtime.example'
+          environment: {}
+          region: us-east-1
+          endpoint_type: runtime
+        - api_base: 'https://api.example'
+          aws_bedrock_runtime_endpoint: 'https://runtime.example'
+          environment: {}
+          region: us-east-1
+          endpoint_type: runtime
+        - api_base: 'https://api.example'
+          aws_bedrock_runtime_endpoint: null
+          environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: 'https://env.example'}
+          region: us-east-1
+          endpoint_type: runtime
+        - api_base: null
+          aws_bedrock_runtime_endpoint: null
+          environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: 'https://env.example'}
+          region: us-east-1
+          endpoint_type: runtime
+        - api_base: ''
+          aws_bedrock_runtime_endpoint: null
+          environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: 'https://env.example'}
+          region: us-east-1
+          endpoint_type: runtime
+        - api_base: null
+          aws_bedrock_runtime_endpoint: ''
+          environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: 'https://env.example'}
+          region: us-east-1
+          endpoint_type: runtime
+        - api_base: null
+          aws_bedrock_runtime_endpoint: null
+          environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: ''}
+          region: us-east-1
+          endpoint_type: runtime
+        - api_base: null
+          aws_bedrock_runtime_endpoint: null
+          environment: {}
+          region: cn-north-1
+          endpoint_type: runtime
+        - api_base: null
+          aws_bedrock_runtime_endpoint: null
+          environment: {}
+          region: cn-north-1
+          endpoint_type: agent
+env: {}
+compare: {ignore: []}

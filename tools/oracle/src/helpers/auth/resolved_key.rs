@@ -9,6 +9,7 @@ use betterlite_auth::user_roles::UserRole;
 use betterlite_db::budget_permission_rows::JsonData;
 use serde::Deserialize;
 use serde_json::Value;
+use sha2::{Digest as _, Sha256};
 
 use crate::helpers::{HelperError, HelperResult};
 
@@ -45,12 +46,16 @@ impl crate::helpers::Helper for Op {
             Function::Auth => auth(&input.value),
             Function::HashToken => hash_token(&input.value),
             Function::IsJwt => is_jwt(&input.value),
-            Function::HealthPrincipal => principal(factories::system_principal(
-                &factories::SystemPrincipal::HealthCheck,
-            )),
-            Function::JobsPrincipal => principal(factories::system_principal(
-                &factories::SystemPrincipal::Jobs,
-            )),
+            Function::HealthPrincipal => {
+                let decoded = factories::system_principal(&factories::SystemPrincipal::HealthCheck)
+                    .map_err(Failure::Auth)?;
+                Ok(serde_json::to_value(decoded).map_err(Failure::Encoding)?)
+            }
+            Function::JobsPrincipal => {
+                let decoded = factories::system_principal(&factories::SystemPrincipal::Jobs)
+                    .map_err(Failure::Auth)?;
+                Ok(serde_json::to_value(decoded).map_err(Failure::Encoding)?)
+            }
             Function::ServiceAccount => predicate(&input.value, is_team_service_account),
             Function::AdminView => predicate(&input.value, user_api_key_has_admin_view),
         }
@@ -123,7 +128,7 @@ fn hash_token(value: &Value) -> HelperResult {
             "value must be a string",
         )));
     };
-    let hashed = credential::hash_token(&text);
+    let hashed = hex::encode(Sha256::digest(text.as_bytes()));
     Ok(serde_json::json!({ "hash": hashed }))
 }
 
@@ -131,11 +136,6 @@ fn is_jwt(value: &Value) -> HelperResult {
     let token = optional_string_value(value)?;
     let shaped = credential::is_jwt(token.as_deref());
     Ok(serde_json::json!({ "is_jwt": shaped }))
-}
-
-fn principal(constructed: Result<UserAPIKeyAuth, AuthError>) -> HelperResult {
-    let decoded = constructed.map_err(Failure::Auth)?;
-    Ok(serde_json::to_value(decoded).map_err(Failure::Encoding)?)
 }
 
 fn predicate(value: &Value, check: fn(&UserAPIKeyAuth) -> bool) -> HelperResult {

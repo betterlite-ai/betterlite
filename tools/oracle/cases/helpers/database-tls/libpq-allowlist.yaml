@@ -1,0 +1,8 @@
+kind: helper
+name: database-tls-libpq-allowlist
+call:
+  database_tls:
+    function: strip_prisma_query_params
+    url: "postgresql://u@h/db?connection_limit=10&pool_timeout=60&socket_timeout=5&max_idle_connection_lifetime=60&schema=tenant&pgbouncer=true&sslmode=require&sslmode=prefer&application_name=app&connect_timeout=5&client_encoding=UTF8&options=-c%20x%3D1&service=svc&gssencmode=disable&krbsrvname=postgres&target_session_attrs=any&sslaccept=accept_invalid_certs"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: config-false-env-true-and-runtime-fallback
+call:
+  spend_bodies:
+    function: storage_policy
+    config_value: false
+    env_value: "true"
+    initial_max_string_length: "100"
+    runtime_max_string_lengths: [null, "200", "not-a-number", ""]
+env: {}
+compare: {ignore: []}

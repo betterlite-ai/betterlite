@@ -1,0 +1,9 @@
+kind: helper
+name: logging-fields-usage
+call:
+  logging_fields:
+    function: usage_as_dict
+    usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 5}
+    combined: {prompt_tokens: 9, completion_tokens: 8, total_tokens: 17}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: disk-increment-transaction
+call:
+  b4291:
+    disk_increment:
+      key: counter
+      initial: 2
+      increments:
+        - 3
+        - -1
+        - 10
+env: {}
+compare:
+  ignore: []

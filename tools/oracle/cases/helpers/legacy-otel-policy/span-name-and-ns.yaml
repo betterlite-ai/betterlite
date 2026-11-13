@@ -1,0 +1,20 @@
+kind: helper
+name: span-name-and-ns
+call:
+  b3854:
+    function: span_time
+    times:
+      - {seconds: 1.5}
+      - {seconds: 0.1}
+      - {seconds: -1.5}
+      - {date_time: "2024-01-01T00:00:00Z"}
+      - {date_time: "1970-01-01T00:00:01.5Z"}
+    now: 1234
+    names:
+      - {litellm_params: {metadata: {generation_name: custom-name}}, call_type: completion, model: gpt-4o, semconv: true}
+      - {litellm_params: {metadata: {generation_name: ""}}, call_type: text_completion, model: gpt-3.5, semconv: true}
+      - {litellm_params: {}, call_type: completion, model: gpt-4o, semconv: false}
+      - {litellm_params: {}, call_type: aembedding, semconv: true}
+      - {litellm_params: {}, call_type: completion, model: "", semconv: true}
+env: {}
+compare: {ignore: []}

@@ -9,7 +9,7 @@ description: >-
   _scannable_text to flatten structured message content for v1 scanning, _interaction_body to decode v1 response JSON, _proxy_server_request
   to access proxy request headers and _header_value to read response headers with defaults. Implement version dispatch via initialize_guardrail
   that selects v1 or v2 based on version config parameter (default v1). Both versions build Authorization Bearer header from jwt_token
-  and retry with token refresh on 401 response. V2's config model accessor remains with B107 to keep this part bounded.
+  and retry with token refresh on 401 response. V2's config model accessor is left out because nothing calls it at the pin.
 scope:
   paths:
     - crates/betterlite-guardrails/src/hiddenlayer.rs
@@ -103,13 +103,13 @@ checks:
   commands:
     - id: hiddenlayer-v1-tests
       why: HiddenlayerGuardrail v1 constructor, apply_guardrail or _call_hiddenlayer fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer_v1::|^hiddenlayer_evaluation_v1::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer::(.*::)?hiddenlayer_v1::|^hiddenlayer_evaluation_v1::/)'
     - id: hiddenlayer-v2-tests
       why: HiddenlayerGuardrailV2 constructor, apply_guardrail or _call_hiddenlayer fail or do not exist
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer_v2::|^hiddenlayer_evaluation_v2::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer::(.*::)?hiddenlayer_v2::|^hiddenlayer_evaluation_v2::/)'
     - id: v1-v2-dispatch-test
       why: initialize_guardrail does not correctly dispatch to v1 or v2 based on version parameter
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer_version_dispatch::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^hiddenlayer::(.*::)?hiddenlayer_version_dispatch::/)'
 oracle_cases:
   - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-last-message-scan.yaml
   - tools/oracle/cases/guardrails/hiddenlayer/evaluation/v1-block-action-400.yaml
@@ -163,14 +163,14 @@ out_of_scope:
   - HiddenLayer SaaS detection and JWT token acquisition (is_saas, _get_jwt, JWT refresh lambda storage) provided by B3775.
   - ">-
     CustomGuardrail base class lifecycle (CustomGuardrail.__init__, log_guardrail_information decorator, supported_event_hooks):
-    Framework base class for guardrail integration; no assigned task owner yet (B104 outline has no task file). Required for initialization and lifecycle; infrastructure dependency."
+    Framework base class for guardrail integration; owned by B5471 (construction and updates) and B3664 (invocation logging). Required for initialization and lifecycle; infrastructure dependency."
   - ">-
     HTTP client management (AsyncHTTPHandler, get_async_httpx_client): Infrastructure layer that provides pooled httpx clients with timeout handling;
     no assigned task owner yet. Injected as dependency rather than constructed here."
   - ">-
     Guardrail callback registration (add_litellm_callback): Callback pipeline registration; no assigned task owner yet.
     Used as injected dependency from logging callback manager."
-  - V2 config model accessor that determines which HiddenlayerGuardrailConfigModel to return based on request context; owned by B107.
+  - V2 config model accessor that determines which HiddenlayerGuardrailConfigModel to return based on request context; it has no caller at the pin, so nobody owns it.
 pitfalls:
   - ">-
     V1 scans only the last message from structured_messages (role and content flattened via _scannable_text) or texts array.

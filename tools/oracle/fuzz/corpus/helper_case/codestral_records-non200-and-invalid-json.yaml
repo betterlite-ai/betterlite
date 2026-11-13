@@ -1,0 +1,17 @@
+kind: helper
+name: codestral-records-seed-non200-and-invalid-json
+call:
+  codestral_records:
+    steps:
+      - kind: reply
+        status: 201
+        body: '{"choices":[]}'
+        api_key: key
+      - kind: reply
+        status: 200
+        body: not json
+      - kind: reply
+        status: 500
+        body: server exploded
+env: {}
+compare: {ignore: []}

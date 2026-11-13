@@ -2,11 +2,11 @@ id: B048
 milestone: M3 providers
 title: Web search and crawl providers
 status: todo
-depends_on: [B091, B1552, B1553, B1554, B1555]
-file: null
+depends_on: [B002, B3270, B171, B206, B1552, B1553, B1554, B1555, B8020, B8021, B8022, B8023, B8024, B8025, B5834]
+file: tasks/B048-tinyfish-search-registry.yaml
 covers:
   - "litellm/llms/apiserpent/__init__.py"
-  - "litellm/llms/{exa_ai,fastcrw,firecrawl,google_pse,linkup,nimble,parallel_ai,searchapi,searxng,serper,tavily,you_com,tinyfish}/**"
+  - "litellm/llms/tinyfish/**"
 parent: null
 split_from: null
 resolution: null

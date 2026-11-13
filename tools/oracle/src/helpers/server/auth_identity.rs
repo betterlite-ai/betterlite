@@ -10,7 +10,7 @@ use betterlite_auth::auth_identity::roles::{
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use serde::Deserialize;
 
-use crate::compare::helper::HelperError;
+use crate::helpers::HelperError;
 
 pub(crate) struct Op;
 

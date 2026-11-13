@@ -1,0 +1,5 @@
+kind: helper
+name: openai-fine-tuning-sdk-client-missing
+call: {"openai_fine_tuning": {"steps": [{"action": "create", "builder": "none", "data": {"model": "m", "training_file": "f"}}, {"action": "list", "builder": "none"}, {"action": "retrieve", "builder": "none", "job_id": "ft_1"}, {"action": "cancel", "builder": "none", "job_id": "ft_1"}]}}
+env: {}
+compare: {ignore: []}

@@ -8,7 +8,9 @@ description: >-
   fallback or warning. Support existing initial_prompt_value, roles, final_prompt_value, bos_token and eos_token
   as typed operator deployment inputs; B036/B037 and provider owners wire them from main.py 5373-5377/5544-5557.
   This task builds text branches and delegates installed structured branches explicitly: Anthropic B180, Azure/Cohere
-  B182, Mistral B036, Watsonx B042 and Perplexity B041. Until each adapter is installed, return the framework typed
+  B182, Mistral B036 and Watsonx B5972. The perplexity branch of prompt_factory (factory.py L5315-L5318, drop each
+  message name) is not built: no caller at the pin passes custom_llm_provider "perplexity", and the Perplexity chat
+  path never calls prompt_factory. Until each adapter is installed, return the framework typed
   unsupported-operation outcome rather than a fabricated prompt. Do not create remote-template acquisition or new
   config behavior before the open decision. Budget 230 selector/custom transforms, 100 adapters, 300 tests and 60
   wiring (690 total). Write the behavior rstest functions prompt_templates_prompt_template_tests_behavior in adjacent tests.rs

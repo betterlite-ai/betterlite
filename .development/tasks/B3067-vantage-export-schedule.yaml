@@ -27,6 +27,12 @@ description: >-
   with the scheduler. Skip if no VantageLogger is registered, logging debug-level
   "No Vantage logger registered; skipping scheduler".
 
+  Also define the live VantageLoggers store: an ordered list of the concrete VantageLogger instances with their
+  callback-list membership, shared as one Arc by the startup scheduler (B8372), settings deletion (B3077) and the
+  export routes (B073). It keeps B189's callback-list order and de-duplication, including instances in the success
+  and failure lists, and hands out snapshots so no caller holds its lock across an await. B8372 populates it and
+  schedules from it, including the DB-only registration.
+
   Preserve VANTAGE settings precedence, hourly default, interval warning behavior and the
   separate vantage_export_usage_data lease key. The export operation is inherited from
   FocusLogger (export_usage_data) without override.

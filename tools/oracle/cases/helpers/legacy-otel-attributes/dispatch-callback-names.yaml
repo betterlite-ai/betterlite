@@ -1,0 +1,28 @@
+kind: helper
+name: dispatch-callback-names
+call:
+  b3856:
+    function: set_attributes
+    callback_name: [langtrace, langfuse_otel, weave_otel, otel]
+    kwargs:
+      model: gpt-4o
+      messages:
+        - {role: user, content: hello}
+      optional_params: {stream: true, max_tokens: 50}
+      litellm_params: {custom_llm_provider: openai}
+      standard_logging_object:
+        id: chatcmpl-1
+        call_type: acompletion
+        litellm_call_id: call-1
+        request_id: request-1
+        metadata: {trace_name: demo}
+        hidden_params: {litellm_model_name: gpt-4o}
+    response:
+      id: chatcmpl-1
+      model: gpt-4o
+      choices:
+        - message: {role: assistant, content: hi}
+          finish_reason: stop
+      usage: {total_tokens: 3, completion_tokens: 1, prompt_tokens: 2}
+env: {}
+compare: {ignore: []}

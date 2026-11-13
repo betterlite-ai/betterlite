@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-capability-catalog-sampling
+call:
+  anthropic_capability_catalog:
+    fixture:
+      model_cost:
+        claude-sonnet-4-5: {litellm_provider: anthropic}
+      packaged: {}
+      thresholds: {medium: 2048, high: 4096, xhigh: 8192}
+    steps:
+      - {function: sampling_capability, model: claude-sonnet-4-5, param: top_p, value: 0.9, output_key: top_p, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}

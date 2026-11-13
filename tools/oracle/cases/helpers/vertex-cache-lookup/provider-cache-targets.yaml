@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-cache-lookup-provider-cache-targets
+call:
+  vertex_cache_lookup:
+    targets:
+      - {provider: vertex_ai, api_base: null, project: proj, location: us-central1, auth: token-abc, gemini_api_key: null, model: gemini-2.5-flash}
+      - {provider: vertex_ai, api_base: null, project: proj, location: global, auth: null, gemini_api_key: null, model: gemini-2.5-flash}
+      - {provider: vertex_ai, api_base: null, project: proj, location: us, auth: token-abc, gemini_api_key: null, model: gemini-2.5-flash}
+env: {}
+compare: {ignore: []}

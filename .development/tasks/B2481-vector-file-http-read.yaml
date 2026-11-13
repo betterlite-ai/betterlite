@@ -15,12 +15,10 @@ description: >-
   35 wiring/corpus lines, 570 total within 610. No new wire parser or proxy route belongs here.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_file_http_read.rs
   - crates/betterlite-core/src/api/vector_file_http_read/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/vector_file_read_transport.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/vector_file_read_transport.py
   - tools/oracle/cases/sdk-http/vector-file-read-transport/**

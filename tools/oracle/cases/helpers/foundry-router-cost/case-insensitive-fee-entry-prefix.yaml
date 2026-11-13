@@ -1,0 +1,12 @@
+kind: helper
+name: case-insensitive-fee-entry-prefix
+call:
+  foundry_router_cost:
+    operation: classify
+    calls:
+      - {model: AZURE_AI/Model-Router}
+      - {model: Azure_AI/model_router, request_model: model_router}
+      - {model: azure_ai/Model-Router, request_model: my-model-router}
+      - {model: azure_ai/azure_ai/model_router}
+env: {}
+compare: {ignore: []}

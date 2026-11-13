@@ -1,0 +1,9 @@
+kind: helper
+name: decode-bytes
+call:
+  tokenizer_engine:
+    operation: decode
+    engine: cl100k_base
+    tokens: [128, 129, 100257, 15339, 0]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,122 @@
+id: B8911
+title: Agent trace receiver lifetime and spend callback attachment
+description: >-
+  Port _start_receiver and manage_tracing from proxy/tracing_runtime.py, plus the store-selection
+  decision at proxy_startup_event L1571-L1574. B3867 owns the receiver and request handlers;
+  B4001 owns ClickHouseSpendLogger and its bounded queue. This task owns the lifetime joining
+  them, in betterlite-server::trace_lifecycle, without depending on the server application or
+  creating a ClickHouse transport. B110 supplies the concrete receiver adapter and application
+  handoff; the lifecycle must also be usable by a server started with an injected receiver.
+
+  Define ReceiverFactory and ReceiverHandle ports in this module, with an associated storage
+  type implementing B4001's ClickHouseStorage. Factory construction returns a receiver, the
+  handle's async start waits for schema setup, and its storage accessor returns the same Arc
+  used by trace reads and ingest. The retained receiver is returned to the caller for route
+  state. Do not depend on B3867 or the lifespan task here: their adapters consume this lower
+  layer. Own TraceLifecycleError and the startup error categories here, preserving sources.
+  Expected factory/start errors corresponding to KeyError, OSError, RuntimeError and ValueError
+  become a warning and no receiver; a separate unexpected error propagates. The disabled branch
+  never invokes the factory. A failed start attaches no callback, and never reports tracing enabled.
+
+  After start succeeds, construct one B4001 ClickHouseSpendLogger with the receiver's shared
+  storage and the already resolved batch settings. Register that same instance, in order, in
+  callbacks, success_callback, failure_callback, _async_success_callback and
+  _async_failure_callback. Reuse B189's registration/removal operations and B8740's callback
+  transport contract, including B189's bounded-list warning/skip result; do not turn a full
+  list into a new startup error or roll back earlier registrations. This automatic logger
+  handles both async success and failure; do not
+  substitute B8745's separately configured clickhouse catalog arm, which only forwards success.
+  Registration must retain a handle identifying this instance, so cleanup removes it from all
+  lists without removing another ClickHouse logger the operator configured. Log that agent
+  tracing is enabled only after registration succeeds. On normal or exceptional server exit,
+  unregister first, then await the logger's bounded shutdown/flush. Expose an explicit async
+  close operation owned by the lifespan, never a detached task or blocking destructor. No
+  receiver shutdown call is added: manage_tracing only closes the spend logger. Keep the
+  callback construction and close failures outside _start_receiver's warning boundary.
+
+  Add config.sections.agent_tracing in betterlite-config/src/sections/agent_tracing.rs. Its
+  view consumes general_settings.tracing.store as an optional string. Absent tracing, null,
+  an empty object or a store other than the exact string clickhouse disables startup; only
+  clickhouse enables it. This setting is independent of LITELLM_OTEL_V2. Read environment
+  only in this config section; the lifecycle consumes its resolved receiver settings and
+  B4001's already resolved spend batching settings.
+  Missing CLICKHOUSE_URL must reach the expected missing-setting start error and warn, not
+  reject config loading, because LiteLLM starts the rest of the proxy with tracing unavailable.
+  The section has decode_agent_tracing(bytes) using the existing YAML serde dependency and
+  loader bounds; add its cargo-fuzz target, seeds and replays_the_agent_tracing_corpus test.
+  The architect declares the section and fuzz target in the shared lists before dispatch.
+
+  Config tests sections::agent_tracing::tests::loads_store exercise the production loader with
+  default, clickhouse, another string, empty object and explicit null, and ensure the known
+  key is consumed. The section also resolves the environment portion of TraceReceiver.from_env:
+  CLICKHOUSE_URL is an optional SecretString, CLICKHOUSE_READER_URL defaults to that same value
+  only when absent, and CLICKHOUSE_DATABASE defaults to litellm only when absent. Preserve
+  explicit empty strings for the factory to validate. Tests loads_clickhouse_environment in
+  the section load every variable, absent defaults and reader override through the production
+  loader; B3867's constructor consumes these resolved fields rather than reading env itself.
+  Lifecycle tests in trace_lifecycle/tests/ cover disabled_never_builds,
+  factory_missing_setting, schema_io_failure, start_runtime_failure, invalid_start_value,
+  unexpected_error_propagates, shared_storage_identity, five_lists_same_instance, full_list_keeps_prior_entries,
+  failure_event_is_logged, unrelated_logger_survives, unregister_before_flush,
+  exceptional_exit_flushes and logger_build_error_propagates. Use B4001's real batch logger
+  over a recording storage and an injected clock; verify a pending row is delivered during
+  close and no producer remains registered afterwards. This is stateful orchestration, so
+  helper adapters are inappropriate. B110 owns its booted HTTP cases. The owned Python slice
+  has 33 nonblank, non-comment logic lines; config, lifetime and callback glue should require
+  about 250 production lines, 40 fuzz lines and 300 tests.
+scope:
+  paths:
+    - crates/betterlite-server/src/trace_lifecycle.rs
+    - crates/betterlite-server/src/trace_lifecycle/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-config/src/sections/agent_tracing.rs
+    - crates/betterlite-config/src/sections/agent_tracing/**
+    - crates/betterlite-config/fuzz/fuzz_targets/agent_tracing.rs
+    - crates/betterlite-config/fuzz/corpus/agent_tracing/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_runtime.py#L35-L66
+    why: Own expected startup failure handling, five-list attachment, shared storage and finally cleanup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1571-L1577
+    why: Own only the tracing.store enable decision; B8374 owns lifespan order and B110 the receiver handoff.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/receiver.py#L104-L121
+    why: Own environment resolution at L104-L114; B3867 owns the receiver/store construction and awaited schema initialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L149-L170
+    why: B4001's success and failure methods and the trace-ingest recursion guard, consumed by the callback adapter.
+dod:
+  - text: Only tracing.store clickhouse enables the lifecycle; the production loader accepts the setting and the section decoder stays bounded on its committed corpus.
+    proof: [settings-tests, config-corpus]
+  - text: Disabled startup performs no work, expected construction/schema failures warn and return no receiver, and unexpected or later logger failures propagate.
+    proof: [startup-tests]
+  - text: One automatic spend logger shares receiver storage, receives both outcome phases through five registrations, and is removed before its final flush on every exit without removing unrelated callbacks.
+    proof: [lifetime-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: settings-tests
+      why: The real loader rejects or ignores tracing.store, or startup uses the wrong default or spelling.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::agent_tracing::/) - test(replays_the_agent_tracing_corpus)'
+    - id: config-corpus
+      why: The new decoder has no fuzz target, no added seeds or no replay through the production decoder.
+      run: test -f crates/betterlite-config/fuzz/fuzz_targets/agent_tracing.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/agent_tracing/)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::agent_tracing::.*replays_the_agent_tracing_corpus$/)'
+    - id: startup-tests
+      why: Receiver startup fails the proxy, skips schema setup or attaches callbacks after a failed start.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::(disabled_never_builds|factory_missing_setting|schema_io_failure|start_runtime_failure|invalid_start_value|unexpected_error_propagates|logger_build_error_propagates)$/)'
+    - id: lifetime-tests
+      why: The live logger misses failure events, uses another storage, removes unrelated callbacks or closes before unregistering.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::(shared_storage_identity|five_lists_same_instance|full_list_keeps_prior_entries|failure_event_is_logged|unrelated_logger_survives|unregister_before_flush|exceptional_exit_flushes)$/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B3867 owns require_receiver, provide_receiver and provide_storage in tracing_runtime.py L20-L32, receiver methods including construction/start in receiver.py, Tenant and its stamping methods, and all seven trace routes; only from_env's environment resolution is moved into this task's config section. B110 binds request state to this lifecycle.
+  - B8374 owns the rest of proxy_startup_event and proxy shutdown ordering; B8613 carries started resources. Neither function is reimplemented here beyond the four-line tracing.store decision.
+  - B4001 owns spend projection, settings, queue, schema forwarding and the async logger methods. B8745's clickhouse catalog registration is separate from manage_tracing's automatic logger.
+  - The concrete native ClickHouse storage and OTLP codec remain an unassigned excluded bridge dependency, identified as G2 by B3865/B3866/B3867; B110 records the integration limitation, and this lifecycle accepts injected implementations.
+pitfalls:
+  - The receiver's factory and start are inside the warning boundary, but spend logger construction and final close are outside it.
+  - Enabling LITELLM_OTEL_V2 does not enable agent trace ingestion, and tracing.store clickhouse does not enable V2 instrumentation.
+  - Cleanup removes this logger from all callback lists before flushing, so a concurrent producer cannot keep refilling the retiring queue.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

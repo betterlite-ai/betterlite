@@ -1,0 +1,30 @@
+kind: helper
+name: vercel-ai-gateway-provider-info-and-supported-params
+call:
+  b5835:
+    steps:
+      - kind: provider_info_and_supported_params
+        model: custom-model
+        api_base: https://explicit.example/v1
+        api_key: explicit-key
+        environment:
+          VERCEL_AI_GATEWAY_API_BASE: https://env.example/v1
+          VERCEL_AI_GATEWAY_API_KEY: env-key
+          VERCEL_OIDC_TOKEN: oidc-token
+        chat_models: []
+        text_models: []
+      - kind: provider_info_and_supported_params
+        model: gpt-4o
+        environment:
+          VERCEL_AI_GATEWAY_API_KEY: env-key
+        chat_models: [gpt-4o]
+        text_models: []
+      - kind: provider_info_and_supported_params
+        model: custom-model
+        environment:
+          VERCEL_OIDC_TOKEN: oidc-token
+      - kind: provider_info_and_supported_params
+        model: gpt-4
+        chat_models: [gpt-4]
+env: {}
+compare: {ignore: []}

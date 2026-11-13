@@ -1,0 +1,203 @@
+id: B130
+title: Health routes answer like LiteLLM through the booted proxy
+description: >-
+  The health parts each build a router function and stop there: B4444 GET /health/shared-status, B4445 GET /health,
+  /health/history and /health/latest, B4446 POST /health/test_connection, B4447 GET /test and GET /health/services. Only
+  B8540 mounts them, and B8540 depends on all four, so the HTTP cases those parts list can never pass on their own branches:
+  the booted proxy answers 404 for every one of those paths until B8540 merges. B8540 already took B4448's 17 cases for
+  that reason. This task takes the other parts' 28 HTTP cases, and adds the GET /health cases that run a real probe against
+  the mock provider, which no part has: B4443's cycle has no cases, B4440 and B7640 have helper cases only, and B4445's
+  four cases never reach a probe. It writes no new module. When a case shows betterlite answering differently from LiteLLM,
+  fix the module that owns that behavior (the owner is named in the part's task file) with the smallest change that makes
+  the answer match, and add a test for it next to that module's existing tests.
+
+  Moved cases. Write each from the owning task's description, DoD and pitfalls and from the LiteLLM lines it cites, under
+  the new folder with the file name the part listed. The architect removes them from the parts.
+
+  tools/oracle/cases/health/routes/shared-status/ (B4444, _health_endpoints.py L1369-L1409): shared-status-disabled.yaml
+  (no use_shared_health_check, 200 `{"shared_health_check_enabled": false, "message": "Shared health check is not
+  enabled"}`), shared-status-no-redis.yaml (`general_settings: {use_shared_health_check: true}` and no Redis, 200 with
+  redis_available false and "Redis is not configured"), shared-status-enabled.yaml (the same with Redis, the status object
+  with its pod_id and ages ignored) and shared-status-error.yaml (the 500 "Failed to retrieve shared health check status:
+  ..." as B4444 describes it).
+
+  tools/oracle/cases/health/routes/status/ (B4445): history-no-database.yaml and latest-no-database.yaml (500
+  `{"detail": {"error": "Database not initialized"}}` from _check_prisma_client), history-limit-zero-422.yaml (GET
+  /health/history?limit=0, the query validation 422 before any database check) and health-unknown-model-id-404.yaml (GET
+  /health?model_id=missing-id, 404 `{"detail": {"error": "Model with ID missing-id not found"}}`).
+
+  tools/oracle/cases/health/routes/access/ (B4446, the visibility helpers at L909-L1039 and POST /health/test_connection at
+  L2016-L2234): admin-and-view-only-see-routing-fields.yaml, non-admin-hides-routing-fields.yaml,
+  team-isolation-blocks-probe.yaml, scoped-grant-limits-team-access.yaml, deployment-id-lookup-preferred.yaml,
+  fallback-to-model-name-then-provider-string.yaml, os-environ-reference-rejected-400.yaml,
+  mismatched-credential-name-strips-config-fields.yaml, connection-test-200-with-error-status.yaml and
+  model-call-auth-rejects-unprivileged.yaml. The test_connection cases need a database (L2114 answers 500 without one), and
+  the non-admin and team cases need virtual keys, so seed keys, teams and roles with the case's `database:` fixture.
+
+  tools/oracle/cases/health/routes/services/ (B4447, L240-L612): services-no-key.yaml, services-unknown-name.yaml,
+  services-missing-name.yaml, services-mock-braintrust.yaml, services-unmatched-null.yaml, services-webhook-null.yaml,
+  services-slack-not-configured.yaml, services-teams-not-configured.yaml, services-teams-no-url.yaml and test-route.yaml.
+
+  New probe cases in tools/oracle/cases/health/probe/. Every config uses the deployment `{model_name: probe-a,
+  litellm_params: {model: openai/gpt-4o-mini, api_base: "{{upstream}}", api_key: oracle-key-a}, model_info: {id:
+  probe-a-id}}` unless the case says otherwise, every config sets `general_settings: {master_key: oracle-master}`, every
+  request is a GET with `authorization: Bearer oracle-master`, and every case compares the upstream authorization header. A healthy upstream answer is a 200 chat.completion with
+  content-type application/json, `x-ratelimit-remaining-requests: "99"` and `x-ratelimit-remaining-tokens: "9999"`; an
+  unhealthy one is a 401 with `{"error": {"message": "Incorrect API key provided", "type": "invalid_request_error", "param":
+  null, "code": "invalid_api_key"}}`. LiteLLM probes chat with a random pick of two messages and `max_tokens` 16
+  (health_check.py L139-L145, L785-L792), so no case compares the upstream body.
+
+  chat-healthy.yaml: GET /health, one healthy answer. LiteLLM answers healthy_endpoints with the model, api_base, both rate
+  limit headers copied from the upstream response and model_id, an empty unhealthy list and the two counts.
+
+  chat-unhealthy-401.yaml: the same with the 401 answer; the unhealthy endpoint carries model, api_base, error,
+  raw_request_typed_dict, model_id and exception_status 401. Ignore /unhealthy_endpoints/0/error (B6750's deviation: the
+  stack text after the message is the cause chain, not a Python traceback) and
+  /unhealthy_endpoints/0/raw_request_typed_dict/raw_request_body/messages (the random message).
+
+  details-off.yaml: chat-healthy with `health_check_details: false` added to general_settings (B9580's key); the endpoint
+  keeps only model and model_id.
+
+  two-deployments-in-order.yaml: probe-a and a second deployment probe-b with id probe-b-id, the same api_key on both so the
+  order the two probes reach the mock doesn't matter, two healthy answers; the lists follow model_list order.
+
+  model-name-filter.yaml: probe-a and probe-b with api keys oracle-key-a and oracle-key-b, GET /health?model=probe-a, one
+  answer; only probe-a is probed.
+
+  model-name-unhealthy-503.yaml: GET /health?model=probe-a with the 401 answer. A targeted request with no healthy
+  endpoint is status 503 with the usual body (L1182-L1183); ignore the same two pointers as chat-unhealthy-401.
+
+  model-id-filter.yaml: two deployments both named probe-shared with ids probe-a-id and probe-b-id and keys oracle-key-a and
+  oracle-key-b, GET /health?model_id=probe-b-id, one answer; only probe-b-id is probed and reported.
+
+  health-check-model-shown.yaml: probe-a with `model_info.health_check_model: openai/gpt-4o`. LiteLLM writes the override
+  into the copied litellm_params in place (L800-L802) and later builds the endpoint from that same dict (L627-L631), so the
+  healthy endpoint reports model openai/gpt-4o.
+
+  no-key-401.yaml: GET /health with no key header and no upstream answer; the auth pipeline answers 401 before the handler.
+  Ignore /error/message only, as tools/oracle/cases/auth/wrong-key.yaml does.
+
+  Run the cases with `cargo run --locked -p betterlite-oracle -- --self-check <folder>` first, to see that LiteLLM answers the
+  same twice and that each ignore is needed, then without --self-check against the built gateway.
+scope:
+  paths:
+    - tools/oracle/cases/health/probe/**
+    - tools/oracle/cases/health/routes/**
+    - crates/betterlite-server/src/app/health.rs
+    - crates/betterlite-server/src/app/health/**
+    - crates/betterlite-server/src/state/health.rs
+    - crates/betterlite-server/src/state/health/**
+    - crates/betterlite-server/src/health_shared.rs
+    - crates/betterlite-server/src/health_shared/**
+    - crates/betterlite-server/src/health_status_routes.rs
+    - crates/betterlite-server/src/health_status_routes/**
+    - crates/betterlite-server/src/health_access_and_connections.rs
+    - crates/betterlite-server/src/health_access_and_connections/**
+    - crates/betterlite-server/src/health_services.rs
+    - crates/betterlite-server/src/health_services/**
+    - crates/betterlite-server/src/health_cycle.rs
+    - crates/betterlite-server/src/health_cycle/**
+    - crates/betterlite-server/src/health_probe_settings.rs
+    - crates/betterlite-server/src/health_probe_settings/**
+    - crates/betterlite-server/src/health_probe_modes.rs
+    - crates/betterlite-server/src/health_probe_modes/**
+    - crates/betterlite-server/src/health_check_entry.rs
+    - crates/betterlite-server/src/health_check_entry/**
+    - crates/betterlite-server/src/health_native_backend.rs
+    - crates/betterlite-server/src/health_native_backend/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1123-L1294
+    why: GET /health, its model and model_id targeting, the targeted 503 and the admin-only field handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1042-L1087
+    why: The result shape with the two lists and the two counts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1297-L1409
+    why: /health/history, /health/latest and /health/shared-status, for the moved status and shared-status cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L2016-L2234
+    why: POST /health/test_connection, for the moved access cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L240-L612
+    why: GET /test and GET /health/services, for the moved services cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L36-L64
+    why: The display field sets that decide which keys an endpoint shows, with and without details.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L514-L655
+    why: How each deployment is probed and how its result becomes a healthy or unhealthy endpoint with model_id and exception_status.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_check.py#L754-L802
+    why: The probe request edits (messages, max_tokens, health_check_model) made in place on the deployment's litellm_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8812-L8831
+    why: The unhealthy result's error text and raw_request_typed_dict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_utils.py#L19-L30
+    why: The three upstream response headers a healthy endpoint copies.
+  - url: https://docs.litellm.ai/docs/proxy/health
+    why: The user docs for GET /health and its model and model_id filters.
+dod:
+  - text: The 28 moved cases of B4444, B4445, B4446 and B4447 match LiteLLM through the booted proxy.
+    proof: [route-cases, oracle]
+  - text: GET /health probes the mock provider and reports healthy and unhealthy endpoints, the details switch, the model and model_id filters, the targeted 503 and the health_check_model display exactly as LiteLLM does.
+    proof: [probe-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: route-cases
+      why: Without the moved case files the oracle proof checks none of the four parts' routes
+      run: >-
+        test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/health/routes | wc -l)" -eq 28
+    - id: probe-cases
+      why: Without the probe case files the oracle proof never runs a health probe
+      run: >-
+        test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/health/probe | wc -l)" -eq 9
+oracle_cases:
+  - tools/oracle/cases/health/routes/shared-status/shared-status-disabled.yaml
+  - tools/oracle/cases/health/routes/shared-status/shared-status-enabled.yaml
+  - tools/oracle/cases/health/routes/shared-status/shared-status-no-redis.yaml
+  - tools/oracle/cases/health/routes/shared-status/shared-status-error.yaml
+  - tools/oracle/cases/health/routes/status/history-no-database.yaml
+  - tools/oracle/cases/health/routes/status/latest-no-database.yaml
+  - tools/oracle/cases/health/routes/status/history-limit-zero-422.yaml
+  - tools/oracle/cases/health/routes/status/health-unknown-model-id-404.yaml
+  - tools/oracle/cases/health/routes/access/admin-and-view-only-see-routing-fields.yaml
+  - tools/oracle/cases/health/routes/access/non-admin-hides-routing-fields.yaml
+  - tools/oracle/cases/health/routes/access/team-isolation-blocks-probe.yaml
+  - tools/oracle/cases/health/routes/access/scoped-grant-limits-team-access.yaml
+  - tools/oracle/cases/health/routes/access/deployment-id-lookup-preferred.yaml
+  - tools/oracle/cases/health/routes/access/fallback-to-model-name-then-provider-string.yaml
+  - tools/oracle/cases/health/routes/access/os-environ-reference-rejected-400.yaml
+  - tools/oracle/cases/health/routes/access/mismatched-credential-name-strips-config-fields.yaml
+  - tools/oracle/cases/health/routes/access/connection-test-200-with-error-status.yaml
+  - tools/oracle/cases/health/routes/access/model-call-auth-rejects-unprivileged.yaml
+  - tools/oracle/cases/health/routes/services/services-no-key.yaml
+  - tools/oracle/cases/health/routes/services/services-unknown-name.yaml
+  - tools/oracle/cases/health/routes/services/services-missing-name.yaml
+  - tools/oracle/cases/health/routes/services/services-mock-braintrust.yaml
+  - tools/oracle/cases/health/routes/services/services-unmatched-null.yaml
+  - tools/oracle/cases/health/routes/services/services-webhook-null.yaml
+  - tools/oracle/cases/health/routes/services/services-slack-not-configured.yaml
+  - tools/oracle/cases/health/routes/services/services-teams-not-configured.yaml
+  - tools/oracle/cases/health/routes/services/services-teams-no-url.yaml
+  - tools/oracle/cases/health/routes/services/test-route.yaml
+  - tools/oracle/cases/health/probe/chat-healthy.yaml
+  - tools/oracle/cases/health/probe/chat-unhealthy-401.yaml
+  - tools/oracle/cases/health/probe/details-off.yaml
+  - tools/oracle/cases/health/probe/two-deployments-in-order.yaml
+  - tools/oracle/cases/health/probe/model-name-filter.yaml
+  - tools/oracle/cases/health/probe/model-name-unhealthy-503.yaml
+  - tools/oracle/cases/health/probe/model-id-filter.yaml
+  - tools/oracle/cases/health/probe/health-check-model-shown.yaml
+  - tools/oracle/cases/health/probe/no-key-401.yaml
+deviations: []
+out_of_scope:
+  - "Building any health route, helper or adapter: B4440 to B4449, B6750 and B7640 own the logic, B8540 mounts the routers and implements the adapters, B9580 parses the general_settings keys. This task only adds cases and fixes what they show."
+  - "B4448's readiness, drain, backlog, license, OPTIONS, /settings and /active/callbacks cases and B8540's four wiring cases: B8540 holds them."
+  - "Embedding and text completion probes through GET /health: B8540 records them as a deviation (UnavailableProbe), so no case here uses a non-chat mode."
+  - "GET /health with background_health_checks on: the first background cycle races the request at startup (proxy_server.py L1523-L1524), so the cache path is proven by B8540's start test and B4445's health_ tests, not by a case."
+  - "The CLI model path (user_model from `litellm --model`): the oracle boots both proxies from a config file only, so B4445's tests cover it."
+pitfalls:
+  - The healthy endpoint copies x-ratelimit-remaining-requests, x-ratelimit-remaining-tokens and x-ms-region from the upstream response headers only when present, so a mock answer without them gives an endpoint without them.
+  - exception_status and model_id appear only on a deployment that has model_info.id; keep the id in every probe config or the shape changes.
+  - Two probes run concurrently, so a case with two deployments and different upstream answers or keys is order-dependent; give both the same answer and key unless a filter leaves one probe.
+  - A request with model or model_id and no healthy endpoint is 503 with the normal body, while the same failure on plain GET /health stays 200.
+  - The master key caller is a proxy admin, so api_base stays in every probe case; the non-admin stripping and the Litellm-Health-Field-Notice header are proven by the moved access cases.
+  - The shared-status cases read general_settings.use_shared_health_check through B9580's section; without it the config fails to load.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

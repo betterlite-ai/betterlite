@@ -491,3 +491,36 @@ fn bounds_cached_json_input() {
     bytes.push(b' ');
     assert_eq!(decode_cached_json(&bytes), CacheValue::Null);
 }
+
+#[test]
+fn lists_stored_expiries_in_key_order_and_keeps_expired_ones() {
+    let now = Arc::new(Mutex::new(0.0_f64));
+    let clock = Arc::clone(&now);
+    let mut shared = timed_cache(5, 1024, Arc::new(move || *clock.lock().unwrap()));
+    shared.set("b", CacheValue::Null, Some(20.0_f64)).unwrap();
+    shared.set("a", CacheValue::Null, Some(20.0_f64)).unwrap();
+    shared.set("c", CacheValue::Null, Some(5.0_f64)).unwrap();
+    assert_eq!(
+        shared.ttl_entries(),
+        vec![
+            ("a".to_owned(), 20.0_f64),
+            ("b".to_owned(), 20.0_f64),
+            ("c".to_owned(), 5.0_f64)
+        ]
+    );
+    *now.lock().unwrap() = 100.0_f64;
+    assert_eq!(shared.ttl_entries().len(), 3);
+    assert_eq!(shared.get("c").unwrap(), None);
+    assert_eq!(shared.ttl_entries().len(), 2);
+}
+
+#[test]
+fn clear_drops_values_expiries_and_heap() {
+    let mut shared = cache(0.0_f64);
+    shared.set("a", CacheValue::Null, Some(5.0_f64)).unwrap();
+    shared.clear();
+    assert!(shared.values.is_empty() && shared.expiries.is_empty() && shared.heap.is_empty());
+    assert_eq!(shared.get("a").unwrap(), None);
+    shared.set("b", CacheValue::Null, None).unwrap();
+    assert_eq!(shared.ttl_entries(), vec![("b".to_owned(), 600.0_f64)]);
+}

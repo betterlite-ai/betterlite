@@ -1,0 +1,16 @@
+kind: helper
+name: langfuse-trace-id-hash
+call:
+  b3901:
+    steps:
+      - function: resolve_trace_id
+        input: "hello"
+      - function: resolve_trace_id
+        input: "not-a-uuid"
+      - function: resolve_trace_id
+        input: "123e4567e89b12d3a45642661417400"
+      - function: resolve_trace_id
+        input: "00000000000000000000000000000000"
+env: {}
+compare:
+  ignore: []

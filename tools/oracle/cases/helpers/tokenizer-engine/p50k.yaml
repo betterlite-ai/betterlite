@@ -1,0 +1,9 @@
+kind: helper
+name: p50k
+call:
+  tokenizer_engine:
+    operation: encode
+    engine: p50k_base
+    text: hello world
+env: {}
+compare: {ignore: []}

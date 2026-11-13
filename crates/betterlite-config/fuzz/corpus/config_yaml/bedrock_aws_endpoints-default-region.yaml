@@ -1,0 +1,2 @@
+# AWS_DEFAULT_REGION is read directly from the process environment
+model_list: []

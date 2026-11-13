@@ -1,0 +1,14 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-server-custom-scheme",
+  "call": {
+    "b3843": {
+      "function": "server_info",
+      "value": "custom://Example.COM:9000/path"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

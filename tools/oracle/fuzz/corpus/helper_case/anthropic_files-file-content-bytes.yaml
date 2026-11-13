@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-files-content-seed
+call:
+  anthropic_files:
+    file_content_bytes:
+      file_ids: [msgbatch_seed]
+      status: 200
+      headers: []
+      body: [0]
+      error: {status: 500, message: boom, headers: []}
+env: {}
+compare: {ignore: []}

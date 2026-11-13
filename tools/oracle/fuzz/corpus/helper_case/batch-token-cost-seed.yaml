@@ -1,0 +1,21 @@
+kind: helper
+name: batch-token-cost-seed
+call:
+  batch_token_cost:
+    kind: calculator
+    model: gpt-4o
+    custom_llm_provider: openai
+    usage:
+      prompt_tokens: 1000
+      completion_tokens: 100
+      prompt_details: {audio_tokens: 10, image_tokens: 5, video_tokens: 1}
+      cache_read_tokens: 20
+    prompt_extras: {cache_creation_tokens: 10}
+    model_info:
+      input_cost_per_token_batches: 0.5
+      output_cost_per_token_batches: 1
+      cache_read_input_token_cost_batches: 0.25
+      cache_creation_input_token_cost_batches: 0
+    data_residency: us
+env: {}
+compare: {ignore: []}

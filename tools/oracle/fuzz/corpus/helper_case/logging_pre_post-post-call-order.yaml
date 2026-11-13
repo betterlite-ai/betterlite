@@ -1,0 +1,6 @@
+kind: helper
+name: logging-pre-post-post-call-order
+call:
+  logging_pre_post: {"action": "post", "verbose": true, "messages": [{"role": "user", "content": "hello"}], "input": [{"role": "user", "content": "call input"}], "original_response": {"id": "r1", "n": "one"}, "additional_args": {"api_base": "https://api.example.com/v1", "headers": {"x-trace": "t1"}}}
+env: {}
+compare: {ignore: []}

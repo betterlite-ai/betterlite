@@ -1,16 +1,15 @@
 id: B383
 title: Router budget configuration and windows
-description: 'Implement ProviderBudget, DeploymentBudget, TagBudget and BudgetWindow over B071 duration
-  parsing and B360 Decimal storage. Own start/reset keys, initial budgets and catalog registration/removal;
+description: 'Implement ProviderBudget, DeploymentBudget, TagBudget and BudgetWindow over B199 duration
+  parsing (`betterlite_core::duration`, its `parse_budget_duration` and `duration_in_seconds`; betterlite-router has no internal dependencies and betterlite-core depends on betterlite-config, so the betterlite-server part parses the strings and hands the router typed durations) and B360 Decimal storage. Own start/reset keys, initial budgets and catalog registration/removal;
   keep zero budgets intact for B020 fail-open filtering. B326 owns success-spend updates and flushing.
   Configuration boundary keys introduced or consumed here: provider_budget_config, max_budget, budget_duration,
   tag_budget_config. Pinned declaration defaults: max_budget=None; budget_duration=None. Resolve env values
   once in betterlite-config, never in router code. provider_budget_config maps provider names to budget_limit
   and time_period; deployment max_budget/budget_duration and tag budgets remain typed Decimal/duration
   data. Budget synchronization uses its local constant 1 second, not the generic counter env override.
-  Implement the owned native service in crates/betterlite-router/src/budget_windows.rs. Add ProbeOperation::BudgetWindows
-  in tools/oracle/src/router_probes/mod.rs and the corresponding B383 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Implement the owned native service in crates/betterlite-router/src/budget_windows.rs. B301 registers ProbeOperation::BudgetWindows and its Python entry as stubs, so fill only tools/oracle/src/router_probes/budget_windows.rs and tools/oracle/litellm/probes/budget_windows.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_strategy/budget_limiter.py:
@@ -20,26 +19,16 @@ description: 'Implement ProviderBudget, DeploymentBudget, TagBudget and BudgetWi
   (L819-L844), RouterBudgetLimiting._init_provider_budgets (L846-L867), RouterBudgetLimiting._init_deployment_budgets
   (L869-L897), RouterBudgetLimiting.register_deployment_budget (L899-L906), RouterBudgetLimiting.unregister_deployment_budget
   (L908-L913). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B020 and B326 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/budget_windows.rs
   - crates/betterlite-router/src/budget_windows/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/budget_windows.rs
   - crates/betterlite-server/src/routing/budget_windows/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/budget_windows.rs
   - tools/oracle/src/router_probes/budget_windows/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/budget_windows.py
   - tools/oracle/cases/routing/budget-windows/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/budget-windows-*

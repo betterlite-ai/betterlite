@@ -1,0 +1,11 @@
+kind: helper
+name: weave-dynamic-headers
+call:
+  b3850:
+    function: weave_dynamic_headers
+    params:
+      wandb_api_key: abc
+      weave_project_id: entity/project
+env: {}
+compare:
+  ignore: []

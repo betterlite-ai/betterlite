@@ -1,0 +1,13 @@
+id: B8747
+milestone: M8 platform
+title: Prompt manager arms for the callback factory and their catalog names
+status: todo
+depends_on: [B8655, B8742, B8741, B8560, B4058, B4052, B4054, B4056, B3968, B3908, B4126]
+file: tasks/B8747-prompt-factory-arms.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

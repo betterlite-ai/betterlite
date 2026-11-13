@@ -1,0 +1,26 @@
+kind: helper
+name: gradient-null-options-and-empty-key
+call:
+  agent_host_policy:
+    scenarios:
+      - environment:
+          GRADIENT_AI_API_KEY: ""
+        calls:
+          - {op: gradient_validate}
+          - {op: gradient_validate, api_key: explicit-key}
+          - {op: gradient_validate, headers: {authorization: mine, Content-Type: text/plain}}
+          - {op: gradient_validate, api_key: "", headers: {Authorization: mine}}
+      - environment: {}
+        calls:
+          - {op: gradient_params, params: {temperature: null, max_completion_tokens: 5, max_tokens: 7, stop: [a, b], k: 0}}
+      - environment: {}
+        calls:
+          - {op: gradient_params, params: {top_k: 1, temperature: 0.5}}
+      - environment: {}
+        calls:
+          - {op: gradient_params, params: {top_k: 1, temperature: 0.5}, drop_params: true}
+      - environment: {}
+        calls:
+          - {op: gradient_validate}
+env: {}
+compare: {ignore: []}

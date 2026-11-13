@@ -2,7 +2,7 @@ id: B202
 milestone: M1 openai data plane
 title: OpenAI text completions
 status: todo
-depends_on: [B010, B011, B014, B193, B2237, B2238]
+depends_on: [B010, B011, B014, B193, B2237, B2238, B1100]
 file: tasks/B202-text-completions.yaml
 covers:
   - "litellm/main.py"

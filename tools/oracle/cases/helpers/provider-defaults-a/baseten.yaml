@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-a-baseten
+call:
+  provider_defaults_a:
+    provider: baseten
+    model: abc12345
+env: {}
+compare: {ignore: []}

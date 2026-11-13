@@ -1,0 +1,11 @@
+task: B8154
+deviations:
+  - what: >-
+      split_embedding_by_shape rejects negative shape values, a count larger than the data sent,
+      and a count times width that overflows usize, where LiteLLM's Python slicing returns short
+      or empty chunks for those shapes.
+    why: >-
+      A working Triton server sends shape[0] * shape[1] == len(data); these shapes only become
+      silent empty vectors under Python slicing, and returning them would let a caller allocate
+      without bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/triton/embedding/transformation.py#L136-L141

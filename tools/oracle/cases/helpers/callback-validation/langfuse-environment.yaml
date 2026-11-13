@@ -1,0 +1,133 @@
+{
+  "kind": "helper",
+  "name": "callback-validation-langfuse-environment",
+  "call": {
+    "callback_validation": {
+      "steps": [
+        {
+          "function": "langfuse_environment_error",
+          "callback_vars": {
+            "langfuse_environment": "prod-1_x"
+          }
+        },
+        {
+          "function": "langfuse_environment_error",
+          "callback_vars": {
+            "langfuse_environment": "Prod"
+          }
+        },
+        {
+          "function": "langfuse_environment_error",
+          "callback_vars": {
+            "langfuse_environment": "langfuse-dev"
+          }
+        },
+        {
+          "function": "langfuse_environment_error",
+          "callback_vars": {
+            "langfuse_environment": ""
+          }
+        },
+        {
+          "function": "langfuse_environment_error",
+          "callback_vars": {
+            "langfuse_environment": "a b"
+          }
+        },
+        {
+          "function": "langfuse_environment_error",
+          "callback_vars": {
+            "other": "Prod"
+          }
+        },
+        {
+          "function": "callback_config_error",
+          "callback_name": "langfuse",
+          "callback_vars": {
+            "langfuse_environment": "Bad",
+            "langfuse_span_scope": "x"
+          }
+        },
+        {
+          "function": "callback_config_error",
+          "callback_name": "langfuse",
+          "callback_vars": {
+            "langfuse_environment": "ok"
+          }
+        },
+        {
+          "function": "callback_config_error",
+          "callback_name": "langfuse",
+          "callback_vars": {}
+        },
+        {
+          "function": "callback_config_error",
+          "callback_name": "langfuse",
+          "callback_vars": {
+            "arize_error_sampling_rate": "0.5",
+            "langfuse_environment": "Bad"
+          }
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": [
+              {
+                "callback_name": "langfuse",
+                "callback_vars": {
+                  "langfuse_environment": "Bad"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": [
+              {
+                "callback_name": "langfuse",
+                "callback_vars": {
+                  "turn_off_message_logging": true
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": [
+      {
+        "pointer": "/value/1/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/2/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/3/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/4/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/6/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/9/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/10/error/message",
+        "why": "betterlite writes its own message"
+      }
+    ]
+  }
+}

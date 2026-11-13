@@ -6,26 +6,39 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+betterlite-env = { path = "../betterlite-env" }
+betterlite-error = { path = "../betterlite-error" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 fancy-regex = "0.19.2"
+futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
+hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+lru = "0.18.5"
+percent-encoding.workspace = true
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
 serde_path_to_error = "0.1.20"
 serde_repr = "0.1.21"
-serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
+sha1 = "0.11.0"
 speedate = "0.18.0"
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 unicode-general-category = "1.1.0"
+unicode-normalization = "0.1.26"
 url = "2.5.8"
+uuid.workspace = true
 
 [dev-dependencies]
+betterlite-context = { path = "../betterlite-context" }
 rstest = "=0.27.0"
+tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true

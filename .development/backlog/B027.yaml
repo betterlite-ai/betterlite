@@ -2,7 +2,7 @@ id: B027
 milestone: M3 providers
 title: Anthropic provider
 status: todo
-depends_on: [B010, B584, B585, B586, B587, B588, B576, B567, B198, B196, B249, B187, B129, B171, B2230]
+depends_on: [B010, B584, B585, B586, B587, B588, B576, B567, B198, B196, B249, B187, B8500, B171, B2230]
 file: tasks/B027-anthropic-provider.yaml
 covers:
   - "litellm/llms/anthropic/__init__.py"

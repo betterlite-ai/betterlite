@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-prompt-duplicate-content-seed
+call:
+  bedrock_prompt:
+    messages:
+      - {role: user, content: go}
+      - role: assistant
+        content: null
+        tool_calls:
+          - {id: dup, type: function, function: {name: first, arguments: '{}'}}
+          - {id: dup, type: function, function: {name: second, arguments: '{}'}}
+      - {role: tool, tool_call_id: dup, content: one}
+      - {role: tool, tool_call_id: dup, content: two}
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+env: {}
+compare: {ignore: []}

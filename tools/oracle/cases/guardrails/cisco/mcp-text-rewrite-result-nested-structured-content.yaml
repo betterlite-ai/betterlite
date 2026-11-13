@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-text-rewrite-result-nested-structured-content
+call: {b3761: {function: rewrite_text, response: {jsonrpc: "2.0", id: 1, result: {structuredContent: {result: old}}}, text: new}}
+env: {}
+compare: {ignore: []}

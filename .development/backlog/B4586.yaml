@@ -1,0 +1,13 @@
+id: B4586
+milestone: M8 platform
+title: Rust status line subcommand and removal of the Python CLI folder
+status: todo
+depends_on: [B192, B4580, B5140]
+file: tasks/B4586-cli-status-line.yaml
+covers: []
+parent: B134
+split_from: B4561
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

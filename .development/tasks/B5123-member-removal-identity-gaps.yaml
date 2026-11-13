@@ -1,0 +1,156 @@
+id: B5123
+title: Close the B2363 member removal identity test gaps
+description: >-
+  B2363 built the member removal identity rules in betterlite-db::member_removal_identity. An Opus
+  review after merge found five gaps: four tests that can't fail on the behavior they name, and one
+  branch with no test at all. The code in identity.rs, matching.rs, duplicates.rs and filters.rs
+  already does what LiteLLM does, so this task changes no source file. It rewrites and adds rstest
+  cases in crates/betterlite-db/src/member_removal_identity/tests.rs and adds six helper oracle cases
+  under tools/oracle/cases/helpers/member-removal-identity/ that call the existing
+  member_removal_identity operation. For every new Rust case the worker applies the mutation named
+  below, watches the case fail, and reverts the mutation before committing. The oracle cases pin the
+  expected answers to LiteLLM's own functions.
+
+  Gap one. LiteLLM's _same_email checks that the requested email is not None and then compares the
+  two strings with plain == (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L177-L178),
+  so case and whitespace both count. The case email_exact_case_and_whitespace in same_email_matching
+  changes the case and adds a trailing space in one input ("Alice@Example.com " against
+  "alice@example.com"). A same_email that only folds case, or only trims, still answers false there,
+  so the case can't fail on either bug. Replace it with email_case_only_differs (candidate
+  "Alice@example.com", request "alice@example.com", false) and email_trailing_space_differs
+  (candidate "a@example.com ", request "a@example.com", false). The first fails once
+  requested == candidate becomes requested.eq_ignore_ascii_case(candidate), the second once both
+  sides are trimmed. Add same-email-case-only.yaml, a same_email oracle case whose emails differ only
+  in case.
+
+  Gap two. The same line answers False when the request has no email, even when the candidate has
+  none either. null_email_never_matches pairs a null request email with a present candidate, a pair
+  that never matches anyway, so it stays green if same_email turns into
+  request.user_email.as_deref() == candidate_email. Keep it and add both_emails_null (candidate None,
+  request email None, false), plus same-email-both-null.yaml with candidate_email null, user_id "u1"
+  and user_email null. Through addresses_member and addresses_user this pair can't occur today:
+  LiteLLM's MemberBase validator (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L29-L36)
+  and betterlite's MemberBase decoder both reject a member with neither identifier. The case pins
+  same_email's own contract, and the helper calls same_email directly.
+
+  Gap three. LiteLLM's _addresses_member sends an email-only request straight to _same_email against
+  the roster entry's email, whatever user_id the entry has
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L181-L184).
+  Every addresses_member_matching case and roster-versus-user-match.yaml send an ID request, so
+  nothing runs the let-else branch on matching.rs lines 17 and 18. If that branch returned false, a
+  bulk removal by email would remove nobody and every test would stay green. Add
+  email_only_matches_roster_email (request None and "a@example.com" against roster entry "u9" and
+  "a@example.com", true) and email_only_rejects_other_email (the same request against "u9" and
+  "b@example.com", false). They fail once the branch returns false or true. Add
+  roster-email-only-request.yaml with the matching pair.
+
+  Gap four. LiteLLM's _addresses_user compares only user_id when the request has one, and only
+  user_email when it doesn't
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L193-L196).
+  That is stricter than the roster rule in gap three. user_row_id_overrides_email only checks an ID
+  request whose user_id equals the row's. It stays green if the request.user_id.is_none() guard on
+  matching.rs line 31 goes, so an ID request matches another user's row by email, and also if
+  matches_by_email is deleted. No oracle case calls addresses_user. Turn the #[test] into an rstest
+  named addresses_user_matching that keeps user_row_id_overrides_email as its first case and adds
+  id_request_ignores_row_email (request "u1" and "a@example.com" against row "u2" and
+  "a@example.com", false) and email_only_matches_row_email (request None and "a@example.com" against
+  the same row, true). The first fails without the guard, the second without matches_by_email. Add
+  user-row-id-request-ignores-email.yaml and user-row-email-only-request.yaml with those two inputs.
+
+  Gap five. LiteLLM's _duplicate_member_indexes marks an entry when an earlier one has the same
+  non-null user_id or the same non-null user_email
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L301-L310),
+  so two email-only entries with different emails are not duplicates. Neither the duplicate_indexes
+  cases nor original-duplicate-indexes.yaml hold two entries with a null user_id and different
+  emails. Dropping request.user_id.is_some() on duplicates.rs line 18 makes None equal None, so a
+  bulk delete naming two different emails would reject the second one as a duplicate, and every
+  test stays green. Add email_only_requests_differ (entries None and "e1", None and "e2", expecting
+  no indexes) and duplicate-indexes-email-only.yaml with the same two requests.
+scope:
+  paths:
+    - crates/betterlite-db/src/member_removal_identity/tests.rs
+    - tools/oracle/cases/helpers/member-removal-identity/same-email-case-only.yaml
+    - tools/oracle/cases/helpers/member-removal-identity/same-email-both-null.yaml
+    - tools/oracle/cases/helpers/member-removal-identity/roster-email-only-request.yaml
+    - tools/oracle/cases/helpers/member-removal-identity/user-row-id-request-ignores-email.yaml
+    - tools/oracle/cases/helpers/member-removal-identity/user-row-email-only-request.yaml
+    - tools/oracle/cases/helpers/member-removal-identity/duplicate-indexes-email-only.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L177-L196
+    why: _same_email needs a non-null requested email and exact equality, _addresses_member matches an email-only request by email alone, and _addresses_user ignores the row's email once the request has a user_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L301-L310
+    why: Duplicate detection counts a shared user_id or email only when it is not None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/team.py#L29-L36
+    why: Member rejects a roster entry with neither identifier, so same_email with two null emails is only reachable through the helper's direct same_email call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L231-L252
+    why: The team removal transaction runs every request through _addresses_member and _addresses_user, so a broken email-only branch removes nobody.
+dod:
+  - text: >-
+      same_email_matching no longer has email_exact_case_and_whitespace. It has email_case_only_differs
+      and email_trailing_space_differs instead, and each fails against its own mutation (case folding,
+      trimming). same-email-case-only.yaml gives false on both sides.
+    proof: [email-exact-cases, module-tests, oracle]
+  - text: >-
+      same_email_matching has both_emails_null. It fails once same_email drops its non-null check
+      on the requested email. same-email-both-null.yaml gives false on both sides.
+    proof: [null-email-cases, oracle]
+  - text: >-
+      addresses_member_matching has email_only_matches_roster_email and email_only_rejects_other_email,
+      which fail once the email-only branch in addresses_member returns false or true.
+      roster-email-only-request.yaml gives true on both sides.
+    proof: [roster-email-only-cases, oracle]
+  - text: >-
+      addresses_user_matching is an rstest with user_row_id_overrides_email, id_request_ignores_row_email
+      and email_only_matches_row_email. The second fails without the request.user_id.is_none() guard,
+      the third without matches_by_email. user-row-id-request-ignores-email.yaml gives false and
+      user-row-email-only-request.yaml gives true on both sides.
+    proof: [user-row-cases, module-tests, oracle]
+  - text: >-
+      duplicate_indexes has email_only_requests_differ. It fails once shares_identity drops
+      request.user_id.is_some(). duplicate-indexes-email-only.yaml gives an empty list on both sides.
+    proof: [duplicate-email-only-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: email-exact-cases
+      why: the combined case and whitespace case can't fail on a same_email that only folds case or only trims
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/member-removal-identity/same-email-case-only.yaml)" && ! grep -q email_exact_case_and_whitespace crates/betterlite-db/src/member_removal_identity/tests.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^member_removal_identity::tests::same_email_matching::case_[0-9]+_email_case_only_differs$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^member_removal_identity::tests::same_email_matching::case_[0-9]+_email_trailing_space_differs$/)'
+    - id: null-email-cases
+      why: no case pairs two null emails, so same_email can drop its non-null check unseen
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/member-removal-identity/same-email-both-null.yaml)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^member_removal_identity::tests::same_email_matching::case_[0-9]+_both_emails_null$/)'
+    - id: roster-email-only-cases
+      why: no test or case sends an email-only request to addresses_member
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/member-removal-identity/roster-email-only-request.yaml)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^member_removal_identity::tests::addresses_member_matching::case_[0-9]+_email_only_matches_roster_email$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^member_removal_identity::tests::addresses_member_matching::case_[0-9]+_email_only_rejects_other_email$/)'
+    - id: user-row-cases
+      why: addresses_user has one test for a matching ID and no oracle case, so its email rule can change unseen
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/member-removal-identity/user-row-id-request-ignores-email.yaml)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/member-removal-identity/user-row-email-only-request.yaml)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^member_removal_identity::tests::addresses_user_matching::case_[0-9]+_user_row_id_overrides_email$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^member_removal_identity::tests::addresses_user_matching::case_[0-9]+_id_request_ignores_row_email$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^member_removal_identity::tests::addresses_user_matching::case_[0-9]+_email_only_matches_row_email$/)'
+    - id: duplicate-email-only-cases
+      why: no duplicate case holds two email-only entries, so the user_id guard can go unseen
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/member-removal-identity/duplicate-indexes-email-only.yaml)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^member_removal_identity::tests::duplicate_indexes::case_[0-9]+_email_only_requests_differ$/)'
+    - id: module-tests
+      why: the rewritten tests.rs must keep every existing member_removal_identity test passing, not only the new cases
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-db/src/member_removal_identity/tests.rs)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^member_removal_identity::tests::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/member-removal-identity/same-email-case-only.yaml
+  - tools/oracle/cases/helpers/member-removal-identity/same-email-both-null.yaml
+  - tools/oracle/cases/helpers/member-removal-identity/roster-email-only-request.yaml
+  - tools/oracle/cases/helpers/member-removal-identity/user-row-id-request-ignores-email.yaml
+  - tools/oracle/cases/helpers/member-removal-identity/user-row-email-only-request.yaml
+  - tools/oracle/cases/helpers/member-removal-identity/duplicate-indexes-email-only.yaml
+deviations: []
+out_of_scope:
+  - identity.rs, matching.rs, duplicates.rs and filters.rs. They already follow LiteLLM, and every kept finding is a missing or weak test, so no source line changes.
+  - The helper adapters tools/oracle/src/helpers/db/member_removal_identity.rs and tools/oracle/helpers/member_removal_identity.py. The same_email, addresses_member, addresses_user and duplicate_indexes operations already exist, so this task adds cases but no operation and no corpus seed.
+  - Padded one-line functions in this module or its adapters belong to B5094, since it clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task does not touch .ast-grep/rules/.
+  - The team members bulk_delete route that calls these rules, and its HTTP oracle cases, stay with B1202 and B067.
+pitfalls:
+  - The Python adapter reads candidate_email, user_id and user_email with input_value[...], so every same_email, addresses_member and addresses_user oracle case spells each key, with null where it is absent; serde reads a missing key as None, but LiteLLM's side fails with KeyError.
+  - MemberDeleteRequest rejects a request with neither identifier before _same_email runs, so same-email-both-null.yaml sends user_id "u1"; only the Rust case builds a request with both fields None, through the struct literal.
+  - The roster rule and the user-row rule disagree for an ID request, so copying the addresses_member_matching expectations into addresses_user_matching gives the wrong answer for a row with another user_id and the same email.
+  - email_only_requests_differ needs two different emails; with one email the email rule alone marks the second entry and the case can't fail on the user_id guard.
+  - An addresses_member oracle case's member needs role "user" or "admin", since both Member types require it, while a user row needs only user_id and user_email because every other LiteLLM_UserTable and LiteLLMUserTable field has a default.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

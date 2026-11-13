@@ -1,0 +1,21 @@
+kind: helper
+name: guardrail-header-recorded
+call:
+  b3737:
+    pre_call:
+      settings:
+        auth_token: test-token
+        detector_id: jailbreak-detector
+      data:
+        messages:
+          - {role: user, content: hello}
+        metadata:
+          applied_guardrails: [other]
+          user: ada
+        litellm_metadata: {}
+      answer:
+        status: 200
+        headers: {}
+        body: [[]]
+env: {}
+compare: {ignore: []}

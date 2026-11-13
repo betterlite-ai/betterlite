@@ -1,0 +1,27 @@
+kind: helper
+name: database-availability-permanent-versus-transient
+call:
+  database_availability:
+    scenarios:
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused, cause: 1}
+          - {kind: database, error_type: prisma, message: query engine crashed}
+      - chain:
+          - {kind: database, error_type: prisma, message: query engine crashed}
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused}
+      - chain:
+          - {kind: database, error_type: prisma, message: cannot reach database server}
+      - chain:
+          - {kind: database, error_type: engine_connection, message: engine is gone}
+      - chain:
+          - {kind: database, error_type: data, message: invalid byte sequence}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/0/error/message, why: betterlite writes its own message}
+    - {pointer: /value/1/error/message, why: betterlite writes its own message}
+    - {pointer: /value/2/error/message, why: betterlite writes its own message}
+    - {pointer: /value/3/error/message, why: betterlite writes its own message}
+    - {pointer: /value/4/error/message, why: betterlite writes its own message}
+    - {pointer: /value/5/error/message, why: betterlite writes its own message}

@@ -1,0 +1,12 @@
+kind: helper
+name: native-errors-a-huggingface-length-limit-before-user-token
+call:
+  native_errors_a:
+    provider: huggingface
+    model: hf/model-a
+    error_str: "length limit exceeded; A valid user token is required"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

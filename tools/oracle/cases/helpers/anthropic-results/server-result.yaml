@@ -1,0 +1,15 @@
+kind: helper
+name: anthropic-results-server-result
+call:
+  anthropic_results:
+    function: server_tool_result
+    tool_id: shared
+    web_search_results:
+      - {tool_use_id: other, result: elsewhere}
+      - 1
+    tool_results:
+      - {tool_use_id: shared, result: tool}
+      - {tool_use_id: shared, result: later}
+env: {}
+compare:
+  ignore: []

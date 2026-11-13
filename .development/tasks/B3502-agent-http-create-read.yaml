@@ -1,0 +1,83 @@
+id: B3502
+title: Send managed-agent create list and get requests
+description: >-
+  Build the outbound HTTP calls that create an agent, list agents and get one agent by name, in the new module betterlite_http::interactions::agents_create_read (crates/betterlite-http/src/interactions/agents_create_read.rs).
+  LiteLLM's AgentsHTTPHandler has six request methods; this task owns create_agent, list_agents and get_agent, each with a sync and an async form. Delete and list-versions belong to B3503, which uses its own module.
+  The Rust form has no _is_async switch. Write one blocking function and one async function per operation (create_agent and async_create_agent, list_agents and async_list_agents, get_agent and async_get_agent). The shared client resolution comes from B3492's base module: the blocking form calls its sync client resolver, the async form calls its async client resolver, and both pass the optional caller-supplied client first. Error conversion also comes from B3492's handle_error, called with the agents config; never rebuild it here.
+  All six functions take the agents config (B1392's Studio agent config, behind the same trait B3501 selects), the litellm params, the logging object, optional extra headers and an optional timeout. Create also takes the agent name and an optional extra_body map, list takes neither, get takes the agent name.
+  Create flow: headers = config.validate_environment(extra headers or an empty map, params); url = config.get_complete_url(params.api_base, params); data = config.transform_create_request(name, params); then every key of extra_body replaces the same key in data (dict update, so the caller wins). Call logging pre_call with input = name, api_key = "" and additional_args holding complete_input_dict = data, api_base = url and headers. POST url with headers, json = data and timeout = the caller's timeout, or the global request_timeout (REQUEST_TIMEOUT env var, default 6000 seconds, owned by B198) when the caller gave none. Any error goes through handle_error with the agents config and is returned as that value. On success call post_call with original_response = the response text and additional_args holding only complete_input_dict = data, then return config.transform_create_response(response, name).
+  List flow: headers as above; (url, params) = config.transform_list_request(params.api_base, params); pre_call with input = "list_agents", api_key = "" and additional_args holding only api_base = url and headers; GET url with headers and the query params; errors through handle_error; post_call with the response text and empty additional_args; return config.transform_list_response(response). The timeout argument is accepted and then ignored: the GET carries no timeout, so the client default applies.
+  Get flow: same as list, except (url, params) = config.transform_get_request(name, params.api_base, params), pre_call input = name, and the result is config.transform_get_response(response, name). Its GET also carries no timeout.
+  The call order inside each function is fixed: resolve the client first, then validate_environment, then URL building, then pre_call, then the request. A failing validate_environment therefore still creates the client and never logs.
+  The module is a thin transport layer. It does not pick the provider (B3501), build bodies or parse responses (B1392), or create the logging object (B3501). It must not call a provider crate directly; it sees only the config trait object.
+scope:
+  paths:
+    - crates/betterlite-http/src/interactions/agents_create_read.rs
+    - crates/betterlite-http/src/interactions/agents_create_read/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L35-L88
+    why: create_agent, including the _is_async dispatch that drops client, the extra_body update and the timeout or request_timeout fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L90-L137
+    why: async_create_agent, the same flow with an awaited POST.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L139-L210
+    why: list_agents and async_list_agents, whose GET passes params and never a timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L213-L289
+    why: get_agent and async_get_agent, including the name passed to both transform_get_request and transform_get_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L37-L73
+    why: The inherited _handle_error, _sync_client and _async_client that B3492 builds and this module calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L561-L577
+    why: request_timeout and its 6000 second default, used when create gets no timeout.
+dod:
+  - text: create_agent and async_create_agent build headers, URL and body through the config, let extra_body keys replace body keys, and return the config's transformed create response.
+    proof: [agent-create-tests]
+  - text: Create sends the caller's timeout, or the request_timeout default of 6000 seconds when none is given, and logs pre_call and post_call with the exact input and additional_args described.
+    proof: [agent-create-tests]
+  - text: list_agents and async_list_agents GET the URL and query params from transform_list_request with no timeout, log input "list_agents", and return transform_list_response.
+    proof: [agent-list-tests]
+  - text: get_agent and async_get_agent GET the URL and query params from transform_get_request, log the agent name as input, and return transform_get_response with the name.
+    proof: [agent-get-tests]
+  - text: A transport status error in any of the six functions is converted by handle_error with the agents config, and no post_call is logged for it.
+    proof: [agent-create-tests, agent-list-tests, agent-get-tests]
+  - text: A caller-supplied client is used as is, and without one the sync form resolves a sync client and the async form an async client, both through B3492's base module.
+    proof: [agent-client-tests]
+checks:
+  optional: []
+  commands:
+    - id: agent-create-tests
+      why: create_agent or async_create_agent drops extra_body, uses the wrong timeout, logs the wrong fields or skips error conversion
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::agents_create_read::create_/)'
+    - id: agent-list-tests
+      why: list_agents or async_list_agents send a timeout, drop the query params or log the wrong input
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::agents_create_read::list_/)'
+    - id: agent-get-tests
+      why: get_agent or async_get_agent forget the name in the response transform, send a timeout or log the wrong input
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::agents_create_read::get_/)'
+    - id: agent-client-tests
+      why: the six functions do not use the supplied client or do not resolve one through B3492's base module
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::agents_create_read::client_/)'
+oracle_cases: []
+deviations:
+  - what: Each operation is a blocking function plus an async function, with no _is_async flag and no function that returns either a value or a coroutine.
+    why: Rust has no dynamic return type of that kind; B3504 picks the form from the caller's acreate_agent, alist_agents or aget_agent flag.
+  - what: The async functions accept an optional async client, which LiteLLM's dispatcher never forwards.
+    why: LiteLLM's async_* methods already have a client parameter, and the dispatcher drops it only by omission; no caller at the pin supplies one, so a direct async call keeps the parameter.
+out_of_scope:
+  - "delete_agent, async_delete_agent, list_agent_versions, async_list_agent_versions and the agents_http_handler singleton: B3503 owns them in its own module."
+  - "Provider selection, header merging and the logging object: B3501."
+  - "The transform_* methods, validate_environment and get_complete_url bodies: B1392."
+  - "_handle_error, _sync_client and _async_client: B3492."
+  - "The public create_agent, list_agents and get_agent entry points that read acreate_agent, alist_agents and aget_agent from kwargs: B3504 and B3505."
+pitfalls:
+  - Only create passes a timeout (timeout or request_timeout); list and get call GET with url, headers and params only, so a timeout argument there has no effect.
+  - extra_body is applied with dict update, so a key such as "name" in extra_body replaces the transformed body value.
+  - post_call after create carries additional_args {complete_input_dict}, but list and get pass an empty additional_args; do not add api_base or headers there.
+  - pre_call for list uses the literal input "list_agents", while create and get use the agent name.
+  - validate_environment gets headers = extra_headers or {}, so None and an empty map behave the same.
+  - get_agent passes the name to transform_get_request and again to transform_get_response; losing the second one changes the returned id.
+  - The error from a failed request is returned through handle_error, which only converts httpx HTTPStatusError; connection and timeout errors pass through unchanged.
+  - LiteLLM's _is_async dispatcher calls the async method without the client argument, so a sync client given to create_agent is never used on the async path.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

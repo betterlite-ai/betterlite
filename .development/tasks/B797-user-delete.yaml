@@ -36,7 +36,7 @@ description: >-
   enterprise package, warn Defaulting to using Legacy Email Hooks and return false from the V2
   probe; enterprise logger enumeration/delivery is unreachable and is not implemented. The V1
   fallback requires email in general_settings.alerting (default []), otherwise raises ValueError
-  with setup guidance BEFORE audit scheduling. B116 supplies the actual email sink; schedule its
+  with setup guidance BEFORE audit scheduling. B4023 supplies the email logic, with B8891 bindings and B8400 SMTP as the actual sink; schedule its
   send_key_created_or_user_invited_email, never log the token. In the audit try, missing database,
   missing response.user_id or missing user row warns Unable to create audit log for user on /user/new
   and returns successfully. Otherwise schedule create_internal_user_audit_log with action created,
@@ -78,17 +78,14 @@ description: >-
 
 
   Wire user_delete behind B052 bearer authentication and the source's B865 management decorator.
+  B1100 registers routes/user_delete.rs as a stub, so fill only crates/betterlite-server/src/routes/user_delete.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/user_delete.rs
     - crates/betterlite-server/src/user_delete/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
+    - crates/betterlite-server/src/routes/user_delete.rs
+    - crates/betterlite-server/src/routes/user_delete/**
     - tools/oracle/cases/management/user-delete/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/user-delete-*

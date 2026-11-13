@@ -1,0 +1,9 @@
+kind: helper
+name: anthropic-count-tokens-headers
+call:
+  anthropic_count_tokens:
+    function: headers
+    cases:
+        - api_key: sk-ant-oat01-seed
+env: {}
+compare: {ignore: []}

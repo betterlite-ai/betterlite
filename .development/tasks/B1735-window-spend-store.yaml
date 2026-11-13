@@ -84,7 +84,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B1736 owns coalescing, cache warming and window reads in spend_counter_reseed.py; this task owns every budget_window_spend_writer function.
-  - B071 owns budget reservation/reset policy and calls this lower row store; B1734 owns queued window normalization/merging.
+  - B3004 and B8480 own the reservation policy and B3009 to B3013 the reset policy; the reset parts call this lower row store; B1734 owns queued window normalization/merging.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as window_seed in the db group. Replace the stub Op in tools/oracle/src/helpers/db/window_seed.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/window_seed.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A late old-window increment adds into the newer stored window instead of being discarded.

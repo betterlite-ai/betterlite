@@ -1,0 +1,5 @@
+kind: helper
+name: verbose-debug-then-detailed
+call: {"b4175": {"operation": "verbose_debug_then_detailed", "worker_config": '{"debug": true, "detailed_debug": true}'}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+id: B8609
+milestone: M5 api families
+title: Mount the Fal, AssemblyAI, TinyFish, VLLM, GigaChat and Watsonx routes
+status: todo
+depends_on: [B8640, B3626, B3627]
+file: tasks/B8609-passthrough-saas-vgw-mount.yaml
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

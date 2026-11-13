@@ -101,15 +101,23 @@ pub fn usage_sum(usages: &[Usage]) -> Result<Usage, UsageSumError> {
             let base = combined.completion_tokens_details.get_or_insert_default();
             combine::sum_completion_details(base, details)?;
         }
-        for (name, value) in &usage.numeric_extras {
-            let merged = combined.numeric_extras.get(name).map_or_else(
-                || add_number(&UsageNumber::Integer(0), value, name),
-                |current| add_number(current, value, name),
-            )?;
-            combined.numeric_extras.insert(name.clone(), merged);
-        }
+        sum_numeric_extras(&mut combined, &usage.numeric_extras)?;
     }
     Ok(combined)
+}
+
+fn sum_numeric_extras(
+    combined: &mut Usage,
+    extras: &BTreeMap<String, UsageNumber>,
+) -> Result<(), UsageSumError> {
+    for (name, value) in extras.iter().filter(|(name, _)| !name.starts_with('_')) {
+        let merged = combined.numeric_extras.get(name).map_or_else(
+            || add_number(&UsageNumber::Integer(0), value, name),
+            |current| add_number(current, value, name),
+        )?;
+        combined.numeric_extras.insert(name.clone(), merged);
+    }
+    Ok(())
 }
 
 fn add_number(

@@ -1,0 +1,1 @@
+{"kind":"helper","name":"pattern-spans-overlapping","call":{"b3693":{"function":"merge","spans":[[4,8],[0,6],[2,3],[8,9],[11,12]],"text":"abcdefghijkl","tag":"[REDACTED]"}},"env":{},"compare":{"ignore":[]}}

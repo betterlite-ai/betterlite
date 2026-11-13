@@ -58,7 +58,7 @@ description: >-
 
   Depends on B732 for UserAPIKeyAuth and parent_otel_span; B1042 for BatchEnqueuedTokenReservation,
   batch_response_view, canonical_provider_batch_id; B1043 for BatchEnqueuedTokenStore.save_reservation,
-  pop_reservation, refund; B3031 for get_request_stash, get_request_stash_for_call, _call_id_from_callback_kwargs;
+  pop_reservation, refund; B3031 for get_request_stash, get_request_stash_for_call (_call_id_from_callback_kwargs is not ported: read litellm_call_id from the typed callback record and pass it to for_call);
   B3035 for _release_stashed_parallel_slot; B3037 for async_increment_tokens_with_ttl_preservation,
   async_increment_reservation_aware_tokens, _build_reservation_aware_tpm_ops, _build_project_reservation_ops;
   B3044 for get_rate_limit_type, _recovered_partial_usage_tokens; B3045 for _build_success_event_pipeline_operations.
@@ -215,7 +215,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_hook_error(::|$)/)'
     - id: oracle-cases-tests
       why: Oracle cases verify callback settlement across success, failure, proxy rejection, and disconnect paths
-      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/post_call_settlement -k 'b3046'
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/post_call_settlement
 
 oracle_cases:
   - tools/oracle/cases/post_call_settlement/header-merge-single-status.yaml
@@ -266,7 +266,7 @@ out_of_scope:
   - Batch token store interface (save, pop, refund) belongs to B1043.
   - User API key auth context and parent span extraction belong to B732.
   - Request stash lifecycle and call-ID filtering belong to B3031.
-  - Cache pipeline transport methods and Redis registration belong to external owners (B124/B125/B126).
+  - Cache pipeline transport methods and Redis registration belong to external owners (B8399, B125 and B126).
 
 pitfalls:
   - _merge_ratelimit_statuses_into_additional_headers is non-mutating; callers must use the returned dict, not assume the input is modified.
@@ -278,7 +278,7 @@ pitfalls:
   - async_post_call_failure_hook's exception handling must be broad (catch Exception) so batch/reservation failures never fail the response. Separate exception blocks per task preserve partial success when some operations fail.
   - batch_response_view(response) returns None for non-batch responses; always check before dereferencing the view.
   - BATCH_ENQUEUED_REFUND_STATUSES is a string set (e.g. {"failed", "expired"}); use .lower() on status values before set membership checks.
-  - Slot stashing uses call_id filtering to prevent nested callbacks from releasing the wrong acquisition. Always pass the correct call ID to _call_id_from_callback_kwargs.
+  - Slot stashing uses call_id filtering to prevent nested callbacks from releasing the wrong acquisition. Always read litellm_call_id from the typed callback record and pass it to for_call (_call_id_from_callback_kwargs is not ported).
 
 review_level: standard
 budget:

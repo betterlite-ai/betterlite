@@ -1,0 +1,10 @@
+kind: helper
+name: redis-cache-ttl-reply-minus-one-is-null
+call:
+  b5640:
+    function: ttl_reply
+    namespace: ns
+    key: alpha
+    reply: -1
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,26 @@
+kind: helper
+name: anthropic-invokes-document-type
+call:
+  anthropic_invokes:
+    function: document_type
+    formats:
+      - application/pdf
+      - text/plain
+      - image/jpeg
+      - image/png
+      - image/gif
+      - image/webp
+      - image/svg+xml
+      - ''
+    file_ids:
+      - 'http://example.test/file.pdf'
+      - 'https://example.test/file.pdf'
+      - file-abc
+      - ''
+    chunk:
+      type: base64
+      media_type: application/pdf
+      data: QUJD
+env: {}
+compare:
+  ignore: []

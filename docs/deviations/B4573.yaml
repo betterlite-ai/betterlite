@@ -12,3 +12,11 @@ deviations:
       of the three fields, so the fallback is a diagnostic string shown to a human, not a value
       any caller parses.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L427-L429
+  - what: >-
+      Each callback connection has a total deadline bounded by its connection timeout and the
+      overall callback wait deadline; LiteLLM applies a timeout to each read instead.
+    why: >-
+      A peer that trickles bytes can otherwise hold the single-threaded callback wait beyond the
+      sign-in deadline. Normal browsers send the callback promptly, while slow local peers are
+      closed and the wait can continue.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/pkce_login.py#L118-L139

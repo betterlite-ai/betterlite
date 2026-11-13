@@ -1,0 +1,26 @@
+kind: helper
+name: route-predicates-matrix
+call:
+  b3605:
+    operation: route
+    routes:
+      - {url_route: "https://api.anthropic.com/v1/messages", custom_llm_provider: null}
+      - {url_route: "https://api.cohere.com/v1/embed", custom_llm_provider: null}
+      - {url_route: "https://api.cohere.com/v1/embeddings", custom_llm_provider: null}
+      - {url_route: "https://api.assemblyai.com/v1/transcript", custom_llm_provider: null}
+      - {url_route: "https://proxy.example/v1/transcript/123", custom_llm_provider: null}
+      - {url_route: "https://api.cursor.com/v0/agents", custom_llm_provider: null}
+      - {url_route: "https://example.com/v0/agents", custom_llm_provider: cursor}
+      - {url_route: "https://example.com/v0/agents", custom_llm_provider: other}
+      - {url_route: "https://generativelanguage.googleapis.com/v1/models/gemini:generateContent", custom_llm_provider: gemini}
+      - {url_route: "https://example.com/langfuse/v1/traces?x=1", custom_llm_provider: null}
+      - {url_route: "wss://example.com/vertex_ai/live", custom_llm_provider: null}
+      - {url_route: "https://example.com/alpha/decisions", custom_llm_provider: openrouter}
+      - {url_route: "https://example.com/alpha/decisions", custom_llm_provider: null}
+      - {url_route: "https://example.com/comprehend", custom_llm_provider: comprehendmedical}
+      - {url_route: "https://example.com/speech", custom_llm_provider: azure_speech}
+      - {url_route: "https://example.com/x", custom_llm_provider: transcribe}
+      - {url_route: "https://example.com/x", custom_llm_provider: typesafe}
+      - {url_route: "", custom_llm_provider: null}
+env: {}
+compare: {ignore: []}

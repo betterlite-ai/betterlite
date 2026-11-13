@@ -1,14 +1,14 @@
 id: B1439
 milestone: M3 providers
 title: GDCH credential exchange and audience-isolated token caching
-status: todo
+status: done
 depends_on: [B173, B184, B1438, B171]
 file: tasks/B1439-gdc-credentials.yaml
 covers:
   - "litellm/llms/gdc/chat/transformation.py"
 parent: B038
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1227

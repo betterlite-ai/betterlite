@@ -1,0 +1,10 @@
+kind: helper
+name: redis-semantic-cache-key-scope
+call:
+  b4382:
+    operation: key_scope
+    key: scope-1
+    litellm_cache_key: scope-2
+env: {}
+compare:
+  ignore: []

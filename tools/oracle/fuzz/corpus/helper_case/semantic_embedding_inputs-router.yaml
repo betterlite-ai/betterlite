@@ -1,0 +1,12 @@
+kind: helper
+name: semantic_embedding_inputs-router-seed
+call:
+  b4310:
+    operation: router
+    embedding_model: text-embedding-3-small
+    router_present: false
+    model_list:
+      - model_name: null
+      - model_name: text-embedding-3-small
+env: {}
+compare: {ignore: []}

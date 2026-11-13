@@ -6,7 +6,7 @@ description: >-
   Distinguish claimless DB fallback, alias-only and RBAC team claims, re-run pass-through authorization
   after DB fallback, and validate_object_id when enforce_rbac has no user or team. Own the
   ManagedAgentTeam::resolve port with user/agent IDs, selected team, explicit-selection flag and optional
-  allowed-team set; B141 installs it without a dependency from this lower stage to its installer.
+  allowed-team set; B8646 installs it without a dependency from this lower stage to its installer.
 
   B760 extracts claim teams, specific team and alias; B764 supplies aggregate teams, header resolution,
   specific-team/model selection, passthrough checks and object-ID validation. DB fallback requires its
@@ -81,6 +81,7 @@ description: >-
   and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
   stage; the failure test asserts its public error translation and that the downstream handler was not
   called. These tests are part of the behavior-test allowance already budgeted above.
+  B1100 registers state/jwt_team_authorization.rs as a stub slot, so fill only crates/betterlite-server/src/state/jwt_team_authorization.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-auth/src/jwt_team_authorization.rs
@@ -88,10 +89,8 @@ scope:
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
+    - crates/betterlite-server/src/state/jwt_team_authorization.rs
+    - crates/betterlite-server/src/state/jwt_team_authorization/**
     - tools/oracle/cases/auth/jwt-team-authorization/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-team-authorization-*

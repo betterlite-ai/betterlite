@@ -19,7 +19,9 @@ description: >-
 scope:
   paths:
     - Cargo.toml
-    - crates/betterlite-guardrails/**
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-guardrails/src/prompt_security_files.rs
+    - crates/betterlite-guardrails/src/prompt_security_files/**
     - tools/oracle/cases/prompt_security_files/**
   lint_tables: false
 

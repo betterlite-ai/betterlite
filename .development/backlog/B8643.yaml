@@ -1,0 +1,14 @@
+id: B8643
+milestone: M5 api families
+title: Serve configured pass-through endpoints at request time
+status: todo
+depends_on: [B8610, B2302, B3613, B3614, B3615, B3616, B052]
+file: tasks/B8643-configured-passthrough-dispatch.yaml
+covers:
+  - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

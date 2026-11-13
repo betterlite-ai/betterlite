@@ -1,0 +1,11 @@
+kind: helper
+name: redis-cache-values-batch-get-skips-null-keys
+call:
+  b4327:
+    function: read_values
+    operation: batch_get_cache
+    namespace: ns
+    keys: [alpha, null, beta]
+    replies: [null, "2"]
+env: {}
+compare: {ignore: []}

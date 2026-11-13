@@ -19,3 +19,18 @@ mark-changed = []
 [[path-rule]]
 globs = ["rust-toolchain.toml"]
 mark-changed = "all"
+
+# the dashboard sources and scripts belong to no crate, so only the browser test reads them instead of every package
+[[path-rule]]
+globs = ["ui/dashboard/**", "tools/dashboard/**", "packaging/ui/**"]
+mark-changed = ["betterlite-dashboard-browser"]
+
+[[path-rule]]
+globs = [
+  "crates/betterlite-server/src/app/edge/ui.rs",
+  "crates/betterlite-server/src/app/edge/ui/**",
+  "crates/betterlite-config/src/sections/dashboard_assets.rs",
+  "crates/betterlite-config/src/sections/dashboard_assets/**",
+]
+mark-changed = ["betterlite-dashboard-browser"]
+post-rule = "skip-rules"

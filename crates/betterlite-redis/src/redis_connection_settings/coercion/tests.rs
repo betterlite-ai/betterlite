@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use super::{coerce_bool, coerce_float, coerce_int};
+use super::{coerce_bool, coerce_number, coerce_passthrough};
 use crate::redis_connection_settings::model::scalars::{
     BoolOrText, FloatOrText, IntOrText, PassthroughValue,
 };
@@ -12,59 +12,61 @@ use crate::redis_connection_settings::model::settings::{ClientKind, Target};
 
 #[test]
 fn coerce_int_parses_a_digit_string() {
-    assert_eq!(coerce_int(Some(IntOrText::Text("42".to_owned()))), Some(42));
-}
-
-#[test]
-fn coerce_int_drops_an_unparsable_string() {
     assert_eq!(
-        coerce_int(Some(IntOrText::Text("not-a-number".to_owned()))),
-        None
+        coerce_number("REDIS_PORT", Some(IntOrText::Text("42".to_owned()))).unwrap(),
+        Some(42)
     );
 }
 
 #[test]
+fn coerce_int_rejects_an_unparsable_string() {
+    coerce_number(
+        "REDIS_PORT",
+        Some(IntOrText::Text("not-a-number".to_owned())),
+    )
+    .unwrap_err();
+}
+
+#[test]
 fn coerce_int_passes_through_an_already_typed_value() {
-    assert_eq!(coerce_int(Some(IntOrText::Value(7))), Some(7));
+    assert_eq!(
+        coerce_number("REDIS_PORT", Some(IntOrText::Value(7))).unwrap(),
+        Some(7)
+    );
 }
 
 #[test]
 fn coerce_float_parses_a_decimal_string() {
     assert_eq!(
-        coerce_float(Some(FloatOrText::Text("1.5".to_owned()))),
+        coerce_number("REDIS_TIMEOUT", Some(FloatOrText::Text("1.5".to_owned()))).unwrap(),
         Some(1.5_f64)
     );
 }
 
 #[test]
-fn coerce_float_drops_an_unparsable_string() {
-    assert_eq!(
-        coerce_float(Some(FloatOrText::Text("nope".to_owned()))),
-        None
-    );
+fn coerce_float_rejects_an_unparsable_string() {
+    coerce_number("REDIS_TIMEOUT", Some(FloatOrText::Text("nope".to_owned()))).unwrap_err();
 }
 
 #[test]
-fn coerce_bool_never_fails() {
+fn coerce_bool_accepts_known_words_and_rejects_unknown_words() {
     assert_eq!(
-        coerce_bool(Some(BoolOrText::Text("true".to_owned()))),
+        coerce_bool("REDIS_SSL", Some(BoolOrText::Text("true".to_owned()))).unwrap(),
         Some(true)
     );
-    assert_eq!(
-        coerce_bool(Some(BoolOrText::Text("garbage".to_owned()))),
-        Some(false)
-    );
+    coerce_bool("REDIS_SSL", Some(BoolOrText::Text("garbage".to_owned()))).unwrap_err();
 }
 
 #[test]
-fn coerce_passthrough_drops_a_failed_int_conversion() {
-    let mut passthrough = BTreeMap::new();
-    passthrough.insert(
-        "cluster_error_retry_attempts".to_owned(),
-        PassthroughValue::Text("three".to_owned()),
-    );
-    coerce_options(Target::Cluster, ClientKind::Sync, &mut passthrough);
-    assert!(!passthrough.contains_key("cluster_error_retry_attempts"));
+fn coerce_passthrough_rejects_a_failed_int_conversion() {
+    let mut value = PassthroughValue::Text("three".to_owned());
+    coerce_passthrough(
+        "cluster_error_retry_attempts",
+        &mut value,
+        Target::Cluster,
+        &BTreeMap::new(),
+    )
+    .unwrap_err();
 }
 
 #[test]
@@ -95,22 +97,14 @@ fn coerce_passthrough_leaves_an_unrecognized_name_untouched() {
     );
 }
 
-#[test]
-fn coerce_numbers_accept_whitespace_and_digit_separators() {
-    assert_eq!(
-        coerce_int(Some(IntOrText::Text(" 6_380\n".to_owned()))),
-        Some(6380)
-    );
-    assert_eq!(
-        coerce_float(Some(FloatOrText::Text(" 1_5.0 ".to_owned()))),
-        Some(15.0_f64)
-    );
-}
-
-#[test]
-fn coerce_numbers_reject_a_leading_or_trailing_underscore() {
-    assert_eq!(coerce_int(Some(IntOrText::Text("_123".to_owned()))), None);
-    assert_eq!(coerce_int(Some(IntOrText::Text("123_".to_owned()))), None);
+#[rstest]
+#[case::grouped("6_380")]
+#[case::leading("_123")]
+#[case::trailing("123_")]
+#[case::doubled("6__380")]
+fn coerce_numbers_reject_underscores(#[case] text: &str) {
+    coerce_number("REDIS_PORT", Some(IntOrText::Text(text.to_owned()))).unwrap_err();
+    coerce_number("REDIS_TIMEOUT", Some(FloatOrText::Text(text.to_owned()))).unwrap_err();
 }
 
 #[test]
@@ -141,16 +135,8 @@ fn coerce_options(
     _client: ClientKind,
     options: &mut BTreeMap<String, PassthroughValue>,
 ) {
-    options.retain(|name, value| super::coerce_passthrough(name, value, target));
-}
-
-#[test]
-fn redis_coerce_rejects_doubled_underscores() {
-    assert_eq!(coerce_int(Some(IntOrText::Text("6__380".to_owned()))), None);
-    assert_eq!(
-        coerce_float(Some(FloatOrText::Text("1__5.0".to_owned()))),
-        None
-    );
+    options
+        .retain(|name, value| coerce_passthrough(name, value, target, &BTreeMap::new()).unwrap());
 }
 
 #[test]
@@ -179,7 +165,7 @@ fn redis_coerce_preserves_untyped_signature_parameters() {
 #[case::read_size("socket_read_size", "32768", 0x8000)]
 fn redis_coerce_signature_integers(#[case] name: &str, #[case] text: &str, #[case] expected: i64) {
     let mut value = PassthroughValue::Text(text.to_owned());
-    assert!(super::coerce_passthrough(name, &mut value, Target::Direct));
+    assert!(coerce_passthrough(name, &mut value, Target::Direct, &BTreeMap::new()).unwrap());
     assert_eq!(
         value,
         PassthroughValue::Number(serde_json::Number::from(expected))
@@ -199,6 +185,73 @@ fn redis_coerce_leaves_cluster_options_untyped_elsewhere(
     #[case] text: &str,
 ) {
     let mut value = PassthroughValue::Text(text.to_owned());
-    assert!(super::coerce_passthrough(name, &mut value, target));
+    assert!(coerce_passthrough(name, &mut value, target, &BTreeMap::new()).unwrap());
     assert_eq!(value, PassthroughValue::Text(text.to_owned()));
+}
+
+#[test]
+fn shared_env_redis_coercion() {
+    assert_eq!(
+        coerce_bool("REDIS_SSL", Some(BoolOrText::Text(" Yes ".to_owned()))).unwrap(),
+        Some(true)
+    );
+    assert_eq!(
+        coerce_bool("REDIS_SSL", Some(BoolOrText::Text(String::new()))).unwrap(),
+        None
+    );
+    let bool_error = coerce_bool(
+        "REDIS_SSL",
+        Some(BoolOrText::Text("maybe-secret".to_owned())),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(bool_error.contains("REDIS_SSL"));
+    assert!(!bool_error.contains("maybe-secret"));
+}
+
+#[test]
+fn shared_env_redis_coercion_numbers() {
+    assert_eq!(
+        coerce_number("REDIS_PORT", Some(IntOrText::Text(" 6380 ".to_owned()))).unwrap(),
+        Some(6380)
+    );
+    assert_eq!(
+        coerce_number("REDIS_PORT", Some(IntOrText::Text(String::new()))).unwrap(),
+        None
+    );
+    let number_error = coerce_number("REDIS_PORT", Some(IntOrText::Text("1_000".to_owned())))
+        .unwrap_err()
+        .to_string();
+    assert!(number_error.contains("REDIS_PORT"));
+    assert!(!number_error.contains("1_000"));
+    assert_eq!(
+        coerce_number("REDIS_TIMEOUT", Some(FloatOrText::Text("1e3".to_owned()))).unwrap(),
+        Some(1_000.0_f64)
+    );
+    let mut kwarg = PassthroughValue::Text("1_000".to_owned());
+    let kwarg_error = coerce_passthrough(
+        "health_check_interval",
+        &mut kwarg,
+        Target::Direct,
+        &BTreeMap::new(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(kwarg_error.contains("REDIS_HEALTH_CHECK_INTERVAL"));
+    assert!(!kwarg_error.contains("1_000"));
+}
+
+#[test]
+fn shared_env_redis_coercion_blames_a_passthrough_reference() {
+    let mut kwarg = PassthroughValue::Text("1_000".to_owned());
+    let names = BTreeMap::from([(
+        "REDIS_HEALTH_CHECK_INTERVAL".to_owned(),
+        "CACHE_HEALTH_CHECK_INTERVAL".to_owned(),
+    )]);
+    let kwarg_error =
+        coerce_passthrough("health_check_interval", &mut kwarg, Target::Direct, &names)
+            .unwrap_err()
+            .to_string();
+    assert!(kwarg_error.contains("CACHE_HEALTH_CHECK_INTERVAL"));
+    assert!(!kwarg_error.contains("REDIS_HEALTH_CHECK_INTERVAL"));
 }

@@ -1,0 +1,59 @@
+kind: helper
+name: cache-placement-block-limit
+call:
+  b4124:
+    operation: message_injections
+    probes:
+      - messages: [{role: user, content: hello}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 0
+      - messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+          - {role: user, content: c, cache_control: {}}
+          - {role: assistant, content: d, cache_control: {}}
+          - {role: user, content: e}
+        points: [{location: message, role: user, index: 4, control: null}]
+        max_blocks: 4
+      - messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+          - {role: user, content: c, cache_control: {}}
+        points: [{location: message, role: null, index: 1, control: null}]
+        max_blocks: 4
+      - messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+          - {role: user, content: c, cache_control: {}}
+        points:
+          - {location: message, role: null, index: 2, control: null}
+          - {location: message, role: null, index: 1, control: null}
+        max_blocks: 4
+      - messages: [{role: user, content: a}, {role: user, content: b}]
+        points:
+          - {location: message, role: null, index: 0, control: null}
+          - {location: message, role: null, index: 0, control: null}
+          - {location: message, role: null, index: 1, control: null}
+        max_blocks: 2
+      - messages: [{role: assistant, content: a}, {role: user, content: b}]
+        points:
+          - {location: message, role: assistant, index: null, control: null}
+          - {location: message, role: user, index: null, control: null}
+        max_blocks: 1
+        openai_dialect: true
+      - messages: [{role: user, content: [{type: video, source: clip}]}, {role: user, content: [{type: text, text: b}]}]
+        points:
+          - {location: message, role: null, index: 0, control: null}
+          - {location: message, role: null, index: 1, control: null}
+        max_blocks: 1
+        openai_dialect: true
+      - messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: user, content: b}
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 2
+      - messages: [{role: user, content: a}, {role: user, content: b}, {role: user, content: c}]
+        points: [{location: message, role: user, index: null, control: null}]
+        max_blocks: 2
+env: {}
+compare: {ignore: []}

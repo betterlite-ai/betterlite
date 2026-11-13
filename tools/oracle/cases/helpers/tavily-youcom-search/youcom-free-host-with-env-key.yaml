@@ -1,0 +1,33 @@
+kind: helper
+name: youcom-free-host-with-env-key
+call:
+  b8021:
+    provider: you_com
+    calls:
+      - operation: validate_environment
+        headers: {}
+        api_key: null
+        api_base: https://api.you.com/v1/agents/search
+        environment:
+          YOUCOM_API_KEY: sk-env
+      - operation: validate_environment
+        headers: {}
+        api_key: sk-caller
+        api_base: https://api.you.com/v1/agents/search
+        environment: {}
+      - operation: validate_environment
+        headers: {}
+        api_key: null
+        api_base: https://YDC-Index.io/v1/search
+        environment:
+          YOUCOM_API_KEY: sk-env
+      - operation: validate_environment
+        headers: {}
+        api_key: null
+        api_base: https://proxy.test/v1/search
+        environment:
+          YOUCOM_API_KEY: sk-env
+          YOUCOM_API_BASE: https://proxy.test
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-usage-reported-thinking-capped
+call:
+  anthropic_usage:
+    usage: {input_tokens: 1, output_tokens: 10, output_tokens_details: {thinking_tokens: 14}}
+    reasoning_content: null
+    completion_response: null
+    speed: null
+env: {}
+compare: {ignore: []}

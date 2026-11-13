@@ -1,0 +1,106 @@
+id: B8331
+title: SAP, watsonx and SageMaker dispatch in main.py
+description: >-
+  A wiring part of the cloud ML platform group (B042). SAP is built by B5845 (chat and embedding configs), B5950 (credentials, token, deployment lookup), B5951 and B5952; watsonx by B5970 (credentials, IAM token, URLs), B5971 (chat), B5972 (text generation) and B5842 (embedding, rerank); SageMaker by B5840 (signed runtime calls), B5960 (request and reply bodies) and B5961 (embedding and the stream decoder). None of it is reachable yet. This task adds the main.py dispatch for the three providers in the module enterprise_ml_dispatch of betterlite-provider, registers the arms in the dispatch table through B2230's selection (the B050 and B8157 way), fills the environment and transports the parts take as arguments, and adds the HTTP oracle cases. Unknown providers keep failing as before. Add betterlite-bedrock to betterlite-provider's dependencies if it is not there yet (betterlite-bedrock does not depend on betterlite-provider).
+
+
+  _complete_sap (main.py L2344-L2387, arm L5915-L5916 for custom_llm_provider sap). headers is the context value, else the global headers. Merge the SAP chat config's class settings into optional_params for each key the request did not set: through the proxy that is model_version = "latest", because nothing calls the config constructor there. Then call the shared HTTP completion handler with the context fields, shared_session and the context provider (GenAIHubOrchestration adds nothing to the inherited path). SAP embedding arm (L7112-L7126): the shared embedding handler with empty litellm_params. Take the SAP branch of the embedding config selection (utils.py L8788-L8789), returning B5845's embedding config. Build one SAP config per call, as LiteLLM's factory does, and keep its deployment URL for that call only. Feed B5950: its SapEnvironment reads process variables (AICORE_* names, AICORE_SERVICE_KEY, AICORE_PROFILE, AICORE_HOME, VCAP_SERVICES), checks and reads files, and gives the home folder; its SapTokenTransport and the deployment lookup run on B173's pooled client, the token request with a 30 second timeout. The deployment lookup is GET {base_url}/lm/deployments, then GET {base_url}/lm/configurations/{configurationId} for each resource whose scenarioId is orchestration (sap/chat/transformation.py L169-L185); B5950 picks the newest URL. litellm.sap_service_key goes in as the service key setting.
+
+
+  _complete_watsonx (L4307-L4341, arm L6024-L6025) passes the context fields to B5971's chat handler with custom_llm_provider "watsonx" and the dispatch client. _complete_watsonx_text (L4344-L4418, arm L6026-L6027) resolves before it calls the shared handler with provider "watsonx_text" and shared_session. api_key is the context value, else popped apikey, else WATSONX_APIKEY, WATSONX_API_KEY, WX_API_KEY. api_base is the context value, else (popping base_url, api_base and url) url, then api_base, then base_url, else WATSONX_API_BASE, WATSONX_URL, WX_URL, WML_URL. Then wx_credentials and watsonx_credentials are both popped, wx_credentials winning; when one is present its url replaces the base, apikey (else api_key) replaces the key and token (else watsonx_token) becomes the token. A token that is not None goes into optional_params as token. Watsonx embedding arm (L7068-L7091): call B5970's get_watsonx_credentials with optional_params, the key and the base, use its api_key and api_base, copy token into optional_params when the result has one, and call the shared embedding handler with empty litellm_params. Take the watsonx branches of the embedding config selection (L8786-L8787, B5842's embedding config) and of the rerank config selection (L8896-L8897, B5842's rerank config). Fill B5970's WatsonxEnvironment from the process at call time, one field per name it lists.
+
+
+  _complete_sagemaker_chat (L4109-L4143, arm L6013-L6017 for sagemaker_chat and sagemaker_nova) calls the shared handler with the context provider, so B5960's chat config and B5840's signed request are picked by that name. _complete_sagemaker (L4146-L4171, arm L6018-L6020) calls B5840's completion with custom_prompt_dict, hf_model_name, logger_fn, the encoding and the acompletion flag; it passes no key and no base, since AWS values travel in optional_params. SageMaker embedding arm (L6962-L6971): B5840's embedding with the encoding and an empty embedding response. Take the sagemaker branch of the embedding config selection (L8848-L8853), which returns B5961's per-model config. Plug B196's text counter into B5960's TextTokenCounter, and pass B005's stream wrapper rule for sagemaker where B5960 asks for it.
+
+
+  Config. Add the section enterprise_ml_credentials with litellm_settings.sap_service_key (default None). Every environment value above is read when the call runs, through betterlite-env, with an empty value counting as unset.
+
+
+  Plan about 380 lines of module code, 260 of tests and 50 for the section and the cases. Where the source and this text differ, the source at the pinned commit wins.
+scope:
+  paths:
+    - crates/betterlite-provider/src/enterprise_ml_dispatch.rs
+    - crates/betterlite-provider/src/enterprise_ml_dispatch/**
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-config/src/sections/enterprise_ml_credentials.rs
+    - crates/betterlite-config/src/sections/enterprise_ml_credentials/**
+    - Cargo.lock
+    - tools/oracle/cases/providers/enterprise-ml/**
+    - tools/oracle/helpers/b8331.py
+    - tools/oracle/helpers/b8331/**
+    - tools/oracle/src/helpers/provider/b8331.rs
+    - tools/oracle/src/helpers/provider/b8331/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2344-L2387
+    why: _complete_sap and the config merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4109-L4171
+    why: _complete_sagemaker_chat and _complete_sagemaker.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4307-L4418
+    why: _complete_watsonx and _complete_watsonx_text with the key, base and credentials order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5915-L6027
+    why: The sap, sagemaker_chat, sagemaker_nova, sagemaker, watsonx and watsonx_text arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6962-L7126
+    why: The sagemaker, watsonx and sap embedding arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L113-L190
+    why: The class settings get_config returns and the deployment lookup calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8786-L8897
+    why: The watsonx, sap and sagemaker embedding branches and the watsonx rerank branch.
+dod:
+  - text: _complete_sap merges model_version and calls the SAP config through the shared handler with the global headers fallback.
+    proof: [enterprise-ml-dispatch-tests, oracle]
+  - text: _complete_watsonx_text resolves key, base, credentials and token in LiteLLM's order and pops the same keys.
+    proof: [enterprise-ml-dispatch-tests, oracle]
+  - text: _complete_watsonx, _complete_sagemaker_chat and _complete_sagemaker pass the context fields to their handlers with the right provider name.
+    proof: [enterprise-ml-dispatch-tests, oracle]
+  - text: The sap, watsonx and sagemaker embedding arms and the watsonx rerank selection reach their configs.
+    proof: [enterprise-ml-dispatch-tests, oracle]
+  - text: The SAP token and deployment lookups and the watsonx environment are filled from the real process and transports.
+    proof: [enterprise-ml-dispatch-tests]
+  - text: litellm_settings.sap_service_key loads into the enterprise_ml_credentials section.
+    proof: [enterprise-ml-config-tests]
+  - text: New HTTP cases for these providers exist.
+    proof: [enterprise-ml-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: enterprise-ml-dispatch-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^enterprise_ml_dispatch::/)'
+      why: The module is a stub on the base branch, so no test matches.
+    - id: enterprise-ml-config-tests
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::enterprise_ml_credentials::/)'
+      why: The section has no tests on the base branch.
+    - id: enterprise-ml-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/providers/enterprise-ml)"
+      why: The oracle proof compares nothing until these case files exist.
+oracle_cases:
+  - tools/oracle/cases/providers/enterprise-ml/sap-chat.yaml
+  - tools/oracle/cases/providers/enterprise-ml/sap-embedding.yaml
+  - tools/oracle/cases/providers/enterprise-ml/watsonx-chat.yaml
+  - tools/oracle/cases/providers/enterprise-ml/watsonx-chat-stream.yaml
+  - tools/oracle/cases/providers/enterprise-ml/watsonx-text.yaml
+  - tools/oracle/cases/providers/enterprise-ml/watsonx-text-credentials.yaml
+  - tools/oracle/cases/providers/enterprise-ml/watsonx-embedding.yaml
+  - tools/oracle/cases/providers/enterprise-ml/watsonx-missing-project.yaml
+  - tools/oracle/cases/providers/enterprise-ml/sagemaker-chat.yaml
+  - tools/oracle/cases/providers/enterprise-ml/sagemaker-nova.yaml
+deviations:
+  - what: Reply ids LiteLLM generates, token usage it estimates and the AWS signature headers are compared as present, not equal.
+    why: The ids are random, usage depends on each side's tokenizer and the signature covers the request time.
+out_of_scope:
+  - "The watsonx branch of rerank_api/main.py (L492-L518) is B1079's; it calls B5970's get_watsonx_credentials."
+  - "B3627 owns the /watsonx passthrough route; B5842 owns its config."
+  - "No HTTP case covers sagemaker/ completion or the sagemaker embedding arm: their URL is always the AWS runtime host, which the mock cannot stand in for. The recording-transport tests cover them."
+  - "The SAP chat config constructor arguments are reachable only from SDK code that builds the config by hand; the proxy merges model_version alone."
+  - "B5840, B5960, B5961, B5845, B5950, B5951, B5952, B5970, B5971, B5972 and B5842 own every provider transform and signing step; only calls to them are here."
+  - "Databricks, Snowflake and OCI are B8330; Hugging Face, Replicate and Predibase are B8332."
+pitfalls:
+  - "watsonx_text reads WATSONX_APIKEY before WATSONX_API_KEY and WX_API_KEY, the reverse of B5970's IAM order; keep each order where it is."
+  - "The three base pops in _complete_watsonx_text run only when the context base is empty, and then all three keys leave optional_params even when url wins."
+  - "wx_credentials and watsonx_credentials are both popped whatever the base, so neither reaches the request body."
+  - "The sagemaker_chat arm also catches sagemaker_nova; both names must reach the shared handler unchanged so the selection picks the Nova config."
+  - "_complete_sap passes the request api_key to the config, and B5845's validate_environment treats a non-empty key as the SAP service key."
+  - "The watsonx embedding arm copies token only when the credentials carry the key, while watsonx_text copies it when it is not None."
+  - "The SAP cases script every reply in the case field upstream, a list the mock answers in arrival order: the token reply, the deployments reply and the configurations reply in the order LiteLLM sends them, then the chat or embedding reply. A request past the end fails with provider answer sequence exhausted. Only case env values get the mock address, through {{upstream}}, so put it in the service key URLs in the env; reply bodies are sent as written."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: security

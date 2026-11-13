@@ -1,0 +1,9 @@
+kind: helper
+name: missing-auth-token
+call:
+  b3736:
+    configure:
+      settings: {base_url: "https://ibm.test", detector_id: jailbreak-detector}
+      environment: {}
+env: {}
+compare: {ignore: []}

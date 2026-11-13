@@ -1,0 +1,14 @@
+kind: helper
+name: cloudflare-wire-chat-url-explicit-base
+call:
+  b5836:
+    chat_urls:
+      - {api_base: "https://proxy.example/v1"}
+      - {api_base: "https://proxy.example/v1/"}
+      - {api_base: "https://proxy.example/chat/completions"}
+      - {api_base: "https://proxy.example/chat/completions/"}
+      - {api_base: "https://proxy.example/chat/completions/extra"}
+      - {api_base: "https://proxy.example/custom//"}
+      - {api_base: " "}
+env: {}
+compare: {ignore: []}

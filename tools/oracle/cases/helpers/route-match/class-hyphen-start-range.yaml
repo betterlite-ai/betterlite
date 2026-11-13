@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "class-hyphen-start-range",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/models/0",
+      "allowed_routes": [
+        "/models/[--a]"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

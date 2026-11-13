@@ -18,21 +18,17 @@ description: >-
   records, so there is no new byte parser. Test both core implementation and provider contract defaults.
   Count 393 nonblank/non-comment source lines in the owned ranges, including docstrings. Allow 310 implementation,
   180 tests, 135 fixtures, 95 adapters and 45 contract wiring lines, 765 total.
+
+  B010 registers the Messages variants of OperationRequest, OperationResult and PreparedRequest as stubs in
+  crates/betterlite-provider/src/api/messages_native_prepare.rs. Fill them there and leave provider.rs,
+  operation.rs and prepared.rs as they are.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_native_prepare.rs
   - crates/betterlite-core/src/api/messages_native_prepare/**
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/messages_native_prepare.rs
   - crates/betterlite-provider/src/api/messages_native_prepare/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
-  - crates/betterlite-provider/src/prepared.rs
-  - crates/betterlite-provider/src/prepared/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/provider/messages_native_prepare.rs
   - tools/oracle/src/helpers/provider/messages_native_prepare/**

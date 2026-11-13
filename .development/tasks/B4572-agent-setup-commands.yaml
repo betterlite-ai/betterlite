@@ -12,8 +12,8 @@ description: >-
   On unconfigure, withheld credentials are reported per-item with their captured endpoint if the gateway URL changed since issuance; other settings are kept or restored depending on ownership.
 scope:
   paths:
-    - tools/management-cli/src/commands/configure.rs
-    - tools/management-cli/src/commands/configure/**
+    - crates/betterlite-cli/src/commands/configure.rs
+    - crates/betterlite-cli/src/commands/configure/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L1-L310
@@ -53,38 +53,38 @@ checks:
     - id: group-invocation-test
       why: "group-command invocation tests missing or failing"
       run: >-
-        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
-        'test(/^configure::(apply_saved_setup|group_invocation).*($|::)/)'
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^commands::configure::(apply_saved_setup|group_invocation).*($|::)/)'
     - id: reconfigure-edit-test
       why: "reconfigure edit-mode behavior tests missing or failing"
       run: >-
-        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
-        'test(/^configure::(reconfigure|edit_mode|edit_dialog).*($|::)/)'
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^commands::configure::(reconfigure|edit_mode|edit_dialog).*($|::)/)'
     - id: option-precedence-test
       why: "option-precedence merging tests missing or failing"
       run: >-
-        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
-        'test(/^configure::(option_precedence|option_merge|flag_precedence).*($|::)/)'
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^commands::configure::(option_precedence|option_merge|flag_precedence).*($|::)/)'
     - id: terminal-requirement-test
       why: "terminal-requirement validation tests missing or failing"
       run: >-
-        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
-        'test(/^configure::(terminal_requirement|require_terminal|interactive).*($|::)/)'
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^commands::configure::(terminal_requirement|require_terminal|interactive).*($|::)/)'
     - id: missing-receipt-test
       why: "missing-receipt messaging tests missing or failing"
       run: >-
-        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
-        'test(/^configure::(missing_receipt|unconfigure_no_receipt).*($|::)/)'
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^commands::configure::(missing_receipt|unconfigure_no_receipt).*($|::)/)'
     - id: forget-behavior-test
       why: "--forget behavior and unconfigure-only availability tests missing or failing"
       run: >-
-        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
-        'test(/^configure::(forget|forget_flag|forget_behavior).*($|::)/)'
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^commands::configure::(forget|forget_flag|forget_behavior).*($|::)/)'
     - id: withheld-credentials-test
       why: "withheld-credential reporting tests missing or failing"
       run: >-
-        cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E
-        'test(/^configure::(withheld|withheld_credentials|endpoint_mismatch).*($|::)/)'
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^commands::configure::(withheld|withheld_credentials|endpoint_mismatch).*($|::)/)'
 oracle_cases: []
 deviations:
   - what: "Non-interactive error message text differs to reflect betterlite CLI conventions."

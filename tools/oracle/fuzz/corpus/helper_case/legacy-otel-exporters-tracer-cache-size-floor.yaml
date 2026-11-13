@@ -1,0 +1,17 @@
+kind: helper
+name: tracer-cache-size-floor
+call:
+  b3855:
+    function: tracer_cache_sequence
+    max_providers: 0
+    config:
+      exporter: console
+    requests:
+      - key:
+          config: {exporter: console, endpoint: null, headers: null}
+        owns_exporter: true
+      - key:
+          config: {exporter: otlp_http, endpoint: "http://collector-b:4318", headers: null}
+        owns_exporter: true
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: invalid-region
+call:
+  bedrock_aws_endpoints:
+    invalid_region:
+      values:
+        - null
+        - us-east-1
+        - us-gov-west-1
+        - cn-north-1
+        - '-'
+        - '123'
+        - ''
+        - US-EAST-1
+        - us_east_1
+        - 'us east 1'
+env: {}
+compare: {ignore: []}

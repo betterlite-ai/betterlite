@@ -1,0 +1,9 @@
+kind: helper
+name: catalog-fetch-policy-retry-wait
+call:
+  catalog_fetch_policy:
+    operation: retry_wait
+    attempt: 2
+    jitter: ["0.5"]
+compare: {ignore: []}
+env: {}

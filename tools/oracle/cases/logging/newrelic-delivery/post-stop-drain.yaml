@@ -1,0 +1,52 @@
+kind: helper
+name: newrelic-delivery-post-stop-drain
+call:
+  b3944:
+    operation: post_stop
+    replies: [{status: 202}, {status: 202}]
+    clock: [1700000000.0]
+    records:
+      - team_id: team-1
+        team_alias: Team One
+        model_group: production
+        model: gpt-4o
+        custom_llm_provider: openai
+        status: success
+        response_cost: 0.5
+        prompt_tokens: 2
+        completion_tokens: 3
+        total_tokens: 5
+        duration_ms: 500.0
+        team_max_budget: null
+        team_spend: null
+    payload:
+      id: chatcmpl-1
+      trace_id: trace-1
+      session_id: session-1
+      call_type: completion
+      response_cost: 0.5
+      status: success
+      status_fields: {llm_api_status: success, guardrail_status: not_run}
+      total_tokens: 5
+      prompt_tokens: 2
+      completion_tokens: 3
+      startTime: 1704067200.0
+      endTime: 1704067201.0
+      completionStartTime: 1704067200.5
+      response_time: 0.5
+      model_map_information: {}
+      model: gpt-4o
+      model_group: production
+      custom_llm_provider: openai
+      api_base: "https://api.openai.com"
+      metadata:
+        user_api_key_team_id: team-1
+        user_api_key_team_alias: Team One
+        user_api_key_team_max_budget: 10.0
+        user_api_key_team_spend: 2.5
+      saved_cache_cost: 0.0
+      request_tags: []
+      model_parameters: {}
+      hidden_params: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,26 @@
+kind: helper
+name: negative-unit-counts-suppress-token-charges
+call:
+  modality_cost:
+    operation: prompt
+    prompt_tokens: 10
+    text_tokens: 10
+    audio_tokens: 2
+    image_tokens: 4
+    character_count: -2
+    image_count: -1
+    audio_length_seconds: "-1.5"
+    video_length_seconds: "-2.5"
+    model_info:
+      input_cost_per_token: "0"
+      input_cost_per_image: "1"
+      input_cost_per_image_token: "0.5"
+      input_cost_per_audio_per_second: "1"
+      input_cost_per_audio_token: "0.25"
+      input_cost_per_character: "1"
+    prompt_base_cost: "0.5"
+    cache_read_cost: "0"
+    cache_creation_cost: "0"
+    cache_creation_cost_above_1hr: "0"
+compare: {ignore: []}
+env: {}

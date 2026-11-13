@@ -6,7 +6,9 @@ description: >-
   Include the Slack icon URL as-is rather than normalizing, and preserve each OAuth pkce boolean. Load the resource once on demand and cache it; on failure return an empty API list. The catalog is data, not a route, so do not register an endpoint here. The consumer task that owns /v1/mcp/openapi-registry depends on this resource.
 scope:
   paths:
-    - crates/betterlite-server/**
+    - crates/betterlite-server/src/mcp/openapi_registry.rs
+    - crates/betterlite-server/src/mcp/openapi_registry/**
+    - crates/betterlite-server/data/openapi_registry.json
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openapi_registry.json
@@ -29,7 +31,7 @@ checks:
       why: the catalog resource is missing or does not match the pinned LiteLLM entry
       run: |
         cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(openapi_registry_)' && sha256sum --check --quiet <<'SUMS'
-        458d22bbb9015f598cdaa49c9d05798d1f0231bf662478dc9ff6d837b2de2d47  ../litellm/litellm/proxy/openapi_registry.json
+        458d22bbb9015f598cdaa49c9d05798d1f0231bf662478dc9ff6d837b2de2d47  crates/betterlite-server/data/openapi_registry.json
         SUMS
     - id: catalog-tests
       why: the catalog tests fail or do not exist

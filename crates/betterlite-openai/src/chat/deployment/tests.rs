@@ -1,12 +1,17 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::ModelDeployment;
+use betterlite_models::catalog::ModelCatalog;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use betterlite_models::resolution::ResolutionContext;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::{ChatDeployment, DeploymentError, OpenAiDefaults, Provider};
 
@@ -95,6 +100,15 @@ fn refuses_deployments_that_cannot_be_called(#[case] entry: &str) {
 }
 
 #[rstest]
+#[case::an_unknown_model("{model_name: g, litellm_params: {model: not-a-known-model}}")]
+#[case::a_missing_model("{model_name: g, litellm_params: {}}")]
+fn a_model_no_provider_places_is_a_resolution_error(#[case] entry: &str) {
+    let error = ChatDeployment::resolve(&deployment(entry), &defaults()).unwrap_err();
+    assert!(matches!(error, DeploymentError::Resolution { .. }));
+    assert!(error.to_string().contains("LLM Provider NOT provided"));
+}
+
+#[rstest]
 #[case::litellm_oracle_hash(
     "{model_name: oracle-model, litellm_params: {model: openai/oracle-model, api_base: 'http://127.0.0.1:40985', api_key: oracle-key}}",
     "ad74a715c2e662440c2597e7713f81cb31cbcdb7d139bfa2ca9bd42dd0ca28c7"
@@ -110,4 +124,198 @@ fn refuses_deployments_that_cannot_be_called(#[case] entry: &str) {
 fn derives_the_model_id_like_litellm(#[case] entry: &str, #[case] id: &str) {
     let resolved = ChatDeployment::resolve(&deployment(entry), &OpenAiDefaults::default()).unwrap();
     assert_eq!(resolved.model_id, id);
+}
+
+#[rstest]
+#[case::userinfo_leaves_the_stored_base(
+    "http://other:pass@h/v2",
+    "http://h/v2|http://h/v2/chat/completions|Basic b3RoZXI6cGFzcw=="
+)]
+#[case::a_plain_base_clears_the_basic_header(
+    "http://h/v2",
+    "http://h/v2|http://h/v2/chat/completions|-"
+)]
+fn override_base_replaces_the_url_and_the_credential(#[case] base: &str, #[case] expected: &str) {
+    let entry = "{model_name: g, litellm_params: {model: openai/m, api_base: 'http://user:pass@first/v1', api_key: k}}";
+    let mut resolved = ChatDeployment::resolve(&deployment(entry), &defaults()).unwrap();
+    resolved.override_base(base).unwrap();
+    let observed = format!(
+        "{}|{}|{}",
+        resolved.api_base,
+        resolved.endpoint,
+        resolved
+            .authorization
+            .as_ref()
+            .map_or("-", |header| header.expose_secret()),
+    );
+    assert_eq!(observed, expected);
+}
+
+#[test]
+fn override_base_refuses_another_scheme_by_key() {
+    let entry =
+        "{model_name: g, litellm_params: {model: openai/m, api_base: 'http://h/v1', api_key: k}}";
+    let mut resolved = ChatDeployment::resolve(&deployment(entry), &defaults()).unwrap();
+    let error = resolved.override_base("ftp://h/v2").unwrap_err();
+    assert!(
+        error.to_string().contains("litellm_params.api_base"),
+        "{error}"
+    );
+}
+
+#[rstest]
+#[case::basic_beats_the_api_key("http://user:pass@h/v1", Some("k"), Some("Basic dXNlcjpwYXNz"))]
+#[case::basic_needs_no_api_key("http://user:pass@h/v1", None, Some("Basic dXNlcjpwYXNz"))]
+#[case::the_api_key_becomes_the_bearer("http://h/v1", Some("k"), Some("Bearer k"))]
+#[case::no_credential_is_absent("http://h/v1", None, None)]
+fn credential_prefers_userinfo_over_the_api_key(
+    #[case] api_base: &str,
+    #[case] api_key: Option<&str>,
+    #[case] expected: Option<&str>,
+) {
+    let entry =
+        format!("{{model_name: g, litellm_params: {{model: openai/m, api_base: '{api_base}'}}}}");
+    let mut resolved =
+        ChatDeployment::resolve(&deployment(&entry), &OpenAiDefaults::default()).unwrap();
+    resolved.api_key = api_key.map(SecretString::from);
+    let credential = resolved.credential();
+    assert_eq!(
+        credential.as_ref().map(ExposeSecret::expose_secret),
+        expected
+    );
+}
+
+fn boundary_observation(api_base: &str) -> String {
+    let entry = format!(
+        "{{model_name: g, litellm_params: {{model: openai/m, api_base: '{api_base}', api_key: k}}}}"
+    );
+    let resolved = match ChatDeployment::resolve(&deployment(&entry), &defaults()) {
+        Ok(resolved) => resolved,
+        Err(error) => return error.to_string(),
+    };
+    let shown = format!("{resolved:?}");
+    let embeddings = resolved.endpoint_for("embeddings").unwrap();
+    format!(
+        "base={}|endpoint={}|embeddings={}|basic={}|debug_leaks={}",
+        resolved.api_base,
+        resolved.endpoint,
+        embeddings,
+        resolved
+            .authorization
+            .as_ref()
+            .map_or("-", |header| header.expose_secret()),
+        shown.contains("s3cret") || shown.contains("dXNlcjpzM2NyZXQ=")
+    )
+}
+
+#[rstest]
+#[case::an_ftp_base_fails_by_key(
+    "ftp://h/v1",
+    "model_list entry g has an api_base that cannot be used: litellm_params.api_base uses the ftp scheme, and only http and https are supported"
+)]
+#[case::a_file_base_fails_by_key(
+    "file:///tmp/x",
+    "model_list entry g has an api_base that cannot be used: litellm_params.api_base uses the file scheme, and only http and https are supported"
+)]
+#[case::userinfo_leaves_the_stored_urls_and_debug(
+    "http://user:s3cret@h/v1?x=1",
+    "base=http://h/v1|endpoint=http://h/v1/chat/completions?x=1|embeddings=http://h/v1/embeddings|basic=Basic dXNlcjpzM2NyZXQ=|debug_leaks=false"
+)]
+#[case::encoded_userinfo_is_decoded_into_the_header(
+    "http://us%40er:p%40ss@h/v1",
+    "base=http://h/v1|endpoint=http://h/v1/chat/completions|embeddings=http://h/v1/embeddings|basic=Basic dXNAZXI6cEBzcw==|debug_leaks=false"
+)]
+#[case::a_private_endpoint_stays_valid(
+    "http://10.0.0.5:8000/v1",
+    "base=http://10.0.0.5:8000/v1|endpoint=http://10.0.0.5:8000/v1/chat/completions|embeddings=http://10.0.0.5:8000/v1/embeddings|basic=-|debug_leaks=false"
+)]
+fn http_boundaries_url_boundary_tests_behavior(#[case] api_base: &str, #[case] expected: &str) {
+    assert_eq!(boundary_observation(api_base), expected);
+}
+
+fn provider_observation(entry: &str, custom_llm_provider: Option<&str>) -> String {
+    let catalog = ModelCatalog::default();
+    let names = BTreeSet::new();
+    let environment = BTreeMap::new();
+    let context = ResolutionContext {
+        catalog: &catalog,
+        known_model_names: &names,
+        custom_providers: &names,
+        environment: &environment,
+        registry: JSONProviderRegistry::default(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    };
+    let resolved = ChatDeployment::resolve_with(
+        &deployment(entry),
+        &OpenAiDefaults::default(),
+        custom_llm_provider,
+        &context,
+    )
+    .unwrap();
+    match resolved.provider {
+        Provider::OpenAi { model } => format!("openai:{model}"),
+        Provider::Unsupported { model } => format!("unsupported:{model}"),
+    }
+}
+
+#[rstest]
+#[case::an_openai_prefix_strips_and_keeps_the_suffix(
+    "{model_name: g, litellm_params: {model: openai/gpt-4o-2024-08-06}}",
+    None,
+    "openai:gpt-4o-2024-08-06"
+)]
+#[case::custom_llm_provider_selects_openai(
+    "{model_name: g, litellm_params: {model: vendor-model}}",
+    Some("openai"),
+    "openai:vendor-model"
+)]
+#[case::another_provider_stays_unsupported(
+    "{model_name: g, litellm_params: {model: groq/llama}}",
+    None,
+    "unsupported:groq/llama"
+)]
+#[case::azure_stays_unsupported(
+    "{model_name: g, litellm_params: {model: azure/m}}",
+    None,
+    "unsupported:azure/m"
+)]
+#[case::a_declaration_rewrites_the_model_prefix(
+    "{model_name: g, litellm_params: {model: openai/m}}",
+    Some("groq"),
+    "unsupported:openai/m"
+)]
+fn provider_resolution_tests_behavior(
+    #[case] entry: &str,
+    #[case] custom_llm_provider: Option<&str>,
+    #[case] expected: &str,
+) {
+    assert_eq!(provider_observation(entry, custom_llm_provider), expected);
+}
+
+#[test]
+fn a_resolved_environment_credential_never_reaches_the_deployment() {
+    let entry = "{model_name: g, litellm_params: {model: groq/llama}}";
+    let catalog = ModelCatalog::default();
+    let known = BTreeSet::new();
+    let custom = BTreeSet::new();
+    let environment = BTreeMap::from([("GROQ_API_KEY".to_owned(), "groq-secret".to_owned())]);
+    let context = ResolutionContext {
+        catalog: &catalog,
+        known_model_names: &known,
+        custom_providers: &custom,
+        environment: &environment,
+        registry: JSONProviderRegistry::load(),
+        policies: ProviderPolicies::default(),
+        globals: GlobalCredentials::default(),
+    };
+    let resolved = ChatDeployment::resolve_with(
+        &deployment(entry),
+        &OpenAiDefaults::default(),
+        None,
+        &context,
+    )
+    .unwrap();
+    assert!(matches!(resolved.provider, Provider::Unsupported { .. }));
+    assert!(resolved.api_key.is_none());
 }

@@ -1,0 +1,16 @@
+kind: helper
+name: tenant-scope-end-user-optional
+call:
+  b4296:
+    get_cache_key:
+      cache_type: qdrant-semantic
+      semantic_cache_scope: end_user
+      params:
+        - {name: model, value: gpt-4}
+      metadata:
+        user_api_key: key-hash
+      litellm_metadata:
+        user_api_key_end_user_id: end-user
+env: {}
+compare:
+  ignore: []

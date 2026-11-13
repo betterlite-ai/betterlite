@@ -1,0 +1,9 @@
+kind: helper
+name: search-partial-fields
+call:
+  b5240:
+    function: "output_choices"
+    response: {"results": [{"title": "Title", "url": ""}]}
+env: {}
+compare:
+  ignore: []

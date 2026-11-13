@@ -1,0 +1,111 @@
+id: B8216
+title: Zscaler AI Guard
+description: >-
+  Build the Zscaler AI Guard guardrail in betterlite-guardrails, module zscaler_ai_guard, with zscaler_ai_guard/init.rs
+  for the initializer in zscaler_ai_guard/__init__.py. It posts the joined texts of a request or response to the
+  Zscaler policy API and blocks on a BLOCK action. Supported hooks: pre_call and post_call.
+
+  Settings. The URL is api_base, else ZSCALER_AI_GUARD_URL, else
+  "https://api.us1.zseclipse.net/v1/detection/execute-policy". policy_id is the argument when set, else
+  ZSCALER_AI_GUARD_POLICY_ID as an integer, else -1 (a value that is not an integer is a start error). api_key is the
+  argument or ZSCALER_AI_GUARD_API_KEY. send_user_api_key_alias, send_user_api_key_user_id and send_user_api_key_team_id
+  are the argument when set, else SEND_USER_API_KEY_ALIAS, SEND_USER_API_KEY_USER_ID and SEND_USER_API_KEY_TEAM_ID,
+  where "true" or "1" in any case is true and the default is false. The timeout is the argument when positive,
+  otherwise 5.0; a non-positive timeout logs a warning that names the value and the default. The same rule runs when
+  the live params are updated in memory (update_in_memory_litellm_params), using the new timeout.
+
+  apply_guardrail(inputs, request_data, input_type). The policy id is the first present of request_data.metadata
+  .zguard_policy_id, metadata.user_api_key_metadata.zguard_policy_id, metadata.team_metadata.zguard_policy_id, then the
+  configured id. A key counts as present even when its value is null. For each enabled send_ flag, the value is looked up
+  with _resolve_metadata_value, which tries request_data.litellm_metadata[key] first (for user_api_key_alias it also tries
+  litellm_metadata["user_api_key_key_alias"]), then request_data.metadata[key], converts the value to a string and
+  trims it, and gives "N/A" when nothing is found. The direction is "OUT" for a response and "IN" for a request. With
+  texts, the content is the texts joined by a single space, and one call is made. With no texts there is no call and the
+  inputs pass.
+
+  The call. Headers are Content-Type: application/json and Authorization: Bearer <api_key>, plus user-api-key-alias,
+  user-api-key-team-id and user-api-key-user-id for the enabled flags. The body is {direction, content}, plus policyId
+  when the policy id is at least 1. POST through the pooled client with the timeout; a failing status is an error.
+  Any error that is not already an HTTP error becomes HTTP 500 with detail {"error_type": "Zscaler AI Guard Error",
+  "reason": <error text>}. The answer by status: 429 gives HTTP 500 with reason "Rate limit reached. status_code: 429";
+  500 or above gives HTTP 500 with reason "Service is unavailable (HTTP <status>)"; 200 reads the JSON, where
+  statusCode must be 200 or the call is HTTP 500 with reason "statusCode in response: <code>, errorMsg: <msg>"; then
+  action "BLOCK" gives a block result, "ALLOW" and "DETECT" give an allow result, and anything else is HTTP 500 with
+  reason "Action field in response is <action>, expecting 'ALLOW', 'BLOCK' or 'DETECT'"; any other status is an HTTP
+  error with that status and reason "Response status code: <status>".
+
+  A block result raises HTTP 400 with detail {"error": "Content blocked by Zscaler AI Guard: <info>"}, where info is
+  {"transactionId": ..., "blockingDetectors": [names of the detectors in detectorResponses whose action is BLOCK]}
+  written the way Python prints a dict. HTTP errors pass through unchanged. Other errors are logged and raised again.
+
+  initialize_zscaler(params, guardrail_name) in zscaler_ai_guard/init.rs returns ZscalerArgs with api_base, api_key,
+  policy_id, the three send_ flags, timeout, the name (empty string when absent), event_hook and default_on, copied
+  without change.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/zscaler_ai_guard.rs
+    - crates/betterlite-guardrails/src/zscaler_ai_guard/**
+    - tools/oracle/cases/guardrails/zscaler-*.yaml
+    - tools/oracle/helpers/b8216.py
+    - tools/oracle/helpers/b8216/**
+    - tools/oracle/src/helpers/guardrails/b8216.rs
+    - tools/oracle/src/helpers/guardrails/b8216/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/zscaler_ai_guard/zscaler_ai_guard.py
+    why: The ZscalerAIGuard class, with settings, metadata lookup, apply_guardrail, response handling and extract_blocking_info.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/zscaler_ai_guard/__init__.py
+    why: The initializer and the registry entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/zscaler_ai_guard.py
+    why: The config model field names.
+
+dod:
+  - text: Settings resolve from the argument, then the environment, then the default, and a non-positive timeout falls back to 5.0 at start and on update.
+    proof: [unit-tests]
+  - text: The policy id and the user key values are found in the documented order.
+    proof: [unit-tests]
+  - text: The request carries the documented URL, headers and body, and nothing is sent when there are no texts.
+    proof: [oracle]
+  - text: BLOCK raises 400 with the transaction id and the blocking detector names, and ALLOW and DETECT pass.
+    proof: [oracle]
+  - text: Status 429, 5xx, a bad statusCode, an unknown action and any other status give the documented errors.
+    proof: [oracle]
+  - text: The initializer copies the settings into ZscalerArgs.
+    proof: [init-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: unit-tests
+      why: a unit test of the zscaler_ai_guard module fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^zscaler_ai_guard::/)'
+    - id: init-tests
+      why: the initializer arguments differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^zscaler_ai_guard::init::/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/zscaler-allow.yaml
+  - tools/oracle/cases/guardrails/zscaler-block.yaml
+  - tools/oracle/cases/guardrails/zscaler-detect-response.yaml
+  - tools/oracle/cases/guardrails/zscaler-rate-limit.yaml
+  - tools/oracle/cases/guardrails/zscaler-bad-action.yaml
+  - tools/oracle/cases/guardrails/zscaler-policy-override.yaml
+
+deviations:
+  - what: The initializer returns ZscalerArgs and registers nothing.
+    why: B3682 owns the registry and the registration, as with B3681.
+
+out_of_scope:
+  - The guardrail base class and event hook plumbing (B5471).
+  - The initializer registry and the callback registration (B3682).
+  - The Python config model class (B7936).
+
+pitfalls:
+  - policyId is left out of the body when the id is below 1, so the default -1 sends no policy.
+  - A policy key set to null in metadata still wins over the configured id.
+  - DETECT is an allow, but the log line for it is the allow line.
+  - The post_call metadata lives in litellm_metadata and the pre_call metadata in metadata, so both are searched.
+review_level: standard
+budget:
+  max_changed_lines: 1800
+  max_new_expects: 0

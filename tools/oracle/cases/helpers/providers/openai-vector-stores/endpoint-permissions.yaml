@@ -1,0 +1,5 @@
+kind: helper
+name: endpoint-permissions
+call: {"openai_vector_stores": {"endpoints": {"surface": "files"}}}
+env: {}
+compare: {ignore: []}

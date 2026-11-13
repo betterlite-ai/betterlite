@@ -1,0 +1,10 @@
+kind: helper
+name: oci-chat-wire-generic-messages-seed
+call:
+  b5942:
+    function: generic_messages
+    messages:
+      - role: user
+        content: "hi"
+env: {}
+compare: {ignore: []}

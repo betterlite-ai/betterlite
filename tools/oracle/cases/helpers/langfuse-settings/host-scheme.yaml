@@ -1,0 +1,19 @@
+kind: helper
+name: langfuse-settings-host-scheme
+call:
+  b3900:
+    function: host
+    steps:
+      - host: http://langfuse.local
+        environment: {}
+      - host: https://langfuse.local
+        environment: {}
+      - host: langfuse.internal:3000
+        environment: {}
+      - host: HTTPS://langfuse.local
+        environment: {}
+      - host: ""
+        environment:
+          LANGFUSE_BASE_URL: langfuse.internal
+env: {}
+compare: {ignore: []}

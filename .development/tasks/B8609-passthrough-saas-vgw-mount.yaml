@@ -1,0 +1,78 @@
+id: B8609
+title: Mount the Fal, AssemblyAI, TinyFish, VLLM, GigaChat and Watsonx routes
+description: >-
+  B8640 builds the shared pass-through state and calls `saas_vgw::mount` with a stub body. This task fills crates/betterlite-server/src/app/pass_through/routes/saas_vgw.rs (and its folder for tests) so the SaaS routes of B3626 and the VLLM, GigaChat and Watsonx routes of B3627 answer through the booted proxy. It takes over their HTTP oracle cases, which could not pass at their own gates.
+  Everything comes from B8640's `PassThroughState`. B3626 needs the handler Arc for B3615's create_pass_through_route, the credential lookup and `config.sections.tinyfish_route`. B3627 needs the same handler Arc, the router hop and the passthrough processor for router models, `config.sections.gigachat_route`, and the pooled GigaChat client with a 600 second timeout and a 5 second connect timeout built from Shared's `http` settings (B3627 line 25). Read both merged deps structs; when a field has no source in PassThroughState, stop and report.
+
+  `mount(router, ps)` merges, inside the auth layers, B3626's router (`/fal_ai/{*endpoint}`, `/assemblyai/{*endpoint}`, `/eu.assemblyai/{*endpoint}` and `/tinyfish/{*endpoint}`, with the methods B3626 lists for each) and B3627's router (`/vllm/{*endpoint}`, `/gigachat/{*endpoint}` and `/watsonx/{*endpoint}`, GET, POST, PUT, DELETE and PATCH).
+
+  Oracle cases. Take over B3626's 12 cases and B3627's 16 cases at their paths; do not move or rename the files. The TinyFish mock upstream answers without a run_id, as B3626 says, so the billing poller makes no second call.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/pass_through/routes/saas_vgw.rs
+    - crates/betterlite-server/src/app/pass_through/routes/saas_vgw/**
+    - tools/oracle/cases/server/passthrough-saas-routes/**
+    - tools/oracle/cases/server/passthrough-vgw-routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L445-L549
+    why: The /fal_ai and /vllm registrations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1873-L1940
+    why: The /assemblyai and /eu.assemblyai registrations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3426-L3440
+    why: The /tinyfish registration and its methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3801-L3810
+    why: The /gigachat registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L4025-L4034
+    why: The /watsonx registration.
+dod:
+  - text: Every Fal, AssemblyAI, TinyFish, VLLM, GigaChat and Watsonx path reaches its handler through the merged app with the methods its task lists, and the merge does not panic.
+    proof: [registration-tests, oracle]
+  - text: The SaaS and VLLM, GigaChat and Watsonx routes answer through the booted proxy as LiteLLM does.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: registration-tests
+      why: a SaaS or VLLM, GigaChat or Watsonx path is missing, takes the wrong methods, or collides with another family
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::routes::saas_vgw::tests::registration(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/server/passthrough-saas-routes/fal-priced-forward.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/fal-unpriced-400.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/fal-requests-path-skips-price.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/fal-missing-key-401.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-run-forward.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-list-runs-403.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-put-405.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-non-json-400.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-envelope-field-400.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-vault-field-403.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-vault-field-allowed.yaml
+  - tools/oracle/cases/server/passthrough-saas-routes/tinyfish-missing-key-401.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/vllm-direct-forward.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/vllm-router-model-json.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/vllm-router-model-stream.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/vllm-get-models-forward.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-chat-no-model-400.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-embeddings-no-model-400.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-empty-model-400.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-models-get-forward.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-direct-bearer.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-router-model.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-router-metadata.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-router-strips-api-base.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/watsonx-default-version.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/watsonx-version-kept.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/watsonx-stream-flag.yaml
+  - tools/oracle/cases/server/passthrough-vgw-routes/watsonx-get-no-body-read.yaml
+deviations: []
+out_of_scope:
+  - "The route logic: B3626 and B3627. The shared state, the router hop and the processor: B8640."
+pitfalls:
+  - "`/eu.assemblyai/{*endpoint}` has a dot in its first segment; register it as a literal path, not as a pattern."
+  - "TinyFish refuses PUT with 405 by its method list, so register only the methods B3626 names there."
+  - "The GigaChat client keeps its own pool and timeouts; building it per request drops the connect timeout LiteLLM sets."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

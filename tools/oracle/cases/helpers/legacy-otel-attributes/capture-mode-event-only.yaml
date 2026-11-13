@@ -1,0 +1,28 @@
+kind: helper
+name: capture-mode-event-only
+call:
+  b3856:
+    function: set_attributes
+    capture_mode: EVENT_ONLY
+    kwargs:
+      model: gpt-4o
+      messages:
+        - {role: user, content: hello}
+      optional_params:
+        tools:
+          - {type: function, function: {name: lookup, description: Look up}}
+      litellm_params: {custom_llm_provider: openai}
+      standard_logging_object:
+        call_type: acompletion
+        request_id: request-1
+        litellm_call_id: call-1
+        metadata: {}
+    response:
+      id: chatcmpl-1
+      model: gpt-4o
+      choices:
+        - message: {role: assistant, content: hi}
+          finish_reason: stop
+      usage: {total_tokens: 3, completion_tokens: 1, prompt_tokens: 2}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,31 @@
+kind: helper
+name: cyberark-rotate-same-name-cache-cleared
+env: {}
+compare: {ignore: []}
+call:
+  b4418:
+    env: {CYBERARK_API_KEY: key-1}
+    routes:
+      - route: "POST http://127.0.0.1:8080/authn/default/admin/authenticate"
+        replies: [{status: 200, body: '{"protected":"abc"}'}]
+      - route: "POST http://127.0.0.1:8080/policies/default/policy/root"
+        replies: [{status: 201, body: ""}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/old"
+        replies: [{status: 200, body: before}]
+      - route: "POST http://127.0.0.1:8080/secrets/default/variable/old"
+        replies: [{status: 201, body: ""}]
+      - route: "POST http://127.0.0.1:8080/secrets/default/variable/new"
+        replies: [{status: 201, body: ""}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/gone"
+        replies: [{status: 404, body: ""}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/lost"
+        replies: [{status: 200, body: here}]
+      - route: "POST http://127.0.0.1:8080/secrets/default/variable/lost"
+        replies: [{status: 500, body: ""}]
+    steps:
+      - {op: rotate, current: old, new: old, value: after}
+      - {op: read, name: old}
+      - {op: rotate, current: old, new: new, value: next}
+      - {op: read, name: new}
+      - {op: rotate, current: gone, new: new, value: never}
+      - {op: rotate, current: lost, new: lost, value: unverified}

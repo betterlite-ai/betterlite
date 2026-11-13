@@ -91,7 +91,9 @@ fn chat_payload_inputs(
 
 // Mirrors LiteLLM's fn _build_metadata.
 fn request_metadata(request_data: &Fields) -> RequestMetadata {
-    let Json::Object(metadata) = Json::field(request_data, "metadata") else {
+    let Json::Object(metadata) =
+        Json::parse(request_data.get("metadata").map_or("null", |raw| raw.get()))
+    else {
         return RequestMetadata::default();
     };
     RequestMetadata {
@@ -106,7 +108,7 @@ fn request_metadata(request_data: &Fields) -> RequestMetadata {
 }
 
 fn text_field(fields: &Fields, key: &str) -> Option<String> {
-    match Json::field(fields, key) {
+    match Json::parse(fields.get(key).map_or("null", |raw| raw.get())) {
         Json::Text(value) if !value.is_empty() => Some(value),
         Json::Null
         | Json::Bool(_)

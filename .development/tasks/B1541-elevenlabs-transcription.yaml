@@ -31,8 +31,6 @@ description: >-
   fit a 600-line cap. HTTP integration remains in B047.
 scope:
   paths:
-    - crates/betterlite-core/src/api/elevenlabs.rs
-    - crates/betterlite-core/src/api/elevenlabs/**
     - crates/betterlite-core/src/api/elevenlabs/transcription.rs
     - crates/betterlite-core/src/api/elevenlabs/transcription/**
     - crates/betterlite-core/fuzz/Cargo.toml

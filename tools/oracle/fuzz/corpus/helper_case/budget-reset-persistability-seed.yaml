@@ -1,0 +1,13 @@
+kind: helper
+name: budget_reset_persistability_seed
+call:
+  budget_reset:
+    reset_now: "2024-06-15T12:00:00Z"
+    calendar_now: "2024-01-31T20:00:00Z"
+    calendar_timezone: Asia/Kolkata
+    calls:
+      - {function: is_persistable, duration: "1mo"}
+      - {function: is_persistable, duration: "0h"}
+      - {function: budget_duration_error, duration: "2mo"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+id: B8218
+milestone: M6 guardrails
+title: Hook initializer arguments M to Z
+status: todo
+depends_on: [B3662]
+file: tasks/B8218-hook-initializers-m-z.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/pillar/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/rubrik/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/straiker/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/typesafe/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/vigil_guard/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/xecguard/__init__.py"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,279 @@
+id: B105
+title: Built-in filter lookup and HTTP composition parity
+description: >-
+  Finish the content-filter umbrella after its class, matchers, streaming hook and
+  initializers. The only unassigned method in content_filter.py is
+  _check_blocked_words at L1173-L1207: upstream tests call it, although production
+  filtering uses the separate all-word loop in _filter_single_text. Build its typed
+  lookup and add HTTP parity cases for the built-in combinations that the earlier
+  helper-only tasks could not reach. B8613 installs B8666's real classes, B8399 runs
+  proxy hooks, B8668 mounts apply_guardrail, and B8626 mounts MCP REST. Call those
+  existing paths; no route, callback registry, constructor, matcher or stream wrapper
+  is registered or implemented again here. B8850 supplies the missing prompt-injection
+  callback and its own HTTP cases; the final mixed case here uses it with a content filter.
+
+  Put check_blocked_words in crates/betterlite-guardrails/src/blocked_word_lookup.rs
+  and its tests in blocked_word_lookup/tests.rs. Accept an insertion-ordered map from
+  already-lowercased keywords to (B3690's ContentFilterAction, optional description),
+  plus text, and return the first matching keyword, action and description, or None.
+  Lowercase the text and use literal substring matching: no word boundaries, wildcard
+  conversion, regex compilation, redaction or detection logging. Preserve map order;
+  when configuration repeated a keyword, the initializer kept its first position and
+  last value. Reuse the workspace's ordered map and str substring operations.
+  The list-to-map recovery at L1183-L1197 is an old Python instance-shape repair,
+  outside the declared dict field type, so docs/compatibility.md applies and no Rust
+  union or malformed-instance case is added. Keep the debug log on a match.
+
+  The helper operation supplied by the skeleton is b105. Its typed input carries a
+  list of valid blocked-word records and text. Its Python adapter builds LiteLLM's
+  actual ContentFilterGuardrail with that list and calls _check_blocked_words; the
+  Rust adapter prepares the ordered map and calls the production lookup. Return
+  null or {keyword, action, description}. Four helper cases cover first insertion
+  winning over text position, duplicate keyword replacement after lowercasing,
+  a literal asterisk rather than a wildcard, and a miss with an empty table. Native
+  rstest cases named blocked_lookup_cases also cover an embedded word and Unicode
+  lowercase. Add a b105-tagged seed to the existing helper-case decoder corpus;
+  the function itself takes parsed records and introduces no new byte parser.
+
+  HTTP cases live in tools/oracle/cases/guardrails/builtin-content-http. Use the
+  normal booted-proxy HTTP case format, a configured master key, no database except
+  for cache-control-permissions, mock
+  OpenAI deployments with api_base {{upstream}}, and router_settings.num_retries 0.
+  Set guardrails[].litellm_params.guardrail to litellm_content_filter and select each
+  guardrail through the request's guardrails list unless a case tests default_on.
+  Modes are pre_call, post_call or pre_mcp_call as named below. Content filter action
+  names are BLOCK and MASK, and its default severity_threshold is medium. Capture
+  provider requests as well as responses so a 200 cannot hide a skipped input scan.
+  Compare status, error type/param/code, content-type and x-litellm-applied-guardrails
+  when the source emits it. On errors ignore only human-readable string leaves with
+  the betterlite-wording reason: /error/message when scalar, or the error/message
+  string inside a structured detail. Keep category, severity, keyword, description,
+  pattern, intent and confidence fields compared. Ignore only justified generated
+  ids/times elsewhere, never the whole error or all response headers.
+
+  auto-enable-and-aliases uses one HTTP scenario with the four existing POST chat
+  paths /v1/chat/completions, /chat/completions,
+  /engines/{model:path}/chat/completions and
+  /openai/deployments/{model:path}/chat/completions. A default_on true MASK word runs
+  without a request guardrails list; a separate default-off case leaves that same
+  word unchanged. pattern-and-word-order puts a prebuilt us_ssn MASK before a
+  blocked-word rule matching the resulting US_SSN_REDACTED tag, proving the ordered
+  initializer/class/evaluator composition rather than merely the regex helper.
+  secret-pattern-mask configures the bundled aws_access_key pattern with MASK and
+  sends the synthetic fixture AKIA0000000000000000; the provider must receive
+  [AWS_ACCESS_KEY_REDACTED]. This is the built-in credential pattern, without the
+  enterprise-only hide_secrets callback.
+  category-conditional-block loads denied_financial_advice and sends "Should I buy
+  stock?"; category-exception-pass sends "What is the return policy?" with the same
+  category. category-conditional-mask uses MASK and the first sentence to prove that
+  the conditional branch warns but leaves the provider input unchanged.
+
+  competitor-refuse uses the generic checker with competitors [Acme], comparison_words
+  [better], policy.competitor_comparison refuse and input "Is Acme better?"; it must
+  stop before the provider. competitor-reframe uses reframe and an explicit
+  reframe_message_template "Please ask about our service" and compares the synthetic
+  chat response and absence of provider traffic. The template is operator input,
+  not generated error wording, so compare its text exactly. airline-brand-excluded
+  uses competitor_intent_type airline, brand_self [Emirates] and a comparison mentioning
+  Emirates, proving that B3697's bundled list and B8773's constructor compose.
+
+  tool-request-mask supplies an assistant message with a function call whose arguments
+  contain nested string values matching a MASK word; compare the provider's parsed
+  arguments. tool-response-mask returns the same kind of tool call from the mock
+  provider in post_call mode. tool-key-mask-block uses the masked word as an object
+  key, which is not rewritable and must block. image-description-block configures a
+  separate image_model deployment returning the blocked word in its description;
+  verify the description request's system prompt "Describe the image in detail."
+  and that the main chat deployment is never called. Use a fixture data image URL,
+  not a real external image service.
+
+  streamed-split-mask sends a provider SSE stream whose us_ssn value spans chunks
+  and ends at finish_reason; compare decoded SSE choices, the redacted text, final
+  flush and absence of an extra trailing space. streamed-block-after-prefix emits
+  enough harmless text to pass the 50-character holdback before a BLOCK word and
+  compares the resulting stream error framing, not an invented replacement HTTP
+  status after headers have already been sent. B3700 owns holdback and B6370 owns
+  the outer wrapper; failures here must be reported to those owners, not repaired
+  by adding a second streaming implementation.
+
+  mcp-argument-mask calls the existing POST /mcp-rest/tools/call with server_id,
+  name and arguments, one mcp_servers entry with transport http, url {{upstream}}
+  and a pinned server_id, and a default-on
+  pre_mcp_call content filter. Compare the tools/call arguments observed by the MCP
+  mock, including nested string redaction and unchanged bool/numeric fields. The
+  mock captures six requests: LiteLLM's startup listing of the server
+  (initialize, notifications/initialized, tools/list), then the call's own session
+  (initialize, notifications/initialized, tools/call). Script the replies in that
+  order with the existing upstream answer queue: initialization returns no
+  Mcp-Session-Id, notifications return 202, and each JSON-RPC reply echoes its
+  request's id, which counts from 1 in each session. Do not assume an OpenAI
+  completion response is an MCP reply. Each initialize body carries its own side's
+  clientInfo, so name B9850's `/upstream/0/body` and `/upstream/3/body` in
+  compare.ignore with that reason. Keep protocol methods, ids and arguments in the
+  other four bodies compared. Do not build a transport or mount /mcp,
+  /mcp/proxy, /toolset/{toolset_name}/mcp or /{mcp_server_name}/mcp, which B8728 owns.
+  apply-aliases masks text through POST /guardrails/apply_guardrail and /apply_guardrail
+  in a two-step scenario and compares response_text. no-auth uses the canonical
+  apply path without authorization and checks refusal before class execution.
+
+  code-request-response-block configures block_code_execution with blocked_languages
+  [python], confidence_threshold 0.5, detect_execution_intent false and action block.
+  One scenario sends a fenced Python block as input and then obtains one in the
+  provider response with the appropriate pre_call and post_call guardrails. Input
+  blocking is a passthrough ModifyResponse result; output blocking raises HTTP 400,
+  so do not collapse the two. mixed-injection-and-content configures B8850's callback
+  with heuristics_check true beside a pre_call content filter; two requests separately
+  trip the heuristic phrase "do not follow" and a content-filter BLOCK word, proving
+  both installed mechanisms run in the same process without reaching the provider.
+
+  cache-control-permissions is an http_scenario using the existing isolated Postgres
+  setup. Call B055's POST /key/generate with the master key, models [chat] and
+  allowed_cache_controls [no-cache], capture /body/key as a secret, then use that
+  key in Authorization for three chat requests: cache {no-cache: true} passes,
+  cache {no-store: true} returns 403 before provider traffic, and an absent cache
+  object passes. Create a second key with allowed_cache_controls [] and prove
+  no-store is permitted. Compare the chat status/error fields and provider traffic;
+  ignore only generated key/id/time fields in the creation responses with reasons.
+  The harness's KeyRow has no allowlist field, so use the real key route, not a
+  made-up fixture property or a forged authenticated principal. B055/B1100 already
+  own that route and its registry entry; this task does not mount it.
+
+  All other behavior remains with the parts listed below. Basic cross-endpoint
+  pre/during/post-call cases already belong to B3680, and generic API hook/header
+  cases to B8399. The sensitive-data hook is registered by B8399 and its cache
+  behavior is B3704's: the open-source built-ins never call
+  handle_sensitive_data_detection at this pin, so do not invent a built-in detector
+  that populates its sticky cache. The examples README and benchmark datasets/results
+  are reference material, not a runtime API or a latency contract; the pytest-only
+  benchmark runner is not ported. llamaguard_prompt.txt has no caller in the
+  open-source checkout, and hide_secrets depends on the unavailable enterprise
+  implementation, so neither becomes a new detector in this task.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/blocked_word_lookup.rs
+    - crates/betterlite-guardrails/src/blocked_word_lookup/**
+    - tools/oracle/cases/helpers/blocked-word-lookup/**
+    - tools/oracle/cases/guardrails/builtin-content-http/**
+    - tools/oracle/fuzz/corpus/helper_case/blocked-word-lookup-*
+    - tools/oracle/helpers/b105.py
+    - tools/oracle/helpers/b105/**
+    - tools/oracle/src/helpers/guardrails/b105.rs
+    - tools/oracle/src/helpers/guardrails/b105/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1173-L1207
+    why: Owned first-literal-substring lookup; it is different from the production all-word regex loop.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/guardrails/guardrail_hooks/content_filter/test_content_filter.py#L154-L179
+    why: The lookup has test callers at the pin and cannot be dismissed as uncalled code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/__init__.py#L14-L65
+    why: B8219 owns arguments and B8521 extends B3682's registry; the HTTP tests verify their defaults reach B8773's class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/patterns.json#L66-L72
+    why: B3691's bundled AWS credential pattern, reached through the initialized class and a real request hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1209-L1429
+    why: B3695's action order and conditional MASK behavior, exercised through real request/response paths here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1456-L1522
+    why: B3699's image description call observed on the mock provider.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1640-L1700
+    why: B3699's refuse and reframe effects must survive the HTTP error and passthrough adapters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1756-L1955
+    why: B3699's argument scans and B8773's orchestration reached by chat and MCP cases, not new implementations here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L2032-L2153
+    why: B3700's buffered stream output as observed after the real SSE wrapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/block_code_execution/block_code_execution.py#L496-L588
+    why: B3702's input passthrough versus output HTTPException, verified together over chat.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11957
+    why: All four authenticated chat aliases used by the scenario; their handler is already owned.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2337-L2453
+    why: B3687's apply handler and both decorators, mounted by B8668.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1159-L1260
+    why: The MCP tools/call decorator and accepted body fields; B8626 owns its mount.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6671-L6714
+    why: Config load lists the server's tools at startup, the first MCP session the mock captures in mcp-argument-mask.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L543-L570
+    why: Each MCP session opens with initialize, whose clientInfo differs per side, then notifications/initialized.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/cache_control_check.py#L16-L58
+    why: B3705's nonempty allowlist enforcement, now tested with a real authenticated key through chat.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1940-L2150
+    why: Existing authenticated key generation decorator and allowlist input used only for the HTTP scenario setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/examples/README.md#L1-L58
+    why: Reference-only airline configuration; executable classification and construction are B3697 and B8773.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/guardrail_benchmarks/test_eval.py#L1-L590
+    why: Inventory-only offline pytest evaluation infrastructure, explicitly excluded below rather than mistaken for a live guardrail.
+dod:
+  - text: The blocked-word lookup returns the first literal substring match in insertion order with its action and optional description, preserving duplicate-key replacement and lowercase behavior.
+    proof: [lookup-tests, oracle, helper-python]
+  - text: Fresh b105 helper-case seeds replay through the existing typed helper decoder.
+    proof: [helper-corpus]
+  - text: Booted-proxy cases cover category and competitor policy effects, aliases and activation, ordered masking and credential redaction, images, chat/MCP tool arguments, stream masking and late blocks, and both code-execution outcomes.
+    proof: [oracle]
+  - text: The apply aliases preserve redacted text and auth, and a process with both prompt-injection and content-filter configuration runs each check on its triggering request.
+    proof: [oracle]
+  - text: A real generated key's nonempty cache-control allowlist permits an authorized control and rejects an unauthorized control with 403, while an empty allowlist permits it.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: lookup-tests
+      why: the lookup is absent, regex-based, loses insertion order or returns the wrong stored value
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::blocked_lookup_cases($|::)/)'
+    - id: helper-python
+      why: the new pure-function oracle adapter fails the strict Python checks
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-corpus
+      why: no seed exercises b105 or the existing helper-case decoder rejects the new typed input
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/blocked-word-lookup-*')" && grep -rlq 'b105:' tools/oracle/fuzz/corpus/helper_case/blocked-word-lookup-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/blocked-word-lookup/first-configured-match.yaml
+  - tools/oracle/cases/helpers/blocked-word-lookup/duplicate-lowercase-replaces.yaml
+  - tools/oracle/cases/helpers/blocked-word-lookup/literal-asterisk.yaml
+  - tools/oracle/cases/helpers/blocked-word-lookup/empty-table.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/auto-enable-and-aliases.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/default-off.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/pattern-and-word-order.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/secret-pattern-mask.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/category-conditional-block.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/category-exception-pass.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/category-conditional-mask.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/competitor-refuse.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/competitor-reframe.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/airline-brand-excluded.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/tool-request-mask.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/tool-response-mask.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/tool-key-mask-block.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/image-description-block.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/streamed-split-mask.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/streamed-block-after-prefix.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/mcp-argument-mask.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/apply-aliases.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/no-auth.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/code-request-response-block.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/mixed-injection-and-content.yaml
+  - tools/oracle/cases/guardrails/builtin-content-http/cache-control-permissions.yaml
+deviations: []
+out_of_scope:
+  - "content_filter.py records and enums are B3690. CategoryConfig.__init__, _category_config_view, _assert_within_data_roots, _resolve_category_file_path, _load_categories, _load_conditional_category, _load_category_file, _read_category_yaml, _load_category_file_json and _should_apply_severity are B3692."
+  - "_normalize_patterns, _normalize_blocked_words, _add_pattern, _lookup_pattern_extra, _load_blocked_words_file, _find_pattern_spans, _match_near_keyword, _gap_text_allowed, _merge_spans, _mask_spans, _convert_word_number_sequence, _check_patterns, _keyword_to_regex_pattern and _mask_content are B3693."
+  - "_check_conditional_categories, _check_phrase_patterns and _check_category_keywords are B3694; _handle_conditional_match, _handle_category_keyword_match, _handle_pattern_match, _handle_blocked_word_match and _filter_single_text are B3695."
+  - "_count_masked_entities, _build_match_details, _get_detection_methods, _get_patterns_checked_count, _get_policy_templates, _compute_risk_score and _log_guardrail_information are B3698."
+  - "_process_images, _describe_image_response_content, _apply_competitor_intent_policy, _get_mcp_tool_name, _assert_argument_label_clean, _filter_argument_value, _scan_mcp_tool_call_arguments, _get_tool_call_arguments, _set_tool_call_arguments, _filter_tool_call_arguments and _scan_tool_call_arguments are B3699."
+  - "_streamed_scan_plan, _cut_breaks_wider_context, _trim_streamed_choice_buffer, _merge_detections and async_post_call_streaming_iterator_hook are B3700. ContentFilterGuardrail.__init__, _init_competitor_intent_checker, apply_guardrail, get_config_model and get_supported_event_hooks are B8773."
+  - "__init__.py initialize_guardrail arguments are B8219; its registry entries are B8521 over B3682, with B8666 constructing live classes. B8521's covers must gain this __init__.py through the architect. B3691 owns the pattern/category assets, B3696 and B3697 the competitor implementations."
+  - "test_eval.py is exclusively pytest evaluation infrastructure: _load_jsonl, _run, _print_confusion_report, _save_confusion_results, _confusion_matrix, _content_filter, _llm_judge, both checker classes' __init__/check methods and every blocker/cases/test_confusion_matrix fixture/test stay upstream; no production caller exists. Its CSV/JSONL eval inputs, JSON result snapshots and BENCHMARKS.md remain reference data, not new Rust APIs or performance assertions."
+  - "examples/README.md documents B3697/B8773 behavior and needs no executable port; llamaguard_prompt.txt has no caller at the pin in the open-source checkout, so no loader is built."
+  - "SensitiveDataRoutingHandler and its cache policy are B3704, its registration is B8399, and handling a SensitiveDataRoute exception is B8392. No open-source built-in emits that exception at the pin. The cache-control hook is B3705 and is likewise installed by B8399."
+  - "Code execution class/detection are B3701/B3702. Prompt-injection logic is B3703 and binding is B8850. hide_secrets is the missing-enterprise-package outcome owned by B3681, not a native secret detector."
+  - "Route ownership remains B8610 for the root, B8667/B8668/B8669/B8790 for the guardrail area, B8626 for MCP REST, B8701 for toolsets, B9950 for sessions and B8728 for MCP transport. No route or mount is added by this umbrella."
+pitfalls:
+  - "_check_blocked_words uses literal substring search, whereas _filter_single_text turns an asterisk into .? and evaluates every configured word."
+  - "The four chat aliases include engines and deployments paths; /openai/v1/chat/completions is not a decorator on this handler."
+  - "A conditional MASK leaves the text intact, so a test that expects [KEYWORD_REDACTED] would contradict LiteLLM."
+  - "ContentFilterGuardrail's during_call MASK warning explicitly describes a race, so deterministic masking cases use pre_call or post_call."
+  - "block_code_execution uses lowercase block/mask, unlike the content filter's uppercase BLOCK/MASK."
+  - "A stream block after the first emitted data cannot be tested as an ordinary HTTP 400 response."
+  - "Benchmark expected labels and recorded timings are not the oracle; compare the pinned running implementation, including its false positives and false negatives."
+  - "compare.ignore reaches a captured MCP request only through B9850's whole-body selector, so a pointer to a JSON-RPC id inside a body is refused; the dispatcher of mcp 2.3.0 (the version tools/oracle/litellm/uv.lock installs) numbers ids from 1 in each session (jsonrpc_dispatcher.py _allocate_id), so they need no ignore."
+  - "LiteLLM lists every mcp_servers entry's tools at startup (mcp_server_manager.py L6683-L6714), so mcp-argument-mask's first three captures come before its own request; run it with --self-check first and take the selector indices from that capture."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

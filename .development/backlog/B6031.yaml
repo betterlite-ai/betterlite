@@ -1,0 +1,14 @@
+id: B6031
+milestone: M12 python
+title: Native guardrail calls in the Python crate
+status: todo
+depends_on: [B5369, B3664, B3665, B5471]
+file: tasks/B6031-native-guardrail-calls.yaml
+covers:
+  - "litellm/integrations/custom_guardrail.py"
+parent: B164
+split_from: B164
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

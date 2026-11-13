@@ -1,0 +1,14 @@
+kind: helper
+name: xpass-prefix-stripped
+call:
+  b3571:
+    operation: forward_headers
+    request_headers:
+      X-Pass-Anthropic-Beta: first
+      x-pass-anthropic-version: "2023-06-01"
+      x-pass-anthropic-beta: second
+    custom_headers:
+      x-route: one
+    forward_headers: false
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,39 @@
+kind: helper
+name: vector-store-knowledge-base-records
+call:
+  vector_store_records:
+    operation: knowledge_base_records
+    record:
+      request:
+        retrievalQuery: {text: q}
+        nextToken: n
+        userContext: {userId: u}
+        guardrailConfiguration: {guardrailId: g, guardrailVersion: "1"}
+        retrievalConfiguration:
+          vectorSearchConfiguration:
+            filter: {equals: {key: k, value: v}}
+            numberOfResults: 3
+            overrideSearchType: HYBRID
+            implicitFilterConfiguration: {modelArn: a, metadataAttributes: [{description: d, key: k, type: STRING}]}
+            rerankingConfiguration: {type: BEDROCK_RERANKING_MODEL, bedrockRerankingConfiguration: {modelConfiguration: {modelArn: a, additionalModelRequestFields: {x: 1}}, metadataConfiguration: {selectionMode: SELECTIVE, selectiveModeConfiguration: {}}}}
+      response:
+        guardrailAction: INTERVENED
+        nextToken: n
+        retrievalResults:
+          - score: 0.5
+            metadata: {k: v}
+            content: {type: TEXT, text: t, byteContent: b, row: [{columnName: c, columnValue: v, type: STRING}]}
+            location:
+              type: S3
+              s3Location: {uri: s3://bucket/key}
+              webLocation: null
+              kendraDocumentLocation: {uri: kendra://doc}
+              salesforceLocation: null
+              sharePointLocation: {url: sharepoint}
+              confluenceLocation: null
+              customDocumentLocation: {id: custom}
+              sqlLocation: null
+      response_guardrail: NONE
+      response_empty_nulls: {guardrailAction: null, nextToken: null, retrievalResults: null}
+env: {}
+compare: {ignore: []}

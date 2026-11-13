@@ -176,7 +176,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::video_edits_cases::case_[0-9]+_fallback_octet_stream$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_video_edits.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_video_edits.py tools/oracle/helpers/openai_video_edits)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -189,7 +189,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_video_edits)"
       && grep -q 'decode_character_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_video_edits.rs && cargo
-      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_video_edits_corpus$/)'
+      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_video_edits_corpus(::|$)/)'
   - id: case-unused-prefetched-source
     why: The OpenAI edit transform ignores prefetched_source_data and request_data; passing either cannot fetch
       media or alter the body or result.

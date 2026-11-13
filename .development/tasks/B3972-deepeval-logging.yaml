@@ -103,7 +103,7 @@ checks:
   commands:
     - id: deepeval-tests
       why: the deepeval tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^deepeval_logging::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^deepeval::(.*::)?deepeval_logging::/) - test(/replays_the_/)'
 
 oracle_cases: []
 

@@ -1,0 +1,10 @@
+general_settings:
+  max_in_flight_requests_per_worker: 4
+  max_queued_requests_per_worker: 2
+  admission_queue_timeout_seconds: 0.25
+
+model_list:
+  - model_name: admission-model
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: sk-admission

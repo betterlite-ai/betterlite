@@ -1,0 +1,191 @@
+id: B4840
+title: Run Deep Agents graphs with approvals, skills and resumable history
+description: >-
+  Port LiteLLM's `DeepAgentsHandler` (litellm/harness/handlers/deepagents_handler.py, 261 lines). It is the
+  BaseHarnessHandler for the Deep Agents harness. Deep Agents is a Python library and betterlite has no LangGraph, so the
+  handler talks to the agent graph through traits and a fake graph stands in for it in every test. Read these on main
+  first: crates/betterlite-harness/src/handlers.rs (the `BaseHarnessHandler` trait), crates/betterlite-harness/src/cli_handler.rs
+  (a finished handler to copy the shape of), crates/betterlite-harness/src/deepagents/transformation.rs and
+  deepagents/sandbox_backend.rs (B4837: the pure helpers and the tool filter and usage callback), and
+  crates/betterlite-deepagents-harness/src/sandbox_backend.rs (B4838: `SandboxBackend` and `Permissions`). Use their exact Rust
+  names and types. This task rebuilds none of them.
+
+
+  The handler lives in the crate betterlite-deepagents-harness, not in betterlite-harness, because the sandbox backend is in
+  that crate and it already depends on betterlite-harness. Put it in crates/betterlite-deepagents-harness/src/handler.rs and
+  src/handler/. Use four files: `handler/graph.rs` for the traits and plain types, `handler/build.rs` for `start`, the agent
+  spec, subagents and skills, `handler/turn.rs` for the turn loop, and `handler/tests.rs`. Add `async-stream`, `futures-core`
+  and whatever else the crate needs to Cargo.toml, with the same versions crates/betterlite-harness/Cargo.toml uses.
+
+
+  Skills are copied with B4839's `copy_skills` in crates/betterlite-harness/src/cli_handler/setup.rs. It is `pub(super)` now
+  and `mod setup;` in cli_handler.rs is private. Make `setup` a `pub mod` and `copy_skills` `pub`, and change nothing else in
+  those two files.
+
+
+  Graph traits (`handler/graph.rs`). `AgentRuntime` stands for the optional Python imports of `load_deps` (L71-L91). It has
+  `build_agent(AgentSpec) -> Result<Graph, HarnessError>`, `general_subagent() -> JsonObject` (deepagents'
+  GENERAL_PURPOSE_SUBAGENT, whose `name` the handler compares with) and `openai_messages(&[Message]) -> Vec<JsonObject>`
+  (LangChain's `convert_to_openai_messages`). `Message` and the update chunk are the types B4837's `stream_events`,
+  `update_events` and `final_ai_text` take; use those. The `Graph` trait is `stream(GraphInput, RunConfig)`, returning a
+  boxed stream of `StreamPart`, and `state(RunConfig) -> GraphState`. `GraphInput` is `Messages(user message)` or
+  `Resume(map of interrupt id to decisions)`. `StreamPart` is `Message { message, node: String }` (LangGraph's
+  `messages` mode) or `Update(chunk)` (its `updates` mode). `GraphState` holds `messages` and an optional
+  `structured_response` JSON value. `RunConfig` holds `thread_id`, `recursion_limit` and an optional `UsageCallback`
+  (B4837). `AgentSpec` holds what `create_deep_agent` gets at L130-L141: the chat model arguments from B4837's
+  `chat_model_kwargs`, `system_prompt` (the session instructions), an optional B4837 `ToolFilterMiddleware`, the subagent
+  list, the skills list, the backend `Permissions`, the `interrupt_on` policy and the output schema. A unit struct
+  `MissingRuntime` implements `AgentRuntime` and fails `build_agent` with `HarnessError::InstallFailed` carrying B4837's
+  `INSTALL_HINT`, as `load_deps` raises `HarnessInstallFailed` when the imports fail. The checkpointer is the runtime's own
+  state, so one runtime value shared by sessions keeps `resume` working across sessions as LiteLLM's process-wide
+  `_SHARED_CHECKPOINTER` does. There is no module-level state.
+
+
+  `DeepAgentsHandler<C, R>` holds the config `C`, the runtime `R`, the graph (`Option`), `thread_id: Option<String>` and
+  `skip_tools: BTreeSet<String>`, and implements `BaseHarnessHandler`.
+
+
+  start (L119-L144). Call `config.validate_environment`. Compute `blocked = blocked_tools(permissions, disable_tools)`.
+  Backend permissions: `writable` when `WRITE_TOOLS` and `blocked` share nothing, `allow_execute` when `EXECUTE_TOOLS` and
+  `blocked` share nothing. The filter middleware exists only when `blocked` is not empty. Custom tools are not passed, since
+  SessionSettings has no tools field (docs/deviations/B4830.yaml). Build the agent through the runtime. `skip_tools` becomes
+  the output schema's `title` when an output schema is set and has a string `title`, else empty. If `thread_id` is unset,
+  set it to the session id; a second `start` after an interrupt keeps the thread id and rebuilds the graph.
+
+
+  Subagents (L243-L254). The user's list is `DeepAgentsOptions.subagents`, or empty. The default general-purpose subagent
+  (the runtime's `general_subagent()` with the tool filter added) goes first, and only when `blocked` is not empty and no
+  user subagent has the same `name`. User subagents come after it, unchanged.
+
+
+  Skills (L257-L261). With no skills, pass `None`. Otherwise `copy_skills(sandbox, skills, "{workdir}/{SKILLS_DIR}")` and
+  pass `["/{SKILLS_DIR}/"]`. `SKILLS_DIR` is B4837's constant (".deepagents/skills").
+
+
+  stop sets the graph to `None` and is safe twice. `native_session_id` returns `thread_id`. `resume` sets `thread_id`. A
+  call that needs the graph before `start` (turn, history) fails with `HarnessError::SessionClosed`.
+
+
+  history (L155-L164). Read the graph state under a run config with no usage callback and return
+  `openai_messages(messages)`, with an empty list when the state has none. Requires the history capability that
+  B4837's config already declares.
+
+
+  turn (L166-L222), in `handler/turn.rs`, as an `async_stream` stream. Build the run config with the thread id (or the
+  session id), `recursion_limit(ctx)` and a `UsageCallback` for the session. Loop: stream one pass over the graph and
+  handle each part. A `Message` part from node "model" yields the events of `stream_events`; any other node is skipped. An
+  `Update` part first appends the chunk's `interrupts_in` to the pass's interrupt list and then yields `update_events(chunk,
+  skip_tools)`. When the pass ends with no interrupts, leave the loop. Otherwise, for each interrupt in order, for each
+  `approval_requests(interrupt value)` entry, yield `Event::Approval` with `tool = normalized_tool_name(name)` and `input`
+  the entry's `args` (empty when absent), then wait on that approval's decision. `Decision::Allow` becomes `decision(true,
+  "")` and `Decision::Deny { reason }` becomes `decision(false, reason)`. Decisions of one interrupt are collected in
+  order and stored under the interrupt id. The next pass starts with `GraphInput::Resume` of that map. After the loop,
+  read the state: `outcome.final_text = final_ai_text(messages)`, and when an output schema is set,
+  `outcome.output_json = structured_json(structured_response)`. The stream never yields `Event::Done`.
+scope:
+  paths:
+    - crates/betterlite-deepagents-harness/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-deepagents-harness/src/handler.rs
+    - crates/betterlite-deepagents-harness/src/handler/**
+    - crates/betterlite-harness/src/cli_handler.rs
+    - crates/betterlite-harness/src/cli_handler/setup.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/deepagents_handler.py#L58-L103
+    why: DeepAgentsDeps, load_deps (install failure) and the process-wide checkpointer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/deepagents_handler.py#L111-L164
+    why: Handler state, start with the backend permissions and create_deep_agent arguments, stop, resume and history.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/deepagents_handler.py#L166-L236
+    why: The turn loop with approvals and resume, the stream pass, finish_turn and the run config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/deepagents_handler.py#L238-L261
+    why: Middleware, subagent selection and skill install.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepagents/harness/transformation.py#L231-L292
+    why: interrupts_in, final_ai_text, structured_json, approval_requests, decision and TurnState, all owned by B4837 and called here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/__init__.py#L22-L31
+    why: Where the handler is chosen (config.harness is Harness.DEEPAGENTS); that factory belongs to B4846.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/base.py#L15-L43
+    why: The handler contract this one implements.
+dod:
+  - text: >-
+      start validates the environment, computes the blocked tools, sets backend `writable` false when any of
+      write_file, edit_file or delete is blocked and `allow_execute` false when execute is blocked, and passes a tool filter only
+      when something is blocked. The agent spec carries the instructions, the `interrupt_on` policy and the output schema.
+    proof: [handler-build]
+  - text: >-
+      The general-purpose subagent is added with the filter only when tools are blocked and the user has no subagent named
+      the same; user subagents follow it unchanged.
+    proof: [handler-build]
+  - text: >-
+      With skills, they are copied under `{workdir}/.deepagents/skills` and the spec gets `["/.deepagents/skills/"]`; with
+      none, skills is absent and nothing is copied.
+    proof: [handler-build, handler-skills-export]
+  - text: >-
+      A missing runtime fails start with InstallFailed carrying the install hint. The thread id defaults to the session id on
+      the first start and survives a second start; resume replaces it; native_session_id returns it; stop twice is fine.
+    proof: [handler-build]
+  - text: >-
+      history returns the runtime's OpenAI form of the state messages, an empty list when there are none, and fails with
+      SessionClosed before start.
+    proof: [handler-history]
+  - text: >-
+      A turn yields events only from model-node messages, yields update events with the skip-tools set, passes the thread id,
+      recursion limit and a usage callback to the graph, and sets final_text and, with an output schema, output_json.
+    proof: [handler-turn]
+  - text: >-
+      An interrupt yields one Approval per action request with the normalized tool name and its args, then resumes the graph
+      with the allow or deny decisions in order under the interrupt id, and repeats until a pass ends with no interrupts.
+    proof: [handler-turn]
+  - text: >-
+      A denied approval resumes with a reject decision whose message is the reason, or "The user denied this tool call."
+      when the reason is empty; an allowed one resumes with approve.
+    proof: [handler-turn]
+  - text: The handler never yields Event::Done, and a turn before start fails with SessionClosed.
+    proof: [handler-turn]
+  - text: copy_skills is public and cli_handler::setup is a public module.
+    proof: [handler-skills-export]
+checks:
+  optional: []
+  commands:
+    - id: handler-build
+      why: start, the agent spec, subagent selection, skills, install failure, resume or stop is missing or wrong
+      run: cargo nextest run --locked -p betterlite-deepagents-harness --no-tests=fail -E 'test(/^handler::tests::build_/)'
+    - id: handler-history
+      why: history is missing or wrong
+      run: cargo nextest run --locked -p betterlite-deepagents-harness --no-tests=fail -E 'test(/^handler::tests::history_/)'
+    - id: handler-turn
+      why: the turn loop, approvals, resume payloads or the final outcome is missing or wrong
+      run: cargo nextest run --locked -p betterlite-deepagents-harness --no-tests=fail -E 'test(/^handler::tests::turn_/)'
+    - id: handler-skills-export
+      why: copy_skills is still private to the CLI handler
+      run: grep -q 'pub async fn copy_skills' crates/betterlite-harness/src/cli_handler/setup.rs && grep -q 'pub mod setup' crates/betterlite-harness/src/cli_handler.rs
+oracle_cases: []
+deviations:
+  - what: The agent graph is reached through the `AgentRuntime` and `Graph` traits, not through the Python deepagents, langgraph and langchain-litellm imports.
+    why: There is no Python in the gateway. `MissingRuntime` gives the same install failure when no runtime is wired in.
+  - what: The in-memory checkpointer is owned by the runtime value, not a module-level singleton.
+    why: The rules forbid module-level state. One runtime shared by sessions gives the same cross-session resume.
+  - what: A call on a session that was never started fails with `HarnessError::SessionClosed`, not HarnessError("Deep Agents session is not started").
+    why: SessionClosed is the existing error for this case and the CLI handler uses it.
+  - what: The structured-output tool that update events skip is named by the output schema's `title`, not by the Python class `__name__`.
+    why: SessionSettings holds a JSON schema, not a class. A pydantic model's schema title is its class name.
+out_of_scope:
+  - Choosing the handler for a harness (`get_harness_handler`) and building sessions (B4846).
+  - Message, update, tool-name, policy and recursion helpers, ToolFilterMiddleware and UsageCallback (B4837).
+  - SandboxBackend and its file and shell operations (B4838).
+  - Copying skill files (B4839's `copy_skills`, only made public here).
+  - A production AgentRuntime that really runs the agent loop; this task ships the traits, `MissingRuntime` and test fakes only.
+  - Custom Python tools (`ctx.tools`), since SessionSettings has no such field.
+pitfalls:
+  - "Interrupts found in an `updates` part are collected before that part's update events are yielded, and the approvals are asked only after the whole pass ends."
+  - "Each interrupt gets its own `{decisions: [...]}` entry keyed by its id, and one resume map holds all interrupts of a pass."
+  - "`messages` parts are filtered by node name `model`; tool-node and subagent nodes would otherwise echo their text twice."
+  - "`output_json` is set only when an output schema is set, even if the state has a structured_response."
+  - "`start` runs again after an interrupt, so it must keep `thread_id` and may build a second graph."
+  - "The default general-purpose subagent is added only when tools are blocked, because without a filter the library already provides it."
+  - "The skills path handed to the graph starts with a slash and ends with a slash, while the copy target is `{workdir}/.deepagents/skills` with no leading slash."
+  - "An unanswered Approval blocks the stream; waiting on `Approval.decision` (a tokio SetOnce) is the only suspension point, so do not poll."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

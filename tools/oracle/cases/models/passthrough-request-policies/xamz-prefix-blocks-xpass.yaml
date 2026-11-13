@@ -1,0 +1,14 @@
+kind: helper
+name: xamz-prefix-blocks-xpass
+call:
+  b3571:
+    operation: forward_headers
+    request_headers:
+      x-pass-x-amz-date: "20260101T000000Z"
+      X-Pass-X-Amz-Security-Token: token
+      x-pass-x-amznot: kept
+      x-pass-x-other: kept
+    custom_headers: {}
+    forward_headers: false
+compare: {ignore: []}
+env: {}

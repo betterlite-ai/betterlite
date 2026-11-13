@@ -105,7 +105,13 @@ fn block_event(block: Block, state: &mut ClaudeCodeStreamState) -> Option<Event>
             name: normalize_tool_name(&name),
             builtin: !name.starts_with("mcp__"),
             native_name: name,
-            input: input.as_ref().map(wire::object).unwrap_or_default(),
+            input: input
+                .as_ref()
+                .map(|value| {
+                    serde_json::from_str(&python_json_text(&value).unwrap_or_default())
+                        .unwrap_or_default()
+                })
+                .unwrap_or_default(),
         }),
         Block::Thinking { .. } | Block::ToolResult { .. } | Block::Other => None,
     }

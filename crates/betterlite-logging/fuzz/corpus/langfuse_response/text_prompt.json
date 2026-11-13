@@ -1,0 +1,1 @@
+{"type":"text","prompt":"Hello {{name}}","name":"greeting","version":1,"config":{"model":"gpt-4o"},"labels":["production"],"tags":[],"commitMessage":null,"resolutionGraph":null}

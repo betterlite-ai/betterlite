@@ -1,0 +1,63 @@
+id: B161
+title: Python resource families surface check
+description: >-
+  This is the umbrella of the entry. Its parts (B7870 to B7891) build the Python functions for files, batches, fine-tuning,
+  vector stores, vector store files, assistants, containers, videos, skills, evals, search, OCR, RAG, realtime, passthrough,
+  decisions, SystemOne and sandbox. This task checks that the whole surface works together and that no public name of the
+  LiteLLM packages lacks an owner. It adds no feature code beyond small gaps found.
+
+
+  Write `tests/test_resource_surface.py`. One test goes through the package list `files`, `batches`, `fine_tuning`,
+  `vector_stores`, `vector_store_files`, `assistants`, `containers`, `videos`, `skills`, `evals`, `search`, `ocr`,
+  `rag`, `realtime_api`, `passthrough`, `decisions`, `systemone` and `sandbox`. For each, it imports the LiteLLM package
+  from the oracle project (the test project already has it), takes the public functions that package exports (names without a
+  leading underscore that are functions), and checks that `betterlite.<package>` and `betterlite.<package>.main` (where
+  LiteLLM has a `main`) have the same names. A second test checks that `inspect.iscoroutinefunction` agrees between the two
+  packages for every shared name. A third runs one call per family against B6040's test server in one process, to show that
+  the native sessions of the parts do not clash. A fourth checks that a call with `client=` raises `UnsupportedCallArgument`
+  in every family that takes a `client`. A fifth reads the star-import lines of `python/betterlite/__init__.py` and checks
+  there is one per part family. If the architect has not added a line, the test names the missing family.
+scope:
+  paths:
+  - crates/betterlite-python/tests/test_resource_surface.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L1-L120
+  why: One of the packages whose public names the test compares.
+dod:
+- text: Every public function of the eighteen LiteLLM packages exists in betterlite with the same async kind.
+  proof: [resource-names]
+- text: One call per family works in one process.
+  proof: [resource-calls]
+- text: "`client=` raises UnsupportedCallArgument in each family that takes it."
+  proof: [resource-client]
+- text: The new test file passes ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: resource-names
+    why: A part forgot a name or its main re-export.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_resource_surface.py -k names
+  - id: resource-calls
+    why: Two parts share a native name or a global.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_resource_surface.py -k calls
+  - id: resource-client
+    why: One family silently ignores a client object.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_resource_surface.py -k client
+  - id: python-lint
+    why: Strict typing has to hold for the test.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names that LiteLLM keeps for the proxy only are listed in the test as skipped, each with a reason.
+  why: The wheel has no proxy. A skipped name needs a one-line reason in the test.
+out_of_scope:
+- The functions themselves are B7870 to B7891.
+pitfalls:
+- The surface test must not call a provider on the network. Use B6040's local server only.
+- Some LiteLLM packages export classes and constants as well. Compare functions only, and leave types to B167.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

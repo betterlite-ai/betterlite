@@ -1,0 +1,11 @@
+kind: helper
+name: provider-resolution-declared
+call:
+  provider_resolution:
+    model: command-r
+    custom_llm_provider: cohere
+    known_model_names: [cohere]
+    catalog:
+      command-r: {litellm_provider: cohere_chat}
+env: {}
+compare: {ignore: []}

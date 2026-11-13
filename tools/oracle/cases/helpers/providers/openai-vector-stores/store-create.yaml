@@ -1,0 +1,5 @@
+kind: helper
+name: store-create
+call: {"openai_vector_stores": {"create_request": {"params": {"name": "docs", "file_ids": ["file-1", "file-2"], "expires_after": {"anchor": "last_active_at", "days": 7}, "chunking_strategy": {"type": "static", "static": {"max_chunk_size_tokens": 800, "chunk_overlap_tokens": 400}}, "metadata": {"hidden_params": "skip", "a": "1", "b": 2, "c": "3"}}, "api_base": "https://api.example.test/v1/vector_stores"}}}
+env: {}
+compare: {ignore: []}

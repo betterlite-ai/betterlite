@@ -1,0 +1,5 @@
+kind: helper
+name: models-non-2xx
+call: {anthropic_credentials: {function: models, environment: {ANTHROPIC_API_KEY: model-key}, reply: {status: 429, body: rate limited}}}
+env: {}
+compare: {ignore: []}

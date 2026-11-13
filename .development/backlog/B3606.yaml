@@ -2,8 +2,8 @@ id: B3606
 milestone: M5 api families
 title: Pass-through provider response logging dispatch
 status: todo
-depends_on: [B3605]
-file: null
+depends_on: [B3605, B3635, B3638, B3640, B3651, B3648, B3649, B3652, B3646, B3653, B3634, B3637, B3642, B3650, B3643]
+file: tasks/B3606-passthrough-provider-dispatch.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/success_handler.py"
 parent: B102

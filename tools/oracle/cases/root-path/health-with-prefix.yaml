@@ -1,0 +1,14 @@
+kind: helper
+name: root-path-health-with-prefix
+call:
+  b4200:
+    scalar_root: ""
+    root_paths: ["/tenant-a", " /tenant-b/ "]
+    requests:
+      - /tenant-a/health/liveliness
+      - /tenant-b/health/liveliness?probe=1
+      - /tenant-a
+      - /tenant-a/
+env: {}
+compare:
+  ignore: []

@@ -3,9 +3,7 @@ use std::num::{ParseFloatError, ParseIntError};
 use std::ops::Range;
 
 use indexmap::IndexMap;
-use serde::Serialize;
 use serde_json::value::RawValue;
-use sha2::{Digest as _, Sha256};
 
 const FIXED_EXPONENTS: Range<i32> = -4_i32..16_i32;
 
@@ -90,13 +88,4 @@ fn write_number(source: &str, out: &mut String) -> Result<(), JsonError> {
         write!(out, "{mantissa}e{sign}{:02}", exponent.unsigned_abs())?;
     }
     Ok(())
-}
-
-// cache_scope in LiteLLM is this digest of (caller_key_hash, deployment_id, provider_key, model, anthropic_version)
-pub fn digest<Value>(value: &Value) -> Result<String, serde_json::Error>
-where
-    Value: Serialize,
-{
-    let text = serde_json::to_vec(value)?;
-    Ok(hex::encode(Sha256::digest(text)))
 }

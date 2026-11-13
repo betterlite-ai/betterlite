@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-catalog-lookup-capability
+call: {anthropic_catalog_lookup: {function: capability, model: claude-x, key: supports_flag, runtime: {claude-x: {supports_flag: "yes"}}, packaged: {claude-x: {supports_flag: true}}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: batch-delivery-flush-order
+call:
+  batch_delivery:
+    flush:
+      steps:
+        - {op: enqueue, events: [a, b]}
+        - {op: flush, script: [{outcome: delivered}]}
+        - {op: enqueue, events: [c]}
+        - {op: flush, script: [{outcome: delivered}]}
+        - {op: flush, script: []}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,88 @@
+id: B3489
+title: Dispatch GenAI generation and streaming calls
+description: >-
+  Build the four public entry points of LiteLLM's Google GenAI generation API in betterlite-core, module `api::genai::generate_content`: `generate_content`, `agenerate_content`, `generate_content_stream` and `agenerate_content_stream`, plus `mock_generate_content_response`.
+  Each entry point takes one request record, `GenerateContentRequest`: model, contents, optional config (a JSON object), optional tools, extra_headers, extra_query, extra_body, optional timeout, optional custom_llm_provider, and the loose caller fields LiteLLM carries in **kwargs (a JSON object that holds `litellm_logging_obj` data, `litellm_call_id`, `mock_response`, `stream`, `client`, `litellm_metadata`, `systemInstruction`, `system_instruction`, `generationConfig` and the native top-level fields).
+  The collaborators come in through one constructor-injected record, `GenerateContentDeps`: B3483's setup function (`setup_generate_content_call`, `_merge_native_request_fields`, `_mark_async_entrypoint`, `GenerateContentSetupResult`), B3486's chat-compatibility handlers, B3488's native HTTP handlers, B174's `get_llm_provider`, B185 and B186's `exception_type` mapping, and B198's default request timeout (REQUEST_TIMEOUT, 6000 seconds). This task owns only the dispatch between them; it re-implements none of them.
+  Shared steps in every entry point, in this order. First mark the async entry point through B3483's helper: `generate_content` marks key `agenerate_content` with the `_is_async` flag it popped from the loose fields, and the two stream entry points mark key `agenerate_content_stream` (always true for the async one, the popped flag for the sync one). Then, when `generationConfig` is in the loose fields and `config` is None, move it into `config` (remove it from the loose fields). When `config` is already set, leave `generationConfig` in the loose fields untouched. Then call B3483's setup. Then read `systemInstruction` first and `system_instruction` second from the loose fields (an empty value falls through to the second name). Then dispatch.
+  Dispatch rule: when the setup result has no provider config, hand the call to B3486's chat-compatibility handler with the setup result's `generate_content_config_dict` as config and its `litellm_params`; otherwise call B3488's native HTTP handler with model, custom_llm_provider, config dict, litellm_params, logging object and provider config (all taken from the setup result), `extra_headers`, `extra_body` from B3483's merge of native fields and the caller's extra_body, `timeout or request_timeout` (a zero or missing timeout takes the default), `client` and `litellm_metadata` (default empty object) from the loose fields, and the system instruction.
+  Per entry point. `generate_content` (sync): pop `agenerate_content` (default false) as `_is_async`; if `mock_response` in the loose fields is a string, return `mock_generate_content_response(mock_response)` before setup; adapter path passes tools and `_is_async` and does not touch `stream`; native path passes `_is_async` and no `stream`. `agenerate_content`: set `agenerate_content` true in the loose fields, move `generationConfig`, resolve the provider through B174 when `custom_llm_provider` is None (so errors can be mapped), then run the same body as `generate_content` on the async path. There is no thread pool and no copied context-var scope in betterlite: B198 injects call context, so the async entry point calls the async body directly. `generate_content_stream` (sync): pop `agenerate_content_stream` as `_is_async`; no mock check; on the adapter path remove `stream` from the loose fields, pass `stream` true and do NOT pass tools; on the native path pass `stream` true and `_is_async`. `agenerate_content_stream` (async): set `agenerate_content_stream` true, mark, move `generationConfig`, resolve the provider through B174 when custom_llm_provider is None passing only the model (the `base_url` read in LiteLLM always sees None, because `local_vars` holds only the named parameters), run setup, then on the adapter path remove `stream`, call B3486's async handler with `stream` true and tools, and on the native path call B3488's async handler with `stream` true and `_is_async` true.
+  `mock_generate_content_response(mock_response)` defaults to "This is a mock response from Google GenAI generate_content." and returns the JSON object with `text`, one candidate (`content.parts[0].text`, `content.role` "model", `finishReason` "STOP", `index` 0, `safetyRatings` an empty list) and `usageMetadata` promptTokenCount 10, candidatesTokenCount 20, totalTokenCount 30.
+  Every failure inside an entry point goes through B185/B186's `exception_type` with the model, the custom_llm_provider as the caller gave it (the async entry points may have resolved it), the request fields as completion_kwargs and the loose fields as extra_kwargs, and the mapped error is the one returned. Errors keep their original cause attached.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/genai/generate_content.rs
+    - crates/betterlite-core/src/api/genai/generate_content/**
+    - tools/oracle/cases/helpers/genai-generate/**
+    - tools/oracle/helpers/b3489.py
+    - tools/oracle/helpers/b3489/**
+    - tools/oracle/src/helpers/core_ops/b3489.rs
+    - tools/oracle/src/helpers/core_ops/b3489/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L68-L88
+    why: mock_generate_content_response body, default text and fixed usage numbers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L234-L299
+    why: agenerate_content sets the async flag, moves generationConfig, resolves the provider, runs the sync body and maps errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L302-L389
+    why: generate_content pops the async flag, returns the string mock early, then setup and adapter or native dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L392-L484
+    why: agenerate_content_stream, including the get_llm_provider call whose base_url read is always None and the adapter path that removes stream.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L487-L573
+    why: generate_content_stream, whose adapter call omits tools and whose native call passes stream true.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L113-L125
+    why: the setup mock guard that raises when mock_response is a string and stream is falsy, which the stream entry points hit.
+dod:
+  - text: Each of the four entry points marks its async entry key, moves generationConfig into config only when config is None, reads systemInstruction before system_instruction, and calls setup once before dispatching.
+    proof: [dispatch-tests]
+  - text: When setup returns no provider config, the call goes to the chat-compatibility handler (sync or async), with tools passed on every path except the sync stream entry point, and with `stream` removed from the loose fields and passed as true on both stream entry points.
+    proof: [dispatch-tests]
+  - text: When setup returns a provider config, the call goes to the native HTTP handler with extra_body from the native-field merge, the timeout defaulting to REQUEST_TIMEOUT for a missing or zero value, and client and litellm_metadata read from the loose fields.
+    proof: [dispatch-tests]
+  - text: A string mock_response makes generate_content and agenerate_content return the mock object before setup, and the two stream entry points do not return a mock (without stream in the loose fields they fail through exception mapping).
+    proof: [mock-tests, oracle]
+  - text: mock_generate_content_response returns LiteLLM's exact JSON, with and without a custom text.
+    proof: [mock-tests, oracle]
+  - text: Any failure inside an entry point is returned through exception_type with the model and provider, and the stream entry point without a provider resolves it from the model only.
+    proof: [error-mapping-tests]
+checks:
+  optional: []
+  commands:
+    - id: dispatch-tests
+      why: the four-entry-point dispatch, field handling or default timeout tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::genai::generate_content::tests::dispatch_/)'
+    - id: mock-tests
+      why: the mock response shape or the mock short-circuit tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::genai::generate_content::tests::mock_/)'
+    - id: error-mapping-tests
+      why: the error mapping tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::genai::generate_content::tests::error_/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/genai-generate/mock-default-text.yaml
+  - tools/oracle/cases/helpers/genai-generate/mock-custom-text.yaml
+  - tools/oracle/cases/helpers/genai-generate/generate-content-string-mock.yaml
+  - tools/oracle/cases/helpers/genai-generate/stream-entry-string-mock-without-stream.yaml
+deviations:
+  - what: agenerate_content calls the async body directly and does not run the sync function in a thread pool with a copied context-var scope.
+    why: Rust has no thread executor step here, and B198 injects the call context that LiteLLM carries in context vars.
+  - what: The adapter fallback and the native HTTP handler are injected collaborators (GenerateContentDeps), not module-level singletons.
+    why: The rules require constructor wiring; LiteLLM's module-level base_llm_http_handler has no counterpart.
+out_of_scope:
+  - "B3483 owns GenerateContentHelper.setup_generate_content_call, GenerateContentSetupResult, _merge_native_request_fields and _mark_async_entrypoint; this task only calls them."
+  - "B3486 owns GenerateContentToCompletionHandler (litellm/google_genai/adapters/handler.py); B3488 owns BaseLLMHTTPHandler.generate_content_handler."
+  - "B5368 owns the @client call wrapper (logging object creation, litellm_call_id, caching, callbacks) around these functions; this task receives the logging data already in the loose fields."
+  - "B3487 owns the streaming iterators in litellm/google_genai/streaming_iterator.py; B3506 owns the HTTP routes that call these entry points."
+  - "litellm/google_genai/__init__.py re-exports and the lazy `from litellm.google_genai import generate_content` surface belong to B098 as an umbrella file with no logic."
+pitfalls:
+  - The two stream entry points never check mock_response themselves, but setup raises "Mock response should be handled by caller" for a string mock when `stream` is not set in the loose fields, so a stream call with a string mock and no stream flag fails, and with stream true it proceeds to a real provider call.
+  - generate_content_stream (sync) calls the chat handler without tools, while generate_content and agenerate_content_stream pass tools; keep this difference, a fix would change what the provider sees.
+  - agenerate_content_stream resolves the provider with get_llm_provider(model, api_base=local_vars.get("base_url")), and local_vars never holds base_url, so api_base is always None; pass only the model.
+  - generationConfig is moved only when config is None; when config is set the key stays in the loose fields and flows on to setup and the chat handler.
+  - systemInstruction wins over system_instruction by truthiness, so an empty string or null for the first falls through to the second.
+  - "`timeout or request_timeout` replaces 0 as well as None, so a zero timeout becomes REQUEST_TIMEOUT (6000 seconds)."
+  - The adapter paths of the stream entry points remove `stream` from the loose fields before the call and pass stream true by name; the non-stream adapter path leaves a caller-supplied `stream` in place.
+  - The mock check in generate_content runs after the async marker and generationConfig move but before setup, so a mock call never needs a logging object.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

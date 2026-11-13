@@ -1,0 +1,9 @@
+kind: helper
+name: matches-pattern-none-value
+call:
+  b3241:
+    policy_memory_matching_matcher:
+      action: matches_pattern
+      patterns: ['*']
+env: {}
+compare: {ignore: []}

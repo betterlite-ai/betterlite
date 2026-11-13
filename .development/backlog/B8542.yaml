@@ -1,0 +1,14 @@
+id: B8542
+milestone: M8 platform
+title: Setup wizard flow, key checks and config file
+status: todo
+depends_on: [B4594, B5364, B5656]
+file: tasks/B8542-setup-wizard-flow.yaml
+covers:
+  - "litellm/setup_wizard.py"
+parent: B135
+split_from: B135
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

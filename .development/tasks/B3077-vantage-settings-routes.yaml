@@ -12,6 +12,8 @@ description: >-
   Sensitive API keys and integration tokens are masked with first and last 4 characters visible using B244's masker.
   Deletion removes both database configuration and the in-memory VantageLogger callback registration,
   so subsequent export requests must reinitialize or use an already-registered logger.
+  After the database delete succeeds, remove only the general-list registrations from B3067's VantageLoggers
+  store. Instances in the other callback lists stay, and already-bound scheduler jobs are not cancelled.
 scope:
   paths:
     - crates/betterlite-server/src/finops/vantage_routes.rs

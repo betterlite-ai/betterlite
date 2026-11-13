@@ -35,8 +35,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/Cargo.toml
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/polly.rs
     - crates/betterlite-core/src/api/polly/**
     - crates/betterlite-core/src/api/polly/speech.rs

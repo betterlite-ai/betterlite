@@ -1,0 +1,10 @@
+kind: helper
+name: defaults-job-role-and-invalid-port
+call:
+  collector_policy:
+    addresses: ['invalid', 'unix://host', 'tcp://localhost', 'tcp://localhost:bad', 'tcp://localhost:65536', 'tcp://[bad]:1']
+    settings: [{}, {enabled: true}, {enabled: true, job_role: collector}, {enabled: true, job_role: Collector}, {enabled: true, job_role: worker}]
+    policies: []
+env: {}
+compare:
+  ignore: []

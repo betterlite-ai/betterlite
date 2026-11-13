@@ -1,0 +1,6 @@
+kind: helper
+name: completion-options-pricing-fields-echoed-fields-no-key
+call:
+  b5650: {function: echoed_fields, model_info: {input_cost_per_token: 0.000001}, entries: [{input_cost_per_token: 0.000001}]}
+env: {}
+compare: {ignore: []}

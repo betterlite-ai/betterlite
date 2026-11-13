@@ -1,0 +1,16 @@
+kind: helper
+name: principal-assumed-role
+call:
+  b3456:
+    step: principal
+    cases:
+      - caller_arn: "arn:aws:sts::123456789012:assumed-role/MyRole/session-one"
+        account_id: "123456789012"
+      - caller_arn: "arn:aws-cn:sts::210987654321:assumed-role/ChinaRole/session"
+        account_id: "210987654321"
+      - caller_arn: "arn:aws-us-gov:sts::111122223333:assumed-role/GovRole/session"
+        account_id: "111122223333"
+      - caller_arn: "arn:aws:sts::123456789012:assumed-role/path/SomeRole/session"
+        account_id: "123456789012"
+env: {}
+compare: {ignore: []}

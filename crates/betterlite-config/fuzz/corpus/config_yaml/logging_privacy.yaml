@@ -1,0 +1,3 @@
+litellm_settings:
+  turn_off_message_logging: true
+  redact_user_api_key_info: true

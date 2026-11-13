@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b4745_list_tools_empty_catalog","call":{"b4745":{"operation":"list_tools","settings":{"server_url":"https://mcp.example.com/mcp","timeout_ms":60000,"listing_ms":30000},"scenarios":[{"pages":[{"delay_ms":0,"tools":[],"next_cursor":null}]}]}},"env":{},"compare":{"ignore":[]}}

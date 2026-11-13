@@ -8,7 +8,7 @@ description: >-
   nvidia_nim_model_groups, nvidia_nim_model_group_in_path and nvidia_nim_router_model_in_endpoint
   L28-L62; and Bedrock action constants L871-L879, is_bedrock_count_tokens_endpoint L885-L886 and
   _extract_model_from_bedrock_endpoint L889-L966. These are pure hints, never permission grants,
-  downloads or resource creation. B746 calls these directly instead of B041/B548/B093/B102.
+  downloads or resource creation. B746 calls these directly instead of B5837/B548/B093/B102.
 
   Azure splits on '/', requires at least two parts, then returns the first exact catalog match;
   it neither drops empty segments nor performs case folding. NVIDIA deployment classification is
@@ -103,7 +103,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L59-L115
 out_of_scope:
   - B093 retains video/character encoders, original-ID convenience readers and video routes; this task supplies their decoding primitive.
-  - B041 retains NIM transport/version/credential helpers and config methods; B548 retains all other Azure passthrough functions.
+  - B5837 and B8310 retain NIM transport/version/credential helpers and config methods; B548 retains all other Azure passthrough functions.
   - B102 retains all other llm_passthrough_endpoints.py functions and streaming-action dispatch.
   - B746 resolves router IDs and combines hints; B1016/B1019 decode other managed IDs. Managed files/batches remain disabled without the enterprise hook pending Max's decision.
 pitfalls:

@@ -1,0 +1,5 @@
+kind: helper
+name: galileo-delivery-health-check-api-error
+call: {"b3964": {"environment": {"GALILEO_API_KEY": "key-0123456789abcdef", "GALILEO_PROJECT_ID": "project-1"}, "replies": [{"status": 503, "body": "{\"detail\": \"status 503\"}"}], "actions": [{"do": "health_check"}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,42 @@
+kind: helper
+name: bedrock-additional-drop-before-route
+call:
+  bedrock_model_routes:
+    price_map: {}
+    converse_models: []
+    request_metadata_fields: []
+    tool_names: {}
+    step:
+      routes:
+        models: []
+        requests:
+          - model: chat_completions/openai.gpt-4o
+            request_params:
+              stop: []
+              model_id: profile-arn
+              tools: [{type: function}]
+              reasoning_effort: high
+              temperature: 0.2
+            additional_drop_params: [stop, model_id, tools, reasoning_effort]
+          - model: chat_completions/openai.gpt-4o
+            request_params:
+              stop: []
+              model_id: profile-arn
+              tools: [{type: function}]
+              reasoning_effort: high
+              temperature: 0.2
+          - model: chat_completions/openai.gpt-4o
+            request_params:
+              stop: []
+              model_id: profile-arn
+            additional_drop_params: []
+          - model: chat_completions/openai.gpt-4o
+            request_params:
+              stop: null
+          - model: chat_completions/openai.gpt-4o
+            request_params:
+              temperature: 0.2
+            additional_drop_params: [absent]
+env: {}
+compare:
+  ignore: []

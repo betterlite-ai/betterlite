@@ -1,0 +1,6 @@
+kind: helper
+name: responses-output-details-image-finish-status
+call:
+  responses_output_details: {images: [], finish_reason: length, annotations: null, usage: null}
+env: {}
+compare: {ignore: []}

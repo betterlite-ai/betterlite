@@ -1,0 +1,31 @@
+kind: helper
+name: milvus-search-body-order
+call:
+  b7810:
+    calls:
+      - call: milvus_search_request
+        input:
+          vector_store_id: docs
+          query_text: find me
+          query_vector: [0.25, 0.5]
+          optional_params: {}
+          api_base: "https://milvus.example.test"
+          litellm_params: {}
+      - call: milvus_search_request
+        input:
+          vector_store_id: docs
+          query_text: find me
+          query_vector: [0.25, 0.5]
+          optional_params: {annsField: custom_vector, limit: 3, filter: "a > 1"}
+          api_base: "https://milvus.example.test"
+          litellm_params: {litellm_embedding_model: "openai/text-embedding-3-small"}
+      - call: milvus_search_request
+        input:
+          vector_store_id: docs
+          query_text: ""
+          query_vector: []
+          optional_params: {}
+          api_base: "https://milvus.example.test"
+          litellm_params: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,1 @@
+{"credentials": {"clientid": "client", "clientsecret": "secret", "url": "https://auth.example.com", "serviceurls": {"AI_API_URL": "https://api.example.com"}}, "resource_group": "default"}

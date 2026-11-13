@@ -56,18 +56,21 @@ description: >-
   assert call.embedding_family_selection. Source count is 115 main.py lines plus 40
   utility selection lines; estimate 250 bindings, 230 tests, 105 adapters and 100
   settings/shared exports, maximum 750.
+
+  B010 registers Provider::EmbeddingRerank and the EmbeddingRerank variants of OperationRequest, OperationResult
+  and PreparedRequest as stubs in crates/betterlite-provider/src/embedding_rerank_providers.rs. Fill them there
+  and leave provider.rs, operation.rs and prepared.rs as they are.
 scope:
   paths:
-    - crates/betterlite-provider/src/{lib,error,provider,operation,prepared,embedding_rerank_providers}.rs
     - crates/betterlite-provider/src/embedding_rerank_providers.rs
     - crates/betterlite-provider/src/embedding_rerank_providers/**
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-core/src/{lib,dispatch,operation,embedding_rerank_providers}.rs
+    - crates/betterlite-core/src/{dispatch,operation}.rs
     - crates/betterlite-core/src/embedding_rerank_providers.rs
     - crates/betterlite-core/src/embedding_rerank_providers/**
     - crates/betterlite-core/Cargo.toml
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,embedding_providers}.rs
+    - crates/betterlite-config/src/sections/embedding_provider_settings.rs
+    - crates/betterlite-config/src/sections/embedding_provider_settings/**
     - crates/betterlite-config/tests/embedding_provider_settings.rs
     - Cargo.lock
     - tools/oracle/src/helpers/core_ops/embedding_family_selection.rs
@@ -117,7 +120,7 @@ checks:
       run: test -f tools/oracle/helpers/embedding_family_selection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The pure helper must inspect the config selected by the pinned utility factories.
     - id: embedding-selection-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/embedding_family_selection*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::embedding_family_selection::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/embedding_family_selection*')" && cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^embedding_family_selection::/)'
       why: Every new seed must parse to embedding_family_selection with a nonzero count.
 oracle_cases:
   - tools/oracle/cases/providers/embedding-rerank/cohere-chat-aliases.yaml

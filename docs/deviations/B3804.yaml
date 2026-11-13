@@ -1,0 +1,8 @@
+task: B3804
+deviations:
+  - what: There is no session lock and no per-thread session pool. One shared reqwest client sends every analyzer call, so chunk requests on one runtime run together up to the concurrency bound.
+    why: On the main thread LiteLLM holds a lock for the whole call, so chunk requests there go out one at a time and the bound of 8 never takes effect. Waiting on a lock around a shared client has no purpose in Rust, and no setup depends on the analyzer being hit serially.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L304-L331
+  - what: The analyzer response is read with a 64 MiB cap and fails with ResponseTooLarge above it.
+    why: aiohttp reads the whole body into memory with no limit, so a misbehaving analyzer can exhaust the gateway. No working setup gets an analysis result that large.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L488

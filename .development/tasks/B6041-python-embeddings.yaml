@@ -1,0 +1,107 @@
+id: B6041
+title: Python embedding and aembedding
+description: >-
+  Add `betterlite.embedding(...)` and `betterlite.aembedding(...)` so they work where LiteLLM's do. Python collects the
+  arguments, calls a native session, and builds an `EmbeddingResponse` (B5658) from the JSON that comes back. Provider
+  logic stays in Rust: the SDK call entries for embeddings (B006 and the provider tasks) already build the request, so
+  this task only wires them to Python.
+
+
+  Native side, the family `embeddings`. `src/embeddings.rs` has `pub(crate) fn register(module: &Bound<'_, PyModule>) ->
+  PyResult<()>`, which adds the class `NativeEmbeddingSession` and the exception `NativeEmbeddingError`, made with
+  `pyo3::create_exception!` like B5659's. The architect writes the `mod embeddings;` line and the call line in `src/lib.rs`,
+  and the import line in the `.pyi` package. Do not edit `lib.rs`. The session is built from JSON settings text, as B5659's
+  session is. `embedding(payload_text, blobs)` blocks inside `py.detach` with `pyo3_async_runtimes::tokio::get_runtime().block_on`.
+  `aembedding(payload_text, blobs)` uses `future_into_py`. Both return the response as JSON text. The error JSON has the same
+  keys as B5659's. Conversion code is in `src/embeddings/convert.rs` and has no interpreter in its tests. Tests there start
+  with `request_` and `error_`. The Rust side builds `CallTarget` and `CallWrapper` from B5368 and calls the SDK embedding
+  entry in `betterlite-sdk`, so success and failure callbacks, retries and fallbacks match the other SDK calls.
+
+
+  Python side, the package `python/betterlite/_embeddings/` with an explicit `__all__` (`embedding`, `aembedding`). The architect
+  writes one star line in `python/betterlite/__init__.py`. Never edit that file. `main.py` re-exports the same names
+  (main.py L6196-L7360). The signatures keep LiteLLM's names, order and defaults, and a test compares `inspect.signature`.
+  `aembedding` is a coroutine function that reads `model` from `args[0]` or `kwargs["model"]` (main.py L6196-L6204), and
+  `embedding(..., aembedding=True)` returns a coroutine. Use `to_call_payload`, `call_native`, `acall_native`, `read_settings`
+  and `proxy_headers` from B6040's `_endpoints` package. Do not write a second copy.
+
+
+  The input rules from `embedding` (main.py L6310-L6420): `input` is a string, a list of strings, a list of ints or a list of
+  lists of ints, and any of them goes to Rust unchanged. `dimensions`, `encoding_format`, `timeout`, `user`, `api_base`,
+  `api_key`, `api_version`, `custom_llm_provider`, `litellm_call_id`, `logger_fn`, `caching`, `extra_headers` and the rest of
+  `**kwargs` follow the signature. `model` can be `provider/model` or a plain name, and Rust resolves the provider. The result is
+  `EmbeddingResponse` with `data` as `Embedding` objects, `usage` and `_hidden_params` that carry the response cost, the model
+  id and the provider. `EmbeddingResponse` is the B5658 class, built from the JSON.
+
+
+  A model whose `encoding_format` is "base64" keeps the string in `Embedding.embedding`, as LiteLLM does when the provider
+  returns it. The default is a list of floats. A caller who passes `user` gets it in the request body for the providers that
+  accept it, and Rust handles that.
+scope:
+  paths:
+  - crates/betterlite-python/src/embeddings.rs
+  - crates/betterlite-python/src/embeddings/**
+  - crates/betterlite-python/python/betterlite/_native_embeddings.pyi
+  - crates/betterlite-python/python/betterlite/_embeddings/**
+  - crates/betterlite-python/python/betterlite/main.py
+  - crates/betterlite-python/tests/test_embeddings.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6196-L6247
+  why: aembedding, the async wrapper and its model lookup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6310-L6460
+  why: The embedding signature and the argument handling before provider dispatch.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7360-L7387
+  why: The end of embedding and the resolve helpers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/embeddings/dispatch.py
+  why: The rust_bridge selector, which this task replaces by the native call.
+dod:
+- text: "`embedding` and `aembedding` keep LiteLLM's signatures."
+  proof: [embedding-signature]
+- text: "A string, a list of strings and a token list reach the local server and come back as an `EmbeddingResponse`."
+  proof: [embedding-call]
+- text: A provider 401 raises the authentication class with the status code and model, with the native error as cause.
+  proof: [embedding-error]
+- text: "`aembedding` runs on the event loop without blocking it, and `embedding(aembedding=True)` returns a coroutine."
+  proof: [embedding-async]
+- text: The native register function adds the session and the error class, and conversion has tests without an interpreter.
+  proof: [embedding-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: embedding-signature
+    why: A renamed or reordered parameter breaks callers who pass arguments by position.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_embeddings.py -k signature
+  - id: embedding-call
+    why: The wiring stops at the Python layer and never reaches the provider.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_embeddings.py -k "call or input"
+  - id: embedding-error
+    why: A provider error shows up as a generic exception.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_embeddings.py -k error
+  - id: embedding-async
+    why: An async call blocks the loop or a sync flag returns the wrong type.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_embeddings.py -k async
+  - id: embedding-native
+    why: The native conversion drops a field of the request or the error.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^embeddings::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Untyped dicts and ignores creep in at the native boundary.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`litellm.embeddings.dispatch` and its rust_bridge selector do not exist."
+  why: Every call already goes through the native session.
+out_of_scope:
+- The files, payload and error helpers are B6040.
+- The Rust request building for each provider is in the provider tasks and the SDK embedding entry.
+- Text completion and moderation are B6042, images B6043, rerank B6044, audio B6045.
+pitfalls:
+- '`input` may be an int list, so never join or strip it in Python.'
+- The model in `aembedding` must be read before the first `await`, or a missing model raises inside the coroutine and not at the call.
+- Do not turn the `_hidden_params` dict into a shared default.
+review_level: standard
+budget:
+  max_changed_lines: 1200
+  max_new_expects: 0

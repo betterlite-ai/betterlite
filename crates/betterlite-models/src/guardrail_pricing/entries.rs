@@ -14,6 +14,7 @@ use super::coercion::{
 #[serde(untagged)]
 pub enum CounterMapField {
     Null(()),
+    Number(serde_json::Number),
     Map(BTreeMap<String, Scalar>),
     Other(IgnoredAny),
 }
@@ -33,7 +34,11 @@ pub struct GuardrailEntryFields {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum GuardrailInformationEntry {
-    Object(GuardrailEntryFields),
+    Number(serde_json::Number),
+    Object {
+        #[serde(flatten)]
+        fields: GuardrailEntryFields,
+    },
     Other(IgnoredAny),
 }
 
@@ -69,7 +74,7 @@ fn parse_validated_field<F, T>(
 where
     F: FnOnce(&GuardrailEntryFields) -> Result<FieldOutcome<T>, GuardrailPricingError>,
 {
-    let GuardrailInformationEntry::Object(fields) = raw else {
+    let GuardrailInformationEntry::Object { fields } = raw else {
         tracing::warn!(field_kind, "ignoring malformed guardrail_information entry");
         return Ok(None);
     };
@@ -106,14 +111,6 @@ fn parse_scalar_cost_field(
     Ok(coerce_lax_magnitude(value)?.map_or(FieldOutcome::Malformed, FieldOutcome::Present))
 }
 
-// Validated apart from the by-unit path below so a forged guardrail_cost_by_unit map cannot change this entry's scalar cost.
-fn parse_guardrail_cost_entry(
-    raw: &GuardrailInformationEntry,
-) -> Result<Option<GuardrailCostEntry>, GuardrailPricingError> {
-    let parsed = parse_validated_field(raw, "guardrail cost", parse_scalar_cost_field)?;
-    Ok(parsed.map(|(cost, in_spend)| GuardrailCostEntry { cost, in_spend }))
-}
-
 fn billable_entry_cost(entry: &GuardrailCostEntry) -> Decimal {
     if !entry.in_spend {
         return Decimal::ZERO;
@@ -124,12 +121,7 @@ fn billable_entry_cost(entry: &GuardrailCostEntry) -> Decimal {
     }
 }
 
-// A malformed entry or an uncoercible in_spend flag prices to zero by itself, preserving a valid sibling's cost.
-fn validated_entry_cost(raw: &GuardrailInformationEntry) -> Result<Decimal, GuardrailPricingError> {
-    let entry = parse_guardrail_cost_entry(raw)?;
-    Ok(entry.map_or(Decimal::ZERO, |parsed| billable_entry_cost(&parsed)))
-}
-
+// A malformed entry or an uncoercible in_spend flag prices to zero, validated apart from the by-unit path below so a forged guardrail_cost_by_unit map cannot change this entry's scalar cost.
 pub fn guardrail_information_cost(
     guardrail_information: &GuardrailInformation,
 ) -> Result<Decimal, GuardrailPricingError> {
@@ -138,11 +130,23 @@ pub fn guardrail_information_cost(
         GuardrailInformation::Array(entries) => {
             entries.iter().try_fold(Decimal::ZERO, |total, entry| {
                 total
-                    .checked_add(validated_entry_cost(entry)?)
+                    .checked_add(
+                        parse_validated_field(entry, "guardrail cost", parse_scalar_cost_field)?
+                            .map_or(Decimal::ZERO, |(cost, in_spend)| {
+                                billable_entry_cost(&GuardrailCostEntry { cost, in_spend })
+                            }),
+                    )
                     .ok_or(GuardrailPricingError::CostOverflow)
             })
         }
-        GuardrailInformation::Entry(entry) => validated_entry_cost(entry),
+        GuardrailInformation::Entry(entry) => {
+            Ok(
+                parse_validated_field(entry, "guardrail cost", parse_scalar_cost_field)?
+                    .map_or(Decimal::ZERO, |(cost, in_spend)| {
+                        billable_entry_cost(&GuardrailCostEntry { cost, in_spend })
+                    }),
+            )
+        }
     }
 }
 
@@ -188,7 +192,7 @@ fn parse_cost_by_unit_field(
         Some(CounterMapField::Map(counters)) => Ok(
             coerce_counter_map(counters)?.map_or(FieldOutcome::Malformed, FieldOutcome::Present)
         ),
-        Some(CounterMapField::Other(_)) => Ok(FieldOutcome::Malformed),
+        Some(CounterMapField::Number(_) | CounterMapField::Other(_)) => Ok(FieldOutcome::Malformed),
     }
 }
 

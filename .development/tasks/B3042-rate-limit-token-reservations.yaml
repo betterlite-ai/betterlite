@@ -231,7 +231,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_reservations::signatures(::|$)/)'
   - id: cases-tests
     why: Oracle cases verify token reservation logic and rollback behavior
-    run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/rate_limit_token_reservations -k 'b3042'
+    run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/rate_limit_token_reservations
 
 oracle_cases:
 - tools/oracle/cases/rate_limit_token_reservations/tpm-reserve-filtered.yaml

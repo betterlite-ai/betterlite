@@ -1,0 +1,16 @@
+kind: helper
+name: query-params-merge-precedence
+call:
+  b3571:
+    operation: query_merge
+    existing_url: https://upstream.example/v1/chat?limit=10&order=url&tag=a%20b&dup=1&dup=2
+    request_query_params:
+      order: request
+      filter: request
+    default_query_params:
+      limit: default
+      order: default
+      tag: default
+      filter: default
+compare: {ignore: []}
+env: {}

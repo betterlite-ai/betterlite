@@ -7,10 +7,26 @@ use crate::git::git;
 
 pub(crate) struct Facts {
     pub(crate) base: String,
+    pub(crate) tree: Tree,
     pub(crate) changed: Vec<String>,
     pub(crate) untracked: Vec<String>,
     pub(crate) numstat: Vec<NumStat>,
     pub(crate) added_rust_lines: Vec<String>,
+    pub(crate) added_python_lines: Vec<String>,
+}
+
+pub(crate) struct Tree {
+    pub(crate) head: String,
+    pub(crate) clean: bool,
+}
+
+impl Tree {
+    pub(crate) fn read(root: &Path) -> Result<Self, GateError> {
+        Ok(Self {
+            head: git(root, &["rev-parse", "HEAD"])?.trim().to_owned(),
+            clean: git(root, &["status", "--porcelain", "-z"])?.is_empty(),
+        })
+    }
 }
 
 pub(crate) struct NumStat {
@@ -21,6 +37,7 @@ pub(crate) struct NumStat {
 impl Facts {
     pub(crate) fn collect(root: &Path) -> Result<Self, GateError> {
         let base = resolve_base(root)?;
+        let tree = Tree::read(root)?;
         let untracked: Vec<String> =
             git(root, &["ls-files", "-z", "--others", "--exclude-standard"])?
                 .split('\0')
@@ -49,22 +66,25 @@ impl Facts {
                 Some(NumStat { lines, path })
             })
             .collect();
-        let added_rust_lines = added_rust_lines(root, &base, &untracked)?;
         Ok(Self {
+            added_rust_lines: added_lines(root, &base, &untracked, "rs")?,
+            added_python_lines: added_lines(root, &base, &untracked, "py")?,
             base,
+            tree,
             changed,
             untracked,
             numstat,
-            added_rust_lines,
         })
     }
 }
 
-fn added_rust_lines(
+fn added_lines(
     root: &Path,
     base: &str,
     untracked: &[String],
+    extension: &str,
 ) -> Result<Vec<String>, GateError> {
+    let pathspec = format!("*.{extension}");
     let patch = git(
         root,
         &[
@@ -74,7 +94,7 @@ fn added_rust_lines(
             "--no-renames",
             base,
             "--",
-            "*.rs",
+            &pathspec,
         ],
     )?;
     let mut lines: Vec<String> = patch
@@ -86,7 +106,7 @@ fn added_rust_lines(
     for path in untracked.iter().filter(|path| {
         Path::new(path)
             .extension()
-            .is_some_and(|extension| extension == "rs")
+            .is_some_and(|found| found == extension)
     }) {
         let file = root.join(path);
         let text =

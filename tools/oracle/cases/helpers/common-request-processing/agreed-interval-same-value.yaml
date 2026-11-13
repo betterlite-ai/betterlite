@@ -1,0 +1,19 @@
+kind: helper
+name: common-request-processing-agreed-interval-same-value
+call:
+  b7324:
+    function: agreed
+    groups:
+      - deployments:
+          - {litellm_params: {keepalive_seconds: 5}}
+          - {litellm_params: {keepalive_seconds: 5.0}}
+        global_interval: 7
+      - deployments:
+          - {litellm_params: {keepalive_seconds: "2.5"}}
+          - {litellm_params: {keepalive_seconds: "2.5"}}
+        global_interval: 7
+      - deployments:
+          - {litellm_params: {keepalive_seconds: 4}}
+        global_interval: null
+env: {}
+compare: {ignore: []}

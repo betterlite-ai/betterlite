@@ -22,7 +22,6 @@ description: >-
   streaming. Budget 230 implementation, 190 tests, 120 adapters and 90 fuzz lines.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,gemini_response}.rs
     - crates/betterlite-vertex/src/gemini_response.rs
     - crates/betterlite-vertex/src/gemini_response/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

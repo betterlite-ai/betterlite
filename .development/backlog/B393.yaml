@@ -1,14 +1,14 @@
 id: B393
 milestone: M2 routing
 title: Routing Redis circuit and failure policy
-status: todo
+status: done
 depends_on: [B002, B301]
 file: tasks/B393-redis-failure-policy.yaml
 covers:
   - "litellm/caching/redis_cache.py"
 parent: B126
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 850

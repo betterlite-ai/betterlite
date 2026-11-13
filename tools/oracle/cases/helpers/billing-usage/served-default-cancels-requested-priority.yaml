@@ -1,0 +1,24 @@
+kind: helper
+name: billing-usage-served-default-cancels-requested-priority
+call:
+  billing_usage:
+    calls:
+      - function: resolve_billable_service_tier
+        requested_tier: priority
+        served_tier: default
+      - function: resolve_billable_service_tier
+        requested_tier: priority
+        served_tier: STANDARD
+      - function: resolve_billable_service_tier
+        requested_tier: priority
+        served_tier: FLEX
+      - function: resolve_billable_service_tier
+        requested_tier: Weird
+        served_tier: auto
+      - function: resolve_billable_service_tier
+        requested_tier: AUTO
+      - function: resolve_billable_service_tier
+        requested_tier: PRIORITY
+        served_tier: weird
+env: {}
+compare: {ignore: []}

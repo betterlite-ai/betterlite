@@ -1,0 +1,18 @@
+kind: helper
+name: session-empty-values-skipped
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: acompletion
+        trace_id: ''
+        metadata:
+          user_api_key_end_user_id: ''
+          user_api_key_user_id: ''
+          user_api_key_team_id: ''
+          user_api_key_team_alias: ''
+          user_api_key_alias: ''
+    response: null
+env: {}
+compare: {ignore: []}

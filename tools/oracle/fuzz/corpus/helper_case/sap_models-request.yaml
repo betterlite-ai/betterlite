@@ -1,0 +1,9 @@
+kind: helper
+name: sap-models-request-seed
+call:
+  b5951:
+    calls:
+      - model: orchestration_request
+        data: {config: {modules: {prompt_templating: {prompt: {template: [{role: user, content: hi}]}, model: {name: m}}}}, placeholder_values: {q: v}}
+env: {}
+compare: {ignore: []}

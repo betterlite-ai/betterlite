@@ -1,0 +1,21 @@
+kind: helper
+name: get-attached-policies-with-reasons
+call:
+  b3241:
+    policy_memory_matching_attachment:
+      action: attached_policies
+      attachments:
+        - policy: global-baseline
+          scope: "*"
+        - policy: hipaa-policy
+          tags: [healthcare-*]
+        - policy: team-policy
+          teams: [health-team]
+        - policy: any-key
+          keys: ["*"]
+      context:
+        team_alias: health-team
+        model: gpt-4
+        tags: [healthcare-eu, healthcare-us]
+env: {}
+compare: {ignore: []}

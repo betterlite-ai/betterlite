@@ -1,0 +1,32 @@
+{
+  "kind": "helper",
+  "name": "session-tags-canonical",
+  "call": {
+    "bedrock_aws_settings": {
+      "operation": "canonical_tags",
+      "params": {
+        "role_arn": "arn:aws:iam::123:role/demo",
+        "session_name": "session",
+        "tags": [
+          {
+            "Key": "a",
+            "Value": "first",
+            "extra": "ignored"
+          },
+          {
+            "Key": "",
+            "Value": ""
+          },
+          {
+            "Key": "a",
+            "Value": "second"
+          }
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

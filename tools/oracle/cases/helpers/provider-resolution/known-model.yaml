@@ -1,0 +1,10 @@
+kind: helper
+name: provider-resolution-known-model
+call:
+  provider_resolution:
+    model: gpt-4o
+    api_base: https://upstream.example/v1
+    catalog:
+      gpt-4o: {litellm_provider: openai, mode: chat}
+env: {}
+compare: {ignore: []}

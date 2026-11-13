@@ -90,13 +90,13 @@ checks:
   commands:
     - id: capability-tests
       why: Native compaction capability detection with model prefix stripping and exception handling must pass.
-      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^native_compaction_capability::/)'
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^native_compaction::(.*::)?native_compaction_capability::/)'
     - id: conflict-tests
       why: Compatible defaults conflict detection must pass for all five conflict fields.
-      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^native_compaction_defaults::/)'
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^native_compaction::(.*::)?native_compaction_defaults::/)'
     - id: request-kwargs-cases
       why: Request kwargs building must include compaction operation and beta header.
-      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^native_compaction_request_kwargs::/)'
+      run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^native_compaction::(.*::)?native_compaction_request_kwargs::/)'
 oracle_cases:
   - tools/oracle/cases/anthropic/native_compaction/dispatch.yaml
   - tools/oracle/cases/anthropic/native_compaction/blocks.yaml

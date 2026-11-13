@@ -1,0 +1,8 @@
+event: status
+data: {"status": "completed", "last_message": {"content": [{"text": "one"}]}}
+
+data: {"status": "completed", "result": {"data": {"message": {"content": [{"text": "two"}]}}}}
+
+data: [DONE]
+
+data: {"status": "completed", "last_message": {"content": [{"text": "three"}]}}

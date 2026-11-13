@@ -1,0 +1,12 @@
+kind: helper
+name: watsonx-token-cp4d-basic
+call:
+  b4807:
+    operation: token
+    steps:
+      - params: {cp4d_host: "https://cp4d.example.com/", auth_mode: cp4d, api_key: key-1, username: alice}
+        at: 100
+        wall: 1000
+        answer: {token: tok-1, expiration: 5000}
+env: {}
+compare: {ignore: []}

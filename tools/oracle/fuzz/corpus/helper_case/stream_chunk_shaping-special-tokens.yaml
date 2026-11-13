@@ -1,0 +1,10 @@
+kind: helper
+name: stream-chunk-shaping-special-tokens-seed
+call:
+  b5652:
+    state: {model: gpt-4, provider: sagemaker}
+    repeated_chunk_limit: 100
+    steps:
+      - {op: special_tokens, chunk: "<"}
+env: {}
+compare: {ignore: []}

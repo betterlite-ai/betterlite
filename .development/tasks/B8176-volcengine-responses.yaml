@@ -1,0 +1,86 @@
+id: B8176
+title: Volcengine Responses API config
+description: >-
+  Build volcengine_responses in crates/betterlite-openai. It covers litellm/llms/volcengine/responses/transformation.py
+  (VolcEngineResponsesAPIConfig over the OpenAI Responses config of B506 to B509). Nothing reads an environment variable.
+  The caller passes each key and base as a plain argument. VolcEngineError and the default base come from B8175.
+
+  Options. The allowed request keys are instructions, max_output_tokens, previous_response_id, store, reasoning, stream,
+  temperature, top_p, text, tools, tool_choice, max_tool_calls, thinking, caching, expire_at, context_management,
+  extra_headers, extra_query, extra_body, timeout and metadata. The supported list shown to callers is input and model plus
+  these keys, without metadata (metadata is internal and dropped). sanitize_request keeps only allowed keys, drops metadata
+  and parallel_tool_calls, and filters the keys inside extra_body by the same allowed list.
+
+  Key and URL. The key is litellm_params.api_key, else the global key, else the ARK_API_KEY value, else the VOLCENGINE_API_KEY
+  value (all passed in). No key is a ValueError. The base is api_base, else the global base, else the VOLCENGINE_API_BASE
+  value, else the ARK_API_BASE value, else https://ark.cn-beijing.volces.com. It is trimmed of trailing "/". A base ending in
+  /responses is used as is. A base ending in /api/v3 gets /responses. Any other base gets /api/v3/responses. Delete, get and
+  cancel use {base URL}/{url-encoded response id}, with /cancel added for cancel. The list of input items uses
+  {...}/{id}/input_items with after, before, include (joined by ","), limit (default 20) and order (default desc) as query
+  parameters.
+
+  Streaming. The chunk patcher takes a decoded stream event. It adds response.output = [] when the response has no output. It
+  fills each missing required field of the event type by its declared kind: integer 0, list [], a union that contains a list
+  [], any other kind null. It recurses into nested objects and lists. The patched event is then validated. This is needed
+  because Volcengine omits fields OpenAI always sends. It gets a fuzz target.
+
+  Reply. created_at is converted to the integer the record expects. A reply is validated, and when validation fails it is
+  built without checks, as LiteLLM does. An error reply raises VolcEngineError with the status and message. should_fake_stream
+  is false and supports_native_websocket is false.
+
+  Size. About 300 nonblank, non-comment LiteLLM lines. Plan 300 production, 350 tests, 70 adapters, 60 fuzz and 20 wiring
+  lines. No split.
+scope:
+  paths:
+    - crates/betterlite-openai/src/volcengine_responses.rs
+    - crates/betterlite-openai/src/volcengine_responses/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/volcengine_stream_event.rs
+    - crates/betterlite-openai/fuzz/corpus/volcengine_stream_event/**
+    - tools/oracle/cases/helpers/volcengine-responses/**
+    - tools/oracle/helpers/b8176.py
+    - tools/oracle/helpers/b8176/**
+    - tools/oracle/src/helpers/openai/b8176.rs
+    - tools/oracle/src/helpers/openai/b8176/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/volcengine/responses/transformation.py
+    why: The whole config, from allowed keys, URLs, chunk patcher and reply handling.
+dod:
+  - text: Allowed keys, sanitizing, key lookup and every URL rule match LiteLLM.
+    proof: [volcengine-resp-tests, oracle]
+  - text: The chunk patcher fills missing required fields by kind and recurses into nested values.
+    proof: [volcengine-resp-tests, oracle]
+  - text: A malformed stream event fails with a typed error and does not panic, and the corpus replays.
+    proof: [volcengine-resp-corpus]
+  - text: The new oracle cases exist and call this task's helper.
+    proof: [volcengine-resp-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: volcengine-resp-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^volcengine_responses::/) - test(/replays_the_/)'
+      why: The OpenAI Responses config would keep metadata and parallel_tool_calls, post to /v1/responses and fail on events with missing fields.
+    - id: volcengine-resp-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/volcengine_stream_event.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/volcengine_stream_event)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_volcengine_stream_event_corpus)'
+      why: Stream events come from the network and need a fuzz target with a replayed corpus.
+    - id: volcengine-resp-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/volcengine-responses)" && /usr/bin/grep -rlE '^  b8176:' tools/oracle/cases/helpers/volcengine-responses
+      why: Without cases that call the B8176 helper nothing compares these functions with LiteLLM.
+oracle_cases:
+  - tools/oracle/cases/helpers/volcengine-responses/params-and-sanitize.yaml
+  - tools/oracle/cases/helpers/volcengine-responses/urls.yaml
+  - tools/oracle/cases/helpers/volcengine-responses/key-lookup.yaml
+  - tools/oracle/cases/helpers/volcengine-responses/chunk-patcher.yaml
+deviations: []
+out_of_scope:
+  - B506 to B509 own the shared OpenAI Responses behavior and B1138 the Responses records. B8175 owns VolcEngineError.
+  - B2230 and B5360 own picking a config from the provider name. B8312 owns wiring.
+pitfalls:
+  - metadata is accepted from callers but never sent and never listed as supported.
+  - The union rule fills [] only when one member of the union is a list. Other unions get null.
+  - Validation failure falls back to building without checks. It is not an error.
+  - The base /api/v3 check happens after trimming "/". The /responses check comes first.
+  - Key order is the explicit key, the global key, ARK_API_KEY, then VOLCENGINE_API_KEY. The base order differs, with VOLCENGINE_API_BASE comes before ARK_API_BASE.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

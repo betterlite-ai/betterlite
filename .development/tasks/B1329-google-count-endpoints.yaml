@@ -21,7 +21,6 @@ description: >-
   assert the exact POST and error provenance. Budget 220 code, 170 tests, 100 adapters and 90 fuzz lines.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,google_count_tokens}.rs
     - crates/betterlite-vertex/src/google_count_tokens.rs
     - crates/betterlite-vertex/src/google_count_tokens/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

@@ -1,0 +1,14 @@
+task: B3931
+deviations:
+  - what: For a list or object field (messages as a list, a dict response), the length test and the cut use the field's compact JSON text, not Python's str() text.
+    why: docs/compatibility.md leaves out repr text. The two texts differ in quote style and spacing, so the cut point of a very long list differs; oracle cases use string fields only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L838-L875
+  - what: strip_base64_from_messages returns a new payload and leaves the caller's payload and its message objects as they were, and one function serves LiteLLM's async and sync variants.
+    why: docs/compatibility.md excludes changes made in place to the caller's dict, and the async variant awaits nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L1012-L1073
+  - what: The placeholder ModelResponse takes its id and created values from the caller instead of generating them inside the function.
+    why: A pure function is testable, and the oracle cases ignore those two values because LiteLLM generates them fresh.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2218-L2225
+  - what: A null turn_off_message_logging in an exporter's init params reads as false.
+    why: LiteLLM's field is bool or None, and None behaves like false in every branch of the redaction except for a harmless extra copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/custom_logger.py#L57-L62

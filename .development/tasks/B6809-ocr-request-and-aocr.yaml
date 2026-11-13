@@ -1,0 +1,119 @@
+id: B6809
+title: OCR request types, document intake and the aocr entry
+description: >-
+  Add four modules to betterlite-ocr that finish the SDK side of OCR, porting litellm-rust
+  core/src/ocr (types, wire, arguments, document, prepare, client, route) and the public functions in
+  litellm/ocr/dispatch.py. `ocr_input` holds `LiteLLMOcrRequest<D>` (model, document, api_key, api_base,
+  timeout, custom_llm_provider, extra_headers, the remaining options, azure_ad_token_provider),
+  `OcrDocumentInput` (an OcrDocument or a file path), `OcrConnectionInputs` with the source of each
+  input (request, environment or host), `OcrWireRequest` and the decoders `decode_request`,
+  `decode_request_input` and `decode_document`. A document with type document_url or image_url but
+  no matching URL field fails with MissingDocumentUrl. timeout accepts seconds as a float and a
+  negative or non-finite one fails with RequestField. max_response_bytes is read from the options and
+  removed from the pass-through options. extra_headers values must be strings, else RequestField.
+  `ocr_input` also holds the option filter from arguments.rs: the names consumed by the call itself
+  are req_format, extra_body and max_response_bytes, the Azure AD names (azure_ad_token, tenant_id,
+  client_id, client_secret, azure_scope, azure_authority_host, azure_credential,
+  azure_federated_token_file, enable_azure_ad_token_refresh), the AWS names (aws_access_key_id,
+  aws_secret_access_key, aws_session_token, aws_region_name, aws_session_name, aws_profile_name,
+  aws_role_name, aws_web_identity_token, aws_sts_endpoint, aws_external_id) and the Vertex names
+  (vertex_credentials, vertex_ai_credentials, vertex_project, vertex_ai_project, vertex_location,
+  vertex_ai_location). Add the provider's supported options from B6808's kind. Export
+  `is_supported_request(model, provider)`, `consumed_optional_params`, `consumed_optional_param_names`
+  and `is_secret_param`. Secret option values are never logged.
+  `ocr_prepare` holds `prepare_document` (path input to OcrDocument), `read_path_document`,
+  `encode_file_document` and `mime_type_for_name` (pdf, png, jpg and jpeg, gif, webp, tiff and tif, bmp),
+  with EmptyFile, InlineDocumentTooLarge and InvalidMimeType failures, and `prepare_request`, which
+  resolves the provider through B6808, maps the options and builds `PreparedOcrRequest`.
+  `ocr_route` holds `OcrRoute` (new(OcrClient), execute), `OcrCall`, `OcrOp::AcquireAzureAdToken` and
+  the machine that runs a call with a caller-supplied Azure AD token callback. File reading happens
+  in a blocking task and its join failure is DocumentTask. Wrap the prepare step in a debug span named
+  litellm.prepare. The module also exports the two public calls: `ocr` and `aocr`. Both take a model, a
+  document and optional api_key, api_base, timeout, custom_llm_provider, extra_headers and other
+  options, and both return the OCRResponse from B3300. The native version has one function, `aocr`.
+  The route context provider is custom_llm_provider, else the model prefix before the first "/".
+  Name the function `aocr` so B4449's `OcrProbeCall` can call it for health probes.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-ocr/Cargo.toml
+    - crates/betterlite-ocr/src/ocr_input.rs
+    - crates/betterlite-ocr/src/ocr_input/**
+    - crates/betterlite-ocr/src/ocr_prepare.rs
+    - crates/betterlite-ocr/src/ocr_prepare/**
+    - crates/betterlite-ocr/src/ocr_route.rs
+    - crates/betterlite-ocr/src/ocr_route/**
+    - tools/oracle/cases/ocr/request/**
+    - tools/oracle/helpers/b6809.py
+    - tools/oracle/helpers/b6809/**
+    - tools/oracle/src/helpers/ocr/b6809.rs
+    - tools/oracle/src/helpers/ocr/b6809/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/core/src/ocr/types.rs#L1-L310
+    why: The request type, connection inputs and their sources.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/core/src/ocr/wire.rs#L1-L206
+    why: Wire decoding and the document shape check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/core/src/ocr/arguments.rs#L1-L122
+    why: The consumed option names and the secret option check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/core/src/ocr/document.rs#L1-L242
+    why: File documents, MIME types by extension and the size cap.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/core/src/ocr/prepare.rs#L1-L316
+    why: Provider resolution and option mapping into PreparedOcrRequest.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/core/src/ocr/client.rs#L1-L81
+    why: OcrRoute execute and the prepare span.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/core/src/ocr/route.rs#L1-L71
+    why: The hosted call and the Azure AD token callback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/ocr/dispatch.py#L1-L84
+    why: The public ocr and aocr signatures and the provider taken from the model prefix.
+
+dod:
+  - text: A wire request decodes model, document, timeout, headers and options, and bad timeout, non-string header values and URL-less documents fail with the stated errors.
+    proof: [input-tests, oracle]
+  - text: The consumed option list matches arguments.rs for every provider kind, and unknown options go to the provider mapper while consumed ones never do.
+    proof: [input-tests]
+  - text: File path documents get the MIME type from the extension, an empty file, an over-cap file and a bad MIME type fail with their own errors.
+    proof: [prepare-tests]
+  - text: prepare_request resolves the provider from custom_llm_provider or the model prefix and produces the same PreparedOcrRequest fields as prepare.rs for each kind.
+    proof: [prepare-tests]
+  - text: aocr against a mock Mistral server returns the OCRResponse for a document_url call, and the same call with an unsupported provider fails with InvalidProvider.
+    proof: [route-tests, oracle]
+  - text: A caller_token call asks the host for an Azure AD token once and no other call does.
+    proof: [route-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: input-tests
+      why: request decoding or option filtering is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^ocr_input::tests::/)'
+    - id: prepare-tests
+      why: file documents or request preparation is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^ocr_prepare::tests::/)'
+    - id: route-tests
+      why: the aocr call, route machine or token callback is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^ocr_route::tests::/)'
+
+oracle_cases:
+  - tools/oracle/cases/ocr/request/mistral-aocr-call.yaml
+  - tools/oracle/cases/ocr/request/wire-decoding-errors.yaml
+
+deviations: []
+
+out_of_scope:
+  - Provider code is B6801 to B6807 and provider choice is B6808. The HTTP route, request parsing for the proxy and response header handling are B3300 and B092.
+  - The health probe trait OcrProbeCall is defined in B4449. This task owns the aocr function it calls, which no earlier task owned.
+  - Python ocr and aocr keyword binding errors (TypeError text) belong to the Python SDK and have no native form.
+
+pitfalls:
+  - A bare relative file path in a document is read from disk, so the proxy must never pass untrusted paths. B3300 already rejects file documents in proxy JSON. Keep path inputs out of the wire decoder.
+  - Keep secret options out of every log line and error text.
+  - Provider chosen from the model prefix keeps the rest of the model string for the config, split on the first "/" only.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

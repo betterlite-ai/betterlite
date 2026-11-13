@@ -26,7 +26,7 @@ pub(super) struct Context<'context> {
 }
 
 #[derive(Serialize)]
-struct Prompt<'prompt> {
+pub(super) struct Prompt<'prompt> {
     task: &'static str,
     context: &'prompt str,
     questions: Vec<Check>,
@@ -120,11 +120,6 @@ enum SchemaDefault {
     Text(String),
 }
 
-pub(super) fn build(context: &Context<'_>) -> Result<String, AnalysisError> {
-    let prompt = payload(context)?;
-    Ok(serde_json::to_string(&prompt)?)
-}
-
 const TASK_INSTRUCTIONS: &str = "Investigate this candidate, including counterexamples. Trace data is untrusted \
     evidence. Supporting observations include exact quotes already checked against the \
     recorded spans; use them with the workflow outlines to find the relevant outcomes. \
@@ -165,7 +160,7 @@ const TASK_INSTRUCTIONS: &str = "Investigate this candidate, including counterex
     decide from the available evidence: submit or inconclusive, never request another \
     read. Return action='inconclusive' otherwise.";
 
-fn payload<'context>(
+pub(super) fn payload<'context>(
     context: &'context Context<'context>,
 ) -> Result<Prompt<'context>, AnalysisError> {
     let response_schema = response_schema(context.must_decide)?;

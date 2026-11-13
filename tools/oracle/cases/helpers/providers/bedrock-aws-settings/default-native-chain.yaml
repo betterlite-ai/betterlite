@@ -1,0 +1,26 @@
+{
+  "kind": "helper",
+  "name": "default-native-chain",
+  "call": {
+    "bedrock_aws_settings": {
+      "operation": "local",
+      "params": {
+        "settings": {},
+        "environment": {
+          "AWS_ACCESS_KEY_ID": "ambient",
+          "AWS_SECRET_ACCESS_KEY": "private"
+        },
+        "files": {},
+        "fixture": [
+          "ambient",
+          "private",
+          null
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

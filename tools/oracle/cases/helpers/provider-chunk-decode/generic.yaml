@@ -1,0 +1,43 @@
+kind: helper
+name: provider-chunk-decode-generic
+call:
+  b5653:
+    state:
+      model: custom-model
+      provider: custom-provider
+      custom_provider: true
+      response_id: chatcmpl-fixed
+      created: 1700000000
+      repeated_chunk_limit: 100
+    steps:
+      - op: decode
+        chunk:
+          kind: generic
+          value: {text: hello, is_finished: false, finish_reason: "", usage: {prompt_tokens: 3, completion_tokens: 4, total_tokens: 7}, provider_specific_fields: {trace: t1}}
+      - op: decode
+        chunk:
+          kind: generic
+          value: {text: "", tool_use: {id: call_1, type: function, function: {name: f, arguments: "{}"}}, is_finished: false, finish_reason: "", usage: null}
+      - op: decode
+        chunk:
+          kind: generic
+          value: {text: "", is_finished: true, finish_reason: stop, usage: null}
+      - op: decode
+        chunk:
+          kind: generic
+          value: {text: again, is_finished: false, finish_reason: "", usage: null}
+      - op: decode
+        chunk:
+          kind: generic
+          value: {text: "", is_finished: false, finish_reason: "", usage: null, provider_specific_fields: {x: 1}}
+      - op: decode
+        chunk:
+          kind: generic
+          value: {text: "", is_finished: false, finish_reason: "", usage: null}
+      - op: creator
+        chunk:
+          kind: json
+          value: {id: chatcmpl-custom, model: custom-model, created: 1700000001, choices: [{index: 0, delta: {content: hi}, finish_reason: stop}]}
+env: {}
+compare:
+  ignore: []

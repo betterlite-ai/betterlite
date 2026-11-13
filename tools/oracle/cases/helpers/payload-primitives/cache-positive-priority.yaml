@@ -1,0 +1,19 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-cache-positive-priority",
+  "call": {
+    "b3843": {
+      "function": "cache_token_value",
+      "values": [
+        null,
+        0,
+        4,
+        7
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

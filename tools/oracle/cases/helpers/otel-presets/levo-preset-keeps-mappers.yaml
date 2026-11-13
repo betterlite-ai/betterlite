@@ -1,0 +1,23 @@
+kind: helper
+name: levo-preset-keeps-mappers
+call:
+  b3850:
+    function: levo_preset
+    environment:
+      LEVOAI_API_KEY: key
+      LEVOAI_ORG_ID: org
+      LEVOAI_WORKSPACE_ID: workspace
+      LEVOAI_COLLECTOR_URL: https://levo.example/v1/traces
+    base:
+      exporters:
+        - kind: otlp_http
+          endpoint: https://collector.example/v1/traces
+      mapper_names: [genai, openinference]
+      resource_attributes: {}
+env:
+  LEVOAI_API_KEY: key
+  LEVOAI_ORG_ID: org
+  LEVOAI_WORKSPACE_ID: workspace
+  LEVOAI_COLLECTOR_URL: https://levo.example/v1/traces
+compare:
+  ignore: []

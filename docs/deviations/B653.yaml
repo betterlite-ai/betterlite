@@ -1,0 +1,8 @@
+task: B653
+deviations:
+  - what: JWT prefixes and raw request payloads are omitted from debug output; authentication mode and failure category remain visible.
+    why: The source logs the first 50 token characters and PAYLOAD; repository redaction rules prohibit credential and content disclosure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L132-L142
+  - what: An empty messages list returns a typed AgentCoreRequestError instead of raising IndexError from messages[-1].
+    why: LiteLLM's unhandled IndexError surfaces as a 500; a typed request error keeps the same failure without an unhandled exception, and no working setup sends an empty message list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L205-L228

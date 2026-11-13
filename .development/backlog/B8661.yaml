@@ -1,0 +1,13 @@
+id: B8661
+milestone: M4 keys, spend and management
+title: Mount the analytics and agent activity routes
+status: todo
+depends_on: [B8610, B8482, B3100, B3101, B3102, B4787, B860]
+file: tasks/B8661-spend-analytics-mount.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

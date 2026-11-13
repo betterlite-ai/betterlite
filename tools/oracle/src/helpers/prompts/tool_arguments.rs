@@ -5,8 +5,8 @@ use betterlite_prompts::arguments::concatenated::{
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::arguments::parse::{ParseArgumentsError, parse_tool_call_arguments};
 use betterlite_prompts::arguments::shapes::{
-    check_is_function_call, custom_tool_to_chat_shape, custom_tool_to_responses_shape,
-    get_tool_call_names, is_function_call, with_prompt_cache_breakpoint,
+    check_is_function_call, custom_tool_to_chat_shape, get_tool_call_names, is_function_call,
+    nested_custom_grammar, nested_to_flat_grammar, with_prompt_cache_breakpoint,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -80,7 +80,7 @@ impl Helper for Op {
             )),
             Input::GetToolCallNames { tools } => Ok(Value::from(get_tool_call_names(tools))),
             Input::IsFunctionCall { optional_params } => {
-                Ok(Value::from(is_function_call(optional_params)))
+                Ok(Value::Bool(is_function_call(optional_params)))
             }
             Input::CheckIsFunctionCall { optional_params } => Ok(Value::from(
                 check_is_function_call(optional_params.as_ref()),
@@ -88,9 +88,10 @@ impl Helper for Op {
             Input::CustomToolToChatShape { format_obj } => {
                 Ok(object_to_value(custom_tool_to_chat_shape(format_obj)))
             }
-            Input::CustomToolToResponsesShape { format_obj } => {
-                Ok(object_to_value(custom_tool_to_responses_shape(format_obj)))
-            }
+            Input::CustomToolToResponsesShape { format_obj } => Ok(object_to_value(
+                nested_custom_grammar(format_obj)
+                    .map_or_else(|| format_obj.clone(), nested_to_flat_grammar),
+            )),
             Input::WithPromptCacheBreakpoint { target, marker } => Ok(object_to_value(
                 with_prompt_cache_breakpoint(target, marker.as_ref()),
             )),

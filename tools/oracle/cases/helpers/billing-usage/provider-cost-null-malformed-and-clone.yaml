@@ -1,0 +1,37 @@
+kind: helper
+name: billing-usage-provider-cost-null-malformed-and-clone
+call:
+  billing_usage:
+    calls:
+      - function: hidden_response_cost
+        hidden_params: {}
+      - function: hidden_response_cost
+        hidden_params:
+          additional_headers:
+            llm_provider-x-litellm-response-cost: null
+      - function: hidden_response_cost
+        hidden_params:
+          additional_headers:
+            llm_provider-x-litellm-response-cost: "0.25"
+      - function: hidden_response_cost
+        hidden_params:
+          additional_headers:
+            llm_provider-x-litellm-response-cost: 0.5
+      - function: hidden_response_cost
+        hidden_params:
+          additional_headers:
+            llm_provider-x-litellm-response-cost: abc
+      - function: without_provider_stated_cost
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 2
+          total_tokens: 3
+          cost: 0.5
+          service_tier: flex
+      - function: without_provider_stated_cost
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 2
+          total_tokens: 3
+env: {}
+compare: {ignore: []}

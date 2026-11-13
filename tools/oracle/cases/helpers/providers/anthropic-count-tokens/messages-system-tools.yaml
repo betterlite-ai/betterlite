@@ -1,0 +1,37 @@
+kind: helper
+name: messages-system-tools
+call:
+  anthropic_count_tokens:
+    function: transform
+    cases:
+        - model: claude-3-5-sonnet-20241022
+          messages:
+            - role: user
+              content:
+                - {type: text, text: hi, x: 1}
+              extra: true
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          system: ''
+          tools: []
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          optional_params:
+            thinking: {type: enabled}
+            tool_choice: {type: auto}
+            output_config: {format: x}
+            temperature: 0.5
+            max_tokens: 5
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          optional_params: {thinking: null}
+        - model: claude-3-5-sonnet-20241022
+          messages: []
+          system: sys
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          tools:
+            - name: lookup
+              input_schema: {type: object, nested: [[], {}, null]}
+env: {}
+compare: {ignore: []}

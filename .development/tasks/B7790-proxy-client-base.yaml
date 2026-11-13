@@ -1,0 +1,208 @@
+id: B7790
+title: Management client base, HTTP transport and the health, model-group and user clients
+description: >-
+  LiteLLM ships a small Python library, `litellm.proxy.client`, that scripts use to call a proxy's management API. In the
+  wheel it becomes `betterlite.proxy.client`, so `from betterlite.proxy.client import HealthManagementClient` works the way
+  the LiteLLM import does. This task builds the shared base and the three smallest resource clients. B7791 and B7792 add the
+  other clients on top, and B169 wires them into `Client`. It is Python plus one thin Rust file, and it adds no HTTP route.
+
+
+  The wheel depends only on python-dotenv, so there is no `requests`. LiteLLM's clients build a `requests.Request`, send it
+  with a `requests.Session` and catch `requests.exceptions.HTTPError`. Replace that with one private module,
+  `python/betterlite/proxy/client/_transport.py`, built on `urllib.request` from the standard library. It holds:
+  `RequestError(Exception)` (the base of everything below), `HTTPError(RequestError)` with the attributes `response` and
+  `args[0]` as the message, `Response` (`status_code: int | None`, `text`, `headers`, `json()` that raises `ValueError` on a
+  bad body, `iter_lines()` for streaming, and `raise_for_status()`), `Request` (a frozen dataclass with `method`, `url`,
+  `headers`, `params` as a dict and `json` as an object or None; it is what every `return_request=True` call hands back), and
+  `send(request, timeout)` plus `stream(request, timeout)`. `raise_for_status` raises `HTTPError` for status 400 and up with
+  the same text requests uses: `"{code} Client Error: {reason} for url: {url}"` for 4xx and `"{code} Server Error: ..."` for
+  5xx, where reason is the HTTP reason phrase. `send` encodes `params` with `urllib.parse.urlencode` and puts a JSON body
+  through `json.dumps`, setting `Content-Type: application/json` unless the caller gave one, as requests does. urllib raises
+  on 4xx and 5xx, so `send` catches `urllib.error.HTTPError` and turns it into a `Response` with the body read, so the
+  callers see a status code and not an exception, the way `session.send` behaves. A connection failure or timeout
+  (`urllib.error.URLError`, `TimeoutError`, `OSError`) becomes `RequestError` with the original as its cause.
+
+
+  `exceptions.py` ports LiteLLM's `UnauthorizedError` and `NotFoundError`. Each takes an `HTTPError` or a string, and stores
+  `orig_exception` after redaction: for an `HTTPError`, a new `HTTPError` with `redact_string(str(error))` as its message and
+  the same `response`; for a string, `redact_string(str)`. `str()` of the exception is the redacted text. `redact_string` comes
+  from the native bridge below, so the patterns stay the ones betterlite-redact owns.
+
+
+  The native bridge is a small family in the Python crate, following the rule B5659 sets out: it owns
+  `crates/betterlite-python/src/proxy_client.rs`, `src/proxy_client/**` and `python/betterlite/_native_proxy_client.pyi`. B5369 declares the `proxy_client` family in `lib.rs` and `_native.pyi` with a stub `register` that this task fills. `register` adds a `#[pyclass]` `ProxyClientNative` with no state of its
+  own beyond a `betterlite_redact::secret::Redactor` built once in `new()` from `MINIMUM_CUSTOM_KEY_LENGTH`. Two methods:
+  `redact_text(value: str) -> str` calls `Redactor::redact_string`, and `gateway_api_key(expected_base_url: str | None) ->
+  str | None` calls B4592 `betterlite_secrets::gateway_key::get_litellm_gateway_api_key` with a `TokenFileStore` that this task writes in `src/proxy_client/token.rs`. It implements `GatewayKeyStore` over the file LiteLLM reads, `~/.litellm/token.json` (the home folder from `HOME`, as `Path.home()` does), and gives the record's `base_url` and `key`. The wheel has no keyring, so there is no vault: it uses the `key` the file holds, which is what LiteLLM returns when the keychain is disabled, not installed or unreachable. A key held only by the keychain gives None here, and LiteLLM reads no environment variable for this key. A missing, unreadable or invalid file gives None. The unit tests use a temp folder as home. Put the plain logic in
+  `src/proxy_client/redact.rs` and `src/proxy_client/token.rs` so unit tests need no interpreter. Add `betterlite-redact`, `betterlite-secrets`, `serde` and `serde_json` to the crate's Cargo.toml; the wheel must not depend on betterlite-cli. The Python side wraps the class in `python/betterlite/proxy/client/_bridge.py`,
+  which builds one instance and offers `redact_string` and `get_gateway_api_key`. `Client` in B169 calls the second.
+
+
+  The clients, all taking `(base_url, api_key=None, timeout=30)` like LiteLLM's and stripping trailing slashes from
+  `base_url`:
+
+  `HTTPClient` (`http_client.py`). `request(method, uri, *, data=None, json=None, headers=None, params=None)` joins
+  `base_url + "/" + uri.lstrip("/")`, copies the caller's headers, then sets `Authorization: Bearer {key}` when the key is
+  non-empty (it overrides a caller header of the same name). `data` as a mapping or a list of pairs goes out form-encoded
+  (`application/x-www-form-urlencoded`); as bytes it goes out raw. It calls `raise_for_status` and returns `response.json()`.
+  It never turns 401 into `UnauthorizedError`. LiteLLM also forwards any other keyword to `requests.request`; here an unknown
+  keyword raises `TypeError`.
+
+  `HealthManagementClient` (`health.py`). `get_readiness()` is `GET /health/readiness` through an `HTTPClient`.
+  `get_server_version()` returns the `litellm_version` field of that reply, or None when it is absent.
+
+  `ModelGroupsManagementClient` (`model_groups.py`). `info(return_request=False)` is `GET /model_group/info`, sends only the
+  `Authorization` header, returns `["data"]` of the reply, and maps a 401 to `UnauthorizedError(error)`. With
+  `return_request=True` it returns the `Request` without sending.
+
+  `UsersManagementClient` (`users.py`). Public attributes `base_url`, `api_key`, `timeout`, and headers that always include
+  `Content-Type: application/json`. `list_users(params=None)` is `GET /user/list` and returns the reply's `"users"` list, or
+  the whole reply when `"users"` is absent. `get_user(user_id=None)` is `GET /user/info` and `get_user_v2` is `GET
+  /v2/user/info`; both send `user_id` as a query parameter only when it is non-empty, and map 401 to `UnauthorizedError(text)`
+  and 404 to `NotFoundError(text)`, where text is the response body as a string. `create_user(user_data)` is `POST /user/new`
+  with the mapping as the JSON body. `delete_user(user_ids)` is `POST /user/delete` with `{"user_ids": [...]}`. The last two
+  and `list_users` map only 401. There is no `return_request` on this class.
+
+
+  Tests: `crates/betterlite-python/tests/proxy_client_support.py` is the shared fixture module for all three parts. It holds a
+  typed `RecordingServer` on `http.server.ThreadingHTTPServer` bound to port 0 in a thread: `reply(status, body_text)` queues
+  one answer, and `requests` lists what arrived as a frozen dataclass `Seen(method, path, query, authorization, content_type,
+  body)` with the JSON body already parsed. `test_proxy_client_base.py` runs the same call through LiteLLM's client and
+  betterlite's against one server and compares what the server saw and what the call returned or raised. LiteLLM and
+  betterlite are installed side by side in the check environment; set `HOME` to a temp folder in those tests so no stored CLI
+  token is found. Test functions start with `transport_`, `exceptions_`, `http_client_`, `health_`, `model_groups_`, `users_`
+  or `bridge_`.
+scope:
+  paths:
+  - crates/betterlite-python/Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-python/src/proxy_client.rs
+  - crates/betterlite-python/src/proxy_client/**
+  - crates/betterlite-python/python/betterlite/_native_proxy_client.pyi
+  - crates/betterlite-python/python/betterlite/proxy/__init__.py
+  - crates/betterlite-python/python/betterlite/proxy/client/_transport.py
+  - crates/betterlite-python/python/betterlite/proxy/client/_bridge.py
+  - crates/betterlite-python/python/betterlite/proxy/client/exceptions.py
+  - crates/betterlite-python/python/betterlite/proxy/client/http_client.py
+  - crates/betterlite-python/python/betterlite/proxy/client/health.py
+  - crates/betterlite-python/python/betterlite/proxy/client/model_groups.py
+  - crates/betterlite-python/python/betterlite/proxy/client/users.py
+  - crates/betterlite-python/tests/proxy_client_support.py
+  - crates/betterlite-python/tests/test_proxy_client_base.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L134-L138
+  why: The token file path the wheel store reads, ~/.litellm/token.json.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L372-L391
+  why: How the file is read, and the keychain-unavailable branch of the secret lookup that the file-only store copies.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/exceptions.py#L1-L27
+  why: The two exception classes and the redaction of the wrapped error.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/http_client.py#L9-L97
+  why: HTTPClient and its generic request method, including the header merge and the 401 it does not map.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/health.py#L6-L43
+  why: Readiness and the server version lookup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/model_groups.py#L8-L64
+  why: The model group info call and its request-only mode.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/users.py#L9-L72
+  why: The user client, with its per-method error mapping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/secret_redaction.py#L91-L110
+  why: redact_string is the function the exceptions call. betterlite-redact already owns it.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L309-L347
+  why: get_litellm_gateway_api_key is what Client uses when no key is given. B4592 owns the Rust port the bridge calls.
+- url: https://github.com/psf/requests/blob/v2.32.3/src/requests/models.py#L1021-L1046
+  why: The message text raise_for_status builds, which the transport copies.
+dod:
+- text: >-
+    The transport sends method, path, query string, Authorization and Content-Type exactly as requests does for LiteLLM's
+    calls, and raise_for_status raises HTTPError with the requests message text for 4xx and 5xx.
+  proof: [transport]
+- text: >-
+    A connection failure or timeout surfaces as RequestError with the original error as its cause, not as a bare urllib error.
+  proof: [transport]
+- text: >-
+    UnauthorizedError and NotFoundError keep a redacted copy of the wrapped HTTPError (same response) or string, and a
+    secret in the message never reaches `str()`.
+  proof: [exceptions]
+- text: >-
+    HTTPClient joins the URL the way LiteLLM does, lets the key override a caller Authorization header, encodes json, form
+    and bytes bodies, returns parsed JSON and raises HTTPError, never UnauthorizedError, on 401.
+  proof: [http-client]
+- text: Health, model-group and user clients send the same requests as LiteLLM's and return or raise the same things.
+  proof: [resource-clients]
+- text: >-
+    The native bridge redacts with betterlite-redact's patterns and returns None for the gateway key when no token is stored
+    or the stored URL differs from the expected one.
+  proof: [native-bridge, bridge-python]
+- text: Python files pass ruff and basedpyright in strict mode.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: transport
+    why: A request line, header or error text differs from requests.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client_base.py -k transport_
+  - id: exceptions
+    why: An exception keeps a secret or loses its response.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client_base.py -k exceptions_
+  - id: http-client
+    why: The generic request builds a different URL, header or body.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client_base.py -k http_client_
+  - id: resource-clients
+    why: A health, model-group or user call differs from LiteLLM's.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client_base.py -k "health_ or model_groups_ or users_"
+  - id: native-bridge
+    why: The Rust side redacts or looks up the key differently from the Python original.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^proxy_client::/)'
+  - id: bridge-python
+    why: The Python wrapper does not reach the native class.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client_base.py -k bridge_
+  - id: python-lint
+    why: Strict typing has to hold for every new module.
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The gateway key comes from the token file only. A key stored only in the OS keychain is not found.
+  why: The wheel must not link the keyring or betterlite-cli. LiteLLM falls back to the file the same way when the keychain is unavailable.
+- what: The clients use the standard library `urllib`, and `return_request=True` returns betterlite's `Request` dataclass, not a `requests.Request`. Errors are `betterlite.proxy.client.HTTPError` and `RequestError`, not `requests.exceptions.HTTPError` and `RequestException`.
+  why: The wheel depends only on python-dotenv, so `requests` is not there. A script that catches the requests classes must catch these.
+- what: >-
+    `HTTPClient.request` takes `params` as a named argument and raises `TypeError` for any other extra keyword.
+  why: LiteLLM forwards `**kwargs` to `requests.request`, which has no counterpart here. `params` is the one extra the other clients in LiteLLM need.
+- what: This task has no helper oracle cases.
+  why: The pytest file imports both packages and compares them against one recording server, and helper cases speak to Rust functions only.
+out_of_scope:
+- The keys and credentials clients are B7791. The models, chat and teams clients are B7792.
+- '`Client` in client.py, the package `__init__.py` and the README belong to B169.'
+- The Rust token store, keyring and `get_litellm_gateway_api_key` itself are B4590 to B4592. This task only calls it.
+- LiteLLM's `litellm/rust_bridge` fallback in `redact_string` (the pure Python regex copy) is not built. betterlite-redact is the one implementation.
+pitfalls:
+- >-
+  Users `list_users` returns `response.json().get("users", response.json())`, so a reply without a `users` key comes back whole.
+- >-
+  `get_user` and `get_user_v2` send no query at all when `user_id` is empty or None, and `UsersManagementClient` puts
+  `Content-Type: application/json` on GET requests too, while `ModelGroupsManagementClient` sends only `Authorization`.
+- >-
+  UsersManagementClient raises `UnauthorizedError(response.text)` with a string, ModelGroupsManagementClient raises it with the
+  `HTTPError`. Both stay as they are, and `str()` is redacted either way.
+- >-
+  `HTTPClient` strips only trailing slashes from `base_url` and only leading slashes from `uri`, so `"/health/x"` and
+  `"health/x"` give the same URL and a double slash in the middle is left alone.
+- >-
+  LiteLLM raises `UnauthorizedError` inside the `except` block, so the original `HTTPError` is the implicit context. Raise
+  with `from error` so the cause is kept.
+- >-
+  urllib follows redirects and adds its own `User-Agent: Python-urllib`. Keep the redirect default and do not assert on
+  `User-Agent` in tests.
+- >-
+  `Redactor::new` can fail with `RedactionError`. The class constructor turns that into a Python `RuntimeError` carrying the
+  message, and nothing else in the family unwraps.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

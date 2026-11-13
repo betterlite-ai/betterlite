@@ -1,0 +1,33 @@
+kind: helper
+name: results_sorted_by_score
+call:
+  b7813:
+    calls:
+      - call: results
+        input:
+          query_text: find me
+          documents:
+            - {id: doc-a, fields: {text: first, vector_distance: "0.25"}}
+            - {id: doc-b, fields: {vector_distance: "0.051030516624450684"}}
+            - {id: doc-c, fields: {text: tie, vector_distance: "0.25"}}
+            - {id: doc-d, fields: {content: custom, vector_distance: "0.5"}}
+            - {id: doc-e, fields: {text: one, vector_distance: "1.0"}}
+            - {id: doc-f, fields: {text: zero, vector_distance: "0.0"}}
+      - call: results
+        input:
+          query_text: custom field
+          litellm_params: {valkey_text_field: content}
+          documents:
+            - {id: doc, fields: {text: wrong, content: right, vector_distance: "0.5"}}
+      - call: results
+        input:
+          query_text: no distance
+          documents:
+            - {id: doc, fields: {text: broken}}
+      - call: results
+        input:
+          query_text: bad distance
+          documents:
+            - {id: doc, fields: {text: broken, vector_distance: close}}
+env: {}
+compare: {ignore: []}

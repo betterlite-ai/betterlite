@@ -1,0 +1,10 @@
+kind: helper
+name: raw-request-response-text
+call:
+  b3856:
+    function: set_raw_request_attributes
+    kwargs:
+      litellm_params: {custom_llm_provider: anthropic}
+      original_response: not json at all
+env: {}
+compare: {ignore: []}

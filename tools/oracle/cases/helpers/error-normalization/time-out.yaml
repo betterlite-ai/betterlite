@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-time-out
+call: {"error_normalization": {"message": "time out", "status_code": 418}}
+env: {}
+compare: {ignore: []}

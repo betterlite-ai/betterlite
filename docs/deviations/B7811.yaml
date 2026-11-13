@@ -1,0 +1,14 @@
+task: B7811
+deviations:
+  - what: "A search result score that is a finite JSON number outside the exact decimal range is reported as an invalid search response, where LiteLLM copies the float into the response score"
+    why: "B1131's score field is an exact Decimal and this task's four error variants carry no decimal error, so a value no betterlite client can read becomes the sidecar's invalid-response ServiceUnavailable instead of being rounded or dropped"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mongodb/vector_stores/transformation.py#L60"
+  - what: "An api_base string that Python's urlsplit accepts but url::Url::parse rejects, such as a host carrying a space or an empty port, is a BadRequest, where LiteLLM builds the sidecar URL from it"
+    why: "The base URL's structure is validated with the workspace's RFC 3986 parser instead of porting urlsplit's lax parsing; the authority's host text is then read as written for the loopback test, so WHATWG rewriting such as 127.1 into 127.0.0.1 cannot turn a refused base into loopback http"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mongodb/vector_stores/transformation.py#L202-L226"
+  - what: "A timeout whose millisecond value exceeds u64 fails with the timeout error, where LiteLLM sends an arbitrarily large integer"
+    why: "The request body carries timeout_ms as a serde_json number bounded by u64, while Python's int is unbounded; the boundary is about 1.8e16 seconds"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mongodb/vector_stores/transformation.py#L228-L238"
+  - what: "A mongodb_num_candidates integer outside the i64 range is reported as an invalid configuration, where LiteLLM compares the arbitrary-precision int against the candidate range"
+    why: "The typed view parses the declared int into i64; a value that does not fit still fails with a 400 BadRequest, but with the configuration-parse message instead of the range message"
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mongodb/vector_stores/transformation.py#L84"

@@ -17,7 +17,11 @@ scope:
   paths:
     - Cargo.toml
     - crates/betterlite-semantic/**
-    - tools/oracle/**
+    - tools/oracle/cases/helpers/semantic-text-index/**
+    - tools/oracle/helpers/b4261.py
+    - tools/oracle/helpers/b4261/**
+    - tools/oracle/src/helpers/proxy/b4261.rs
+    - tools/oracle/src/helpers/proxy/b4261/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/semantic_text_index.py

@@ -1,0 +1,12 @@
+kind: helper
+name: error-normalization-seed
+call:
+  error_normalization:
+    message: ordinary provider error
+    proxy_type: budget_exceeded
+    class: null
+    status_code: 429
+    rate_limit_type: null
+    error_present: true
+env: {}
+compare: {ignore: []}

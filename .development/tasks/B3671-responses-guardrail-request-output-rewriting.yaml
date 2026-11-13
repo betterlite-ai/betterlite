@@ -1,0 +1,342 @@
+id: B3671
+title: Responses guardrail request and output rewriting
+description: >-
+  Build the handler that applies a guardrail to an OpenAI Responses API request and to a finished
+  (non-streamed) Responses API response. It is LiteLLM's `OpenAIResponsesHandler` without its streaming
+  and block-event methods. Handlers are plain async functions generic over `G: GuardrailContract`
+  (B5471's `guardrail_base`, which also gives `GuardrailApiInputs`, `GuardrailInputType` and
+  `GuardrailLogTarget`), as in B5820 and B3674. The dispatcher (B3679, B3680) calls them. Nothing here
+  knows about routes or call types, and nothing here catches, logs or rewrites a `GuardrailFailure`:
+  it goes straight to the caller. Request bodies are `BTreeMap<String, GuardrailValue>` and the
+  response is a `GuardrailValue`, both as B5820 uses them. B3670's helpers take `serde_json::Value`,
+  so move between the two with serde in one place per module and do not write a converter module.
+  Raw Responses items and output items are JSON that betterlite does not model, so they stay JSON.
+  LiteLLM branches between pydantic objects and dicts in many places. In Rust both are one JSON
+  object, so only the dict behavior is built.
+
+  Two modules, in crates/betterlite-server/src/guardrails/responses_translation/. Each owns an error
+  enum in its own `error.rs` with `thiserror`: `RequestRewriteError` and `OutputRewriteError`. Their
+  variants wrap, with `#[source]`, the `GuardrailFailure` (box it if `clippy::result_large_err` fires),
+  B3663's unappliable-rewrite error, and the typed errors of B909's input converter, B917's
+  chat-to-Responses converter, B3669's tool merge and B3670's provenance. A conversion error is never
+  turned into "no change". Add the crates this task imports to crates/betterlite-server/Cargo.toml
+  (betterlite-guardrails, betterlite-core and betterlite-config; none depends on betterlite-server).
+  Read the finished modules of B909, B913, B917, B3663, B3669 and B3670 for their exact Rust names and
+  signatures. Where this text uses LiteLLM's names, those are the functions meant.
+
+  Module `request_rewrite` (request_rewrite.rs). `get_structured_messages(data) ->
+  Result<Option<Vec<ChatMessage>>, RequestRewriteError>`: None when `data.input` is missing or null,
+  otherwise B909's input-to-messages function over `data.input` with `data` as the request (so a
+  truthy `instructions` becomes a leading system message), and None when the result is empty.
+  `scannable_instructions(data, skip_system: bool) -> Option<&str>` is the `instructions` string only
+  when it is non-empty and `skip_system` is false. It is public because other guardrails read it.
+  `ExtractedInputs { inputs: GuardrailApiInputs, task_mappings: Vec<(usize, Option<usize>)>,
+  instructions: Option<String> }` and `RequestFields { input: Vec<Value>, instructions: Option<String> }`
+  are the two small structs.
+
+  `extract_guardrail_inputs(data, input_data, flattened_tool_groups, skip_system) -> ExtractedInputs`
+  builds what the guardrail sees. `texts` starts with the scannable instructions, if any. A string
+  `input` adds itself as one text. An array `input` walks its items with their index. An item that is
+  not an object is skipped. The item's role is its `role` when that is a string, lowercased, else "".
+  B3663's `role_out_of_guardrail_scope(role, skip_system, skip_tool = false)` skips the item. For the
+  rest, a missing or null `content` adds nothing. A string `content` adds one text and the mapping
+  `(msg_idx, None)`. An array `content` walks its entries; an entry that is an object with a string
+  `text` adds that text and the mapping `(msg_idx, Some(content_idx))`, and an entry whose `type` is
+  "image_url" with an `image_url` object holding a non-empty string `url` adds that url to `images`.
+  `tools` is a deep copy of every tool of every group in `flattened_tool_groups` (each group is the
+  `chat_tools` of one form returned by B913's `responses_tools_to_chat_forms` over `data.tools`).
+  `images` and `tools` are set only when not empty. `model` is set whenever `data.model` is a string,
+  even an empty one.
+
+  `process_input_messages(data: &mut BTreeMap<String, GuardrailValue>, guardrail: &G, logging_obj:
+  Option<&mut GuardrailLogTarget>) -> Result<(), RequestRewriteError>` runs in this order. (1) If
+  `data.input` is neither a string nor an array, return. (2) `skip_system` comes from B3663's
+  `effective_skip_system_message_for_guardrail` for this guardrail. (3) `get_structured_messages`. (4)
+  `scoped_indices` is B3663's `scoped_structured_message_indices` over those messages (or none) with
+  `scan_only_tool_results` false, the `skip_system` above and `skip_tool` false. `scoped_messages` is
+  the messages at those indices when the full list is not empty, else None. (5) `original_tools` is
+  `data.tools` when it is an array, else empty; `flattened_tool_groups` come from B913. (6)
+  `extract_guardrail_inputs`. If its `texts` is empty, return with `data` untouched. (7) When
+  `scoped_messages` is Some and not empty, set `inputs.structured_messages` to it (moved from the
+  converter's message type to `GuardrailMessage` with serde). (8) Call the guardrail with `inputs`,
+  `data` itself as `request_data`, `GuardrailInputType::Request` and `logging_obj`. (9)
+  `apply_guardrailed_tools_to_data`: when the answer has `tools` (even an empty list), set `data.tools`
+  to B3669's `merge_guardrailed_tools(original_tools, flattened_tool_groups, returned_tools)`; when
+  the answer has no `tools`, do nothing. This happens before the message write-back and stays even if
+  the write-back later falls back. (10) `written_back_request_fields`. When it gives Some, set
+  `data.input` to its input list and set `data.instructions` to its instructions, or remove the key
+  when they are None. When it gives None, run `apply_guardrailed_texts`. (11) Keep LiteLLM's debug
+  line `OpenAI Responses API: Processed input messages: {input}`.
+
+  `written_back_request_fields(data, structured_messages, scoped_indices, scoped_messages, guardrail,
+  answer) -> Result<Option<RequestFields>, RequestRewriteError>` returns None when the answer has no
+  `structured_messages` or they equal `scoped_messages` (see deviations). `covers_full_request` is true
+  when `scoped_indices.len() == structured_messages.len()`, or when
+  `guardrail.structured_messages_cover_full_request()` is true and the returned list has the same
+  length as `structured_messages`. A covering list is used as it is; any other is put back into the
+  full list with B3663's `merge_guardrailed_scoped_messages(full, scoped_indices, returned)`. The
+  result goes to `patch_or_convert_request_fields`. That function first tries
+  `patched_request_fields`; when that gives None it converts the merged messages with B917's
+  `convert_chat_completion_messages_to_responses_api`, whose items become the new input and whose
+  instructions become the new instructions. So a string `input` always ends as an array after a
+  structured rewrite.
+
+  `patched_request_fields(raw_input, instructions, original_messages, merged_messages) ->
+  Result<Option<RequestFields>, RequestRewriteError>` rewrites only the raw input items whose message
+  changed, so untouched items keep every field the chat form cannot hold. It returns None (so the
+  caller converts) in each of these cases. `raw_input` is not an array. The two message lists differ in
+  length. `offset` is 1 when the raw `instructions` is truthy (a non-empty string), else 0, and it
+  does not depend on `skip_system`. B3670's `input_item_provenance(raw_input, original_messages[offset..])`
+  gives None. A rewritten `instructions` is present but not a string. A changed message after `offset` is
+  in B3670's `tainted` set or has no entry in `item_for_message`. Two changed messages map to one item.
+  `rewritten_input_item` gives None for any changed item. Otherwise: a message is changed when the
+  original and merged messages differ as JSON values (serialize the original with serde, leaving out
+  absent fields, so an echoed row compares equal). Only index 0 can be an instructions rewrite when
+  `offset` is 1. The new instructions are that row's `content` when the row is an object, and
+  the old `instructions` when no row changed. A rewritten instructions row without a `content` yields
+  None, which removes `instructions`. A changed body message `i` replaces raw item
+  `item_for_message[i - offset]` with B3670's `rewritten_input_item`. The result keeps every other raw
+  item as it was.
+
+  `apply_guardrailed_texts(data, input_data, extracted, guardrail, answer)`: no returned `texts` (absent
+  or empty) changes nothing. Otherwise `offset` is 1 when `extracted.instructions` is Some, else 0, and
+  `expected` is 1 for a string input, else the number of `task_mappings`. A returned length other than
+  `offset + expected` fails with B3663's `unappliable_request_rewrite(guardrail_name)` before anything is
+  written. Then `data.instructions` is set to the first returned text when `offset` is 1, a string
+  input is replaced by the next text, and an array input goes to
+  `apply_guardrail_responses_to_input(messages: &mut [Value], responses, task_mappings)`. That function
+  pairs the two lists to the shorter, skips an item whose `content` is missing or null, sets a string
+  `content` only for a `None` mapping, and sets `text` of `content[content_idx]` only for a `Some`
+  mapping, when `content` is an array and that entry is an object. It edits `data.input` in place.
+
+  Module `output_rewrite` (output_rewrite.rs). `extract_output(output_items: &[Value]) -> ExtractedOutput {
+  texts, task_mappings: Vec<(usize, usize)>, tool_calls: Vec<Value> }` replaces LiteLLM's per-item
+  `_extract_output_text_and_images` (its `images` list is never filled, so it is not built). B3672 calls
+  it on the stream's completed envelope. For each item with its index: if B3670's
+  `tool_call_output_item_mapping` is Some (type `function_call` or `custom_tool_call`), B917's
+  `tool_call_dict_from_output_item(item, output_idx)` is added to `tool_calls` and the item adds no
+  text. Otherwise an item that is an object with a non-empty array `content` is walked; each entry
+  that is an object with a non-empty string `text` adds the text and the mapping `(output_idx,
+  content_idx)`. Any other item adds nothing. Keep the debug line `OpenAI Responses API: Processing
+  output item: {item}` for each item that has content to walk.
+
+  `apply_guardrail_responses_to_output(response: &mut Value, responses: &[String], task_mappings) ->
+  Result<(), OutputRewriteError>` is also called by B3672. It reads `response.output` (an array, else
+  returns). For returned text number `i` it takes `task_mappings[i]` and skips it when the output index
+  is past the end of the output; otherwise, when that item is an object whose `content` is an array longer
+  than the content index and the entry is an object, it sets the entry's `text`. A returned list longer
+  than `task_mappings` returns `OutputRewriteError::TooManyTexts` at the first extra text, after the earlier
+  writes (see deviations). `write_tool_call_item(item: &mut Value, name: Option<&str>, payload:
+  Option<&str>)` sets the item's `name` when `name` is Some, and sets `arguments` (type `function_call`)
+  or `input` (type `custom_tool_call`) when `payload` is Some and the item has one of those two types. A
+  non-object item is left alone. B3672 also calls it. `write_tool_call_rewrites_to_output(response,
+  pre, post)` collects the output items that are tool call items and does nothing unless their count
+  equals `post.len()`. For each triple of item, before and after shape whose shapes differ, it calls
+  `write_tool_call_item` with B3670's `tool_call_rewrite(before, after)` (name only when changed, arguments
+  always). The pairs stop at the shortest list.
+
+  `process_output_response(response: &mut GuardrailValue, guardrail: &G, logging_obj:
+  Option<&mut GuardrailLogTarget>, user_api_key_dict: Option<&BTreeMap<String, GuardrailValue>>,
+  request_data: Option<&mut BTreeMap<String, GuardrailValue>>) -> Result<(), OutputRewriteError>`: a
+  response that is not an object logs the debug line `OpenAI Responses API: No output found in
+  response` and returns. A missing, null or empty `output` logs `OpenAI Responses API: Empty output in
+  response` and returns. Then `extract_output`. No texts and no tool calls means no call. Otherwise
+  prepare the request data with B5820's `response_context::add_response_context` (an absent
+  `request_data` starts from an empty map; the key `response` is inserted only when missing), build
+  `GuardrailApiInputs` with `texts`, `tool_calls` only when not empty, and `model` when
+  `response.model` is a non-empty string. `pre` is B3670's `tool_call_shapes` over the scanned calls.
+  Call the guardrail with `GuardrailInputType::Response`. `post` is B3670's
+  `post_guardrail_tool_call_shapes(answer.tool_calls, pre, guardrail_name)`. Write the returned texts
+  with `apply_guardrail_responses_to_output` (no returned `texts` means none), then the tool call
+  rewrites. Keep the debug line `OpenAI Responses API: Processed output response: {response}`.
+
+  Tests live in `tests.rs` of each module, with a small fake guardrail defined there that records the
+  `GuardrailApiInputs`, the input type and a copy of the request data, and returns scripted `texts`,
+  `tools`, `structured_messages` and `tool_calls`. Test names start with: `instructions_`,
+  `extract_inputs_`, `texts_`, `patch_`, `write_back_`, `process_input_` in request_rewrite; and
+  `extract_output_`, `apply_output_`, `tool_rewrite_`, `process_output_` in output_rewrite. The handlers
+  are not reachable from a route yet, so the HTTP cases come with the dispatcher umbrella (B3680);
+  this task gets helper cases for the pure functions only.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/guardrails/responses_translation/request_rewrite.rs
+    - crates/betterlite-server/src/guardrails/responses_translation/request_rewrite/**
+    - crates/betterlite-server/src/guardrails/responses_translation/output_rewrite.rs
+    - crates/betterlite-server/src/guardrails/responses_translation/output_rewrite/**
+    - tools/oracle/cases/helpers/responses-guardrail-rewrite/**
+    - tools/oracle/helpers/b3671.py
+    - tools/oracle/helpers/b3671/**
+    - tools/oracle/src/helpers/server/b3671.rs
+    - tools/oracle/src/helpers/server/b3671/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L375-L394
+    why: The two small request structs, scannable_instructions and the role reader.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L396-L457
+    why: patched_request_fields and patch_or_convert_request_fields, the item-level patch and its fallbacks to full conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L482-L560
+    why: get_structured_messages and the order of process_input_messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L562-L588
+    why: apply_guardrailed_texts and the length check that rejects a text rewrite it cannot place.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L590-L660
+    why: extract_guardrail_inputs and written_back_request_fields, with the full-request coverage rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L675-L757
+    why: Tool write-back into data.tools, input text and image extraction, and the positional write-back of returned texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L759-L877
+    why: process_output_response, its early returns, request data preparation and the order of writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1249-L1262
+    why: write_tool_call_rewrites_to_output, which skips everything on a count mismatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1296-L1303
+    why: write_tool_call_item, which the streaming task also calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1450-L1567
+    why: Output text and tool call extraction and the write-back of returned texts into output items.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L248-L282
+    why: role_out_of_guardrail_scope and scoped_structured_message_indices, which B3663 owns and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L336-L430
+    why: merge_guardrailed_scoped_messages and unappliable_request_rewrite, which B3663 owns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L230-L263
+    why: tool_call_dict_from_output_item, which B917 owns and extract_output calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2037-L2060
+    why: responses_tools_to_chat_forms, which B913 owns and the request side calls.
+dod:
+  - text: >-
+      get_structured_messages returns None for a missing or null input and for an input that converts to no
+      messages, and turns a truthy instructions string into a leading system message.
+    proof: [request-structured-tests, oracle]
+  - text: >-
+      scannable_instructions returns the instructions only when they are a non-empty string and system
+      messages are not skipped.
+    proof: [request-instructions-tests, oracle]
+  - text: >-
+      extract_guardrail_inputs collects instructions, string content and text entries with their
+      mappings, skips out-of-scope roles and non-object items, collects image_url urls, deep-copies the
+      flattened tools, sets model for any string, and leaves images and tools out when empty.
+    proof: [request-extract-tests, oracle]
+  - text: >-
+      apply_guardrailed_texts writes returned texts to instructions, a string input or the mapped
+      content, changes nothing for an absent or empty answer, and fails with the unappliable-rewrite
+      error, before any write, when the returned count does not fit.
+    proof: [request-texts-tests, oracle]
+  - text: >-
+      patched_request_fields rewrites only the changed raw items and keeps the others untouched, and
+      returns None for a non-array input, a length mismatch, an untraceable or tainted message, two
+      changes in one item, a non-string rewritten instructions row, or an item that cannot be patched.
+    proof: [request-patch-tests, oracle]
+  - text: >-
+      A returned structured_messages list is used whole when it covers the request and merged into the
+      full list otherwise, an unchanged list is ignored, and a failed patch falls back to the B917
+      conversion, which sets or removes instructions and turns a string input into an array.
+    proof: [request-write-back-tests, oracle]
+  - text: >-
+      process_input_messages makes no call without texts, sends structured_messages only when the scope
+      is not empty, merges returned tools before the write-back, writes back through structured messages
+      first and texts second, and passes a guardrail failure through unchanged.
+    proof: [request-process-tests]
+  - text: >-
+      extract_output collects non-empty text entries with (output index, content index) mappings, turns
+      function_call and custom_tool_call items into chat tool calls with no text, and skips other items.
+    proof: [output-extract-tests, oracle]
+  - text: >-
+      apply_guardrail_responses_to_output writes returned texts by mapping, skips an out-of-range output
+      index or content index, and returns a typed error for a returned text with no mapping.
+    proof: [output-apply-tests, oracle]
+  - text: >-
+      write_tool_call_item and write_tool_call_rewrites_to_output rewrite arguments for function_call and
+      input for custom_tool_call, rename only when the name is given, and change nothing when the item
+      count differs from the returned call count.
+    proof: [output-tool-rewrite-tests, oracle]
+  - text: >-
+      process_output_response returns early for a missing or empty output, makes no call and adds no
+      response key when nothing was extracted, otherwise prepares the request data, calls the guardrail
+      with the Response input type and writes texts, then tool call rewrites.
+    proof: [output-process-tests]
+checks:
+  optional: []
+  commands:
+    - id: request-structured-tests
+      why: the Responses get_structured_messages tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::request_rewrite::tests::structured_messages_/)'
+    - id: request-instructions-tests
+      why: the scannable_instructions tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::request_rewrite::tests::instructions_/)'
+    - id: request-extract-tests
+      why: the request input extraction tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::request_rewrite::tests::extract_inputs_/)'
+    - id: request-texts-tests
+      why: the text write-back and length check tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::request_rewrite::tests::texts_/)'
+    - id: request-patch-tests
+      why: the item-level request patch tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::request_rewrite::tests::patch_/)'
+    - id: request-write-back-tests
+      why: the structured message write-back and conversion fallback tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::request_rewrite::tests::write_back_/)'
+    - id: request-process-tests
+      why: the process_input_messages flow tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::request_rewrite::tests::process_input_/)'
+    - id: output-extract-tests
+      why: the output text and tool call extraction tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::output_rewrite::tests::extract_output_/)'
+    - id: output-apply-tests
+      why: the output text write-back tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::output_rewrite::tests::apply_output_/)'
+    - id: output-tool-rewrite-tests
+      why: the tool call item write-back tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::output_rewrite::tests::tool_rewrite_/)'
+    - id: output-process-tests
+      why: the process_output_response flow tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::output_rewrite::tests::process_output_/)'
+    - id: helper-cases-added
+      why: the helper cases for this task were not added on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-guardrail-rewrite)"
+oracle_cases:
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/structured-messages-instructions-and-input.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/structured-messages-empty-is-none.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/scannable-instructions-skip-system.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/extract-inputs-mappings-and-images.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/extract-inputs-skips-system-role.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/texts-write-back-by-mapping.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/texts-wrong-count-rejected.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/patch-changes-one-item-only.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/patch-tainted-message-falls-back.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/patch-instructions-row-rewritten.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/write-back-converts-string-input-to-array.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/write-back-scoped-list-merged.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/extract-output-text-and-tool-calls.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/apply-output-skips-out-of-range.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/tool-rewrite-function-and-custom-call.yaml
+  - tools/oracle/cases/helpers/responses-guardrail-rewrite/tool-rewrite-count-mismatch-ignored.yaml
+deviations:
+  - what: A returned structured_messages list that equals the scoped list sent to the guardrail is treated as unchanged, and the text path runs. LiteLLM treats it as unchanged only when it is the same Python object.
+    why: Rust has no object identity for the returned list. A guardrail that echoes its input unchanged gives the same result in both, and a guardrail that builds an equal copy takes the text path here instead of a no-op patch.
+  - what: A guardrail that returns more texts than were scanned in a response fails with the typed `OutputRewriteError::TooManyTexts` after the earlier texts were written.
+    why: LiteLLM raises IndexError at the first extra text after the same earlier writes, which becomes a 500. The typed error keeps that outcome with a name.
+  - what: The `response` entry that process_output_response puts in the request data is a copy taken before the rewrite. LiteLLM stores the response object itself, so later readers of the request data see the rewritten response.
+    why: A Rust map cannot hold a second mutable reference to the response. Nothing in the guardrail code after the call reads that entry.
+out_of_scope:
+  - "B3670 owns ToolCallShape, tool_call_shapes, post_guardrail_tool_call_shapes, tool_call_rewrite, the undeliverable-rewrite reason, input_item_provenance, item_rewrite_field, rewritten_input_item, is_tool_call_item, tool_call_output_item_mapping, is_tool_call_output_item and last_message_role. This task calls them."
+  - "B3672 owns process_output_streaming_response, the ended-stream tool call delivery, the stream event sync and spread helpers, get_streaming_string_so_far, the scan key, the ended-stream check, _has_streamed_tool_call_events, _completed_response_scan_key and the event type constants. It calls this task's extract_output, apply_guardrail_responses_to_output and write_tool_call_item."
+  - "B3673 owns build_block_sse_chunks, build_stream_error_items, _next_stream_sequence_number, the blocked payload types and the open item state helpers."
+  - "B888 owns extract_request_tool_names. It moves into betterlite-auth, so this task does not build it."
+  - "B3669 owns merge_guardrailed_tools (tool_merge.py). B3663 owns the scope helpers, merge_guardrailed_scoped_messages and unappliable_request_rewrite. B5820 owns add_response_context."
+  - "B909 owns transform_responses_api_input_to_messages, B913 owns responses_tools_to_chat_forms and B917 owns convert_chat_completion_messages_to_responses_api and tool_call_dict_from_output_item. This task only calls them."
+  - "_has_text_content on the Responses handler has no caller at the pin (only the chat and Anthropic handlers call their own copies), so it is not built and has no cases."
+  - "_write_event_field is a one-line key write on a JSON object. write_tool_call_item inlines it, and B3672 does the same for stream events."
+  - "OpenAIResponsesHandler's class attributes delivers_ended_stream_rewrites and assembles_streamed_response belong to the streaming task and the dispatcher."
+pitfalls:
+  - "`offset` in patched_request_fields comes from the raw `instructions` being truthy, not from skip_system. With skip_system on, the system row still sits in the structured messages (out of the guardrail's scope) and the offset still skips it when looking up items."
+  - "The scope list is empty and not sent when every message is out of scope, but the texts check comes first: with no texts the guardrail is never called at all, even when the request has messages."
+  - "Compare original and merged messages as JSON with absent fields left out. If a typed message serializes `null` fields, every echoed row looks changed and every request falls back to full conversion."
+  - "A rewritten instructions row without `content` removes `instructions` from the body, and a rewritten row whose `content` is not a string sends the whole request to full conversion."
+  - "`data.tools` is set from the guardrail's tools even when the returned list is empty, and before the message write-back, so a later fallback does not undo it."
+  - "In apply_guardrailed_texts the length check compares the returned list with `offset + expected`, where expected counts the mappings, not the messages. A text-less content entry has no mapping and no text."
+  - "`model` is set for any string on the request side, even an empty one, but only for a non-empty string on the response side."
+  - "extract_output skips a tool call item for text even when its `content` has entries, and an entry with an empty `text` adds nothing and gets no mapping."
+  - "write_tool_call_rewrites_to_output compares the count of tool call items in the output with the post-guardrail call count. A guardrail that adds a call is ignored silently, and one that drops a call is ignored the same way."
+  - "write_tool_call_item with `payload` None must leave `arguments` and `input` alone. B3672 relies on this for the `output_item.added` events."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

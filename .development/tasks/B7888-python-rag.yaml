@@ -1,0 +1,74 @@
+id: B7888
+title: Python RAG ingest and query
+description: >-
+  This task adds the RAG facade: `ingest`, `aingest`, `query`, `aquery` (litellm/rag/main.py), the `rag_ingest` and `arag_ingest` aliases of rag/__init__.py and the two class getters of rag/utils.py. Rust runs ingestion and the query pipeline (B3460 ingest, B3461 query).
+
+
+  Native side, the family `rag_calls`: `src/rag_calls.rs` with `register` that adds `NativeRagSession` and `NativeRagError`, and `src/rag_calls/convert.rs` with tests `request_*` and `error_*`. The architect writes the `lib.rs` line.
+
+
+  Python side, `python/betterlite/rag/main.py`, `utils.py` and `__init__.py`. `ingest(ingest_options, file_data, file, file_url, file_id, timeout, **kwargs)` returns an ingest response, and `query(model, messages, retrieval_config, rerank, stream, vector_store_params, **kwargs)` returns the model response with the search hits attached, both from B167. `rag_ingest` and `arag_ingest` call `ingest` and `aingest` with the same arguments. `get_rag_ingestion_class` and `get_rag_transformation_class` (utils.py L13-L64) return the provider class name map that Rust owns, so Python keeps only the same ValueError for an unknown provider. Python objects that cannot cross to Rust (`client`, `shared_session`) raise `UnsupportedCallArgument` from B158.
+scope:
+  paths:
+  - crates/betterlite-python/src/rag_calls.rs
+  - crates/betterlite-python/src/rag_calls/**
+  - crates/betterlite-python/python/betterlite/_native_rag_calls.pyi
+  - crates/betterlite-python/python/betterlite/rag/main.py
+  - crates/betterlite-python/python/betterlite/rag/utils.py
+  - crates/betterlite-python/python/betterlite/rag/__init__.py
+  - crates/betterlite-python/tests/test_rag.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L1-L225
+  why: provider lookup and the ingest pipeline and aingest
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L226-L524
+  why: query pipeline, aquery, query and ingest
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/utils.py#L1-L64
+  why: the class getters
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/__init__.py#L1-L21
+  why: the exported names and aliases
+dod:
+- text: Every function keeps LiteLLM's name and parameters, and a keyword LiteLLM refuses is refused here.
+  proof: [rag-signature]
+- text: "Ingest and query return the same results as LiteLLM against one local server, with the same hits attached to a query answer."
+  proof: [rag-calls]
+- text: A provider error keeps its class and cause, and an unsupported Python object raises `UnsupportedCallArgument`.
+  proof: [rag-errors]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [rag-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: rag-signature
+    why: A caller's keyword is accepted or refused wrongly.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_rag.py -k signature
+  - id: rag-calls
+    why: A result differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_rag.py -k calls
+  - id: rag-errors
+    why: An error class or message changes.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_rag.py -k 'error or unsupported'
+  - id: rag-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^rag_calls::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for these calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The two class getters return a provider name and not a Python class.
+  why: The classes are Rust types. The error for an unknown provider is the same.
+- what: This task has no helper oracle cases.
+  why: The functions call a native session, so pytest compares both packages against one local server.
+out_of_scope:
+- "Ingestion and retrieval execution belong to B3460 and B3461."
+- "The `RAGQuery` helper (rag_query.py) is internal to B3461."
+pitfalls:
+- "`query` is the only call that makes a chat completion, so its keywords follow `completion` and the RAG-only ones are listed first."
+- "The sub-call billing guard (L208-L225) is Rust-side, so Python must not wrap the call."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

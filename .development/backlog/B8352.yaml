@@ -1,0 +1,14 @@
+id: B8352
+milestone: M12 python
+title: Router embedding, image, audio, rerank and text calls
+status: todo
+depends_on: [B014, B016, B017, B303, B306, B310, B346, B364, B6020, B6021]
+file: tasks/B8352-router-single-calls.yaml
+covers:
+  - "litellm/router.py"
+parent: B162
+split_from: B162
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

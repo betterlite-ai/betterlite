@@ -1,0 +1,50 @@
+kind: helper
+name: invalid-response
+call:
+  b7811:
+    calls:
+      - call: mongodb_decode_search
+        input:
+          body: '{"object":"vector_store.search_results.page","search_query":"find me","data":[{"score":0.25,"content":[{"type":"text","text":"hello"}],"file_id":"file_a","filename":"a.txt"},{"score":1.5,"content":[],"file_id":null,"filename":null},{"score":null,"content":[],"file_id":"file_b","filename":null}]}'
+      - call: mongodb_decode_search
+        input:
+          body: '{"object":"vector_store.search_results.page","search_query":"","data":[]}'
+      - call: mongodb_decode_search
+        input:
+          body: '{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1.5,"content":[{"type":"text","text":"x","extra":1}],"file_id":"f","filename":"n","attributes":{"a":1}}],"extra":true}'
+      - call: mongodb_decode_search
+        input: {body: "{}"}
+      - call: mongodb_decode_search
+        input: {body: "[]"}
+      - call: mongodb_decode_search
+        input: {body: "not json"}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"other","search_query":"q","data":[]}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"vector_store.search_results.page","data":[]}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"vector_store.search_results.page","search_query":"q"}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"vector_store.search_results.page","search_query":"q","data":null}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"vector_store.search_results.page","search_query":"q","data":[{}]}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"vector_store.search_results.page","search_query":"q","data":[{"content":[],"file_id":null,"filename":null}]}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1.5,"content":[],"filename":null}]}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1.5,"content":[],"file_id":null}]}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":"high","content":[],"file_id":null,"filename":null}]}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1.5,"content":[{"type":"image","text":"x"}],"file_id":null,"filename":null}]}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1.5,"content":[{"type":"text"}],"file_id":null,"filename":null}]}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1.5,"content":[],"file_id":5,"filename":null}]}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":{"vector_store.search_results.page":null},"search_query":"q","data":[]}'}
+      - call: mongodb_decode_search
+        input: {body: '{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1.5,"content":[{"type":{"text":null},"text":"x"}],"file_id":null,"filename":null}]}'}
+env: {}
+compare: {ignore: []}

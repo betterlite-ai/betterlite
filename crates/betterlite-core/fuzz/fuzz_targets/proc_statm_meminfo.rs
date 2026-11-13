@@ -1,9 +1,11 @@
 #![no_main]
 
-use betterlite_core::diagnostic_snapshots::parse_proc_memory;
+use betterlite_core::diagnostic_snapshots::process::parse_proc_memory;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|input: &[u8]| {
-    let split = input.len() / 2;
-    let _ = parse_proc_memory(&input[..split], &input[split..], 4096);
+    let Some((statm, meminfo)) = input.split_at_checked(input.len() >> 1) else {
+        return;
+    };
+    let _outcome = parse_proc_memory(statm, meminfo, 4096);
 });

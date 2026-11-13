@@ -1,0 +1,22 @@
+kind: helper
+name: mantle-region-prefix
+call:
+  bedrock_mantle_inputs:
+    mantle_region_prefix:
+      models:
+        - us-east-1/anthropic.claude-3
+        - us-east-1/
+        - us-east-1/eu-west-1/x
+        - eu-west-2
+        - unknown/region
+        - bedrock_mantle/us-east-1/x
+        - global.anthropic.claude
+        - US-EAST-1/x
+        - us-gov-west-1/x
+        - ap-northeast-3/x
+        - sa-east-1/x
+        - us-east/x
+        - /x
+        - ''
+env: {}
+compare: {ignore: []}

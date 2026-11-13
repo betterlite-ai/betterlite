@@ -1,0 +1,128 @@
+id: B8464
+title: MCP tool pre-call checks and guardrail hooks
+description: >-
+  Build mcp::tool_precheck in betterlite-server: the checks every MCP tool call passes before it
+  reaches an upstream server, and the guardrail hooks that run around it. These are
+  MCPServerManager.check_allowed_or_banned_tools, validate_allowed_params,
+  check_tool_permission_for_key_team, pre_call_tool_check and _create_during_hook_task, plus the
+  module function _record_mcp_guardrail_evaluations. B8465's call_tool and B8198's
+  _execute_mcp_tool call pre_call_tool_check.
+
+
+  tool_allowed(name, server): when B6594's server_applies_tool_allowlist is true, the tool must
+  match allowed_tools through B6594's match_known_tool_name; otherwise it must not match
+  disallowed_tools. The name is bare (the caller already removed the server prefix).
+  check_allowed_params: when match_known_tool_name finds the tool among the allowed_params keys,
+  every argument name must be in that key's list, else 403 with detail {"error": "Parameters
+  <list> are not allowed for tool <name>. Allowed parameters: <list>. Contact proxy admin to allow
+  these parameters."}, the lists printed as Python lists. check_key_team_tool: no auth record
+  passes; otherwise B4672's is_tool_allowed_for_server(tool, server_id, auth) must be true, else
+  403 with {"error": "Tool '<name>' is not allowed for your key/team on server '<server name>'.
+  Contact proxy admin for access."}.
+
+
+  pre_call_check(name, arguments, server_name, auth, hooks, server, raw_headers, logging,
+  guardrail_context) runs, in order and always: tool_allowed (403 {"error": "Tool <name> is not
+  allowed for server <server name>. Contact proxy admin to allow this tool."}); when pinned_tools is
+  set, the name must match one of them (403 {"error": "Tool <name> is not in the pinned tool list
+  for server <server name>. Contact proxy admin to re-pin this server."}); check_key_team_tool;
+  check_allowed_params. Without a hooks handle it returns an empty result here, so a missing
+  logger never skips an authorization check.
+
+
+  With hooks it builds the pre-call kwargs: guardrail_context, name, arguments, server_name,
+  mcp_rate_limit_server_name (alias, else server_name, else name), user_api_key_auth and the
+  user_id, team_id, end_user_id and api_key_hash of the auth record, incoming_bearer_token (the
+  inbound authorization header after a case-insensitive "bearer " prefix, else None) and headers
+  from B6594's logging_safe_mcp_headers. The MCP request object and the LLM-shaped data come from
+  B8401's MCP hook payload conversion, with the request logger added to the data. The hooks' pre
+  call hook runs with call type call_mcp_tool. When it returns data, the converted kwargs give
+  "arguments" only when they differ from the input and "extra_headers" only when non-empty. A
+  guardrail rejection or an HTTP error logs "Guardrail blocked MCP tool call pre call: <error>"
+  and propagates. Whatever happens, record_guardrail_evals copies the guardrail decision records
+  from the data onto the request logger through B3664's _sync_guardrail_info_to_logging_obj; it
+  does nothing without a logger and turns its own failure into the warning "Failed to record MCP
+  guardrail evaluation for logging: <error>".
+
+
+  during_hook_task builds an MCPDuringCallRequestObject (tool_name, arguments, server_name,
+  start_time as a timestamp, empty hidden params), converts it with the kwargs guardrail_context,
+  name, arguments, server_name and user_api_key_auth, adds the request logger, and spawns the
+  during call hook with call type call_mcp_tool, recording guardrail evaluations when it ends. It
+  returns the task handle for B8465 to await next to the tool call.
+
+
+  McpGuardrailHooks is a trait for the proxy logging calls, so tests use a fake. B8399 implements it over their owners: pre_call_hook is B8393's `PreCallHook::run`, during_call_hook is B8392's `during_call_hook` (guardrails/hook_execution/during_call.rs), and the payload conversions are B8401's.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/tool_precheck.rs
+    - crates/betterlite-server/src/mcp/tool_precheck/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-tool-precheck/**
+    - tools/oracle/helpers/b8464.py
+    - tools/oracle/helpers/b8464/**
+    - tools/oracle/src/helpers/server/b8464.rs
+    - tools/oracle/src/helpers/server/b8464/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1687-L1718
+    why: Guardrail decision records copied onto the request logger.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5637-L5730
+    why: Allowed or banned tools, allowed params and the key/team tool permission.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5793-L5977
+    why: pre_call_tool_check and _create_during_hook_task.
+
+dod:
+  - text: >-
+      An allowlisted, a disallowed, an unpinned and a key/team-denied tool and a disallowed
+      parameter each fail with the Python's 403 detail, in the Python's order, with or without a
+      hooks handle.
+    proof: [precheck-tests, oracle]
+  - text: >-
+      The pre-call kwargs carry the same fields as the Python, and a hook result returns arguments
+      only when changed and extra headers only when non-empty.
+    proof: [precheck-tests]
+  - text: >-
+      A guardrail rejection propagates and the guardrail records still reach the request logger;
+      a recording failure is a warning.
+    proof: [precheck-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: precheck-tests
+      why: An authorization check, its order or a hook rule differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::tool_precheck::/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-tool-precheck
+
+deviations: []
+
+out_of_scope:
+  - "ProxyLogging.pre_call_hook (B8393, PreCallHook::run) and during_call_hook (B8392, during_call_hook): this task calls them through McpGuardrailHooks, which B8399 implements."
+  - "MCP hook payload conversion (_create_mcp_request_object_from_kwargs, _convert_mcp_to_llm_format, _convert_mcp_hook_response_to_kwargs): B8401."
+  - "is_tool_allowed_for_server: B4672. match_known_tool_name and server_applies_tool_allowlist: B6594."
+  - The HTTP cases for a denied tools/call come with the MCP routes in B136; helper cases cover the 403 details.
+
+pitfalls:
+  - >-
+    The authorization checks run before the hooks check, so a call without a logger is still
+    denied; do not return early before them.
+  - >-
+    incoming_bearer_token only strips a "bearer " prefix matched case-insensitively and is None for
+    any other scheme, while the headers field goes through logging_safe_mcp_headers so secrets do
+    not reach guardrails.
+  - >-
+    The pinned check uses match_known_tool_name against pinned_tools, so a prefixed spelling of a
+    pinned tool passes.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

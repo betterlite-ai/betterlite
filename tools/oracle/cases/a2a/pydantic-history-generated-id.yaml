@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-history-generated-id
+call: {b4805: {operation: extract, response: {result: {history: [{role: agent, parts: [{kind: text, text: "no id"}]}]}}}}
+env: {}
+compare: {ignore: []}

@@ -12,6 +12,7 @@ use serde_json::json;
 use super::app_crypto::{AppCrypto, AppCryptoError, Envelope};
 use crate::error::SecretError;
 use crate::secret_codec::diagnostics::TracingDiagnostics;
+use crate::secret_codec::secret_map;
 use crate::secret_codec::{Algorithm, CipherSettings, NonceSource, OsNonces, StoredCipher};
 
 struct FixedNonce<'bytes>(&'bytes [u8]);
@@ -154,7 +155,11 @@ fn decode_stored_secret_rejects_invalid_utf8() {
 #[test]
 fn decode_secret_map_accepts_a_plaintext_map() {
     let cipher = fuzz_cipher();
-    let map = cipher.decode_secret_map(br#"{"a":"1"}"#).unwrap().unwrap();
+    let map = str::from_utf8(br#"{"a":"1"}"#)
+        .map_err(|source| SecretError::Utf8 { source })
+        .and_then(|text| secret_map::decode_secret_map(&cipher, Some(text), "fuzz"))
+        .unwrap()
+        .unwrap();
     assert_eq!(
         map.get("a").map(|value| value.expose_secret().to_owned()),
         Some("1".to_owned())
@@ -165,7 +170,9 @@ fn decode_secret_map_accepts_a_plaintext_map() {
 fn decode_secret_map_rejects_a_wrong_field_type() {
     let cipher = fuzz_cipher();
     assert!(matches!(
-        cipher.decode_secret_map(br#"{"a":1}"#),
+        str::from_utf8(br#"{"a":1}"#)
+            .map_err(|source| SecretError::Utf8 { source })
+            .and_then(|text| secret_map::decode_secret_map(&cipher, Some(text), "fuzz")),
         Err(SecretError::MapDecode { .. })
     ));
 }
@@ -185,8 +192,9 @@ fn replays_the_stored_secret_corpus() {
         if tag.is_multiple_of(2) {
             cipher.decode_stored_secret(bytes).is_some()
         } else {
-            cipher
-                .decode_secret_map(bytes)
+            str::from_utf8(bytes)
+                .map_err(|source| SecretError::Utf8 { source })
+                .and_then(|text| secret_map::decode_secret_map(&cipher, Some(text), "fuzz"))
                 .is_ok_and(|decoded| decoded.is_some())
         }
     });

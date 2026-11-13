@@ -1,0 +1,14 @@
+kind: helper
+name: media-metadata-gzip-pdf-extension
+call:
+  media_metadata:
+    operation: extract_file_metadata
+    file_data:
+      kind: tuple2
+      filename: report.pdf.gz
+      content:
+        kind: bytes
+        content_base64: eA==
+env: {}
+compare:
+  ignore: []

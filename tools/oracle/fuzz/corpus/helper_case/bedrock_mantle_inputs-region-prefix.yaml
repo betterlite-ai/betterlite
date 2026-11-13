@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-mantle-inputs-region-prefix-seed
+call:
+  bedrock_mantle_inputs:
+    mantle_region_prefix:
+      models:
+        - us-east-1/openai.gpt-5
+        - unknown/model
+        - bedrock_mantle/us-east-1/x
+        - eu-west-2
+env: {}
+compare: {ignore: []}

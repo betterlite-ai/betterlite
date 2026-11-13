@@ -1,0 +1,14 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-primitive-int",
+  "call": {
+    "b3844": {
+      "function": "primitive_value",
+      "value": 3
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

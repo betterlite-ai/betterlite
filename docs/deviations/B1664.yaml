@@ -1,0 +1,5 @@
+task: B1664
+deviations:
+  - what: PTU hourly rates retain exact decimal input rather than binary-float rounding; unrepresentable rates cannot produce chargeable terms.
+    why: Reservation charges must obey the repository's finite checked Decimal money rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/ptu_pricing.py#L181-L208

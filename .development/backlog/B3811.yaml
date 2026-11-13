@@ -2,7 +2,7 @@ id: B3811
 milestone: M6 guardrails
 title: Evaluate ordered tool permissions and nested argument patterns
 status: todo
-depends_on: [B3810]
+depends_on: [B3810, B3664]
 file: tasks/B3811-tool-permission-decisions.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/tool_permission.py"

@@ -1,0 +1,19 @@
+kind: helper
+name: datadog-llm-privacy-message-redaction-with-tool-calls
+call:
+  b3936:
+    function: message_redaction
+    messages:
+      - {role: system, content: "You are a helpful assistant."}
+      - role: assistant
+        content: "The answer"
+        reasoning_content: "let me think"
+        tool_calls:
+          - id: call_1
+            type: function
+            function: {name: get_weather, arguments: '{"city": "Paris"}'}
+      - {role: tool, tool_call_id: call_1, content: '{"temperature": 21}'}
+      - {role: rascal, content: "an unknown role"}
+      - "a bare string"
+env: {}
+compare: {ignore: []}

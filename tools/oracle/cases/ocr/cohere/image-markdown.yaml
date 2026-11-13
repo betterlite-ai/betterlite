@@ -1,0 +1,31 @@
+kind: helper
+name: cohere_parse_image_markdown
+call:
+  b6803:
+    model: parse
+    document:
+      type: image_url
+      image_url: data:image/png;base64,YWJj
+    options:
+      output_format: markdown
+    response:
+      pages:
+        - type: markdown
+          index: 4
+          markdown:
+            content: "Invoice total: $4.00"
+            images:
+              - id: image-0
+                bounding_box: {top_left_x: 1, top_left_y: 2, bottom_right_x: 48, bottom_right_y: 49}
+                bounding_box_normalized: {top_left_x: 0.25, top_left_y: 0.5, bottom_right_x: 0.75, bottom_right_y: 1.0}
+                description: company logo
+                category: logo
+              - image_base64: aGVsbG8=
+        - type: markdown
+          markdown:
+            content: Page two
+      meta:
+        billed_units: {pages: 2}
+    api_key: oracle-key
+env: {}
+compare: {ignore: []}

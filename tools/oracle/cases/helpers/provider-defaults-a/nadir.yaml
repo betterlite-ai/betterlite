@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-a-nadir
+call:
+  provider_defaults_a:
+    provider: nadir
+    model: any-model
+    environment:
+      NADIR_API_KEY: nadir-key
+env: {}
+compare: {ignore: []}

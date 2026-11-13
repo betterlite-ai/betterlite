@@ -1,0 +1,5 @@
+kind: helper
+name: openai-assistants-assistant-error
+call: {openai_assistants: {delete_assistant: {options: {api_key: sk-test, api_base: 'https://example.test/v1'}, assistant_id: asst_missing, flag: true, reply: {status: 404, body: '{"error":{"message":"No assistant found with id asst_missing.","type":"invalid_request_error","param":null,"code":null}}'}}}}
+env: {}
+compare: {ignore: []}

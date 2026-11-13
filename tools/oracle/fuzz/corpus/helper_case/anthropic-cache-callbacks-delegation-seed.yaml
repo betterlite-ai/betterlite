@@ -1,0 +1,21 @@
+kind: helper
+name: anthropic_cache_callbacks-delegation-seed
+call:
+  b4126:
+    operation: delegation_to_placement
+    probes:
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hello}]
+        params:
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null, _litellm_openai_dialect: false}
+      - model: gpt-4
+        messages: [{role: user, content: hello}]
+        params:
+          prompt_cache_options: {mode: explicit}
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null}
+        model_cost:
+          gpt-4: {supports_prompt_cache_breakpoint: true, litellm_provider: openai}
+env: {}
+compare: {ignore: []}

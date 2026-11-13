@@ -2,7 +2,7 @@ id: B4444
 milestone: M8 platform
 title: Coordinate shared health checks and report Redis status
 status: todo
-depends_on: [B002, B052, B192, B4443]
+depends_on: [B002, B052, B192, B4443, B4445, B7640, B8388]
 file: tasks/B4444-shared-health-checks.yaml
 covers:
   - "litellm/proxy/health_check_utils/**"

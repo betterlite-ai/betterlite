@@ -8,7 +8,7 @@ description: >-
   with 403 Cannot reset your own spend. Ask a proxy admin. Budget reset deliberately has no such check.
   Both find membership by user_id_team_id and return HTTP 404 User <id> is not a member of team <id>.
 
-  B124's ResetSpendRequest requires reset_to and rejects booleans before numeric coercion (422).
+  B8411's ResetSpendRequest requires reset_to and rejects booleans before numeric coercion (422).
   The owned helper itself accepts Python int/float, including bool if directly called; other types
   are 400 reset_to must be a float. Reject negative/nonfinite values (400 finite number >= 0), then
   values above membership.spend or 0 (400 <= current spend), then above a nonnull expanded budget
@@ -59,17 +59,14 @@ description: >-
 
 
   Install B052 and B865 on the two member-reset registrations, retaining each handler's separate catch behavior.
+  B1100 registers routes/team_member_resets.rs as a stub, so fill only crates/betterlite-server/src/routes/team_member_resets.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/team_member_resets.rs
     - crates/betterlite-server/src/team_member_resets/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
+    - crates/betterlite-server/src/routes/team_member_resets.rs
+    - crates/betterlite-server/src/routes/team_member_resets/**
     - tools/oracle/cases/management/team-member-resets/**
     - crates/betterlite-server/src/team_member_resets/fixtures.rs
     - crates/betterlite-server/src/team_member_resets/fixtures/**

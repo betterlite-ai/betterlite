@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 use uuid::Uuid;
 
-mod usage;
+pub(crate) mod usage;
 use usage::{original_usage_shape, resolve_usage};
 
 #[derive(Debug, Error)]
@@ -37,7 +37,7 @@ fn is_blank(value: &Value) -> bool {
 }
 
 // Ported from _FINISH_REASON_MAP in litellm/litellm_core_utils/core_helpers.py, defaulting to "stop" when the raw value has no entry.
-fn mapped_finish_reason(raw: &str) -> &'static str {
+pub(crate) fn mapped_finish_reason(raw: &str) -> &'static str {
     match raw {
         "max_tokens" | "MAX_TOKENS" | "compaction" | "length" => "length",
         "tool_use" | "tool_calls" => "tool_calls",

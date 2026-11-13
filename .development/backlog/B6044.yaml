@@ -1,0 +1,14 @@
+id: B6044
+milestone: M12 python
+title: Python rerank and arerank
+status: todo
+depends_on: [B6040]
+file: tasks/B6044-python-rerank.yaml
+covers:
+  - "litellm/rerank_api/**"
+parent: B159
+split_from: B159
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,14 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-usage-absent",
+  "call": {
+    "b3843": {
+      "function": "usage",
+      "value": {}
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

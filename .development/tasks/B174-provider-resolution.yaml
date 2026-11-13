@@ -19,16 +19,21 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-models/**
-  - crates/betterlite-config/**
-  - crates/betterlite-openai/**
+  - crates/betterlite-models/src/resolution.rs
+  - crates/betterlite-models/src/resolution/**
+  - crates/betterlite-config/src/sections/provider_resolution.rs
+  - crates/betterlite-config/src/sections/provider_resolution/**
+  - "crates/betterlite-config/fuzz/corpus/config_yaml/provider-resolution-*"
+  - crates/betterlite-openai/src/chat/deployment.rs
+  - crates/betterlite-openai/src/chat/deployment/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/models/provider_resolution.rs
   - tools/oracle/src/helpers/models/provider_resolution/**
   - tools/oracle/helpers/provider_resolution.py
   - tools/oracle/helpers/provider_resolution/**
   - tools/oracle/cases/helpers/provider-resolution/**
-  - crates/betterlite-server/**
+  - crates/betterlite-server/src/server/chat_setup.rs
+  - crates/betterlite-server/src/server/chat_setup/**
   - "tools/oracle/fuzz/corpus/helper_case/provider_resolution-*"
   lint_tables: false
 references:
@@ -110,6 +115,11 @@ out_of_scope:
 - is_registered_custom_provider and Python custom-provider registration are B164; actual provider authentication/execution
   belongs to B024-B050.
 pitfalls:
+- The new pure logic lives in crates/betterlite-models/src/resolution.rs. Wire it into ChatDeployment::resolve
+    in crates/betterlite-openai/src/chat/deployment.rs and into its caller in crates/betterlite-server/src/server/chat_setup.rs.
+    Read litellm_params.custom_llm_provider per deployment through its own config section, crates/betterlite-config/src/sections/provider_resolution.rs,
+    which re-parses model_list the way sections/bedrock_settings.rs does; callers read it as config.sections.provider_resolution.
+    No other file in these crates is this task's to touch.
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/provider_resolution-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as provider_resolution in the models group. Replace the stub Op in tools/oracle/src/helpers/models/provider_resolution.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/provider_resolution.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The native OpenRouter model openrouter/auto is not the same prefix case as openrouter/anthropic/claude-3.5-sonnet.

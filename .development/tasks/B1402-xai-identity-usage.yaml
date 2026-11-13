@@ -32,18 +32,13 @@ description: >-
   implementation, 220 behavior/config tests, 150 adapters and 100 fuzz/wiring, maximum 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,xai_identity,xai_usage}.rs
+    - crates/betterlite-openai/src/{xai_identity,xai_usage}.rs
     - crates/betterlite-openai/src/{xai_identity,xai_usage}/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/xai_models.rs
     - crates/betterlite-openai/fuzz/corpus/xai_models/**
-    - crates/betterlite-config/src/{lib,config,settings,model,env,providers,tests}.rs
-    - crates/betterlite-config/src/providers/xai.rs
-    - crates/betterlite-config/src/providers/xai/**
-    - crates/betterlite-config/src/providers/xai/identity.rs
-    - crates/betterlite-config/src/providers/xai/identity/**
-    - crates/betterlite-config/src/tests/xai_identity.rs
-    - crates/betterlite-config/src/tests/xai_identity/**
+    - crates/betterlite-config/src/sections/xai_identity.rs
+    - crates/betterlite-config/src/sections/xai_identity/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/xai_identity*
     - tools/oracle/src/helpers/openai/xai_identity.rs
     - tools/oracle/src/helpers/openai/xai_identity/**

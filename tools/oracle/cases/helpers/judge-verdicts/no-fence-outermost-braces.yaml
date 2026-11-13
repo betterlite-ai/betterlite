@@ -1,0 +1,9 @@
+kind: helper
+name: judge-verdict-no-fence-outermost-braces
+call:
+  b4080:
+    check: parse
+    raw: |
+      The verdict is {"outer": {"score": 2}} as requested.
+env: {}
+compare: {ignore: []}

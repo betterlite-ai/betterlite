@@ -1,0 +1,11 @@
+kind: helper
+name: redis-cache-values-batch-get-miss-is-null
+call:
+  b4327:
+    function: read_values
+    operation: batch_get_cache
+    namespace: ns
+    keys: [alpha, missing]
+    replies: ['{"answer": 1}', null]
+env: {}
+compare: {ignore: []}

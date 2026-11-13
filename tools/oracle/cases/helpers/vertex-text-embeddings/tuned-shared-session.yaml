@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-text-embeddings-tuned-shared-session
+call:
+  vertex_text_embeddings:
+    requests:
+      - {model: "1234567890", input: hello, optional: {shared_session: s}}
+      - {model: bge-small, input: hello, optional: {shared_session: s}}
+      - {model: text-embedding-005, input: hello, optional: {shared_session: s}}
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,12 @@
+kind: helper
+name: timestamp-envelope-missing-timestamp
+call:
+  b4297:
+    get_cache_logic:
+      cached:
+        choices:
+          - {role: assistant, content: hi}
+      max_age: 60
+env: {}
+compare:
+  ignore: []

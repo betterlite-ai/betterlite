@@ -5,10 +5,12 @@ use betterlite_prompts::factory::custom::{
     CustomPromptTemplate, custom_prompt, default_response_schema_prompt, function_call_prompt,
     response_schema_prompt,
 };
-use betterlite_prompts::factory::{Output, prompt_factory};
+use betterlite_prompts::factory::hub::{Hub, builtin_entries};
+use betterlite_prompts::factory::{Output, PromptFactory, prompt_factory};
 use chrono::{TimeZone as _, Utc};
 use serde::Deserialize;
 use serde_json::{Value, to_value};
+use std::sync::Mutex;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
@@ -66,14 +68,25 @@ impl Helper for Op {
                 model,
                 messages,
                 custom_llm_provider,
-            } => {
-                let now = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
-                prompt_factory(model, messages, custom_llm_provider.as_deref(), now)
-                    .map(output_value)
-                    .map_err(|error| failure(&error))
-            }
+            } => factory_prompt(model, messages, custom_llm_provider.as_deref()),
         }
     }
+}
+
+fn factory_prompt(model: &str, messages: &[Message], provider: Option<&str>) -> HelperResult {
+    let now = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+    let factory = PromptFactory {
+        cache: Mutex::new(builtin_entries()),
+        hub: Hub::Unreachable,
+    };
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| runtime_failure(&error))?;
+    runtime
+        .block_on(prompt_factory(&factory, model, messages, provider, now))
+        .map(output_value)
+        .map_err(|error| failure(&error))
 }
 
 fn output_value(output: Output) -> Value {
@@ -84,11 +97,24 @@ fn output_value(output: Output) -> Value {
     }
 }
 
+fn runtime_failure(error: &std::io::Error) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: "Runtime".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
+}
+
 fn failure(error: &FactoryError) -> Box<HelperError> {
     let class = match error {
-        FactoryError::Prompt(_) | FactoryError::Render(_) | FactoryError::NoChatTemplate => {
-            "Exception"
-        }
+        FactoryError::Prompt(_)
+        | FactoryError::Render(_)
+        | FactoryError::NoChatTemplate
+        | FactoryError::Hub(_)
+        | FactoryError::TemplateNotText => "Exception",
         FactoryError::Repr(_) => "SerializationError",
         FactoryError::Limit | FactoryError::InputLimit(_) => "LimitError",
         FactoryError::Append { .. } => "AttributeError",

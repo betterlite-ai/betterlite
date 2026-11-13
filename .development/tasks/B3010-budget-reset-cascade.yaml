@@ -15,7 +15,8 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-db/**
+    - crates/betterlite-db/src/budget_cascade.rs
+    - crates/betterlite-db/src/budget_cascade/**
     - Cargo.toml
   lint_tables: true
 
@@ -40,7 +41,7 @@ dod:
     proof: [counter-helper-tests]
   - text: "Linked-row protocol properties (budget_id, spend) are used to select rows owned by expiring budget tiers, skipping keys with their own budget_duration."
     proof: [cascade-collection-tests]
-  - text: "Budget reset-at timestamps are computed using existing B3000 settings and the budget tier's budget_duration."
+  - text: "Budget reset-at timestamps are computed by calling B2317 directly with the reset settings and the budget tier's budget_duration."
     proof: [cascade-collection-tests]
   - text: "Rollover carry-over spend is calculated correctly: nothing carries if rollover is disabled, everything carries if the cap is null, and (spend - cap) carries if cap is finite."
     proof: [rollover-carry-tests]
@@ -69,7 +70,7 @@ out_of_scope:
   - "Paged end-user cache-invalidation walk (_invalidate_enduser_caches, _invalidate_enduser_page, _fetch_enduser_page); owned by B3011."
   - "Actual reset writes for keys, users, and teams; those are owned by B3012-B3013."
   - "Service-logging callback invocation on failure; that is owned by B3009."
-  - "Budget reset settings and timezone handling; those are owned by B3000."
+  - "Budget reset settings and timezone handling; those are owned by B2317."
   - "Write-retry strategy wrapping _commit_budget_cascade_once and transport implementations for spend-counter invalidation; those are owned by B3009."
 
 deviations:

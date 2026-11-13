@@ -1,0 +1,3 @@
+event: thread.run.step.delta
+data: {"id":"step_1","object":"thread.run.step.delta","delta":{}}
+

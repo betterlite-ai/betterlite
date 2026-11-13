@@ -1,0 +1,1164 @@
+{
+  "kind": "helper",
+  "name": "responses-objects-sdk-fallback",
+  "call": {
+    "responses_objects": {
+      "operation": "response_defaults",
+      "response": {
+        "id": "resp_fallback",
+        "created_at": 1,
+        "output": [
+          {
+            "content": [
+              {
+                "type": "output_text",
+                "text": "hello",
+                "annotations": [],
+                "provider_text": 7
+              },
+              {
+                "type": "refusal",
+                "refusal": "no"
+              }
+            ],
+            "role": "assistant",
+            "status": "in_progress",
+            "type": "message",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "role": "assistant",
+            "status": "in_progress",
+            "type": "message",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "hello",
+                "annotations": [],
+                "provider_text": 7
+              },
+              {
+                "type": "refusal",
+                "refusal": "no"
+              }
+            ],
+            "status": "in_progress",
+            "type": "message",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "hello",
+                "annotations": [],
+                "provider_text": 7
+              },
+              {
+                "type": "refusal",
+                "refusal": "no"
+              }
+            ],
+            "role": "assistant",
+            "type": "message",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "hello",
+                "annotations": [],
+                "provider_text": 7
+              },
+              {
+                "type": "refusal",
+                "refusal": "no"
+              }
+            ],
+            "role": "assistant",
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "queries": [],
+            "status": "in_progress",
+            "type": "file_search_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "status": "in_progress",
+            "type": "file_search_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "queries": [],
+            "type": "file_search_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "queries": [],
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "name": "sample",
+            "type": "function_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "arguments": "sample",
+            "name": "sample",
+            "type": "function_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "arguments": "sample",
+            "call_id": "sample",
+            "type": "function_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "arguments": "sample",
+            "call_id": "sample",
+            "name": "sample",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "output": "sample",
+            "status": "in_progress",
+            "type": "function_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "output": "sample",
+            "status": "in_progress",
+            "type": "function_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "status": "in_progress",
+            "type": "function_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "output": "sample",
+            "type": "function_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "output": "sample",
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "action": {
+              "type": "search"
+            },
+            "status": "in_progress",
+            "type": "web_search_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "status": "in_progress",
+            "type": "web_search_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "action": {
+              "type": "search"
+            },
+            "type": "web_search_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "action": {
+              "type": "search"
+            },
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "pending_safety_checks": [],
+            "status": "in_progress",
+            "type": "computer_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "pending_safety_checks": [],
+            "status": "in_progress",
+            "type": "computer_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "status": "in_progress",
+            "type": "computer_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "pending_safety_checks": [],
+            "type": "computer_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "pending_safety_checks": [],
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "output": {
+              "type": "computer_screenshot"
+            },
+            "status": "completed",
+            "type": "computer_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "output": {
+              "type": "computer_screenshot"
+            },
+            "status": "completed",
+            "type": "computer_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "status": "completed",
+            "type": "computer_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "output": {
+              "type": "computer_screenshot"
+            },
+            "type": "computer_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "output": {
+              "type": "computer_screenshot"
+            },
+            "status": "completed",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "summary": [],
+            "type": "reasoning",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "type": "reasoning",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "summary": [],
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "code": "sample",
+            "fingerprint": "sample",
+            "type": "program",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "code": "sample",
+            "fingerprint": "sample",
+            "type": "program",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "fingerprint": "sample",
+            "type": "program",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "code": "sample",
+            "type": "program",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "code": "sample",
+            "fingerprint": "sample",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "result": "sample",
+            "status": "completed",
+            "type": "program_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "result": "sample",
+            "status": "completed",
+            "type": "program_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "status": "completed",
+            "type": "program_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "result": "sample",
+            "type": "program_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "result": "sample",
+            "status": "completed",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "arguments": {},
+            "execution": "server",
+            "status": "in_progress",
+            "type": "tool_search_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "execution": "server",
+            "status": "in_progress",
+            "type": "tool_search_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "arguments": {},
+            "status": "in_progress",
+            "type": "tool_search_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "arguments": {},
+            "execution": "server",
+            "type": "tool_search_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "arguments": {},
+            "execution": "server",
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "execution": "server",
+            "status": "in_progress",
+            "tools": [],
+            "type": "tool_search_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "status": "in_progress",
+            "tools": [],
+            "type": "tool_search_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "execution": "server",
+            "tools": [],
+            "type": "tool_search_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "execution": "server",
+            "status": "in_progress",
+            "type": "tool_search_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "execution": "server",
+            "status": "in_progress",
+            "tools": [],
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "role": "unknown",
+            "tools": [],
+            "type": "additional_tools",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "tools": [],
+            "type": "additional_tools",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "role": "unknown",
+            "type": "additional_tools",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "role": "unknown",
+            "tools": [],
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "encrypted_content": "sample",
+            "type": "compaction",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "type": "compaction",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "encrypted_content": "sample",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "status": "in_progress",
+            "type": "image_generation_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "type": "image_generation_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "container_id": "sample",
+            "status": "in_progress",
+            "type": "code_interpreter_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "status": "in_progress",
+            "type": "code_interpreter_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "container_id": "sample",
+            "type": "code_interpreter_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "container_id": "sample",
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "action": {
+              "command": [],
+              "env": {},
+              "type": "exec"
+            },
+            "call_id": "sample",
+            "status": "in_progress",
+            "type": "local_shell_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "status": "in_progress",
+            "type": "local_shell_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "action": {
+              "command": [],
+              "env": {},
+              "type": "exec"
+            },
+            "status": "in_progress",
+            "type": "local_shell_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "action": {
+              "command": [],
+              "env": {},
+              "type": "exec"
+            },
+            "call_id": "sample",
+            "type": "local_shell_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "action": {
+              "command": [],
+              "env": {},
+              "type": "exec"
+            },
+            "call_id": "sample",
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "output": "sample",
+            "type": "local_shell_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "type": "local_shell_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "output": "sample",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "action": {
+              "commands": []
+            },
+            "call_id": "sample",
+            "status": "in_progress",
+            "type": "shell_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "status": "in_progress",
+            "type": "shell_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "action": {
+              "commands": []
+            },
+            "status": "in_progress",
+            "type": "shell_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "action": {
+              "commands": []
+            },
+            "call_id": "sample",
+            "type": "shell_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "action": {
+              "commands": []
+            },
+            "call_id": "sample",
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "output": [],
+            "status": "in_progress",
+            "type": "shell_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "output": [],
+            "status": "in_progress",
+            "type": "shell_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "status": "in_progress",
+            "type": "shell_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "output": [],
+            "type": "shell_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "output": [],
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "operation": {
+              "diff": "sample",
+              "path": "sample",
+              "type": "create_file"
+            },
+            "status": "in_progress",
+            "type": "apply_patch_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "operation": {
+              "diff": "sample",
+              "path": "sample",
+              "type": "create_file"
+            },
+            "status": "in_progress",
+            "type": "apply_patch_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "status": "in_progress",
+            "type": "apply_patch_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "operation": {
+              "diff": "sample",
+              "path": "sample",
+              "type": "create_file"
+            },
+            "type": "apply_patch_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "operation": {
+              "diff": "sample",
+              "path": "sample",
+              "type": "create_file"
+            },
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "status": "completed",
+            "type": "apply_patch_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "status": "completed",
+            "type": "apply_patch_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "type": "apply_patch_call_output",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "call_id": "sample",
+            "status": "completed",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "arguments": "sample",
+            "name": "sample",
+            "server_label": "sample",
+            "type": "mcp_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "name": "sample",
+            "server_label": "sample",
+            "type": "mcp_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "arguments": "sample",
+            "server_label": "sample",
+            "type": "mcp_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "arguments": "sample",
+            "name": "sample",
+            "type": "mcp_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "arguments": "sample",
+            "name": "sample",
+            "server_label": "sample",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "server_label": "sample",
+            "tools": [],
+            "type": "mcp_list_tools",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "tools": [],
+            "type": "mcp_list_tools",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "server_label": "sample",
+            "type": "mcp_list_tools",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "server_label": "sample",
+            "tools": [],
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "arguments": "sample",
+            "name": "sample",
+            "server_label": "sample",
+            "type": "mcp_approval_request",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "name": "sample",
+            "server_label": "sample",
+            "type": "mcp_approval_request",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "arguments": "sample",
+            "server_label": "sample",
+            "type": "mcp_approval_request",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "arguments": "sample",
+            "name": "sample",
+            "type": "mcp_approval_request",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "arguments": "sample",
+            "name": "sample",
+            "server_label": "sample",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "approval_request_id": "sample",
+            "approve": true,
+            "type": "mcp_approval_response",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "approve": true,
+            "type": "mcp_approval_response",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "approval_request_id": "sample",
+            "type": "mcp_approval_response",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "id": "sample",
+            "approval_request_id": "sample",
+            "approve": true,
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "input": "sample",
+            "name": "sample",
+            "type": "custom_tool_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "name": "sample",
+            "type": "custom_tool_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "input": "sample",
+            "type": "custom_tool_call",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "input": "sample",
+            "name": "sample",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "output": "sample",
+            "type": "custom_tool_call_output",
+            "id": "sample",
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "type": "custom_tool_call_output",
+            "id": "sample",
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "output": "sample",
+            "id": "sample",
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "output": "sample",
+            "type": "custom_tool_call_output",
+            "status": "in_progress",
+            "provider_extra": {
+              "nested": 7
+            }
+          },
+          {
+            "call_id": "sample",
+            "output": "sample",
+            "type": "custom_tool_call_output",
+            "id": "sample",
+            "provider_extra": {
+              "nested": 7
+            }
+          }
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

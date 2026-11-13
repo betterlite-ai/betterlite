@@ -1,0 +1,165 @@
+id: B9260
+title: Seed daily usage and exporter settings in isolated oracle databases
+description: >-
+  B860's HTTP database fixture currently seeds users, keys, teams, memberships and
+  budgets, but not LiteLLM_DailyUserSpend, organization joins or exporter configuration.
+  Its baseline SQL does not create DailyUserSpend; B9270 now owns the shared daily-table
+  fixture DDL. B073 additionally needs 501 rows, controlled timestamps, orphan keys and
+  exporter settings, beyond B9270's 256-row fixed-time seed contract. Add the test-only
+  FinOpsSeed extension in tools/postgres-fixture/src/finops.rs and finops/, with
+  FinOpsFixtureError owned there, reusing B9270's schema without a second DDL file. This is native oracle infrastructure,
+  not a second product repository, migration system or LiteLLM function implementation.
+  Do not import betterlite-db or product encryption/query code: both gateways must receive
+  the same independently seeded data, so a product bug cannot manufacture its own answer.
+
+  The architect adds the shared attachment before dispatch: an optional finops field on
+  FixtureSeed with serde default, its validation call and a FinOps error variant, plus a
+  seed_database call after seed_keys and any B9270 daily_usage inserts. Apply B9270's
+  daily_usage::SCHEMA once when either daily_usage or finops is present. The skeleton
+  declares the finops module. Implement FinOpsSeed::validate(&FixtureSeed) and async
+  seed(&Client, &FinOpsSeed), the exact
+  functions those call sites invoke. Absence preserves the current fixture unchanged;
+  Some(empty) creates the fixture tables but inserts no rows. Existing FixtureSeed struct
+  literals receive finops: None in the shared change. All setup remains under B860's
+  existing seed deadline and independent-database lifecycle, including cleanup on error.
+
+  FinOpsSeed has four default-empty lists: organizations, key_metadata, daily_usage and
+  config_rows. Bound each to 1024 rows before database provisioning. Reject unknown
+  fields, repeated organization IDs, repeated metadata targets, repeated usage IDs and
+  duplicate config names; also reject repeated non-null DailyUserSpend unique tuples.
+  A null component in that database unique tuple retains PostgreSQL's null-distinct
+  behavior. Validate referenced budget, user, team, organization and fixture key identities
+  before spawning either gateway. A usage row may deliberately hold an orphan key hash
+  for the query's LEFT JOIN tests; represent that choice explicitly rather than treating a
+  misspelled fixture-key reference as an orphan. Never accept executable SQL or arbitrary
+  table/column names in the fixture YAML.
+
+  Organization rows carry organization_id, organization_alias, an existing budget_id,
+  created_by and updated_by referring to fixture users, and models defaulting to an empty
+  list. key_metadata identifies an existing key by its SecretString token and optionally
+  supplies key_alias and organization_id; a separate optional team_organization_id applies
+  to that key's existing team, so tests can exercise the key-before-team COALESCE. Reject
+  conflicting assignments to the same team. Do not change the key's role, owning user or
+  team membership. Insert organizations after B860 has seeded budgets, then update key
+  and team metadata using bound SQL parameters and the existing SHA256 key-hash helper.
+
+  Daily usage rows mirror schema.prisma L848-L882, with explicit id, date, created_at and
+  updated_at for deterministic order and window tests. Retain nullable user_id, model,
+  model_group, custom_llm_provider, mcp_namespaced_tool_name and endpoint. api_key is
+  supplied either by a fixture key reference that is hashed once or by the explicit orphan
+  hash variant. Counters are signed 64-bit values defaulting to zero, and spend/savings
+  amounts are Decimal defaulting to zero. Do not add total_tokens: that column does not
+  exist. Timestamp input uses declared strings bound through PostgreSQL timestamp casts;
+  an invalid timestamp fails setup before either proxy starts. Write all fields B3060's
+  SELECT needs, including both cache-token columns. B9270 creates DailyUserSpend with
+  the pinned column types, nullable fields, defaults, indexes and unique tuple; the
+  existing LiteLLM_Config/Organization/Key/Team tables are reused.
+  Keep Decimal in Rust and bind numeric text through a PostgreSQL numeric cast into the
+  pinned double-precision columns; do not introduce Rust floats or change the database
+  schema's money type.
+
+  Config rows use a closed name enum for vantage_settings or cloudzero_settings and
+  an optional SecretString serialized_value. Store a present value as a JSON string
+  using to_jsonb of the bound text, exactly the representation the route accessor parses;
+  absence stores SQL NULL. This permits missing-credential and invalid-ciphertext fixtures
+  without embedding a product encryptor. Successful credential persistence is exercised
+  by B073's actual /init HTTP transcript, not by a fixture that encrypts on behalf of the
+  gateway. The fixture's Debug/errors never include config contents or raw key tokens.
+  Use inserts for config rows and fail a duplicate name, rather than silently overwriting
+  another fixture's setup. No new environment variables or runtime gateway options exist.
+
+  Tests under finops::tests use B860's independent databases and real PostgreSQL, in
+  rstest functions finops_seed_database_contract and finops_seed_validation_contract. Seed
+  51 and 501 deterministic rows to show sampling/default-query-limit boundaries can be
+  distinguished, verify date/created_at ordering and inclusive updated_at boundaries with
+  independent SQL, and verify key-versus-team organization precedence. Check null models,
+  orphan hashes, Decimal readback through numeric text, the serialized config string and
+  SQL NULL, duplicate and unknown references, row limits and redacted diagnostics. Mutate
+  one provisioned database and prove the other is unchanged. Cause a timestamp/insert
+  failure and verify B860 removes its resources. No test calls a FastAPI handler or
+  compares data using betterlite's FinOps query implementation.
+
+  Extend the existing HTTP case decoding proof in tools/oracle/src/finops_fixture.rs and
+  finops_fixture/tests.rs. It calls the same decode_http_case entry point used by the
+  runner and the existing http_case fuzz target; no second YAML parser is introduced.
+  Add valid empty/populated cases and invalid unknown-field, duplicate, excess-row,
+  missing-reference and truncated-input seeds under fuzz/corpus/http_case/finops/.
+  A normal replays_the_finops_http_fixture_corpus test reads that directory and asserts
+  the intended accept/reject result. The existing corpus replay scans only top-level
+  files and rejects every unknown filename; the architect updates that shared replay
+  to skip subdirectories, leaving ownership of this subdirectory's contents here. Decoder
+  tests, named finops_http_fixture_decode_contract, prove database.seed.finops reaches both independent provisioning inputs instead
+  of merely accepting a field and dropping it. No HTTP oracle case belongs to this
+  infrastructure task; B073 consumes it through actual FinOps endpoints. Plan roughly
+  250-350 record/validation/insert lines and adjacent tests; reuse serde, tokio-postgres,
+  rust_decimal and secrecy already in the fixture crate.
+scope:
+  paths:
+    - "tools/postgres-fixture/src/seed_sql.rs"
+    - "tools/postgres-fixture/src/fixtures/http_scenarios.rs"
+    - tools/postgres-fixture/src/finops.rs
+    - tools/postgres-fixture/src/finops/**
+    - tools/oracle/src/finops_fixture.rs
+    - tools/oracle/src/finops_fixture/**
+    - tools/oracle/fuzz/corpus/http_case/finops/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L848-L883
+    why: DailyUserSpend fixture schema, nullable fields, timestamp columns and composite uniqueness; product storage is not reimplemented.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L146-L165
+    why: Organization rows require a budget and creator/updater fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L180-L214
+    why: Team organization joins used by the independent fixture.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L486-L526
+    why: Key aliases, user/team identity and organization fields retain their pinned storage names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L695-L700
+    why: Exporter settings occupy a nullable JSON config value keyed by param_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/database.py#L61-L111
+    why: Context for which fixture fields the real export query reads; B3060 owns that query.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L97-L144
+    why: Context for JSON-string settings and corrupted ciphertext cases; B3075 owns the accessor.
+dod:
+  - text: Typed bounded fixtures seed the pinned daily usage, organization joins and nullable serialized exporter settings independently for both gateways.
+    proof: [finops-fixture-tests, finops-decoder-tests]
+  - text: Invalid references, duplicate identities, excessive rows and SQL failures fail setup with redacted errors and no leftover test database.
+    proof: [finops-fixture-tests, finops-decoder-tests]
+  - text: The existing production HTTP-case decoder accepts the new fixture field, rejects malformed variants and replays every new fuzz seed.
+    proof: [finops-decoder-tests, finops-fixture-corpus]
+  - text: Existing Postgres fixtures and HTTP fixture comparisons retain their behavior when the new field is absent.
+    proof: [existing-fixture-tests]
+checks:
+  optional: []
+  commands:
+    - id: finops-fixture-tests
+      why: Daily usage or joins cannot be seeded, database isolation fails, invalid input reaches a gateway, or secrets appear in diagnostics.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/::finops_seed_database_contract($|::)/) + test(/::finops_seed_validation_contract($|::)/)'
+    - id: finops-decoder-tests
+      why: The runner drops database.seed.finops, accepts invalid fields or fails to hand the extension to both provisioning inputs.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::finops_http_fixture_decode_contract($|::)/)'
+    - id: finops-fixture-corpus
+      why: The HTTP-case decoder has no new FinOps corpus or its valid and invalid seeds replay incorrectly.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_case/finops)" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_finops_http_fixture_corpus)'
+    - id: existing-fixture-tests
+      why: The optional shared attachment breaks existing fixture setup, cleanup or oracle error comparisons.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/postgres-fixture/src/finops.rs tools/postgres-fixture/src/finops)" &&
+        cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^tests::/)' &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::postgres::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Product FOCUS and CloudZero queries are B3060; settings access/encryption are B3075/B1600; route behavior and booted HTTP parity are B3076, B3077 and B073."
+  - "B860 owns database creation, connection policy, the baseline fixture and cleanup; this extension runs through those existing mechanisms without a second connection lifecycle."
+  - "B9270 owns daily_usage::SCHEMA and its three-table DDL; this extension only inserts richer FinOps rows and does not alter B9270's fixed-time 256-row seed contract."
+  - "The architect owns shared FixtureSeed fields, the FixtureError variant, seed_database attachment and existing replay-directory guard; this task implements only the dedicated extension they call."
+pitfalls:
+  - "LiteLLM_DailyUserSpend.api_key stores the UTF-8 SHA256 hex token, so hashing an already-hashed orphan value again makes every metadata join miss."
+  - "A FOCUS preview sums no total_tokens column because that column is absent from the actual SELECT and table."
+  - "Settings fixtures store a JSON string inside param_value, not a JSON object with plaintext credentials that happens to bypass a broken decryptor."
+  - "PostgreSQL allows repeated composite unique tuples containing null, so fixture validation must not make nullable model/provider rows artificially unique."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

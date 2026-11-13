@@ -6,16 +6,15 @@ description: >-
   using TeamRepository (B724) and execute a SQL query for user emails via DbSession (B700).
   Implement send_team_budget_alert to format and send a team budget alert email to all team
   members, preserving the sequential user-email then team-email sends and the false return value
-  after sending. Validate email customization restrictions: in open-source betterlite without
-  a paid tier, logo and contact customization fields are rejected when both premium_user is false
-  and customization is attempted. Implement send_email_alert_using_smtp to send individual SMTP
+  after sending. Email customization: betterlite has no paid tier, so a customized logo or support contact is
+  allowed and there is no license check. Implement send_email_alert_using_smtp to send individual SMTP
   budget alerts with logo and contact information from B4020's settings, HTML email templates with
   logo image and support contact, and sequential email sending (user email first, then team email
   for team events). Keep empty-recipient behavior visible: joining an empty recipient list produces
   an empty string, not None. Preserve LiteLLM's loud logging for missing recipients and configuration,
   but never log event dumps containing tokens or credentials. Return false after sending both user
   and team emails, matching the source behavior. Integrate with SMTP transport through the injected
-  send_email function from Q2.
+  send_email function: B8400's betterlite_logging::smtp_send, with B8891's adapter.
 scope:
   paths:
     - crates/betterlite-logging/src/budget_email.rs
@@ -27,7 +26,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_alerting.py#L68-L131
     why: Team budget alert email formatting with logo, contact, team alias and spend information.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1224-L1234
-    why: Premium user email customization check; betterlite's no-paid-tier decision.
+    why: The premium user email customization check, which betterlite drops because it has no paid tier.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1367-L1428
     why: Individual SMTP budget alert email with template formatting, sequential sends and false return.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_alerting.py#L1-L16
@@ -45,9 +44,9 @@ dod:
     proof: [budget-email-tests]
   - text: send_team_budget_alert returns false regardless of send result; empty recipient list produces empty string (not None) from join operation, so no warning condition triggers.
     proof: [budget-email-tests]
-  - text: Email customization validation checks if email_logo_url or email_support_contact are customized when premium_user is false and raises ValueError.
+  - text: A customized email_logo_url or email_support_contact is used as given, with no license check and no error.
     proof: [budget-email-tests]
-  - text: send_email_alert_using_smtp accepts WebhookEvent and alert_type, checks premium email feature, gets email settings from config via B4020.
+  - text: send_email_alert_using_smtp accepts WebhookEvent and alert_type, gets email settings from config via B4020.
     proof: [budget-email-tests]
   - text: User email alert is sent first with individual budget information (user_id as name, max_budget, event_message, support contact).
     proof: [budget-email-tests]
@@ -65,8 +64,8 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^budget_email::/)'
 oracle_cases: []
 deviations:
-  - what: Email customization rejection raises ValueError in all cases; betterlite has no paid tier, so customization is never allowed in open-source.
-    why: B4022 retains LiteLLM's loud validation logic. Unlike the source's premium_user check that conditionally raises, betterlite's no-paid-tier decision makes the check live for all users.
+  - what: A customized email logo or support contact is allowed and _check_if_using_premium_email_feature is not built, so nothing raises.
+    why: betterlite has no paid tier and no license check. LiteLLM rejects customization only when premium_user is false.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1224-L1234
   - what: Email branding defaults to LiteLLM's constants when SMTP_SENDER_LOGO, EMAIL_LOGO_URL and EMAIL_SUPPORT_CONTACT are not set; no implicit asset fetching.
     why: B4022 and B4023 use B4020's settings without network fetches. Missing configuration falls back to constants, matching source behavior.
@@ -77,7 +76,7 @@ deviations:
 out_of_scope:
   - Alert production and alert type decisions are owned by B4025 and B4024.
   - WebhookEvent record definitions and webhook delivery are owned by B4020 and B4024.
-  - SMTP send_email function transport and implementation are Q2 (unresolved).
+  - The SMTP transport is B8400's betterlite_logging::smtp_send, and B8891 owns the adapter that hands it to this task.
   - User and team repository lookups are owned by B700 and B724; this task uses their table handles.
   - Email template rendering for key creation and invitations are owned by B4023.
   - Alert settings configuration loading is owned by B4020.
@@ -86,7 +85,7 @@ pitfalls:
   - "Team member filtering from members_with_roles requires both member dict check and user_id string validation before adding to the lookup list."
   - "SQL query execution on team members must use parameterized queries (any($1::TEXT[])) to prevent injection and match Prisma's safety."
   - "send_team_budget_alert returns false unconditionally after sending, not true on successful send; this matches LiteLLM's behavior."
-  - "Premium email customization rejection applies to both email_logo_url and email_support_contact independently in betterlite (no paid tier)."
+  - "Do not add a license or premium gate for email_logo_url or email_support_contact; both are customizable in betterlite."
   - "Email subject must include event_message from webhook_event, not a hardcoded string, for different alert types."
   - "Budget alert HTML email must preserve logo image tag, team/user name in greeting, budget/spend values formatted as currency, and support contact."
   - "Sequential sends mean user email first (event budget_crossed), then team email second only if event_group is TEAM; do not nest calls."

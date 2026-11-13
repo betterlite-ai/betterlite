@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::{HelperCase, parse_helper_case};
+use crate::case::{HelperCase, helper::validate_helper};
 
 #[test]
 fn helper_seeds_select_catalog_generalizations() {
@@ -14,7 +14,13 @@ fn helper_seeds_select_catalog_generalizations() {
         .filter(|path| path.to_str().unwrap().contains("/catalog_generalizations"))
         .map(|path| {
             let source = fs::read_to_string(path).unwrap();
-            parse_helper_case(&source).unwrap();
+            serde_saphyr::from_str(&source)
+                .map_err(|error| error.to_string())
+                .and_then(|parsed| {
+                    validate_helper(Path::new("<helper>"), &parsed)
+                        .map_err(|error| error.to_string())
+                })
+                .unwrap();
             serde_saphyr::from_str(&source).unwrap()
         })
         .collect();

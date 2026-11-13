@@ -1,0 +1,12 @@
+kind: helper
+name: prometheus-callback-unrelated-and-null
+call:
+  b4177:
+    function: callback_configured
+    settings:
+      drop_params: true
+      num_retries: 3
+      callbacks: [prometheus]
+env: {}
+compare:
+  ignore: []

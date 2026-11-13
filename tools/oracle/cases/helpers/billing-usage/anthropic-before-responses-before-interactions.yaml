@@ -1,0 +1,51 @@
+kind: helper
+name: billing-usage-anthropic-before-responses-before-interactions
+call:
+  billing_usage:
+    calls:
+      - function: get_usage_object
+        response:
+          kind: chat
+          usage:
+            kind: mapping
+            value:
+              input_tokens: 10
+              output_tokens: 5
+              cache_read_input_tokens: 3
+              cache_creation_input_tokens: 2
+      - function: get_usage_object
+        response:
+          kind: chat
+          usage:
+            kind: mapping
+            value:
+              input_tokens: 4
+              output_tokens: 6
+              input_tokens_details:
+                cached_tokens: 2
+                text_tokens: 2
+              output_tokens_details:
+                reasoning_tokens: 1
+      - function: get_usage_object
+        response:
+          kind: chat
+          usage:
+            kind: mapping
+            value:
+              total_input_tokens: 10
+              total_output_tokens: 4
+              total_cached_tokens: 3
+              input_tokens_by_modality:
+                - modality: text
+                  tokens: 10
+      - function: get_usage_object
+        response:
+          kind: chat
+          usage:
+            kind: mapping
+            value:
+              prompt_tokens: 5
+              completion_tokens: 2
+              total_tokens: 7
+env: {}
+compare: {ignore: []}

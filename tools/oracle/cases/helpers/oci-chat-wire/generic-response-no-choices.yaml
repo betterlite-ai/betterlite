@@ -1,0 +1,18 @@
+kind: helper
+name: oci-chat-wire-generic-response-no-choices
+call:
+  b5942:
+    function: generic_response
+    status: 400
+    body:
+      modelId: m
+      modelVersion: "1"
+      chatResponse:
+        apiFormat: GENERIC
+        timeCreated: "2025-01-01T00:00:00Z"
+        choices: []
+        usage:
+          promptTokens: 1
+          totalTokens: 1
+env: {}
+compare: {ignore: []}

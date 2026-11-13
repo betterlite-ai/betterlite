@@ -1,0 +1,24 @@
+kind: helper
+name: anthropic-web-replay-missing-search-title-url
+call:
+  anthropic_web_replay:
+    messages:
+      - content:
+          - type: web_search_tool_result
+            tool_use_id: q1
+            content:
+              - {type: web_search_result, title: "Only title"}
+              - {type: web_search_result, url: "https://u.example"}
+              - {type: web_search_result, snippet: "Only snippet"}
+              - {type: web_search_result, title: T, url: "https://u2.example", snippet: S}
+          - {type: web_search_tool_result, tool_use_id: q2, content: []}
+          - {type: web_search_tool_result, tool_use_id: q3, content: {type: web_search_tool_result_error}}
+          - {type: web_search_tool_result, tool_use_id: q4, content: [{type: web_search_result}]}
+          - {type: web_search_tool_result, tool_use_id: q5, content: [{type: web_search_result}, {type: web_search_result}]}
+          - {type: server_tool_use, id: q1, input: {query: " padded query "}}
+          - {type: server_tool_use, id: q2, input: {query: ""}}
+          - {type: server_tool_use, id: q4, input: {}}
+      - content:
+          - {type: web_search_tool_result, tool_use_id: q6, content: {type: web_search_tool_result_error, error_code: invalid_tool_input}}
+env: {}
+compare: {ignore: []}

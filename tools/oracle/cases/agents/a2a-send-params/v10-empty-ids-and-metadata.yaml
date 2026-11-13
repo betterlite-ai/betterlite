@@ -1,0 +1,17 @@
+kind: helper
+name: a2a-send-params-v10-empty-ids-and-metadata
+call:
+  b6950:
+    params:
+      message:
+        messageId: m1
+        contextId: ""
+        taskId: ""
+        referenceTaskIds: []
+        extensions: []
+        parts:
+          - text: hi
+        metadata: {}
+      metadata: {}
+env: {}
+compare: {ignore: []}

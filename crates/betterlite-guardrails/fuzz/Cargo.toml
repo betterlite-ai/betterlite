@@ -3,11 +3,16 @@ name = "betterlite-guardrails-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
 
 [dependencies]
+betterlite-config = { path = "../../betterlite-config" }
 betterlite-guardrails = { path = ".." }
 libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
@@ -47,4 +52,65 @@ test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "grayswan_response"
+path = "fuzz_targets/grayswan_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prisma_content"
+path = "fuzz_targets/prisma_content.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vigil_guard_analysis"
+path = "fuzz_targets/vigil_guard_analysis.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prisma_scan"
+path = "fuzz_targets/prisma_scan.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prisma_unified"
+path = "fuzz_targets/prisma_unified.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "blocked_words_yaml"
+path = "fuzz_targets/blocked_words_yaml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "content_regex"
+path = "fuzz_targets/content_regex.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mcp_jwt_idp_document"
+path = "fuzz_targets/mcp_jwt_idp_document.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "guardrail_message_scope_sse_chunk"
+path = "fuzz_targets/guardrail_message_scope_sse_chunk.rs"
+test = false
+doc = false
+bench = false

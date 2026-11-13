@@ -89,18 +89,18 @@ pub fn transform_file_response(
 ) -> Result<HttpxBinaryResponseContent, FileContentError> {
     if raw_response.status_code >= 400 {
         let message = decode_response_text(&raw_response.body, &raw_response.headers);
-        let request = ErrorRequest {
+        let response_request = ErrorRequest {
             method: raw_response.request.method.clone(),
             url: raw_response.request.url.clone(),
         };
         let response = ErrorResponse {
             status_code: raw_response.status_code,
-            request,
+            request: response_request,
         };
         let error = BedrockError::try_from(ErrorInput {
             status_code: raw_response.status_code,
             message: message.clone(),
-            request: Some(response.request.clone()),
+            request: None,
             body: None,
             status_code_is_synthesized: false,
             headers: Some(ErrorHeaders::Http(raw_response.headers.clone())),

@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-restored-ignorecase",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/aKÉ",
+      "allowed_routes": [
+        "/(?i:a(?a:k)(?-i:é))"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

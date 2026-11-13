@@ -1,0 +1,17 @@
+kind: helper
+name: media-tokens-document-text-context
+call:
+  media_tokens:
+    model: gpt-3.5-turbo
+    calls:
+      - function: count_content
+        content:
+          - type: document
+            title: hello
+            context: world
+            source:
+              type: text
+              media_type: text/plain
+              data: hello world
+env: {}
+compare: {ignore: []}

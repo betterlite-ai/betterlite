@@ -308,7 +308,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_unsupported_create$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_vector_stores.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_vector_stores.py tools/oracle/helpers/bedrock_services_vector_stores)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -321,7 +321,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_vector_stores)"
       && grep -q 'decode_knowledge_base_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_vector_stores.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_vector_stores_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_vector_stores_corpus(::|$)/)'
   - id: case-option-mapping
     why: Supported list filters,max_num_results,ranking_options. map_openai_params maps max_num_results to numberOfResults
       evenNone; filters=None does not alter existing filters. Non-None nondict filters writes filters=None; dict
@@ -377,6 +377,6 @@ pitfalls:
 - The option mapper writes numberOfResults, while the request transformer reads max_num_results; do not silently
   rewrite their interfaces into one algorithm.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1900
   max_new_expects: 0
 review_level: standard

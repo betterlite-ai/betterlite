@@ -46,31 +46,31 @@ checks:
   commands:
     - id: s3-init-tests
       why: S3Destination init validation or config handling fails or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_s3_destination::init/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::focus::(.*::)?focus_s3_destination::init/)'
     - id: s3-deliver-tests
       why: S3Destination deliver method fails or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_s3_destination::deliver/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::focus::(.*::)?focus_s3_destination::deliver/)'
     - id: s3-key-tests
       why: S3 object key partitioning or prefix handling fails or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_s3_destination::object_key/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::focus::(.*::)?focus_s3_destination::object_key/)'
     - id: s3-kwargs-tests
       why: S3 client kwargs filtering fails or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_s3_destination::kwargs/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::focus::(.*::)?focus_s3_destination::kwargs/)'
     - id: s3-upload-tests
       why: S3 upload method fails or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_s3_destination::upload/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::focus::(.*::)?focus_s3_destination::upload/)'
     - id: gcs-init-tests
       why: GCSDestination init validation or config handling fails or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_gcs_destination::init/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::focus::(.*::)?focus_gcs_destination::init/)'
     - id: gcs-deliver-tests
       why: GCSDestination deliver method fails or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_gcs_destination::deliver/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::focus::(.*::)?focus_gcs_destination::deliver/)'
     - id: gcs-status-tests
       why: GCSDestination status code validation fails or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_gcs_destination::status/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::focus::(.*::)?focus_gcs_destination::status/)'
     - id: gcs-key-tests
       why: GCS object key partitioning or prefix handling fails or tests are missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^focus_gcs_destination::object_key/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::focus::(.*::)?focus_gcs_destination::object_key/)'
 oracle_cases: []
 deviations:
   - what: S3 client construction filters config values, omitting any that are falsy (None, empty string); only non-empty credentials are forwarded to boto3.

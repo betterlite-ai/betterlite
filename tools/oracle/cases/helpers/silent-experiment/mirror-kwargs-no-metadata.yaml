@@ -1,0 +1,11 @@
+kind: helper
+name: mirror-kwargs-fills-absent-metadata
+call:
+  b8440:
+    function: silent_kwargs
+    request:
+      model: gpt-4o
+      messages: [{role: user, content: hi}]
+      stream: false
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,1 @@
+{"template":"{{ .Tools }} <|tool_call|>","model_info":{"llama.context_length":8192,"general.architecture":"llama","tokenizer.ggml.tokens":["a"]}}

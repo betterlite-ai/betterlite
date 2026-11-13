@@ -1,0 +1,11 @@
+task: B3073
+deviations:
+  - what: Presigned upload URLs are always checked through B009's validate_url. LiteLLM skips the check when litellm.user_url_validation is false and then sends no Host header.
+    why: B009 declares the user_url_validation opt-out unavailable under current rules, so betterlite has no switch that turns the SSRF check off.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/upload_client.py#L188-L194
+  - what: Every presigned-URL validation failure, including a URL that does not parse, is a non-retryable PointFiveUploadFailure. LiteLLM catches only SSRFError and lets a parse error escape the flush as an exception.
+    why: An exception from an API-supplied URL crashes the flush instead of dropping the one unreadable batch; no working setup relies on the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/upload_client.py#L191-L194
+  - what: Presign and upload response bodies are read through the shared transport's 16 MiB cap, and a body past it fails as an unreachable transport rather than being read whole.
+    why: Rule bounded-inputs gives every outbound call a bounded response body; the PointFive API answers with small JSON objects, and the upload itself sends its bytes rather than receiving them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/upload_client.py#L144-L159

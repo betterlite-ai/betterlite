@@ -120,13 +120,14 @@ out_of_scope:
   - 'litellm/proxy/management_helpers/utils.py: B1228 owns _object_mapping (L609-L611), _object_list (L614-L616),
     _redacted_env_var (L619-L626), _redact_record_env_vars (L629-L647), _redact_env_var_values (L650-L666).'
   - 'litellm/proxy/management_helpers/utils.py: B1228 owns send_management_endpoint_alert (L559-L606)
-    and _emit_management_endpoint_otel_span (L669-L752) as typed event/payload projections. B116 and B110
-    implement the injected alert and OTel transports.'
+    and _emit_management_endpoint_otel_span (L669-L752) as typed event/payload projections. B4030 implements
+    the injected alert transport through B4024 and B4021, over the shared runtime of B8890. B3858 implements the OTel transport and B110 is its adapter.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
   - One inner catch surrounds every success effect; an alert error prevents cache eviction.
   - These deletes use raw ids and synchronous UserApiKeyCache routing, not broadcast invalidation keys.
   - The wrapper docstring mentions audit logging, but its executable code makes no audit persistence call.
+  - "send_virtual_key_event_slack swallows its errors."
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

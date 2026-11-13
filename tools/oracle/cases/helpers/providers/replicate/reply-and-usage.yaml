@@ -1,0 +1,23 @@
+kind: helper
+name: replicate-reply-and-usage
+env: {}
+compare: {ignore: []}
+call:
+  b5847:
+    op: reply
+    replies:
+      - model: m
+        body: '{"status":"succeeded","output":["he","llo"]}'
+        messages:
+          - {role: user, content: hi}
+      - model: m
+        body: '{"status":"succeeded","output":[]}'
+        messages: []
+      - model: m
+        body: '{"status":"succeeded","output":""}'
+      - model: m
+        body: '{"status":"succeeded","output":"abc"}'
+      - model: m
+        body: '{"status":"succeeded"}'
+      - model: m
+        body: '{"status":"succeeded","output":[""]}'

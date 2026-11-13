@@ -1,0 +1,23 @@
+kind: helper
+name: transcription-provider-parameters
+call:
+  transcription_contract:
+    function: provider_parameters
+    model: m
+    supported: [language, response_format]
+    supported_with_extra: [language, response_format, extra]
+    optional_params:
+      model: m
+      OPENAI_TRANSCRIPTION_PARAMS: internal
+      language: en
+      response_format: json
+      diarize: false
+      count: 0
+      label: ""
+      unset: null
+      extra: "yes"
+    reserved_params: {Model: m}
+    openai_params: [extra]
+    other_openai_params: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-a-cohere-internal-server-error-on-403
+call:
+  native_errors_a:
+    provider: cohere
+    model: command-r
+    error_str: "Internal Server Error"
+    exception_type: ""
+    status_code: 403
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

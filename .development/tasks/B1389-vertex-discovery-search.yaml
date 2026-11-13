@@ -41,7 +41,6 @@ description: >-
   lines, maximum 800.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,vertex_discovery_search}.rs
     - crates/betterlite-vertex/src/vertex_discovery_search.rs
     - crates/betterlite-vertex/src/vertex_discovery_search/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

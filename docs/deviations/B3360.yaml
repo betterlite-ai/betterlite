@@ -1,0 +1,20 @@
+task: B3360
+deviations:
+  - what: Response transforms take the raw response body as bytes and return Result<_, ContainerError>, and drop the logging_obj argument.
+    why: Python passes an httpx.Response and a Logging object, but no container provider reads logging_obj and the HTTP layer is B3363's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/containers/transformation.py#L307-L310
+  - what: litellm_params is a serde_json::Map of values, not the typed GenericLiteLLMParams model.
+    why: That model belongs to the router types; the container providers only read keys from it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/containers/transformation.py#L100-L107
+  - what: A body that fails a record shape returns ContainerError::Decode instead of a pydantic ValidationError.
+    why: Rust has no pydantic. The accept and reject outcome is the same, which the oracle cases compare.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/containers/transformation.py#L152-L158
+  - what: BaseLlmException is a small struct local to this module.
+    why: The Rust error shape of B2202's BaseLLMException is not importable from here yet; the fields (status_code, message, headers) are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L55
+  - what: Request transform parameters are grouped into ContainerRequestContext (litellm_params, headers) and ContainerListQuery (after, limit, order, extra_query).
+    why: The house rule allows at most five arguments per function; the grouped values keep LiteLLM's names, order and meaning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/containers/transformation.py#L124-L134
+  - what: field("_hidden_params") returns None, while Python's get() and __getitem__ return the private _hidden_params dict for that key.
+    why: hidden_params never enters the encoded record, and field() is defined over encoded declared fields; code that needs it reads the public hidden_params field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/containers/main.py#L28-L38

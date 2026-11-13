@@ -260,7 +260,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_legacy_auth$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_completion.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_completion.py tools/oracle/helpers/anthropic_completion)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -273,7 +273,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/anthropic_completion)"
       && grep -q 'decode_legacy_anthropic_reply' crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_completion.rs
-      && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_completion_corpus$/)'
+      && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_completion_corpus(::|$)/)'
   - id: case-legacy-error-envelope
     why: AnthropicTextError always synthesizes POST https://api.anthropic.com/v1/complete and same-status response
       via B2202 BaseLLMException; get_error_class ignores supplied headers. Iterator construction delegates B005

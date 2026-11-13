@@ -1,0 +1,25 @@
+kind: helper
+name: gdc-auth-projection-invalid-json-is-bearer
+call:
+  gdc_auth_projection:
+    scenarios:
+      - config:
+          model_list:
+            - litellm_params: {vertex_project: project-a}
+        keys:
+          - {api_key: sk-plain-token}
+          - {api_key: "Bearer opaque value"}
+          - {api_key: ""}
+          - {api_key: "{"}
+          - {api_key: "NaN"}
+        validations:
+          - {api_key: sk-plain-token, base: "https://gateway.example", deployment: 0}
+          - api_key: sk-plain-token
+            base: "https://gateway.example"
+            deployment: 0
+            headers:
+              - {name: authorization, value: lower}
+              - {name: Authorization, value: "Bearer own"}
+          - {api_key: sk-plain-token, base: "https://gateway.example/v1/projects/base-project/locations/eu", deployment: 0}
+env: {}
+compare: {ignore: []}

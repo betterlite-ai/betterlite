@@ -46,7 +46,7 @@ description: >-
   metadata field through B861. B2317's get_budget_reset_time supplies budget_reset_at and each budget
   window's ISO reset_at. Extract members and persist an empty members_with_roles list initially;
   serialize router_settings as supplied or {}. Use B2304.encrypt_callback_vars on metadata BEFORE
-  B124.jsonify_team_object and insertion. Both logging[].callback_vars and
+  B8397.jsonify_team_object and insertion. Both logging[].callback_vars and
   callback_settings.callback_vars must exercise actual encryption, prefix-idempotence and unchanged
   nonsensitive values. Its source catches encryption failure and returns the original value; the
   compatibility case must expose that plaintext fallback rather than claim every write is encrypted.
@@ -81,7 +81,7 @@ description: >-
   that owner's deviation, and cannot make the team insert and audit write atomic.
 
 
-  This route really does catch Exception and raise B124.handle_exception_on_proxy: HTTPException keeps
+  This route really does catch Exception and raise B2400.handle_exception_on_proxy: HTTPException keeps
   its status but becomes internal_server_error with its detail and openai_error_param; ProxyException
   keeps its type/status/param/code, and other exceptions use their status_code or 500 with
   internal_server_error. Compare those exact envelopes and application/json through B001 HttpCase,
@@ -134,17 +134,14 @@ description: >-
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
   exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
   route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+  B1100 registers routes/team_create.rs as a stub, so fill only crates/betterlite-server/src/routes/team_create.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/team_create.rs
     - crates/betterlite-server/src/team_create/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
+    - crates/betterlite-server/src/routes/team_create.rs
+    - crates/betterlite-server/src/routes/team_create/**
     - tools/oracle/cases/management/team-create/**
     - crates/betterlite-server/src/team_create/fixtures.rs
     - crates/betterlite-server/src/team_create/fixtures/**

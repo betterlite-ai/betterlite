@@ -1,0 +1,9 @@
+kind: helper
+name: logging-pre-post-masked-headers
+call:
+  logging_pre_post: {"action": "pre", "log_raw_request_response": true, "litellm_params": {"metadata": {"user": "u1"}}, "input": "plain", "additional_args": {"api_base": "https://host/v1?key=abcdef1234", "headers": {"Authorization": "Bearer sk-live-abcdef123456", "x-api-key": "short", "x-goog-api-key": "abcd", "cookie": "a=b", "x-token": "tok-123456789", "Credentials": {"user": "u1", "api_secret": "abcdefgh"}}, "complete_input_dict": "{\"model\": \"gpt-4o\"}"}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/litellm_params/metadata/raw_request
+      why: betterlite scrubs the curl text with its own redactor, which rewrites a key= query value differently

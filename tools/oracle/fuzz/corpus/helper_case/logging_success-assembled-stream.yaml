@@ -1,0 +1,13 @@
+kind: helper
+name: logging-success-assembled-stream-seed
+call:
+  logging_success:
+    operations:
+      - operation: assembled
+        probes:
+          - {stream: true, result: {kind: chunk}, complete_key: assembled}
+      - operation: recognized
+        probes:
+          - {result: {kind: other, value: {object: search}}, call_type: search}
+env: {}
+compare: {ignore: []}

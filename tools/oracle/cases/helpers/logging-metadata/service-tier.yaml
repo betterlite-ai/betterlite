@@ -1,0 +1,24 @@
+kind: helper
+name: logging-metadata-service-tier
+call:
+  logging_metadata:
+    function: standard_metadata
+    metadata:
+      user_api_key_alias: alias-1
+      user_api_key_team_id: team-1
+      user_api_key_spend: 1.5
+      user_api_key_hash: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      user_api_key: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+      unknown_key: ignored
+      applied_guardrails: [recorded]
+      metadata: {langsmith_field: value}
+    litellm_params:
+      prompt_id: prompt-1
+      prompt_variables: {name: Ada}
+      litellm_metadata: {used_client_oauth_token: true}
+    applied_guardrails: [recorded, argument]
+    usage_object: {total_tokens: 3, service_tier: priority}
+    prompt_integration: langfuse
+    custom_llm_provider: anthropic
+env: {}
+compare: {ignore: []}

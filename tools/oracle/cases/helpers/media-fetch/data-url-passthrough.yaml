@@ -1,0 +1,9 @@
+kind: helper
+name: media-fetch-data-url-passthrough
+call:
+  b5083:
+    call: convert
+    url: "data:image/png;base64,iVBORw0KGgo="
+env: {}
+compare:
+  ignore: []

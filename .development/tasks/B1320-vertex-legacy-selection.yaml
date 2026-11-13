@@ -25,7 +25,6 @@ description: >-
   Budget 320 routing/facade, 180 tests and 140 helper lines, maximum 725.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,legacy_vertex}.rs
     - crates/betterlite-vertex/src/legacy_vertex.rs
     - crates/betterlite-vertex/src/legacy_vertex/**
     - tools/oracle/src/helpers/vertex/legacy_vertex_plan.rs

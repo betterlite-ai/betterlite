@@ -39,6 +39,7 @@ pub(crate) fn problems(catalog: &Catalog) -> Vec<String> {
     }
     for patterns in [
         &catalog.settings.always_in_scope,
+        &catalog.settings.overlap_allowed,
         &catalog.settings.budget_excludes,
     ] {
         if let Err(error) = glob_set(patterns) {

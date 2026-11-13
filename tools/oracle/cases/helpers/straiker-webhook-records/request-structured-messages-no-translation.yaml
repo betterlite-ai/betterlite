@@ -1,0 +1,10 @@
+kind: helper
+name: request-structured-messages-no-translation
+call:
+  b3795:
+    structured_messages:
+      request_data:
+        litellm_metadata:
+          user_api_key_request_route: /v1/unmapped/route
+env: {}
+compare: {ignore: []}

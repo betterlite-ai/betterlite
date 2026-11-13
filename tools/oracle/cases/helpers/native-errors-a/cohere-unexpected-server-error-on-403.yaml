@@ -1,0 +1,11 @@
+kind: helper
+name: native-errors-a-cohere-unexpected-server-error-on-403
+call:
+  native_errors_a:
+    provider: cohere
+    model: command-r
+    error_str: "Unexpected server error occurred"
+    exception_type: SomeOtherError
+    status_code: 403
+env: {}
+compare: {ignore: []}

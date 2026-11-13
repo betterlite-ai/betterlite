@@ -1,0 +1,13 @@
+id: B8807
+milestone: R1 cleanup and refactoring
+title: Oracle helper group server as its own crate
+status: done
+depends_on: [B8806]
+file: tasks/B8807-oracle-server-group-crate.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 1421

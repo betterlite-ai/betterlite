@@ -1,0 +1,1 @@
+{kind: helper, name: overwrite-existing, call: {private_json: {function: overwrite, name: settings.json, data: {"token": "fresh"}}}, env: {}, compare: {ignore: []}}

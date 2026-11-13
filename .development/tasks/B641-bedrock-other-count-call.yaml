@@ -256,7 +256,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_call_cases::case_[0-9]+_count_timeout$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_count_call.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_count_call.py tools/oracle/helpers/bedrock_other_count_call)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -269,7 +269,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_count_call)"
       && grep -q 'decode_bedrock_count_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_count_call.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_count_call_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_count_call_corpus(::|$)/)'
   - id: case-counter-factory
     why: BedrockModelInfo.get_token_counter constructs a fresh BedrockTokenCounter without credential lookup, model
       gating, IO or fallback. BaseTokenCounter has no stateful constructor to invoke.

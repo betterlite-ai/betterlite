@@ -1,0 +1,9 @@
+kind: helper
+name: unicode-whitespace
+call:
+  tokenizer_engine:
+    operation: encode
+    engine: cl100k_base
+    text: "Héllo, 世界! 👋\n  a\tb  "
+env: {}
+compare: {ignore: []}

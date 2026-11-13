@@ -1,0 +1,139 @@
+id: B5835
+title: Vercel AI Gateway chat options, embedding and model list
+description: >-
+  Build vercel_ai_gateway in betterlite-openai from litellm/llms/vercel_ai_gateway/ (common_utils.py,
+  chat/transformation.py, embedding/transformation.py). The gateway speaks the OpenAI wire format, so the module is a thin
+  layer over the shared OpenAI chat policy and the existing embedding types. Everything is a pure transform with no network
+  call. Credentials and base URLs arrive as plain arguments the caller has already read, and no config section is added. An
+  empty string counts as unset in every "a or b or c" chain below, as in LiteLLM. Where a chain names an environment variable,
+  the caller passes its value as an optional argument and the module only applies the order.
+
+
+  Error. Define VercelAiGatewayError (LiteLLM's VercelAIGatewayException) with a message, a status code and headers, in its own
+  error file. Both get_error_class functions build it from exactly those three values. It adds nothing to the base native
+  error.
+
+
+  Chat. VercelAiGatewayConfig reports provider "vercel_ai_gateway". Provider info resolves the base as the explicit api_base,
+  then VERCEL_AI_GATEWAY_API_BASE, then "https://ai-gateway.vercel.sh/v1" (no trailing-slash trimming). It resolves the key as
+  the explicit api_key, then VERCEL_AI_GATEWAY_API_KEY, then VERCEL_OIDC_TOKEN; when none is set the key is None. Supported
+  params are B668's base list with "extra_body" appended only when the list lacks it (base order first). map_openai_params
+  calls B668's base mapping first, then reads and removes "providerOptions" from the incoming params, and always sets
+  "extra_body" on the result: a map holding providerOptions when the value is present and not null, otherwise an empty map.
+  That assignment replaces whatever "extra_body" the base mapping copied from the caller, so a caller extra_body is lost.
+  transform_request is the inherited OpenAI one and is not repeated here; B503 owns it and B8311 wires it.
+
+
+  Embedding. VercelAiGatewayEmbeddingConfig.validate_environment starts from Content-Type "application/json", adds
+  "Authorization: Bearer {api_key}" only for a non-empty api_key, then lays the caller's headers over those with a plain map
+  merge (a caller key differing only in letter case adds a second entry). get_complete_url trims trailing slashes from a
+  non-empty api_base, otherwise uses VERCEL_AI_GATEWAY_API_BASE or "https://ai-gateway.vercel.sh/v1" (the fallback is not
+  trimmed), and appends "/embeddings". transform_embedding_request wraps a single string input in a list, removes one leading
+  "vercel_ai_gateway/" from the model, and returns {"model", "input"} with every optional param laid over them, so an option
+  named model or input wins. get_supported_openai_params is timeout, dimensions, encoding_format, user. map_openai_params
+  copies only those four and drops the rest without error, whatever drop_params says. transform_embedding_response hands the
+  raw response text to an injected post_call hook first, then decodes the body with EmbeddingOutcome::parse in
+  crates/betterlite-openai/src/embedding.rs. The decoder takes bytes and returns a typed error for invalid JSON or a wrong
+  shape; its bytes are the fuzz target's input.
+
+
+  Model list. get_models builds the URL "{api_base}/models", where api_base comes from the same provider-info chain as chat
+  (the api_key it resolves is not used and no Authorization header is sent). Split it into two pure functions: one returns the
+  URL, and one takes the HTTP status and body bytes. A status other than 200 returns a typed error whose text is "Failed to
+  get models: {body text}". On 200 the body must be a JSON object with a "data" list, and the result is the "id" of each entry
+  in order. A body of the wrong shape returns a typed error. The GET itself is made by the caller (B8311 sends it), so the fuzz
+  target also feeds arbitrary bytes to the second function.
+
+
+  Helper b5835 (named by the skeleton) calls the production functions and records what the pinned Python classes return, so a
+  case can compare provider info, supported and mapped params, embedding headers, URL and request, and the model list. The
+  LiteLLM source here is 175 non-blank, non-comment lines. Plan 190 transform lines, 220 tests, 90 for the fuzz target and
+  exports and 140 for helper adapters, under 1500.
+scope:
+  paths:
+    - crates/betterlite-openai/src/vercel_ai_gateway.rs
+    - crates/betterlite-openai/src/vercel_ai_gateway/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/vercel_ai_gateway_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/vercel_ai_gateway_reply/**
+    - tools/oracle/cases/helpers/vercel-ai-gateway/**
+    - "tools/oracle/fuzz/corpus/helper_case/vercel_ai_gateway-*"
+    - tools/oracle/helpers/b5835.py
+    - tools/oracle/helpers/b5835/**
+    - tools/oracle/src/helpers/openai/b5835.rs
+    - tools/oracle/src/helpers/openai/b5835/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vercel_ai_gateway/chat/transformation.py#L27-L62
+    why: Provider name, extra_body in the supported list, base and key chains, and the providerOptions mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vercel_ai_gateway/chat/transformation.py#L64-L100
+    why: Inherited request build, the error class and the model list fetch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vercel_ai_gateway/common_utils.py#L1-L5
+    why: VercelAIGatewayException adds nothing to the base native error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vercel_ai_gateway/embedding/transformation.py#L32-L100
+    why: Embedding headers, URL, prefix strip, request body and the logging call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vercel_ai_gateway/embedding/transformation.py#L101-L148
+    why: Response decode, the four supported params, their filter and the error class.
+dod:
+  - text: Provider info, the supported list with extra_body and the providerOptions mapping match VercelAIGatewayConfig, including the lost caller extra_body.
+    proof: [vercel-tests, vercel-python, oracle]
+  - text: Embedding headers, URL, request body and params match VercelAIGatewayEmbeddingConfig.
+    proof: [vercel-tests, vercel-python, oracle]
+  - text: The embedding reply decoder and the model list parser return typed errors on bad bytes and never panic.
+    proof: [vercel-tests, vercel-corpus]
+  - text: The model list URL and parser give the ids in order and the LiteLLM failure text for a non-200 status.
+    proof: [vercel-tests, oracle]
+  - text: Every new helper case replays through the shared helper-case parser.
+    proof: [vercel-seeds]
+checks:
+  commands:
+    - id: vercel-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^vercel_ai_gateway::/) - test(replays_the_vercel_ai_gateway_reply_corpus)'
+      why: A plain OpenAI passthrough has no providerOptions mapping, no extra_body entry in the supported list and no model-list parser.
+    - id: vercel-corpus
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/vercel_ai_gateway_reply.rs &&
+        grep -q 'name = "vercel_ai_gateway_reply"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/vercel_ai_gateway_reply)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_vercel_ai_gateway_reply_corpus)'
+      why: The embedding body and the model list come from the network, so the decoders need a fuzz target and fresh seeds.
+    - id: vercel-python
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5835)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5835 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5835/pyrightconfig.json
+      why: The Python adapter must call the pinned Vercel AI Gateway classes directly.
+    - id: vercel-seeds
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/vercel_ai_gateway-*")" &&
+        grep -lE '^[[:space:]]+b5835:' tools/oracle/fuzz/corpus/helper_case/vercel_ai_gateway-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: New seeds must name the b5835 operation and replay.
+  optional: [mutants]
+oracle_cases:
+  - tools/oracle/cases/helpers/vercel-ai-gateway/provider-info-and-supported-params.yaml
+  - tools/oracle/cases/helpers/vercel-ai-gateway/provider-options-extra-body.yaml
+  - tools/oracle/cases/helpers/vercel-ai-gateway/embedding-headers-and-url.yaml
+  - tools/oracle/cases/helpers/vercel-ai-gateway/embedding-request-and-params.yaml
+  - tools/oracle/cases/helpers/vercel-ai-gateway/models-url-and-list.yaml
+deviations:
+  - what: A model list reply with a non-200 status or a body of the wrong shape returns a typed VercelAiGatewayError, not a bare Python Exception or a KeyError.
+    why: Rust has no untyped exception. The message text for a non-200 status is the same as LiteLLM's, so a user sees the same failure.
+out_of_scope:
+  - B8311 owns _complete_vercel_ai_gateway in litellm/main.py, building these configs where the selection picks them, the HTTP GET behind get_models and the HTTP oracle cases. B2230 owns the VERCEL_AI_GATEWAY selection tag.
+  - B668, B503 and B504 own the inherited OpenAIGPTConfig methods, including transform_request (VercelAIGatewayConfig.transform_request only calls super) and transform_response.
+  - B006 owns EmbeddingResponse and its construction. This task only calls the decoder.
+  - B010 owns the provider framework that calls get_error_class and the param mapping entry points.
+  - No other function in litellm/llms/vercel_ai_gateway/ is left over; embedding/__init__.py is empty.
+pitfalls:
+  - map_openai_params assigns extra_body after the base mapping, so a caller extra_body that the base copied (it is in the supported list) is replaced, and an empty map goes out when providerOptions is absent or null.
+  - providerOptions is read from the incoming params after the base mapping ran, and the base drops it, so it only reaches the result through extra_body. The pop also removes it from the incoming map.
+  - The key chain ends with VERCEL_OIDC_TOKEN, so a request with only an OIDC token still gets a key. The model list fetch sends no Authorization header at all.
+  - The embedding prefix strip removes "vercel_ai_gateway/" once and only at the start, so "x/vercel_ai_gateway/y" is unchanged.
+  - The embedding request lays optional params over model and input, so an option named input wins over the real input.
+  - The embedding URL trims trailing slashes only from an explicit api_base. The environment value and the default are used as they are.
+  - Embedding headers are merged with a plain map overlay, so a caller header "content-type" does not replace "Content-Type" and both are sent.
+  - The model list takes `data[].id` in order and does not check for duplicates or a missing id beyond the shape error.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

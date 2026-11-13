@@ -1,0 +1,35 @@
+kind: helper
+name: budget_reset_settings_normalization
+call:
+  budget_reset:
+    reset_now: "2024-01-01T10:00:00Z"
+    calendar_now: "2024-06-15T12:00:00Z"
+    calendar_timezone: null
+    calls:
+      - {function: get_budget_reset_settings, settings: {}}
+      - {function: get_budget_reset_settings, settings: {timezone: null, budget_reset_time: null}}
+      - {function: get_budget_reset_settings, settings: {timezone: "", budget_reset_time: ""}}
+      - {function: get_budget_reset_settings, settings: {timezone: false}}
+      - {function: get_budget_reset_settings, settings: {timezone: 0}}
+      - {function: get_budget_reset_settings, settings: {timezone: 0.0}}
+      - {function: get_budget_reset_settings, settings: {timezone: []}}
+      - {function: get_budget_reset_settings, settings: {timezone: {}}}
+      - {function: get_budget_reset_settings, settings: {timezone: "UTC", budget_reset_time: "00:00"}}
+      - {function: get_budget_reset_settings, settings: {timezone: " Asia/Kolkata ", budget_reset_time: "6:5"}}
+      - {function: get_budget_reset_settings, settings: {timezone: "utc"}}
+      - {function: get_budget_reset_settings, settings: {timezone: 1}}
+      - {function: get_budget_reset_settings, settings: {timezone: -1}}
+      - {function: get_budget_reset_settings, settings: {timezone: 0.5}}
+      - {function: get_budget_reset_settings, settings: {timezone: true}}
+      - {function: get_budget_reset_settings, settings: {timezone: ["UTC"]}}
+      - {function: get_budget_reset_settings, settings: {timezone: {"name": "UTC"}}}
+      - {function: get_budget_reset_settings, settings: {budget_reset_time: "abc"}}
+      - {function: get_budget_reset_settings, settings: {budget_reset_time: "24:00"}}
+      - {function: get_budget_reset_settings, settings: {budget_reset_time: 42}}
+      - {function: get_budget_reset_settings, settings: {budget_reset_time: false}}
+      - {function: get_budget_reset_settings, settings: {budget_reset_time: 0}}
+      - {function: get_budget_reset_settings, settings: {budget_reset_time: []}}
+      - {function: get_budget_reset_settings, settings: {budget_reset_time: {}}}
+      - {function: get_budget_reset_settings, settings: {timezone: 1, budget_reset_time: 0}}
+env: {}
+compare: {ignore: []}

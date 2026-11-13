@@ -39,3 +39,4 @@ CREATE INDEX IF NOT EXISTS "LiteLLM_DailyOrganizationSpend_mcp_namespaced_tool_n
 
 -- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "LiteLLM_DailyOrganizationSpend_organization_id_date_api_key_key" ON "LiteLLM_DailyOrganizationSpend"("organization_id", "date", "api_key", "model", "custom_llm_provider", "mcp_namespaced_tool_name");
+

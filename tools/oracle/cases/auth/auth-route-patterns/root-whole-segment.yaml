@@ -1,0 +1,8 @@
+name: auth-route-patterns-http-root-whole-segment
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request: {"method": "GET", "path": "/proxy/v1/models", "headers": {}, "body": null}
+upstream: []
+compare: {"headers": ["content-type"], "headers_present": [], "upstream_headers": [], "ignore": []}

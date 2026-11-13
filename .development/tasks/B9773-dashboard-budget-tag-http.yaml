@@ -1,0 +1,98 @@
+id: B9773
+title: Pin budget filters and tag-editor HTTP contracts
+description: >-
+  Test the retained budgets and tag-management pages through B1703's management collection,
+  B829's budget mutations, B1603/B1604's tag handlers and B850's model catalog. B150-route-audit.md
+  records every query/body and its owner. The owners already plan isolated pagination,
+  update and validation cases; the missing coverage is the combined page filters, modal
+  projections and create/edit/delete reloads. Add only HTTP YAML, around 600 lines.
+
+  A B1630 transcript starts with B860/B5076's independent databases and seeded admin/viewer
+  credentials. Use the real POST /budget/new and /tag/new for setup that their typed fixtures
+  cannot seed, capturing generated IDs inside each proxy execution. GET
+  /management/v1/budgets initially sends page=1&page_size=50&sort=-created_at. Subsequent
+  requests use the page's selected page/page_size, sort, nonempty q and bracketed filter keys.
+  Exercise filter[budget_duration][in]=7d,30d separately from [is_null]=true, and
+  filter[max_budget][gte]/[lte] separately from [is_null]=true. Combine a normal duration
+  and amount range with filter[created_at][gte]/[lte] as explicit ISO instants corresponding
+  to the UI's selected local-day boundaries. Use a fixed broad range containing fixture
+  rows instead of modifying the process clock. Compare data and meta.total_count, including
+  rows' budget_id,max_budget,tpm_limit,rpm_limit,tpd_limit,budget_duration and created_at.
+
+  Both POST /budget/new and POST /budget/update receive budget_id and mounted optional
+  tpm_limit,rpm_limit,tpd_limit,max_budget,budget_duration fields. Use a 12-decimal rounded
+  monetary value from budgetPrecision, cleared numeric controls as null, and a collapsed
+  optional-budget panel that omits max_budget/budget_duration entirely. A successful modal
+  triggers the same management list request. POST /budget/delete has {id:budget_id}, never
+  {budget_id:...}; verify the subsequent list/count. Test roles from actual authentication,
+  including the source's stronger deletion guard, without inventing a client-only policy.
+
+  Tag creation sends name,description,models,max_budget,soft_budget,tpm_limit,rpm_limit and
+  budget_duration, excluding undefined controls. GET /tag/list sends no query and returns
+  a bare array, even though the page uses Object.values on it. Preserve name,description,
+  models,model_info,created_at,updated_at and litellm_budget_table. POST /tag/info sends
+  {names:[name]} and returns a name-keyed object. POST /tag/update sends name,description,
+  models,max_budget,budget_duration; tpm_limit/rpm_limit and soft_budget are not part of
+  this edit projection. Include an emptied models array and cleared optional limits, then
+  inspect the info result instead of claiming an unobserved preservation rule. POST
+  /tag/delete sends {name} and reloads the unfiltered list. Tag model choices GET
+  /v2/model/info?include_team_models=true&page=1&size=50, reading data[].model_name and
+  model_info.id; configure two fixed mock deployments so IDs and labels are actually present.
+
+  Reuse B9735's exact shared GET /tag/list selector case, not its distinct /budget/list
+  selector as a substitute for the paged management route. Assert status and content-type
+  on every step, and compare error type,param,code plus stable response fields. Normalize
+  only captured generated IDs and timestamps, never budget amounts, models or result counts.
+scope:
+  paths:
+    - tools/oracle/cases/ui/budget-tags/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/budgets/useBudgets.ts#L20-L47
+    why: The page uses the new management collection with its concrete filter fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/tag-management/_components/index.tsx#L43-L118
+    why: Actual tag create/delete bodies, array consumption and model-info arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/budgets.py#L139-L204
+    why: B1703 owns the decorator and list spec, not the legacy budget/list handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/budget_management_endpoints.py#L35-L202
+    why: Existing create/update routes preserve null versus omitted fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/budget_management_endpoints.py#L331-L362
+    why: The delete decorator and body id spelling consumed by B829.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tag_management_endpoints.py#L246-L350
+    why: B1603 owns tag creation and associated budget creation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tag_management_endpoints.py#L394-L719
+    why: Decorated tag update/info/list/delete operations and their different response envelopes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15288-L15529
+    why: B850's v2 model-info route, including its decorator and page parameters.
+dod:
+  - text: Paged budgets honor the simultaneous UI filters and modal serialization through create, edit, deletion and list reloads.
+    proof: [budget-tag-cases, oracle]
+  - text: Tag forms use the real model IDs, mutation bodies and array-versus-map envelopes, including authenticated error responses.
+    proof: [budget-tag-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: budget-tag-cases
+      why: Generic budget or tag service tests miss the retained pages' projections.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/budget-tags)"
+oracle_cases:
+  - tools/oracle/cases/ui/budget-tags/budget-defaults-filter-combinations.yaml
+  - tools/oracle/cases/ui/budget-tags/budget-null-filters-and-pagination.yaml
+  - tools/oracle/cases/ui/budget-tags/budget-modal-roundtrip-and-delete.yaml
+  - tools/oracle/cases/ui/budget-tags/budget-collapsed-panel-and-null-limits.yaml
+  - tools/oracle/cases/ui/budget-tags/tag-create-info-edit-delete.yaml
+  - tools/oracle/cases/ui/budget-tags/tag-model-info-ui-query.yaml
+  - tools/oracle/cases/ui/budget-tags/budget-and-tag-role-results.yaml
+  - tools/oracle/cases/ui/management-selectors/prompt-and-tag-options.yaml
+deviations: []
+out_of_scope:
+  - B9090 imports all budget/tag page functions and presentation tests; B829/B1703/B1603/B1604/B850 retain their complete backend implementations.
+  - B9735 owns shared tag and budget selectors; /budget/list is not called by the paginated budgets page.
+pitfalls:
+  - Object.values does not make /tag/list a name-keyed wire object; only /tag/info has that shape.
+  - The tag edit modal omits rate limits that the creation modal sends.
+  - Budget deletion's request field is id even though every displayed row identifies itself as budget_id.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,5 @@
+kind: helper
+name: openai-threads-missing-api-key
+call: {openai_threads: {get_thread: {options: {api_base: 'https://example.test/v1'}, thread_id: thread_1, aget_thread: true}}}
+env: {}
+compare: {ignore: []}

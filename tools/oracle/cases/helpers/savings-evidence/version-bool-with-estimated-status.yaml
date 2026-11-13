@@ -1,0 +1,12 @@
+kind: helper
+name: version-bool-with-estimated-status
+call:
+  savings_evidence:
+    operation: autorouter
+    metadata:
+      autorouter_savings_estimate:
+        version: true
+        status: estimated
+      autorouter_savings: 2.5
+compare: {ignore: []}
+env: {}

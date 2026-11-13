@@ -1,0 +1,54 @@
+kind: helper
+name: logging-state-no-log
+call:
+  logging_state:
+    instances:
+      - init:
+          model: gpt-4o
+          messages: "hello"
+          stream: false
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-plain
+          function_id: fn-plain
+          litellm_trace_id: trace-plain
+          litellm_params: {"no-log": true}
+        operations:
+          - op: should_run_callback
+            callback: external
+            litellm_params: {"no-log": true}
+          - op: should_run_callback
+            callback: proxy_internal
+            litellm_params: {"no-log": true}
+          - op: should_run_callback
+            callback: external
+            litellm_params: {}
+      - init:
+          model: gpt-4o
+          messages: "hello"
+          stream: false
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-global
+          function_id: fn-global
+          litellm_trace_id: trace-global
+          callback_policy: {"global_disable_no_log_param": true}
+        operations:
+          - op: should_run_callback
+            callback: external
+            litellm_params: {"no-log": true}
+      - init:
+          model: gpt-4o
+          messages: "hello"
+          stream: false
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-quoted
+          function_id: fn-quoted
+          litellm_trace_id: trace-quoted
+        operations:
+          - op: should_run_callback
+            callback: external
+            litellm_params: {"no-log": "true"}
+env: {}
+compare: {ignore: []}

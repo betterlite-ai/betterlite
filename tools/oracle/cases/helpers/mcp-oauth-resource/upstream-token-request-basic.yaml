@@ -1,0 +1,5 @@
+kind: helper
+name: "upstream-token-request-basic"
+call: {"b4654":{"function":"token_request","upstream_resource":"auto","url":"https://H:443/mcp/","server_id":"srv","auth_method":"client_secret_basic","client_id":"cid","client_secret":"sec"}}
+env: {}
+compare: {"ignore":[]}

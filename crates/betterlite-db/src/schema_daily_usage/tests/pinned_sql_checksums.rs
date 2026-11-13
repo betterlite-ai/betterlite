@@ -1,49 +1,158 @@
 use sha2::{Digest as _, Sha256};
 
-const EXPECTED_DIRECTORIES: [&str; 28] = [
+#[rstest]
+#[case::add_daily_user_table(
     "20250326171002_add_daily_user_table",
+    "48b046b5dcfe063869b28fd4c47ed4aa553707ccb02a42be276c43ae0d7cd612",
+    0
+)]
+#[case::add_api_requests_to_daily_user_table(
     "20250327180120_add_api_requests_to_daily_user_table",
+    "47ffc522eec4af95fc48c18d4f92b86a6dd6c755b2afb40dc4585b69ebd109da",
+    1
+)]
+#[case::new_cron_job_table(
     "20250329084805_new_cron_job_table",
+    "050f9d2bf329e99b1c294a5c137d73859dded58324af55696d5c7f51f7e281d4",
+    2
+)]
+#[case::track_success_and_failed_requests_daily_agg_table(
     "20250331215456_track_success_and_failed_requests_daily_agg_table",
+    "049767abdd55f43520a1c2201a9a99f7356be451bec8c7e52895301fa0e2eb61",
+    3
+)]
+#[case::add_managed_file_table(
     "20250411215431_add_managed_file_table",
+    "477ee9e678d0a6f4a3e97898b085a0dfb6ddd24730c28f46e68a700f37ee2d2f",
+    4
+)]
+#[case::team_member_permissions(
     "20250412081753_team_member_permissions",
+    "67b629914bbb8f6fa26c52fac9fd4940a96e5c1371d76dbadc620de66a554244",
+    5
+)]
+#[case::add_cache_read_write_tokens_daily_spend_transactions(
     "20250415151647_add_cache_read_write_tokens_daily_spend_transactions",
+    "bc904bdd0befbb6e2fb96b6f4bb7699d1c85518b85cce7f1822524d64d67c3ff",
+    6
+)]
+#[case::add_daily_team_table(
     "20250415191926_add_daily_team_table",
+    "f07d74cf601a93592bf6fb0cd732d21a261a23c461b4d64a5eb500b82f38e1c8",
+    7
+)]
+#[case::add_tag_table_to_db(
     "20250416115320_add_tag_table_to_db",
+    "7a4a9a98c40803f33f46ece325a233687df1d69402e7536b5e0ae3fb7cdb94d8",
+    8
+)]
+#[case::drop_tag_uniqueness_requirement(
     "20250416151339_drop_tag_uniqueness_requirement",
+    "e795d3fc96efff0b386425d5d1090319280317dd5954a01614f828a6e020302a",
+    9
+)]
+#[case::add_allowed_routes_litellm_verification_token(
     "20250416185146_add_allowed_routes_litellm_verification_token",
+    "35377cad4aaf835bd319f56811c344d53654ea664216f39c15ddd20434c1b69c",
+    10
+)]
+#[case::add_session_id(
     "20250425182129_add_session_id",
+    "1cb236b5c18b69b62b58e8c92cb762cb0be309cfdf2bfd935733ba198673d726",
+    11
+)]
+#[case::add_managed_vector_stores(
     "20250430193429_add_managed_vector_stores",
+    "d89c388b45a1367f0ad93543e56bfeaa32a391ff8adf1c18ab74003635446261",
+    12
+)]
+#[case::add_mcp_table_to_db(
     "20250507161526_add_mcp_table_to_db",
+    "f03c48cd15a994d4e6727cf4749ad27d52277da0d76561e9d7f50de94e8379b0",
+    13
+)]
+#[case::add_health_check_fields_to_mcp_servers(
     "20250507161527_add_health_check_fields_to_mcp_servers",
+    "b0cb512a90b674c5531b2c722048c936efefe834b3050715483d1b9c3c195de2",
+    14
+)]
+#[case::add_mcp_key_team_permission_mgmt(
     "20250507184818_add_mcp_key_team_permission_mgmt",
+    "3fc693f5dbdbb9968a6d95f2c940a04646b258eb671c70ff01bf4772e27e5979",
+    15
+)]
+#[case::add_status_to_spendlogs(
     "20250508072103_add_status_to_spendlogs",
+    "ad1052154ae85e7a3beac99764f23ee50feb0eb745a0970935a471d5e730f433",
+    16
+)]
+#[case::use_big_int_for_daily_spend_tables(
     "20250509141545_use_big_int_for_daily_spend_tables",
+    "50f6805ecaf21af5594ff4a739ffb5c87bb96ca3d356bda03f7cd8eb814a47ba",
+    17
+)]
+#[case::add_session_id_index_spend_logs(
     "20250510142544_add_session_id_index_spend_logs",
+    "f718b2a74f2a8529c079242e36330206a17b985d31d36e16fc31861090a74c93",
+    18
+)]
+#[case::add_guardrails_table(
     "20250514142245_add_guardrails_table",
+    "67fdce0f3f25d350bc661f8f32b747ee7cd3e18dab46a90f72ef7e46024098af",
+    19
+)]
+#[case::managed_object_table(
     "20250522223020_managed_object_table",
+    "9f4099edfb29658b8330afec322d97f2f1233fae81946c51521bbdcde5bf67e0",
+    20
+)]
+#[case::allow_null_entity_id(
     "20250526154401_allow_null_entity_id",
+    "3bd0b7fd731a1d2e43aaefc346dca6f3d6e1b29022792422429c4ad4c4d06604",
+    21
+)]
+#[case::add_vector_stores_to_object_permissions(
     "20250528185438_add_vector_stores_to_object_permissions",
+    "55939a32735a821668ea76cf37ad550e0f567225eec6d7595221a9f7445e5854",
+    22
+)]
+#[case::cascade_budget_changes(
     "20250603210143_cascade_budget_changes",
+    "c2eb9e521552dbb2f7f14652a7f0d66c892589745ef121c1799e06fa5bd53e2d",
+    23
+)]
+#[case::add_health_check_table(
     "20250618225828_add_health_check_table",
+    "9e8723ee10d9ce8c5dcad41da4bcb2f8db2d7cab415eff59eb3ecc38b698d2e9",
+    24
+)]
+#[case::cascade_budget_and_loosen_managed_file_json(
     "20250625145206_cascade_budget_and_loosen_managed_file_json",
+    "4ae034e93702511a6641b53102836f239cfee44393703b4ac0be0a5849f69bde",
+    25
+)]
+#[case::add_status_to_managed_object_table(
     "20250625213625_add_status_to_managed_object_table",
+    "a397ffbfaba32f88d7d453b28f24e3dc8dc240974926e0456d9eaab06fb34b09",
+    26
+)]
+#[case::add_mcp_info_column_mcp_servers(
     "20250707212517_add_mcp_info_column_mcp_servers",
-];
-
-fn assert_catalog_matches(files: &[MigrationFile], expected_directories: &[&str; 28]) {
-    for (file, expected_directory) in files.iter().zip(expected_directories.iter().copied()) {
-        assert_eq!(file.directory, expected_directory);
-        let digest = hex::encode(Sha256::digest(file.bytes));
-        assert_eq!(
-            digest, file.sha256,
-            "checksum mismatch for {expected_directory}"
-        );
-    }
+    "820dbb9d88eba37648b5e65c2beedfaa022276fc5a704a8fddafb5e36dcc9038",
+    27
+)]
+fn pinned_sql_checksums(
+    #[case] directory: &str,
+    #[case] expected_sha256: &str,
+    #[case] position: usize,
+) {
+    let file = &MIGRATION_CATALOG.files[position];
+    assert_eq!(file.directory, directory);
+    assert_eq!(hex::encode(Sha256::digest(file.bytes)), expected_sha256);
+    assert_eq!(file.sha256, expected_sha256);
 }
 
 #[test]
-fn pinned_sql_checksums() {
-    assert_eq!(MIGRATION_CATALOG.files.len(), EXPECTED_DIRECTORIES.len());
-    assert_catalog_matches(MIGRATION_CATALOG.files, &EXPECTED_DIRECTORIES);
+fn pinned_sql_catalog_size() {
+    assert_eq!(MIGRATION_CATALOG.files.len(), 28);
 }

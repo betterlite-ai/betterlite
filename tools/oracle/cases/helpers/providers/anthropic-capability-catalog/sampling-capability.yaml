@@ -1,0 +1,30 @@
+kind: helper
+name: sampling-capability
+call:
+  anthropic_capability_catalog:
+    fixture:
+      model_cost:
+        claude-opus-4-6: {litellm_provider: anthropic, supports_sampling_params: true}
+        claude-opus-4-7: {litellm_provider: anthropic, supports_sampling_params: false}
+        claude-sonnet-4-5: {litellm_provider: anthropic}
+        claude-fable-lite: {litellm_provider: anthropic, supports_sampling_params: true}
+      packaged: {}
+      thresholds: {medium: 2048, high: 4096, xhigh: 8192}
+    steps:
+      - {function: sampling_capability, model: claude-sonnet-4-5, param: temperature, value: 0.5, output_key: temperature, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-opus-4-8, param: temperature, value: 1, output_key: temperature, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-opus-4-8, param: temperature, value: 1.0, output_key: temperature, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-opus-4-8, param: temperature, value: true, output_key: temperature, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-opus-4-8, param: temperature, value: 0.5, output_key: temperature, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-opus-4-8, param: temperature, value: 0.5, output_key: temperature, drop_params: true, global_drop_params: false}
+      - {function: sampling_capability, model: claude-opus-4-8, param: top_p, value: 0.9, output_key: top_p, drop_params: false, global_drop_params: true}
+      - {function: sampling_capability, model: claude-opus-4-8, param: top_p, value: 0.9, output_key: top_p, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-opus-4-8, param: top_k, value: 5, output_key: top_k, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-opus-4-8, param: top_p, value: 1, output_key: top_p, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-opus-4-8, param: top_k, value: 1, output_key: top_k, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-opus-4-6, param: top_k, value: 5, output_key: top_k, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-opus-4-7, param: temperature, value: 0.2, output_key: temperature, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-fable-lite, param: temperature, value: 0.2, output_key: temperature, drop_params: false, global_drop_params: false}
+      - {function: sampling_capability, model: claude-fable-5, param: temperature, value: 2, output_key: temperature, drop_params: false, global_drop_params: false}
+env: {}
+compare: {ignore: []}

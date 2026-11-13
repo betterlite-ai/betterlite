@@ -1,6 +1,8 @@
 pub mod error;
 pub mod passthrough_reconstruction;
+pub mod provider_chunk_decode;
 pub mod stream_base_assembly;
+pub mod stream_chunk_shaping;
 pub mod stream_content_assembly;
 pub mod stream_tool_assembly;
 pub mod stream_usage_assembly;

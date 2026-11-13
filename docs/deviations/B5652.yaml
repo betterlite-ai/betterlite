@@ -1,0 +1,8 @@
+task: B5652
+deviations:
+  - what: A chunk without choices has no content, tool calls or role, instead of raising IndexError and failing the request with a 500.
+    why: No working LiteLLM setup streams a chunk without choices through these rules, so the raise only turns a broken chunk into a dropped request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L819-L880
+  - what: A generic chunk's usage is read into the typed Usage, so the counters the provider left out come back as zero rather than missing.
+    why: LiteLLM copies the raw usage dictionary onto the chunk there, while betterlite's chunk has one typed usage field every other path fills the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L2491-L2492

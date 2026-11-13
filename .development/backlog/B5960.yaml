@@ -1,0 +1,17 @@
+id: B5960
+milestone: M3 providers
+title: SageMaker TGI completion, Messages API chat and Nova request transforms
+status: todo
+depends_on: [B004, B011, B177, B503, B504, B668]
+file: tasks/B5960-sagemaker-completion-chat.yaml
+covers:
+  - "litellm/llms/sagemaker/completion/transformation.py"
+  - "litellm/llms/sagemaker/nova/**"
+  - "litellm/llms/sagemaker/chat/transformation.py"
+  - "litellm/llms/sagemaker/common_utils.py"
+parent: B042
+split_from: B5840
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

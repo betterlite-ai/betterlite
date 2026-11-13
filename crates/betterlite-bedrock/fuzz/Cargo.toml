@@ -3,12 +3,17 @@ name = "betterlite-bedrock-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
 
 [dependencies]
 betterlite-bedrock = { path = ".." }
+bytes = "1.12.1"
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
@@ -18,4 +23,79 @@ test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "bedrock_event_frames"
+path = "fuzz_targets/bedrock_event_frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_converse_content"
+path = "fuzz_targets/bedrock_converse_content.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_image_reply"
+path = "fuzz_targets/bedrock_image_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_services_agentcore_response"
+path = "fuzz_targets/bedrock_services_agentcore_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_services_s3_access"
+path = "fuzz_targets/bedrock_services_s3_access.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_services_agentcore_stream"
+path = "fuzz_targets/bedrock_services_agentcore_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_web_identity"
+path = "fuzz_targets/bedrock_web_identity.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_services_batch_create"
+path = "fuzz_targets/bedrock_services_batch_create.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_services_batch_status"
+path = "fuzz_targets/bedrock_services_batch_status.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_services_vector_stores"
+path = "fuzz_targets/bedrock_services_vector_stores.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_other_count_call"
+path = "fuzz_targets/bedrock_other_count_call.rs"
+test = false
+doc = false
+bench = false

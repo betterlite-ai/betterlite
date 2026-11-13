@@ -1,0 +1,17 @@
+task: B5952
+deviations:
+  - what: In Sync mode a chunk that fails to parse surfaces as a typed stream error, not a pydantic ValidationError.
+    why: The Python exception class is a library detail. The caller sees the same failure at the same point, and Async mode still reports status 502.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/handler.py#L153-L157
+  - what: A JSON line that is not an object is ignored, and a final_result or orchestration_result value of a type the event cannot hold is an error that names the field. LiteLLM tests membership and calls .get on the value itself, so a JSON number raises TypeError and a string or array containing "code" or "error" reads as an error event.
+    why: The declared event type is a dict, and Python's membership and attribute access on another type are runtime accidents that escape the ValueError handler. Ignoring non-object lines matches what LiteLLM does for arrays and ordinary strings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/handler.py#L87-L88
+  - what: A final_result, passthrough or orchestration chunk is validated against betterlite's chunk record, which rejects fields it does not declare and reads created and index as unsigned integers; LiteLLM's pydantic model keeps unknown fields on the chunk and accepts a negative created or index.
+    why: The record from B004 declares the chunk shape once for every provider, so SAP maps onto it instead of carrying a second chunk type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/handler.py#L96
+  - what: finish_reason, service_tier and the delta role are plain strings in betterlite's chunk record, so a value outside OpenAI's literal sets passes, and a tool call without arguments gains an empty arguments string; LiteLLM rejects the literal values and omits the absent arguments.
+    why: The same B004 record carries these fields for every provider, and a provider stop reason must not fail a stream betterlite could pass on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/handler.py#L58-L73
+  - what: created falls back to the now the caller passes to SapLineStream, so every chunk built from an event without created carries that one timestamp. LiteLLM calls _now_ts() as each chunk is built.
+    why: Clocks are injected dependencies (rule inject-dependencies), so the stream takes the request's time once instead of reading the wall clock mid-stream, and the OpenAI chunk contract says a stream's chunks share one timestamp.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/handler.py#L31-L32

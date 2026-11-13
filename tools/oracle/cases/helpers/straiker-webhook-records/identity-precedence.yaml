@@ -1,0 +1,19 @@
+kind: helper
+name: identity-precedence
+call:
+  b3795:
+    identity:
+      request_data:
+        metadata:
+          user_api_key_token: token-1
+          user_api_key_hash: hash-1
+          user_api_key_team_id: team-id-1
+        litellm_metadata:
+          user_api_key_alias: key-alias
+          user_api_key_team_alias: team-alias
+          user_api_key_user_id: user-7
+          user_api_key_user_email: user@example.com
+          user_api_key_org_id: org-1
+          user_api_key_end_user_id: end-9
+env: {}
+compare: {ignore: []}

@@ -104,19 +104,19 @@ checks:
       run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_prompt_manager::.*async/)'
     - id: bitbucket-compiler-parse-tests
       why: _parse_prompt_to_messages with role prefixes and blank line tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_compiler_parse_tests::|^bitbucket_prompt_manager::.*parse/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket::(.*::)?bitbucket_compiler_parse_tests::|^bitbucket_prompt_manager::.*parse/)'
     - id: bitbucket-compiler-parse-no-prefix
       why: _parse_prompt_to_messages no-role-prefix fallback test fails or does not exist
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_compiler_parse_tests::no_role_prefix_single_user_message/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket::(.*::)?bitbucket_compiler_parse_tests::no_role_prefix_single_user_message/)'
     - id: bitbucket-compiler-parse-blank
       why: _parse_prompt_to_messages blank/whitespace-only template test fails or does not exist
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_compiler_parse_tests::blank_template_empty_list/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket::(.*::)?bitbucket_compiler_parse_tests::blank_template_empty_list/)'
     - id: bitbucket-compiler-global-tests
       why: set_global_bitbucket_config tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_global_config_tests::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket::(.*::)?bitbucket_global_config_tests::/)'
     - id: bitbucket-compiler-registry-tests
       why: prompt_initializer_registry tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket_initializer_registry_tests::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^bitbucket::(.*::)?bitbucket_initializer_registry_tests::/)'
 oracle_cases:
   - tools/oracle/cases/prompts/bitbucket/compile-basic.yaml
   - tools/oracle/cases/prompts/bitbucket/compile-with-params.yaml

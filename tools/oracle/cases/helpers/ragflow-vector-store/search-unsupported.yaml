@@ -1,0 +1,9 @@
+kind: helper
+name: ragflow-search-unsupported
+call:
+  b7814:
+    calls:
+      - call: search_request
+      - call: search_response
+env: {}
+compare: {ignore: []}

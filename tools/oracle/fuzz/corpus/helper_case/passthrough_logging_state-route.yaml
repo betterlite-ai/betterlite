@@ -1,0 +1,10 @@
+kind: helper
+name: passthrough-logging-state-route
+call:
+  b3605:
+    operation: route
+    routes:
+      - {url_route: "https://api.anthropic.com/v1/messages", custom_llm_provider: null}
+      - {url_route: "https://example.com/v0/agents", custom_llm_provider: cursor}
+env: {}
+compare: {ignore: []}

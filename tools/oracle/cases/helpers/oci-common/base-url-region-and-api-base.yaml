@@ -1,0 +1,18 @@
+kind: helper
+name: oci-common-base-url-region-and-api-base
+call:
+  b5940:
+    function: base_url
+    explicit:
+      oci_region: eu-frankfurt-1
+    env: {}
+    api_bases:
+      - null
+      - https://inference.generativeai.us-ashburn-1.oci.oraclecloud.com/20231130/actions/chat/
+      - https://host/base/20231130/actions/embedText/
+      - https://host/20231130/actions/chat?x=1
+      - https://host///
+      - https://host/x/20231130/actions/a/b
+      - https://host/20231130/actions/chat//
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: gdc-request-policy-full-project-url-bypass-seed
+call:
+  gdc_request_policy:
+    scenarios:
+      - config:
+          model_list:
+            - litellm_params: {}
+          litellm_settings:
+            gdc_api_base: https://gateway.example/v1/projects/prebuilt/locations/eu/
+        urls:
+          - {model: gdc/gemini-2.5-pro, deployment: 0, optional_params: {}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,171 @@
+id: B4310
+title: Resolve semantic-cache embedding routing and input limits
+description: >-
+  Port the five functions of litellm/caching/_embedding_router.py into a new module `semantic_embedding_inputs` in betterlite-router.
+  The Redis and Qdrant semantic caches call them before every embedding request: they decide whether the embedding goes through the proxy Router, what metadata it carries, how many tokens the input may have, how long the call may take, and cut the input down to that size.
+  B4381 builds the embedding calls on top of this module, so the functions take their state as arguments and read no globals.
+
+  `resolve_embedding_router<'a, R>(embedding_model: &str, llm_router: Option<&'a R>, llm_model_list: Option<&[ModelListEntry]>) -> Option<&'a R>`.
+  `ModelListEntry` is a struct with one field, `model_name: Option<String>`, the only key LiteLLM reads from a model-list row (`"model_name" in m`).
+  No router gives None.
+  A router with no model list gives None, because the list of names is then empty.
+  A router whose list has an entry with `model_name` equal to the embedding model gives the router, and every other case gives None.
+  Entries without a `model_name` are skipped, and the comparison is exact (no wildcard, no case folding).
+
+  `build_router_embedding_metadata(request_metadata: Option<&Map<String, Value>>) -> Map<String, Value>` copies the caller's metadata (an empty map for None) and sets `"semantic-cache-embedding"` to `true`.
+  The caller's map is never changed.
+  A caller key with the same name is overwritten and keeps its position; a new key goes last.
+  Use the map type the router crate already uses for request metadata, and make sure it keeps insertion order.
+
+  `resolve_embedding_max_input_tokens(configured: Option<i64>, embedding_model: &str, router: Option<&dyn ConfiguredTokenLimits>) -> Option<i64>`.
+  A configured value wins, including 0 and negative numbers.
+  Otherwise no router gives None, and a router gives the first element of its `get_configured_token_limits(embedding_model)` pair.
+  `ConfiguredTokenLimits` is a trait defined in this module with one method, `fn get_configured_token_limits(&self, model_name: &str) -> (Option<i64>, Option<i64>)`.
+  B845 owns the real Router method (router.py L10492-L10517); this task only calls it through the trait and does not read deployments itself.
+
+  `resolve_embedding_timeout(configured: Option<f64>, default_seconds: f64) -> f64` returns the configured value when there is one (0 and negatives too) and `default_seconds` otherwise.
+  The default comes from a new config section, `semantic_embedding_inputs` (crates/betterlite-config/src/sections/semantic_embedding_inputs.rs and semantic_embedding_inputs/**).
+  It reads the env var `SEMANTIC_CACHE_EMBEDDING_TIMEOUT_SECONDS` (constants.py L573-L575, default 5.0) and reaches other crates as `config.sections.semantic_embedding_inputs`.
+  A value that does not parse as a float is a typed config error, the way LiteLLM fails at import with ValueError.
+  Surrounding whitespace is trimmed first, as Python's `float()` does.
+
+  `truncate_embedding_input(prompt: &str, embedding_model: &str, max_input_tokens: Option<i64>) -> Result<String, EmbeddingInputError>`.
+  None returns the prompt unchanged without touching a tokenizer.
+  Otherwise encode the prompt with B195's `select` for `embedding_model` and that engine's encode, with no custom tokenizer.
+  When the token count is at most `max_input_tokens`, return the prompt unchanged.
+  When it is more, decode the first `max_input_tokens` ids with the same engine and return the text.
+  Take the first N with Python slice rules: 0 decodes an empty list, and a negative N drops that many ids from the end (`tokens[:-2]`), so with a negative limit the count is never `<=` and the slice always runs.
+  Match whichever sync or async shape B195's `select` has; if it is async, this function is async and B4381 awaits it.
+  `EmbeddingInputError` has one variant per failing step (select, encode, decode), each holding B195's typed error as `#[source]`.
+  LiteLLM lets those exceptions propagate, and so does this function.
+
+  Write behavior tests as rstest functions in `semantic_embedding_inputs::tests`, with the name prefixes in the checks below and one named case per branch.
+  For truncation, use a model such as `text-embedding-3-small`: B195 selects the bundled cl100k_base for it, so no test needs the network.
+  Add one helper case file per function, listed below.
+  The Python adapter builds a real `litellm.Router` from the case's `model_list` (an openai deployment with a placeholder key, which makes no network call) and sets `model_info.max_input_tokens` where the case needs it.
+  It calls the pinned `_embedding_router` functions and reports router identity as a boolean.
+
+scope:
+  paths:
+    - crates/betterlite-router/src/semantic_embedding_inputs.rs
+    - crates/betterlite-router/src/semantic_embedding_inputs/**
+    - crates/betterlite-config/src/sections/semantic_embedding_inputs.rs
+    - crates/betterlite-config/src/sections/semantic_embedding_inputs/**
+    - tools/oracle/cases/helpers/semantic-embedding-inputs/**
+    - "tools/oracle/fuzz/corpus/helper_case/semantic_embedding_inputs-*"
+    - tools/oracle/helpers/b4310.py
+    - tools/oracle/helpers/b4310/**
+    - tools/oracle/src/helpers/router/b4310.rs
+    - tools/oracle/src/helpers/router/b4310/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/_embedding_router.py#L25-L79
+    why: All five functions this task ports; nothing else in the file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L331-L375
+    why: Call site that shows how the results are used (router, truncated input, metadata, timeout).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L220-L252
+    why: The Qdrant call site, same five functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10492-L10517
+    why: The method behind ConfiguredTokenLimits; B845 owns it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2472-L2515
+    why: litellm.encode and litellm.decode, which truncation calls; B195 owns them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L573-L575
+    why: SEMANTIC_CACHE_EMBEDDING_TIMEOUT_SECONDS env var and its 5.0 default.
+
+dod:
+  - text: Router resolution returns the router only when a router and a model list are present and an entry's model_name equals the embedding model.
+    proof: [router-tests, oracle, helper-python]
+  - text: Embedding metadata is a copy of the caller's metadata with "semantic-cache-embedding" set to true, and the caller's map is unchanged.
+    proof: [metadata-tests, oracle, helper-python]
+  - text: A configured max input token count wins over the deployment's limit, and no router or an unknown model gives None.
+    proof: [max-tokens-tests, oracle, helper-python]
+  - text: The embedding timeout is the configured value when given and the section's default otherwise, and the section reads SEMANTIC_CACHE_EMBEDDING_TIMEOUT_SECONDS with default 5.0.
+    proof: [timeout-tests, settings-tests, oracle, helper-python]
+  - text: Truncation leaves the prompt alone for None or a short input, and keeps the first N tokens (Python slice rules for 0 and negative N) otherwise.
+    proof: [truncate-tests, oracle, helper-python]
+  - text: New helper seeds exist and replay through the shared helper parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: router-tests
+      why: router resolution tests are missing or a branch differs
+      run: >-
+        cargo nextest run --locked -p betterlite-router --no-tests=fail
+        -E 'test(/^semantic_embedding_inputs::tests::router_/)'
+    - id: metadata-tests
+      why: metadata copy tests are missing or the flag or copy differs
+      run: >-
+        cargo nextest run --locked -p betterlite-router --no-tests=fail
+        -E 'test(/^semantic_embedding_inputs::tests::metadata_/)'
+    - id: max-tokens-tests
+      why: max input token resolution tests are missing or the precedence differs
+      run: >-
+        cargo nextest run --locked -p betterlite-router --no-tests=fail
+        -E 'test(/^semantic_embedding_inputs::tests::max_tokens_/)'
+    - id: timeout-tests
+      why: timeout resolution tests are missing or the precedence differs
+      run: >-
+        cargo nextest run --locked -p betterlite-router --no-tests=fail
+        -E 'test(/^semantic_embedding_inputs::tests::timeout_/)'
+    - id: truncate-tests
+      why: truncation tests are missing or a slice rule differs
+      run: >-
+        cargo nextest run --locked -p betterlite-router --no-tests=fail
+        -E 'test(/^semantic_embedding_inputs::tests::truncate_/)'
+    - id: settings-tests
+      why: the section test is missing or the env var, default or bad-value error differs
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::semantic_embedding_inputs::tests::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4310)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4310 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4310/pyrightconfig.json
+    - id: helper-case-corpus
+      why: new helper seeds are missing or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/semantic_embedding_inputs-*")" &&
+        grep -lE '^[[:space:]]+b4310:' tools/oracle/fuzz/corpus/helper_case/semantic_embedding_inputs-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/semantic-embedding-inputs/router-resolution.yaml
+  - tools/oracle/cases/helpers/semantic-embedding-inputs/router-metadata.yaml
+  - tools/oracle/cases/helpers/semantic-embedding-inputs/max-input-tokens.yaml
+  - tools/oracle/cases/helpers/semantic-embedding-inputs/timeout.yaml
+  - tools/oracle/cases/helpers/semantic-embedding-inputs/truncate.yaml
+
+deviations:
+  - what: A SEMANTIC_CACHE_EMBEDDING_TIMEOUT_SECONDS value that Rust's f64 parser rejects (Python-only spellings such as "1_0") is a config error.
+    why: Python float() accepts underscore digit separators; Rust does not, and docs/compatibility.md leaves such runtime parsing out.
+  - what: The configured timeout and max input tokens are typed numbers (f64 and i64) and nothing else.
+    why: LiteLLM declares float | None and int | None, and input of another type is outside the declared contract.
+
+out_of_scope:
+  - Router.get_configured_token_limits and the deployment lookup behind it; B845 owns them, and the trait impl on its type is theirs.
+  - litellm.encode, litellm.decode, tokenizer selection and Hub downloads; B195 owns them.
+  - The embedding calls, the asyncio.wait_for wrapper, vector extraction and error wrapping in redis_semantic_cache.py and qdrant_semantic_cache.py; B4381 owns them.
+  - Constructor handling of embedding_max_input_tokens and embedding_timeout inside the Redis and Qdrant caches; B4382 and B4383 own it and call resolve_embedding_timeout.
+
+pitfalls:
+  - resolve_embedding_router checks `"model_name" in m`, so a row without model_name is skipped and does not raise.
+  - A router with llm_model_list None gives None even though the router exists; the name list is then empty.
+  - resolve_embedding_max_input_tokens uses `is not None`, so a configured 0 is returned as 0 and never falls through to the router.
+  - resolve_embedding_timeout also uses `is not None`, so 0.0 is kept.
+  - get_configured_token_limits returns (None, None) for a wildcard or unknown name, so the result is None and truncation is skipped.
+  - truncate_embedding_input must not call encode at all when max_input_tokens is None.
+  - The length test is `len(tokens) <= max_input_tokens`, so a prompt of exactly N tokens is returned as the original string, not a decode round trip.
+  - Decoding a cut at N can split a multi-byte character into replacement characters; return whatever B195's decode gives and do not repair it.
+  - The metadata key is spelled with hyphens, `semantic-cache-embedding`, and the value is the boolean true, not the string.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

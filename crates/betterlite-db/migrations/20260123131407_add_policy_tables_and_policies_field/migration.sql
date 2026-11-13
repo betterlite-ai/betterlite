@@ -48,3 +48,4 @@ CREATE TABLE IF NOT EXISTS "LiteLLM_PolicyAttachmentTable" (
 
 -- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "LiteLLM_PolicyTable_policy_name_key" ON "LiteLLM_PolicyTable"("policy_name");
+

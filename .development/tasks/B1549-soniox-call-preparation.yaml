@@ -33,8 +33,6 @@ description: >-
   230 tests and 160 oracle/fuzz lines within 700 changed lines.
 scope:
   paths:
-    - crates/betterlite-core/src/api/soniox.rs
-    - crates/betterlite-core/src/api/soniox/**
     - crates/betterlite-core/src/api/soniox/prepare.rs
     - crates/betterlite-core/src/api/soniox/prepare/**
     - crates/betterlite-core/fuzz/Cargo.toml

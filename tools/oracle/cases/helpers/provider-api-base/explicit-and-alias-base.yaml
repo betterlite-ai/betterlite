@@ -1,0 +1,10 @@
+kind: helper
+name: provider-api-base-explicit-and-alias-base
+call:
+  b7320:
+    model: gemini/gemini-pro
+    params:
+      api_base: https://explicit.test/v1
+      base_url: https://alias.test/v1
+env: {}
+compare: {ignore: []}

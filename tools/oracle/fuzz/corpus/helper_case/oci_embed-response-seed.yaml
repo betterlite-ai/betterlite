@@ -1,0 +1,10 @@
+kind: helper
+name: oci-embed-response-seed
+call:
+  b5941:
+    steps:
+      - method: response
+        status: 200
+        body: '{"embeddings":[[0.5]],"modelId":"seed","modelVersion":"1"}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: auth-route-patterns-root-whole-segment
+env: {}
+compare: {ignore: []}
+call:
+  auth_route_patterns:
+    function: scope
+    requests:
+      - {"name": "root_whole_segment", "path": "/proxy/v1/models", "root_path": "/proxy", "url_path": "/wrong"}

@@ -1,0 +1,18 @@
+kind: helper
+name: inline-media-invalid-base64
+call:
+  inline_media:
+    call: inline
+    mode: sequential
+    messages:
+      - role: user
+        content:
+          - type: document
+            source:
+              type: url
+              url: "https://files.example.com/broken.pdf"
+    data_urls:
+      "https://files.example.com/broken.pdf": "data:application/pdf;base64,!!!not-base64!!!"
+env: {}
+compare:
+  ignore: []

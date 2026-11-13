@@ -1,0 +1,92 @@
+id: B8143
+title: "AWS Terraform module: example root and README"
+description: >-
+  Add the runnable example and the README for the AWS module in packaging/terraform/aws/. The module itself (B8140, B8141, B8142) has no provider block, so the example root is where the aws provider
+  is configured and where a person runs terraform apply.
+
+  packaging/terraform/aws/examples/default/ holds: versions.tf (required_version ">= 1.13.0", aws provider "~> 6.0" and random "~> 3.6", the same constraints as the module's versions.tf), providers.tf (one provider "aws" block
+  with region = var.region and default_tags of managed_by = "terraform"), variables.tf (region with default "us-east-1", tenant with default "demo", env with default "dev", image with no default, litellm_master_key sensitive with no default,
+  acm_certificate_arn default "", allow_plaintext_alb default false), main.tf (one module "betterlite" with source = "../.." passing those variables through, create_database and create_redis left at their module defaults),
+  outputs.tf (alb_url, alb_dns_name, ecs_cluster, migration_run_command and db_bootstrap_sql, each read from the module), terraform.tfvars.example (every variable with a sample value, the master key as "sk-change-me" and a comment line
+  telling the reader to replace it) and a .terraform.lock.hcl made with `terraform providers lock -platform=linux_amd64 -platform=linux_arm64 -platform=darwin_arm64` in that folder.
+
+  packaging/terraform/aws/README.md has these sections in this order: what the module builds (VPC or your own, Aurora PostgreSQL with IAM auth, ElastiCache Redis, one Fargate service, an ALB, an S3 bucket, Secrets Manager entries);
+  a quick start of five numbered steps (copy terraform.tfvars.example, set image and the master key, terraform init, terraform apply, curl the alb_url plus /health/readiness); the inputs table grouped by file (names, types, defaults, copied
+  from the variables files, not retyped from memory); the outputs table; bring your own network and stores (vpc_id, subnet ids, existing database URL and Redis URL secrets); TLS (acm_certificate_arn, or allow_plaintext_alb for a test);
+  the database bootstrap and migration order (the bootstrap task grants the IAM user, then the migration task runs `betterlite-db-admin migrate`, then the service starts); autoscaling; the connection pool; what is not built compared with
+  LiteLLM (the collector and metrics sidecars, billing metrics, the separate backend and ui services) and how to run the module tests (`terraform -chdir=packaging/terraform/aws test`). The README names no secret value and no real account id.
+
+  The checks copy the example into nothing: they run init and validate inside the example folder, which uses the module through the relative source, so a broken module fails here as well.
+
+scope:
+  paths:
+    - packaging/terraform/aws/examples/**
+    - packaging/terraform/aws/README.md
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/tree/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default
+    why: The example files to port, trimmed to one service.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/README.md
+    why: The README sections and the input and output tables.
+
+dod:
+  - text: The example root has the seven files listed and its lock file, and the provider block is only in the example.
+    proof: [aws-example-layout, aws-example-provider]
+  - text: The example passes fmt, init with the locked providers and validate.
+    proof: [aws-example-validate]
+  - text: The README has the listed sections and every module input and output name appears in it.
+    proof: [aws-readme-sections, aws-readme-names]
+
+checks:
+  optional: []
+  commands:
+    - id: aws-example-layout
+      why: An example file is missing.
+      run: >-
+        for f in versions.tf providers.tf variables.tf main.tf outputs.tf terraform.tfvars.example .terraform.lock.hcl; do test -f "packaging/terraform/aws/examples/default/$f" || { echo "missing $f"; exit 1; }; done
+    - id: aws-example-provider
+      why: The provider block is in the module or missing from the example.
+      run: >-
+        grep -q '^provider "aws"' packaging/terraform/aws/examples/default/providers.tf && ! grep -rq '^provider "' --include='*.tf' packaging/terraform/aws --exclude-dir=examples --exclude-dir=.terraform
+    - id: aws-example-validate
+      why: The example does not format, initialize or validate.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/aws-example" TF_IN_AUTOMATION=1 && terraform -chdir=packaging/terraform/aws/examples/default fmt -check -diff &&
+        terraform -chdir=packaging/terraform/aws/examples/default init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/aws/examples/default validate
+    - id: aws-readme-sections
+      why: A README section is missing.
+      run: >-
+        for s in 'Quick start' 'Inputs' 'Outputs' 'Bring your own' 'TLS' 'Migration' 'Autoscaling' 'Connection pool' 'Not built' 'Tests'; do grep -q "^## .*$s" packaging/terraform/aws/README.md || { echo "missing section $s"; exit 1; }; done
+    - id: aws-readme-names
+      why: A module variable or output is not in the README.
+      run: >-
+        for f in packaging/terraform/aws/variables*.tf; do for n in $(grep -o '^variable "[a-z_0-9]*"' "$f" | cut -d'"' -f2); do grep -q "\`$n\`" packaging/terraform/aws/README.md || { echo "README lacks variable $n"; exit 1; }; done; done;
+        for n in $(grep -o '^output "[a-z_0-9]*"' packaging/terraform/aws/outputs.tf | cut -d'"' -f2); do grep -q "\`$n\`" packaging/terraform/aws/README.md || { echo "README lacks output $n"; exit 1; }; done
+
+oracle_cases: []
+
+deviations:
+  - what: The example has one module call and no separate gateway, backend or ui settings.
+    why: The module runs one service.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/main.tf
+  - what: The image variable in the example has no default.
+    why: There is no published betterlite image name yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/examples/default/variables.tf
+
+out_of_scope:
+  - "A GitHub Actions workflow that runs these checks. The gate runs them; a workflow is not planned here."
+  - "The GCP example and README. Owned by B8147."
+  - "The root packaging/terraform/README.md. Owned by B154."
+
+pitfalls:
+  - "The lock file must come from `terraform providers lock`, never written by hand, and must list hashes for the three platforms."
+  - "`-lockfile=readonly` makes init fail if the constraints in versions.tf and the lock file disagree, which is the point; do not loosen the check."
+  - "The checks read the module's variables files by glob, so a variable added later must also get a README row."
+  - "Never put a real master key or account id in terraform.tfvars.example."
+
+review_level: standard
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

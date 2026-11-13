@@ -1,0 +1,15 @@
+kind: helper
+name: model-split-proxy-vs-sdk
+call:
+  b3841:
+    function: context
+    payload:
+      model_group: public-model
+      model: azure/deployment
+      response:
+        model: response-model
+      metadata:
+        model_info:
+          id: deployment-id
+env: {}
+compare: {ignore: []}

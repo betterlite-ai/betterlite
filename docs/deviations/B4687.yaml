@@ -1,0 +1,11 @@
+task: B4687
+deviations:
+  - what: >-
+      The builder omits help_url values whose WHATWG-normalized parsed scheme is
+      javascript, data or vbscript, while LiteLLM emits these links after HTML escaping.
+      Ordinary HTTP(S) and relative links remain supported.
+    why: >-
+      HTML escaping does not neutralize executable URL schemes. Suppressing
+      active-content links prevents script navigation from the API-key entry page;
+      the value comes from configured MCP server metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L229-L231

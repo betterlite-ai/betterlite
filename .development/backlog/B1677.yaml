@@ -1,7 +1,7 @@
 id: B1677
 milestone: M4 keys, spend and management
 title: Charge the Foundry model-router fee exactly once
-status: todo
+status: done
 depends_on: [B171, B204, B2230, B1668, B1672, B1678]
 file: tasks/B1677-foundry-router-cost.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/azure_ai/azure_model_router/transformation.py"
 parent: B026
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1102

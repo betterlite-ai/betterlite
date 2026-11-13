@@ -5,7 +5,7 @@
 
 use reqwest::Url;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 const EXCLUDED_HEADERS: [&str; 7] = [
     "transfer-encoding",
@@ -104,15 +104,6 @@ pub fn buffer_response(status_code: u16, headers: &HeaderMap) -> bool {
     }
     let handling = response_handling(status_code, headers);
     handling == ResponseHandling::Buffer
-}
-
-#[must_use]
-pub fn update_stream_param(
-    request_body: &Map<String, Value>,
-    stream: Option<bool>,
-) -> Option<bool> {
-    let stream_value = request_body.get("stream");
-    stream_value.map_or(stream, Value::as_bool)
 }
 
 #[must_use]

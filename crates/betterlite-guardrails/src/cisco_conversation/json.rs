@@ -28,22 +28,14 @@ impl Json {
     }
 
     #[must_use]
-    pub fn field(fields: &Fields, key: &str) -> Self {
-        let text = fields.get(key).map_or("null", |raw| raw.get());
-        Self::parse(text)
-    }
-
-    #[must_use]
     pub fn objects(&self) -> Vec<Fields> {
-        match self {
-            Self::List(items) => items
-                .iter()
-                .filter_map(|item| object_from_raw(item.as_ref()))
-                .collect(),
-            Self::Null | Self::Bool(_) | Self::Number(_) | Self::Text(_) | Self::Object(_) => {
-                Vec::new()
-            }
-        }
+        let Self::List(items) = self else {
+            return Vec::new();
+        };
+        items
+            .iter()
+            .filter_map(|item| object_from_raw(item.as_ref()))
+            .collect()
     }
 
     #[must_use]
@@ -51,7 +43,12 @@ impl Json {
         match self {
             Self::Null => false,
             Self::Bool(flag) => *flag,
-            Self::Number(text) => number_is_nonzero(text),
+            Self::Number(text) => text
+                .split(['e', 'E'])
+                .next()
+                .unwrap_or_default()
+                .chars()
+                .any(|digit| matches!(digit, '1'..='9')),
             Self::Text(text) => !text.is_empty(),
             Self::List(items) => !items.is_empty(),
             Self::Object(fields) => !fields.is_empty(),
@@ -61,12 +58,10 @@ impl Json {
     // LiteLLM coerces with str(), so a string stays bare and everything else prints as its repr
     #[must_use]
     pub fn python_str(&self) -> String {
-        match self {
-            Self::Text(text) => text.clone(),
-            Self::Null | Self::Bool(_) | Self::Number(_) | Self::List(_) | Self::Object(_) => {
-                self.python_repr()
-            }
+        if let Self::Text(text) = self {
+            return text.clone();
         }
+        self.python_repr()
     }
 
     fn python_repr(&self) -> String {
@@ -130,9 +125,4 @@ fn python_quote(text: &str) -> String {
     }
     repr.push(mark);
     repr
-}
-
-fn number_is_nonzero(text: &str) -> bool {
-    let mantissa = text.split(['e', 'E']).next().unwrap_or_default();
-    mantissa.chars().any(|digit| matches!(digit, '1'..='9'))
 }

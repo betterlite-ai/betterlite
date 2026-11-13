@@ -1,0 +1,22 @@
+name: errors-call-id-enabled
+config: |
+  model_list:
+    - model_name: error-model
+      litellm_params: {model: openai/gpt-call-id, api_base: "{{upstream}}", api_key: oracle-key}
+  router_settings: {num_retries: 0}
+  general_settings: {include_call_id_in_error_body: true}
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: error-model, messages: [{role: user, content: hi}]}
+upstream:
+  - status: 502
+    headers: {content-type: application/json}
+    body: {error: {message: "upstream failed", type: server_error, param: null, code: null}}
+compare:
+  headers: [content-type, llm_provider-content-type]
+  headers_present: [x-litellm-call-id]
+  upstream_headers: [authorization, content-type]
+  ignore: [{pointer: /error/message, why: betterlite writes its own message}, {pointer: /error/litellm_call_id, why: Generated IDs differ; the HTTP test asserts body and header equality}]

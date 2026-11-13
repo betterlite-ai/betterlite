@@ -29,3 +29,4 @@ CREATE INDEX IF NOT EXISTS "LiteLLM_ManagedObjectTable_unified_object_id_idx" ON
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "LiteLLM_ManagedObjectTable_model_object_id_idx" ON "LiteLLM_ManagedObjectTable"("model_object_id");
+

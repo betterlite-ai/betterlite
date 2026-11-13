@@ -3,12 +3,9 @@ name: duration-and-prediction-token-details
 call:
   usage_sum:
     usages:
-      - numeric_extras: {duration: 0.25}
+      - prompt_tokens_details: {audio_length_seconds: 1.5, video_length_seconds: 0.25}
         completion_tokens_details: {accepted_prediction_tokens: 2, rejected_prediction_tokens: 1}
-      - numeric_extras: {duration: 0.75}
+      - prompt_tokens_details: {audio_length_seconds: 2.25}
         completion_tokens_details: {accepted_prediction_tokens: 3, rejected_prediction_tokens: 4}
-compare:
-  ignore:
-    - pointer: /value/numeric_extras/duration
-      why: betterlite sums the duration extra; LiteLLM's combine_usage_objects loses every extra because dir(usage) never lists a pydantic extra="allow" field (docs/deviations/B1680.yaml)
+compare: {ignore: []}
 env: {}

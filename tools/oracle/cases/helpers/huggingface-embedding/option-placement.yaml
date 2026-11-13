@@ -1,0 +1,33 @@
+kind: helper
+name: option-placement
+call:
+  b5991:
+    steps:
+      - kind: transform_input
+        model: "BAAI/bge-small-en-v1.5"
+        input: ["text"]
+        pipeline_tag: "feature-extraction"
+        optional_params:
+          use_cache: true
+          wait_for_model: false
+          min_length: 1
+          max_length: 8
+          top_k: 5
+          top_p: 0.9
+          temperature: 0.7
+          repetition_penalty: 1.1
+          max_time: 30
+          dimensions: 8
+          input_type: "embed"
+      - {kind: optional_params, data: {inputs: ["text"]}, optional_params: {use_cache: true, top_k: 3, dimensions: 8}}
+      - {kind: optional_params, data: {inputs: ["text"], options: {keep: 1}}, optional_params: {use_cache: true}}
+      - {kind: optional_params, data: {inputs: ["text"]}, optional_params: {options: "text", use_cache: true}}
+      - {kind: optional_params, data: {inputs: ["text"]}, optional_params: {parameters: [], top_k: 3}}
+      - {kind: optional_params, data: {inputs: ["text"]}, ordered_params: [["use_cache", true], ["options", {keep: 1}]]}
+      - {kind: optional_params, data: {inputs: ["text"]}, ordered_params: [["options", {keep: 1}], ["use_cache", true]]}
+      - {kind: optional_params, data: {inputs: ["text"]}, ordered_params: [["max_length", 8], ["parameters", {truncate: true}]]}
+      - {kind: optional_params, data: {inputs: ["text"]}, ordered_params: [["parameters", {truncate: true}], ["max_length", 8]]}
+      - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: ["text"], optional_params: {dimensions: 8}, pipeline_tag: "embed"}
+      - {kind: transform_input, model: "BAAI/bge-small-en-v1.5", input: ["first", "second"], optional_params: {input_type: "similarity"}, pipeline_tag: "rerank"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-embedding-row-without-vector",
+  "call": {
+    "b3844": {
+      "function": "embedding_output",
+      "value": {
+        "data": [
+          {
+            "object": "embedding"
+          }
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

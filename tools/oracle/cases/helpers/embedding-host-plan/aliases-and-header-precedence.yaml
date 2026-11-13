@@ -1,0 +1,19 @@
+kind: helper
+name: embedding-host-plan-aliases-and-header-precedence
+call:
+  embedding_host_plan:
+    jina:
+      model: jina-v3
+      input: [hello]
+      base: ""
+      api_key: ""
+      env: {JINA_AI_API_BASE: "https://env.test/v1", JINA_AI_API_KEY: "", JINA_API_KEY: second, JINA_AI_TOKEN: third}
+      headers: {Authorization: "Bearer mine", X-Caller: kept}
+    infinity:
+      model: bge
+      input: [hello]
+      base: ""
+      env: {INFINITY_API_KEY: inf}
+      headers: {accept: text/plain, Authorization: "Bearer mine"}
+env: {}
+compare: {ignore: []}

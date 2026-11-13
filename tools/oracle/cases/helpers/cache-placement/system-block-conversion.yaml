@@ -1,0 +1,96 @@
+kind: helper
+name: cache-placement-system-block
+call:
+  b4124:
+    operation: messages_route
+    probes:
+      - messages: [{role: user, content: hi}]
+        system: rules
+        points: [{location: message, role: system, index: null, control: null}]
+      - messages: []
+        system: [{type: text, text: one}, {type: text, text: two}]
+        points: [{location: message, role: system, index: null, control: null}]
+      - messages: []
+        system: [{type: text, text: one, cache_control: {type: ephemeral, ttl: 1h}}]
+        points: [{location: message, role: system, index: null, control: null}]
+      - messages: [{role: user, content: hi}]
+        points: [{location: message, role: system, index: null, control: null}]
+      - messages: []
+        system: rules
+        points: [{location: message, role: system, index: null, control: null}]
+        openai_dialect: true
+      - messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+          - {role: user, content: c, cache_control: {}}
+        system: rules
+        points: [{location: message, role: system, index: null, control: null}]
+      - messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+          - {role: user, content: c, cache_control: {}}
+          - {role: assistant, content: d, cache_control: {}}
+        system: rules
+        points: [{location: message, role: system, index: null, control: null}]
+      - messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+          - {role: user, content: c, cache_control: {}}
+        system: rules
+        points:
+          - {location: message, role: system, index: null, control: null}
+          - {location: tool_config, control: null}
+      - messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+          - {role: user, content: c, cache_control: {}}
+          - {role: assistant, content: d, cache_control: {}}
+        points: [{location: tool_config, control: null}]
+      - messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+          - {role: user, content: c, cache_control: {}}
+          - {role: assistant, content: d, cache_control: {}}
+        points: [{location: tool_config, control: null, _litellm_openai_dialect: true}]
+        openai_dialect: true
+      - messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+        system: rules
+        points: [{location: message, role: system, index: null, control: null}]
+        external_breakpoints: 2
+      - messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+        system: rules
+        points: [{location: message, role: system, index: null, control: null}]
+        external_breakpoints: 1
+      - messages: []
+        system: rules
+        points: [{location: message, role: system, index: 5, control: null}]
+      - messages: [{role: user, content: a}, {role: assistant, content: b}]
+        system: rules
+        points: [{location: message, role: null, index: 1, control: null}]
+      - messages: [{role: assistant, content: b}]
+        points: [{location: message, role: null, index: 0, control: null}]
+        openai_dialect: true
+      - messages: [{role: user, content: hi}]
+        system: rules
+        points: []
+      - messages: []
+        system: []
+        points: [{location: message, role: system, index: null, control: null}]
+      - messages: [{role: user, content: hi}]
+        system: rules
+        points: [{location: message, role: system, index: null, control: {type: ephemeral, ttl: 1h}}]
+      - messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+          - {role: user, content: c, cache_control: {}}
+          - {role: user, content: d}
+        system: rules
+        points:
+          - {location: message, role: user, index: null, control: null}
+          - {location: message, role: system, index: null, control: null}
+env: {}
+compare: {ignore: []}

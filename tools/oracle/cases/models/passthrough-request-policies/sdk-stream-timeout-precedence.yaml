@@ -1,0 +1,18 @@
+kind: helper
+name: sdk-stream-timeout-precedence
+call:
+  b3571:
+    operation: sdk_timeout
+    request:
+      stream: true
+      stream_timeout: 5
+      timeout: not-a-number
+    deployment:
+      stream_timeout: 6
+    router:
+      stream_timeout: 7
+      timeout: 8
+    configured_timeout: 9
+    settings_timeout: 10
+compare: {ignore: []}
+env: {}

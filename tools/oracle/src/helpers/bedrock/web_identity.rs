@@ -1,9 +1,14 @@
+mod cross;
+mod fixture;
+mod input;
+mod ops;
+mod ports;
+mod tests;
+use crate::helpers::{Helper, HelperResult};
 pub(crate) struct Op;
-
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
-
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("bedrock_web_identity")
+impl Helper for Op {
+    type Input = input::Input;
+    fn run(input: &Self::Input) -> HelperResult {
+        ops::run(input)
     }
 }

@@ -1,0 +1,9 @@
+kind: helper
+name: canonical-route
+call:
+  route_match:
+    function: get_request_method
+    method: get
+env: {}
+compare:
+  ignore: []

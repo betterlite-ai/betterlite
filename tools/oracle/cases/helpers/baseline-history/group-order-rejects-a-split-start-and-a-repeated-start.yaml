@@ -1,0 +1,72 @@
+kind: helper
+name: group_order_rejects_a_split_start_and_a_repeated_start
+call:
+  baseline_history:
+    groups:
+    - - request_id: first
+        started_at: 100.0
+        available_at: 100.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 5
+          total_tokens: 105
+          prompt_tokens_details:
+            text_tokens: 100
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 0
+              ephemeral_1h_input_tokens: 0
+    - - request_id: split-a
+        started_at: 200.0
+        available_at: 200.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 5
+          total_tokens: 105
+          prompt_tokens_details:
+            text_tokens: 100
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 0
+              ephemeral_1h_input_tokens: 0
+      - request_id: split-b
+        started_at: 250.0
+        available_at: 250.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 5
+          total_tokens: 105
+          prompt_tokens_details:
+            text_tokens: 100
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 0
+              ephemeral_1h_input_tokens: 0
+    - - request_id: repeated
+        started_at: 100.0
+        available_at: 100.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 5
+          total_tokens: 105
+          prompt_tokens_details:
+            text_tokens: 100
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 0
+              ephemeral_1h_input_tokens: 0
+compare:
+  ignore: []
+env: {}

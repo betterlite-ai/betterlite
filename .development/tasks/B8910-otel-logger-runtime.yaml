@@ -1,0 +1,152 @@
+id: B8910
+title: OTel logger factory and published provider ownership
+description: >-
+  The V2 callbacks and destination processors have owners, but their factory and the choice of the
+  provider shared by HTTP spans and tenant fan-out do not. Build otel::logger_runtime in
+  betterlite-logging. Reuse the workspace's opentelemetry and opentelemetry_sdk types, B3853's callback,
+  B8250's Langfuse wrappers, B3849's fan-out and B3851's preset resolver. Do not build exporters,
+  duplicate a callback catalog or introduce process globals. Own LoggerRuntimeError here. The runtime
+  is an injected, shared value whose lifetime is the proxy's lifetime; the catalog and auth adapter
+  receive that same value. Its provider publication operation accepts the provider setter as a
+  dependency, so tests never replace the process-wide OTel provider.
+
+  Implement select_global_otel_v2_logger, publish_global_otel_v2_provider, _excluded_db_systems,
+  _v2_configs, fan_out_provider, build_otel_v2_logger and _logger_class. Selection prefers the
+  registered V2 callback, then the first V2 callback in catalog construction order, and constructs
+  a generic B3853 callback from B3842's resolved environment config only when neither exists.
+  A legacy registered callback is not a V2 candidate. Publication collects the selected config first,
+  then the other V2 configs in their existing order, excluding only the selected instance; equal
+  configs on distinct loggers remain distinct. Attach tenant fan-out before invoking the setter,
+  then retain the actual published provider separately from the registered callback and SDK global.
+  fan_out_provider returns that retained provider first, otherwise attaches fan-out to a registered
+  V2 provider and returns it, otherwise returns the injected SDK provider. Never construct a new
+  provider in this accessor. An SDK global already claimed by legacy instrumentation must not make
+  the accessor return a provider without the published fan-out.
+
+  Exclusions come from top-level callback_settings.otel.excluded_services when explicitly non-null,
+  including an empty list; otherwise use the selected logger's resolved excluded_services. Call
+  B3842's normalization, including its unknown-service logging. Keep the distinction between an
+  absent setting and an explicit empty override even when a preset's env-only config was selected.
+  LITELLM_OTEL_EXCLUDED_SERVICES is resolved by B3842, not read here. The factory selects the generic
+  callback unless mapper_names contains the exact name langfuse; with it select LangfuseOtel or
+  LangfuseContentOtel according to capture_span_content. Preserve callback_name, injected trace/log/
+  meter providers and constructor settings. The runtime is built with an `Arc<dyn StreamOutputAssembler>` (B3857's port in
+  otel::content_projections) and hands that same value to every LangfuseContentOtel the factory builds. Langfuse wrappers still expose the wrapped V2 provider
+  and config, and participate in V2 selection and callback registration.
+
+  Also own _maybe_construct_otel_v2 and its five predicate/filter helpers in litellm_logging.py
+  L5191-L5269. B3851 supplies presets; B8746 supplies catalog arms and calls this function. Return
+  no V2 logger when LITELLM_OTEL_V2 is false (default), the name has no preset, or preset construction
+  fails. Read destination_backends from B3847's request context. A destination for this callback
+  plus any existing V2 logger permits allow_missing_credentials. Reuse a same-name V2 logger only
+  when it serves a destination or has an ungated exporter. An exporter is gated only when
+  requires_headers is true and headers is empty; an empty exporter list makes _exports_nowhere
+  true. Without an existing carrier, a gated preset needs a real operator exporter, not the
+  unconfigured console placeholder. With a carrier keep only its gated exporters. Warn when the
+  resulting config exports nowhere, construct through the factory above and append it once to
+  the caller's ordered collection. Do not catch errors from the final logger constructor: only
+  preset construction is inside that fallback boundary.
+
+  runtime.py's _otel_runtime, phase_span and seed_request_identity become an injected optional
+  hooks handle to B3853. No Python import cache is needed in Rust. Absence is a no-op; a present
+  phase hook runs the body once and propagates its error after the callback stamps it. These
+  wrappers never catch the request body's failure. B3853 supplies the actual phase and identity
+  methods and does not call this module back.
+
+  The auth handoff also exposes three legacy methods left out of the earlier parts: own
+  create_litellm_proxy_request_started_span, set_proxy_request_route_attributes and
+  set_response_status_code_attribute in opentelemetry.py L3508-L3558. In logger_runtime/legacy.rs,
+  open a SERVER span named Received Proxy Server Request using the supplied tracer, B3854's
+  to_ns(start_time) and B3847's traceparent extraction. Do not make it an active span implicitly.
+  With no span, both setters do nothing. Otherwise non-empty url_path and http_route write
+  url.path and http.route respectively through B3844's safe setter; a present status writes
+  the integer http.response.status_code, including zero. Neither setter ends the span or
+  assigns its status. B3858/B3859 call the status setter; B110's auth adapter calls creation
+  and route stamping. The Langfuse legacy override that returns no parent stays B3910's.
+
+  Native tests in logger_runtime/tests/ cover registered_first, first_v2_fallback, generic_once,
+  legacy_slot_with_v2_catalog, distinct_equal_configs, explicit_empty_exclusions,
+  attach_before_publish, remembered_provider_beats_global, registered_fallback_attaches,
+  sdk_fallback_builds_nothing, factory_provider_passthrough and every credential-carrier branch.
+  Exercise preset failure separately from final constructor failure, plus phase_error_propagates
+  and absent_hooks_noop. Tests legacy_parent_remote_context, legacy_parent_start_time,
+  legacy_route_missing_values and legacy_status_zero exercise the three legacy methods against
+  an in-memory SDK exporter. The pure kind: helper cases call _logger_class and the five exporter predicates
+  on real OpenTelemetryV2Config/ExporterSpec inputs; they never invoke a proxy handler, a callback
+  constructor, a publisher or a network exporter. B110 adds the HTTP cases. This owns 132 logic
+  lines in the V2 slices, plus the three short legacy methods; allow roughly 450 Rust and
+  adapter lines plus 300 test lines. No new byte decoder is introduced.
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/logger_runtime.rs
+    - crates/betterlite-logging/src/otel/logger_runtime/**
+    - tools/oracle/cases/helpers/otel-logger-runtime/**
+    - tools/oracle/helpers/b8910.py
+    - tools/oracle/helpers/b8910/**
+    - tools/oracle/src/helpers/logging/b8910.rs
+    - tools/oracle/src/helpers/logging/b8910/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L846-L932
+    why: Own canonical selection, provider publication, exclusion precedence and config aggregation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L970-L990
+    why: Own published, registered and SDK provider fallback order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L1003-L1026
+    why: Own factory argument forwarding and Langfuse class selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/runtime.py#L20-L54
+    why: Own the optional hooks boundary; absence is cached and request exceptions are not swallowed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5191-L5269
+    why: Own the unassigned preset constructor and exporter predicates, called by B8746's catalog arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3508-L3558
+    why: Own legacy request-root creation, route attributes and response-status attributes, omitted by the earlier legacy parts.
+dod:
+  - text: The factory forwards its inputs, chooses the three callback forms and implements every credential-carrier reuse, trim and fallback branch.
+    proof: [factory-tests, oracle, helper-python]
+  - text: Publication selects one canonical provider, collects all operator configs and applies explicit exclusion overrides before the setter; auth reads the retained provider even when the SDK global differs.
+    proof: [publication-tests]
+  - text: Optional hooks are inert when absent and preserve phase-body errors when present.
+    proof: [runtime-tests]
+  - text: Legacy auth creates the correctly named SERVER span with the supplied start and remote parent, and route/status setters preserve missing values and integer zero without closing it.
+    proof: [legacy-span-tests]
+checks:
+  optional: []
+  commands:
+    - id: factory-tests
+      why: Langfuse dispatch, constructor forwarding or credential-carrier composition is missing.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger_runtime::tests::factory::/)'
+    - id: publication-tests
+      why: Selection, exclusion precedence, publication order or the remembered fan-out provider is wrong.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger_runtime::tests::publication::/)'
+    - id: runtime-tests
+      why: The optional hook adapter is absent or swallows a request exception.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger_runtime::tests::hooks::/)'
+    - id: helper-python
+      why: The pure factory decision comparison has no independently checked Python adapter.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b8910::/)'
+    - id: legacy-span-tests
+      why: Legacy parent creation, route attributes or the response-status setter is missing.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger_runtime::tests::legacy::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/otel-logger-runtime/generic-and-langfuse-class.yaml
+  - tools/oracle/cases/helpers/otel-logger-runtime/langfuse-content-class.yaml
+  - tools/oracle/cases/helpers/otel-logger-runtime/gated-and-credentialed-exporters.yaml
+  - tools/oracle/cases/helpers/otel-logger-runtime/console-placeholder-not-operator.yaml
+  - tools/oracle/cases/helpers/otel-logger-runtime/empty-exporters-export-nowhere.yaml
+  - tools/oracle/cases/helpers/otel-logger-runtime/retain-only-gated-exporters.yaml
+deviations: []
+out_of_scope:
+  - 'opentelemetry.py: config/capture/dedupe, time/name, identity/team/service-tier and exception annotations are B3854; dynamic exporter caches are B3855; inference/raw attributes are B3856; metric/event recording is B3857; service/management/proxy failure hooks are B3858; inference/guardrail lifecycle and request tracer selection are B3859; constructor/provider setup is B3868. Primitive setters are B3844, transforms/tool attributes B3845, header context B3847. Only L3508-L3558 is newly owned here; cast_as_primitive_value_type has no caller at the pin.'
+  - 'logger.py: _span_error_from_exception, OpenTelemetryV2 construction and registration, tracer_provider, _init_metrics, _init_events, service hooks, _emit_service, identity seeding, phase spans, pre/post-call proxy hooks, error stamping, emit_guardrail_span, request-root capture and module _registered_v2_logger/emit_guardrail_span/seed_request_identity/phase_span are B3853.'
+  - 'logger.py: _request_trace_links, _LLMCallSpan, log_pre_api_call, async success/failure, metric recording, _seed_identity_baggage, MCP emission, _close_llm_call, _store_open_call, _release_carrier and _finish_carrier are B3852.'
+  - 'litellm_logging.py: _init_custom_logger_compatible_class OTel arms and _maybe_auto_initialize_arize_phoenix are B8746; get_custom_logger_compatible_class and catalog infrastructure are B8741. Logging state, dynamic selection, pre/post, success, failure, streams and metadata functions remain B247-B253 and B190; other vendor factories remain their B111-B118 parts. Only L5191-L5269 is owned here.'
+  - B3842 owns settings and exclusion normalization, B3850/B3851 own presets, B3849 owns attach_tenant_fan_out, and B8250 owns both Langfuse wrappers and the HTTP span policy.
+  - B8680 installs the server-span layer; B110 connects the runtime to the server and adds HTTP cases. B8870 implements auth destination seeding and calls this runtime's provider accessor.
+pitfalls:
+  - A registered legacy logger and an already occupied SDK global do not identify the published V2 fan-out provider.
+  - callback_settings.otel.excluded_services set to an empty list must clear env exclusions even when the canonical logger is a preset.
+  - _maybe_construct_otel_v2 catches preset failures but does not catch build_otel_v2_logger failures.
+  - B3853's old out-of-scope text says its callback calls fan_out_provider, but no callback method does so at the pin; adding that dependency would create a cycle.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

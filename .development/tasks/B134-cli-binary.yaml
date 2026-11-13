@@ -1,0 +1,193 @@
+id: B134
+title: The lite CLI binary and command wiring
+description: >-
+  Add crates/betterlite-cli/src/main.rs as a thin [[bin]] entry point and crates/betterlite-cli/src/cli.rs
+  as the clap root that mirrors main.py's click group. main.rs only calls into cli.rs so every test filter
+  for this task stays on the library crate, not the binary. Add a [[bin]] table (name "lite", path
+  src/main.rs) to crates/betterlite-cli/Cargo.toml; Cargo's default bin name would otherwise be
+  betterlite-cli, and the gateway binary crates/betterlite already produces "betterlite" with no [[bin]]
+  override anywhere in the workspace, so "lite" is free.
+  cli.rs declares --base-url/LITELLM_PROXY_URL and --api-key/LITELLM_PROXY_API_KEY as global options, plus
+  --version/-v, and resolves B4560's CliContext from them before dispatching to any subcommand: the stored
+  base_url from B4560's config.rs when no flag is given, defaulting to http://localhost:4000, trailing
+  slash stripped; api_key_from_token_file true only when no flag/env key was given and the parsed
+  subcommand is not configure, reconfigure or unconfigure, in which case the key comes from B4574's stored
+  token lookup for that base_url, otherwise from the flag or environment; base_url_explicit true when the
+  flag was given or a base_url is already stored outside a configure/reconfigure/unconfigure invocation.
+  This mirrors main.py's cli() callback, which runs this resolution before any subcommand body, so cli.rs's
+  own root callback must resolve CliContext from the parsed global flags and the chosen subcommand's name
+  before matching on that subcommand.
+  --version, -v and a `version` subcommand (built directly in cli.rs; no sibling owns it) each print the
+  binary's own version and the resolved base URL, then the proxy's reported version fetched through
+  B4580's shared HTTP client, printing a fallback message instead of failing the command when that request
+  errors.
+  cli.rs mounts every family command: login (B4585's login.rs); logout, whoami, the auth group's
+  print-token and down (B4575's session.rs and settings_backup.rs); up (B4577's up.rs); models (B4578);
+  credentials, users, teams and model-groups (B4580's commands module); keys and encryption (B4579); config
+  (B4560's config.rs); configure, reconfigure and unconfigure (B4572's commands::configure); autoroute,
+  including its hidden `up`/`down` aliases (B4583's autoroute::config/wizard/paths and B4584's
+  autoroute::process/commands, through the architect's autoroute.rs); the per-agent commands (B4585's
+  agent_dispatch.rs, backed by B4564 through B4571); statusline (B4586's statusline.rs); chat and the http
+  group (B4581's commands::chat and commands::http); and debug (B4582's commands::debug). cli.rs builds
+  B4580's shared client once per run and passes it to every command that sends a request, including as the
+  pkce_login::Http transport that login, logout and SSO polling take, and it builds the real terminal and
+  file ports the commands inject; no command builds its own client.
+  The --help listing filters names from B4560's hidden_command_names() at runtime (clap's derive-level hide
+  attribute is static and can't vary with stored config), then lists the remaining names alphabetically,
+  matching Click's default Group.list_commands sort that HideConfiguredCommandsGroup filters on top of; a
+  hidden name stays fully callable. Each owned command module's own error enum is matched in cli.rs and
+  turned into the documented exit code and one stderr line: a usage-shaped variant exits 2, every other
+  variant exits 1, the same split Click's UsageError and plain ClickException/ sys.exit(1) produce.
+  Add crates/betterlite-cli/src/shell.rs, the interactive_shell port (interface.py), started when no
+  subcommand is given. It shows a startup banner and connection line, reads lines with a styled prompt,
+  handles exit/quit/help/clear locally, and re-dispatches every other line through the same clap root used
+  for one-shot invocations rather than a second parser. Its "Available commands" listing calls B4585's
+  commands_listing module instead of rebuilding interface.py's own hand-maintained subset.
+  Port crates/betterlite-cli/README.md from the LiteLLM CLI README: install/build instructions through
+  Cargo instead of pip, the "lite" binary name throughout, the hidden-commands example, and the autoroute
+  up/down deprecated-alias note.
+scope:
+  paths:
+    - crates/betterlite-cli/src/main.rs
+    - crates/betterlite-cli/src/cli.rs
+    - crates/betterlite-cli/src/cli/**
+    - crates/betterlite-cli/src/shell.rs
+    - crates/betterlite-cli/src/shell/**
+    - crates/betterlite-cli/README.md
+    - crates/betterlite-cli/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/main.py#L56-L67
+    why: HideConfiguredCommandsGroup filters hidden names out of the (already alphabetically sorted) command listing while leaving them runnable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/main.py#L70-L92
+    why: the click.group decorator and its three global options (--base-url, --api-key, --version/-v).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/main.py#L93-L131
+    why: cli()'s callback body resolves base_url, api_key_from_token_file and base_url_explicit before any subcommand runs, and starts the interactive shell when none was given.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/main.py#L40-L53
+    why: print_version prints the CLI version and base URL unconditionally, then swallows any error fetching the server version into a message instead of failing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/main.py#L134-L179
+    why: the version command and the full add_command registration list this task's dispatch match must cover.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/main.py#L186-L190
+    why: litellm_proxy_cli, the deprecated console-script alias this task does not port.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/interface.py#L76-L106
+    why: show_commands is a hand-picked, incomplete subset of the real command tree; shell.rs must call B4585's port of it rather than deriving the list itself.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/interface.py#L109-L211
+    why: setup_shell, handle_special_commands, execute_command and interactive_shell define the REPL's banner, special commands and re-dispatch loop that shell.rs ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/README.md#L40-L63
+    why: the hidden_commands config example and the Global Options section (base URL, API key, version).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml#L189-L192
+    why: the project's console scripts; "lite" is the primary one and the one this task's binary name follows.
+dod:
+  - text: cli.rs resolves CliContext from --base-url/LITELLM_PROXY_URL, --api-key/LITELLM_PROXY_API_KEY, the stored config value and the saved token file in that order, stripping a trailing slash from the base URL, and sets api_key_from_token_file only when no explicit key was given and the parsed subcommand is not configure, reconfigure or unconfigure.
+    proof: [global-options]
+  - text: base_url_explicit is true when --base-url was given, or when a base URL is already stored and the invocation is not configure, reconfigure or unconfigure.
+    proof: [global-options]
+  - text: --version, -v and the version subcommand each print the binary's own version, the resolved base URL, and the proxy's reported version fetched through B4580's shared client, falling back to a message instead of failing the command when that request errors.
+    proof: [version-output]
+  - text: lite --help lists every mounted top-level command alphabetically by name, matching Click's default sorted listing rather than main.py's add_command call order.
+    proof: [help-listing]
+  - text: a command name present in B4560's hidden_command_names() is removed from the --help listing but still parses and dispatches normally.
+    proof: [hidden-commands]
+  - text: every family command mounts and parses a minimal valid argv, including login, logout, whoami, auth print-token, down, up, models, credentials, users, teams, model-groups, keys, encryption, config, configure, reconfigure, unconfigure, autoroute, the per-agent commands, and statusline.
+    proof: [subcommand-parsing]
+  - text: an argv naming a command no module mounts fails to parse, with a nonzero exit and a usage message, instead of being accepted or falling through to the interactive shell.
+    proof: [unknown-command]
+  - text: cli.rs converts an owned command module's error into the documented exit code and one stderr line, a usage-shaped variant exiting 2 and every other variant exiting 1.
+    proof: [error-exit-codes]
+  - text: running lite with no subcommand starts shell.rs's loop, which shows a startup banner and connection line, handles help/clear/exit/quit locally, reports an unrecognized line without ending the loop, and re-dispatches every other line through the same clap root one-shot invocations use.
+    proof: [interactive-shell]
+  - text: shell.rs's "Available commands" listing is printed by calling B4585's commands_listing module, not by rebuilding interface.py's own curated subset a second time.
+    proof: [interactive-shell]
+  - text: main.rs contains no clap parsing or dispatch of its own; it resolves a process exit code and calls into cli.rs.
+    proof: [thin-main]
+  - text: the crate builds one binary, lite, from its own [[bin]] table; no litellm-proxy binary name or console-script alias is present anywhere in this task's files.
+    proof: [no-litellm-alias]
+checks:
+  optional: []
+  commands:
+    - id: global-options
+      why: CliContext resolution order, or the base_url_explicit/api_key_from_token_file flags, do not match main.py's callback
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^cli::tests::(context|global_options).*($|::)/)'
+    - id: version-output
+      why: --version, -v or the version subcommand skip a line, or propagate a failed server-version request instead of falling back
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^cli::tests::version.*($|::)/)'
+    - id: help-listing
+      why: the --help listing is unsorted, or follows main.py's add_command order instead of Click's alphabetical default
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^cli::tests::help.*($|::)/)'
+    - id: hidden-commands
+      why: a hidden command stays in the --help listing, or stops being callable once hidden
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^cli::tests::hidden.*($|::)/)'
+    - id: subcommand-parsing
+      why: a family command is not mounted, or fails to parse a minimal argv
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^cli::tests::(mounts|subcommand).*($|::)/)'
+    - id: unknown-command
+      why: an unrecognized command name is accepted, or silently falls through to the interactive shell instead of failing
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^cli::tests::unknown_command.*($|::)/)'
+    - id: error-exit-codes
+      why: a command error maps to the wrong exit code, or prints more than one stderr line
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^cli::tests::exit_code.*($|::)/)'
+    - id: interactive-shell
+      why: the REPL's special commands, re-dispatch or command-listing delegation regress
+      run: >-
+        cargo nextest run --locked -p betterlite-cli --no-tests=fail -E
+        'test(/^shell::tests::.*/)'
+    - id: thin-main
+      why: "clap parsing added directly to main.rs would move dispatch logic off the cli:: module path every other check here filters on"
+      run: '! grep -nE "derive\(Parser\)|derive\(Subcommand\)|clap::" crates/betterlite-cli/src/main.rs'
+    - id: no-litellm-alias
+      why: a litellm-proxy binary name or console-script alias would carry the LiteLLM name, which rules.yaml's litellm-boundaries rule forbids
+      run: '! grep -rnE "litellm-proxy|litellm_proxy_cli" crates/betterlite-cli/Cargo.toml crates/betterlite-cli/src/main.rs crates/betterlite-cli/src/cli.rs'
+oracle_cases: []
+deviations:
+  - what: the litellm-proxy console-script alias and its deprecation-banner entry point are not ported; lite is the only binary this crate builds.
+    why: litellm-proxy carries the LiteLLM name directly, which rules.yaml's litellm-boundaries rule forbids for any crate or binary, and LiteLLM itself already marks the alias deprecated.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/main.py#L186-L190
+  - what: the version command and --version/-v read the server version through B4580's shared HTTP client instead of a HealthManagementClient port.
+    why: HealthManagementClient lives outside litellm/proxy/client/cli and is not part of this family; reusing the client every other command in this crate already sends requests through avoids a second HTTP client implementation for one field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/main.py#L40-L53
+  - what: cli.rs's help text and the version output's product name say betterlite or the proxy, not LiteLLM, even though the two report an identical server version.
+    why: rules.yaml's litellm-boundaries rule keeps the LiteLLM name off everything but wire-level identifiers (headers, litellm_params keys, LITELLM_* environment variables); CLI banner and help text are not wire-level.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/main.py#L93-L94
+out_of_scope:
+  - login; owned by B4585's login.rs.
+  - logout, whoami, the auth group's print-token, and down; owned by B4575's session.rs and settings_backup.rs.
+  - up; owned by B4577's up.rs.
+  - models; owned by B4578's commands::models.
+  - credentials, users, teams and model-groups; owned by B4580's commands module.
+  - keys and encryption; owned by B4579's commands::keys and commands::encryption.
+  - configure, reconfigure and unconfigure; owned by B4572's commands::configure.
+  - autoroute's configure/start/stop subcommands and its hidden up/down aliases; owned by B4583's autoroute::config/wizard/paths and B4584's autoroute::process/commands.
+  - config's set/get/unset subcommands; owned by B4560's config.rs.
+  - the per-agent commands (claude, codex, opencode, pi and the rest the catalog lists); owned by B4585's agent_dispatch.rs, backed by B4564 through B4571.
+  - statusline; owned by B4586's statusline.rs.
+  - chat and the http group; owned by B4581's commands::chat and commands::http.
+  - debug claude and debug install-claude-command; owned by B4582's commands::debug.
+  - the shared client, its pkce_login::Http implementation and the shared HTTP error printing; owned by B4580's commands.rs.
+  - interface.py's show_commands listing itself, the text body shell.rs prints; owned by B4585's commands_listing.rs.
+  - the CliContext type's fields and Default impl, and hidden_command_names() and the config store behind it; owned by B4560.
+  - the stored API key lookup used when api_key_from_token_file is true; owned by B4574's credentials.rs.
+pitfalls:
+  - Runtime command hiding needs an imperative filter on the built Command (clap's derive-level hide attribute is static); apply B4560's hidden_command_names() after building the root Command and before rendering help, while the dispatch match still accepts a hidden name normally.
+  - Click's Group.list_commands sorts alphabetically by default, and HideConfiguredCommandsGroup only filters that sorted list; cli.rs's --help output must match that alphabetical order, not main.py's add_command call sequence (which inserts "version" before every other command, which the sort then ignores anyway).
+  - main.py resolves CliContext in the group callback before the chosen subcommand's own body runs; cli.rs's root must do the same from the parsed (not yet dispatched) subcommand name, so setup_command and api_key_from_token_file are known before the dispatch match, not after.
+  - "up and down both come from up.py but split across two tasks: B4577 owns up, B4575 owns down in settings_backup.rs; cli.rs mounts each from its own owner, not both from one."
+  - print_version already swallows a failed server-version request into a message rather than raising; cli.rs's version output must do the same, not propagate the request error and fail the command.
+  - interface.py's show_commands is a hand-maintained subset (login, logout, whoami, models, credentials, chat, http, keys, teams, users, the agent commands, version/help/quit) that leaves out auth, encryption, debug, up, down, model-groups, autoroute, config and configure/reconfigure/unconfigure; shell.rs must reproduce that real (incomplete) list through B4585's module, not the full command tree.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

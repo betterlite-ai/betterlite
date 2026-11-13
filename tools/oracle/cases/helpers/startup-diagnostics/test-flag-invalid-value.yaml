@@ -1,0 +1,5 @@
+kind: helper
+name: test-flag-invalid-value
+call: {"b4175": {"operation": "test_flag_invalid_value"}}
+env: {}
+compare: {ignore: []}

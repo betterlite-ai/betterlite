@@ -1,0 +1,6 @@
+kind: helper
+name: logging-privacy-environment-reference
+call:
+  logging_privacy: {"action": "metadata", "request": {"metadata": {"langsmith_project": "os.environ/PRIVATE"}}}
+env: {}
+compare: {ignore: []}

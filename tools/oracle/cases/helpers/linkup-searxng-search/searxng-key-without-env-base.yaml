@@ -1,0 +1,13 @@
+kind: helper
+name: searxng-key-without-env-base
+call:
+  b8023:
+    operation: searxng_environment
+    params:
+      headers: {}
+      environment:
+        SEARXNG_API_KEY: sk-server
+      api_key: null
+      api_base: https://caller.test
+env: {}
+compare: {ignore: []}

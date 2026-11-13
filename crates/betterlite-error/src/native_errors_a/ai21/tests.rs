@@ -53,6 +53,12 @@ fn facts(message: Option<&str>, status_code: Option<u16>) -> ProviderErrorFacts 
     "context_window_exceeded"
 )]
 #[case::bad_or_missing_token(Some("Bad or missing API token."), None, "bad_request")]
+#[case::too_many_tokens_before_bad_token(
+    Some("Prompt has too many tokens. Bad or missing API token."),
+    None,
+    "context_window_exceeded"
+)]
+#[case::bad_token_on_401(Some("Bad or missing API token."), Some(401), "bad_request")]
 #[case::status_401(None, Some(401), "authentication")]
 #[case::status_408(None, Some(408), "timeout")]
 #[case::status_422(None, Some(422), "bad_request")]

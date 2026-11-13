@@ -1,0 +1,10 @@
+kind: helper
+name: invalid-json
+call:
+  catalog_fetch_policy:
+    operation: classify_response
+    status: 200
+    body: '{"model": '
+    url: https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json
+compare: {ignore: []}
+env: {}

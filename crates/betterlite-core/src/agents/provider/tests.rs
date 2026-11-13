@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::a2a::LiteLLMSendMessageResponse;
+use super::a2a::{LiteLLMSendMessageResponse, normalize_a2a_jsonrpc_response};
 use super::{
     AgentCreateResponse, AgentDeleteResult, AgentHttpResponse, AgentListResponse,
     AgentProviderError, AgentRequest, AgentVersionsResponse, BaseAgentsAPIConfig,
@@ -44,10 +44,14 @@ fn list_agents_response_wraps_agent_records() {
 #[test]
 fn a2a_error_gets_request_id_and_bool_is_stringified() {
     let request_id = json("true");
-    let response = LiteLLMSendMessageResponse::from_dict(
+    let response = normalize_a2a_jsonrpc_response(
         &json(r#"{"jsonrpc": "2.0", "error": {"code": -32600}}"#),
         Some(&request_id),
     )
+    .and_then(|normalized| {
+        serde_json::from_value::<LiteLLMSendMessageResponse>(normalized)
+            .map_err(|source| AgentProviderError::Decode { source })
+    })
     .unwrap();
     assert_eq!(
         response.id,
@@ -58,10 +62,14 @@ fn a2a_error_gets_request_id_and_bool_is_stringified() {
 
 #[test]
 fn a2a_existing_bool_id_is_stringified() {
-    let response = LiteLLMSendMessageResponse::from_dict(
+    let response = normalize_a2a_jsonrpc_response(
         &json(r#"{"jsonrpc": "2.0", "id": true, "result": {}}"#),
         None,
     )
+    .and_then(|normalized| {
+        serde_json::from_value::<LiteLLMSendMessageResponse>(normalized)
+            .map_err(|source| AgentProviderError::Decode { source })
+    })
     .unwrap();
     assert_eq!(
         response.id,
@@ -205,7 +213,12 @@ provider_fixture!(
 
 #[test]
 fn a2a_defaults_preserve_null_fields() {
-    let response = LiteLLMSendMessageResponse::from_dict(&json("{}"), None).unwrap();
+    let response = normalize_a2a_jsonrpc_response(&json("{}"), None)
+        .and_then(|normalized| {
+            serde_json::from_value::<LiteLLMSendMessageResponse>(normalized)
+                .map_err(|source| AgentProviderError::Decode { source })
+        })
+        .unwrap();
     assert_eq!(
         serde_json::to_value(response).unwrap(),
         json(
@@ -236,7 +249,14 @@ fn deletion_requires_name() {
 #[test]
 fn a2a_fractional_response_id_is_rejected() {
     let payload = serde_json::from_str(r#"{"id": 1.5}"#).unwrap();
-    drop(LiteLLMSendMessageResponse::from_dict(&payload, None).unwrap_err());
+    drop(
+        normalize_a2a_jsonrpc_response(&payload, None)
+            .and_then(|normalized| {
+                serde_json::from_value::<LiteLLMSendMessageResponse>(normalized)
+                    .map_err(|source| AgentProviderError::Decode { source })
+            })
+            .unwrap_err(),
+    );
 }
 
 #[rstest::rstest]
@@ -312,7 +332,12 @@ fn record_defaults_match_litellm() {
 #[case::object_id(json(r#"{"a": false}"#), json(r#""{'a': False}""#))]
 fn request_id_normalization(#[case] request: AgentJson, #[case] expected: AgentJson) {
     let payload = json(r#"{"error":{"code":-32600},"id":null}"#);
-    let direct = LiteLLMSendMessageResponse::from_dict(&payload, Some(&request)).unwrap();
+    let direct = normalize_a2a_jsonrpc_response(&payload, Some(&request))
+        .and_then(|normalized| {
+            serde_json::from_value::<LiteLLMSendMessageResponse>(normalized)
+                .map_err(|source| AgentProviderError::Decode { source })
+        })
+        .unwrap();
     let sdk = LiteLLMSendMessageResponse::from_a2a_response(&payload, Some(&request)).unwrap();
     assert_eq!(serde_json::to_value(&direct).unwrap()["id"], expected);
     assert_eq!(
@@ -328,7 +353,12 @@ fn a2a_preserves_existing_id_and_metadata() {
         r#"{"id":42,"jsonrpc":"2.0","result":{"text":"answer"},
         "error":null,"usage":{"cost":"0.001"},"vendor":[1,2]}"#,
     );
-    let mut response = LiteLLMSendMessageResponse::from_dict(&payload, Some(&json("99"))).unwrap();
+    let mut response = normalize_a2a_jsonrpc_response(&payload, Some(&json("99")))
+        .and_then(|normalized| {
+            serde_json::from_value::<LiteLLMSendMessageResponse>(normalized)
+                .map_err(|source| AgentProviderError::Decode { source })
+        })
+        .unwrap();
     assert!(response.hidden_params.is_empty());
     response
         .hidden_params
@@ -344,7 +374,14 @@ fn a2a_preserves_existing_id_and_metadata() {
 #[case::invalid_result(json(r#"{"result":[]}"#))]
 #[case::invalid_error(json(r#"{"error":"oops"}"#))]
 fn invalid_a2a_records_fail(#[case] payload: AgentJson) {
-    drop(LiteLLMSendMessageResponse::from_dict(&payload, None).unwrap_err());
+    drop(
+        normalize_a2a_jsonrpc_response(&payload, None)
+            .and_then(|normalized| {
+                serde_json::from_value::<LiteLLMSendMessageResponse>(normalized)
+                    .map_err(|source| AgentProviderError::Decode { source })
+            })
+            .unwrap_err(),
+    );
 }
 
 #[rstest::rstest]
@@ -362,7 +399,12 @@ fn invalid_a2a_records_fail(#[case] payload: AgentJson) {
 #[case::negative_overflow("-1e309", "-inf")]
 fn fractional_request_ids_become_strings(#[case] input: &str, #[case] expected: &str) {
     let request: AgentJson = serde_json::from_str(input).unwrap();
-    let response = LiteLLMSendMessageResponse::from_dict(&json("{}"), Some(&request)).unwrap();
+    let response = normalize_a2a_jsonrpc_response(&json("{}"), Some(&request))
+        .and_then(|normalized| {
+            serde_json::from_value::<LiteLLMSendMessageResponse>(normalized)
+                .map_err(|source| AgentProviderError::Decode { source })
+        })
+        .unwrap();
     assert_eq!(serde_json::to_value(response).unwrap()["id"], expected);
 }
 
@@ -423,10 +465,12 @@ fn replays_agent_provider_corpus() {
             drop(serde_json::from_slice::<ListAgentsResponse>(&bytes));
             drop(serde_json::from_slice::<LiteLLMSendMessageResponse>(&bytes));
             let payload: AgentJson = serde_json::from_slice(&bytes).unwrap();
-            drop(LiteLLMSendMessageResponse::from_dict(
-                &payload,
-                Some(&payload),
-            ));
+            drop(
+                normalize_a2a_jsonrpc_response(&payload, Some(&payload)).and_then(|normalized| {
+                    serde_json::from_value::<LiteLLMSendMessageResponse>(normalized)
+                        .map_err(|source| AgentProviderError::Decode { source })
+                }),
+            );
             drop(LiteLLMSendMessageResponse::from_a2a_response(
                 &payload, None,
             ));
@@ -518,10 +562,22 @@ fn native_contract_exposes_responses() {
 fn arbitrary_integer_ids_keep_precision() {
     let request: AgentJson =
         serde_json::from_str("1234567890123456789012345678901234567890").unwrap();
-    let response = LiteLLMSendMessageResponse::from_dict(&json("{}"), Some(&request)).unwrap();
+    let response = normalize_a2a_jsonrpc_response(&json("{}"), Some(&request))
+        .and_then(|normalized| {
+            serde_json::from_value::<LiteLLMSendMessageResponse>(normalized)
+                .map_err(|source| AgentProviderError::Decode { source })
+        })
+        .unwrap();
     assert_eq!(serde_json::to_value(response).unwrap()["id"], request);
     let existing = json(&format!(r#"{{"id":{request}}}"#));
-    drop(LiteLLMSendMessageResponse::from_dict(&existing, None).unwrap());
+    drop(
+        normalize_a2a_jsonrpc_response(&existing, None)
+            .and_then(|normalized| {
+                serde_json::from_value::<LiteLLMSendMessageResponse>(normalized)
+                    .map_err(|source| AgentProviderError::Decode { source })
+            })
+            .unwrap(),
+    );
 }
 
 #[rstest::rstest]
@@ -529,7 +585,8 @@ fn arbitrary_integer_ids_keep_precision() {
 #[case::quotes(json(r#"["say 'hi' and \"bye\""]"#), "['say \\'hi\\' and \"bye\"']")]
 #[case::controls(json(r#"["\n\r\t\u0000\\"]"#), "['\\n\\r\\t\\x00\\\\']")]
 fn compound_request_ids_use_python_spelling(#[case] request: AgentJson, #[case] expected: &str) {
-    let response = LiteLLMSendMessageResponse::from_dict(&json("{}"), Some(&request)).unwrap();
+    let normalized = normalize_a2a_jsonrpc_response(&json("{}"), Some(&request)).unwrap();
+    let response: LiteLLMSendMessageResponse = serde_json::from_value(normalized).unwrap();
     assert_eq!(serde_json::to_value(response).unwrap()["id"], expected);
 }
 

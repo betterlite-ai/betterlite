@@ -1,0 +1,34 @@
+kind: helper
+name: langfuse-settings-deployment-environment
+call:
+  b3900:
+    function: environment
+    steps:
+      - explicit: "  production  "
+        environment: {}
+      - explicit: ""
+        environment:
+          LANGFUSE_TRACING_ENVIRONMENT: qa
+      - explicit: "   "
+        environment:
+          LANGFUSE_TRACING_ENVIRONMENT: qa
+      - explicit: "Bad Env"
+        environment: {}
+      - explicit: null
+        environment:
+          LANGFUSE_TRACING_ENVIRONMENT: Bad Env
+      - explicit: null
+        environment:
+          LANGFUSE_TRACING_ENVIRONMENT: "   "
+      - explicit: null
+        environment:
+          LANGFUSE_TRACING_ENVIRONMENT: ""
+      - explicit: null
+        environment: {}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/4/warning_details/0
+      why: betterlite writes its own validation message
+    - pointer: /value/5/warning_details/0
+      why: betterlite writes its own validation message

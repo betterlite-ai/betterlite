@@ -1,0 +1,27 @@
+kind: helper
+name: image-token-geometry-low-auto-high
+call:
+  image_tokens:
+    calls:
+      - function: calculate_img_tokens
+        data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAA="
+        mode: low
+      - function: calculate_img_tokens
+        data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAA="
+        mode: auto
+      - function: calculate_img_tokens
+        data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAA="
+        mode: high
+      - function: calculate_img_tokens
+        data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAA="
+      - function: calculate_img_tokens
+        data: "not a data url"
+        mode: low
+      - function: calculate_img_tokens
+        data: "data:image/png;base64,!!!!"
+        mode: auto
+      - function: calculate_img_tokens
+        data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAA="
+        use_default_image_token_count: true
+env: {}
+compare: {ignore: []}

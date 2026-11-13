@@ -1,0 +1,9 @@
+kind: helper
+name: responses-empty-text-part
+call:
+  b5240:
+    function: "output_choices"
+    response: {"output": [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": ""}]}], "status": "completed"}
+env: {}
+compare:
+  ignore: []

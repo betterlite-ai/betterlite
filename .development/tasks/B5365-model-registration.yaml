@@ -1,0 +1,158 @@
+id: B5365
+title: Model registration, deployment filters and region checks
+description: >-
+  `litellm.register_model` lets a user add or change pricing for a model at runtime, and the router uses a few plain
+  filters to pick deployments by order and region. Build these in betterlite-models: `model_registration`,
+  `deployment_filters` and `deployment_regions`.
+
+
+  `model_registration` holds a `ModelRegistry` struct the caller owns, with the live cost map, the runtime registrations
+  and B5361's `ProviderModelSets`. The cost map stays as `serde_json::Map` because a user entry may hold any field, and
+  Python shows it as a dict. Build `_update_dictionary` (skip `None`, send strings through `_convert_stringified_numbers`,
+  merge nested dicts), `_convert_stringified_numbers` ("e" or "." gives a float, anything else an int, a failed parse
+  keeps the string), `cost_map_omits_token_price` (true when at least one key has an entry and no entry holds `input_cost_per_token` or
+  `output_cost_per_token`), `_resolve_builtin_model_cost_entry`, `is_generalized_model_info`,
+  `_get_builtin_model_info_for_registration`, `set_live_deployment_replay`, `reapply_runtime_model_cost_registrations`
+  and `register_model` (L3317-L3479).
+
+
+  `register_model` takes a dict or a URL, plus `persist_across_reloads` (default true) and `warning_display_name`. A URL
+  goes through a `CostMapFetcher` trait with `max_attempts` 1, so this crate makes no HTTP call. For each key it records
+  the entry in the runtime registrations, skips the model info step for `PROVIDERS_THAT_AUTHENTICATE_ON_PROVIDER_INFO`,
+  and otherwise takes the built-in info, or seeds it from B2229's `match_capability_generalizations`. It then inherits
+  `_CACHE_PRICING_FIELDS` from the built-in entry, or warns when custom pricing has no cache pricing. It pops a
+  `litellm_provider` of `None`, pops an `input_cost_per_token` or `output_cost_per_token` the raw entry didn't hold, since
+  `get_model_info` fills a missing price with 0 (issue 30198), does `setdefault(key, {}).update(...)`, drops the lowercase lookup and adds the key to the provider
+  sets. Openrouter stores the part after the first "/". It returns its argument. A warning goes through a returned list
+  of named warnings, not a log call.
+
+
+  `deployment_filters` holds `_get_deployment_order` (`litellm_params` first, then `model_info`),
+  `get_order_filtered_deployments` (the group with the smallest order; no orders at all gives the input back). They're
+  generic over a small trait with the order accessor, so the router's deployment type can use them.
+
+
+  `deployment_regions` holds `_get_model_region` (vertex uses `vertex_location`, then the caller's resolved default;
+  bedrock uses `aws_region_name`; watsonx uses `watsonx_region_name`; other providers use `region_name`),
+  `_infer_model_region` (resolves the provider through B174, lowers the region and tests substrings against the EU list
+  and then the US list) and `is_region_allowed`. The provider region lists come in as a `ProviderRegionLists` argument
+  because they live in provider crates, and the default location replaces `litellm.vertex_location` and the
+  VERTEXAI_LOCATION and VERTEX_LOCATION env reads.
+
+
+  The oracle operation is `b5365`. Its Python adapter calls `litellm.register_model` on a copy of a fixture map and reports
+  the map entry and the provider set, and calls the filter functions with fixture deployment dicts.
+scope:
+  paths:
+  - crates/betterlite-models/Cargo.toml
+  - crates/betterlite-models/src/model_registration.rs
+  - crates/betterlite-models/src/model_registration/**
+  - crates/betterlite-models/src/deployment_filters.rs
+  - crates/betterlite-models/src/deployment_filters/**
+  - crates/betterlite-models/src/deployment_regions.rs
+  - crates/betterlite-models/src/deployment_regions/**
+  - tools/oracle/cases/helpers/model-registration/**
+  - "tools/oracle/fuzz/corpus/helper_case/model_registration-*"
+  - tools/oracle/helpers/b5365.py
+  - tools/oracle/helpers/b5365/**
+  - tools/oracle/src/helpers/models/b5365.rs
+  - tools/oracle/src/helpers/models/b5365/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3136-L3314
+  why: Dictionary merge, number conversion, built-in entry lookup and the replay functions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3317-L3479
+  why: The whole order of steps in register_model.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5188-L5217
+  why: The deployment order filter.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5245-L5347
+  why: Region lookup and the allowed check.
+- url: https://github.com/BerriAI/litellm/issues/30198
+  why: Why synthesized zero costs are removed. They would turn budget enforcement off for the model.
+dod:
+- text: >-
+    `_update_dictionary`, `_convert_stringified_numbers` and `cost_map_omits_token_price` match LiteLLM on strings, nested
+    dicts, `None` values and a failed number parse.
+  proof: [cost-merge, oracle, helper-python]
+- text: >-
+    `register_model` leaves the same entry as LiteLLM for a known model, a generalized model, a new model and a provider
+    from `PROVIDERS_THAT_AUTHENTICATE_ON_PROVIDER_INFO`, and returns its argument.
+  proof: [register-model, oracle, helper-python]
+- text: >-
+    A registered entry with no price holds no synthesized zero cost, and a stated price of 0 stays, so budget checks see
+    the same entry as in LiteLLM.
+  proof: [synthesized-costs, oracle, helper-python]
+- text: A registered key lands in the provider set, with Openrouter's part after the first "/".
+  proof: [register-model, oracle, helper-python]
+- text: Runtime registrations replay after a reload unless `persist_across_reloads` was false.
+  proof: [registration-replay, oracle, helper-python]
+- text: The order filter matches LiteLLM, including deployments with no order at all.
+  proof: [deployment-filters, oracle, helper-python]
+- text: Region lookup and `is_region_allowed` match LiteLLM for vertex, bedrock, watsonx and a plain `region_name`.
+  proof: [deployment-regions, oracle, helper-python]
+- text: New helper corpus seeds call `b5365` and replay through the shared parser.
+  proof: [helper-case-corpus]
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: cost-merge
+    why: A merge or conversion step differs from the source.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^model_registration::.*(merge|number|omits)/)'
+  - id: register-model
+    why: The step order of register_model is broken.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^model_registration::.*register/)'
+  - id: synthesized-costs
+    why: A zero cost survives where it must not, or a real zero is lost.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^model_registration::.*synthesized/)'
+  - id: registration-replay
+    why: Runtime entries are lost, or return when they should not.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^model_registration::.*replay/)'
+  - id: deployment-filters
+    why: A filter picks the wrong group.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^deployment_filters::/)'
+  - id: deployment-regions
+    why: A region check passes a deployment it should stop.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^deployment_regions::/)'
+  - id: helper-python
+    why: The b5365 adapter must exist and pass ruff and basedpyright.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5365)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers/b5365 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5365/pyrightconfig.json
+  - id: helper-case-corpus
+    why: b5365 needs fresh seeds that replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/model_registration-*")"
+      && grep -lE '^[[:space:]]+b5365:' tools/oracle/fuzz/corpus/helper_case/model_registration-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/model-registration/dictionary-merge.yaml
+- tools/oracle/cases/helpers/model-registration/stringified-numbers.yaml
+- tools/oracle/cases/helpers/model-registration/register-known-model.yaml
+- tools/oracle/cases/helpers/model-registration/register-new-model.yaml
+- tools/oracle/cases/helpers/model-registration/synthesized-costs.yaml
+- tools/oracle/cases/helpers/model-registration/replay.yaml
+- tools/oracle/cases/helpers/model-registration/deployment-order.yaml
+- tools/oracle/cases/helpers/model-registration/regions.yaml
+deviations:
+- what: The registry is a struct, the URL fetch is a trait, and warnings are returned.
+  why: The inject-dependencies rule bars globals and this crate makes no network call, so the caller wires both.
+out_of_scope:
+- >-
+  `get_model_region` L5350-L5371, `_is_region_eu` L5313-L5324 and `_is_region_us` L5327-L5338 are not built: no caller at
+  the pin. `get_supported_regions` L3081-L3121 has none either.
+- >-
+  The provider EU and US lists stay with their provider tasks, and `calculate_max_parallel_requests` L5145-L5185 stays with
+  B303. B157 exposes `register_model` to Python as a module attribute through the wiring in its task file.
+- The B157 task file holds the full owner list for litellm/utils.py.
+- "`get_excluded_filtered_deployments` L5220-L5242: B8440 ports it as `drop_excluded` in betterlite-router, next to its only callers, so deployment_filters does not build it."
+pitfalls:
+- >-
+  Issue 30198 is why the order of the pops matters: a synthesized zero left in the entry reads as free and turns budget
+  enforcement off. Run the pop before the merge, as the source does.
+- >-
+  Prices stay as JSON numbers here. The money-is-decimal rule applies where a price is computed, not where a user's
+  entry is stored, and a float conversion would change what the Python dict shows.
+- '`_update_dictionary` skips `None` and merges nested dicts rather than replacing them.'
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,20 @@
+kind: helper
+name: premium-user-check
+call:
+  b8400:
+    calls:
+      - do: premium
+        premium_user: true
+        feature: sso
+      - do: premium
+        premium_user: false
+        feature: sso
+      - do: premium
+        premium_user: false
+env: {}
+compare:
+  ignore:
+    - pointer: /value/results/1/detail/error
+      why: betterlite writes its own premium-gate message
+    - pointer: /value/results/2/detail/error
+      why: betterlite writes its own premium-gate message

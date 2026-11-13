@@ -1,0 +1,7 @@
+kind: helper
+name: refused_device_code
+call:
+  chatgpt_login: {"record": null, "replacement": null, "now": 1000, "replies": [{"status": 503, "body": "{}"}], "repeat": null}
+env: {}
+compare:
+  ignore: []

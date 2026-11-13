@@ -1,0 +1,16 @@
+kind: helper
+name: a2a-send-params-v10-data-part-object-and-scalar
+call:
+  b6950:
+    params:
+      message:
+        messageId: m1
+        parts:
+          - data: {a: 1}
+          - data: scalar
+            metadata: {x: 1}
+          - data: null
+          - data: null
+            text: a
+env: {}
+compare: {ignore: []}

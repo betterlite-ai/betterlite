@@ -1,0 +1,18 @@
+kind: helper
+name: vector-query-embedding-executor-precedence
+call:
+  vector_query_embedding:
+    operation: executor_precedence
+    cases:
+      - {explicit: true, router: true, metadata: {team: supplied}}
+      - {router: true, metadata: {team: supplied}}
+      - {}
+    forward:
+      vector_store_id: vs_a
+      query: [a, ""]
+      optional_params: {max_num_results: 3}
+      api_base: https://example.test
+      litellm_params: {litellm_embedding_model: openai/text-embedding-3-small}
+      extra_body: {e: true}
+env: {}
+compare: {ignore: []}

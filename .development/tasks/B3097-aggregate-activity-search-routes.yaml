@@ -1,0 +1,178 @@
+id: B3097
+title: Serve aggregate daily activity and scoped key searches
+description: >-
+  Build the module `aggregate_activity_routes` in betterlite-server. It serves two reports for every entity that
+  has daily activity routes: the aggregated report (all days in a range, with totals and breakdowns, no paging) and
+  the key search (find API keys by a text fragment, then return their summed metrics). The caller's scope (which
+  users, teams, tags and so on they may see) is decided before any query runs, by B3094 and B3095. B3096 owns the
+  helpers and response types used here; import them, do not copy them: `resolved_scope`, `key_metadata`,
+  `get_daily_activity_prisma_client` and `get_daily_activity_repository` (the two lookups B3096 builds), plus
+  `KeyActivityRow` and `DailyActivityKeySearchResponse`. B3096 owns the module `daily_activity_routes`; this task
+  must not write into it.
+
+  Routes. For each prefix in an entity's resolver (`route_prefixes`: /user, /team, /tag, /organization, /customer
+  and /end_user, /agent) register GET `{prefix}/daily/activity/aggregated` and GET
+  `{prefix}/daily/activity/aggregated/search`. That makes 14 routes. /end_user is an alias of /customer that
+  LiteLLM leaves out of /openapi.json; keep it out of the schema too, register it once, and answer exactly like
+  /customer. Each route is authenticated by B052 (the route-level dependency runs first, then the handler's own),
+  carries the resolver's `tags` and the operation name from `operation_names` (`aggregated` and `search`;
+  B3094's `OperationNames`), and each handler runs inside B865's management completion wrapper, like
+  `@management_endpoint_wrapper`. The route functions are named after those operation names. Expose one public
+  function that returns the axum routes for an entity. B8482 composes them with B3096's and B3098's and mounts them, and this task
+  adds no loop over all entities and mounts nothing.
+
+  Query parameters. The entity's own parameters are parsed by the B3094 and B3095 query types (user: start_date,
+  end_date, model, api_key, user_id, timezone, include_current_utc_day; team: team_ids, exclude_team_ids and the
+  rest; the other four come from B3095). Use each entity's query-params struct and its `*_entity_query` function to
+  get an `EntityQuery`; this task turns the query string into those structs. The six public descriptions of the
+  user parameters are `pub const` values next to B3094's UserQueryParams; the schema reads them and nothing is
+  retyped here. Malformed values (an integer `timezone` that is not an integer, a boolean that is not a boolean)
+  answer 422 in the envelope B003 uses for other query validation errors. Added by this task, with LiteLLM's
+  constants from litellm/constants.py L2166-L2171:
+  aggregated route `api_key_limit` (integer, 1 to 1000, default 100, USAGE_TOP_API_KEYS_DEFAULT and
+  USAGE_TOP_API_KEYS_MAX); search route `search` (required string, at least 1 character) and `limit` (1 to 100,
+  default 100, USAGE_KEY_SEARCH_DEFAULT and USAGE_KEY_SEARCH_MAX). These are fixed constants, not environment
+  settings. A value out of range answers 422, never a clamped value. When the entity query and the handler's own
+  parameters are both bad, one 422 lists the entity query's errors first, then the handler's, in declaration
+  order (`search`, then `limit`).
+
+  Order inside every handler. First the dependencies run: the route-level authentication, the entity query, the
+  caller (B052), the daily activity repository, the database handle. A missing database stops there with HTTP 500
+  and detail `{"error": <CommonProxyErrors.db_not_connected_error text>}` (litellm/proxy/_types.py L4391-L4395),
+  before any 422 is reported for any parameter. Then `resolved_scope` runs with the `user_aggregated` flag B3096
+  built. The aggregated route passes `true` for the user entity and `false` for the other five. The search route
+  passes `false` for all six. With `true` only the canonical date parser runs, so a missing date answers B3090's
+  `InvalidDateRange` message and a range of more than 400 days is accepted. With `false` B815's
+  `aggregated_date_range_error` runs, including the 400-day cap. A date or scope failure becomes the HTTP error
+  through B3090's `raise_public` (400, 403 or 404, detail `{"error": <reason>}`).
+
+  Aggregated handler. After the scope, call B3093's `get_daily_activity_aggregated` with the resolved scope,
+  `entity_metadata_field` = the resolved scope's entity_metadata, `include_entity_breakdown` = the resolver's flag
+  (true for team and the other entities that set it in B3094 and B3095, false for user) and `api_key_limit` from
+  the query. Return its `SpendAnalyticsPaginatedResponse` (B3090) unchanged. The user and team routes carry the
+  long descriptions LiteLLM sets on the function (daily_activity_routes.py L283-L310); the other four have none.
+  Copy those two texts byte for byte as `pub const &str` values in this module.
+
+  Search handler. After the scope, ask the repository for `search_keys(scope, search, limit)`. If it returns no
+  keys, answer `DailyActivityKeySearchResponse { api_keys: [] }` and do not read anything else. Otherwise call
+  `get_daily_activity_aggregated` with the scope copied and its `api_keys` replaced by the found keys (this
+  replaces any api_key the caller filtered on), `include_entity_breakdown` false, no entity metadata and the
+  default `api_key_limit` of 100. Then `search_rows` walks the found keys in order and keeps one `KeyActivityRow`
+  per key that has data (LiteLLM `_search_rows`). `fold_key_metrics` (LiteLLM `_fold_key_metrics`) collects, for
+  one key, the metrics of every day in `results` whose `breakdown.api_keys` holds that key. With none it returns
+  nothing, so the key is dropped. Otherwise it returns `KeyActivityRow { api_key, metrics: sum_metrics(all of
+  them), metadata: <metadata of the first day that held the key> }`. `sum_metrics` (LiteLLM `_sum_metrics`) adds
+  all 17 SpendMetrics fields of B3090 one by one: spend, flat_cost, prompt_tokens, completion_tokens,
+  cache_read_input_tokens, cache_creation_input_tokens, compression_saved_tokens, compression_savings_spend,
+  prompt_caching_savings_spend, gateway_injected_caching_savings_spend, autorouter_savings_spend, total_tokens,
+  successful_requests, failed_requests, api_requests, total_response_time_ms and timed_requests. Floats add in
+  order, left to right, from zero.
+
+  Failures. Any error from the repository or from the aggregation that is not already an HTTP error answers 500
+  with detail `{"error": "Failed to fetch analytics: <error text>"}`. The handler logs one line at error level:
+  "Daily activity aggregation failed: %s" on the aggregated route and "Daily activity key search failed: %s" on the
+  search route. An HTTP error from the scope step or from B3093 (which already answers 500 itself) passes through
+  unchanged and is not logged by the handler.
+
+  This task has unit tests only. Its routes answer over HTTP once B8482 mounts them, so B8482 owns their HTTP oracle cases (tools/oracle/cases/management/daily-activity-aggregate/) and proves the defaults, bounds, date errors, access errors, missing credential and missing database over HTTP. Here native tests call the per-entity routes on a test router with fake dependencies for the parameter bounds, the route set per prefix, the date check flag per entity, scope denials and the dependency order, and cover summing, folding and error paths with a fake repository.
+scope:
+  paths:
+    - crates/betterlite-server/src/aggregate_activity_routes.rs
+    - crates/betterlite-server/src/aggregate_activity_routes/**
+    - tools/oracle/helpers/b3097.py
+    - tools/oracle/helpers/b3097/**
+    - tools/oracle/src/helpers/server/b3097.rs
+    - tools/oracle/src/helpers/server/b3097/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L240-L310
+    why: The aggregated route, from the wrapper to add_api_route, with its api_key_limit bounds, the user_aggregated flag per entity, the 500 handling, include_in_schema and the user and team function descriptions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L356-L402
+    why: The search route, its required search parameter, limit bounds, the early return for no keys, the scope copy with api_keys replaced and the error log.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L97-L116
+    why: _sum_metrics, the field-by-field sum of the 17 SpendMetrics fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L187-L200
+    why: _fold_key_metrics and _search_rows, including the metadata taken from the first day and the dropped keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L63-L94
+    why: Database and repository lookups, _date_range_error and _resolved_scope, built by B3096; this task calls them and passes the user_aggregated flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L560-L579
+    why: Which prefixes get which routes and the six resolvers; the loop itself is B8482's.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L1007-L1086
+    why: get_daily_activity_aggregated (B3093), its defaults, and how it turns any failure into its own 500.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2166-L2171
+    why: Default and maximum of api_key_limit and of the search limit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L219-L272
+    why: The user and team query shapes and the public parameter descriptions, built by B3094.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L358-L396
+    why: The USER and TEAM resolver constants whose route prefixes, tags, operation names and entity breakdown flag this task reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L9-L46
+    why: DailyActivityScope, whose api_keys field the search replaces.
+dod:
+  - text: The aggregated route answers SpendAnalyticsPaginatedResponse on every prefix, with api_key_limit default 100 and maximum 1000 and a value out of range answering 422.
+    proof: [route-tests]
+  - text: The search route requires a non-empty search, with limit default 100 and maximum 100, and an out of range limit answers 422 on every prefix.
+    proof: [route-tests]
+  - text: Exactly 14 routes exist, two per prefix, /end_user is hidden from the schema and answers like /customer, and the team, tag, organization, customer and agent prefixes each have both routes.
+    proof: [route-tests]
+  - text: The user aggregated route accepts a range of more than 400 days and answers the canonical-date message for a missing date, while the other five aggregated routes and all six search routes answer 400 for a range of more than 400 days.
+    proof: [route-tests]
+  - text: A reversed or non-canonical date answers 400 with detail.error before the scope resolver runs.
+    proof: [route-tests]
+  - text: A scope denial answers 403 or 404 with detail.error, and a non-admin asking for another user gets "Non-admin users can only view their own spend data.".
+    proof: [route-tests]
+  - text: A missing database answers 500 with the db_not_connected_error text before any parameter validation error, and a missing credential answers 401 first.
+    proof: [route-tests]
+  - text: Malformed timezone or include_current_utc_day values answer 422 instead of being ignored.
+    proof: [route-tests]
+  - text: The aggregated handler passes the scope, the resolved entity metadata, the resolver's entity breakdown flag and api_key_limit to B3093's function and returns its response unchanged.
+    proof: [route-tests]
+  - text: The search handler answers an empty list without an aggregate read when no keys match, and otherwise reads the aggregate with api_keys replaced by the found keys, no entity breakdown and the default key limit.
+    proof: [search-tests]
+  - text: search_rows keeps the order of the found keys, drops a key with no data in any day, sums every one of the 17 metric fields across days and takes the metadata of the first day.
+    proof: [search-tests, sum-tests]
+  - text: A repository or aggregation error that is not an HTTP error answers 500 with detail.error starting "Failed to fetch analytics" and the error text, and logs the route's own line; an HTTP error passes through unchanged and unlogged.
+    proof: [failure-tests]
+checks:
+  optional: []
+  commands:
+    - id: route-tests
+      why: the routes, their parameter bounds, the route set per prefix, the date check flag per entity, scope denials, the dependency order or the aggregated handler wiring are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^aggregate_activity_routes::tests::route_/)'
+    - id: search-tests
+      why: the search handler, its early return, its scope copy or search_rows and fold_key_metrics are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^aggregate_activity_routes::tests::search_/)'
+    - id: sum-tests
+      why: sum_metrics leaves out a field or adds in the wrong order
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^aggregate_activity_routes::tests::sum_/)'
+    - id: failure-tests
+      why: errors are not turned into the 500 body and log line LiteLLM uses, or an HTTP error is wrapped
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^aggregate_activity_routes::tests::failure_/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      A repository or aggregation failure answers 500 with "Failed to fetch analytics" and a colon, followed by the Rust error's display text, not Python's exception text.
+    why: The wording of an internal error cannot match Python's exception strings; the prefix, the status and the detail.error shape do.
+  - what: The six resolver callables become a match on B3094's Entity enum, as B3094 already records, so a route function takes the entity and uses B3094 and B3095's query and resolve functions instead of stored callables.
+    why: rules.yaml requires an enum matched exhaustively in place of a registry of callables.
+  - what: LiteLLM's `exception` log call also prints a stack trace; betterlite logs the one line at error level with the error text and no trace.
+    why: A Rust error has no Python traceback to print, and the line text, level and logger match.
+out_of_scope:
+  - "B3096 owns resolved_scope, date_range_error, key_metadata, key_activity_row, key_activity_rows (L63-L162), get_daily_activity_prisma_client, get_daily_activity_repository, the key page, model leaders and cache leakage routes (L313-L353, L405-L452, L516-L557), and the types KeyActivityRow, KeySpendMetrics, KeySpendActivityRow, DailyActivityKeySearchResponse and the other response models."
+  - "B3098 owns the export route and _export_filename, _content_disposition, _csv_cell, _csv_row and _stream_export_rows (L165-L184, L203-L237, L455-L513)."
+  - "B8482 composes the routes of B3096 to B3098 and owns register_daily_activity_routes with its loop over the six resolvers (L560-L579); this task only exposes the per-entity route function."
+  - "B3093 owns get_daily_activity_aggregated and the rollup folding; B729 owns the repository's search_keys and aggregated methods and their limit checks; B3094 and B3095 own the resolvers and query shapes; B3090 owns SpendMetrics, KeyMetadata, SpendAnalyticsPaginatedResponse, ScopeDenied, InvalidDateRange and raise_public; B815 owns aggregated_date_range_error."
+pitfalls:
+  - The aggregated route passes user_aggregated true for the user entity only, so /user/daily/activity/aggregated has no 400-day cap and a different missing-date message, while /team, /tag, /organization, /customer, /end_user and /agent keep the cap. The search route passes false for every entity, user included.
+  - The missing-database 500 comes from a dependency, so it beats the 422 for a bad limit, api_key_limit or timezone; a test with no database and limit=0 must still answer 500, and a missing credential answers 401 before that.
+  - The search route replaces the scope's api_keys with the found keys, so an api_key the caller passed only narrows the first search and not the aggregate read that follows.
+  - fold_key_metrics takes the metadata from the first day that holds the key, not the last, and a key found by the search but absent from every day is dropped, so the response can have fewer rows than the limit.
+  - get_daily_activity_aggregated already turns its own failure into an HTTP 500, so the handler must let that error through without wrapping it or logging "Daily activity aggregation failed" a second time.
+  - include_entity_breakdown on the aggregated route comes from the resolver (B3094 sets it on for team), but the search read always passes false.
+  - /end_user is the same handler set as /customer but hidden from /openapi.json, and it must not be registered twice.
+  - search is a text fragment for a SQL match inside B729's builder; this task passes it through unchanged and never logs it or puts it in an error body other than inside the repository's own error text.
+  - api_key_limit is 1 to 1000 on the aggregated route while the search limit is 1 to 100; do not share one bound between them.
+  - 'Query values that FastAPI treats as booleans for include_current_utc_day are true, false, t, f, 1, 0, yes, no, y, n, on and off in any case; anything else is 422.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

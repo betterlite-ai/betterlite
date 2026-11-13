@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-web-identity-malformed-token
+call:
+  bedrock_web_identity:
+    jwt_audience_hint:
+      tokens:
+        - a.b
+        - a.b.c.d
+        - h.!!!!.c
+        - header.eyJhdWQiOg.signature
+        - header.eyJhdWQiOjV9.signature
+        - header.eyJhdWQiOlsImEiLDVdfQ.signature
+        - h.é.c
+        - header.eyJpc3MiOjV9.signature
+        - header.bnVsbA.signature
+env: {}
+compare: {ignore: []}

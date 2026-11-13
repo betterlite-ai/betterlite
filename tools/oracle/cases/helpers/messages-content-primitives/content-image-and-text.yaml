@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-content-image-and-text
+call: {"messages_content_primitives": {"operation": "tool_result_content", "raw_content": [{"type": "image", "source": {"type": "base64", "data": "YWJj"}}, "a"]}}
+env: {}
+compare: {ignore: []}

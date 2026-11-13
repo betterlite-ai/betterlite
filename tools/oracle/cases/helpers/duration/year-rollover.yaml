@@ -1,0 +1,13 @@
+kind: helper
+name: year_rollover
+call:
+  duration:
+    calls:
+      - {function: duration_in_seconds, duration: "1mo", now: "2024-12-31T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "3mo", now: "2024-11-30T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "12mo", now: "2024-06-15T12:00:00Z"}
+      - {function: reset, duration: "1mo", now: "2024-12-15T10:00:00Z"}
+      - {function: reset, duration: "1mo", now: "2024-12-01T00:00:00Z"}
+      - {function: reset, duration: "1d", now: "2024-12-31T23:59:59Z"}
+env: {}
+compare: {ignore: []}

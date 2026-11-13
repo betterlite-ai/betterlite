@@ -3,11 +3,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
-use minijinja::value::Serde;
+use minijinja::value::Value;
 use serde::Deserialize;
 use serde_with::{DefaultOnNull, serde_as};
 
 use crate::arguments::json::{Json, Object};
+use crate::gitlab_templates::sandbox::to_value;
 use loading::PromptManagerError;
 use render::RenderError;
 use template::{PromptTemplate, TemplateError};
@@ -17,6 +18,7 @@ pub mod content;
 mod conversion;
 pub mod frontmatter;
 pub mod loading;
+pub mod preview;
 mod reload;
 pub mod render;
 mod sandbox;
@@ -161,7 +163,14 @@ impl PromptManager {
             return Err(RenderError::NotFound {
                 prompt_id: prompt_id.to_owned(),
                 version_suffix,
-                available: render::format_available(self.prompts.keys()),
+                available: format!(
+                    "[{}]",
+                    self.prompts
+                        .keys()
+                        .map(|id| format!("'{id}'"))
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                ),
             });
         };
 
@@ -172,12 +181,17 @@ impl PromptManager {
         bounds::check_template(&template.content)?;
 
         let env = sandbox::build();
-        let rendered = env
-            .render_str(&template.content, Serde(prompt_variables))
-            .map_err(|source| RenderError::Template {
-                prompt_id: prompt_id.to_owned(),
-                source,
-            })?;
+        let scope = Value::from_pairs(
+            prompt_variables
+                .iter()
+                .map(|(name, value)| (name.clone(), to_value(value))),
+        );
+        let rendered =
+            env.render_str(&template.content, scope)
+                .map_err(|source| RenderError::Template {
+                    prompt_id: prompt_id.to_owned(),
+                    source,
+                })?;
         bounds::check_output(rendered)
     }
 

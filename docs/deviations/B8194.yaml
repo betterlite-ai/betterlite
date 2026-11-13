@@ -1,0 +1,8 @@
+task: B8194
+deviations:
+  - what: Capturing an error body from a response that carries no request keeps the body and reports the preview as unavailable.
+    why: LiteLLM raises RuntimeError from the diagnostics helper here, which would turn a debugging path into a failed request; no working setup relies on that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_debug.py#L588
+  - what: The auth resolution headers are computed from a typed diagnostics value the caller holds, not from a scope dictionary read by key at send time.
+    why: betterlite keeps per-request state in typed request extensions; the header values and their order are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_debug.py#L136-L148

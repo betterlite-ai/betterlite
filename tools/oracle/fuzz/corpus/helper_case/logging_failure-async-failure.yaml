@@ -1,0 +1,90 @@
+kind: helper
+name: logging-failure-async-failure
+call:
+  logging_failure:
+    instances:
+      - init:
+          model: gpt-4o
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-1
+          function_id: fn-1
+          stream: false
+          litellm_trace_id: trace-1
+          litellm_params: {}
+          dynamic_callbacks:
+            failure: [legacy_function]
+        failure:
+          exception: {class_name: APIError, message: provider exploded}
+          traceback: "Traceback"
+        payload:
+          id: chatcmpl-1
+          trace_id: trace-1
+          session_id: session-1
+          call_type: completion
+          response_cost: 0.5
+          status: failure
+          status_fields: {llm_api_status: failure, guardrail_status: not_run}
+          total_tokens: 5
+          prompt_tokens: 2
+          completion_tokens: 3
+          startTime: 1704067200.0
+          endTime: 1704067201.0
+          completionStartTime: 1704067201.0
+          response_time: 1.0
+          model_map_information: {}
+          model: gpt-4o
+          api_base: https://api.openai.com
+          metadata: {}
+          saved_cache_cost: 0.0
+          request_tags: []
+          model_parameters: {}
+          hidden_params: {}
+        loggers:
+          - {name: first, flags: []}
+          - {name: second, flags: []}
+        operations:
+          - op: dispatch_failure_handlers
+            prefer_async_handlers: true
+      - init:
+          model: gpt-4o
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-2
+          function_id: fn-2
+          stream: false
+          litellm_trace_id: trace-2
+          litellm_params:
+            acompletion: true
+        failure:
+          exception: {class_name: APIError, message: provider exploded}
+          traceback: "Traceback"
+        payload:
+          id: chatcmpl-1
+          trace_id: trace-1
+          session_id: session-1
+          call_type: completion
+          response_cost: 0.5
+          status: failure
+          status_fields: {llm_api_status: failure, guardrail_status: not_run}
+          total_tokens: 5
+          prompt_tokens: 2
+          completion_tokens: 3
+          startTime: 1704067200.0
+          endTime: 1704067201.0
+          completionStartTime: 1704067201.0
+          response_time: 1.0
+          model_map_information: {}
+          model: gpt-4o
+          api_base: https://api.openai.com
+          metadata: {}
+          saved_cache_cost: 0.0
+          request_tags: []
+          model_parameters: {}
+          hidden_params: {}
+        loggers:
+          - {name: first, flags: []}
+        operations:
+          - op: dispatch_failure_handlers
+env: {}
+compare: {ignore: []}

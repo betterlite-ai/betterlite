@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-beta-comma-list
+call: {"bedrock_event_frames": {"operation": "beta", "params": {"headers": {"anthropic-beta": " a, b ,,a "}}}}
+env: {}
+compare: {ignore: []}

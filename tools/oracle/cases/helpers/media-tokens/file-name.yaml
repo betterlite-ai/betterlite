@@ -1,0 +1,14 @@
+kind: helper
+name: media-tokens-file-name
+call:
+  media_tokens:
+    model: gpt-3.5-turbo
+    calls:
+      - function: count_content
+        content:
+          - type: file
+            file:
+              filename: hello
+              file_data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABA"
+env: {}
+compare: {ignore: []}

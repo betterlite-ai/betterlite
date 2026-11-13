@@ -1,0 +1,11 @@
+kind: helper
+name: judge-verdict-non-object-json-rejected
+call:
+  b4080:
+    check: parse
+    raw: |
+      ```json
+      [1, 2]
+      ```
+env: {}
+compare: {ignore: []}

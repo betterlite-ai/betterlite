@@ -1,0 +1,64 @@
+id: B5106
+title: The chat route success tests do not race a 0.4 second deployment timeout
+description: >-
+  stream_has_success_headers::case_7_fallbacks failed queue run 41479415875 for PR 526, a change that only added
+  betterlite-openai sandbox_lifecycle files: x-litellm-attempted-fallbacks was None and the case took 30.077 s, while
+  cases 1 to 6 passed in about 0.08 s. case_3_model_group failed the same way in queue run 41233006057 for PR 395.
+  exchange in crates/betterlite-server/src/routes/chat/tests.rs gives its one deployment timeout 0.4 for every test,
+  so a success test fails whenever a loaded runner stalls the exchange for 0.4 s. Only two cases need the short
+  timeout: slower_than_the_timeout (a 2 s provider delay that expects 408 and x-litellm-timeout 0.4) and rate_limited
+  (it expects x-litellm-timeout 0.4 echoed back).
+
+
+  exchange takes the deployment timeout as a parameter. Every success test passes a timeout far above any runner
+  stall (30 seconds), and answers_failures_in_litellm_shape keeps 0.4 with its expected x-litellm-timeout. A new test
+  a_streaming_success_survives_a_one_second_provider_delay, where the provider answers a streaming request after 1
+  second, proves the success path no longer depends on a
+  sub-second deadline; it fails against the old 0.4 timeout. Before the change, reproduce the failure once with a
+  0.001 timeout on stream_has_success_headers and say in the report what the 30 seconds went into. If that points at
+  a product bug (a timed-out stream that answers 30 s later), report it and leave the product code alone.
+scope:
+  paths:
+    - crates/betterlite-server/src/routes/chat/tests.rs
+  lint_tables: false
+references:
+  - url: https://github.com/betterlite-ai/betterlite/actions/runs/41479415875
+    why: The queue run for PR 526 failed only case_7_fallbacks after 30.077 s; the gate-logs-tests artifact holds tests.log.
+  - url: https://github.com/betterlite-ai/betterlite/actions/runs/41233006057
+    why: The queue run for PR 395 failed case_3_model_group the same way.
+  - url: https://github.com/betterlite-ai/betterlite/blob/4d250403/crates/betterlite-server/src/routes/chat/tests.rs#L77-L118
+    why: exchange builds the one deployment with timeout 0.4 for every test.
+  - url: https://github.com/betterlite-ai/betterlite/blob/4d250403/crates/betterlite-server/src/routes/chat/tests.rs#L247-L298
+    why: The two failure cases that check x-litellm-timeout 0.4.
+dod:
+  - text: Every chat route success test runs with a 30 second deployment timeout, and a streaming request whose provider answers after 1 second still gets 200 and every success header.
+    proof: [slow-success-stream, success-headers-stress]
+  - text: The failure cases keep the 0.4 second timeout and still expect 408 and x-litellm-timeout 0.4, and every chat route test passes.
+    proof: [chat-route-tests]
+checks:
+  optional: []
+  commands:
+    - id: slow-success-stream
+      why: No test proves a success answer survives a 1 second provider delay.
+      run: |-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(=routes::chat::tests::a_streaming_success_survives_a_one_second_provider_delay)'
+    - id: success-headers-stress
+      why: A streaming header case fails on some of 20 runs.
+      run: |-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail --stress-count 20 -E 'test(/^routes::chat::tests::stream_has_success_headers::/)'
+    - id: chat-route-tests
+      why: A chat route test fails.
+      run: |-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::chat::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Product code. A product bug the 30 seconds point at goes into the report.
+  - The stream tests in tests/stream/tests.rs already use timeout 10 and stay as they are.
+pitfalls:
+  - The new slow case must fail with timeout 0.4. A delay shorter than the timeout proves nothing.
+  - Raising 0.4 for the failure cases too would make slower_than_the_timeout wait longer for no gain; keep both values.
+budget:
+  max_changed_lines: 60
+  max_new_expects: 0
+review_level: standard

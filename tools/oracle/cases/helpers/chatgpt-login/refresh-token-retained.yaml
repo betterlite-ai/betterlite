@@ -1,0 +1,7 @@
+kind: helper
+name: refresh_token_retained
+call:
+  chatgpt_login: {"record": "{\"access_token\": \"stale\", \"refresh_token\": \"keep-me\", \"expires_at\": 10}", "replacement": null, "now": 1000, "replies": [{"status": 200, "body": "{\"access_token\": \"h.eyJleHAiOiA0MDAwMDAwMDAwLCAiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjogeyJjaGF0Z3B0X2FjY291bnRfaWQiOiAiYWNjdCJ9fQ.s\", \"id_token\": \"h.eyJleHAiOiA0MDAwMDAwMDAwLCAiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjogeyJjaGF0Z3B0X2FjY291bnRfaWQiOiAiYWNjdCJ9fQ.s\"}"}], "repeat": null}
+env: {}
+compare:
+  ignore: []

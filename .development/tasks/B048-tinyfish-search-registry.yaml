@@ -1,0 +1,124 @@
+id: B048
+title: Map TinyFish searches and register every web search provider
+description: >-
+  Last part of the web search provider family. It adds api::search_providers::tinyfish and
+  api::search_providers::registry to betterlite-core, plus tinyfish_search_settings in betterlite-config
+  (TINYFISH_API_KEY unset, TINYFISH_API_BASE default https://api.search.tinyfish.ai). The other 17 providers
+  already have owners: B1552 (apiserpent), B1553 (brave), B1554 (dataforseo), B1555 (duckduckgo), B5834 (perplexity),
+  and B8020 to B8025 (exa_ai, serper, tavily, you_com, fastcrw, firecrawl, linkup, searxng, google_pse, searchapi,
+  nimble, parallel_ai). Do not rebuild any of them.
+
+  TinyFish. Display name "TinyFish", method GET. validate_environment returns a new map of the incoming headers
+  plus X-API-Key and Accept application/json (no Content-Type); a missing key fails with "TINYFISH_API_KEY is
+  not set. Set `TINYFISH_API_KEY` environment variable." The config is built per call and keeps one field,
+  caller_max_results, written by transform_search_request and read by transform_search_response, so the request
+  hook takes &mut self. transform_search_request returns the record _tinyfish_params holding: query (a list is
+  joined by a space; a nonempty search_domain_filter list of strings rewrites it as (q) (site:a OR site:b));
+  location from country when it is a string; then every non-unified option not already present, with a dict
+  or list encoded as compact JSON (separators "," and ":") and a bool as the text true or false. max_results is
+  not sent: an int, float or numeric string is clamped to 1..10 and stored in caller_max_results, and anything
+  that does not parse as an integer (including infinity) logs the warning "TinyFish Search: max_results=%r is
+  not a valid integer; ignoring." and leaves the stored value as it was. get_complete_url validates the record
+  as string, int, float or bool values (a null fails) and appends ?query-string, encoded with doseq, to the
+  caller base, else TINYFISH_API_BASE, else the default; with no record it returns the base unchanged.
+
+  transform_search_response, in order: a non-2xx status raises the wrapped error; a body that is not JSON
+  raises "Expected JSON response, got: " plus the first 200 characters; each results item that is an object
+  gets title, url and snippet set to "" when not a string; the body then has to validate as a SearchResponse
+  (results required) or it raises "Response shape does not match LiteLLM's SearchResponse schema: ..."; each
+  parameter_warnings entry with a nonempty string type, parameter and message is logged as "TinyFish Search
+  parameter_warning (type) `parameter`: message", others skipped silently; results are cut to
+  caller_max_results, or 10 when it is unset; the response headers go into hidden params as headers (raw) and
+  additional_headers (process_response_headers, owned by B206). All undeclared result and response fields are
+  kept as extras. The wrapped error is "TinyFish Search: {message}. See https://docs.tinyfish.ai/search-api for
+  details." where message is body.error.message when that is a nonempty string, else the raw text. It is also
+  the result of get_http_error_class, but get_error_class stays the base one.
+
+  Registry. registry.rs holds the closed enum of the 18 search provider names this family builds, parsed from
+  LiteLLM's SearchProviders values (apiserpent, brave, dataforseo, duckduckgo, exa_ai, fastcrw, firecrawl,
+  google_pse, linkup, nimble, parallel_ai, perplexity, searchapi, searxng, serper, tavily, tinyfish, you_com), and
+  search_config(name) returning a fresh boxed B3270 search config of that provider every call (it must be
+  fresh because TinyFish keeps state). A name outside the set returns None, as LiteLLM's
+  get_provider_search_config does for an unmapped provider. perplexity is in the set: its search config is B5834's perplexity_search in betterlite-openai, which implements B3270's
+  SearchProvider. agentcore (B659, B2212) and bing_grounding (B546) are not in this set: those tasks build typed request and
+  reply functions in betterlite-bedrock and betterlite-azure and no B3270 search config, and those leaf crates never import
+  betterlite-core. Add fuzz target tinyfish_reply with replays_the_tinyfish_corpus.
+  The source holds 282 nonblank lines for TinyFish and 20 for the map; plan 400 production and config lines,
+  280 test lines and 190 oracle and fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/api/search_providers/tinyfish.rs
+    - crates/betterlite-core/src/api/search_providers/tinyfish/**
+    - crates/betterlite-core/src/api/search_providers/registry.rs
+    - crates/betterlite-core/src/api/search_providers/registry/**
+    - crates/betterlite-config/src/providers/tinyfish.rs
+    - crates/betterlite-config/src/providers/tinyfish/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/tinyfish_reply.rs
+    - crates/betterlite-core/fuzz/corpus/tinyfish_reply/**
+    - tools/oracle/cases/helpers/tinyfish-registry-search/**
+    - tools/oracle/helpers/b048.py
+    - tools/oracle/helpers/b048/**
+    - tools/oracle/src/helpers/core_ops/b048.rs
+    - tools/oracle/src/helpers/core_ops/b048/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/tinyfish/search/transformation.py#L35-L347
+    why: GET params record, max_results stash, response checks in order, warnings, hidden headers and error wrapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9859-L9916
+    why: The provider map the registry mirrors; B157 owns the Python function and this task owns only the Rust lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4202-L4227
+    why: The SearchProviders values that the registry names come from.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L453-L498
+    why: process_response_headers, used for additional_headers.
+  - url: https://docs.tinyfish.ai/search-api
+    why: The upstream query parameters the passthrough can reach.
+dod:
+  - text: TinyFish settings, headers, query record, max_results clamp and URL match the source.
+    proof: [tinyfish-registry-tests, oracle]
+  - text: TinyFish replies check status, JSON and shape in the pinned order, cut results to the stored limit and keep extras and headers.
+    proof: [tinyfish-registry-tests, tinyfish-corpus, oracle]
+  - text: The registry returns a fresh config for each of the 18 names with the same display name, method and rich-input flag LiteLLM reports, and None for any other name.
+    proof: [tinyfish-registry-tests, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: tinyfish-registry-tests
+      why: TinyFish mapping, reply handling, registry lookup or settings loading is missing
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::search_providers::(tinyfish|registry)::/) - test(replays_the_tinyfish_corpus) | test(tinyfish_search_settings)'
+    - id: tinyfish-corpus
+      why: The TinyFish reply decoder has no new corpus inputs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/tinyfish_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_tinyfish_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/tinyfish-registry-search/tinyfish-domain-rewrite.yaml
+  - tools/oracle/cases/helpers/tinyfish-registry-search/tinyfish-max-results-clamp.yaml
+  - tools/oracle/cases/helpers/tinyfish-registry-search/tinyfish-param-encoding.yaml
+  - tools/oracle/cases/helpers/tinyfish-registry-search/tinyfish-null-field-defaults.yaml
+  - tools/oracle/cases/helpers/tinyfish-registry-search/tinyfish-result-cut.yaml
+  - tools/oracle/cases/helpers/tinyfish-registry-search/tinyfish-error-wrapping.yaml
+  - tools/oracle/cases/helpers/tinyfish-registry-search/registry-display-and-method.yaml
+  - tools/oracle/cases/helpers/tinyfish-registry-search/registry-unmapped-name.yaml
+deviations:
+  - what: The registry covers 18 of LiteLLM's 20 search providers. agentcore and bing_grounding return None here.
+    why: B659, B2212 and B546 build no B3270 search config, only typed request and reply functions in leaf crates that cannot be imported by betterlite-core. A later task that adds such a config adds the name.
+out_of_scope:
+  - The apiserpent package initializer (litellm/llms/apiserpent/__init__.py) holds only a docstring and exports nothing; B1552 owns the search module under it.
+  - The package initializers of the other 12 providers only re-export a class; B8020 to B8025 own those files.
+  - ProviderConfigManager.get_provider_search_config as a Python function is B157. This task builds the Rust lookup it will call.
+  - Routes, the HTTP handler and tool selection stay with B3272, B3276 and the B091 parts; B091 adds the HTTP oracle cases because it composes the routes.
+  - process_response_headers is B206; this task calls it.
+  - The pass-through relay for TinyFish traffic (tinyfish_passthrough_logging_handler.py) is B3648 and B3649.
+pitfalls:
+  - A failed max_results parse keeps the earlier stored limit rather than clearing it, so only a request with a good value or none leaves 10.
+  - The slice uses caller_max_results or 10, so a stored limit never exceeds 10 and a missing one means the full ten.
+  - A null value inside the params record fails the string, int, float or bool check in get_complete_url, and a bool was already turned into text before that.
+  - Unified names (search_domain_filter, max_tokens_per_page, max_results) never reach the query string, and a caller location is dropped when country is sent.
+  - The base get_error_class is not overridden, so a network failure path carries no "TinyFish Search:" prefix.
+  - A result with a numeric title is replaced by "" because only strings are kept.
+  - The registry must build a new config each call; sharing one would leak caller_max_results between requests.
+  - "The url crate (form_urlencoded) is needed in crates/betterlite-core/Cargo.toml by B8023, B8024 and this task. The first part to merge adds the line and the others keep it."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

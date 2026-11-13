@@ -1,0 +1,128 @@
+kind: helper
+name: top_level_cache_counters_override_prompt_token_details
+call:
+  baseline_history:
+    groups:
+    - - request_id: read
+        started_at: 100.0
+        available_at: 100.0
+        outcome: complete
+        baseline_equivalent: true
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 10
+          total_tokens: 110
+          prompt_tokens_details:
+            text_tokens: 80
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 0
+              ephemeral_1h_input_tokens: 0
+          cache_read_input_tokens: 20
+    - - request_id: creation
+        started_at: 200.0
+        available_at: 200.0
+        outcome: complete
+        baseline_equivalent: true
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 10
+          total_tokens: 110
+          prompt_tokens_details:
+            text_tokens: 80
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 20
+              ephemeral_1h_input_tokens: 0
+          cache_creation_input_tokens: 20
+    - - request_id: hit-only
+        started_at: 300.0
+        available_at: 300.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 10
+          total_tokens: 110
+          prompt_tokens_details:
+            text_tokens: 80
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 0
+              ephemeral_1h_input_tokens: 0
+          prompt_cache_hit_tokens: 20
+    - - request_id: read-wins
+        started_at: 400.0
+        available_at: 400.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 10
+          total_tokens: 110
+          prompt_tokens_details:
+            text_tokens: 80
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 0
+              ephemeral_1h_input_tokens: 0
+          prompt_cache_hit_tokens: 5
+          cache_read_input_tokens: 20
+    - - request_id: nested-only
+        started_at: 500.0
+        available_at: 500.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 10
+          total_tokens: 110
+          prompt_tokens_details:
+            text_tokens: 80
+            cached_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 20
+              ephemeral_1h_input_tokens: 0
+            cache_creation_input_tokens: 20
+      - request_id: creation-first
+        started_at: 500.0
+        available_at: 500.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 10
+          total_tokens: 110
+          prompt_tokens_details:
+            text_tokens: 80
+            cached_tokens: 0
+            cache_creation_tokens: 20
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 20
+              ephemeral_1h_input_tokens: 0
+            cache_creation_input_tokens: 5
+      - request_id: write-first
+        started_at: 500.0
+        available_at: 500.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 10
+          total_tokens: 110
+          prompt_tokens_details:
+            text_tokens: 80
+            cached_tokens: 0
+            cache_creation_tokens: 5
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 20
+              ephemeral_1h_input_tokens: 0
+            cache_creation_input_tokens: 5
+            cache_write_tokens: 20
+compare:
+  ignore: []
+env: {}

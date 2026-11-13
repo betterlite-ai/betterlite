@@ -1,0 +1,13 @@
+kind: helper
+name: a2a-discover-skips-blocked-and-failed-paths
+call:
+  b8202:
+    operation: card
+    base_url: https://agent.example
+    replies:
+      - error: ssrf
+      - error: transport
+      - status: 200
+        body: '{"name":"agent"}'
+env: {}
+compare: {ignore: []}

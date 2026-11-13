@@ -1,0 +1,60 @@
+kind: helper
+name: database-urls-settings-validation
+call:
+  database_urls:
+    function: batch
+    calls:
+      - function: from_env
+        environment: {}
+      - function: from_env
+        environment:
+          DATABASE_USER: ""
+          DATABASE_USERNAME: alias_user
+          DATABASE_USER_READ_REPLICA: ""
+          DATABASE_USERNAME_READ_REPLICA: reader_alias
+      - function: from_env
+        environment:
+          DaTaBaSe_UrL: postgresql://mixed/db
+          database_user: lower_user
+          DATABASE_PORT: "6543"
+          DATABASE_DISABLE_PREPARED_STATEMENTS: "yes"
+          DATABASE_MAX_IDLE_CONNECTION_LIFETIME: " 42 "
+      - function: from_env
+        environment:
+          DATABASE_DISABLE_PREPARED_STATEMENTS: "1"
+          IAM_TOKEN_DB_AUTH: "on"
+          AZURE_POSTGRESQL_AUTH: "true"
+      - function: from_env
+        environment:
+          DATABASE_DISABLE_PREPARED_STATEMENTS: "off"
+          IAM_TOKEN_DB_AUTH: "0"
+          AZURE_POSTGRESQL_AUTH: "false"
+      - function: from_env
+        environment:
+          DATABASE_DISABLE_PREPARED_STATEMENTS: sometimes
+      - function: from_env
+        environment:
+          IAM_TOKEN_DB_AUTH: sometimes
+      - function: from_env
+        environment:
+          DATABASE_MAX_IDLE_CONNECTION_LIFETIME: "4.5"
+      - function: from_env
+        environment:
+          DATABASE_URL: "true"
+          DATABASE_PORT: ""
+          DATABASE_PASSWORD: ""
+      - function: from_env
+        environment:
+          DATABASE_URL_READ_REPLICA: postgresql://reader/db
+          DATABASE_HOST_READ_REPLICA: replica.example
+          DATABASE_PORT_READ_REPLICA: "6543"
+          DATABASE_NAME_READ_REPLICA: reader_db
+          DATABASE_SCHEMA_READ_REPLICA: reader_schema
+          DATABASE_PASSWORD_READ_REPLICA: reader_pass
+      - function: from_env
+        environment:
+          UNRELATED_SETTING: x
+          DATABASE_SSLMODE: require
+          DATABASE_SSLROOTCERT: /certs/root.pem
+env: {}
+compare: {ignore: []}

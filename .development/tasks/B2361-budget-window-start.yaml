@@ -78,8 +78,8 @@ deviations:
     why: Bound parsing work while retaining the source's malformed-window fallback; window_byte_and_depth_limits proves both limits.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L894-L908
 out_of_scope:
-  - B071 retains every other budget_reservation.py function, including counter reads, reservation writes,
-    request estimation and release. B199 owns duration grammar; B887 owns team window admission.
+  - B3000 to B3004 and B8480 own every other budget_reservation.py function, including counter reads (B3002), reservation writes (B3004),
+    request estimation (B3001) and release (B3003). B199 owns duration grammar; B887 owns team window admission.
     B751 owns key-window admission and must consume this lower helper when its task is implemented.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as budget_window_start in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/budget_window_start.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/budget_window_start.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

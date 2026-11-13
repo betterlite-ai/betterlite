@@ -1,0 +1,19 @@
+task: B3800
+deviations:
+  - what: >-
+      The XecGuard response body is read through a 1 MiB cap. A larger body is an
+      API failure handled by block_on_error and suppress_errors, so it yields a
+      handled block error or a pass-through instead of being read into memory.
+    why: >-
+      Rule bounded-inputs caps every allocation sized by untrusted input; LiteLLM
+      calls response.json(), which reads whatever length the server sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L366
+  - what: >-
+      A scan or grounding response whose JSON body is not an object is an API
+      failure handled by block_on_error and suppress_errors, instead of an
+      unhandled AttributeError on scan_result.get("decision").
+    why: >-
+      LiteLLM's _post returns any JSON value and apply_guardrail then calls .get
+      on it, so a list or scalar reply becomes a 500; no working setup depends on
+      that crash, and rule owned-behavior-is-built fixes it without asking.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L167

@@ -1,0 +1,22 @@
+kind: helper
+name: vector-query-embedding-query-preparation
+call:
+  vector_query_embedding:
+    operation: query_preparation
+    queries: [" a ", [a, b], [], [a, "", b]]
+    litellm_params:
+      - model: openai/text-embedding-3-small
+        config: {kind: value, value: {dimensions: 2}}
+      - model: " "
+      - {}
+      - model: null
+      - model: ""
+      - model: 1
+      - model: openai/text-embedding-3-small
+        config: {kind: value, value: null}
+      - model: openai/text-embedding-3-small
+        config: {kind: value, value: [1, 2]}
+      - model: openai/text-embedding-3-small
+        config: {kind: entries, entries: [[1, one], [dimensions, 2]]}
+env: {}
+compare: {ignore: []}

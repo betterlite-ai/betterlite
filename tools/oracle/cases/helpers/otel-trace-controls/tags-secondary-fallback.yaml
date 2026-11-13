@@ -1,0 +1,13 @@
+kind: helper
+name: tags-secondary-fallback
+call:
+  b3892:
+    function: trace
+    litellm_params:
+      metadata:
+        tags: ["", 1, false]
+      litellm_metadata:
+        tags: [secondary-tag]
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,17 @@
+kind: helper
+name: passthrough-falsy-and-viewer
+call:
+  management_guards:
+    calls:
+      - {function: check_passthrough_routes, user_role: proxy_admin_viewer, allowed_passthrough_routes: [], metadata: {allowed_passthrough_routes: []}}
+      - {function: check_passthrough_routes, user_role: internal_user, allowed_passthrough_routes: [], metadata: {allowed_passthrough_routes: []}}
+      - {function: check_passthrough_routes, user_role: proxy_admin_viewer, allowed_passthrough_routes: ["/x"]}
+      - {function: check_passthrough_routes, user_role: internal_user, metadata: {allowed_passthrough_routes: 0}}
+      - {function: check_passthrough_routes, user_role: internal_user, metadata: {allowed_passthrough_routes: "yes"}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/2/detail
+      why: betterlite writes its own message
+    - pointer: /value/4/detail
+      why: betterlite writes its own message

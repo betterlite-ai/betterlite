@@ -1,0 +1,9 @@
+kind: helper
+name: transcription-empty-text
+call:
+  b5240:
+    function: "output_choices"
+    response: {"text": ""}
+env: {}
+compare:
+  ignore: []

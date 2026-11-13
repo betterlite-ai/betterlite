@@ -1,0 +1,25 @@
+kind: helper
+name: callback-registry-register-remove
+call:
+  callback_registry:
+    max_callbacks: 100
+    steps:
+      - {op: register, list: callbacks, callback: {class_name: Alpha, attributes: {api_key: a}}}
+      - {op: register, list: success_callback, callback: {class_name: Beta, attributes: {api_key: b}}}
+      - {op: register, list: failure_callback, callback: {class_name: Beta, attributes: {api_key: b}}}
+      - {op: register, list: service_callback, callback: {class_name: Gamma}}
+      - {op: register, list: input_callback, callback: {class_name: Delta}}
+      - {op: remove_from_list, list: success_callback, callback: {class_name: Beta, attributes: {api_key: b}}}
+      - {op: register, list: success_callback, callback: {class_name: Epsilon}}
+      - {op: register, list: success_callback, callback: {class_name: Zeta}}
+      - {op: remove_class_from_list, list: success_callback, class_name: Epsilon}
+      - {op: remove_from_list, list: callbacks, callback: {class_name: Alpha, attributes: {api_key: a}}}
+      - {op: remove_from_list, list: failure_callback, callback: {class_name: Absent}}
+      - {op: validate, callback_name: arize, vars: {arize_success_sampling_rate: "0.5"}}
+      - {op: validate, callback_name: arize, vars: {arize_success_sampling_rate: "2"}}
+      - {op: validate, callback_name: langfuse, vars: {langfuse_secret_key: "t"}, stored: [{langfuse_secret: "s"}]}
+      - {op: validate, callback_name: langfuse_otel, vars: {langfuse_span_scope: full}, stored: [{langfuse_span_scope: llm_only}]}
+      - {op: validate, callback_name: langfuse, vars: {langfuse_span_scope: full}}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-truncated-payload
+call: {"error_normalization": {"message": "payload is not completed", "status_code": 418}}
+env: {}
+compare: {ignore: []}

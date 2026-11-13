@@ -1,0 +1,10 @@
+kind: helper
+name: batch-calls-deployments-first-success
+call:
+  batch_calls:
+    mode: deployments
+    models: [m0, m1]
+    results: [{value: slower}, {value: winner}]
+    completion_order: [1, 0]
+env: {}
+compare: {ignore: []}

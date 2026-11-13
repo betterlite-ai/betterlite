@@ -1,0 +1,4 @@
+{"type":"stdout","text":"FOO=bar\n"}
+{"type":"stdout","text":"BAZ=qux\n"}
+{"type":"number_of_executions","execution_count":1}
+{"type":"result","text":"'done'"}

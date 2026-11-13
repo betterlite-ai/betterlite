@@ -1,0 +1,151 @@
+id: B104
+title: Guardrail framework registry and API integration parity
+description: >-
+  Finish the framework's integration evidence without registering any route. The
+  base class, registry, translation dispatch, invocation records, admin handlers,
+  usage queries and mounts already have concrete owners. The actual code remainder
+  is B8990's Vigil class and B8994's scan metadata utilities; the independently
+  runnable media, native-protocol and native-stream suites are B8991-B8993. Here
+  add about 750 lines of HTTP fixtures under guardrails/framework-http through the
+  real startup, live callback source and mounted inference/direct-apply/admin APIs.
+  No new decoder, config key, runtime callback class or helper oracle is needed.
+
+  Use the existing four POST chat decorators: /v1/chat/completions,
+  /chat/completions, /engines/{model}/chat/completions and
+  /openai/deployments/{model}/chat/completions. Configure general_settings.master_key,
+  an OpenAI mock deployment, and guardrails with their actual wire names. Spread
+  these aliases across the scenarios. Configure Vigil using guardrail vigil_guard,
+  mode pre_call or post_call, api_base, api_key, and unreachable_fallback as needed.
+  An environment-default case omits the two credentials in guardrails config and
+  supplies VIGIL_GUARD_URL and VIGIL_GUARD_API_KEY through the case's env map. A second
+  named guardrail in the same config has explicit credentials; selecting it in the
+  next request proves their precedence. Check the
+  exact /v1/guard/analyze request path, Bearer header, source user_input/model_output,
+  text and metadata, and the absence of another provider call after an intervention.
+
+  A pre-call SANITIZED result rewrites the provider's messages, without leaving
+  original structured_messages able to overwrite the result. A post-call BLOCKED
+  result returns the source's guardrail error status, type, param and code instead
+  of the model response. A transient backend failure followed by ALLOWED makes
+  exactly two analysis attempts. A fail_open case sanitizes the first of two user
+  text messages, fails the second scan, and forwards the first rewrite plus the
+  untouched second message, with no later analysis. An unknown decision under the
+  default fail_closed policy becomes the unwrapped backend-policy failure rather
+  than an explicit blocked_content intervention. Capture the actual pinned error
+  fields; do not manufacture a generic 500 or erase the reason with ignore rules.
+
+  Call both POST /guardrails/apply_guardrail and /apply_guardrail with guardrail_name
+  and text. Test explicit input_type request and response against a Vigil guardrail
+  supporting both: the same live class must send user_input then model_output and
+  return the sanitized text. A blank text is passed through with no analysis call.
+  Include an unauthenticated step and compare the real auth error, with neither
+  scanner nor model traffic. These are the existing B3687/B8668 endpoints; the
+  task must not add aliases or call the route functions from a helper.
+
+  Scan-header scenarios use openai_moderation and panw_prisma_airs with the valid
+  class configurations already used by B3731/B3788, pointing their providers at
+  the mock. One allowed moderation response and one flagged response each carry
+  a known moderation id. Both must record that id before the result leaves live
+  dispatch; compare x-litellm-guardrail-scan-id and
+  x-litellm-guardrail-scan-metadata on the actual success/failure HTTP responses,
+  plus x-litellm-applied-guardrails when the reference emits it. For Prisma, run
+  pre_call and post_call with the same id and confirm one id but two scan entries
+  with their respective stages; preserve entry order, provider and guardrail name.
+  Add forged internal scan/applied metadata to the allowed request and prove only
+  server-recorded values reach the headers. B8994's helper cases own the 2048 limit
+  and both-bucket projection; this suite proves that production actually calls it.
+
+  A trusted-opt-out case sets a default_on generic_guardrail_api and submits
+  disable_global_guardrails/opted_out_global_guardrails in caller metadata and
+  litellm_metadata, including forged user_api_key_metadata. Its blocking scan still
+  runs because opt-outs are taken from authenticated key/team metadata after
+  B1137 intake. This does not introduce a license requirement; no enterprise-only
+  module or feature token is used.
+
+  Finally use a real PostgreSQL oracle fixture and the existing multi-step/capture
+  format for POST /guardrails, PUT /guardrails/{guardrail_id} and
+  DELETE /guardrails/{guardrail_id}. Create a named generic API guardrail, immediately
+  apply it through /apply_guardrail, change its name/configuration, then apply the
+  updated name and delete it. After deletion direct apply returns 404. Capture the
+  assigned id between steps and compare the scanner calls before and after the
+  update. The scenario must work in one process without restarting or waiting for
+  a poll: it proves B8666 reads the live B3683 registry instead of a startup snapshot.
+  Use valid declarations, not deliberately failing synchronization, so it requires
+  no timing sleeps and claims no transaction stronger than LiteLLM's write order.
+
+  All cases compare status, complete error type/param/code, selected headers,
+  returned JSON and upstream path/method/auth/body. Only dynamic ids, timestamps
+  and measured durations may be normalized. The ordinary oracle gate is the proof
+  against betterlite; a LiteLLM self-check only checks fixture correctness. If one
+  of the existing owners lacks its composition call, report that owner instead of
+  duplicating a mount or adding a fixture-only dispatch route.
+scope:
+  paths:
+    - tools/oracle/cases/guardrails/framework-http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_guardrail.py#L1-L119
+    why: Exclusive inventory path; its example class and four methods have no caller at the pin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/__init__.py#L1-L13
+    why: Exclusive inventory path; endpoint_translation_mappings is not consumed by the real discovery code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11959
+    why: All four chat route decorators used by the integration cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/vigil_guard/vigil_guard.py#L97-L268
+    why: The new B8990 class, source selection, ordered scans and early-return behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L675-L712
+    why: Only admin-configured key/team metadata may disable a global guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2337-L2410
+    why: Both direct-apply decorators, live lookup and source input type selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L335-L693
+    why: Create/update/delete decorators and immediate in-memory synchronization after persistence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L467-L529
+    why: Client-visible scan and applied-guardrail header projection built by B8994.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L215-L234
+    why: Scan recording precedes the moderation verdict check, including blocked calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L53-L224
+    why: Window/row helpers and database accessors already split between B3689 and B8772.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L227-L992
+    why: Remaining records, aggregates and all four usage routes are already assigned, including their mounts and HTTP cases.
+dod:
+  - text: The real live Vigil class honors config/env precedence, sequential sanitization, retry, block and partial fail-open over chat HTTP.
+    proof: [oracle]
+  - text: Both direct-apply paths use the same live class, honor input_type, skip blank scans and retain authentication.
+    proof: [oracle]
+  - text: Provider scan ids reach success and blocked response headers with correct stage deduplication, and caller metadata cannot forge them or disable global scans.
+    proof: [oracle]
+  - text: Creating, replacing and deleting a guardrail changes direct-apply behavior immediately in the same booted proxy.
+    proof: [oracle]
+checks:
+  optional: []
+  commands: []
+oracle_cases:
+  - tools/oracle/cases/guardrails/framework-http/vigil-env-and-explicit.yaml
+  - tools/oracle/cases/guardrails/framework-http/vigil-post-block.yaml
+  - tools/oracle/cases/guardrails/framework-http/vigil-transient-retry.yaml
+  - tools/oracle/cases/guardrails/framework-http/vigil-partial-fail-open.yaml
+  - tools/oracle/cases/guardrails/framework-http/vigil-unknown-fail-closed.yaml
+  - tools/oracle/cases/guardrails/framework-http/vigil-direct-apply-aliases.yaml
+  - tools/oracle/cases/guardrails/framework-http/moderation-allowed-scan-id.yaml
+  - tools/oracle/cases/guardrails/framework-http/moderation-blocked-scan-id.yaml
+  - tools/oracle/cases/guardrails/framework-http/prisma-scan-stage-dedup.yaml
+  - tools/oracle/cases/guardrails/framework-http/untrusted-opt-out.yaml
+  - tools/oracle/cases/guardrails/framework-http/live-registry-mutations.yaml
+deviations: []
+out_of_scope:
+  - "custom_guardrail.py myCustomGuardrail.__init__, async_pre_call_hook, async_moderation_hook and async_post_call_success_hook: no caller at the pin; the configured example module is proxy/example_config_yaml/custom_guardrail.py, not this claimed path."
+  - "unified_guardrail/__init__.py endpoint_translation_mappings and __all__: no caller at the pin; real discovery scans llms packages for guardrail_translation_mappings and is B3679/B3680."
+  - "usage_endpoints.py _resolve_usage_window, _counter_name, _team_of, _key_of, _row_untracked_units, _row_tracked_cost, _sum_counter_units, _sum_untracked_units, _sum_tracked_cost, _by, _first_match, _status_from_fail_rate, _trend_from_comparison, _aggregate_daily_metrics, _prev_fail_rates, _chart_from_metrics, _get_guardrail_field and its overloads, _to_dict, _field_str, _get_guardrail_attrs, _guardrail_overview_rows and _policy_overview_rows are B3689, as are UsageChartPoint, _MetricTotals, _PrevPeriodCounts, _DailyPassBlocked, UsageOverviewRow and UsageOverviewResponse."
+  - "usage_endpoints.py _guardrails_table, _policies_table, _daily_guardrail_metrics_table, _daily_policy_metrics_table, _find_daily_guardrail_metrics, _find_daily_policy_metrics, _daily_guardrail_usage_units_table, _find_daily_guardrail_usage_units, _GuardrailRunInfo, EMPTY_OVERVIEW, UsageUnitsDailyPoint, UsageDetailResponse, UsageLogEntry, UsageLogsResponse, _build_usage_logs_where, _usage_log_entry_from_row, _snippet, _input_snippet_for_log and the four route functions guardrails_usage_overview, guardrails_usage_detail, guardrails_usage_logs and policies_usage_overview are B8772. It also mounts GET /guardrails/usage/overview, /guardrails/usage/detail/{guardrail_id}, /guardrails/usage/logs and /policies/usage/overview and owns their HTTP evidence."
+  - B5471 owns the base class/failures/default apply contract, B3664 invocation logging, B3665 gates/dynamic parameters and B3666 scan cache and deployment hooks; B3688 owns compliance redaction including redact_nested_match_and_regex_keys.
+  - B3682/B3683 own registry and runtime, B8521 concrete hook specifications, B8666 live class construction, B8613 startup and B8399 callback dispatch; B8610 owns the root and B8667/B8668/B8669/B8790 the existing guardrail area mounts.
+  - B8990 owns Vigil orchestration and B8994 shared scan metadata; B8991-B8993 own the independent deferred HTTP suites and are not dependencies of this suite because it does not consume their files.
+pitfalls:
+  - The two B104-exclusive files are unused examples/exports, so their presence in coverage does not justify a second framework implementation.
+  - A new scan id must survive a flagged moderation error, not just the successful inference path.
+  - Direct apply performs a live registry lookup and cannot use a callback list frozen at startup.
+  - Caller metadata named user_api_key_metadata is still untrusted until normal request intake replaces it with authenticated state.
+  - A fail-open scan keeps earlier sanitization; forwarding the entire original request would discard an already accepted rewrite.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

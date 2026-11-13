@@ -1,0 +1,140 @@
+id: B8144
+title: "GCP Terraform module: network, Cloud SQL and Redis"
+description: >-
+  Start the GCP module in packaging/terraform/gcp/: provider versions, the network, Cloud SQL for PostgreSQL and Memorystore for Redis. Later parts (B8145, B8146) add secrets, buckets and the Cloud Run service on top.
+  The module has no provider block (the example root in B8147 has it). It ports LiteLLM's gcp module with the same variable names where betterlite keeps the feature.
+
+  versions.tf: required_version ">= 1.13.0", providers google "~> 6.0" and random "~> 3.6". .terraform.lock.hcl comes from `terraform providers lock -platform=linux_amd64 -platform=linux_arm64 -platform=darwin_arm64`, never by hand.
+
+  variables_data.tf: project_id (string, no default), region ("us-central1"), tenant ("demo"), env ("dev"), labels (map(string), {}), create_runtime (bool, true; false builds only the stores and network for a caller that runs
+  the service elsewhere), network_id ("" means create a VPC), create_psa_connection (bool, true; false when the caller's network already has private services access), subnet_cidr ("10.20.0.0/24"), vpc_connector_cidr ("10.20.1.0/28"),
+  db_tier ("db-custom-2-7680"), db_edition ("ENTERPRISE"), db_version ("POSTGRES_16"), db_name ("betterlite"), db_username ("betterlite"), cloudsql_deletion_protection (bool, true), redis_tier ("STANDARD_HA"),
+  redis_memory_size_gb (1), redis_transit_encryption (bool, false) and create_redis (bool, true).
+  locals.tf: name = "${var.tenant}-${var.env}-betterlite" cut to 30 characters where a Google resource name limit needs it, labels merged with managed_by = "terraform", network_self_link and network_name (from the created VPC or from var.network_id),
+  and redis_enabled.
+
+  network.tf: google_compute_network (count when network_id is empty, auto_create_subnetworks false), google_compute_subnetwork (private_ip_google_access true), google_compute_global_address for private services access (VPC_PEERING, prefix 16),
+  google_service_networking_connection (count create_psa_connection), google_vpc_access_connector (count create_runtime, min_instances 2, max_instances 3, machine_type e2-micro, ip_cidr_range vpc_connector_cidr).
+  cloudsql.tf: random_password.db_password (length 32, special false), google_sql_database_instance.writer (REGIONAL availability, disk 20 GB with autoresize, backups on with point-in-time recovery and start time 07:00, ipv4_enabled false,
+  private_network, query insights on, database_flags none, deletion_protection from the variable) with a precondition that create_psa_connection is true or network_id is set, google_sql_database_instance.reader (read replica of the writer, ZONAL),
+  google_sql_database, google_sql_user.app (password from random_password) and google_secret_manager_secret.db_password with its version. redis.tf: google_redis_instance.this (count create_redis, REDIS_7_0, PRIVATE_SERVICE_ACCESS connect mode,
+  transit encryption SERVER_AUTHENTICATION only when redis_transit_encryption, otherwise DISABLED, auth_enabled true).
+
+  The secret resource for the database password sits in cloudsql.tf and the accessor binding is made by B8145, which owns the runtime service account. Names this part exports to the next ones: local.name, local.labels, local.network_self_link,
+  google_vpc_access_connector.this, google_sql_database_instance.writer, google_sql_database_instance.reader, google_secret_manager_secret.db_password, google_redis_instance.this.
+
+  Tests with a mocked google provider: tests/deps_only.tftest.hcl (create_runtime = false builds no connector, supplied network_id builds no VPC, create_redis = false builds no Redis, the precondition fires without private services access
+  and without a network id, the Redis transit encryption default is DISABLED).
+
+scope:
+  paths:
+    - packaging/terraform/gcp/versions.tf
+    - packaging/terraform/gcp/.terraform.lock.hcl
+    - packaging/terraform/gcp/variables_data.tf
+    - packaging/terraform/gcp/locals.tf
+    - packaging/terraform/gcp/network.tf
+    - packaging/terraform/gcp/cloudsql.tf
+    - packaging/terraform/gcp/redis.tf
+    - packaging/terraform/gcp/tests/deps_only.tftest.hcl
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/network.tf
+    why: Network, private services access and VPC connector.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudsql.tf
+    why: Writer, reader, user, database and the password secret.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/redis.tf
+    why: Memorystore settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/variables.tf
+    why: Variable names and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/tests/deps_only.tftest.hcl
+    why: The deps-only plan test to port.
+
+dod:
+  - text: The GCP module folder has versions.tf, a lock file made by terraform, no provider block, and passes fmt.
+    proof: [gcp-layout, gcp-lock-file, gcp-no-provider-block, gcp-fmt]
+  - text: Every variable listed exists with the stated default.
+    proof: [gcp-variable-defaults]
+  - text: The network, Cloud SQL and Redis resources carry the stated settings.
+    proof: [gcp-network-literals, gcp-data-store-literals]
+  - text: This part validates on its own when the later parts are absent.
+    proof: [gcp-validate]
+  - text: The deps-only plan tests pass without credentials.
+    proof: [gcp-deps-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: gcp-layout
+      why: A file of this part is missing.
+      run: >-
+        cd packaging/terraform/gcp && for f in versions.tf variables_data.tf locals.tf network.tf cloudsql.tf redis.tf tests/deps_only.tftest.hcl; do test -f "$f" || { echo "missing $f"; exit 1; }; done
+    - id: gcp-lock-file
+      why: The lock file is missing or lacks a platform hash.
+      run: >-
+        test -f packaging/terraform/gcp/.terraform.lock.hcl && grep -q 'hashicorp/google' packaging/terraform/gcp/.terraform.lock.hcl && grep -q 'hashicorp/random' packaging/terraform/gcp/.terraform.lock.hcl && grep -q '"h1:' packaging/terraform/gcp/.terraform.lock.hcl
+    - id: gcp-no-provider-block
+      why: The module declares a provider block. Only the example root may.
+      run: >-
+        ! grep -rq '^provider "' --include='*.tf' packaging/terraform/gcp --exclude-dir=examples --exclude-dir=.terraform
+    - id: gcp-fmt
+      why: A Terraform file is not formatted the way terraform fmt writes it.
+      run: >-
+        test -f packaging/terraform/gcp/versions.tf && terraform -chdir=packaging/terraform/gcp fmt -check -recursive -diff
+    - id: gcp-validate
+      why: This part of the module does not initialize or validate.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/gcp" TF_IN_AUTOMATION=1 && test -f packaging/terraform/gcp/cloudsql.tf &&
+        terraform -chdir=packaging/terraform/gcp init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/gcp validate
+    - id: gcp-variable-defaults
+      why: A variable is missing or its default differs from the description.
+      run: >-
+        f=packaging/terraform/gcp/variables_data.tf;
+        for n in project_id region tenant env labels create_runtime network_id create_psa_connection subnet_cidr vpc_connector_cidr db_tier db_edition db_version db_name db_username cloudsql_deletion_protection create_redis redis_tier redis_memory_size_gb redis_transit_encryption; do grep -q "^variable \"$n\"" $f || { echo "missing $n"; exit 1; }; done;
+        grep -q '"us-central1"' $f && grep -q '"db-custom-2-7680"' $f && grep -q '"POSTGRES_16"' $f && grep -q '"STANDARD_HA"' $f && grep -q '"10.20.0.0/24"' $f && grep -q '"10.20.1.0/28"' $f
+    - id: gcp-network-literals
+      why: A network setting differs from the description.
+      run: >-
+        f=packaging/terraform/gcp/network.tf; grep -q 'private_ip_google_access *= *true' $f && grep -q 'VPC_PEERING' $f && grep -q 'min_instances *= *2' $f && grep -q 'max_instances *= *3' $f && grep -q 'google_service_networking_connection' $f
+    - id: gcp-data-store-literals
+      why: A Cloud SQL or Redis setting differs from the description.
+      run: >-
+        f=packaging/terraform/gcp/cloudsql.tf; g=packaging/terraform/gcp/redis.tf;
+        grep -q 'availability_type *= *"REGIONAL"' $f && grep -q 'availability_type *= *"ZONAL"' $f && grep -q 'point_in_time_recovery_enabled *= *true' $f && grep -q 'ipv4_enabled *= *false' $f && grep -q '"07:00"' $f &&
+        grep -q 'master_instance_name' $f && grep -q 'resource "google_secret_manager_secret" "db_password"' $f && grep -q 'REDIS_7_0' $g && grep -q 'PRIVATE_SERVICE_ACCESS' $g
+    - id: gcp-deps-tests
+      why: The deps-only plan tests fail or are missing.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/gcp" TF_IN_AUTOMATION=1 && test -f packaging/terraform/gcp/tests/deps_only.tftest.hcl &&
+        terraform -chdir=packaging/terraform/gcp init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/gcp test -filter=tests/deps_only.tftest.hcl
+
+oracle_cases: []
+
+deviations:
+  - what: redis_transit_encryption defaults to false, where LiteLLM turns TLS on.
+    why: With TLS the client needs the server CA in REDIS_SSL_CA_CERTS, and no betterlite task wires that file yet. The variable stays so a caller can opt in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/redis.tf
+  - what: Cloud SQL uses password authentication from a generated secret, as LiteLLM does.
+    why: IAM database authentication on Cloud SQL needs a connector or token refresh that betterlite does not have; the AWS module uses IAM tokens because B1232 and the gateway support them there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/cloudsql.tf
+
+out_of_scope:
+  - "Secrets, service accounts, IAM bindings and buckets. Owned by B8145."
+  - "Cloud Run, the migration job, the load balancer and outputs. Owned by B8146."
+  - "Example root and README. Owned by B8147."
+  - "A ui_runtime service account, billing and metrics secrets, collector and Prometheus resources. Not built in this module."
+
+pitfalls:
+  - "Cloud SQL names cannot be reused for a week after deletion, so the instance name carries a random_id suffix or the caller's tenant and env; do not hard-code one."
+  - "The reader replica needs backups and binary logging on the writer first, so give it depends_on the writer and set master_instance_name."
+  - "The VPC connector is only created when create_runtime is true, so every reference to it elsewhere must use a count index guard."
+  - "google_service_networking_connection must exist before the Cloud SQL instance with a private network; add depends_on."
+  - "Run `terraform providers lock` for linux_amd64, linux_arm64 and darwin_arm64; a lock with one platform fails init on the others."
+  - "The tests mock the google provider, so a plan test never needs credentials or a project; do not add provider config to the test files except mock_provider."
+
+review_level: standard
+budget:
+  max_changed_lines: 900
+  max_new_expects: 0

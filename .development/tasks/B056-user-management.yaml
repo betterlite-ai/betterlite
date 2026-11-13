@@ -45,17 +45,14 @@ description: >-
   inspect tables after injected failures and prove the generated raw key authenticates while only its
   hash is stored by B893. Reuse request/row decoders; no new parser. Allow 180 production, 330 tests
   and 90 wiring lines, 600 within a 625-line gate.
+  B1100 registers routes/user_management.rs as a stub, so fill only crates/betterlite-server/src/routes/user_management.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/user_management.rs
     - crates/betterlite-server/src/user_management/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
+    - crates/betterlite-server/src/routes/user_management.rs
+    - crates/betterlite-server/src/routes/user_management/**
     - tools/oracle/cases/management/user-management/**
     - tools/oracle/helpers/b056.py
     - tools/oracle/helpers/b056/**
@@ -63,7 +60,7 @@ scope:
     - tools/oracle/src/helpers/server/b056/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L482-L672
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L475-L672
     why: Actual creation order, role checks, response filtering and exception mapping.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8241
     why: Shared mapping actually called by this route.

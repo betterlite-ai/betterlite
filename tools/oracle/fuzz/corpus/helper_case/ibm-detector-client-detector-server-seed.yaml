@@ -1,0 +1,11 @@
+kind: helper
+name: ibm_detector_client-detector-server-seed
+call:
+  b3736:
+    detect:
+      settings: {auth_token: seed-token, detector_id: jailbreak-detector}
+      environment: {}
+      contents: [hello]
+      answer: {status: 200, headers: {}, body: [[]]}
+env: {}
+compare: {ignore: []}

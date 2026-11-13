@@ -1,0 +1,7 @@
+# AWS_S3_OUTPUT_BUCKET_NAME backs s3_output_bucket_name when the deployment leaves it out
+model_list:
+  - model_name: bedrock/batch-output
+    litellm_params:
+      model: bedrock/us.anthropic.claude-haiku-4-5-20251001-v1:0
+      s3_bucket_name: batch-input-bucket
+      s3_output_bucket_name: batch-output-bucket

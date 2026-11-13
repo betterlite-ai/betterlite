@@ -1,0 +1,15 @@
+id: B9770
+milestone: M10 admin ui
+title: Identity and UI settings form HTTP acceptance
+status: todo
+depends_on: [B1661, B1657, B1660, B066, B055, B892, B791, B1630, B860, B5076, B9735, B9733]
+file: tasks/B9770-dashboard-identity-settings-http.yaml
+covers:
+  - "ui/litellm-dashboard/src/components/{SCIM,SSOModals,UIAccessControlForm,TeamSSOSettings}.*"
+  - "ui/litellm-dashboard/src/components/Settings/AdminSettings/{SSOSettings,UISettings,UserBannerSettings}/**"
+parent: B150
+split_from: B150
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

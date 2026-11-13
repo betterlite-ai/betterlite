@@ -1,0 +1,11 @@
+kind: helper
+name: responses-shapes-web-search-array-item
+call:
+  responses_shapes:
+    operation: web_search_sources
+    tool_id: t
+    tool_input: {}
+    result: {content: [[web_search_result, "https://a.test"]]}
+env: {}
+compare:
+  ignore: []

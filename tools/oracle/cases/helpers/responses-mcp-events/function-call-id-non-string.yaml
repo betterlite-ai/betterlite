@@ -1,0 +1,11 @@
+kind: helper
+name: function-call-id-non-string
+call:
+  responses_mcp_events:
+    operation: output_items_and_function_call_id
+    output:
+      - {type: function_call, call_id: 5, id: fc_5, name: weather, arguments: "{}", status: completed}
+      - {type: function_call, call_id: 0, id: fc_6, name: weather, arguments: "{}", status: completed}
+      - {type: function_call, call_id: null, id: fc_7, name: weather, arguments: "{}", status: completed}
+env: {}
+compare: {ignore: []}

@@ -113,7 +113,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B070 retains coalesced_window L416-L491 and spend writes; it consumes these lower primitives.
-  - B2316 owns request batching, B126 Redis operations, B715 query deadlines and B199 durations.
+  - B2316 owns request batching, B5640 Redis operations, B715 query deadlines and B199 durations.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as spend_reseed in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/spend_reseed.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_reseed.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A clean Redis miss must not fall back to stale process memory, even after a batch miss.

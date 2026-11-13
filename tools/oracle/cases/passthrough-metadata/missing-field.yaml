@@ -1,0 +1,9 @@
+kind: helper
+name: passthrough-missing-field
+call:
+  b3570:
+    function: model_group
+    litellm_params:
+      litellm_metadata: {session_id: s1}
+env: {}
+compare: {ignore: []}

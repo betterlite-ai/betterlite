@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-converse-content-empty-tool-input
+call:
+  bedrock_converse_content:
+    empty_tool_input:
+      content_blocks:
+        - text: prefix
+        - toolUse: {toolUseId: tu-empty, name: plain, input: {}}
+        - toolUse: {toolUseId: tu-null, name: plain, input: null}
+        - toolUse: {toolUseId: tu-nested, name: plain, input: {b: [1, {d: 4}], a: null}}
+env: {}
+compare: {ignore: []}

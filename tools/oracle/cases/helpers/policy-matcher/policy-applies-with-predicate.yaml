@@ -1,0 +1,26 @@
+kind: helper
+name: policy-applies-with-predicate
+call:
+  b3241:
+    policy_memory_matching_matcher:
+      action: policy_applies
+      policies:
+        parent:
+          guardrails:
+            add: [g-parent]
+        child:
+          inherit: parent
+          guardrails:
+            add: [g-child]
+          condition:
+            model: claude.*
+        fallback:
+          guardrails:
+            add: [g-fallback]
+      context:
+        team_alias: t
+        key_alias: k
+        model: gpt-5.5
+      policy_names: [child, parent, fallback, missing]
+env: {}
+compare: {ignore: []}

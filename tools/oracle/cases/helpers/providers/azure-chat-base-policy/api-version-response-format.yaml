@@ -1,0 +1,75 @@
+kind: helper
+name: api-version-response-format
+call:
+  azure_chat_base_policy:
+    action: api_version_response_format
+    settings: {}
+    models:
+      - gpt-4o
+      - gpt-4-1
+      - gpt-3.5-turbo
+      - gpt-3-5-turbo
+      - gpt-35-turbo
+      - azure/gpt-4-1
+      - azure/gpt-3-5
+    versions:
+      - {year: '2024', month: '07'}
+      - {year: '2024', month: '08'}
+      - {year: '2025', month: '01'}
+      - {year: '2023', month: '12'}
+      - {year: '2_024', month: '8'}
+      - {year: '2024', month: 'x'}
+    steps:
+      - model: gpt-4o
+        api_version: '2024-08-01'
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema: {name: n, schema: {type: object}}
+      - model: gpt-3.5-turbo
+        api_version: '2024-08-01'
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema: {name: n, schema: {type: object}}
+      - model: gpt-4o
+        api_version: '2024-07-01'
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema: {name: n, schema: {type: object}}
+      - model: gpt-3.5-turbo
+        api_version: '2024-08-01'
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema: {name: n, schema: {}}
+      - model: gpt-3.5-turbo
+        api_version: '2024-08-01'
+        non_default: {response_format: json_object}
+      - model: gpt-4o
+        api_version: 'abcd-08-01'
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema: {name: n, schema: {type: object}}
+      - model: gpt-35-turbo
+        api_version: '2024-08-01'
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema: {name: n, schema: {type: object}}
+      - model: gpt-3-5-turbo
+        api_version: '2024-08-01'
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema: {name: n, schema: {type: object}}
+      - model: azure/gpt-3-5
+        api_version: '2024-08-01'
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema: {name: n, schema: {type: object}}
+env: {}
+compare: {ignore: []}

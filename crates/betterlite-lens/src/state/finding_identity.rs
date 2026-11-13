@@ -9,11 +9,6 @@ use crate::state::evidence_cap::merge_evidence;
 
 mod tests;
 
-fn short_digest(text: &str) -> String {
-    let digest = Sha256::digest(text.as_bytes());
-    hex::encode(digest.iter().take(12).copied().collect::<Vec<u8>>())
-}
-
 fn identity_parts<'finding>(
     lens: &'finding Lens,
     draft: &FindingDraft,
@@ -23,9 +18,19 @@ fn identity_parts<'finding>(
         Kind::Pattern => "pattern",
     };
     let title = draft.title.to_lowercase();
-    let identity = short_digest(&format!("{}:{}:{kind}:{title}", lens.id, draft.check_id));
+    let identity_digest =
+        Sha256::digest(format!("{}:{}:{kind}:{title}", lens.id, draft.check_id).as_bytes());
+    let identity = hex::encode(
+        identity_digest
+            .iter()
+            .take(12)
+            .copied()
+            .collect::<Vec<u8>>(),
+    );
     // findings stored before the kind joined the hash keep their old id
-    let legacy = short_digest(&format!("{}:{}:{title}", lens.id, draft.check_id));
+    let legacy_digest =
+        Sha256::digest(format!("{}:{}:{title}", lens.id, draft.check_id).as_bytes());
+    let legacy = hex::encode(legacy_digest.iter().take(12).copied().collect::<Vec<u8>>());
     let previous = lens.findings.iter().find(|finding| {
         let named = draft.existing_finding_id.as_ref() == Some(&finding.id);
         (named || finding.id == identity || finding.id == legacy)

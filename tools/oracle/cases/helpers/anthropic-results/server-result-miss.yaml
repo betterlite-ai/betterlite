@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-results-server-result-miss
+call:
+  anthropic_results:
+    function: server_tool_result
+    tool_id: absent
+    web_search_results:
+      - {tool_use_id: other}
+    tool_results: []
+env: {}
+compare:
+  ignore: []

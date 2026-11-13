@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-prompt-role-continuation
+call:
+  bedrock_prompt:
+    messages:
+      - {role: user, content: a}
+      - {role: tool, tool_call_id: call_1, content: result}
+      - {role: user, content: b}
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+    modify_params: true
+env: {}
+compare: {ignore: []}

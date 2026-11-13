@@ -1,7 +1,7 @@
 id: B249
 milestone: M1 openai data plane
 title: Pre-call and post-call logging dispatch
-status: todo
+status: done
 depends_on: [B247, B248, B191, B187, B2239]
 file: tasks/B249-logging-pre-post.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/main.py"
 parent: B012
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1043

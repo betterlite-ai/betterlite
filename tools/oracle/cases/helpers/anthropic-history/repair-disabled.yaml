@@ -1,0 +1,15 @@
+kind: helper
+name: anthropic-history-repair-disabled
+call:
+  anthropic_history:
+    function: sanitize_messages_for_tool_calling
+    modify_params: false
+    messages:
+      - role: tool
+        tool_call_id: missing
+        content: preserve
+      - role: user
+        content: "  "
+env: {}
+compare:
+  ignore: []

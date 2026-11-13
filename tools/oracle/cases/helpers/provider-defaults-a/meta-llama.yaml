@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-a-meta-llama
+call:
+  provider_defaults_a:
+    provider: meta_llama
+    model: Llama-3
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+kind: helper
+name: gemini-tool-results-missing-name
+call:
+  gemini_tool_results:
+    message:
+      role: tool
+      tool_call_id: call_x
+      content: oops
+    last_message_with_tool_calls:
+      tool_calls:
+        - id: call_a
+          function:
+            name: first
+            arguments: '{}'
+env: {}
+compare:
+  ignore: []

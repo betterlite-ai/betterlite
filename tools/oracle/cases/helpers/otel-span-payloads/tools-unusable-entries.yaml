@@ -1,0 +1,37 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-tools-unusable-entries",
+  "call": {
+    "b3844": {
+      "function": "tools",
+      "value": {
+        "tools": [
+          "text",
+          {
+            "type": "function"
+          },
+          {
+            "function": {
+              "name": ""
+            }
+          },
+          {
+            "function": {
+              "description": "no name"
+            }
+          },
+          {
+            "function": "name"
+          },
+          {
+            "name": "kept"
+          }
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

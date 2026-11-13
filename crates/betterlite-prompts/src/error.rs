@@ -1,4 +1,5 @@
 use crate::builtin::PromptError;
+use crate::factory::hub::HubError;
 use crate::jinja::RenderError;
 use betterlite_logging::analytics::python::FormatError;
 use thiserror::Error;
@@ -19,6 +20,10 @@ pub enum FactoryError {
     Append { index: usize },
     #[error("No chat template found")]
     NoChatTemplate,
+    #[error(transparent)]
+    Hub(#[from] HubError),
+    #[error("the chat template is not text")]
+    TemplateNotText,
     #[error("betterlite does not support the {operation} prompt adapter yet")]
     Unsupported { operation: &'static str },
 }

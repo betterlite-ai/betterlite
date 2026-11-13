@@ -1,0 +1,22 @@
+kind: helper
+name: crossed-threshold-overrides-every-rate
+call:
+  token_rates:
+    operation: base
+    model_info:
+      input_cost_per_token: "0.000001"
+      output_cost_per_token: "0.000002"
+      cache_read_input_token_cost: "0.000003"
+      cache_creation_input_token_cost: "0.000004"
+      cache_creation_input_token_cost_above_1hr: "0.000005"
+      input_cost_per_token_above_100_tokens: "0.000011"
+      output_cost_per_token_above_100_tokens: "0.000012"
+      cache_read_input_token_cost_above_100_tokens: "0.000013"
+      cache_creation_input_token_cost_above_100_tokens: "0.000014"
+      cache_creation_input_token_cost_above_1hr_above_100_tokens: "0.000015"
+    usage:
+      prompt_tokens: 200
+    service_tier: null
+    provider: null
+compare: {ignore: []}
+env: {}

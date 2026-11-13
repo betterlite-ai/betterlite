@@ -13,10 +13,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::resolve_secret;
 
-use super::{
-    RawSettings, config_or_environment_flag, non_empty, resolve_secret_opt, resolve_string_opt,
-};
+use super::{RawSettings, config_or_environment_flag, non_empty, resolve_string_opt};
 
 const ELASTICACHE_TOKEN_TTL_SECONDS: u64 = 900;
 const ELASTICACHE_SERVICE_NAME: &str = "elasticache";
@@ -201,15 +200,15 @@ fn ensure_tls<L>(settings: &RawSettings, lookup: &L) -> Result<(), ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let url = resolve_secret_opt(
+    let url = resolve_secret(
         settings
             .url
             .as_ref()
             .map(|secret| secret.expose_secret().to_owned()),
         "litellm_settings.cache_params.url",
         lookup,
-        "REDIS_URL",
-    )?;
+    )?
+    .or_else(|| lookup.lookup("REDIS_URL").map(SecretString::from));
     let ssl_enabled = config_or_environment_flag(
         settings.ssl.as_ref(),
         lookup,

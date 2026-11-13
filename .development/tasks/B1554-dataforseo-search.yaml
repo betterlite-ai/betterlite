@@ -1,7 +1,7 @@
 id: B1554
 title: Authenticate DataForSEO tasks and preserve first-result semantics
 description: >-
-  Implement api::search_providers::dataforseo with B091 search types and trusted-base validation.
+  Implement api::search_providers::dataforseo with B3270 search types and trusted-base validation.
   Load DATAFORSEO_LOGIN/PASSWORD unset, DATAFORSEO_API_BASE default
   https://api.dataforseo.com/v3/serp/google/organic/live/advanced, and integer
   DEFAULT_DATAFORSEO_LOCATION_CODE default 2250. dataforseo_search_settings must load all four.
@@ -36,12 +36,8 @@ description: >-
 scope:
   paths:
     - crates/betterlite-core/Cargo.toml
-    - crates/betterlite-core/src/api/search_providers.rs
-    - crates/betterlite-core/src/api/search_providers/**
     - crates/betterlite-core/src/api/search_providers/dataforseo.rs
     - crates/betterlite-core/src/api/search_providers/dataforseo/**
-    - crates/betterlite-config/src/providers.rs
-    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/dataforseo.rs
     - crates/betterlite-config/src/providers/dataforseo/**
     - crates/betterlite-core/fuzz/Cargo.toml

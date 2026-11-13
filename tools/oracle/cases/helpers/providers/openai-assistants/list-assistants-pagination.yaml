@@ -1,0 +1,5 @@
+kind: helper
+name: openai-assistants-list-assistants-pagination
+call: {openai_assistants: {list_assistants: {options: {api_key: sk-test, api_base: 'https://example.test/v1', organization: org-1}, params: {order: asc, limit: 5, before: b1, after: a1}, flag: false, reply: {status: 200, body: '{"object":"list","data":[{"id":"asst_1","object":"assistant","created_at":1,"model":"gpt-4o","name":"first","tools":[{"type":"code_interpreter"}]}],"first_id":"asst_1","last_id":"asst_1","has_more":true}'}}}}
+env: {}
+compare: {ignore: []}

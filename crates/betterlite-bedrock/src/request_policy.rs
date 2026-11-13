@@ -33,16 +33,10 @@ pub type OneResponse<T> = option::IntoIter<T>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BedrockRequestPolicy {
-    fields: IndexSet<String>,
+    pub fields: IndexSet<String>,
 }
 
 impl BedrockRequestPolicy {
-    #[must_use]
-    pub fn from_fields(configured: &[String]) -> Option<Self> {
-        let fields: IndexSet<String> = configured.iter().cloned().collect();
-        (!fields.is_empty()).then_some(Self { fields })
-    }
-
     #[must_use]
     pub fn resolve(
         &self,

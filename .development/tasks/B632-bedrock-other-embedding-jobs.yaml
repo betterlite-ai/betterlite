@@ -160,7 +160,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_jobs_cases::case_[0-9]+_async_invoke_status_url$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_embedding_jobs.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_embedding_jobs.py tools/oracle/helpers/bedrock_other_embedding_jobs)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -173,7 +173,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_embedding_jobs)"
       && grep -q 'decode_async_embedding_status' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_embedding_jobs.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_embedding_jobs_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_embedding_jobs_corpus(::|$)/)'
   - id: case-status-body-passthrough
     why: Use the B173 async BEDROCK client with no per-call timeout/client override and GET the prepared URL/headers.
       Only status exactly 200 returns decode_async_embedding_status(response bytes). Preserve arbitrary parsed JSON,

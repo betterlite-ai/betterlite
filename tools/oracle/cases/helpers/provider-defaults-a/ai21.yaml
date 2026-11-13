@@ -1,0 +1,11 @@
+kind: helper
+name: provider-defaults-a-ai21
+call:
+  provider_defaults_a:
+    provider: ai21
+    model: jamba-instruct
+    environment:
+      AI21_API_BASE: https://env.ai21.example
+      AI21_API_KEY: ai21-key
+env: {}
+compare: {ignore: []}

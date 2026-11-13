@@ -1,0 +1,15 @@
+kind: helper
+name: a2a-discover-all-paths-fail
+call:
+  b8202:
+    operation: card
+    base_url: https://agent.example
+    replies:
+      - status: 500
+        body: ''
+      - status: 403
+        body: forbidden
+      - status: 404
+        body: missing
+env: {}
+compare: {ignore: []}

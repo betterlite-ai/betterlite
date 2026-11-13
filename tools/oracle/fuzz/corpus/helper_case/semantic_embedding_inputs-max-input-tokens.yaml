@@ -1,0 +1,11 @@
+kind: helper
+name: semantic_embedding_inputs-max-input-tokens-seed
+call:
+  b4310:
+    operation: max_input_tokens
+    configured: null
+    embedding_model: text-embedding-3-small
+    model_list: null
+    router_present: true
+env: {}
+compare: {ignore: []}

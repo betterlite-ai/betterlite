@@ -1,0 +1,9 @@
+kind: helper
+name: guardrail-params-mode-missing
+call:
+  b3662:
+    function: litellm_params
+    body:
+      guardrail: custom
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,133 @@
+id: B9092
+title: Rebrand the retained dashboard shell and bundle its MIT notices
+description: >-
+  Make a small reviewed 20-branding.patch and its preimage/postimage record on top of B9090's retained application and B9091's build patch. Do not copy the React
+  tree into git. Keep the original layouts, components, routes and networking functions; change
+  the shared product presentation. Set document title to "betterlite Dashboard" and description
+  to "betterlite Proxy Admin UI". Change LiteLLM product names in login and disabled-login screens,
+  connect/onboarding copy, common loading screens, navbar/leftnav home labels, alt text, account
+  menus, notifications and shared navigation metadata to betterlite, and the shared LiteAdmin
+  launcher label to "betterlite Assistant". Preserve all protocol names,
+  source provenance and references to genuinely external LiteLLM integrations.
+
+  The brand mark is text, not an image: no logo, monogram or favicon file is created, drawn or
+  rasterized, and no image file is checked in. A small wordmark component, carried in the patch,
+  renders "betterlite" (collapsed: "b") in the system sans-serif stack, with light and dark
+  colors from the existing theme CSS. The shell still requests the configured logo the upstream
+  way (theme logo_url, then /get_image for a server-side UI_LOGO_PATH) and shows that image only
+  once it loads; a 404 or load error shows the text wordmark, never a broken-image icon. The
+  patch deletes the upstream app favicon.ico and public/assets/logos/litellm_monogram.svg from
+  the prepared source and points their users at the wordmark component, so the export carries
+  no LiteLLM brand image. With no LITELLM_FAVICON_URL the browser gets B8387's 404 "Default
+  favicon not found" and shows its default icon. Keep the provider logos unchanged. B8387 still
+  decides custom-logo precedence and B1662 still owns theme settings; do not replace an operator's UI_LOGO_PATH, UI_LOGO_PATH_DARK or
+  LITELLM_FAVICON_URL. Defaults remain the light theme with system-theme support from next-themes,
+  and custom theme fields remain null until configured.
+
+  Use a single added brand-links module, carried in the patch, for the shared product links.
+  Home/source point to https://github.com/betterlite-ai/betterlite, general documentation to
+  https://github.com/betterlite-ai/betterlite#readme, support/community to
+  https://github.com/betterlite-ai/betterlite/issues, and release history to
+  https://github.com/betterlite-ai/betterlite/releases. Replace the LiteLLM Slack and sales CTAs
+  with clearly labelled betterlite issue/support links; remove the upstream blog dropdown and
+  its fetch from the shared navbar rather than presenting Berri's announcements as betterlite's.
+  Feature-specific links for which betterlite has no replacement remain functional and are
+  visibly labelled "Upstream LiteLLM documentation". Do not silently redirect every docs path
+  to a nonexistent betterlite documentation site. The release banner continues to use the
+  release_url field from /get/latest_release_info, supplied by B1655, and the installed version
+  in health readiness's existing litellm_version field; neither wire field is renamed.
+
+  Remove Standard/Premium tier badges, license-expiry advertising, the SidebarUsageCard seat/team
+  license-cap meter and shell upgrade-to-paid prompts, including their now-unused shell fetches.
+  Keep the software update banner, operational warnings, role badges and every role,
+  team and permission check. Do not forge premium_user in a JWT or make every user an admin.
+  Retained MIT feature controls must not be hidden solely by shell subscription presentation;
+  page-specific feature gates remain with B145-B150 and their backend owners, and enterprise-only
+  code is never imported. Components retained for later reuse can stay in the source, but the
+  shipped shell must not mount the paid-license banner or fetch its license endpoint just to
+  show a tier label.
+
+  Keep upstream copyright/license comments, the exact Berri AI MIT notice and npm notices in
+  the build output. Add an attribution link from the shared account menu to
+  /ui/notices/LiteLLM-LICENSE.txt using uiHref, so a root-path deployment reaches the same file.
+  The attribution names LiteLLM and Berri AI accurately; rebranding is not an excuse to remove
+  those names. Tests under ui/dashboard/tests/branding render the actual retained components
+  with the pinned Vitest setup and verify labels, links, the text wordmark in light, dark and collapsed form, the configured logo
+  winning once it loads,
+  preserved custom overrides, retained role restrictions and absence of paid advertising.
+  Include fixture responses for B1655 success and null and prove the release URL is used as
+  returned. Check patch target hashes and notices in the actual build with check-branding.sh, and that no
+  file in the export matches the bytes of a pinned LiteLLM logo, monogram or favicon; a grep that
+  only finds the word betterlite is insufficient.
+  This is roughly 220 patch lines, 220 component checks and 80 build assertions,
+  around 520 authored lines; all other covered component functions remain upstream code.
+scope:
+  paths:
+    - ui/dashboard/patches/20-branding.patch
+    - ui/dashboard/patches/20-branding.json
+    - ui/dashboard/tests/branding/**
+    - tools/dashboard/check-branding.sh
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/layout.tsx#L14-L41
+    why: Product metadata and the default light/system theme wrapper are retained with the new name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/login/LoginPage.tsx#L34-L56
+    why: SSO notice contains visible product copy while AUTO_REDIRECT_UI_LOGIN_TO_SSO remains a compatibility spelling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/login/LoginPage.tsx#L187-L250
+    why: Enabled/disabled login branding and the existing credentials documentation link.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/leftnav.tsx#L630-L697
+    why: Shared home label, logo fallbacks, release link and account-menu composition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/SidebarAccountMenu/SidebarAccountMenu.tsx#L181-L235
+    why: Product name, tier advertising and role information must be distinguished during the rebrand.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/Navbar/CommunityEngagementButtons/CommunityEngagementButtons.tsx#L1-L45
+    why: Upstream support and GitHub links become explicitly named betterlite destinations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/UpgradeBanner.tsx#L15-L76
+    why: Keep software-version comparison and release_url navigation while removing paid-tier advertising elsewhere.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/SidebarUsageCard.tsx#L75-L120
+    why: The sidebar's license-cap meter and license fetches are omitted under the no-paid-tier decision.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/contexts/ThemeContext.tsx#L1-L84
+    why: Existing logo, dark-logo and favicon setting consumers remain functional.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/LICENSE#L6-L26
+    why: Visible product naming changes never remove the original copyright, permission or warranty notices.
+dod:
+  - text: The real retained shell displays betterlite names and the text wordmark while custom logos and theme choices continue to win.
+    proof: [branding-components, branding-bundle]
+  - text: Product links identify betterlite, retained upstream documentation identifies its source, and release notices consume B1655's URL.
+    proof: [branding-components]
+  - text: Paid-tier advertising disappears without changing identity, roles, permission checks or the operational warning banners.
+    proof: [branding-components]
+  - text: Both the exported bundle and the account attribution retain the complete Berri AI MIT notice and dependency notices.
+    proof: [branding-components, branding-bundle]
+checks:
+  optional: []
+  commands:
+    - id: branding-components
+      why: Rebranding only changes unused strings, breaks custom themes or removes authorization presentation.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/branding
+    - id: branding-bundle
+      why: The patched output or legal notices are absent from the sidecar, or a LiteLLM brand image is still in it.
+      run: bash tools/dashboard/check-branding.sh
+oracle_cases: []
+deviations:
+  - what: The shared dashboard identifies itself as betterlite with a text wordmark, image alt text and document metadata, and ships no logo, monogram or favicon image.
+    why: README Decisions keeps LiteLLM's MIT UI but requires betterlite product branding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/layout.tsx#L14-L18
+  - what: Shared source, release, support and general documentation links point to betterlite's GitHub repository; feature references without a replacement explicitly say Upstream LiteLLM documentation, and the upstream blog menu is omitted.
+    why: A betterlite installation must not advertise another product's support or releases or link to invented documentation pages.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/Navbar/CommunityEngagementButtons/CommunityEngagementButtons.tsx#L1-L22
+  - what: The shell has no Standard/Premium badge, license-expiry banner, licensed seat/team-cap meter or paid-upgrade prompt; ordinary software updates and permission restrictions remain.
+    why: betterlite has no paid tier and excludes enterprise-only code, per README Decisions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/SidebarAccountMenu/SidebarAccountMenu.tsx#L212-L228
+out_of_scope:
+  - B9090 retains every unchanged function in the fetched components and utilities; this task modifies only presentation through a patch, not their API implementations.
+  - B144 proves login/session handling and the production root-path browser flow; B145-B150 finish feature-page copy, links and license-only presentation in their own patches.
+  - B1655 owns release fetching; B1662 owns theme JSON and uploads; B8387 and B8671 own the logo/favicon HTTP routes and custom-file validation.
+  - cached_logo.jpg has no caller at the pin and is not an alternative runtime logo cache to implement.
+pitfalls:
+  - litellm_version, litellm_worker_url, the token cookie, x-litellm headers and /litellm-asset-prefix are compatibility identifiers, not rebranding targets.
+  - Removing LicenseExpiryBanner must not also remove UpgradeBanner, which reports software releases rather than a subscription.
+  - The attribution link needs uiHref so SERVER_ROOT_PATH is not lost on deployments below a prefix.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

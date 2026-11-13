@@ -1,0 +1,9 @@
+kind: helper
+name: spend-sanitize-raw-model-seed
+call:
+  spend_sanitize:
+    operation: scrub_raw_model
+    raw_model: gpt-4o
+    information: {$py: mapping, id: 1, entries: {error_message: gpt-4o failed, traceback: null}}
+env: {}
+compare: {ignore: []}

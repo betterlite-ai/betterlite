@@ -1,0 +1,1 @@
+{"role":"tool","tool_call_id":"call_1","name":"computer","content":[{"type":"text","text":"the screen:"},{"type":"image","source":{"type":"base64","data":"QQ","media_type":"image/png"}},{"type":"input_image","image_url":{"url":"data:image/webp;base64,Qg"}},{"type":"file","file":{"file_data":"data:application/pdf;base64,Qw"}}]}

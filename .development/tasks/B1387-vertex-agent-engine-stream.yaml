@@ -26,7 +26,6 @@ description: >-
   lifecycle tests and 100 oracle/helper-seed lines within 550; no new byte decoder is added.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,vertex_agent_stream}.rs
     - crates/betterlite-vertex/src/vertex_agent_stream.rs
     - crates/betterlite-vertex/src/vertex_agent_stream/**
     - crates/betterlite-provider/src/adapters.rs

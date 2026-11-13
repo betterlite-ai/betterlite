@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-config-selection-seed-construction
+call:
+  bedrock_config_selection:
+    function: selection_without_construction
+    models: [mantle/openai.gpt-5.5, twelvelabs/pegasus]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,23 @@
+kind: helper
+name: sse-final-message
+call:
+  bedrock_services_agentcore_response:
+    status: 200
+    headers: [[content-type, text/event-stream]]
+    body: |-
+      data: {"event":{"contentBlockDelta":{"delta":{"text":"delta"}}}}
+      data: {"message":{"content":[{"text":"final"}]}}
+    model: gpt-4
+    messages: [{role: user, content: hi}]
+    content: final
+    tokens: {prompt: 3, completion: 5}
+    response:
+      id: chatcmpl-fixture
+      object: chat.completion
+      created: 123
+      model: supplied
+      system_fingerprint: fp-fixture
+      choices: []
+      usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+env: {}
+compare: {ignore: []}

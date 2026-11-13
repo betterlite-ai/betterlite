@@ -2,8 +2,8 @@ id: B3251
 milestone: M6 guardrails
 title: Batch policy and guardrail compliance testing
 status: todo
-depends_on: [B003, B732, B855, B756, B865, B2400, B004, B3240, B3241]
-file: null
+depends_on: [B003, B004, B732, B865, B2400, B3240, B3241, B3682, B3803, B5471, B3668]
+file: tasks/B3251-policy-compliance-testing.yaml
 covers:
   - "litellm/proxy/management_endpoints/policy_endpoints/endpoints.py"
 parent: B079

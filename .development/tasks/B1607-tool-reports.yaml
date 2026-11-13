@@ -20,10 +20,11 @@ description: >-
   pagination, DB failures and role denial. Compare response fields and headers, status and
   complete error metadata; error prose alone is ignored. The route/helper block has 317 source
   lines plus 77 declarations/options; allow 390 product, 180 tests, 110 fuzz and 70 wiring lines.
+  B1100 registers routes/tool_reports.rs as a stub, so fill only crates/betterlite-server/src/routes/tool_reports.rs and leave routes.rs as it is.
 scope:
   paths:
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
+    - crates/betterlite-server/src/routes/tool_reports.rs
+    - crates/betterlite-server/src/routes/tool_reports/**
     - crates/betterlite-server/src/tool_reports.rs
     - crates/betterlite-server/src/tool_reports/**
     - crates/betterlite-server/fuzz/Cargo.toml

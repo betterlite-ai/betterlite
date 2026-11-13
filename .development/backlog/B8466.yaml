@@ -1,0 +1,14 @@
+id: B8466
+milestone: M2 routing
+title: "Router prompt management model dispatch"
+status: todo
+depends_on: [B302, B2202]
+file: tasks/B8466-router-prompt-dispatch.yaml
+covers:
+  - "litellm/router.py"
+parent: B162
+split_from: B162
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

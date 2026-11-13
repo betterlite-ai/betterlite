@@ -1,0 +1,15 @@
+kind: helper
+name: root-path-unmatched-prefix
+call:
+  b4200:
+    scalar_root: /gateway
+    root_paths: ["/tenant-a", "tenant-b", "/", ""]
+    requests:
+      - /v1/models
+      - /tenant-ab/models
+      - /x/tenant-a/models
+      - /gateway/models
+      - /tenant-a/gateway/models
+env: {}
+compare:
+  ignore: []

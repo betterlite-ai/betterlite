@@ -1,0 +1,14 @@
+kind: helper
+name: image-token-geometry-heic-default-dimensions
+call:
+  image_tokens:
+    calls:
+      - function: get_image_type
+        data: "data:image/heic;base64,AAAAGGZ0eXBoZWljAAAAAA=="
+      - function: get_image_dimensions
+        data: "data:image/heic;base64,AAAAGGZ0eXBoZWljAAAAAA=="
+      - function: calculate_img_tokens
+        data: "data:image/heic;base64,AAAAGGZ0eXBoZWljAAAAAA=="
+        mode: high
+env: {}
+compare: {ignore: []}

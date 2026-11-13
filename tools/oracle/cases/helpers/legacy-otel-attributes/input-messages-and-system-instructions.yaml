@@ -1,0 +1,18 @@
+kind: helper
+name: input-messages-and-system-instructions
+call:
+  b3856:
+    function: set_attributes
+    kwargs:
+      model: gpt-4o
+      messages:
+        - {role: user, content: hello}
+      system_instructions: null
+      instructions: be brief
+      system: be terse
+      standard_logging_object:
+        call_type: acompletion
+        metadata: {}
+    response: {}
+env: {}
+compare: {ignore: []}

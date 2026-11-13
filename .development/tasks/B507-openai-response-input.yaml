@@ -230,7 +230,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_base_model_gate$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_response_input.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_response_input.py tools/oracle/helpers/openai_response_input)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -243,7 +243,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_response_input)"
       && grep -q 'decode_response_tool_schema' crates/betterlite-openai/fuzz/fuzz_targets/openai_response_input.rs
-      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_response_input_corpus$/)'
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_response_input_corpus(::|$)/)'
   - id: case-replay-body-overlay
     why: The final body contains model, prepared input and optional parameters with sanitized tools only when present;
       preserve absent versus empty tools and source duplicate-key errors if options repeat model/input.

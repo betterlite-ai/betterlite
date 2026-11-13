@@ -1,0 +1,69 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-llm-route-and-session-options",
+  "call": {
+    "b3844": {
+      "function": "llm_call",
+      "payload": {
+        "id": "call-1",
+        "model": "gpt-4o",
+        "model_group": "chat-group",
+        "api_base": "https://api.openai.com/v1",
+        "prompt_tokens": 10,
+        "completion_tokens": 4,
+        "total_tokens": 14,
+        "response_cost": 0.0015,
+        "custom_llm_provider": "openai",
+        "call_type": "completion",
+        "stream": true,
+        "model_parameters": {
+          "temperature": 0.2,
+          "max_tokens": 32,
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "get_weather",
+                "parameters": {
+                  "type": "object"
+                }
+              }
+            }
+          ]
+        },
+        "cost_breakdown": {
+          "input_cost": 0.001,
+          "output_cost": 0.0005
+        },
+        "messages": [
+          {
+            "role": "user",
+            "content": "hi"
+          }
+        ],
+        "response": {
+          "id": "resp-1",
+          "model": "gpt-4o-2024",
+          "system_fingerprint": "fp-1",
+          "choices": [
+            {
+              "message": {
+                "role": "assistant",
+                "content": "hello"
+              },
+              "finish_reason": "stop"
+            }
+          ]
+        }
+      },
+      "capture_content": false,
+      "time_to_first_chunk_seconds": 1.5,
+      "request_route": "/v1/chat/completions",
+      "session_id": "session-1"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

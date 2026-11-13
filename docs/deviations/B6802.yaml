@@ -1,0 +1,29 @@
+task: B6802
+deviations:
+- what: >-
+    A DeepSeek OCR reply keeps its tables, its keyValuePairs and the unknown fields of every page.
+    LiteLLM's Rust port filters tables and keyValuePairs out of the response map without ever
+    assigning them and rebuilds each page from index, markdown, images and dimensions, so those
+    values never reach the caller.
+  why: >-
+    OCRResponse declares tables and keyValuePairs, a setup that asks the model for them relies on
+    the content, and docs/compatibility.md keeps what the declared types carry; dropping it is
+    silent data loss.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/vertex_ai/ocr/deepseek_transformation.rs#L246-L313
+- what: >-
+    A numeric string or a whole float inside a DeepSeek page's dimensions or the usage counts fails
+    as a ResponseField error. LiteLLM decodes those fields through LaxI64 and accepts them.
+  why: >-
+    OCRPageDimensions and OCRUsageInfo are the response types every OCR provider shares and belong
+    to B3300, which decodes them strictly; docs/compatibility.md rejects a value the declared type
+    cannot hold with an error that names the field.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms-types/src/formats/ocr.rs#L62-L95
+- what: >-
+    A Vertex OCR call with no project in vertex_project, VERTEXAI_PROJECT, the settings or the
+    access token fails with InvalidConfiguration naming vertex_project. LiteLLM asks its credential
+    provider for the project and returns whichever authentication error that provider raises.
+  why: >-
+    The credential provider is injected here and reports a project only when it has one, so
+    betterlite names the missing field instead of reporting a credential acquisition failure; no
+    working setup sends a request without a project.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/auth-gcp/src/lib.rs#L175-L183

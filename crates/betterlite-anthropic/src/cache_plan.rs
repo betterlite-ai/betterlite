@@ -7,10 +7,10 @@ pub mod wire;
 
 use serde::Serialize;
 use serde_json::value::RawValue;
+use sha2::{Digest as _, Sha256};
 
 use crate::cache_plan::breakpoints::{groups, lookback, markers};
 use crate::cache_plan::decode::{Decoded, Section, decode};
-use crate::cache_plan::json::digest;
 use crate::cache_plan::prefix::prefix_body;
 use crate::cache_plan::wire::Ttl;
 
@@ -115,10 +115,14 @@ fn breakpoints(
         let window = lookback(&groups, &chain, index);
         let mut fingerprints = Vec::with_capacity(window.len());
         for earlier in &window {
-            fingerprints.push(digest(&(ENTRY_SCOPE, earlier, seconds))?);
+            fingerprints.push(
+                serde_json::to_vec(&(ENTRY_SCOPE, earlier, seconds))
+                    .map(|text| hex::encode(Sha256::digest(text)))?,
+            );
         }
         breakpoints.push(CacheBoundary {
-            fingerprint: digest(&(ENTRY_SCOPE, hash, seconds))?,
+            fingerprint: serde_json::to_vec(&(ENTRY_SCOPE, hash, seconds))
+                .map(|text| hex::encode(Sha256::digest(text)))?,
             prefix_body: prefix_body(decoded, index)?,
             ttl_seconds: seconds,
             lookback_fingerprints: fingerprints,
@@ -130,25 +134,28 @@ fn breakpoints(
 }
 
 fn chain(decoded: &Decoded) -> Result<Vec<String>, serde_json::Error> {
-    let mut previous = digest(&Settings {
+    let mut previous = serde_json::to_vec(&Settings {
         thinking: decoded.thinking.as_deref(),
         output_config: decoded.output_config.as_deref(),
         speed: decoded.speed.as_deref(),
-    })?;
+    })
+    .map(|text| hex::encode(Sha256::digest(text)))?;
     let mut chain = Vec::with_capacity(decoded.positions.len());
     for position in &decoded.positions {
         let tool_choice = match position.section {
             Section::Messages => decoded.tool_choice.as_deref(),
             Section::Tools | Section::System => None,
         };
-        let current = digest(&(
+        let current = serde_json::to_vec(&(
             position.section,
             position.message_index,
             &position.role,
             &position.fields,
             tool_choice,
-        ))?;
-        previous = digest(&(&previous, &current))?;
+        ))
+        .map(|text| hex::encode(Sha256::digest(text)))?;
+        previous = serde_json::to_vec(&(&previous, &current))
+            .map(|text| hex::encode(Sha256::digest(text)))?;
         chain.push(previous.clone());
     }
     Ok(chain)

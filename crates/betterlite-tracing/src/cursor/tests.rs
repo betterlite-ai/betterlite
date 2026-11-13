@@ -6,7 +6,7 @@ use rstest::rstest;
 use std::fs;
 
 use super::{
-    CursorError, ErrorCursor, decode_error_cursor, decode_trace_cursor, encode_trace_cursor,
+    CursorError, ErrorCursor, TraceCursorPayload, decode_error_cursor, decode_trace_cursor,
 };
 
 const VALID_VERSION: &str = "A1B2C3D4E5F6071829384756AFBECD1029384756473829102938475647382910";
@@ -18,7 +18,8 @@ fn decodes_an_absent_trace_cursor_as_the_empty_start() {
 
 #[test]
 fn round_trips_a_trace_cursor() {
-    let cursor = encode_trace_cursor(1_700_000_000_000, "trace-abc");
+    let payload = TraceCursorPayload(1_700_000_000_000, "trace-abc".to_owned());
+    let cursor = URL_SAFE.encode(serde_json::to_string(&payload).unwrap_or_default());
     assert_eq!(
         decode_trace_cursor(Some(&cursor)).expect("ok"),
         (1_700_000_000_000, "trace-abc".to_owned())

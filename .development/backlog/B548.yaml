@@ -2,7 +2,7 @@ id: B548
 milestone: M3 providers
 title: Azure native passthrough preparation and logging
 status: todo
-depends_on: [B508, B504, B171, B188, B101, B103, B668, B2200, B129]
+depends_on: [B508, B504, B171, B188, B3570, B3636, B668, B2200, B8500]
 file: tasks/B548-azure-passthrough.yaml
 covers:
   - "litellm/llms/azure/passthrough/transformation.py"

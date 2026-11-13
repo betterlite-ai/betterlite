@@ -2,7 +2,7 @@ id: B312
 milestone: M2 routing
 title: Responses and Messages stream fallback boundaries
 status: todo
-depends_on: [B311, B310, B370, B081, B301]
+depends_on: [B311, B310, B370, B081, B301, B8351]
 file: tasks/B312-native-stream-fallback.yaml
 covers:
   - "litellm/router.py"

@@ -9,22 +9,27 @@ publish.workspace = true
 aws-credential-types = "1.3.1"
 aws-sigv4 = "1.6.2"
 aws-smithy-runtime-api = "1.19.1"
+betterlite-db = { path = "../betterlite-db" }
+betterlite-env = { path = "../betterlite-env" }
 betterlite-models = { path = "../betterlite-models" }
-betterlite-rate-limit = { path = "../betterlite-rate-limit" }
+betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
-dec_from_char = "0.2.1"
+chrono.workspace = true
 fancy-regex = "0.19.2"
 indexmap = { version = "2.14.2", features = ["serde"] }
 netrc-rs = "0.1.2"
 pcre2 = "0.2.11"
 percent-encoding.workspace = true
 rust_decimal.workspace = true
-secrecy.workspace = true
+secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde-inline-default = "1.0.3"
 serde-saphyr.workspace = true
 serde_ignored.workspace = true
-serde_json = "1.0.154"
+serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_path_to_error = "0.1.20"
+serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
+shellexpand = { version = "3.1.2", default-features = false, features = ["full"] }
 soft-canonicalize = "0.5.6"
 strum = { version = "0.28.0", features = ["derive"] }
 tempfile = "3.27.0"
@@ -35,6 +40,8 @@ unicode_titlecase = "2.5.0"
 url = "2.5.8"
 
 [dev-dependencies]
+betterlite-auth = { path = "../betterlite-auth" }
+betterlite-db = { path = "../betterlite-db" }
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 tempfile = "3.27.0"

@@ -1,0 +1,19 @@
+id: B9690
+milestone: M10 admin ui
+title: Deployed model table, detail, credential, health and price page requests
+status: todo
+depends_on: [B860, B5076, B850, B851, B835, B838, B1601, B4445, B4446, B8540, B8586, B8676, B2341, B825, B8595, B8675, B077]
+file: tasks/B9690-dashboard-model-table-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/models-and-endpoints/{*.*,utils/**}"
+  - "ui/litellm-dashboard/src/app/(dashboard)/models-and-endpoints/panels/{AccessGroupBudgets,AllModels,HealthStatus,LlmCredentials,PassThrough,PriceData}Panel*"
+  - "ui/litellm-dashboard/src/app/(dashboard)/models-and-endpoints/components/{AccessGroupBudget,accessGroupBudget,AllModels,ModelsTableColumns,PriceDataManagementTab}*"
+  - "ui/litellm-dashboard/src/components/{model_add,model_dashboard,ModelSelect,view_model}/**"
+  - "ui/litellm-dashboard/src/components/{model_filters,ModelInfoEditForm,model_info_view,update_model_credentials_modal,provider_info_helpers,price_data_reload,route_preview}.*"
+  - "ui/litellm-dashboard/src/components/{model_info_view,update_model_credentials_modal,provider_info_helpers,price_data_reload,route_preview}.test.*"
+parent: B146
+split_from: B146
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

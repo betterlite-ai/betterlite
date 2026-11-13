@@ -1,0 +1,33 @@
+task: B3900
+deviations:
+  - what: >-
+      The installed-SDK version check (installed_langfuse_version, raise_if_unsupported_langfuse_version, the
+      "langfuse>=4.7,<5" ImportError) is not built. betterlite links no Langfuse package.
+    why: The check guards a Python import that does not exist here. The OTLP traces route still needs a Langfuse server on 3.63.0 or newer, which is B3902's error hint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L175-L206
+  - what: >-
+      The messages for an unusable LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS and a non-numeric LANGFUSE_TIMEOUT
+      carry no ANSI red escape codes, and the value is quoted with single quotes the way Python's repr does for a plain string.
+    why: The escape codes only colour a terminal and corrupt structured logs; the variable name and the value stay.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L216-L222
+  - what: >-
+      An invalid LANGFUSE_TRACING_ENVIRONMENT warns on every resolution. LiteLLM warns once per distinct
+      (value, error) pair through an lru_cache of 8.
+    why: The cache is module-level state, which rules.yaml forbids. A logger is built once per credential set and at most MAX_LANGFUSE_INITIALIZED_CLIENTS (50) are allowed, so the repeats are bounded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L276-L283
+  - what: >-
+      LANGFUSE_MOCK only sets a flag the logger reads. The httpx monkey-patching mock client
+      (create_mock_langfuse_client, url matchers ".langfuse.com", 100 ms latency, {"status": "success"} body)
+      is not built.
+    why: B191 replaces the Python mock factories with injected transport fixtures in each exporter's tests, and the mock-mode exporter that drops spans is B3902's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_mock_client.py#L22-L45
+  - what: >-
+      A Langfuse setting beyond the range of the Rust type that holds it does not keep Python's unbounded value:
+      LANGFUSE_FLUSH_INTERVAL above u64::MAX seconds saturates to u64::MAX, LANGFUSE_MAX_RETRIES above u32::MAX
+      reports 4294967295 in the ceiling warning, and LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS above i64::MAX fails
+      the whole-number check that LiteLLM passes.
+    why: >-
+      Python ints are unbounded, while a Duration, a retry count and a parsed TTL need a fixed width. No working setup
+      configures a flush interval of 5.8e11 years, four billion retries or a TTL past 2^63 seconds, so the saturated or
+      rejected value never changes what an operator gets. The behavior test cases flush_interval_overflow_saturates and beyond_i64 pin it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L497-L516

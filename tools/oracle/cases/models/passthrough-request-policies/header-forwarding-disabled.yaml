@@ -1,0 +1,15 @@
+kind: helper
+name: header-forwarding-disabled
+call:
+  b3571:
+    operation: forward_headers
+    request_headers:
+      content-length: "42"
+      host: client.example
+      accept-encoding: br
+      x-request-id: abc
+    custom_headers:
+      x-route: one
+    forward_headers: false
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,2 @@
+general_settings:
+  public_routes: ['/v1/models', '/api/*']

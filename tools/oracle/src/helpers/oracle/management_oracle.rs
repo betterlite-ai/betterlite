@@ -81,5 +81,5 @@ fn unbuilt(domain: &str) -> crate::helpers::HelperResult {
         code: None,
         message,
     };
-    Err(error.into())
+    Err(Box::new(error))
 }

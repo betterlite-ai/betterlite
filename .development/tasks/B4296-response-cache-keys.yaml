@@ -82,10 +82,10 @@ dod:
     proof: [cache-key-domain-tests]
 
   - text: get_cache_key returns the exact SHA-256 hash that LiteLLM produces for identical input kwargs, verified by oracle helper cases comparing both implementations with the same request material.
-    proof: [cache-key-oracle-identity]
+    proof: [oracle]
 
   - text: Tenant scope fields (user_api_key, user_api_key_team_id, user_api_key_org_id) and optional end-user field (user_api_key_end_user_id) are extracted from kwargs metadata or litellm_params metadata in that order of precedence.
-    proof: [cache-key-domain-tests, cache-key-oracle-tenant-scope]
+    proof: [cache-key-domain-tests, oracle]
 
   - text: Preset cache keys supplied upstream bypass the pipeline and return immediately without re-hashing or namespace assignment.
     proof: [cache-key-domain-tests]
@@ -106,7 +106,7 @@ dod:
     proof: [cache-key-domain-tests]
 
   - text: Oracle helper cases feed identical kwargs to both LiteLLM's Cache.get_cache_key and betterlite's implementation, comparing hash strings for exact format match. Cases cover semantic vs non-semantic modes, preset-key reuse, tenant-scope variants and namespace prefixing.
-    proof: [cache-key-oracle-identity, cache-key-oracle-tenant-scope]
+    proof: [oracle]
 
 checks:
   optional: []
@@ -114,14 +114,6 @@ checks:
     - id: cache-key-domain-tests
       why: Cache key derivation logic does not match LiteLLM behavior, or tenant isolation fields are wrong.
       run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^cache_key::/)'
-
-    - id: cache-key-oracle-identity
-      why: get_cache_key does not produce the exact SHA-256 hash LiteLLM produces for matching input, or preset keys are handled incorrectly.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/cache_key/)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^cache_key::oracle::(exact_hash|preset_key)/)'
-
-    - id: cache-key-oracle-tenant-scope
-      why: Tenant scope fields (user_api_key, team_id, org_id, end_user_id) are not extracted correctly or are in wrong order.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/cache_key/)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^cache_key::oracle::tenant_scope/)'
 
 oracle_cases:
   - tools/oracle/cases/cache_key/print-verbose-guards-console.yaml

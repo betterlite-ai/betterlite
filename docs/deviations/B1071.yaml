@@ -1,0 +1,8 @@
+task: B1071
+deviations:
+  - what: error_class returns the BaseLlmException value and complete_url returns a typed ApiBaseRequired error, where LiteLLM raises BaseLLMException and ValueError from the same methods.
+    why: Rust has no exceptions; the caller returns the value as its error, and the oracle case compares status, message and headers of the raised exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/vector_store_files/transformation.py#L181-L188
+  - what: The operation argument of supported_params and map_params is a closed enum of create, list, read, update and delete instead of any string.
+    why: Those are the only five operations LiteLLM's vector store file layer has, and a closed set removes a misspelling that LiteLLM silently ignores.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/vector_store_files/transformation.py#L35-L52

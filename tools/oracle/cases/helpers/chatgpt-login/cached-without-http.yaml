@@ -1,0 +1,7 @@
+kind: helper
+name: cached_without_http
+call:
+  chatgpt_login: {"record": "{\"access_token\": \"h.eyJleHAiOiA0MDAwMDAwMDAwLCAiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjogeyJjaGF0Z3B0X2FjY291bnRfaWQiOiAiYWNjdCJ9fQ.s\", \"refresh_token\": \"refresh\", \"expires_at\": 2000}", "replacement": null, "now": 1000, "replies": [], "repeat": null}
+env: {}
+compare:
+  ignore: []

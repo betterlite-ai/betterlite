@@ -4,7 +4,7 @@ use std::fmt::Debug;
 use std::task::{Context, Poll, Waker};
 
 use futures_util::{StreamExt as _, stream};
-use indexmap::IndexMap;
+use indexmap::{IndexMap, IndexSet};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -51,8 +51,8 @@ fn headers(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
 }
 
 fn policy(fields: &[&str]) -> Option<BedrockRequestPolicy> {
-    let owned: Vec<String> = fields.iter().map(|field| (*field).to_owned()).collect();
-    BedrockRequestPolicy::from_fields(&owned)
+    let owned: IndexSet<String> = fields.iter().map(|field| (*field).to_owned()).collect();
+    (!owned.is_empty()).then_some(BedrockRequestPolicy { fields: owned })
 }
 
 // IndexMap equality ignores order, and order is part of every outcome here
@@ -335,7 +335,10 @@ fn budget_caps(owner: &BedrockRequestPolicy, params: &Params, caller: &RequestVa
             .map(|field| (field.clone(), text("v")))
             .collect(),
     );
-    let capped = BedrockRequestPolicy::from_fields(&many)
+    let capped = (!many.is_empty())
+        .then_some(BedrockRequestPolicy {
+            fields: many.iter().cloned().collect(),
+        })
         .unwrap()
         .resolve(
             &Params::from([("metadata".to_owned(), identities)]),

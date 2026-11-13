@@ -1,0 +1,36 @@
+kind: helper
+name: predibase-reply-text-and-finish
+env: {}
+compare: {ignore: []}
+call:
+  b5846:
+    op: reply
+    replies:
+      - body: '{"generated_text":"<|assistant|>hi","details":{"finish_reason":"length","tokens":[{"logprob":-0.5},{"logprob":null},{"logprob":-0.25}]}}'
+        model: model
+        messages:
+          - {role: user, content: hello}
+      - body: '{"generated_text":"x","details":{"finish_reason":"content_filtered","tokens":[]}}'
+        model: model
+      - body: '{"generated_text":"x","details":{"finish_reason":"weird","tokens":[]}}'
+        model: model
+      - body: '{"generated_text":"x","details":{"finish_reason":null,"tokens":[]}}'
+        model: model
+      - body: '{"generated_text":"x","details":{"finish_reason":"length"}}'
+        model: model
+      - body: '{"generated_text":""}'
+        model: model
+        messages:
+          - {role: user, content: hello}
+        headers: {x-request-id: r, X-Upper: u, foo: f}
+        now: 1700000001
+      - body: '{"generated_text":"abc"}'
+        model: model
+        messages:
+          - {role: user, content: hello}
+        encoding_fails: true
+      - body: '{"generated_text":"abc"}'
+        model: model
+        messages:
+          - {role: user, content: hello}
+        counter_fails: true

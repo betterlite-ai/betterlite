@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-a-volcengine
+call:
+  provider_defaults_a:
+    provider: volcengine
+    model: any-model
+env: {}
+compare: {ignore: []}

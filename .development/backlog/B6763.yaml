@@ -1,0 +1,14 @@
+id: B6763
+milestone: M9 agents and mcp
+title: MCP server record from a database row
+status: todo
+depends_on: [B6590, B6760, B6761, B6762, B4710, B858, B2305, B2303, B6594, B4682]
+file: tasks/B6763-mcp-server-from-table.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
+parent: B139
+split_from: B6592
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

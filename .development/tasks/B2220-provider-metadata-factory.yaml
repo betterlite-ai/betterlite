@@ -191,7 +191,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - All other ProviderConfigManager factories and public Python SDK facades retain their existing owners. Remaining
-  XAI methods belong to B036, Fireworks transformations to B041 and Lemonade/self-hosted methods to B040; remaining
+  XAI methods belong to B036, Fireworks transformations to B6071 and B6072 and Lemonade/self-hosted methods to B8157 and B8150 to B8156; remaining
   BaseLLMModelInfo abstract/default helpers stay B010. Other AzureFoundryModelInfo methods remain B549.
 - 'Function ownership inventory litellm/llms/azure_ai/common_utils.py: AzureFoundryModelInfo.get_azure_ai_route
   L168-L191; AzureFoundryModelInfo.get_azure_ai_config_for_model L310-L343 belong to B2230.'
@@ -225,7 +225,7 @@ out_of_scope:
   FireworksAIConfig.transform_request L653-L683; FireworksAIConfig._handle_message_content_with_tool_calls L685-L708;
   FireworksAIConfig.transform_response L710-L764; FireworksAIConfig.get_model_response_iterator L766-L776; FireworksAIConfig._get_openai_compatible_provider_info
   L778-L788; FireworksAIConfig.get_models L790-L817; FireworksAIConfig.get_api_key L819-L826; FireworksAIChatCompletionStreamingHandler.chunk_parser
-  L830-L838 belong to B041.'
+  L830-L838 belong to B6071 and B6072.'
 - 'Function ownership inventory litellm/llms/fireworks_ai/chat/transformation.py: FireworksAIConfig._get_fireworks_index
   L534-L555; FireworksAIConfig._matches_on_hyphen_boundary L557-L569; FireworksAIConfig._short_model_name L571-L576;
   FireworksAIConfig._firerouter_family_cost_keys L578-L583; FireworksAIConfig._get_model_cost_capability_exact L585-L597;
@@ -233,7 +233,7 @@ out_of_scope:
   L625-L651 belong to B2222.'
 - 'Function ownership inventory litellm/llms/lemonade/chat/transformation.py: LemonadeChatConfig.custom_llm_provider
   L63-L65; LemonadeChatConfig.get_config L67-L69; LemonadeChatConfig.get_models L71-L108; LemonadeChatConfig.transform_response
-  L224-L255 belong to B040.'
+  L224-L255 belong to B8157.'
 - 'Function ownership inventory litellm/llms/lemonade/chat/transformation.py: LemonadeChatConfig._get_positive_int
   L110-L123; LemonadeChatConfig._get_provider_specific_entry L125-L137; LemonadeChatConfig._get_context_window L139-L154;
   LemonadeChatConfig._get_default_model_info L156-L166; LemonadeChatConfig.get_model_info L168-L206; LemonadeChatConfig._get_openai_compatible_provider_info

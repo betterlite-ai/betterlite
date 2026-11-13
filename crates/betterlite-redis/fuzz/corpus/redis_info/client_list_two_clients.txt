@@ -1,0 +1,2 @@
+id=3 addr=127.0.0.1:56789 laddr=127.0.0.1:6379 fd=8 name= age=5 idle=0 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=26 qbuf-free=20448 argv-mem=10 multi-mem=0 tot-net-in=0 tot-net-out=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=0 events=r cmd=client|list user=default redir=-1 resp=2
+id=4 addr=127.0.0.1:56790 laddr=127.0.0.1:6379 fd=9 name= age=2 idle=0 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=26 qbuf-free=20448 argv-mem=10 multi-mem=0 tot-net-in=0 tot-net-out=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=0 events=r cmd=ping user=default redir=-1 resp=2

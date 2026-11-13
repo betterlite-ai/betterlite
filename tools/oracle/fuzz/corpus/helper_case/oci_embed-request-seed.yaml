@@ -1,0 +1,14 @@
+kind: helper
+name: oci-embed-request-seed
+call:
+  b5941:
+    steps:
+      - method: request
+        model: cohere.embed-v4.0
+        input: seed text
+        optional_params:
+          input_type: search_document
+        explicit:
+          oci_compartment_id: ocid1.compartment.oc1..seed
+env: {}
+compare: {ignore: []}

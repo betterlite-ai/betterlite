@@ -152,14 +152,17 @@ fn extract_response_messages(response: &Fields) -> Vec<InspectMessage> {
     if has_choice_key(response, "text") {
         return completion_messages(response);
     }
-    if matches!(Json::field(response, "output"), Json::List(_)) {
+    if matches!(
+        Json::parse(response.get("output").map_or("null", |raw| raw.get())),
+        Json::List(_)
+    ) {
         return output_messages(response);
     }
     Vec::new()
 }
 
 fn has_choice_key(response: &Fields, key: &str) -> bool {
-    Json::field(response, "choices")
+    Json::parse(response.get("choices").map_or("null", |raw| raw.get()))
         .objects()
         .iter()
         .any(|choice| choice.contains_key(key))
@@ -172,7 +175,8 @@ fn record_applied_guardrail(request_data: &mut Fields, guardrail_name: &str) {
     } else {
         "metadata"
     };
-    let mut bucket = match Json::field(request_data, bucket_key) {
+    let mut bucket = match Json::parse(request_data.get(bucket_key).map_or("null", |raw| raw.get()))
+    {
         Json::Object(fields) => fields,
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
             Fields::new()
@@ -187,7 +191,11 @@ fn record_applied_guardrail(request_data: &mut Fields, guardrail_name: &str) {
 }
 
 fn applied_guardrails(bucket: &Fields) -> Vec<String> {
-    match Json::field(bucket, "applied_guardrails") {
+    match Json::parse(
+        bucket
+            .get("applied_guardrails")
+            .map_or("null", |raw| raw.get()),
+    ) {
         Json::List(items) => items
             .iter()
             .filter_map(|item| match Json::parse(item.get()) {

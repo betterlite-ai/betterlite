@@ -1,0 +1,1 @@
+{"id":"ft_7","created_at":9223372036854775808,"error":null,"fine_tuned_model":null,"finished_at":null,"hyperparameters":{},"model":"m","object":"fine_tuning.job","organization_id":"org","result_files":[],"status":"queued","trained_tokens":null,"training_file":"f","validation_file":null}

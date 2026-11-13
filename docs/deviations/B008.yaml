@@ -1,0 +1,8 @@
+task: B008
+deviations:
+  - what: A router_settings.routing_strategy other than simple-shuffle stops startup with an error that names the key.
+    why: least-busy, usage-based-routing, latency-based-routing and cost-based-routing are not built yet, and ignoring the key would silently route differently from LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L147-L172
+  - what: weight, rpm and tpm are whole numbers, and the request argument _router_weights is not read.
+    why: The config crate types the three keys as unsigned integers, and per-request weights belong to a later task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/simple_shuffle.py#L17-L67

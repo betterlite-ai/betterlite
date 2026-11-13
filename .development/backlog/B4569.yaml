@@ -1,14 +1,14 @@
 id: B4569
 milestone: M8 platform
 title: Persistent Codex provider settings and undo
-status: todo
+status: done
 depends_on: [B192, B4564]
 file: tasks/B4569-codex-settings.yaml
 covers:
   - "litellm/proxy/client/cli/commands/codex_settings.py"
 parent: B134
 split_from: B134
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1192

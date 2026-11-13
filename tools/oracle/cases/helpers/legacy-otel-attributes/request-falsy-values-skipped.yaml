@@ -1,0 +1,14 @@
+kind: helper
+name: request-falsy-values-skipped
+call:
+  b3856:
+    function: set_attributes
+    kwargs:
+      model: ''
+      optional_params: {max_tokens: 0, temperature: 0, top_p: 0, stream: null, user: ''}
+      standard_logging_object:
+        call_type: acompletion
+        litellm_call_id: ''
+        metadata: {}
+env: {}
+compare: {ignore: []}

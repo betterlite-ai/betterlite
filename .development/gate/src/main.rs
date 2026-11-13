@@ -20,6 +20,7 @@ mod process;
 mod report_check;
 mod review_check;
 mod schema;
+mod shellcheck;
 mod show;
 mod spec;
 mod trace;
@@ -55,13 +56,23 @@ enum Command {
     #[command(
         about = "Print the nextest package flags for the packages a change against GATE_BASE can affect: --workspace, -p flags, or nothing; GATE_ALL_TESTS set prints --workspace"
     )]
-    Affected,
+    Affected {
+        #[arg(
+            long,
+            help = "Print only the packages the change edits, without the ones that depend on them"
+        )]
+        edited: bool,
+    },
     #[command(
         about = "Validate every spec file under .development/ and the committed JSON Schemas"
     )]
     Validate,
     #[command(about = "Print the checks a task runs")]
-    List { task: String },
+    List {
+        task: String,
+        #[arg(long, help = "Print only the checks a dispatch runs locally")]
+        local: bool,
+    },
     #[command(
         about = "Check task prerequisites without running builds, tests, coverage or mutants"
     )]
@@ -83,6 +94,12 @@ enum Command {
             help = "Leave these check ids out (repeatable or comma-separated)"
         )]
         skip: Vec<String>,
+        #[arg(
+            long,
+            value_delimiter = ',',
+            help = "Start these check ids at once, one after another, while the other checks run (repeatable or comma-separated)"
+        )]
+        beside: Vec<String>,
     },
     #[command(
         about = "Write the JSON Schemas generated from the format types into .development/schema/"
@@ -134,9 +151,23 @@ enum Command {
         #[arg(help = "A path from the repository or LiteLLM root, optionally with :line")]
         target: String,
     },
+    #[command(
+        about = "Run shellcheck on every run command of checks.yaml, with .shellcheckrc, or of task files, with the default checks"
+    )]
+    Shellcheck {
+        #[arg(
+            required = true,
+            help = ".development/checks.yaml or a file in .development/tasks/"
+        )]
+        paths: Vec<PathBuf>,
+    },
 }
 
-fn listing(development: &Development, task_id: &str) -> Result<Vec<String>, GateError> {
+fn listing(
+    development: &Development,
+    task_id: &str,
+    local: bool,
+) -> Result<Vec<String>, GateError> {
     let task = development.task(task_id)?;
     let builtin = development
         .catalog
@@ -146,7 +177,14 @@ fn listing(development: &Development, task_id: &str) -> Result<Vec<String>, Gate
         .map(|check| format!("{:16} builtin", <&str>::from(check.id)));
     let commands = checks::commands(development, &task)?
         .into_iter()
-        .map(|check| format!("{:16} {}", check.id, check.run));
+        .filter(|check| !local || checks::selection::lint(&check.id))
+        .map(|check| {
+            format!(
+                "{:16} {}",
+                check.id,
+                check.run.replace('\n', "\n                 ")
+            )
+        });
     Ok(builtin.chain(commands).collect())
 }
 
@@ -198,32 +236,45 @@ fn dispatch_command(command: Command) -> Result<(Vec<String>, bool), GateError> 
     run_command(command, &Development::open(&directory)?)
 }
 
+fn run_selection(
+    development: &Development,
+    id: &str,
+    selection: &Selection,
+) -> Result<(Vec<String>, bool), GateError> {
+    let task = development.task(id)?;
+    let verdict = checks::run(development, &task, selection)?;
+    Ok((verdict.lines, verdict.passed))
+}
+
 fn run_command(
     command: Command,
     development: &Development,
 ) -> Result<(Vec<String>, bool), GateError> {
     match command {
-        Command::Affected => Ok((affected::affected(&development.root)?, true)),
+        Command::Affected { edited } => Ok((affected::affected(&development.root, edited)?, true)),
         Command::Availability => {
             dispatch::availability(development)?;
             Ok((vec!["a worker vendor is available".to_owned()], true))
         }
         Command::Validate => validate_command(development),
-        Command::List { task } => Ok((listing(development, &task)?, true)),
+        Command::Shellcheck { paths } => shellcheck::shellcheck(&development.root, &paths),
+        Command::List { task, local } => Ok((listing(development, &task, local)?, true)),
         Command::Preflight { task: id } => {
             let task = development.task(&id)?;
-            let selection = checks::selection::preflight(development, &task)?;
+            let selection = checks::selection::builtins_and(
+                development,
+                &task,
+                checks::selection::prerequisite,
+            )?;
             let verdict = checks::run(development, &task, &selection)?;
             Ok((verdict.lines, verdict.passed))
         }
-        Command::Run { task, only, skip } => {
-            let verdict = checks::run(
-                development,
-                &development.task(&task)?,
-                &Selection { only, skip },
-            )?;
-            Ok((verdict.lines, verdict.passed))
-        }
+        Command::Run {
+            task,
+            only,
+            skip,
+            beside,
+        } => run_selection(development, &task, &Selection { only, skip, beside }),
         Command::Schema => Ok((schema::write(&development.root)?, true)),
         Command::Dispatch { task, notes, grant } => {
             Ok((dispatch::dispatch(development, &task, notes, grant)?, true))

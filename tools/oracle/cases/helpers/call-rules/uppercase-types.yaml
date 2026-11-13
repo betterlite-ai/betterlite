@@ -1,0 +1,19 @@
+kind: helper
+name: uppercase-types
+call:
+  schema_validation:
+    mode: normalize
+    schema:
+      type: OBJECT
+      properties:
+        name: {type: STRING}
+        tags: {type: ARRAY, items: {type: INTEGER}}
+        flag: {type: BOOLEAN}
+        score: {type: NUMBER}
+        extra: {type: "NULL"}
+        choice: {type: "FUNDAMENTAL"}
+      anyOf:
+        - type: OBJECT
+env: {}
+compare:
+  ignore: []

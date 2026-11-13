@@ -1,0 +1,9 @@
+kind: helper
+name: completion-chat-passthrough
+call:
+  b5240:
+    function: "output_choices"
+    response: {"choices": [{"message": {"role": "assistant", "content": "hi"}, "finish_reason": "stop"}]}
+env: {}
+compare:
+  ignore: []

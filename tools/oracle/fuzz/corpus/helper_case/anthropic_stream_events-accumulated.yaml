@@ -1,0 +1,15 @@
+kind: helper
+name: anthropic-stream-events-accumulated
+call:
+  anthropic_stream_events:
+    json_mode: false
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: accumulated, fragment: '{"type": "con', is_final: false}
+      - {function: accumulated, fragment: 'tent_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hi"}}', is_final: false}
+      - {function: accumulated, fragment: '[1,2] {"type":"ping"}', is_final: false}
+      - {function: accumulated, fragment: '', is_final: true}
+      - {function: state}
+env: {}
+compare: {ignore: []}

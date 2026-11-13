@@ -1,0 +1,12 @@
+kind: helper
+name: pinned-instant-retains-off-peak-rate
+call:
+  billed_tokens:
+    operation: catalog
+    provider: fireworks_ai
+    model_info: {input_cost_per_token: 4, output_cost_per_token: 8}
+    off_peak_pricing: {hours_utc: "10:00-11:00", input_cost_per_token: 2, output_cost_per_token: 3}
+    moment: "2024-06-16T10:30:00Z"
+    usage: {detail_cache_read: 6, detail_reasoning: 2}
+compare: {ignore: []}
+env: {}

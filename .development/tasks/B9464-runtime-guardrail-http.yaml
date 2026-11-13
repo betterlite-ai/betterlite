@@ -1,0 +1,180 @@
+id: B9464
+title: Booted-proxy cases for the Presidio, Pillar, TypeSafe, XecGuard and Straiker guardrails
+description: >-
+  The Presidio, Pillar, TypeSafe, XecGuard and Straiker tasks were planned before any chat route ran a guardrail, so
+  they only have helper cases or Rust tests. This task adds the booted-proxy HTTP cases that show each configured
+  guardrail really runs on a chat request: B9460 to B9463 build the four classes, B3795 to B3797 build Straiker,
+  B8521 registers the wire names, B8666 runs a held guardrail through its class, B8613 installs the callbacks, B8399
+  runs the proxy hooks, B3683 starts the config guardrails, B8994 and B9802 put the x-pillar-* headers on the
+  response, and B004 serves the chat route. It writes no code and registers no route, guardrail kind or class.
+  A case that fails because a class answers differently from LiteLLM goes back to that class's task as a finding and
+  is never fixed here.
+
+
+  Cases go in tools/oracle/cases/guardrails/m-z-runtime-http. Use the booted-proxy case format with master key
+  oracle-master, one deployment `chat` on `openai/gpt-oracle` with api_base {{upstream}} and api_key oracle-key, and
+  router_settings.num_retries 0. Every guardrail endpoint is the same mock, so the ordered upstream queue holds the
+  guardrail calls and the model call in the order the hooks make them. Configure each guardrail in the top-level
+  `guardrails:` list and select it with the request body's `guardrails` list. Compare status, content-type,
+  x-litellm-applied-guardrails where the class records it, and the error type, param and code. On an error ignore
+  /error/message only where it is a string that betterlite wraps in its own words, with that reason; keep every
+  structured detail field compared. Compare the upstream requests the mock captured, so a 200 cannot hide a skipped
+  scan, and list the vendor headers named below in upstream_headers. Ignore generated ids and timestamps in a 200
+  body with a reason, and nothing else. Use /v1/chat/completions everywhere except presidio-mask-input, which calls
+  /chat/completions.
+
+
+  Presidio (guardrail presidio, presidio_analyzer_api_base and presidio_anonymizer_api_base both {{upstream}}, so the
+  calls go to /analyze and /anonymize; list content-type). presidio-mask-input: mode pre_call, pii_entities_config
+  {PHONE_NUMBER: MASK}; the analyzer finds a PHONE_NUMBER span, the anonymizer answers the masked text, and the model
+  receives it. presidio-block-entity: pii_entities_config {CREDIT_CARD: BLOCK}; the analyzer finds CREDIT_CARD and the
+  client gets LiteLLM's blocked entity error with no anonymize call and no model call. presidio-restore-output: mode
+  pre_call, output_parse_pii true and presidio_filter_scope input, so only the input scan and the restore callback
+  exist; the anonymizer replaces the name with a token, the model answers with that token, and the client gets the
+  original name back. presidio-mask-output: presidio_filter_scope output and mode post_call; the model answers first
+  and the client gets the masked answer. presidio-analyzer-down: pii_entities_config set and the analyzer answers 500,
+  so the request fails closed before any model call.
+
+
+  Pillar (guardrail pillar, api_base {{upstream}}, api_key oracle-pillar-key, so calls go to /api/v1/protect; list
+  authorization, content-type, plr_scanners and plr_evidence). pillar-block-input: on_flagged_action block, mode
+  pre_call, a flagged answer with scanners and evidence; the client gets 400 with "Blocked by Pillar Security
+  Guardrail" and the model is never called. pillar-monitor-headers: on_flagged_action monitor, a flagged answer with a
+  session_id; the client gets 200 and compares x-pillar-flagged, x-pillar-scanners, x-pillar-evidence and
+  x-pillar-session-id. pillar-mask-input: on_flagged_action mask and an answer with masked_session_messages; the
+  model receives those messages. pillar-error-allow: the Pillar endpoint answers 500 and the default fallback lets the
+  model answer. pillar-error-block: fallback_on_error block and a 500; the client gets 503 with "Pillar Security
+  Guardrail Unavailable"; ignore only the original_error field, with the reason that it carries the HTTP client's own
+  error text. pillar-post-call-block: mode post_call and on_flagged_action block; the model answers, Pillar receives
+  the request messages plus the answer, flags it, and the client gets 400.
+
+
+  TypeSafe (guardrail typesafe, mode pre_call, api_base {{upstream}}, api_key oracle-typesafe-key, so calls go to
+  /v1/systemone; list authorization and content-type). Build a conversation with one completed tool exchange whose
+  result is longer than 200 characters and that get_protected_indices does not protect (read compress.py L225 for
+  which trailing messages it keeps), followed by a new user turn. typesafe-drops-stale-result: Jev answers e0 with noul
+  0.05 and the model receives the tool message with LiteLLM's fixed removal text. typesafe-keeps-relevant: noul 0.9
+  and the model receives the conversation unchanged. typesafe-fail-open-default: no unreachable_fallback, Jev answers
+  500, and the model receives the conversation unchanged. typesafe-fail-closed: unreachable_fallback fail_closed and a
+  500; the client gets 502 with {"error": "TypeSafe evaluation service returned an error"}. typesafe-short-result: the
+  tool result is under 200 characters, so the only upstream call is the model's.
+
+
+  XecGuard (guardrail xecguard, api_base {{upstream}}, api_key oracle-xecguard-key, so calls go to /xecguard/v1/scan
+  and /xecguard/v1/grounding; list authorization and content-type). xecguard-input-unsafe: mode pre_call, the scan
+  answers UNSAFE and the client gets 400 with the scan block message, guardrail_name and xecguard_response.
+  xecguard-input-safe: SAFE, and the captured scan body shows model xecguard_v2, scan_type input and the three default
+  policies. xecguard-grounding-unsafe: mode post_call with metadata.xecguard_grounding_documents in the request; the
+  model answers, the response scan is SAFE, grounding answers UNSAFE and the client gets 400. xecguard-error-block: the
+  scan answers 500 with block_on_error left at its default; the client gets 400 with "XecGuard API unreachable
+  (block_on_error=True)" (ignore that error text after the colon, with the reason that it is the HTTP client's own
+  message). xecguard-error-open: block_on_error false and a 500, so the model answers.
+
+
+  Straiker (guardrail straiker, api_base {{upstream}}, api_key oracle-straiker-key, which has no sk_agt_ prefix, so the
+  v1 webhook /api/v1/detect/webhook; max_retries 0 so one failure is one call; list authorization, content-type and
+  x-straiker-webhook-format). straiker-request-blocked: mode pre_call, the webhook answers action BLOCKED with a
+  blocked_reason and the client gets that reason unwrapped. straiker-allow: action NONE and the model answers.
+  straiker-request-rewritten: action GUARDRAIL_INTERVENED with texts and the model receives those texts.
+  straiker-response-blocked: mode post_call and BLOCKED; LiteLLM answers the response block with
+  ModifyResponseException, so compare the 200 the client gets. straiker-unreachable: the webhook answers 503, the
+  default unreachable_fallback is fail_closed, and the client gets "Straiker detection unavailable: ..."; ignore the
+  text after the colon with the same reason.
+
+
+  no-auth: a Pillar guardrail with default_on true and no Authorization header; the 401 comes before any upstream
+  call.
+scope:
+  paths:
+    - tools/oracle/cases/guardrails/m-z-runtime-http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_initializers.py#L135-L195
+    why: Which Presidio callbacks presidio_filter_scope and output_parse_pii create, and their event hooks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1011-L1099
+    why: The Presidio pre-call masking the input cases see.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1205-L1240
+    why: The Presidio post-call restore and mask the output cases see.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L312-L532
+    why: Pillar's hooks, the request plus response scan on post_call and the allow or block fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/pillar.py#L140-L168
+    why: The x-pillar-* headers Pillar stores for the response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L477-L529
+    why: get_logging_caching_headers, which copies the trusted x-pillar-* headers onto the response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L319-L408
+    why: TypeSafe's request-only compaction and its failure paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L225
+    why: get_protected_indices, which decides which tool exchanges TypeSafe may evaluate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L146-L194
+    why: XecGuard's scan and grounding blocks and their 400 details.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/xecguard/xecguard.py#L343-L379
+    why: The block_on_error branch and its error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1147-L1197
+    why: Straiker's fail and block paths, unwrapped on a request and ModifyResponseException on a response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1287-L1364
+    why: Straiker's v1 apply_guardrail and the BLOCKED and GUARDRAIL_INTERVENED actions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L885-L961
+    why: How the key prefix picks the v1 webhook or v3 detect path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L92-L152
+    why: The wire names presidio, pillar, typesafe, xecguard and straiker.
+dod:
+  - text: Booted-proxy cases show Presidio masking input, blocking an entity, restoring tokens in the answer, masking the answer and failing closed when the analyzer is down.
+    proof: [oracle]
+  - text: Booted-proxy cases show Pillar blocking, monitoring with x-pillar-* headers, masking, both API error fallbacks and a post-call block.
+    proof: [oracle]
+  - text: Booted-proxy cases show TypeSafe dropping a stale tool result, keeping a relevant one, failing open by default, failing closed with 502 and skipping short results.
+    proof: [oracle]
+  - text: Booted-proxy cases show XecGuard scan and grounding blocks, the default policies and both block_on_error settings.
+    proof: [oracle]
+  - text: Booted-proxy cases show Straiker blocking and rewriting a request, blocking a response, allowing a request and failing closed, and an unauthenticated request is refused before any scan.
+    proof: [oracle]
+checks:
+  optional: []
+  commands: []
+oracle_cases:
+  - tools/oracle/cases/guardrails/m-z-runtime-http/presidio-mask-input.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/presidio-block-entity.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/presidio-restore-output.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/presidio-mask-output.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/presidio-analyzer-down.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/pillar-block-input.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/pillar-monitor-headers.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/pillar-mask-input.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/pillar-error-allow.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/pillar-error-block.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/pillar-post-call-block.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/typesafe-drops-stale-result.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/typesafe-keeps-relevant.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/typesafe-fail-open-default.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/typesafe-fail-closed.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/typesafe-short-result.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/xecguard-input-unsafe.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/xecguard-input-safe.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/xecguard-grounding-unsafe.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/xecguard-error-block.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/xecguard-error-open.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/straiker-request-blocked.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/straiker-allow.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/straiker-request-rewritten.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/straiker-response-blocked.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/straiker-unreachable.yaml
+  - tools/oracle/cases/guardrails/m-z-runtime-http/no-auth.yaml
+deviations: []
+out_of_scope:
+  - "The classes: B9460 (Pillar), B9461 (TypeSafe), B9462 (XecGuard), B9463 (Presidio), B3795 to B3797 (Straiker) and the earlier Presidio, Pillar, TypeSafe and XecGuard parts. Their initializers: B8218 and B3681. Registry arms: B8521. Running a held guardrail: B8666. Installing callbacks: B8613. Proxy hook dispatch: B8399. Config guardrail startup: B3683."
+  - "Vigil and the Prisma AIRS scan headers: B104. Straiker's v3 path needs an sk_agt_ key and Anthropic or OpenAI session envelopes; B3796's helper cases cover it."
+  - "Streamed responses: B3807 (Presidio) and B3788 (Prisma AIRS) own the stream code; the streaming cases across guardrails are B8993's."
+  - "XecGuard and Presidio logging_only scans: no task calls a held guardrail's logging hooks from the logging pipeline yet (see the B108 report notes)."
+pitfalls:
+  - "The oracle compares every captured upstream request body whole and has no ignore for it, so nothing generated may reach a vendor body. Straiker's envelope carries litellm_call_id, litellm_trace_id, the event id and the session id: send x-litellm-call-id oracle-call-1 and x-litellm-trace-id oracle-trace-1 on every Straiker request so both sides send the same values (LiteLLM honors both headers in common_request_processing.py L273-L276 and litellm_pre_call_utils.py L1560-L1571)."
+  - "Pillar's payload and Straiker's context carry LiteLLM's version string; betterlite has to send the pinned LiteLLM version there, and a mismatch is a finding for B3790 or B3795."
+  - "Presidio's default presidio_filter_scope is both, which adds an output mask callback that scans the answer too; a case that only means to test input must set the scope or queue the extra analyze and anonymize calls."
+  - "Presidio appends / to its API bases, so the mock sees /analyze and /anonymize, never //analyze."
+  - "Pillar's API key goes in a Bearer header while Onyx-style vendors put it in the path; listing authorization for Pillar is fine since the key is a fixed test value."
+  - "TypeSafe skips any exchange that get_protected_indices protects, so a conversation that ends right after the tool result never reaches the service."
+  - "A Straiker key starting with sk_agt_ silently moves the call to /api/v3/detect even with api_version v1."
+  - "Straiker's request block uses should_wrap_with_default_message false, so the client message is the blocked_reason alone, not LiteLLM's guardrail prefix."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

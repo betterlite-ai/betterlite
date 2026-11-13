@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-processor-tool-result-seed
+call:
+  bedrock_processor:
+    function: convert
+    messages:
+      - role: tool
+        tool_call_id: call_1
+        content: sunny
+    modify_params: false
+env: {}
+compare: {ignore: []}

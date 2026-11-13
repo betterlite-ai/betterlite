@@ -1,0 +1,23 @@
+task: B3855
+deviations:
+  - what: Headers go through B3848's W3C Baggage parser when the exporter is built, so a name is lower-cased, a percent escape is decoded, an entry that is not valid HTTP text is dropped with a warning, and a value that holds a comma is split in two.
+    why: B3848 builds every OTLP exporter, and the alternative is a second copy of its header client. headers_dictionary itself keeps LiteLLM's raw split; the difference shows only for values that hold percent escapes, commas or characters HTTP does not allow.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3358-L3380
+  - what: When the legacy exporter is the in-memory one, the log exporter is a fresh InMemoryLogExporter.
+    why: LiteLLM hands the span exporter object to the log pipeline, which cannot take log records. The Rust SDK has a typed log exporter for this.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3159-L3164
+  - what: A dropped provider is shut down on one bounded worker behind a bounded queue, not on a pool of 4 workers, and no provider registers an exit hook (shutdown_on_exit).
+    why: The queue gives a waiting caller the same backpressure without keeping a thread per eviction, and the Rust SDK has no interpreter-exit hook.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L96-L106
+  - what: The cache never calls shutdown on a provider that does not own its exporter, but the Rust SDK shuts that provider's processors down when its last tracer drops, and the shared in-memory exporter clears its spans then.
+    why: LiteLLM's collector drops the shared-exporter provider without shutting anything down. Suppressing the SDK's drop-time shutdown needs a processor wrapper the build contract does not return, so the buffer survives only while a tracer for that provider is alive.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L263-L290
+  - what: The resource carries no telemetry.sdk.* attributes, and an empty service.name stays absent instead of becoming "unknown_service".
+    why: It starts from an empty builder so the SDK cannot read the process environment, which this crate only receives as a snapshot, and it writes only the values the config holds; the config layer normally fills the service name first.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L447-L464
+  - what: The dynamic-config cache key is the exporter, endpoint and headers as separate fields, not LiteLLM's "dynamic_config:<exporter>:<endpoint>:<headers>" string.
+    why: A colon-joined key makes two different configs share one provider when a field contains a colon or spells "None", and a structured key cannot. Every config whose fields hold those characters still gets its own provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1188-L1210
+  - what: Debug lines never print header values, the plan types have no Debug at all, and a cache key's Debug prints only the exporter or the header names.
+    why: LiteLLM redacts them with redact_string; leaving them out is simpler and cannot leak a key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3046-L3060

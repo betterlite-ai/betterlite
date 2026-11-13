@@ -1,0 +1,13 @@
+kind: helper
+name: azure-error-factory
+call:
+  azure_chat_base_policy:
+    action: azure_error_factory
+    steps:
+      - message: caller message
+        status_code: 400
+      - message: supplied message
+        status_code: 500
+        headers: {x-request-id: abc}
+env: {}
+compare: {ignore: []}

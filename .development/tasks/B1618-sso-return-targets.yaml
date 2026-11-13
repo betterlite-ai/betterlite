@@ -15,7 +15,7 @@ description: >-
   Both clear litellm_cp_return_to. The token cookie deliberately has HttpOnly=false and
   SameSite=lax because the dashboard reads it; Secure comes from B743's trust-aware HTTPS
   check. Persist safe return targets in the HttpOnly litellm_cp_return_to cookie for 600s;
-  suppress origin-mismatch HTTP errors only. Callback URL assembly uses B124's custom URL
+  suppress origin-mismatch HTTP errors only. Callback URL assembly uses B7323's custom URL
   helper and ignores existing_key. Add decode_sso_return_target for URL string bytes and
   a sso_return_target fuzz target. A pure sso_return_target helper compares relative-path
   and origin validation; native response tests inspect cache writes, Location and Set-Cookie.

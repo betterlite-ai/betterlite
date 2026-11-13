@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-services-s3-access-model-helpers
+call:
+  bedrock_services_s3_access:
+    operation: s3_model_helpers
+    models:
+      - bedrock/anthropic.claude-3-sonnet
+      - invoke/foo
+      - amazon.titan-text-express
+env: {}
+compare: {ignore: []}

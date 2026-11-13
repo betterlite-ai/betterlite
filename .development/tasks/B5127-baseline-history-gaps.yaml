@@ -1,0 +1,499 @@
+id: B5127
+title: Close the B1696 baseline history audit gaps
+description: >-
+  B1696 ported LiteLLM's baseline cache accounting into the baseline_history module of
+  crates/betterlite-models. An Opus review after merge found twelve gaps, and each one was checked
+  against the pinned LiteLLM. Eleven are test gaps: betterlite's code already does what LiteLLM does,
+  but no unit test or oracle case fails when the branch in question is deleted or changed. The twelfth
+  is a deviation entry that names only one of LiteLLM's crash paths. A thirteenth gap turned up while
+  the twelfth was checked: betterlite never copies the top-level cache counters of a usage into
+  prompt_tokens_details, and LiteLLM does. Only that gap changes product code, in usage.rs. The rest of
+  the task rewrites and adds tests in the baseline_history test modules, adds oracle cases for the
+  existing baseline_history helper operation in tools/oracle/cases/helpers/baseline-history/, and
+  widens one entry in docs/deviations/B1696.yaml. Each new or rewritten test for gaps one to eleven
+  must pass on today's code and fail once the mutation its paragraph names is applied. The gap
+  thirteen case fails on today's code and passes once the fix lands.
+
+
+  Gap one, entry matching. LiteLLM's _matches counts an entry only when available_at <= started <
+  expires_at and some marker lists its fingerprint in lookback_fingerprints, has prefix_tokens at or
+  above its tokens, and has its ttl_seconds
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L125-L131).
+  entry_status in matching.rs does the same. On main, entry_status_requires_the_window_the_fingerprint_and_the_ttl_to_match
+  in estimate/tests.rs only asserts a hit at 5.0 and no match at the expiry. Deleting the available_at
+  bound, the lookback check, the token check or the TTL check leaves every test and case green. Replace
+  that test with an rstest entry_status_matches_only_when_every_condition_holds whose cases are
+  matching, expired, not_yet_available, fingerprint_outside_lookback, tokens_above_prefix and
+  ttl_differs. Each negative case breaks one condition and keeps the others true. Two new oracle cases
+  cover the same ground end to end. request-before-write-availability-stays-cold.yaml starts from a
+  history with first_at, last_at and uncertain_before at 0.0. Its first group writes a 300 second
+  marker at 5000.0 with available_at 5050.0, and its second group sends the same plan at 5010.0.
+  LiteLLM answers cache_prefix_cold for the second request; without the bound betterlite would answer
+  cache_prefix_available. near-miss-entries-stay-cold.yaml starts from the same kind of history
+  holding three entries, each failing exactly one of the other three conditions against the plan's
+  300 second marker at prefix 50: a fingerprint outside lookback_fingerprints, 60 tokens, and a 3600
+  second TTL. Its request at 5000.0 must come back cache_prefix_cold.
+
+
+  Gap two, uncertain entries. LiteLLM's _ambiguous flags an entry on a marker's content when the entry
+  is uncertain or its TTL differs
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L134-L139),
+  and _estimate then answers cache_ttl_changed
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L188-L189).
+  The only ambiguity test on main, entry_status_flags_a_changed_ttl_on_the_same_content_as_ambiguous,
+  uses a changed TTL, so deleting `entry.uncertain ||` in matching.rs passes everything. A request after
+  an ambiguous write would then be modeled cold instead of refused. Add
+  entry_status_flags_an_uncertain_entry_with_the_same_ttl_as_ambiguous: an entry with uncertain true
+  and the marker's own fingerprint, content and TTL must be ambiguous. Add
+  uncertain-entry-refuses-a-later-request.yaml: its starting history holds only such an uncertain
+  entry, its request at 5000.0 names the same fingerprint, content and TTL, and LiteLLM answers
+  cache_ttl_changed.
+
+
+  Gap three, history_unavailable. LiteLLM answers history_unavailable when fewer tokens were read than
+  the last marker's prefix and the request starts before uncertain_before plus the largest ttl_seconds
+  among the markers that minimum_cache_tokens keeps
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L199).
+  Every case on main that reaches this check has one marker or starts past uncertain_before + 3600, so
+  is_history_unavailable in estimate.rs could take .min() or read plan.breakpoints and nothing fails.
+  history-unavailable-uses-the-longest-marker-ttl.yaml starts from a history with first_at, last_at
+  and uncertain_before at 0.0 and no entries, and sends at 1000.0 a plan whose breakpoints are a 3600 second marker at prefix 40
+  and a 300 second marker at prefix 80; LiteLLM answers history_unavailable.
+  history-unavailable-skips-markers-below-the-minimum.yaml sends the same request with
+  minimum_cache_tokens 50, so only the 300 second marker counts and LiteLLM answers a modeled
+  cache_prefix_cold.
+
+
+  Gap four, the last two reasons. LiteLLM's reason falls through to below_cache_minimum when
+  minimum_cache_tokens drops every breakpoint, and to no_cache_breakpoints when the plan has none
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L210-L220).
+  No test or case on main reaches either reason, and no case sets minimum_cache_tokens, so
+  cache_prefix_reason could swap or drop them. below-cache-minimum-sends-every-prompt-token-as-text.yaml
+  sends a complete request with one breakpoint at prefix 50 and minimum_cache_tokens 100.
+  empty-breakpoints-report-no-cache-breakpoints.yaml sends a complete request whose plan has
+  breakpoints: []. Both set baseline_equivalent false, and LiteLLM answers a modeled estimate with the
+  named reason, every plan token as text_tokens and no cache reads or writes.
+
+
+  Gap five, the blocked write guard. LiteLLM's _writes writes nothing for a request that started
+  before blocked_until
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L232).
+  The estimate test on main checks only the concurrent_uncertainty reason, so deleting the same guard
+  in writes.rs passes everything, and a blocked request would then warm the cache history. Add
+  writes_for_a_request_started_before_blocked_until_writes_nothing: a history with blocked_until 100.0
+  and an otherwise valid observation at 50.0 must give no entries. Add
+  blocked-request-writes-no-entries.yaml: group one is a request at 100.0 with outcome uncertain and
+  available_at 500.0, and group two is a complete request with a valid plan at 200.0. LiteLLM answers
+  concurrent_uncertainty for the second request and keeps the history's entries empty.
+
+
+  Gap six, the ambiguous write's expiry. LiteLLM's marker entries for an ambiguous write expire at
+  started plus the longest TTL across the marker and every conflicting entry, and they are uncertain
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L275-L276).
+  The only ambiguous case on main, content-match-with-changed-ttl.yaml, pairs a 3600 second marker
+  with a 300 second entry, so dropping the fold over the ambiguous TTLs in marker_entries still gives
+  the right expiry there. Add writes_for_an_ambiguous_write_expires_at_the_longest_conflicting_ttl: a
+  3600 second entry on content "c" from 0.0 to 3600.0 and a 300 second marker with another fingerprint on the same content,
+  at 5.0, must give one uncertain entry with ttl_seconds 300 and expires_at 3605.0. Add
+  short-marker-after-long-entry-keeps-the-long-expiry.yaml: its starting history holds a 3600 second
+  entry "old" on content "c1", and its request at 5000.0 has one 300 second marker "new" on content
+  "c1". LiteLLM answers cache_ttl_changed and writes an uncertain "new" entry with ttl_seconds 300 that
+  expires at 8600.0.
+
+
+  Gap seven, the refresh entry. LiteLLM writes a refresh of the largest certain hit ahead of the marker
+  entries when no marker carries the hit's fingerprint
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L252-L265).
+  writes_for_refreshes_a_hit_that_the_plan_no_longer_names in writes/tests.rs uses a marker with the
+  hit's own fingerprint "stale", so no refresh is written and the one entry it counts is the marker
+  entry; it passes with refresh_entry deleted. Rewrite it as
+  writes_for_emits_a_refresh_before_the_marker_entry. Keep the "stale" entry (50 tokens, 3600 seconds,
+  0.0 to 10.0) and the request at 5.0. Give the plan one 3600 second marker "fresh" with prefix 80,
+  content "fresh", lookback_fingerprints ["stale", "fresh"] and lookback_content_fingerprints
+  ["fresh"]. Assert two entries, the first "stale" with available_at 5.0 and expires_at 3605.0.
+  tied-tokens-refresh-picks-the-first-match.yaml already reaches the refresh through the oracle, so
+  this gap needs no new case.
+
+
+  Gap eight, how an invalid group blocks. Once any relevant observation (every outcome except
+  response_cache) invalidates a group, LiteLLM folds the available_at of every relevant observation
+  into blocked_until
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L332-L335)
+  and sets uncertain_before to the larger of started and blocked_until
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L345).
+  an_invalid_observation_blocks_every_relevant_observation_in_its_group in replay/tests.rs gives the bad
+  observation the larger available_at and never checks uncertain_before. Folding only the bad
+  observations, folding the response_cache one too, or dropping `invalidated ||` in replay.rs all pass
+  it. Rewrite it as an_invalid_group_blocks_until_its_latest_relevant_observation_is_available: a
+  history with first_at and last_at 0.0, and a group at 10.0 holding a complete valid observation with
+  available_at 30.0, an observation with outcome uncertain and available_at 20.0, and a response_cache
+  observation with available_at 40.0. Assert blocked_until and uncertain_before are both 30.0. Add
+  invalid-group-blocks-through-the-latest-relevant-sibling.yaml with the same history and group.
+
+
+  Gap nine, equivalence after a divergence. LiteLLM keeps equivalent false once any earlier group
+  diverged
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L327).
+  No test or case on main runs a group after a divergence, so dropping `history.equivalent &&` in
+  advance_valid_group passes everything, and a later baseline_equivalent request would come back as
+  identical_baseline_path. Add equivalence-stays-off-after-a-divergence.yaml. Group one at 500.0 is
+  the pair from simultaneous-divergence-shares-prior-snapshot.yaml (one baseline_equivalent true, one
+  false, both complete with no plan). Group two at 600.0 is a complete baseline_equivalent true request
+  with no plan, and LiteLLM answers unsupported_cache_plan for it.
+
+
+  Gap ten, group order. LiteLLM rejects a group whose members don't share one started_at, or whose
+  start is not later than the history's last_at, with invalid_observation_order for every member and
+  the history unchanged
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L317-L323).
+  invalid-group-order-leaves-history.yaml on main sends only a strictly earlier start and an
+  available_at before started_at, so deleting the equal start check in replay.rs, or loosening
+  started > last_at to >=, passes everything. Add
+  group-order-rejects-a-split-start-and-a-repeated-start.yaml: group one is a complete request at
+  100.0, group two holds two requests at 200.0 and 250.0, and group three is one request at exactly
+  100.0. The audit asked for new groups in the two existing case files of gaps nine and ten; new files
+  keep those cases as they are and let the checks find each one by name.
+
+
+  Gap eleven, finite timestamps. LiteLLM declares started_at and available_at with
+  Field(allow_inf_nan=False, ge=0)
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L30-L31).
+  model.rs checks is_finite in TryFrom<Raw>, but the infinite_available_at case of
+  an_invalid_field_is_rejected_at_the_deserialize_boundary in model/tests.rs sends the literal 1e400.
+  serde_json rejects that literal as out of range before TryFrom runs, so deleting both is_finite
+  checks leaves the case green. Add an rstest a_non_finite_timestamp_is_rejected_by_its_own_check that
+  builds Raw directly with cases started_at_infinity, started_at_nan, available_at_infinity and
+  available_at_nan, and asserts that BaselineObservation::try_from returns exactly
+  ObservationError::InvalidStartedAt or ObservationError::InvalidAvailableAt. Rename the 1e400 case to
+  overflowing_available_at_literal, since it checks serde_json's range limit and not the finite check.
+
+
+  Gap twelve, the usage crash deviation. LiteLLM's PromptTokensDetailsWrapper deletes
+  cache_write_tokens, cache_creation_tokens and cache_creation_token_details when they are None
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1803-L1843),
+  and pydantic runs that __init__ when it validates an observation's usage. So _complete_usage raises
+  AttributeError at line 75 when prompt_tokens_details gets no creation count from any of the four
+  sources gap thirteen lists, and at line 78 whenever cache_creation_token_details is missing, with zero or
+  positive writes
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L75-L78).
+  betterlite's is_usage_complete returns false in the first case and for a missing split with positive
+  writes, and true for a missing split with zero writes, so the replay goes on where LiteLLM's call
+  fails. docs/deviations/B1696.yaml lists only the zero writes case at line 78. Rewrite its second entry
+  so it covers all three paths and links #L75-L78, and keep the file at two entries. No oracle case can
+  compare these inputs, since LiteLLM raises on them.
+
+
+  Gap thirteen, top-level cache counters. LiteLLM's Usage.__init__ copies three top-level integer
+  counters into prompt_tokens_details before any check reads them
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1932-L1952).
+  prompt_cache_hit_tokens replaces cached_tokens, then cache_read_input_tokens replaces it again, so
+  cache_read_input_tokens wins when both are sent. cache_creation_input_tokens replaces
+  cache_write_tokens, and the wrapper's __setattr__ copies the same value into cache_creation_tokens
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1796-L1801).
+  Each copy overwrites the value already in prompt_tokens_details, and only an int is copied. Usage in
+  usage.rs keeps cache_read_input_tokens and cache_creation_input_tokens as their own fields, leaves
+  prompt_cache_hit_tokens in extra, and copies none of them. So a usage whose detail counts add up to
+  prompt_tokens only after the copy is complete in LiteLLM and incomplete in betterlite: the request
+  answers the reason complete instead of its estimate, and its group invalidates the history. Copy the
+  three counters in the same order when Usage is deserialized, and keep the top-level fields and the
+  extra key as they are.
+
+
+  The wrapper has a fourth source for the creation count. Its __init__ sets cache_write_tokens from
+  cache_write_tokens, else cache_creation_tokens, else a cache_creation_input_tokens nested inside
+  prompt_tokens_details, and the nested value counts only when the other two are None and it is an int
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1803-L1819).
+  From<RawPromptTokensDetails> in usage.rs takes the first two in that order and never reads the nested
+  key. Add it as the last choice and keep it in extra.
+
+
+  Add top-level-cache-counters-override-prompt-token-details.yaml. It starts from an empty history.
+  Every request in it is complete, sends no plan, has available_at equal to started_at, and has
+  prompt_tokens 100, completion_tokens 10, total_tokens 110, text_tokens 80 and cached_tokens 0. Groups
+  one to four also have cache_creation_tokens 0. Group one at 100.0 is baseline_equivalent true with a
+  zero split and cache_read_input_tokens 20; LiteLLM answers identical_baseline_path, and the returned
+  usage has cached_tokens 20. Group two at 200.0 is baseline_equivalent true with a split of 20 and 0
+  and cache_creation_input_tokens 20; LiteLLM answers identical_baseline_path, and the returned usage
+  has cache_creation_tokens and cache_write_tokens 20. Groups three at 300.0 and four at 400.0 are
+  baseline_equivalent false with a zero split. Group three sends prompt_cache_hit_tokens 20, group four
+  sends prompt_cache_hit_tokens 5 and cache_read_input_tokens 20, and LiteLLM answers
+  unsupported_cache_plan for both. Group five at 500.0 holds three baseline_equivalent false requests,
+  with the request ids nested-only, creation-first and write-first, a split of 20 and 0, and each one has a nested cache_creation_input_tokens. nested-only sends
+  the nested 20 and no other creation count. creation-first sends cache_creation_tokens 20 and the
+  nested 5. write-first sends cache_write_tokens 20, cache_creation_tokens 5 and the nested 5. LiteLLM
+  answers unsupported_cache_plan for all three, since each one counts 20 writes. On main the first four
+  groups and nested-only answer complete. A fix that reads the nested key ahead of either field counts
+  5 for creation-first or write-first, and that request answers complete.
+
+
+  A nested value that is not an int, such as 20.0, is ignored. With no other creation count LiteLLM
+  then raises AttributeError at baseline_accounting.py line 75, the gap twelve path, so no case can
+  compare it. Pin the order and the ignored float in a unit test instead: an rstest
+  prompt_tokens_details_takes_the_nested_creation_count_last in usage/tests.rs with the cases
+  write_wins, creation_beats_nested, nested_alone_counts and nested_float_is_ignored. Each case builds
+  RawPromptTokensDetails with the nested key in extra, like
+  prompt_tokens_details_mirrors_cache_creation_and_write_tokens_on_parse does, and asserts
+  cache_creation_tokens and cache_write_tokens: 20, 20, 20 and None.
+scope:
+  paths:
+    - crates/betterlite-models/src/baseline_history/estimate/tests.rs
+    - crates/betterlite-models/src/baseline_history/writes/tests.rs
+    - crates/betterlite-models/src/baseline_history/replay/tests.rs
+    - crates/betterlite-models/src/baseline_history/model/tests.rs
+    - crates/betterlite-models/src/baseline_history/usage.rs
+    - crates/betterlite-models/src/baseline_history/usage/tests.rs
+    - tools/oracle/cases/helpers/baseline-history/request-before-write-availability-stays-cold.yaml
+    - tools/oracle/cases/helpers/baseline-history/near-miss-entries-stay-cold.yaml
+    - tools/oracle/cases/helpers/baseline-history/uncertain-entry-refuses-a-later-request.yaml
+    - tools/oracle/cases/helpers/baseline-history/history-unavailable-uses-the-longest-marker-ttl.yaml
+    - tools/oracle/cases/helpers/baseline-history/history-unavailable-skips-markers-below-the-minimum.yaml
+    - tools/oracle/cases/helpers/baseline-history/below-cache-minimum-sends-every-prompt-token-as-text.yaml
+    - tools/oracle/cases/helpers/baseline-history/empty-breakpoints-report-no-cache-breakpoints.yaml
+    - tools/oracle/cases/helpers/baseline-history/blocked-request-writes-no-entries.yaml
+    - tools/oracle/cases/helpers/baseline-history/short-marker-after-long-entry-keeps-the-long-expiry.yaml
+    - tools/oracle/cases/helpers/baseline-history/invalid-group-blocks-through-the-latest-relevant-sibling.yaml
+    - tools/oracle/cases/helpers/baseline-history/equivalence-stays-off-after-a-divergence.yaml
+    - tools/oracle/cases/helpers/baseline-history/group-order-rejects-a-split-start-and-a-repeated-start.yaml
+    - tools/oracle/cases/helpers/baseline-history/top-level-cache-counters-override-prompt-token-details.yaml
+    - docs/deviations/B1696.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L25-L37
+    why: BaselineObservation rejects an infinite or NaN started_at or available_at with allow_inf_nan=False.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L69-L93
+    why: _complete_usage reads cache_creation_tokens at line 75 and cache_creation_token_details at line 78 before any short circuit, the two AttributeError paths of gap twelve.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L125-L139
+    why: _matches and _ambiguous, the window, fingerprint, token, TTL and uncertain conditions of gaps one and two.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L172-L226
+    why: _estimate, with the cache_ttl_changed refusal, the history_unavailable bound over the kept markers and the reason chain ending in below_cache_minimum and no_cache_breakpoints.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L229-L280
+    why: _writes, with the blocked_until guard, the refresh entry and the longest TTL across the marker and the ambiguous entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L305-L348
+    why: advance_baseline_history, with the order checks, the sticky equivalent flag, the blocked_until fold over relevant observations and uncertain_before after an invalid group.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1803-L1843
+    why: PromptTokensDetailsWrapper.__init__ mirrors cache_write_tokens and cache_creation_tokens, then deletes both and cache_creation_token_details when they are None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1932-L1952
+    why: Usage.__init__ copies prompt_cache_hit_tokens and then cache_read_input_tokens into cached_tokens, and cache_creation_input_tokens into cache_write_tokens, the copies of gap thirteen.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1803-L1819
+    why: PromptTokensDetailsWrapper.__init__ takes cache_write_tokens, then cache_creation_tokens, then an int cache_creation_input_tokens from its extra fields, the fourth source of gap thirteen.
+dod:
+  - text: >-
+      entry_status_matches_only_when_every_condition_holds replaces
+      entry_status_requires_the_window_the_fingerprint_and_the_ttl_to_match, with the cases matching,
+      expired, not_yet_available, fingerprint_outside_lookback, tokens_above_prefix and ttl_differs.
+      Deleting the available_at bound, the lookback_fingerprints check, the tokens <= prefix_tokens
+      check or the TTL equality in entry_status each fails one case. The new
+      entry_status_flags_an_uncertain_entry_with_the_same_ttl_as_ambiguous fails once
+      `entry.uncertain ||` is deleted.
+    proof: [entry-status-tests]
+  - text: >-
+      request-before-write-availability-stays-cold.yaml and near-miss-entries-stay-cold.yaml both come
+      back cache_prefix_cold, and uncertain-entry-refuses-a-later-request.yaml comes back
+      cache_ttl_changed, the same as LiteLLM. Each one would answer differently with the matching
+      condition its gap names deleted.
+    proof: [case-entry-matching, oracle]
+  - text: >-
+      history-unavailable-uses-the-longest-marker-ttl.yaml answers history_unavailable and
+      history-unavailable-skips-markers-below-the-minimum.yaml answers a modeled cache_prefix_cold, the
+      same as LiteLLM. Taking the smallest marker TTL fails the first case, and taking the TTLs from
+      plan.breakpoints instead of the kept markers fails the second.
+    proof: [case-history-unavailable, oracle]
+  - text: >-
+      below-cache-minimum-sends-every-prompt-token-as-text.yaml answers below_cache_minimum and
+      empty-breakpoints-report-no-cache-breakpoints.yaml answers no_cache_breakpoints, each as a modeled
+      estimate with every plan token as text_tokens, the same as LiteLLM.
+    proof: [case-cache-reasons, oracle]
+  - text: >-
+      writes_for_a_request_started_before_blocked_until_writes_nothing fails once the blocked_until
+      guard in writes_for is deleted. writes_for_an_ambiguous_write_expires_at_the_longest_conflicting_ttl
+      fails once marker_entries stops folding the ambiguous entries' TTLs. writes_for_emits_a_refresh_before_the_marker_entry
+      replaces writes_for_refreshes_a_hit_that_the_plan_no_longer_names and fails once refresh_entry
+      returns None.
+    proof: [writes-tests]
+  - text: >-
+      blocked-request-writes-no-entries.yaml keeps the history's entries empty after the blocked
+      request, and short-marker-after-long-entry-keeps-the-long-expiry.yaml writes an uncertain "new"
+      entry that expires at 8600.0, the same as LiteLLM.
+    proof: [case-write-guards, oracle]
+  - text: >-
+      an_invalid_group_blocks_until_its_latest_relevant_observation_is_available replaces
+      an_invalid_observation_blocks_every_relevant_observation_in_its_group and asserts blocked_until
+      and uncertain_before both equal the valid observation's available_at. It fails when blocked_until
+      folds only the bad observations, when it also folds the response_cache one, and when
+      `invalidated ||` is dropped from the uncertain_before choice.
+    proof: [replay-tests]
+  - text: >-
+      invalid-group-blocks-through-the-latest-relevant-sibling.yaml,
+      equivalence-stays-off-after-a-divergence.yaml and
+      group-order-rejects-a-split-start-and-a-repeated-start.yaml answer the same as LiteLLM: blocked_until
+      and uncertain_before at 30.0, unsupported_cache_plan instead of identical_baseline_path after the
+      divergence, and invalid_observation_order for every member of a split start group and of a group
+      at exactly last_at, with the history left unchanged.
+    proof: [case-replay-state, oracle]
+  - text: >-
+      a_non_finite_timestamp_is_rejected_by_its_own_check builds Raw with an infinite or NaN started_at
+      or available_at and gets exactly ObservationError::InvalidStartedAt or
+      ObservationError::InvalidAvailableAt from BaselineObservation::try_from, so deleting either
+      is_finite check fails it. The 1e400 case is renamed overflowing_available_at_literal.
+    proof: [finite-timestamp-tests]
+  - text: >-
+      The second entry of docs/deviations/B1696.yaml covers every AttributeError path of
+      _complete_usage: no cache_creation_tokens and no cache_write_tokens at line 75, and a missing
+      cache_creation_token_details with zero or positive writes at line 78. It links
+      baseline_accounting.py#L75-L78, and the file still holds two entries.
+    proof: [usage-crash-deviation]
+  - text: >-
+      top-level-cache-counters-override-prompt-token-details.yaml answers the same as LiteLLM in all
+      five groups: identical_baseline_path with cached_tokens 20 in the returned usage for group one,
+      identical_baseline_path with cache_creation_tokens and cache_write_tokens 20 for group two, and
+      unsupported_cache_plan for groups three and four and for all three requests of group five. On
+      main the first four groups and group five's nested-only request answer complete.
+    proof: [case-top-level-cache-counters, oracle]
+  - text: >-
+      prompt_tokens_details_takes_the_nested_creation_count_last passes its cases write_wins,
+      creation_beats_nested, nested_alone_counts and nested_float_is_ignored, so the nested
+      cache_creation_input_tokens counts only after cache_write_tokens and cache_creation_tokens and
+      only as an integer.
+    proof: [nested-creation-count-tests]
+checks:
+  optional: []
+  commands:
+    - id: entry-status-tests
+      why: entry_status has no unit test that fails when its available_at bound, lookback check, token check, TTL check or uncertain flag is deleted
+      run: >-
+        ! grep -q 'fn entry_status_requires_the_window_the_fingerprint_and_the_ttl_to_match' crates/betterlite-models/src/baseline_history/estimate/tests.rs &&
+        grep -q 'fn entry_status_matches_only_when_every_condition_holds' crates/betterlite-models/src/baseline_history/estimate/tests.rs &&
+        grep -q 'case::not_yet_available' crates/betterlite-models/src/baseline_history/estimate/tests.rs &&
+        grep -q 'case::fingerprint_outside_lookback' crates/betterlite-models/src/baseline_history/estimate/tests.rs &&
+        grep -q 'case::tokens_above_prefix' crates/betterlite-models/src/baseline_history/estimate/tests.rs &&
+        grep -q 'case::ttl_differs' crates/betterlite-models/src/baseline_history/estimate/tests.rs &&
+        grep -q 'fn entry_status_flags_an_uncertain_entry_with_the_same_ttl_as_ambiguous' crates/betterlite-models/src/baseline_history/estimate/tests.rs &&
+        cargo nextest run --locked -p betterlite-models --no-tests=fail -E
+        'test(/^baseline_history::estimate::tests::/)'
+    - id: writes-tests
+      why: writes_for has no unit test that fails when the blocked_until guard, the longest ambiguous TTL or the refresh entry is deleted
+      run: >-
+        ! grep -q 'fn writes_for_refreshes_a_hit_that_the_plan_no_longer_names' crates/betterlite-models/src/baseline_history/writes/tests.rs &&
+        grep -q 'fn writes_for_emits_a_refresh_before_the_marker_entry' crates/betterlite-models/src/baseline_history/writes/tests.rs &&
+        grep -q 'fn writes_for_a_request_started_before_blocked_until_writes_nothing' crates/betterlite-models/src/baseline_history/writes/tests.rs &&
+        grep -q 'fn writes_for_an_ambiguous_write_expires_at_the_longest_conflicting_ttl' crates/betterlite-models/src/baseline_history/writes/tests.rs &&
+        cargo nextest run --locked -p betterlite-models --no-tests=fail -E
+        'test(/^baseline_history::writes::tests::/)'
+    - id: replay-tests
+      why: no replay test fails when blocked_until folds the wrong observations or uncertain_before ignores an invalid group
+      run: >-
+        ! grep -q 'fn an_invalid_observation_blocks_every_relevant_observation_in_its_group' crates/betterlite-models/src/baseline_history/replay/tests.rs &&
+        grep -q 'fn an_invalid_group_blocks_until_its_latest_relevant_observation_is_available' crates/betterlite-models/src/baseline_history/replay/tests.rs &&
+        cargo nextest run --locked -p betterlite-models --no-tests=fail -E
+        'test(/^baseline_history::replay::tests::/)'
+    - id: finite-timestamp-tests
+      why: no model test fails when the is_finite checks on started_at and available_at are deleted
+      run: >-
+        ! grep -qF 'case::infinite_available_at("available_at", "1e400")' crates/betterlite-models/src/baseline_history/model/tests.rs &&
+        grep -qF 'case::overflowing_available_at_literal("available_at", "1e400")' crates/betterlite-models/src/baseline_history/model/tests.rs &&
+        grep -q 'fn a_non_finite_timestamp_is_rejected_by_its_own_check' crates/betterlite-models/src/baseline_history/model/tests.rs &&
+        grep -q 'case::started_at_infinity' crates/betterlite-models/src/baseline_history/model/tests.rs &&
+        grep -q 'case::started_at_nan' crates/betterlite-models/src/baseline_history/model/tests.rs &&
+        grep -q 'case::available_at_infinity' crates/betterlite-models/src/baseline_history/model/tests.rs &&
+        grep -q 'case::available_at_nan' crates/betterlite-models/src/baseline_history/model/tests.rs &&
+        cargo nextest run --locked -p betterlite-models --no-tests=fail -E
+        'test(/^baseline_history::model::tests::/)'
+    - id: case-entry-matching
+      why: no oracle case sends a request before an earlier write is available, near-miss entries, or an uncertain entry ahead of a later request
+      run: >-
+        test -f tools/oracle/cases/helpers/baseline-history/request-before-write-availability-stays-cold.yaml &&
+        test -f tools/oracle/cases/helpers/baseline-history/near-miss-entries-stay-cold.yaml &&
+        test -f tools/oracle/cases/helpers/baseline-history/uncertain-entry-refuses-a-later-request.yaml
+    - id: case-history-unavailable
+      why: no oracle case reaches history_unavailable with two markers of different TTLs or with a marker below minimum_cache_tokens
+      run: >-
+        test -f tools/oracle/cases/helpers/baseline-history/history-unavailable-uses-the-longest-marker-ttl.yaml &&
+        test -f tools/oracle/cases/helpers/baseline-history/history-unavailable-skips-markers-below-the-minimum.yaml
+    - id: case-cache-reasons
+      why: no oracle case reaches the below_cache_minimum or no_cache_breakpoints reason
+      run: >-
+        test -f tools/oracle/cases/helpers/baseline-history/below-cache-minimum-sends-every-prompt-token-as-text.yaml &&
+        test -f tools/oracle/cases/helpers/baseline-history/empty-breakpoints-report-no-cache-breakpoints.yaml
+    - id: case-write-guards
+      why: no oracle case sends a valid request before blocked_until, or a short marker against a longer entry on the same content
+      run: >-
+        test -f tools/oracle/cases/helpers/baseline-history/blocked-request-writes-no-entries.yaml &&
+        test -f tools/oracle/cases/helpers/baseline-history/short-marker-after-long-entry-keeps-the-long-expiry.yaml
+    - id: case-replay-state
+      why: no oracle case invalidates a group after first_at, runs a group after a divergence, or sends a split start group or a group at exactly last_at
+      run: >-
+        test -f tools/oracle/cases/helpers/baseline-history/invalid-group-blocks-through-the-latest-relevant-sibling.yaml &&
+        test -f tools/oracle/cases/helpers/baseline-history/equivalence-stays-off-after-a-divergence.yaml &&
+        test -f tools/oracle/cases/helpers/baseline-history/group-order-rejects-a-split-start-and-a-repeated-start.yaml
+    - id: usage-crash-deviation
+      why: the deviation log names only the zero writes AttributeError at line 78, not the line 75 path or the positive writes path
+      run: >-
+        grep -q 'baseline_accounting.py#L75-L78' docs/deviations/B1696.yaml &&
+        grep -q 'cache_write_tokens' docs/deviations/B1696.yaml &&
+        ! grep -q 'baseline_accounting.py#L78$' docs/deviations/B1696.yaml &&
+        test "$(grep -c '^  - what:' docs/deviations/B1696.yaml)" = "2"
+    - id: case-top-level-cache-counters
+      why: no oracle case sends prompt_cache_hit_tokens, cache_read_input_tokens or cache_creation_input_tokens at the top level of a usage
+      run: >-
+        test -f tools/oracle/cases/helpers/baseline-history/top-level-cache-counters-override-prompt-token-details.yaml &&
+        grep -q 'prompt_cache_hit_tokens' tools/oracle/cases/helpers/baseline-history/top-level-cache-counters-override-prompt-token-details.yaml &&
+        grep -q 'cache_read_input_tokens' tools/oracle/cases/helpers/baseline-history/top-level-cache-counters-override-prompt-token-details.yaml &&
+        grep -q 'cache_creation_input_tokens' tools/oracle/cases/helpers/baseline-history/top-level-cache-counters-override-prompt-token-details.yaml &&
+        grep -q 'cache_write_tokens' tools/oracle/cases/helpers/baseline-history/top-level-cache-counters-override-prompt-token-details.yaml &&
+        grep -q 'nested-only' tools/oracle/cases/helpers/baseline-history/top-level-cache-counters-override-prompt-token-details.yaml
+    - id: nested-creation-count-tests
+      why: no usage test parses a nested cache_creation_input_tokens, so nothing pins its place after cache_write_tokens and cache_creation_tokens or that a float is ignored
+      run: >-
+        grep -q 'fn prompt_tokens_details_takes_the_nested_creation_count_last' crates/betterlite-models/src/baseline_history/usage/tests.rs &&
+        grep -q 'case::write_wins' crates/betterlite-models/src/baseline_history/usage/tests.rs &&
+        grep -q 'case::creation_beats_nested' crates/betterlite-models/src/baseline_history/usage/tests.rs &&
+        grep -q 'case::nested_alone_counts' crates/betterlite-models/src/baseline_history/usage/tests.rs &&
+        grep -q 'case::nested_float_is_ignored' crates/betterlite-models/src/baseline_history/usage/tests.rs &&
+        cargo nextest run --locked -p betterlite-models --no-tests=fail -E
+        'test(/^baseline_history::usage::tests::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/baseline-history/request-before-write-availability-stays-cold.yaml
+  - tools/oracle/cases/helpers/baseline-history/near-miss-entries-stay-cold.yaml
+  - tools/oracle/cases/helpers/baseline-history/uncertain-entry-refuses-a-later-request.yaml
+  - tools/oracle/cases/helpers/baseline-history/history-unavailable-uses-the-longest-marker-ttl.yaml
+  - tools/oracle/cases/helpers/baseline-history/history-unavailable-skips-markers-below-the-minimum.yaml
+  - tools/oracle/cases/helpers/baseline-history/below-cache-minimum-sends-every-prompt-token-as-text.yaml
+  - tools/oracle/cases/helpers/baseline-history/empty-breakpoints-report-no-cache-breakpoints.yaml
+  - tools/oracle/cases/helpers/baseline-history/blocked-request-writes-no-entries.yaml
+  - tools/oracle/cases/helpers/baseline-history/short-marker-after-long-entry-keeps-the-long-expiry.yaml
+  - tools/oracle/cases/helpers/baseline-history/invalid-group-blocks-through-the-latest-relevant-sibling.yaml
+  - tools/oracle/cases/helpers/baseline-history/equivalence-stays-off-after-a-divergence.yaml
+  - tools/oracle/cases/helpers/baseline-history/group-order-rejects-a-split-start-and-a-repeated-start.yaml
+  - tools/oracle/cases/helpers/baseline-history/top-level-cache-counters-override-prompt-token-details.yaml
+deviations:
+  - what: >-
+      A usage whose prompt_tokens_details gets no creation count (no cache_creation_tokens, no
+      cache_write_tokens and no int cache_creation_input_tokens, nested or top level), or has no
+      cache_creation_token_details, gets a completeness answer instead of a crash. Without a
+      creation count, or with positive writes and no split, the usage is incomplete; with zero writes
+      and no split it is complete. LiteLLM deletes those None attributes in PromptTokensDetailsWrapper,
+      so its completeness check raises AttributeError at line 75 or line 78 in every one of these cases.
+    why: No caller can rely on a pure completeness check crashing instead of returning a bool, and a working setup sends these fields whenever it reaches this code, so the crash only shows on a hand-built input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L75-L78
+out_of_scope:
+  - Padded one-line functions in the baseline_history modules belong to B5094. It clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task does not touch .ast-grep/rules/.
+  - The fixed status per error class belongs to B5102, already merged.
+  - The source files matching.rs, estimate.rs, writes.rs, replay.rs and model.rs, and the oracle adapters tools/oracle/src/helpers/models/baseline_history.rs and tools/oracle/helpers/baseline_history.py. Every finding but gap thirteen is a test or log gap, and that code already does what LiteLLM does.
+  - The eleven B1696 oracle cases already in tools/oracle/cases/helpers/baseline-history/ stay as they are; the new cases sit next to them.
+pitfalls:
+  - Every usage in a new case gives LiteLLM a creation count (cache_creation_tokens, cache_write_tokens or an int cache_creation_input_tokens, nested or top level) and a cache_creation_token_details split, as the B1696 cases do; without them LiteLLM raises AttributeError at baseline_accounting.py line 75 or 78 and the case compares a crash.
+  - Gap thirteen's group five keeps its nested cache_creation_input_tokens in prompt_tokens_details extra. betterlite writes it back out and the Python adapter does not print it, so its requests take unsupported_cache_plan and return no usage, the same as groups three and four.
+  - In gap thirteen the copies overwrite the values in prompt_tokens_details, so a fix that only fills a missing cached_tokens or cache_creation_tokens keeps the cases' explicit 0 and still answers complete; cache_creation_input_tokens has to set both cache_creation_tokens and cache_write_tokens.
+  - prompt_cache_hit_tokens has no typed field, so it stays in Usage.extra and is copied only when it holds an integer, as LiteLLM's isinstance int check does. betterlite writes extra keys back out and the Python adapter prints only named usage keys, so the gap thirteen requests with prompt_cache_hit_tokens take unsupported_cache_plan, a path that returns no usage.
+  - A history that starts empty sets uncertain_before to the first group's started_at, so a cold request in the next 300 or 3600 seconds answers history_unavailable; the cases for gaps one, two, three and six start from a history with first_at, last_at and uncertain_before at 0.0, so only the times the description gives decide that bound.
+  - A valid plan keeps prefix_tokens rising and ttl_seconds falling, so gap three lists the 3600 second marker first with prefix 40; the other order is an invalid plan and answers unsupported_cache_plan.
+  - Each breakpoint must list its own fingerprint in lookback_fingerprints and its own content_fingerprint in lookback_content_fingerprints, or is_plan_valid rejects the plan.
+  - The ttl_differs unit case and the near-miss entry with the other TTL put their content_fingerprint outside the marker's lookback_content_fingerprints; with a shared content the entry is ambiguous and the request answers cache_ttl_changed instead of testing the TTL match.
+  - A response_cache observation is not relevant, so its available_at never reaches blocked_until or uncertain_before; the gap eight sibling at 40.0 must leave both at 30.0.
+  - Raw and its fields stay private. model/tests.rs is a child module of model and can build Raw directly, so model.rs needs no visibility change.
+  - The new cases call the existing baseline_history helper operation with kind helper, compare {ignore []} and env {}, like the B1696 cases. There is no new helper operation.
+  - A rewritten test takes its new name, since the checks require the old name to be gone; new assertions under the old name fail the gate.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

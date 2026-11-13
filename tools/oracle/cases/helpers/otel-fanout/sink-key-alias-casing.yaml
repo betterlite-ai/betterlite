@@ -1,0 +1,11 @@
+kind: helper
+name: sink-key-alias-casing
+call:
+  b3849:
+    function: sink_key
+    endpoint: http://collector:4318/logs
+    headers:
+      Arize-Space-Id: space
+      Authorization: Bearer abc
+env: {}
+compare: {ignore: []}

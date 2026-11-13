@@ -1,0 +1,15 @@
+id: B8501
+milestone: M8 platform
+title: Production cloud credentials for Redis AUTH
+status: todo
+depends_on: [B4320, B5220, B673, B676, B677, B1301]
+file: tasks/B8501-redis-cloud-auth.yaml
+covers:
+  - "litellm/_redis_credential_provider.py"
+  - "litellm/_redis.py"
+parent: B126
+split_from: B126
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

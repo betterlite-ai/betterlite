@@ -1,0 +1,68 @@
+task: B4328
+deviations:
+  - what: >-
+      No throttled failure log runs inside these methods. increment_cache writes a plain
+      `tracing::error!` line that names the operation and carries the error text; the other
+      methods only return their error.
+    why: >-
+      The throttle belongs to B393's log_redis_failure, and the gate carries the failure there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L851-L906
+  - what: >-
+      The hooks are called inline. increment_cache's events carry the operation name, the key and
+      that call's duration; the scan events carry the operation name and the duration. LiteLLM
+      sends the async hooks through asyncio.create_task and adds a "current <- caller" string read
+      from the Python stack.
+    why: >-
+      A Rust call has no frame names to report, and the hook implementer can spawn if it needs to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L945-L993
+  - what: >-
+      increment_cache fires hooks.failure with the call type increment_cache when any of its three
+      calls fails, where LiteLLM only writes its log line from the except block.
+    why: >-
+      The service failure hook is the one place a failed backend call is reported, so an operator
+      sees the failure beside the successes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L851-L906
+  - what: >-
+      async_register_script keeps no executor cache per event loop and no entry in
+      in_memory_llm_clients_cache. RegisteredScript holds the SHA-1, the source text, the transport
+      and the namespace.
+    why: >-
+      A script object holds no connection in redis-rs and betterlite has one runtime, so the
+      per-loop binding has nothing to protect.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L995-L1083
+  - what: >-
+      The `client` argument of the script runner is not built, and neither is the `script_load`
+      branch for clients without `register_script`.
+    why: >-
+      No caller passes `client=` at the pin, and redis-py's async RedisCluster has
+      `register_script`, so that branch never runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1046-L1083
+  - what: >-
+      async_scan_iter on a Cluster client scans the primaries one after another. redis-py reads the
+      first batch of every node before it continues node by node, so with a count cap the returned
+      keys can differ. The hasattr(scan_iter) branch that returns an empty list is not built.
+    why: >-
+      The key order of SCAN is undefined anyway, and redis-py's async RedisCluster has scan_iter,
+      so that branch never runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L945-L993
+  - what: >-
+      async_scan_iter with count 0 returns an empty list and sends no SCAN. LiteLLM passes the
+      count to scan_iter, which sends COUNT 0, and the server rejects it.
+    why: >-
+      A zero cap asks for no keys, and no working setup can pass 0 and still expect a result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L945-L993
+  - what: >-
+      async_set_max rejects a NaN or infinite `value` with NonFiniteValue. LiteLLM sends the text
+      and lets the Lua comparison decide.
+    why: >-
+      The Lua result for those strings depends on the server's Lua build, and an error that names
+      the field is the rule in docs/compatibility.md.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1478-L1513
+  - what: >-
+      increment_cache returns InvalidTtl for an infinite `ttl`, and for a finite one outside the
+      i64 range, before any call is sent. LiteLLM's int() raises OverflowError for an infinity and
+      sends a number the server rejects on EXPIRE, after the INCRBY has applied.
+    why: >-
+      Both are errors the caller sees before any Redis call, and no working setup asks for a TTL
+      Redis cannot store.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L22-L33

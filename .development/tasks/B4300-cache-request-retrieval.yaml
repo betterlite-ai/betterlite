@@ -84,7 +84,7 @@ out_of_scope:
 - Dynamic cache object construction (memory vs Redis tier selection); owned by B4293.
 - Cached embedding response assembly and token merge logic; owned by B4303.
 - Request payload assembly and structured response objects; consumed from B004/B005/B189.
-- OTel span parent lookup helper; assigned to B110 by existing inventory.
+- OTel span parent lookup helper; assigned to B3847.
 pitfalls:
 - Preset cache key computation uses the request's `cache_key` parameter if present, falling back to computing from request kwargs. The preset key is not the embedding-specific per-input key; the two are distinct and must not be confused in cache stamping or retrieval.
 - Embedding format validation rejects any cached entry whose format_version does not match EMBEDDING_CACHE_FORMAT_VERSION exactly; partial-version upgrades are not attempted, preserving freshness.

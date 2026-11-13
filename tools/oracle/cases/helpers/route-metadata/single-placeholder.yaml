@@ -1,0 +1,11 @@
+kind: helper
+name: route-metadata-single-placeholder
+call:
+  route_metadata:
+    {
+      "function": "get_call_types",
+      "route": "/v1/threads/thread-1"
+    }
+env: {}
+compare:
+  ignore: []

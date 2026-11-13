@@ -1,0 +1,19 @@
+kind: helper
+name: fireworks-catalog-metadata-seed-fuzzy-cache
+call:
+  fireworks_catalog_metadata:
+    catalog:
+      - {key: "fireworks_ai/accounts/fireworks/models/glm-5p2", model_info: {supports_vision: false}}
+      - {key: "fireworks_ai/accounts/fireworks/models/qwen3-8b", model_info: {supports_vision: false}}
+      - {key: "fireworks_ai/accounts/fireworks/models/qwen3-8b-instruct", model_info: {supports_vision: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/tie-b", model_info: {supports_vision: false}}
+      - {key: "fireworks_ai/accounts/fireworks/models/tie-a", model_info: {supports_vision: true}}
+    steps:
+      - {op: capability, model: "custom-qwen3-8b-instruct", capability: supports_vision}
+      - {op: capability, model: "tie-a-tie-b", capability: supports_vision}
+      - {op: add, key: "fireworks_ai/accounts/fireworks/models/fresh-model", model_info: {supports_vision: true}}
+      - {op: capability, model: "custom-fresh-model", capability: supports_vision}
+      - {op: invalidate}
+      - {op: capability, model: "custom-fresh-model", capability: supports_vision}
+env: {}
+compare: {ignore: []}

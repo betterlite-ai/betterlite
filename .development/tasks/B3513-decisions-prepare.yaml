@@ -81,31 +81,31 @@ checks:
     - id: providers-list
       why: >-
         supported_decisions_providers is missing or does not return all provider names in the correct order
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::providers/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::call::(.*::)?decisions_call::providers/)'
     - id: prepare-call-success
       why: >-
         prepare_call is missing, does not construct DecisionsCall objects, or does not resolve credentials and call prepare
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::prepare_call_success/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::call::(.*::)?decisions_call::prepare_call_success/)'
     - id: prepare-call-validation
       why: >-
         prepare_call does not validate request fields, model names, provider existence, api_base/api_key resolution, or canonical_model errors
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::(validation|errors)/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::call::(.*::)?decisions_call::(validation|errors)/)'
     - id: prepare-call-safety-id
       why: >-
         prepare_call does not drop safety_identifier when unsupported and drop_params is true, or does not raise UnsupportedParamsError when drop_params is false
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::safety_identifier/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::call::(.*::)?decisions_call::safety_identifier/)'
     - id: reject-other-format
       why: >-
         reject_other_format is missing or does not raise BadRequestError with the correct message for mismatched request formats
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::reject_format/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::call::(.*::)?decisions_call::reject_format/)'
     - id: request-format-validation
       why: >-
         SystemOne and OpenAI request formats are not validated through TypeAdapter or validation fails incorrectly
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::request_format/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::call::(.*::)?decisions_call::request_format/)'
     - id: decisions-call-fields
       why: >-
         DecisionsCall is missing, does not carry all required fields, or fields are not set correctly
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions_call::fields/)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^decisions::call::(.*::)?decisions_call::fields/)'
 
 oracle_cases: []
 

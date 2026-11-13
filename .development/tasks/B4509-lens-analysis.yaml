@@ -147,7 +147,7 @@ out_of_scope:
   - Evidence storage and structured response repair; B4506 owns those primitives.
   - Record definitions for Sample, Result, Coverage, Candidate, Clusters, etc.; B4500 and B4506 own those.
   - Server routes and HTTP registration; B4503 and B4505 register handlers using this coordinator.
-  - Worker implementation and LiteLLM model-call retry logic; B132 supplies those.
+  - Worker implementation and LiteLLM model-call retry logic; B8232 supplies those.
 pitfalls:
   - consolidate rebinds active to incoming candidates at the start, then accumulates settled across pages; ensure retained/settled lists are not duplicated across page iterations.
   - merge_candidates calls structured_response with response_schema set to Clusters.model_json_schema(); validation happens inside structured_response and raises on invalid JSON.

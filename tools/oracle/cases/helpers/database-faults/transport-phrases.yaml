@@ -1,0 +1,21 @@
+kind: helper
+name: database-faults-transport-phrases
+call:
+  database_faults:
+    errors:
+      - { error_type: prisma, message: "CAN'T REACH DATABASE SERVER" }
+      - { error_type: prisma, message: "CANNOT REACH DATABASE SERVER" }
+      - { error_type: prisma, message: "CAN'T CONNECT" }
+      - { error_type: prisma, message: "CANNOT CONNECT" }
+      - { error_type: prisma, message: "CONNECTION ERROR" }
+      - { error_type: prisma, message: "CONNECTION CLOSED" }
+      - { error_type: prisma, message: "TIMED OUT" }
+      - { error_type: prisma, message: "TIMEOUT" }
+      - { error_type: prisma, message: "CONNECTION REFUSED" }
+      - { error_type: prisma, message: "NETWORK IS UNREACHABLE" }
+      - { error_type: prisma, message: "NO ROUTE TO HOST" }
+      - { error_type: prisma, message: "BROKEN PIPE" }
+      - { error_type: other, message: "CONNECTION REFUSED" }
+env: {}
+compare:
+  ignore: []

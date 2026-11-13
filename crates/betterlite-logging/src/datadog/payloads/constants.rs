@@ -1,0 +1,1 @@
+pub const DATADOG_413_ERROR: &str = "Datadog API Error - Payload too large (batch is above 5MB uncompressed). If you want this logged either disable request/response logging or set `DD_BATCH_SIZE=50`";

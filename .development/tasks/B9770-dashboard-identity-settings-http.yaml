@@ -1,0 +1,125 @@
+id: B9770
+title: Verify the retained identity and UI settings forms over HTTP
+description: >-
+  Add the missing booted-proxy cases for SSOSettings, UIAccessControlForm, TeamSSOSettings,
+  SCIM's token button, UISettings and UserBannerSettings. The complete request/owner inventory
+  is .development/tasks/B150-route-audit.md. These sources arrive unchanged from B9090;
+  this task writes HTTP cases, not a dashboard copy or another settings service. B1661,
+  B1657, B1660, B066 and B055 already own the handlers. Their future unit/route cases do not
+  exercise these mounted forms' full JSON projections, and no matching case is on disk.
+
+  Use B1630 steps with B860/B5076's independently seeded admin and viewer databases. Set
+  general_settings.store_model_in_db=true for saved settings. Authenticate as the page does,
+  with the session key as a Bearer value, except getUiSettings which sends no credential.
+  Compare each step's status, content-type, stable response fields and error type/param/code;
+  exclude only generated token material, revision values and timestamps at named pointers,
+  retaining their types and using per-proxy captures for subsequent requests.
+
+  GET /get/sso_settings returns values and field_schema. PATCH /update/sso_settings uses
+  flat provider fields: exercise Google, Microsoft, generic/Okta and SAML mounted payloads,
+  including generic_scope, string-valued SAML checkboxes, role_mappings with provider=generic,
+  group_claim/default_role/roles and team_mappings.team_ids_jwt_field. Follow each save with
+  the same GET to check masked secrets and replacement. The delete modal PATCHes its nineteen
+  provider/base/email/mapping fields to null, omitting generic_scope and ui_access_mode;
+  it never DELETEs a route. UIAccessControlForm PATCHes only ui_access_mode: "none" for
+  all_authenticated_users, or an object containing type, sso_group_jwt_field and, only for
+  restricted_sso_group, restricted_sso_group. These are the two selectable modes at the pin.
+  Do not repair the upstream
+  replacement behavior by secretly sending previous SSO values with these access-mode writes.
+
+  GET /get/default_team_settings and PATCH /update/default_team_settings use values and
+  settings respectively. The form submits max_budget,budget_duration,tpm_limit,rpm_limit,
+  models,team_member_permissions,organization_id together; include nullable limits and
+  an empty permission array and organization_id=null. The organization selector's populated
+  catalog is already covered by the reused B9733 case. The token button POSTs /key/generate
+  with user_id,key_alias="SCIM Access Token",team_id=null,models=[] and allowed_routes=["/scim/*"].
+  Capture the returned key and verify the allowlist record; generating this token is not a
+  SCIM provisioning request and needs no new SCIM route or enterprise package.
+
+  Public GET /get/ui_settings supplies values and field_schema.properties. PATCH
+  /update/ui_settings sends one changed boolean at a time: disable_model_add_for_internal_users,
+  disable_team_admin_delete_team_user,require_auth_for_public_ai_hub,forward_client_headers_to_llm_api,
+  forward_llm_provider_auth_headers,enable_projects_ui,enable_chat_ui,disable_agents_for_internal_users,
+  allow_agents_for_team_admins,disable_vector_stores_for_internal_users,allow_vector_stores_for_team_admins,
+  scope_user_search_to_org and disable_custom_api_keys. Check false as well as true without
+  dropping other saved settings. Separate steps submit enabled_ui_pages_internal_users as
+  a selected array then null, and team_admin_editable_team_fields as a selected array then [].
+  Use actual enum members from the returned schema. GET /get/user_banner and PATCH
+  /update/user_banner use the complete enabled,message,severity form and read the returned
+  banner/revision before a reload. Keep backend schema defaults, not client-invented defaults.
+
+  TeamSSOSettings mounts ModelSelect with context=global and no teamID/organizationID. Its
+  useAllProxyModels sends GET /models?include_model_access_groups=True&return_wildcard_routes=True&scope=expand;
+  reuse B9735's expanded-model selector case and B9733's organization list. useCurrentUser
+  separately GETs /v2/user/info with no user_id query, reading the top-level models array.
+  Add that precise user-bound request here: B791 implements it and names a native self-default
+  test, but its planned projection HTTP case and B9732's explicit-user detail request do not
+  establish this no-query form lookup. Do not use /user/info or invent a user_info wrapper.
+  Including these nested reads keeps the part near 750 case lines without Rust/Python code.
+scope:
+  paths:
+    - tools/oracle/cases/ui/identity-settings/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/UIAccessControlForm.tsx#L96-L146
+    why: Mounted access-mode fields and the literal none representation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/Settings/AdminSettings/SSOSettings/utils.ts#L7-L71
+    why: SSO provider serialization and structured mappings rather than guessed config keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/SCIM.tsx#L51-L69
+    why: Exact provisioning-token body emitted by this page.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/users/useCurrentUser.ts#L8-L17
+    why: ModelSelect asks for the current user without supplying a user ID.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/models/useModels.ts#L247-L254
+    why: The global model selector requests wildcard expansion and access groups together.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1130-L1322
+    why: B1661 owns both SSO decorators and replacement/secret behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L875-L895
+    why: B1657's default-team read returns the values envelope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1105-L1127
+    why: B1657's team-default patch starts at its decorator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1745-L1961
+    why: B1660 owns public settings discovery and authenticated flag updates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/user_banner_endpoints.py#L67-L130
+    why: B066's banner decorators and publication response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1940-L2150
+    why: B055 creates the token; B892 validates its allowed_routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1067-L1170
+    why: B791's v2 decorator and self-default lookup, distinct from the legacy /user/info envelope.
+dod:
+  - text: SSO provider switches, deletion and both selectable access modes use the retained bodies and expose the pinned replacement and masking behavior.
+    proof: [identity-cases, oracle]
+  - text: Default-team edits, SCIM token creation, each UI control and banner publication survive their actual HTTP readback with the source access policy.
+    proof: [identity-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: identity-cases
+      why: The forms are represented only by pre-existing helper or generic route cases.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/identity-settings)"
+oracle_cases:
+  - tools/oracle/cases/ui/identity-settings/provider-form-replacement.yaml
+  - tools/oracle/cases/ui/identity-settings/sso-modal-null-clear.yaml
+  - tools/oracle/cases/ui/identity-settings/access-mode-only-patches.yaml
+  - tools/oracle/cases/ui/identity-settings/default-team-complete-form.yaml
+  - tools/oracle/cases/ui/identity-settings/scim-button-token.yaml
+  - tools/oracle/cases/ui/identity-settings/individual-boolean-toggles.yaml
+  - tools/oracle/cases/ui/identity-settings/page-visibility-and-editable-fields.yaml
+  - tools/oracle/cases/ui/identity-settings/banner-publish-and-read.yaml
+  - tools/oracle/cases/ui/identity-settings/viewer-and-missing-key.yaml
+  - tools/oracle/cases/ui/identity-settings/current-user-models-no-query.yaml
+  - tools/oracle/cases/ui/management-selectors/public-ui-and-authenticated-sso-settings.yaml
+  - tools/oracle/cases/ui/management-selectors/models-ui-flags-and-team-scope.yaml
+  - tools/oracle/cases/ui/organizations/list-filter-info-eligible-mit.yaml
+deviations: []
+out_of_scope:
+  - Every retained component, utility, schema and test under this part's UI covers is source intake owned by B9090; no TypeScript function is ported here.
+  - B1661/B1657/B1660/B066/B055/B892/B791 implement settings, banner, key and self-user behavior; B9735/B9733 prove the reused catalogs without a second implementation.
+  - B064 owns SCIM protocol handlers, which the token-generation page does not call; real IdP sign-in remains B063 and its route parts.
+pitfalls:
+  - The UI-access form omits other SSO fields, so preserving those fields in its test body would conceal the source's replacement semantics.
+  - The SCIM token has models=[] and team_id=null; adding a model or team changes the request being verified.
+  - An empty visible-page array and null are distinct from the editable-team-field editor's empty array.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

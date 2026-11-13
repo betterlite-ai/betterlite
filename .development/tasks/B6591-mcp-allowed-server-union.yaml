@@ -1,0 +1,134 @@
+id: B6591
+title: MCP allowed server union and open channels
+description: >-
+  Build the per-caller list of MCP servers the registry hands out: the grants from B4671 plus the servers anyone may reach (allow_all_keys servers, the caller's own submitted servers and passthrough servers), bounded by the session resource scope. In LiteLLM that is MCPServerManager.get_allowed_mcp_servers, operator_open_server_ids, _admitted_session_resource_scope, the BYOM submitted-server cache and resolve_toolset_tool_permissions, plus get_all_allowed_mcp_servers. B4717 and the tool paths call these, and B4671's RegistryReads port gets its toolset method from here.
+
+
+  Code goes in betterlite-mcp, module allowed_union: crates/betterlite-mcp/src/allowed_union.rs, allowed_union/** and a tests.rs beside each file. The production reads go in betterlite-server, module mcp::union_reads (crates/betterlite-server/src/mcp/union_reads.rs with a tests.rs). The config key goes in betterlite-config, section mcp_allow_all_scope (crates/betterlite-config/src/sections/mcp_allow_all_scope.rs with a tests.rs): general_settings.mcp_allow_all_keys_respects_mcp_scope, a boolean defaulting to false, exposed as config.sections.mcp_allow_all_scope. Do not add the key to the shared loader outside that file's own tests. The crates already depend in this direction, so no Cargo.toml changes.
+
+
+  ServerUnion<U: UnionReads, G: GrantSource, C: ToolsetCache> holds settings: UnionSettings { respects_scope: bool }, registry: &ServerRegistry (B4731) or a shared pointer to it, reads: U, grants: G and cache: C, all in a struct literal. GrantSource is the port to B4671 and B4670 with these methods: managed_servers(auth) -> Result<Vec<String>, UnionError> (B4671's allowed_servers for an auth that has a managed agent policy), access(auth) -> Result<ServerAccess, UnionError> (B4671's server_access) and admin_unscoped(auth) -> Result<bool, UnionError> (B4670's admin_view_unscoped). B4731 does not depend on this task, so no cycle. UnionReads is the async store port: submitted_server_ids(user_id) -> Result<Vec<String>, UnionError> (B4711's get_active_submitted_mcp_server_ids_for_user) and toolsets(toolset_ids, use_writer) -> Result<Vec<ToolsetRow>, UnionError> (B4681's list_mcp_toolsets) with ToolsetRow { tools: Vec<ToolRef { server_id, tool_name }> }. ToolsetCache has async get(key) -> Option<Cache value> and set(key, value, ttl_secs) and delete(key), each returning a Result whose failure the callers below log and ignore, with the value type JSON (serde_json::Value). The cache TTL for toolset permissions is LiteLLM's get_management_object_ttl of the shared cache. Take it as a field toolset_ttl_secs: u64 in UnionSettings, filled by the wave 17 part B8620 (default 60).
+
+
+  Functions to build (LiteLLM name in backticks, each a method on ServerUnion).
+
+  1. `session_scope` (`_admitted_session_resource_scope`): None for no auth or an auth that is not a keyless admitted subject (B4679's key_identity(auth).mcp_admitted_user_subject); else the auth's mcp_session_resource_server_id.
+
+  2. `open_server_ids` (`operator_open_server_ids`), inputs: auth, optional allow_all_server_ids and optional submitted_server_ids. An auth with mcp_toolset_id set or mcp_explicit_grants_only true gives an empty set. Otherwise start with the allow-all ids (registry.get_allow_all_keys_server_ids() when not given). The auth has an explicit object permission when it is not an admitted subject, it has an object_permission and that permission's mcp_servers is not None (an empty list counts). Without an explicit object permission, add the submitted ids (given, else submitted_for(auth)). The admitted-subject exception matters: its object permission is the user's own row, whose mcp_servers is [] by default, so the rule must not hide the user's own submissions.
+
+  3. `submitted_for` (`_get_active_submitted_mcp_server_ids_for_user`): no auth or no user_id gives an empty list. Cache key byom_submitted_servers:<user_id>. A cache read fault is warned ("Failed to read BYOM submitted MCP server cache") and treated as a miss. On a miss, call reads.submitted_server_ids(user_id); a fault there is warned ("Failed to read BYOM submitted MCP servers from database") and gives an empty list. With no database the reads port answers an empty list. The result, even when empty, is written back with a 60 second TTL (a write fault is warned and ignored). Return only ids that registry.server_by_id(id, no ip) still finds. `invalidate_submitted` (`invalidate_byom_submitted_servers_cache`): no user_id does nothing; else delete the cache key and warn on a fault.
+
+  4. `allowed_servers` (`get_allowed_mcp_servers`), inputs: optional auth and optional access: Option<ServerAccess>. Returns Vec<String> and never fails except through managed_servers.
+    a. Managed agent policy present (B4772's managed_agent_policy): managed = grants.managed_servers(auth)?; with access given keep only ids in access.server_ids; return. This branch is outside the guard in step f.
+    b. allow_all = registry.get_allow_all_keys_server_ids(). explicit_only = auth.mcp_explicit_grants_only. admitted = auth is a keyless admitted subject.
+    c. If not admitted and the auth has an object permission whose mcp_servers contains the literal no-mcp-servers, return an empty list now (before open channels).
+    d. submitted = empty when the auth has an explicit object permission (as in step 2) or explicit_only; else submitted_for(auth).
+    e. Inside the guard (any error here goes to step f): admin_unscoped = grants.admin_unscoped(auth). resolved_access = ServerAccess with no ids and the default scope when admin_unscoped, else the given access, else grants.access(auth). resolved ids = every registry server id when admin_unscoped, else resolved_access.server_ids. combined starts as resolved ids. Add open_server_ids(auth, allow_all, submitted). Anonymous caller: no auth, or an auth with none of user_id, user_role and api_key set; for it add every registry server whose auth_type is true_passthrough. If settings.respects_scope and the auth exists and auth.via_virtual_key and resolved_access.scope is not Unscoped: remove from combined the ids in allow_all that are not in resolved ids and, unless the scope is Unresolved, not in submitted. Finally keep only the id equal to session_scope(auth) when there is one. Return the ids de-duplicated, resolved ids first, then open ids, then passthrough ids, each group in registry order.
+    f. Guard failure: log at error "Failed to get allowed MCP servers; team-level object_permission grants may be dropped. Falling back to global and submitted servers.", then return allow_all followed by submitted, de-duplicated in order, filtered by session_scope, and an empty list when explicit_only. The fallback never widens a scoped session bearer.
+
+  5. `resolve_toolset_permissions` (`resolve_toolset_tool_permissions`), inputs: toolset_ids and requires_fresh_policy (default false). Returns Result<BTreeMap<String, Vec<String>>, UnionError>. Empty ids or no database give an empty map. Cache key toolset_perms:<sorted ids joined by comma>; unless fresh, a cache hit is returned as is. Otherwise reads.toolsets(ids, use_writer = fresh); for each toolset and each tool append tool_name to the list of tool.server_id once (first-seen order). Write the map to the cache with settings.toolset_ttl_secs and return it. A fault in the read or the cache write: fresh propagates it; not fresh warns ("Failed to resolve toolset permissions") and returns an empty map. A cache READ fault is part of this guard too. B4671's RegistryReads::resolve_toolset_scope is this method with the keys of the map taken by its caller.
+
+  6. `allowed_tables` (`get_all_allowed_mcp_servers`), input: auth: the ids from allowed_servers(auth), then for each id registry.server_by_id (no ip) and registry.server_table of it; an id the registry does not know is warned ("MCP Server ... not found in registry") and skipped.
+
+  Production reads. LiveUnionReads in betterlite-server holds B4711's submitted-server read and B4681's toolset list as fields and maps their errors to UnionError::Failed(String). Keep the mapping in plain functions so tests need no Postgres.
+
+
+  Tests use fakes that record calls, synthetic servers, users and keys, and names with the prefix test-. No route reaches this code at this commit, so there are no oracle cases.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/allowed_union.rs
+    - crates/betterlite-mcp/src/allowed_union/**
+    - crates/betterlite-server/src/mcp/union_reads.rs
+    - crates/betterlite-server/src/mcp/union_reads/**
+    - crates/betterlite-config/src/sections/mcp_allow_all_scope.rs
+    - crates/betterlite-config/src/sections/mcp_allow_all_scope/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3474-L3598
+    why: get_allowed_mcp_servers, the order of the managed, opt-out, submitted, admin, open, anonymous, allow-all-scope and session scope steps and the fallback on error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3414-L3472
+    why: operator_open_server_ids and _admitted_session_resource_scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3354-L3412
+    why: The BYOM submitted-server cache, key, TTL and fault handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3600-L3658
+    why: resolve_toolset_tool_permissions, cache key and fresh policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7296-L7324
+    why: get_all_allowed_mcp_servers.
+
+dod:
+  - text: A managed agent returns B4671's servers (limited to the given access), and a non-admitted key that lists no-mcp-servers returns an empty list before any open channel is added.
+    proof: [union-tests]
+  - text: The union holds the resolved grants (the whole registry for an unscoped admin), the allow-all servers, the caller's own submitted servers and, for an anonymous caller, the passthrough servers; keys with their own mcp_servers list or explicit-grants-only get no submitted servers.
+    proof: [union-tests]
+  - text: With mcp_allow_all_keys_respects_mcp_scope on, a virtual key with a scoped or unresolved access loses the allow-all servers it was not granted, and keeps submitted ones unless its scope is unresolved.
+    proof: [union-tests]
+  - text: A keyless admitted subject with a session resource scope gets only that one server from every branch, the error fallback included, and any error in the union falls back to allow-all plus submitted servers or to nothing for explicit-grants-only callers.
+    proof: [union-tests]
+  - text: Open server ids are empty inside a toolset or explicit-grants scope, and the admitted-subject exception keeps a user's own submissions despite an empty mcp_servers row.
+    proof: [open-tests]
+  - text: The submitted server read uses the 60 second cache, ignores cache faults, returns an empty list on a database fault and only ids the registry still holds; invalidation deletes the key.
+    proof: [submitted-tests]
+  - text: Toolset permissions are cached under the sorted-ids key, skip the cache and the replica when fresh, return an empty map for no ids and, on a fault, an empty map when not fresh and the error when fresh.
+    proof: [toolset-tests]
+  - text: allowed_tables returns the table of each allowed id and skips unknown ids with a warning.
+    proof: [union-tests]
+  - text: The allow-all scope setting defaults to false and loads from general_settings.mcp_allow_all_keys_respects_mcp_scope.
+    proof: [config-tests]
+  - text: The production reads map store results and errors to the port values.
+    proof: [reads-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: union-tests
+      why: the allowed server union, its guard fallback or the table list is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^allowed_union::tests::/)'
+    - id: open-tests
+      why: the open channel server ids are missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^allowed_union::open::tests::/)'
+    - id: submitted-tests
+      why: the submitted server cache read or invalidation is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^allowed_union::submitted::tests::/)'
+    - id: toolset-tests
+      why: the toolset permission resolution or its cache is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^allowed_union::toolsets::tests::/)'
+    - id: config-tests
+      why: the allow-all scope setting does not load or has the wrong default
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_allow_all_scope::/)'
+    - id: reads-tests
+      why: the production reads map a store result to the wrong port value
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::union_reads::tests::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Stores, the shared cache and the grant functions go through typed ports (UnionReads, ToolsetCache, GrantSource), not proxy_server globals.
+    why: betterlite has no module-level state; the observable results are the same.
+  - what: The returned list is de-duplicated in a fixed order (grants, open channels, passthrough), where LiteLLM returns a Python set in arbitrary order.
+    why: set order is not stable, so no client can rely on it; tests compare as sets where order is not part of the contract.
+  - what: The mcp_allow_all_keys_respects_mcp_scope flag is read once at config load.
+    why: betterlite config is immutable after load.
+
+out_of_scope:
+  - "get_mcp_server_access, get_allowed_mcp_servers of MCPRequestHandler and admitted subject sources: B4671. admin_view_unscoped: B4670."
+  - "Registry reads, lookups and table building: B4731. The MCPServer record: B6590."
+  - "invalidate_toolset_cache and get_toolset_by_name_cached: B6592 owns them. B4681 owns the toolset storage they read."
+  - "get_all_mcp_servers_with_health_and_teams and health_check_server: B6592 owns them."
+  - "Wiring ServerUnion and LiveUnionReads into application state, and every route: B8621 (state), B8625, B8701 and B8626 (routes)."
+
+pitfalls:
+  - "The managed agent branch and the no-mcp-servers opt-out return before any open channel is added, so the opt-out stays absolute; the opt-out does not apply to a keyless admitted subject."
+  - "An empty object_permission.mcp_servers list is an explicit scope for a key and means no submitted servers, but for an admitted subject it is just the default of the user's row and must not hide submissions."
+  - "The session resource scope is applied last, over the whole union and over the fallback, so an error never widens a scoped bearer."
+  - "The error fallback returns allow-all plus submitted servers, but nothing at all when the caller has explicit-grants-only."
+  - "restrict_allow_all keeps submitted servers in the 'not removed' set unless the access scope is unresolved, and it needs a virtual key, not any auth."
+  - "A cache fault in the submitted server read is a miss. After a database fault the empty list is still written to the cache for 60 seconds, as LiteLLM does."
+  - "resolve_toolset_permissions raises only when fresh policy is requested; a revocation check must never turn a read fault into no grants."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

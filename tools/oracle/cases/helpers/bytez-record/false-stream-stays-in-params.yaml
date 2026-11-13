@@ -1,0 +1,32 @@
+kind: helper
+name: bytez-record-false-stream-stays-in-params
+call:
+  bytez_record:
+    function: request
+    requests:
+      - model: org/model
+        api_key: secret
+        messages:
+          - role: user
+            content: hi
+        optional_params: {stream: false, max_new_tokens: 5}
+      - model: org/model
+        api_key: secret
+        messages:
+          - role: user
+            content: hi
+        optional_params: {stream: null}
+      - model: org/model
+        api_key: secret
+        messages:
+          - role: user
+            content: hi
+        optional_params: {}
+      - model: org/model
+        api_key: secret
+        messages:
+          - role: user
+            content: hi
+        optional_params: {stream: true, max_new_tokens: 5}
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,5 @@
+kind: helper
+name: "byok-www-authenticate"
+call: {"b4654":{"function":"byok_authenticate","proxy_base_url":"","request_root_path":"/litellm/"}}
+env: {}
+compare: {"ignore":[]}

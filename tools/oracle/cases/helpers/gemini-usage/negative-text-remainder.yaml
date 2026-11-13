@@ -1,0 +1,11 @@
+kind: helper
+name: gemini-usage-negative-text-remainder
+call:
+  gemini_usage:
+    usage_metadata:
+      promptTokenCount: 1
+      candidatesTokenCount: 3
+      totalTokenCount: 4
+      candidatesTokensDetails: [{modality: IMAGE, tokenCount: 5}]
+env: {}
+compare: {ignore: []}

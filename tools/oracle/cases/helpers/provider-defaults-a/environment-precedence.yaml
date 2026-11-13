@@ -1,0 +1,12 @@
+kind: helper
+name: provider-defaults-a-environment-precedence
+call:
+  provider_defaults_a:
+    provider: perplexity
+    model: llama-3
+    environment:
+      PERPLEXITY_API_BASE: https://env.perplexity.example
+      PERPLEXITYAI_API_KEY: first-key
+      PERPLEXITY_API_KEY: second-key
+env: {}
+compare: {ignore: []}

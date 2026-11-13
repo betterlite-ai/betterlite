@@ -1,0 +1,50 @@
+kind: helper
+name: gigachat-stream-chunks
+call:
+  b8177:
+    steps:
+      - kind: stream
+        events:
+          - 'data: {"choices": [{"index": 0, "delta": {"content": "hello"}}]}'
+          - '{"choices": [{"index": 0, "delta": {"content": " world"}, "finish_reason": "stop"}]}'
+          - "not json"
+          - ""
+          - "{}"
+          - '{"choices": []}'
+      - kind: stream
+        events:
+          - '{"choices": [{"delta": {"content": "before"}}]}'
+          - "[DONE]"
+          - '{"choices": [{"delta": {"content": "after"}}]}'
+      - kind: stream
+        events:
+          - "data: [DONE]"
+      - kind: stream
+        events:
+          - 'data: data: {"choices": [{"delta": {"content": "twice"}}]}'
+      - kind: stream
+        events:
+          - '{"choices": [{"index": 2, "delta": {"function_call": {"name": "lookup", "arguments": {"city": "prague"}}}, "finish_reason": "function_call"}]}'
+      - kind: stream
+        events:
+          - '{"choices": [{"delta": {"function_call": {"name": "lookup"}}, "finish_reason": "function_call"}]}'
+      - kind: stream
+        events:
+          - '{"choices": [{"delta": {"function_call": {}}, "finish_reason": "function_call"}]}'
+      - kind: stream
+        events:
+          - '{"choices": [{"delta": {"function_call": {"name": "lookup"}}, "finish_reason": "stop"}]}'
+      - kind: stream
+        events:
+          - '{"choices": [{"delta": {}}], "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12, "precached_prompt_tokens": 5}}'
+      - kind: stream
+        events:
+          - '{"choices": [{"delta": {}}], "usage": {}}'
+      - kind: stream
+        events:
+          - '{"choices": [{"delta": {}}], "usage": {"counted_elsewhere": 1}}'
+      - kind: stream
+        events:
+          - '{"choices": [], "usage": {"prompt_tokens": 9}}'
+env: {}
+compare: {ignore: []}

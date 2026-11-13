@@ -1,0 +1,12 @@
+task: B4564
+deviations:
+  - what: >-
+      A failed process handoff (os.execvpe on Unix, subprocess.run on Windows) is returned as
+      AgentRunError::Process carrying the io::Error, and a failed controlling-terminal dup2 is returned
+      as an io::Error, where LiteLLM lets the OSError escape uncaught out of _hand_off and
+      _restore_controlling_terminal and prints a traceback.
+    why: >-
+      Betterlite's CLI reports every failure through one typed error and one stderr line with exit
+      status 1. No working launch reaches these paths: the agent binary was already resolved before
+      the handoff, and a terminal that cannot be reopened is silently ignored exactly as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L713-L765

@@ -1,0 +1,16 @@
+kind: helper
+name: stream-usage-assembly-details
+call:
+  stream_usage_assembly:
+    function: batch
+    cases:
+    - function: attach_cache_creation
+      prompt_tokens_details: {cached_tokens: 2}
+      cache_creation_token_details: {ephemeral_1h_input_tokens: 5}
+    - function: apply_grounding
+      prompt_tokens_details: {cached_tokens: 2}
+      web_search_requests: 0
+    - function: capture_cache_creation
+      current: {ephemeral_5m_input_tokens: 1}
+env: {}
+compare: {ignore: []}

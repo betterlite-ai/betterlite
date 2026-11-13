@@ -1,0 +1,8 @@
+kind: helper
+name: watsonx-result-extract-last-message
+call:
+  b4807:
+    operation: result_text
+    result: {last_message: {content: [{text: from last message}]}, result: {data: {message: {content: [{text: nested}]}}}, results: raw}
+env: {}
+compare: {ignore: []}

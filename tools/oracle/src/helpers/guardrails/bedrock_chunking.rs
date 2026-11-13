@@ -1,6 +1,6 @@
 use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_guardrails::bedrock_chunking::{
-    ChunkResult, ChunkingError, bin_pack, is_input_too_large, merge, nearest_whitespace, split,
+    ChunkResult, ChunkingError, TOO_LARGE, bin_pack, merge, nearest_whitespace, split,
     uses_grounding,
 };
 use betterlite_guardrails::bedrock_records::ContentItem;
@@ -46,7 +46,12 @@ impl Helper for Op {
             Step::Nearest { text } => Ok(to_value(nearest_whitespace(text))),
             Step::Merge { chunks } => merge(chunks).map(to_value),
             Step::Grounding { content } => Ok(to_value(uses_grounding(content))),
-            Step::TooLarge { detail } => Ok(to_value(is_input_too_large(detail.as_deref()))),
+            Step::TooLarge { detail } => {
+                let lowered = detail.as_deref().map(str::to_lowercase).unwrap_or_default();
+                Ok(to_value(
+                    TOO_LARGE.iter().any(|pattern| lowered.contains(pattern)),
+                ))
+            }
         };
         let (class, message) = match outcome {
             Ok(Ok(value)) => return Ok(value),

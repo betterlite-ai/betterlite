@@ -1,0 +1,48 @@
+kind: helper
+name: stream-usage
+call:
+  bedrock_services_agentcore_stream:
+    model: agentcore-model
+    ids:
+      - 00000000-0000-4000-8000-000000000021
+      - 00000000-0000-4000-8000-000000000022
+      - 00000000-0000-4000-8000-000000000023
+    scenarios:
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"hi"}},"metadata":{"usage":{"inputTokens":1,"outputTokens":2,"totalTokens":3}}}}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"x"}},"metadata":{"usage":{"inputTokens":4}}},"message":{}}
+      - reads:
+          - |
+            data: {"event":{"metadata":{"usage":{}}}}
+      - reads:
+          - |
+            data: {"event":{"metadata":{"usage":{"outputTokens":9}}}}
+      - reads:
+          - |
+            data: {"event":{"metadata":{"usage":{"totalTokens":5}}}}
+      - reads:
+          - |
+            data: {"event":{"metadata":{"usage":{"inputTokens":null,"outputTokens":2}}}}
+      - reads:
+          - |
+            data: {"event":{"metadata":{"usage":null}}}
+      - reads:
+          - |
+            data: {"event":{"metadata":{"usage":5}}}
+      - reads:
+          - |
+            data: {"event":{"metadata":{"usage":{"inputTokens":1.5}}}}
+      - reads:
+          - |
+            data: {"event":{"metadata":{}}}
+      - reads:
+          - |
+            data: {"event":{"metadata":{"metrics":{"latencyMs":1}}}}
+      - reads:
+          - |
+            data: {"event":{"metadata":5}}
+env: {}
+compare: {ignore: []}

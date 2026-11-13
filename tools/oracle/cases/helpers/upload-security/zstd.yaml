@@ -1,0 +1,8 @@
+kind: helper
+name: upload-security-zstd
+call:
+  b3452:
+    content_hex: '28b52ffd'
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,8 @@
+kind: helper
+name: failure-policy
+call:
+  vector_context_shaping:
+    operation: failure_policy
+    configured: bogus
+env: {}
+compare: {ignore: []}

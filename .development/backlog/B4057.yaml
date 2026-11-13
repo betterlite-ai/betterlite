@@ -1,14 +1,14 @@
 id: B4057
 milestone: M7 observability
 title: Generic prompt API fetching and compilation cache
-status: todo
+status: done
 depends_on: [B4050, B173]
 file: tasks/B4057-generic-prompt-api.yaml
 covers:
   - "litellm/integrations/generic_prompt_management/**"
 parent: B117
 split_from: B117
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 748

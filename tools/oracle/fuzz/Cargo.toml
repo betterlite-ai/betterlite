@@ -3,17 +3,34 @@ name = "betterlite-oracle-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
 
+[package.metadata.cargo-shear]
+ignored = ["betterlite-logging", "chrono", "quick-xml", "serde", "thiserror", "tl"]
+
 [dependencies]
+betterlite-logging = { path = "../../../crates/betterlite-logging" }
 betterlite-oracle = { path = ".." }
 chrono = { version = "0.4.45", default-features = false, features = ["now", "serde"] }
 libfuzzer-sys = "0.4.9"
 quick-xml = "0.41.0"
 serde = { version = "1.0.228", features = ["derive"] }
+serde-saphyr = "2.0.0"
 thiserror = "2.0.17"
+tl = "0.7.8"
+
+[[bin]]
+name = "datadog_logs"
+path = "fuzz_targets/datadog_logs.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "helper_case"
@@ -32,6 +49,13 @@ bench = false
 [[bin]]
 name = "probe_ipc"
 path = "fuzz_targets/probe_ipc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "route_probe"
+path = "fuzz_targets/route_probe.rs"
 test = false
 doc = false
 bench = false
@@ -78,4 +102,51 @@ test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "websocket_oracle"
+path = "fuzz_targets/websocket_oracle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sdk_http_case"
+path = "fuzz_targets/sdk_http_case.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "datadog_llm_argument_decoder"
+path = "fuzz_targets/datadog_llm_argument_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "datadog_budget_reset_decoder"
+path = "fuzz_targets/datadog_budget_reset_decoder.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_scenarios"
+path = "fuzz_targets/http_scenarios.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "discovery_case"
+path = "fuzz_targets/discovery_case.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "search_case"
+path = "fuzz_targets/search_case.rs"
+test = false
+doc = false
+bench = false

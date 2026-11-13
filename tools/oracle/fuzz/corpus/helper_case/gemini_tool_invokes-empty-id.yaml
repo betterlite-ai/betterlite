@@ -1,0 +1,5 @@
+kind: helper
+name: gemini-tool-invokes-corpus-empty-id
+call: {gemini_tool_invokes: {operation: convert_to_gemini_tool_call_invoke, model: gemini-2.5-flash, forward_function_call_id: true, message: {role: assistant, tool_calls: [{id: '', function: {name: empty_id, arguments: '{}'}}, {id: __thought__signature-only, function: {name: signature_only, arguments: '{}'}}]}}}
+env: {}
+compare: {ignore: []}

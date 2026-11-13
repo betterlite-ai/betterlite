@@ -1,0 +1,10 @@
+kind: helper
+name: route-metadata-full-table
+call:
+  route_metadata:
+    {
+      "function": "full_table"
+    }
+env: {}
+compare:
+  ignore: []

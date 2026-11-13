@@ -1,0 +1,10 @@
+kind: helper
+name: template-regex-boundaries
+call:
+  route_match:
+    function: route_matches_pattern
+    route: /v1beta/models/foo/bar:generateContent
+    pattern: /v1beta/models/{model_name:path}:generateContent
+env: {}
+compare:
+  ignore: []

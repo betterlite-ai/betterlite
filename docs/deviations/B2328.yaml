@@ -1,0 +1,5 @@
+task: B2328
+deviations:
+  - what: A custom provider naming one of the eight JSON-registry-only slugs (gmi, crusoe, veniceai, aihubmix, sarvam, llamagate, empiriolabs, abliteration) takes the static catalog path and returns no warning, where LiteLLM's LlmProviders conversion raises and warns before returning an empty list.
+    why: betterlite's ProviderId is wider than LiteLLM's LlmProviders by those registry-only slugs, and the models crate has no shared list saying which variants LiteLLM rejects. The returned model list is empty in both; only the warning differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7880-L7891

@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "class-hex-range-end",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/models/0",
+      "allowed_routes": [
+        "/models/[a-z--\\x61]"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

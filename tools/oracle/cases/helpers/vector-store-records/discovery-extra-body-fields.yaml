@@ -1,0 +1,41 @@
+kind: helper
+name: vector-store-discovery-extra-body
+call:
+  vector_store_records:
+    operation: discovery_extra_body_fields
+    extra_body:
+      query: q
+      pageSize: 1
+      pageToken: x
+      offset: 1
+      oneBoxPageSize: 1
+      pageCategories: []
+      imageQuery: {}
+      filter: x
+      canonicalFilter: x
+      orderBy: x
+      userInfo: {}
+      languageCode: x
+      facetSpecs: []
+      boostSpec: {}
+      params: {}
+      queryExpansionSpec: {}
+      spellCorrectionSpec: {}
+      userPseudoId: x
+      contentSearchSpec: {}
+      rankingExpression: x
+      rankingExpressionBackend: x
+      safeSearch: false
+      userLabels: {a: b}
+      naturalLanguageQueryUnderstandingSpec: {}
+      searchAsYouTypeSpec: {}
+      displaySpec: {}
+      crowdingSpecs: []
+      relevanceThreshold: x
+      relevanceScoreSpec: {}
+      customRankingParams: {}
+      dataStoreSpecs: [{dataStore: s}]
+      numResultsPerDataStore: 2
+      servingConfig: provider-extension
+env: {}
+compare: {ignore: []}

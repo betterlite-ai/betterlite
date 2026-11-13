@@ -1,0 +1,28 @@
+kind: helper
+name: chat-config-selection-openai-family
+call:
+  chat_config_selection:
+    function: openai_family_selection
+    catalog:
+      chat_models: [o1, o3-mini, o4-mini, gpt-4o, gpt-5, gpt-5-chat-latest, gpt-6]
+      text_models: [gpt-3.5-turbo-instruct]
+    calls:
+      - {provider: openai, model: o1}
+      - {provider: openai, model: openai/o1}
+      - {provider: openai, model: o3-mini}
+      - {provider: openai, model: o4-mini}
+      - {provider: openai, model: o1-preview}
+      - {provider: openai, model: o_series/foo}
+      - {provider: openai, model: O1}
+      - {provider: openai, model: o5}
+      - {provider: openai, model: gpt-5}
+      - {provider: openai, model: gpt-6}
+      - {provider: openai, model: responses/gpt-5}
+      - {provider: openai, model: gpt-4o}
+      - {provider: openai, model: gpt-5-chat-latest}
+      - {provider: openai, model: responses/gpt-4o}
+      - {provider: openai, model: gpt-3.5-turbo-instruct}
+      - {provider: openai, model: gpt-4o, base_model: o1}
+      - {provider: openai, model: gpt-4o, base_model: gpt-5}
+env: {}
+compare: {ignore: []}

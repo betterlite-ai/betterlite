@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::case::{HelperCase, parse_helper_case};
+use crate::case::{HelperCase, helper::validate_helper};
 use std::fs;
 use std::path::Path;
 
@@ -20,6 +20,12 @@ fn helper_seeds_select_bedrock_services_file_content() {
     assert!(!seeds.is_empty());
     assert!(seeds.iter().all(|source| {
         let case: HelperCase = serde_saphyr::from_str(source).unwrap();
-        parse_helper_case(source).is_ok() && case.call.operation == "bedrock_services_file_content"
+        serde_saphyr::from_str(source)
+            .map_err(|error| error.to_string())
+            .and_then(|parsed| {
+                validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
+            })
+            .is_ok()
+            && case.call.operation == "bedrock_services_file_content"
     }));
 }

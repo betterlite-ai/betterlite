@@ -22,12 +22,8 @@ description: >-
   605 total within 640.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_query_embedding.rs
   - crates/betterlite-core/src/api/vector_query_embedding/**
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/vector_query_embedding.rs
   - crates/betterlite-provider/src/api/vector_query_embedding/**
   - tools/oracle/src/helpers/core_ops/vector_query_embedding.rs
@@ -35,7 +31,7 @@ scope:
   - tools/oracle/helpers/vector_query_embedding.py
   - tools/oracle/helpers/vector_query_embedding/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/vector_query_embedding.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/vector_query_embedding.py
   - tools/oracle/cases/helpers/vector-query-embedding/**

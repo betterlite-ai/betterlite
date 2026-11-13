@@ -1,0 +1,27 @@
+kind: helper
+name: strands-direct-http
+call:
+  b3512:
+    steps:
+      - kind: runtime
+        api_base: https://strands.example
+      - kind: sign
+        api_base: https://strands.example
+        headers:
+          Authorization: Bearer runtime-jwt
+          X-Custom: v
+        api_key: runtime-jwt
+        model: m
+        state: the state
+        question: q
+        instructions: decide
+        now: 1767225600
+      - kind: transform
+        api_base: https://strands.example
+        body: '{"model": "m", "answers": {"q": {"type": "noul", "noul": 0.5}}, "usage": {"input_tokens": 3, "output_tokens": 4}}'
+        model: m
+        state: the state
+        question: q
+        instructions: decide
+env: {}
+compare: {ignore: []}

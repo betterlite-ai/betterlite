@@ -1,0 +1,10 @@
+kind: helper
+name: metadata
+call:
+  openai_batches:
+    is_async: false
+    settings: {api_key: sk-fixture, api_base: null, timeout: null, max_retries: null, organization: null}
+    request: {retrieve: {batch_id: batch_1}}
+    answer: {value: {id: batch_1, object: batch, endpoint: /v1/embeddings, input_file_id: file-1, completion_window: 24h, status: validating, created_at: 1700000000, metadata: {team: ml}, usage: {input_tokens: 3, input_tokens_details: {cached_tokens: 0}, output_tokens: 4, output_tokens_details: {reasoning_tokens: 0}, total_tokens: 7}}}
+env: {}
+compare: {ignore: []}

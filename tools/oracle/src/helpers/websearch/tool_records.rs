@@ -18,28 +18,16 @@ impl crate::helpers::Helper for Op {
 }
 
 fn builder(function: &str) -> crate::helpers::HelperResult {
-    if function == "get_litellm_web_search_tool" {
-        return anthropic_builder();
-    }
-    if function == "get_litellm_web_search_tool_openai" {
-        return openai_builder();
-    }
-    responses_builder()
-}
-
-fn anthropic_builder() -> crate::helpers::HelperResult {
-    let tool = betterlite_websearch::tools::get_litellm_web_search_tool();
-    serde_json::to_value(tool).map_err(|error| helper_error(error, "Serialization"))
-}
-
-fn openai_builder() -> crate::helpers::HelperResult {
-    let tool = betterlite_websearch::tools::openai_web_search_tool();
-    serde_json::to_value(tool).map_err(|error| helper_error(error, "Serialization"))
-}
-
-fn responses_builder() -> crate::helpers::HelperResult {
-    let tool = betterlite_websearch::tools::responses_web_search_tool();
-    serde_json::to_value(tool).map_err(|error| helper_error(error, "Serialization"))
+    let encoded = match function {
+        "get_litellm_web_search_tool" => {
+            serde_json::to_value(betterlite_websearch::tools::get_litellm_web_search_tool())
+        }
+        "get_litellm_web_search_tool_openai" => {
+            serde_json::to_value(betterlite_websearch::tools::openai_web_search_tool())
+        }
+        _ => serde_json::to_value(betterlite_websearch::tools::responses_web_search_tool()),
+    };
+    encoded.map_err(|error| helper_error(error, "Serialization"))
 }
 
 fn helper_error<E>(error: E, class: &str) -> Box<crate::helpers::HelperError>

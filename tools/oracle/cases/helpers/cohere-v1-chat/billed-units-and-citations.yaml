@@ -1,0 +1,34 @@
+kind: helper
+name: cohere-v1-chat-billed-units-and-citations
+call:
+  cohere_v1_chat:
+    function: reply
+    requests:
+      - body: '{"text":"answer","citations":[{"start":1,"end":4,"text":"answer","sources":[{"type":"document","id":"doc-1"}]}],"meta":{"billed_units":{"input_tokens":11,"output_tokens":3},"tokens":{"input_tokens":100,"output_tokens":200}}}'
+        status: 200
+        model: command-r
+        created: 42
+        id: chatcmpl-template
+        finish_reason: COMPLETE
+      - body: '{"text":null,"citations":null}'
+        status: 200
+        model: command-r
+        created: 43
+        id: chatcmpl-template
+      - body: '{"text":"answer","meta":{}}'
+        status: 200
+        model: command-r
+        created: 44
+        id: chatcmpl-template
+      - body: '{"text":"answer","meta":{"billed_units":{"input_tokens":7}}}'
+        status: 200
+        model: command-r
+        created: 45
+        id: chatcmpl-template
+      - body: '{"text":"answer","meta":{"billed_units":{"input_tokens":9.0,"output_tokens":4.0}}}'
+        status: 200
+        model: command-r
+        created: 46
+        id: chatcmpl-template
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-unicode-sigma",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/σς",
+      "pattern": "/(?i:(.)\\1)"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

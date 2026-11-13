@@ -1,0 +1,8 @@
+kind: helper
+name: requested-ids-for-diagnostics
+call:
+  vector_context_shaping:
+    operation: requested_ids_for_diagnostics
+    non_default_params: {vector_store_ids: [vs_a, 2, null, true]}
+env: {}
+compare: {ignore: []}

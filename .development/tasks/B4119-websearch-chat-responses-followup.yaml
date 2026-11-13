@@ -1,0 +1,298 @@
+id: B4119
+title: Build chat and Responses search follow-up plans
+description: >-
+  Build the two plan builders that turn an intercepted web search into a follow-up request on the
+  Chat Completions and Responses surfaces, plus the typed plan and patch records every agentic loop
+  callback returns. B4118 owns the surface dispatcher (build_agentic_loop_plan) and calls the two
+  builders below, so B4119 must not depend on B4118 and the names below are public API that B4118
+  uses as written.
+
+  Part 1: the plan records. Implement crates/betterlite-context/src/agentic_loop_plan.rs (and its
+  folder). The skeleton creates the empty module and declares it in lib.rs. No earlier task builds
+  these types: B189 covers the LiteLLM file but its task text never names them, and other tasks
+  (B4118, B3544, B4122, B2415, B6030) say "from B189". They sit in betterlite-context, which core
+  already depends on, so every caller can reach them without a cycle. Add `serde` (workspace),
+  `indexmap` (version 2.14.2, feature serde) and the `raw_value` feature of serde_json to
+  crates/betterlite-context/Cargo.toml.
+  - `pub type JsonMap = IndexMap<String, Box<RawValue>>` is the shape for every LiteLLM dict
+    whose values are provider JSON (optional_params, kwargs, metadata). Add `JsonMap` helper
+    functions as free functions only if a second caller needs them; `get_text(map, key)` returning
+    Option<String> for a JSON string value is the one this task needs.
+  - `FollowupMessage` wraps `Box<RawValue>` with `#[serde(transparent)]` and has
+    `FollowupMessage::from_value<T: Serialize>(value: &T) -> Result<Self, serde_json::Error>`. It
+    stands for one LiteLLM message or Responses input item (a dict). Do not use serde_json::Value.
+  - `AgenticLoopRequestPatch` has `model: Option<String>`, `messages: Option<Vec<FollowupMessage>>`,
+    `tools: Option<Vec<FollowupMessage>>`, `max_tokens: Option<u64>`, `optional_params: JsonMap`
+    and `kwargs: JsonMap`. It derives Default, Debug, Clone, Serialize and Deserialize with the same
+    field names, so Default matches LiteLLM's field defaults (None and empty maps).
+  - `AgenticLoopPlan` has `run_agentic_loop: bool` (default false), `request_patch:
+    Option<AgenticLoopRequestPatch>`, `response_override: Option<Box<RawValue>>`, `terminate: bool`,
+    `stop_reason: Option<String>` and `metadata: JsonMap`, with the same derives and default.
+
+  Part 2: the builders. Implement crates/betterlite-websearch/src/chat_responses_followup.rs (and
+  its folder: search.rs, chat.rs, responses.rs, rerun.rs, error.rs, tests.rs). The skeleton creates
+  the empty module and declares it in lib.rs. Add `betterlite-context` (path), `async-trait`
+  (0.1.92), `futures-util` (0.3.34, default-features false, feature alloc) to
+  crates/betterlite-websearch/Cargo.toml, and `tokio` (workspace, features macros and rt) and
+  `rstest` (=0.27.0) as dev-dependencies. Do not read the environment or the clock.
+
+  The search runner is a trait so tests pass fixed outcomes and B4118 reuses it:
+
+      #[async_trait]
+      pub trait SearchExecutor: Send + Sync {
+          async fn execute_search(&self, query: &str, kwargs: &JsonMap, rich: Option<RichWebSearchInput>) -> SearchResult;
+      }
+
+  SearchResult is B4113's call_transformation::outcome::SearchResult. Also add, in search.rs, the
+  impl of SearchExecutor for B4115's WebSearchExecution: read crates/betterlite-websearch/src/execution.rs
+  on main first (B4115 is a dependency), call its execute_search, and map the typed result (text and
+  optional SearchResponse, or SearchFailure) to SearchResult::Succeeded or SearchResult::Failed. If
+  B4115's signature cannot be mapped this way, stop and report a blocker naming the function.
+
+  `search_batch(executor, tool_calls, kwargs)` in search.rs returns `Vec<SearchOutcome>` in tool
+  call order. For each call it finds the query and the rich input (see the per-surface rules), then
+  starts `executor.execute_search` for a non-empty query, or uses B4115's create_empty_search_result
+  (text "No search query provided", no response) for a missing or empty query and logs the call id
+  at debug. All searches run together with `futures_util::future::join_all`. Each SearchResult goes
+  through B4113's `search_outcome` and the text through `search_outcome_text`, so a failed search
+  becomes "Search failed: <message>" and never cancels its siblings. Keep the debug line
+  "Executing N search(es) in parallel".
+
+  Public entry points, all on `pub struct ChatResponsesFollowup { search: Arc<dyn SearchExecutor> }`
+  with `ChatResponsesFollowup::new(search: Arc<dyn SearchExecutor>)`:
+
+  - `build_chat_plan(&self, tool_calls: &[Call], response_format: &str, request: &FollowupRequest<'_>)
+    -> Result<AgenticLoopPlan, FollowupError>`. `FollowupRequest<'a>` holds `model: &'a str`,
+    `messages: &'a [FollowupMessage]`, `optional_params: &'a JsonMap`, `kwargs: &'a JsonMap`. The
+    dispatcher passes "openai" for response_format when the tools record has none. Returns
+    run_agentic_loop=true, the patch from build_chat_patch and metadata {"tool_type": "websearch",
+    "response_format": <response_format>}.
+  - `build_responses_plan(&self, tool_calls: &[Call], request: &ResponsesRequest<'_>)
+    -> Result<AgenticLoopPlan, FollowupError>`. `ResponsesRequest<'a>` holds `model`, `input:
+    &'a ResponsesInput`, `optional_params`, `kwargs`. `ResponsesInput` is `Text(String)` or
+    `Items(Vec<FollowupMessage>)`. Metadata is {"tool_type": "websearch", "response_format":
+    "responses"}.
+  - `build_chat_rerun(&self, tool_calls, response_format, request) -> Result<ChatRerunRequest,
+    FollowupError>` is the legacy OpenAI chat path (async_run_chat_completion_agentic_loop and
+    _execute_chat_completion_agentic_loop). OpenAI's chat provider calls it directly at the pin
+    without the plan, so it has a caller. It builds the same chat patch, then returns
+    `ChatRerunRequest { model, messages, params, kwargs }` for the core executor to send (no HTTP in
+    this crate). `model` is patch.model, falling back to request.model. `params` is request
+    optional_params with the patch optional_params laid over it (patch wins), then "tool_choice"
+    removed. `kwargs` is patch.kwargs. LiteLLM raises "WebSearchInterception: missing follow-up
+    messages" when the patch has no messages; the Rust patch always has them, so there is no error
+    path for it.
+
+  Chat patch (build_chat_patch, chat.rs), from _build_chat_completion_request_patch:
+  1. Query lookup per call: if call.input is an object, the tool args are call.input and the query
+     is its "query"; otherwise if call.function is present and its arguments are an object, those
+     are the tool args. Anything else has no query. A non-empty string query starts execute_search
+     with B4115's rich_search_input(tool args) and logs "Queuing search for query='<q>'" at debug.
+     No query logs "Tool call <id> has no query" at debug and uses the empty result.
+  2. Texts and outcomes from search_batch, then B4113's `WebSearchTransformation::transform_response`
+     with the calls, texts and response_format.
+  3. follow_up_messages: when response_format is "openai", request.messages then the assistant
+     message then every tool message. Any other format: request.messages, the assistant message,
+     then the single user message. Each message becomes a FollowupMessage. Log "Follow-up messages
+     count" at debug.
+  4. Model: if kwargs has "custom_llm_provider" (a string) and the model does not start with that
+     string and has no "/", the patch model is "<provider>/<model>"; otherwise the model as given.
+     This is a prefix test on the whole provider string, not a segment test.
+  5. patch.optional_params is request optional_params without "tools", "tool_choice", "extra_body",
+     "model_alias_map", "stream_response", "custom_prompt_dict", then "tools" is put back last when
+     the request had it. patch.tools stays None.
+  6. patch.kwargs is request kwargs without any key that starts with "_websearch_interception" and
+     without "_websearch_interception", "acompletion", "litellm_logging_obj", "custom_llm_provider",
+     "model_alias_map", "stream_response", "custom_prompt_dict". "_agentic_loop_api_surface" is kept.
+  7. Debug line "Built chat completion request patch model=<m> messages=<n>".
+
+  Responses patch (build_responses_patch, responses.rs), from _build_responses_request_patch:
+  1. Query lookup: only call.input as an object with a non-empty string "query". The rich input is
+     rich_search_input(call.input). Otherwise the empty result.
+  2. Texts from search_batch as above.
+  3. followup items: for each call in order, a `function_call` item {"type": "function_call",
+     "call_id": call.call_id, "name": "litellm_web_search", "arguments": call.arguments or ""} then a
+     `function_call_output` item {"type": "function_call_output", "call_id": call.call_id, "output":
+     <text>}. A missing call_id is JSON null. Use the LITELLM_WEB_SEARCH_TOOL_NAME constant from
+     crates/betterlite-websearch/src/tools.rs.
+  4. patch.messages is the normalized input plus the items. Text(s) becomes one item
+     {"role": "user", "content": s}; Items(list) is copied as is.
+  5. patch.tools is request optional_params["tools"] when it is a JSON array, else None.
+  6. patch.optional_params is request optional_params without "tools", "tool_choice", "stream",
+     "model_alias_map", "stream_response", "custom_prompt_dict". "extra_body" stays.
+  7. patch.kwargs is request kwargs without keys starting with "_websearch_interception" and without
+     "_agentic_loop_api_surface", "litellm_logging_obj", "acompletion", "custom_llm_provider",
+     "model_alias_map". "stream_response" and "custom_prompt_dict" stay here.
+  8. Model: when the model has no "/" and kwargs["custom_llm_provider"] is a string, the patch model
+     is "<provider>/<model>", with no starts-with test. Otherwise as given.
+  9. Debug line "Built responses request patch model=<m> input_items=<n> searches=<n>".
+
+  The dispatcher in B4118 reads tools["tool_calls"] and tools.get("response_format", "openai"),
+  and ignores response, logging_obj and stream for these two surfaces, so the Rust builders do not
+  take them.
+
+  Oracle: helper cases compare LiteLLM and betterlite. The Python adapter builds a
+  WebSearchInterceptionLogger, replaces `_execute_search` with a function that returns or raises what
+  the case lists and records each (query, rich) call, then awaits
+  async_build_chat_completion_agentic_loop_plan or async_build_responses_agentic_loop_plan. For the
+  rerun cases it replaces `litellm.acompletion` with a recorder and calls
+  async_run_chat_completion_agentic_loop. The adapter returns the plan (or the recorded rerun
+  arguments) together with the recorded search calls. Write case files under
+  tools/oracle/cases/helpers/websearch-chat-responses-plan/. The worker names the operation b4119 in the
+  case files, with the functions build_chat_plan, build_responses_plan and build_chat_rerun.
+
+scope:
+  paths:
+    - crates/betterlite-context/Cargo.toml
+    - crates/betterlite-context/src/agentic_loop_plan.rs
+    - crates/betterlite-context/src/agentic_loop_plan/**
+    - crates/betterlite-websearch/Cargo.toml
+    - crates/betterlite-websearch/src/chat_responses_followup.rs
+    - crates/betterlite-websearch/src/chat_responses_followup/**
+    - tools/oracle/cases/helpers/websearch-chat-responses-plan/**
+    - tools/oracle/helpers/b4119.py
+    - tools/oracle/helpers/b4119/**
+    - tools/oracle/src/helpers/context/b4119.rs
+    - tools/oracle/src/helpers/context/b4119/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/custom_logger.py#L65-L88
+    why: AgenticLoopRequestPatch and AgenticLoopPlan, with every field default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1127-L1177
+    why: The chat and Responses plan builders and their metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1179-L1282
+    why: The Responses patch, input normalization and search text extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1836-L1962
+    why: The chat patch, query lookup, message assembly and the key filters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1964-L1968
+    why: The empty search result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1092-L1125
+    why: The legacy chat run entry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1802-L1834
+    why: The legacy chat rerun, which merges params and drops tool_choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L587-L620
+    why: The OpenAI chat provider calls the legacy chat run directly, which is why it is not dead code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5960-L6000
+    why: The shared chat dispatcher calls the plan builder with custom_llm_provider added to kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L674
+    why: LITELLM_WEB_SEARCH_TOOL_NAME is "litellm_web_search".
+
+dod:
+  - text: >-
+      AgenticLoopRequestPatch and AgenticLoopPlan exist in betterlite-context with LiteLLM's field
+      names and defaults, and a default plan has run_agentic_loop false, no patch, no override, terminate
+      false, no stop reason and empty metadata.
+    proof: [plan-types-tests]
+  - text: >-
+      search_batch returns outcomes in tool call order, runs every search even when one fails, turns
+      a failure into "Search failed: <message>" text, and does not call the executor for a call
+      without a query.
+    proof: [search-batch-tests, oracle]
+  - text: >-
+      The chat plan finds the query in call.input or in function.arguments, forwards the rich input,
+      and builds the follow-up messages for the openai format (assistant plus tool messages) and the
+      other formats (assistant plus one user message).
+    proof: [chat-patch-tests, oracle]
+  - text: >-
+      The chat patch prefixes the model with custom_llm_provider only when the model has no "/" and
+      does not start with the provider string, and keeps tools in optional_params with patch.tools unset.
+    proof: [chat-patch-tests, oracle]
+  - text: >-
+      The chat patch removes exactly its own optional_params and kwargs keys and keeps
+      "_agentic_loop_api_surface" in kwargs.
+    proof: [chat-patch-tests, oracle]
+  - text: >-
+      The Responses patch turns a string or list input into items, adds a function_call and a
+      function_call_output item per call in order, with call_id null when missing and arguments ""
+      when missing.
+    proof: [responses-patch-tests, oracle]
+  - text: >-
+      The Responses patch moves optional_params["tools"] into patch.tools, removes exactly its own
+      optional_params and kwargs keys, and prefixes the model whenever it has no "/" and a string provider is set.
+    proof: [responses-patch-tests, oracle]
+  - text: >-
+      Both plans carry run_agentic_loop true and metadata tool_type "websearch" with response_format
+      "openai" (or the given format) for chat and "responses" for Responses.
+    proof: [followup-plan-tests, oracle]
+  - text: >-
+      The chat rerun request lays the patch optional_params over the request ones, removes
+      tool_choice, uses the patch model and carries the patch kwargs.
+    proof: [chat-rerun-tests, oracle]
+  - text: >-
+      Each oracle case calls the production operation and compares the whole plan or rerun request
+      with LiteLLM's, including the recorded search calls; only error message wording may be ignored.
+    proof: [oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: plan-types-tests
+      why: the plan and patch records, their defaults or their serialization are missing or untested
+      run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^agentic_loop_plan::/)'
+    - id: search-batch-tests
+      why: the parallel search batch, its ordering or its failure text is missing or untested
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^chat_responses_followup::(.*::)?search_batch/)'
+    - id: chat-patch-tests
+      why: the chat patch builder is missing, wrong or untested
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^chat_responses_followup::(.*::)?chat_patch/)'
+    - id: responses-patch-tests
+      why: the Responses patch builder is missing, wrong or untested
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^chat_responses_followup::(.*::)?responses_patch/)'
+    - id: followup-plan-tests
+      why: the two public plan builders or their metadata are missing, wrong or untested
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^chat_responses_followup::(.*::)?followup_plan/)'
+    - id: chat-rerun-tests
+      why: the legacy chat rerun request is missing, wrong or untested
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^chat_responses_followup::(.*::)?chat_rerun/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/chat-two-searches.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/chat-no-query.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/chat-function-args.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/chat-rich-input.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/chat-anthropic-format.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/chat-model-prefix.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/chat-optional-params.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/chat-kwargs-filter.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/chat-rerun-request.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/responses-string-input.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/responses-list-input.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/responses-two-searches.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/responses-no-query.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/responses-missing-fields.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/responses-optional-params.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/responses-kwargs-filter.yaml
+  - tools/oracle/cases/helpers/websearch-chat-responses-plan/responses-model-prefix.yaml
+
+deviations:
+  - what: The plan, patch and message records are typed Rust structs with JSON-valued fields, not pydantic models and dicts.
+    why: The rules forbid untyped dicts; the JSON a client or provider sees is unchanged.
+  - what: The legacy chat rerun returns a ChatRerunRequest instead of calling litellm.acompletion itself.
+    why: Sending the request belongs to the core executor; the request it sends is the same.
+
+out_of_scope:
+  - The surface dispatcher build_agentic_loop_plan, the Anthropic plan, the Anthropic patch, _resolve_max_tokens and _prepare_followup_kwargs (B4118).
+  - The OpenAI chat provider hook that calls async_run_chat_completion_agentic_loop (litellm/llms/openai/openai.py L587-L620) and the follow-up provider call itself (B2415 and the chat executor).
+  - async_run_agentic_loop and _execute_agentic_loop, the Anthropic legacy run (B4118).
+  - _execute_search, _rich_search_input, _short_circuit_search_outcome and _create_empty_search_result bodies (B4115). This task calls them.
+  - transform_response, search_outcome, search_outcome_text and the native blocks (B4113).
+  - AgenticLoopSafetyError, StandardCustomLoggerInitParams and the interception prefix helpers in custom_logger.py L1-L64 (no task owns them in Rust; see notes).
+  - Gates, tool rewriting and request hooks (B4116, B4117), tool access (B4114).
+
+pitfalls:
+  - The chat model prefix test is "model does not start with custom_llm_provider and has no '/'"; a model like "azure-gpt" with provider "azure" stays unprefixed, while the Responses builder prefixes it.
+  - The chat patch keeps "_agentic_loop_api_surface" in kwargs, but the Responses patch removes it; do not share one kwargs filter.
+  - The chat optional_params filter drops "extra_body" and keeps "stream"; the Responses filter keeps "extra_body" and drops "stream". Neither touches the other's list.
+  - The chat patch never sets patch.tools; it puts "tools" back into optional_params. The Responses patch does the reverse.
+  - A chat call whose "input" is present but not an object still falls through to function.arguments, and function.arguments that is a JSON string (not an object) gives no query.
+  - Responses items use tool_call["call_id"] (null when missing) and tool_call["arguments"] (the empty string when missing), not call.id.
+  - For the openai format the tool messages are a list added after the assistant message; for every other format the user message is one item, so the length of follow_up_messages differs.
+  - Run the searches with join_all and keep the call order, because B4113's native pairing zips calls with outcomes by position and a failed search must not stop the others.
+  - A Text input becomes a user item, but an empty list stays empty and only gets the function items.
+  - The rerun removes "tool_choice" after merging, so a patch that sets it would still lose it.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

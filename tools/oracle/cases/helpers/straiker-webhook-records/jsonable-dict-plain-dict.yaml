@@ -1,0 +1,13 @@
+kind: helper
+name: jsonable-dict-plain-dict
+call:
+  b3795:
+    jsonable:
+      item:
+        plain:
+          role: user
+          content: hi
+          score: 1.5
+          flags: [true, null]
+env: {}
+compare: {ignore: []}

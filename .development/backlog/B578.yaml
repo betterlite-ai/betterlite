@@ -1,7 +1,7 @@
 id: B578
 milestone: M3 providers
 title: Anthropic reply content and tool-result projection
-status: todo
+status: done
 depends_on: [B902, B171]
 file: tasks/B578-anthropic-response-content.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/base_llm/base_utils.py"
 parent: B027
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 633

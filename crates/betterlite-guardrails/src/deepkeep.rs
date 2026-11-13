@@ -8,6 +8,7 @@ use secrecy::ExposeSecret as _;
 use serde::{Deserialize, Serialize};
 
 pub mod error;
+mod log;
 mod transport;
 
 pub const SUPPORTED_EVENT_HOOKS: [CallHook; 3] = [CallHook::Pre, CallHook::Post, CallHook::During];
@@ -103,22 +104,6 @@ impl DeepKeepGuardrail {
             })?;
         api_key.set_sensitive(true);
         headers.insert(HeaderName::from_static("x-api-key"), api_key);
-        for (name, value) in &self.settings.extra_headers {
-            let header_name =
-                HeaderName::try_from(name).map_err(|source| DeepKeepError::InvalidHeaderName {
-                    name: name.clone(),
-                    source,
-                })?;
-            let mut header_value =
-                HeaderValue::from_str(value.expose_secret()).map_err(|source| {
-                    DeepKeepError::InvalidHeader {
-                        name: "extra header",
-                        source,
-                    }
-                })?;
-            header_value.set_sensitive(true);
-            headers.insert(header_name, header_value);
-        }
         Ok(headers)
     }
 
@@ -195,12 +180,12 @@ impl DeepKeepGuardrail {
         response: Response,
     ) -> Result<Inputs, DeepKeepError> {
         if response.action.as_deref() == Some("BLOCKED") {
-            return Err(DeepKeepError::Blocked {
-                reason: response
-                    .blocked_reason
-                    .filter(|reason| !reason.is_empty())
-                    .unwrap_or_else(|| "Content violates policy".to_owned()),
-            });
+            let reason = response
+                .blocked_reason
+                .filter(|reason| !reason.is_empty())
+                .unwrap_or_else(|| "Content violates policy".to_owned());
+            tracing::warn!(reason, "DeepKeep guardrail blocked the request");
+            return Err(DeepKeepError::Blocked { reason });
         }
         Ok(Inputs {
             texts: response.texts.unwrap_or_else(|| original.texts.clone()),
@@ -219,10 +204,15 @@ impl DeepKeepGuardrail {
         inputs: Inputs,
         context: RequestContext,
     ) -> Result<Inputs, DeepKeepError> {
+        let identity = log::CallIdentity {
+            input_type: context.input_type,
+            litellm_call_id: context.litellm_call_id.clone(),
+            litellm_trace_id: context.litellm_trace_id.clone(),
+        };
         let request = self.build_request(inputs.clone(), context);
         let parsed = match transport::send_request(self, &request).await {
             Ok(response) => response,
-            Err(error) => return self.recover_from_failure(error, inputs),
+            Err(error) => return self.recover_from_failure(error, inputs, &identity),
         };
         Self::build_return_inputs(&inputs, parsed)
     }
@@ -231,6 +221,7 @@ impl DeepKeepGuardrail {
         &self,
         error: DeepKeepError,
         inputs: Inputs,
+        identity: &log::CallIdentity,
     ) -> Result<Inputs, DeepKeepError> {
         let (unreachable, failure_category, status) = match &error {
             DeepKeepError::Request { .. } => (true, "request_error", None),
@@ -249,19 +240,25 @@ impl DeepKeepGuardrail {
             | DeepKeepError::ResponseJson { .. }
             | DeepKeepError::ResponseTooLarge { .. }
             | DeepKeepError::RequestBuild { .. }
-            | DeepKeepError::InvalidHeader { .. }
-            | DeepKeepError::InvalidHeaderName { .. } => (false, "other", None),
+            | DeepKeepError::InvalidHeader { .. } => (false, "other", None),
         };
         if self.settings.unreachable_fallback == UnreachableFallback::FailOpen && unreachable {
-            tracing::warn!(
-                guardrail_name = %self.settings.guardrail_name,
-                api_base = %self.settings.api_base,
+            log::failure(
+                &self.settings.guardrail_name,
+                &self.settings.api_base,
                 failure_category,
-                status = status.as_deref().unwrap_or("n/a"),
-                "DeepKeep guardrail unreachable; evaluation bypassed because unreachable_fallback is fail_open",
+                status.as_deref(),
+                log::Outcome::Bypassed(identity),
             );
             return Ok(inputs);
         }
+        log::failure(
+            &self.settings.guardrail_name,
+            &self.settings.api_base,
+            failure_category,
+            status.as_deref(),
+            log::Outcome::Rejected,
+        );
         Err(error)
     }
 }

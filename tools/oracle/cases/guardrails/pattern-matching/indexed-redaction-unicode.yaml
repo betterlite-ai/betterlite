@@ -1,0 +1,1 @@
+{"kind":"helper","name":"indexed-redaction-unicode","call":{"b3693":{"function":"tag","format":"{pattern_name[1]}","name":"\u00e9mail"}},"env":{},"compare":{"ignore":[]}}

@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-capture-conditional",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/ab",
+      "allowed_routes": [
+        "/(a)?(?(1)b|c)"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

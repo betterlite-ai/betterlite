@@ -1,0 +1,215 @@
+kind: helper
+name: certificate-chain-header
+call:
+  azure_certificate:
+    steps:
+    - certificate: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCsb3PFs3hBbOjX
+        H7iEb8cOIgUK4QwdXFsAAJatrtqycNPlq92q8hCF30rOOhCCs4DIbn3hUvPAZrwZ
+        +q++tM4kvvUTzHymSwzAHnMlLpljJKFuWcb7Wunobww1NReO8J+Em1yp9d6VS3Hw
+        mKkxYzODTDFhzqn7r4r8TPGlZA8PffQdfvazqnxfLGMz+eED2fM6BQ0yJu1y51jh
+        VCndUZIlHQyk1/uP56svgel6W2SzpcsTedlYP6oZNY/zK+YjYbSGl2Ikl5ETjq3M
+        IwGsV8dxceNXHwm+JyrhqEQzW0MIh5Z9HAseArmFXVts/5VW1emOJyCnqgijMSb+
+        lqyJmSAXAgMBAAECggEAGW6uwp//wpaPmPsCufXKhBkcaUhcAxCWE2AC2UcK1nqx
+        phQ9M3NUYIpYfCYwPTbAbc9uHYegj+YXJDXHKfd82AqaFvt3/wbesI9NKFTBJtBG
+        RwJSyMvV6ARI5qgX+2sd++72MdMjqx1fhr7dZX1eIaVhOy3CAG8ZrrCii2RAnGYX
+        VLBA7DMGNrAwvFwyiJrwm40+W0gUvfnhtYMrgHWJPVzny4Jik5jDupqJBhLg7RQT
+        mldaTwCcqj0sTEtxg57a3UJdMaKK2mTS3ptXjX0G1L/04xQIn0uT4wBJdV9brHsg
+        0/fg1+r62M4a/xk87dVDkS+GX0w7g3Kl80PF1s3ZgQKBgQDYJjT15JPOKjkYNvpK
+        pFQ+GPeNYS9N2c5hHLkKYVlfbhVfNS7t4ADY+cWaqc7vsCBAOxAc5a7KQo7uN6nh
+        H1eyjeRH8C5vL79NILMUC60N6eVu50sTA1rh1sZzY+3F5Jt6m0HFyvtlo2gFdI1S
+        0+4ufIpLKizWPvIn0XgNKepuNwKBgQDMOgqOb77Yv6p5vtdBEk6j9D6oN8TTS2AP
+        kTPb9Vjtg28mCTaVtmGfHIPn05ILmzLkdUhLnSD1lhX1cBYt7snm9EVJB42CX/p2
+        CAWP2aV46buN1anO6iWqfY5FZ4iU0mGqcjpV2yoAkV30hz64VuH5FXNRXQDAMtJR
+        6pkBTGjtIQKBgCgfJ3OBQ2JgegqhoeIbELwaHFF0+bfktydVko93tIQ/Rd5PW++x
+        xdaAvopP/OaG9eWWUQ5cIA7RPgC/+lucWsX9CqPD1Iq0/TiO2k7dP/k2Mm1cp5XW
+        6JbFLD8dDHTQU3/1s8bIP9QE+fkRQm5egnbEjVMYeAwo0QBNJJCk+CwPAoGABdb7
+        Ckujt2rzovuUCCZP3VxUllbR6ADVxFwwkW+YlWIWwY2t4+YNMJGOLAjeujo74FCC
+        OrdJg/xAsH3+BF45o8MEYCw5HatE7C8aiZx9oNF+LXYYnvQPE6r3cICfZTIG3Orb
+        RC06LD3748wiPP8vAwJcA82XAefyH6mHqoPW1EECgYA/5ihI8tibfkWGpPDPml16
+        +nOloINqn3nh27D8S8kK7/3ajuyobPp34VyQO1wfrxaiP4fxyD0Bv58GISABGXXE
+        2zlQ7Ra4tjwZKHM0pFLJWmalD6Sr9qKE6Y/RloPZRu2k6Iqg7MebRjKNY6Eo76oj
+        wx1PMWwEB1QkX7TPdPvOLg==
+        -----END PRIVATE KEY-----
+        -----BEGIN CERTIFICATE-----
+        MIICzDCCAbSgAwIBAgIUb2Ljpg1lbRfvhDKtq7RsRlhdWU0wDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFzEVMBMGA1UEAwwMZml4dHVyZSBsZWFmMIIBIjANBgkqhkiG
+        9w0BAQEFAAOCAQ8AMIIBCgKCAQEArG9zxbN4QWzo1x+4hG/HDiIFCuEMHVxbAACW
+        ra7asnDT5avdqvIQhd9KzjoQgrOAyG594VLzwGa8GfqvvrTOJL71E8x8pksMwB5z
+        JS6ZYyShblnG+1rp6G8MNTUXjvCfhJtcqfXelUtx8JipMWMzg0wxYc6p+6+K/Ezx
+        pWQPD330HX72s6p8XyxjM/nhA9nzOgUNMibtcudY4VQp3VGSJR0MpNf7j+erL4Hp
+        eltks6XLE3nZWD+qGTWP8yvmI2G0hpdiJJeRE46tzCMBrFfHcXHjVx8Jvicq4ahE
+        M1tDCIeWfRwLHgK5hV1bbP+VVtXpjicgp6oIozEm/pasiZkgFwIDAQABoxAwDjAM
+        BgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQAzCgcl9YCHrkwcfkGvHp54
+        qCNjsFmGE1F4GlOOTO+WobRjK9p3amxy7LmljBtYWjc3xoSz50P3qvvVLHkGwZT3
+        LzQeLtUE108z0C5aLDUiCi0q0ISbpvDmC9G/UVV4RyvFPJPjqOxb115m+hmGFnW0
+        0L0sxSQLtJcpG/8vPygVjHxOOZsp7O+7WXIHlcG4020STw9CPel6IjUE8VEhM8pB
+        wed805MMHoyi1Y45CYzk27YIbRpquGMA4zOIgbcQ5q4j040n2vnTQPcC7MnrvTK6
+        pxTxDq/yj8RWpLeFyyXaW+oLA77nJbknE10SqoPPNV2ypKFHgzj1vnhNxRLB9t3o
+        -----END CERTIFICATE-----
+        -----BEGIN CERTIFICATE-----
+        MIICzTCCAbWgAwIBAgIUCs+il3M3lmHutyYzje8zZHoAokwwDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFTETMBEGA1UEAwwKZml4dHVyZSBjYTCCASIwDQYJKoZIhvcN
+        AQEBBQADggEPADCCAQoCggEBAM805pse5HoBfjysnB7vCyRKPHAteUCDc8gKikZJ
+        oXx+OMMUG5qnms0M2QtJ80/HF2VYPWZmBWGT9smydl2SFVFaRjJTWL4PiFLJHZ++
+        MnDi8UXLxOA9yNUT7XHrOOCE8KHsT+wjZP8tM5Joe/RQPtRrTdOy1JTNErbnU1bw
+        NjYbUdsqxLAVUSk4HF3zO3tOIg9ZuFjLNbKeEhWyDB3pOvpzjlNFy5CHu/E/IW6Y
+        qo5XscJmtjUHpYK+Kw3O/JROtOjNpFygVseu901vPIaQi2w+1BT0vnIznVtCbdgI
+        vQwDI5V/PS2Hfp3PDV+El+LEEyQ9NV1EfMHEz3miHI+m3ccCAwEAAaMTMBEwDwYD
+        VR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAXU0sAMoxoKMZIijZWyEd
+        wVuh+xFWSkL9DjAueeBeSuJVVg/29GDxHZerfV/FEeKP6wDED4JcskAQ+gQgYZgC
+        m9P8e6i263QNw38OEOpPsBfOBUmhFZ51IhdVxyKTzTNiVW53ahKSZGuZMWN2viXY
+        y8urTR4IFXhkoMd8+qQwjC1pKqgl7PpDnEttH9+hmwtHmlrz4BZ6nmoLeInJFvtA
+        AcLf+fl8C1nYv3GtMlqba9Rp4uMIHSJkxv+J3wQ7on7MAn5dGetDoqN0almiWzCM
+        tM+MBhlgks0BW5R747bdjH93O5q0Laxiht9/t5H+zCbmHIxwtw6IVWMG4gv9PJSf
+        ig==
+        -----END CERTIFICATE-----
+      send_certificate_chain: true
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCsb3PFs3hBbOjX
+        H7iEb8cOIgUK4QwdXFsAAJatrtqycNPlq92q8hCF30rOOhCCs4DIbn3hUvPAZrwZ
+        +q++tM4kvvUTzHymSwzAHnMlLpljJKFuWcb7Wunobww1NReO8J+Em1yp9d6VS3Hw
+        mKkxYzODTDFhzqn7r4r8TPGlZA8PffQdfvazqnxfLGMz+eED2fM6BQ0yJu1y51jh
+        VCndUZIlHQyk1/uP56svgel6W2SzpcsTedlYP6oZNY/zK+YjYbSGl2Ikl5ETjq3M
+        IwGsV8dxceNXHwm+JyrhqEQzW0MIh5Z9HAseArmFXVts/5VW1emOJyCnqgijMSb+
+        lqyJmSAXAgMBAAECggEAGW6uwp//wpaPmPsCufXKhBkcaUhcAxCWE2AC2UcK1nqx
+        phQ9M3NUYIpYfCYwPTbAbc9uHYegj+YXJDXHKfd82AqaFvt3/wbesI9NKFTBJtBG
+        RwJSyMvV6ARI5qgX+2sd++72MdMjqx1fhr7dZX1eIaVhOy3CAG8ZrrCii2RAnGYX
+        VLBA7DMGNrAwvFwyiJrwm40+W0gUvfnhtYMrgHWJPVzny4Jik5jDupqJBhLg7RQT
+        mldaTwCcqj0sTEtxg57a3UJdMaKK2mTS3ptXjX0G1L/04xQIn0uT4wBJdV9brHsg
+        0/fg1+r62M4a/xk87dVDkS+GX0w7g3Kl80PF1s3ZgQKBgQDYJjT15JPOKjkYNvpK
+        pFQ+GPeNYS9N2c5hHLkKYVlfbhVfNS7t4ADY+cWaqc7vsCBAOxAc5a7KQo7uN6nh
+        H1eyjeRH8C5vL79NILMUC60N6eVu50sTA1rh1sZzY+3F5Jt6m0HFyvtlo2gFdI1S
+        0+4ufIpLKizWPvIn0XgNKepuNwKBgQDMOgqOb77Yv6p5vtdBEk6j9D6oN8TTS2AP
+        kTPb9Vjtg28mCTaVtmGfHIPn05ILmzLkdUhLnSD1lhX1cBYt7snm9EVJB42CX/p2
+        CAWP2aV46buN1anO6iWqfY5FZ4iU0mGqcjpV2yoAkV30hz64VuH5FXNRXQDAMtJR
+        6pkBTGjtIQKBgCgfJ3OBQ2JgegqhoeIbELwaHFF0+bfktydVko93tIQ/Rd5PW++x
+        xdaAvopP/OaG9eWWUQ5cIA7RPgC/+lucWsX9CqPD1Iq0/TiO2k7dP/k2Mm1cp5XW
+        6JbFLD8dDHTQU3/1s8bIP9QE+fkRQm5egnbEjVMYeAwo0QBNJJCk+CwPAoGABdb7
+        Ckujt2rzovuUCCZP3VxUllbR6ADVxFwwkW+YlWIWwY2t4+YNMJGOLAjeujo74FCC
+        OrdJg/xAsH3+BF45o8MEYCw5HatE7C8aiZx9oNF+LXYYnvQPE6r3cICfZTIG3Orb
+        RC06LD3748wiPP8vAwJcA82XAefyH6mHqoPW1EECgYA/5ihI8tibfkWGpPDPml16
+        +nOloINqn3nh27D8S8kK7/3ajuyobPp34VyQO1wfrxaiP4fxyD0Bv58GISABGXXE
+        2zlQ7Ra4tjwZKHM0pFLJWmalD6Sr9qKE6Y/RloPZRu2k6Iqg7MebRjKNY6Eo76oj
+        wx1PMWwEB1QkX7TPdPvOLg==
+        -----END PRIVATE KEY-----
+        -----BEGIN CERTIFICATE-----
+        MIICzDCCAbSgAwIBAgIUb2Ljpg1lbRfvhDKtq7RsRlhdWU0wDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFzEVMBMGA1UEAwwMZml4dHVyZSBsZWFmMIIBIjANBgkqhkiG
+        9w0BAQEFAAOCAQ8AMIIBCgKCAQEArG9zxbN4QWzo1x+4hG/HDiIFCuEMHVxbAACW
+        ra7asnDT5avdqvIQhd9KzjoQgrOAyG594VLzwGa8GfqvvrTOJL71E8x8pksMwB5z
+        JS6ZYyShblnG+1rp6G8MNTUXjvCfhJtcqfXelUtx8JipMWMzg0wxYc6p+6+K/Ezx
+        pWQPD330HX72s6p8XyxjM/nhA9nzOgUNMibtcudY4VQp3VGSJR0MpNf7j+erL4Hp
+        eltks6XLE3nZWD+qGTWP8yvmI2G0hpdiJJeRE46tzCMBrFfHcXHjVx8Jvicq4ahE
+        M1tDCIeWfRwLHgK5hV1bbP+VVtXpjicgp6oIozEm/pasiZkgFwIDAQABoxAwDjAM
+        BgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQAzCgcl9YCHrkwcfkGvHp54
+        qCNjsFmGE1F4GlOOTO+WobRjK9p3amxy7LmljBtYWjc3xoSz50P3qvvVLHkGwZT3
+        LzQeLtUE108z0C5aLDUiCi0q0ISbpvDmC9G/UVV4RyvFPJPjqOxb115m+hmGFnW0
+        0L0sxSQLtJcpG/8vPygVjHxOOZsp7O+7WXIHlcG4020STw9CPel6IjUE8VEhM8pB
+        wed805MMHoyi1Y45CYzk27YIbRpquGMA4zOIgbcQ5q4j040n2vnTQPcC7MnrvTK6
+        pxTxDq/yj8RWpLeFyyXaW+oLA77nJbknE10SqoPPNV2ypKFHgzj1vnhNxRLB9t3o
+        -----END CERTIFICATE-----
+        -----BEGIN CERTIFICATE-----
+        MIICzTCCAbWgAwIBAgIUCs+il3M3lmHutyYzje8zZHoAokwwDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFTETMBEGA1UEAwwKZml4dHVyZSBjYTCCASIwDQYJKoZIhvcN
+        AQEBBQADggEPADCCAQoCggEBAM805pse5HoBfjysnB7vCyRKPHAteUCDc8gKikZJ
+        oXx+OMMUG5qnms0M2QtJ80/HF2VYPWZmBWGT9smydl2SFVFaRjJTWL4PiFLJHZ++
+        MnDi8UXLxOA9yNUT7XHrOOCE8KHsT+wjZP8tM5Joe/RQPtRrTdOy1JTNErbnU1bw
+        NjYbUdsqxLAVUSk4HF3zO3tOIg9ZuFjLNbKeEhWyDB3pOvpzjlNFy5CHu/E/IW6Y
+        qo5XscJmtjUHpYK+Kw3O/JROtOjNpFygVseu901vPIaQi2w+1BT0vnIznVtCbdgI
+        vQwDI5V/PS2Hfp3PDV+El+LEEyQ9NV1EfMHEz3miHI+m3ccCAwEAAaMTMBEwDwYD
+        VR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAXU0sAMoxoKMZIijZWyEd
+        wVuh+xFWSkL9DjAueeBeSuJVVg/29GDxHZerfV/FEeKP6wDED4JcskAQ+gQgYZgC
+        m9P8e6i263QNw38OEOpPsBfOBUmhFZ51IhdVxyKTzTNiVW53ahKSZGuZMWN2viXY
+        y8urTR4IFXhkoMd8+qQwjC1pKqgl7PpDnEttH9+hmwtHmlrz4BZ6nmoLeInJFvtA
+        AcLf+fl8C1nYv3GtMlqba9Rp4uMIHSJkxv+J3wQ7on7MAn5dGetDoqN0almiWzCM
+        tM+MBhlgks0BW5R747bdjH93O5q0Laxiht9/t5H+zCbmHIxwtw6IVWMG4gv9PJSf
+        ig==
+        -----END CERTIFICATE-----
+      send_certificate_chain: false
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCsb3PFs3hBbOjX
+        H7iEb8cOIgUK4QwdXFsAAJatrtqycNPlq92q8hCF30rOOhCCs4DIbn3hUvPAZrwZ
+        +q++tM4kvvUTzHymSwzAHnMlLpljJKFuWcb7Wunobww1NReO8J+Em1yp9d6VS3Hw
+        mKkxYzODTDFhzqn7r4r8TPGlZA8PffQdfvazqnxfLGMz+eED2fM6BQ0yJu1y51jh
+        VCndUZIlHQyk1/uP56svgel6W2SzpcsTedlYP6oZNY/zK+YjYbSGl2Ikl5ETjq3M
+        IwGsV8dxceNXHwm+JyrhqEQzW0MIh5Z9HAseArmFXVts/5VW1emOJyCnqgijMSb+
+        lqyJmSAXAgMBAAECggEAGW6uwp//wpaPmPsCufXKhBkcaUhcAxCWE2AC2UcK1nqx
+        phQ9M3NUYIpYfCYwPTbAbc9uHYegj+YXJDXHKfd82AqaFvt3/wbesI9NKFTBJtBG
+        RwJSyMvV6ARI5qgX+2sd++72MdMjqx1fhr7dZX1eIaVhOy3CAG8ZrrCii2RAnGYX
+        VLBA7DMGNrAwvFwyiJrwm40+W0gUvfnhtYMrgHWJPVzny4Jik5jDupqJBhLg7RQT
+        mldaTwCcqj0sTEtxg57a3UJdMaKK2mTS3ptXjX0G1L/04xQIn0uT4wBJdV9brHsg
+        0/fg1+r62M4a/xk87dVDkS+GX0w7g3Kl80PF1s3ZgQKBgQDYJjT15JPOKjkYNvpK
+        pFQ+GPeNYS9N2c5hHLkKYVlfbhVfNS7t4ADY+cWaqc7vsCBAOxAc5a7KQo7uN6nh
+        H1eyjeRH8C5vL79NILMUC60N6eVu50sTA1rh1sZzY+3F5Jt6m0HFyvtlo2gFdI1S
+        0+4ufIpLKizWPvIn0XgNKepuNwKBgQDMOgqOb77Yv6p5vtdBEk6j9D6oN8TTS2AP
+        kTPb9Vjtg28mCTaVtmGfHIPn05ILmzLkdUhLnSD1lhX1cBYt7snm9EVJB42CX/p2
+        CAWP2aV46buN1anO6iWqfY5FZ4iU0mGqcjpV2yoAkV30hz64VuH5FXNRXQDAMtJR
+        6pkBTGjtIQKBgCgfJ3OBQ2JgegqhoeIbELwaHFF0+bfktydVko93tIQ/Rd5PW++x
+        xdaAvopP/OaG9eWWUQ5cIA7RPgC/+lucWsX9CqPD1Iq0/TiO2k7dP/k2Mm1cp5XW
+        6JbFLD8dDHTQU3/1s8bIP9QE+fkRQm5egnbEjVMYeAwo0QBNJJCk+CwPAoGABdb7
+        Ckujt2rzovuUCCZP3VxUllbR6ADVxFwwkW+YlWIWwY2t4+YNMJGOLAjeujo74FCC
+        OrdJg/xAsH3+BF45o8MEYCw5HatE7C8aiZx9oNF+LXYYnvQPE6r3cICfZTIG3Orb
+        RC06LD3748wiPP8vAwJcA82XAefyH6mHqoPW1EECgYA/5ihI8tibfkWGpPDPml16
+        +nOloINqn3nh27D8S8kK7/3ajuyobPp34VyQO1wfrxaiP4fxyD0Bv58GISABGXXE
+        2zlQ7Ra4tjwZKHM0pFLJWmalD6Sr9qKE6Y/RloPZRu2k6Iqg7MebRjKNY6Eo76oj
+        wx1PMWwEB1QkX7TPdPvOLg==
+        -----END PRIVATE KEY-----
+        -----BEGIN CERTIFICATE-----
+        MIICzDCCAbSgAwIBAgIUb2Ljpg1lbRfvhDKtq7RsRlhdWU0wDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFzEVMBMGA1UEAwwMZml4dHVyZSBsZWFmMIIBIjANBgkqhkiG
+        9w0BAQEFAAOCAQ8AMIIBCgKCAQEArG9zxbN4QWzo1x+4hG/HDiIFCuEMHVxbAACW
+        ra7asnDT5avdqvIQhd9KzjoQgrOAyG594VLzwGa8GfqvvrTOJL71E8x8pksMwB5z
+        JS6ZYyShblnG+1rp6G8MNTUXjvCfhJtcqfXelUtx8JipMWMzg0wxYc6p+6+K/Ezx
+        pWQPD330HX72s6p8XyxjM/nhA9nzOgUNMibtcudY4VQp3VGSJR0MpNf7j+erL4Hp
+        eltks6XLE3nZWD+qGTWP8yvmI2G0hpdiJJeRE46tzCMBrFfHcXHjVx8Jvicq4ahE
+        M1tDCIeWfRwLHgK5hV1bbP+VVtXpjicgp6oIozEm/pasiZkgFwIDAQABoxAwDjAM
+        BgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQAzCgcl9YCHrkwcfkGvHp54
+        qCNjsFmGE1F4GlOOTO+WobRjK9p3amxy7LmljBtYWjc3xoSz50P3qvvVLHkGwZT3
+        LzQeLtUE108z0C5aLDUiCi0q0ISbpvDmC9G/UVV4RyvFPJPjqOxb115m+hmGFnW0
+        0L0sxSQLtJcpG/8vPygVjHxOOZsp7O+7WXIHlcG4020STw9CPel6IjUE8VEhM8pB
+        wed805MMHoyi1Y45CYzk27YIbRpquGMA4zOIgbcQ5q4j040n2vnTQPcC7MnrvTK6
+        pxTxDq/yj8RWpLeFyyXaW+oLA77nJbknE10SqoPPNV2ypKFHgzj1vnhNxRLB9t3o
+        -----END CERTIFICATE-----
+      send_certificate_chain: true
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate_base64: 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
+      password: fixture-password
+      send_certificate_chain: true
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate_base64: 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
+      send_certificate_chain: true
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+env: {}
+compare:
+  ignore: []

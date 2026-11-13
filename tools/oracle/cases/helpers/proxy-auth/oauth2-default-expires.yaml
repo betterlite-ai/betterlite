@@ -1,0 +1,19 @@
+kind: helper
+name: proxy-auth-oauth2-default-expires
+call:
+  proxy_auth:
+    operation: oauth2
+    params:
+      client_id: my-client
+      client_secret: s3cr3t
+      responses:
+        - {status: 200, body: {access_token: jwt-one}}
+        - {status: 200, body: {access_token: jwt-two, expires_in: 120}}
+        - {status: 401, body: {error: invalid_client}}
+      calls:
+        - {at: 1000, scope: api}
+        - {at: 4539, scope: api}
+        - {at: 4540, scope: api}
+        - {at: 4660, scope: api}
+env: {}
+compare: {ignore: []}

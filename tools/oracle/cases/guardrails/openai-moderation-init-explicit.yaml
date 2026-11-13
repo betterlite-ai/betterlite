@@ -1,0 +1,15 @@
+kind: helper
+name: openai-moderation-init-explicit
+call:
+  b3731:
+    construct:
+      settings:
+        api_key: arg-key
+        api_base: "https://moderation.test/v1"
+        model: text-moderation-latest
+        streaming_end_of_stream_only: true
+        streaming_sampling_rate: 0
+      environment: {OPENAI_API_KEY: env-key}
+      global_keys: {api_key: global-key, openai_key: openai-key}
+env: {}
+compare: {ignore: []}

@@ -3,8 +3,8 @@ name: modify-params-default-and-env
 call:
   provider_base_helpers:
     modify_params:
-      environment: {LITELLM_MODIFY_PARAMS: "false"}
+      environment: {LITELLM_MODIFY_PARAMS: "true"}
       configured: null
-env: {LITELLM_MODIFY_PARAMS: "false"}
+env: {LITELLM_MODIFY_PARAMS: "true"}
 compare:
   ignore: []

@@ -1,0 +1,22 @@
+kind: helper
+name: cohere-v1-chat-history-not-inserted
+call:
+  cohere_v1_chat:
+    function: request
+    requests:
+      - model: command-r
+        messages:
+          - {role: user, content: first question}
+          - {role: user, content: second question}
+        non_default_params: {}
+        optional_params: {}
+      - model: command-r
+        messages:
+          - {role: user, content: first question}
+          - {role: assistant, content: answer}
+          - {role: user, content: follow up}
+        settings: {preamble: default preamble, temperature: 0}
+        non_default_params: {}
+        optional_params: {temperature: 0.1}
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,7 @@
+kind: helper
+name: stream-keepalive-explicit-disable-values
+call:
+  b8603:
+    values: [0, -1, 0.0, -2.5, "0", " -2.5 ", "-inf", "1e-400", "0_0", "-1_0"]
+env: {}
+compare: {ignore: []}

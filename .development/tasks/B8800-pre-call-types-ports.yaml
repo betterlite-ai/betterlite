@@ -1,0 +1,113 @@
+id: B8800
+title: Pre-call route types, ports and request rewrites
+description: >-
+  LiteLLM runs ProxyBaseLLMRequestProcessing.common_processing_pre_call_logic (litellm/proxy/common_request_processing.py L1913-L2241) before every LLM route: chat, Responses, Anthropic messages, embeddings, images, video, containers, realtime, batches and pass-through. betterlite builds it once, in two parts. This part writes the pieces the step is made of: the route type, the key view, the ports for the collaborators that live in shared server state, the failure type, the pure request rewrites and one config section. B8801 writes the step that runs them in LiteLLM's order. Code goes in crates/betterlite-server/src/pre_call.rs and pre_call/ (route_type.rs, key.rs, ports.rs, failure.rs, rewrites.rs, tests.rs), and the config section in crates/betterlite-config/src/sections/pre_call.rs. Every name stays at 30 characters or fewer.
+
+  route_type.rs. `RouteType` is a closed enum with one variant per route type LiteLLM passes: every value in the route_type Literal of common_processing_pre_call_logic (L1920-L2014), plus the values the proxy endpoints pass that the Literal leaves out: aimage_generation, amoderation, arerank, aspeech, atranscription and acreate_realtime_transcription_session. `as_str(self) -> &'static str` gives LiteLLM's text, leading underscore included (`_arealtime`, `_aresponses_websocket`). `FromStr` parses the same text and fails on anything else.
+
+  key.rs. `PreCallKey` is the trait the step reads the caller's key through, so the step is generic over the key type: `team_id(&self) -> Option<&str>`, `key_aliases(&self) -> Option<&Map<String, Value>>` (UserAPIKeyAuth.aliases) and `key_router_settings(&self) -> Option<&Value>` (UserAPIKeyAuth.router_settings). B8802 implements it for betterlite-auth's UserAPIKeyAuth; tests use a plain test key.
+
+  failure.rs. `PreCallFailure` is the closed set of what the step can raise: `Proxy(ProxyFailure)` for a ProxyException (`message`, `error_type`, `param: Option<String>`, `code: u16`), `RateLimited(ProxyFailure)` for ProxyRateLimitError (the only kind the fallback loop in B8801 catches), and `Http { status: u16, detail: Value }` for an HTTPException. `PreCallError` pairs a failure with `data: Map<String, Value>`, the request data as it was when the failure happened, because LiteLLM's exception handler reads self.data after a failed pre-call.
+
+  ports.rs. One trait per collaborator that lives in shared server state. Every method is async (declare them with async_trait, already a betterlite-server dependency), takes `&self`, and returns `Result<_, PreCallFailure>` where LiteLLM can raise. Each trait is generic over `K: PreCallKey` where it takes the key.
+  `RequestPreparer`: `prepare(data, request: &Parts, key, version: Option<&str>) -> Result<Map, PreCallFailure>`, add_litellm_data_to_request.
+  `VectorStoreAccess`: `assert_access(store_id: &str, key)`, assert_user_can_access_vector_store_id.
+  `RouterSettingsSource`: `router_settings(key) -> Result<Option<Map>, PreCallFailure>`, ProxyConfig._get_hierarchical_router_settings.
+  `RouterView`: `resolved_models(model: &str, team_id: Option<&str>) -> Vec<String>` (Router.resolved_litellm_models), `arm_prefetch(model: &str, data: &Map)` (Router.arm_routing_read_prefetch, not async), `fallbacks() -> Option<Vec<Value>>` (Router.fallbacks), `fallback_models(model: &str, fallbacks: &[Value]) -> Option<Vec<String>>` (_resolve_fallback_models L2350-L2359 over get_fallback_model_group) and `authorize_alias(target: &str, key)` (can_key_call_resolved_model with the router's model list).
+  `StreamOptionsCheck`: `supports(litellm_model: &str) -> bool`, true when get_supported_openai_params for that model lists stream_options and false when the lookup fails (L481-L486).
+  `GuardrailMerge`: `merge(data: Map, model_alias: Option<&str>) -> Map`, _check_and_merge_model_level_guardrails with trust_client_model_info false.
+  `CompressionArming`: `arm(data: &mut Map)`, auto_router_compression.arm_pre_call.
+  `PreCallHooks`: `pre_call_hook(key, data: Map, route_type: RouteType, skip_guardrails: bool) -> Result<Map, PreCallFailure>`, ProxyLogging.pre_call_hook.
+  `TagBudgets`: `skips_budget(route: &str, model: &RequestModel) -> bool` (request_skips_budget_checks) and `check_tags(tags: &[String], key)` (tag_max_budget_check_for_tags, whose budget error the adapter returns as `Proxy` with type budget_exceeded, no param and the error's status, L728-L734).
+  `RetrievalPipelines`: `attach(data: &mut Map, key)`, attach_post_call_pipelines_to_retrieval.
+  `PreCallPorts<K>` holds one `Arc<dyn ...>` per port, with `router: Option<Arc<dyn RouterView<K>>>` (no router configured means None), plus the `Arc<dyn Tracer>` from betterlite-logging's datadog::apm (B3930, merged) for the span tags.
+
+  rewrites.rs. The pure pieces of the file, each a function the step calls:
+  `resolve_call_id(header: Option<&str>) -> String` replaces resolve_litellm_call_id (L273-L276): the header value when its length is 1 to 256 (MAX_LITELLM_CALL_ID_LENGTH), else a new UUID v4. The merged chat route does this inline in crates/betterlite-server/src/routes/chat.rs; B8803 moves it to this function.
+  `stream_usage_updates(data, always_include: Option<bool>, route_type, supports: impl FnOnce() -> bool) -> Map` replaces _stream_usage_tracking_updates (L503-L530), the keys to merge into the data. `scrub` is `{"_litellm_strip_stream_usage": false}` when the data has that key, else empty. Without `stream` equal to JSON true, return scrub. With always_include Some(true): no `stream_options` key gives scrub plus `stream_options: {"include_usage": true}`; an object without `include_usage` gives scrub plus that object with `include_usage: true` added last; anything else gives scrub. With Some(false), or a route type other than acompletion, return scrub. When `stream_options` is an object whose `include_usage` is JSON true, return scrub. Call `supports` only now; false returns scrub. Otherwise return `stream_options` (the existing object, or empty, with `include_usage: true`) and `_litellm_strip_stream_usage: true`, without scrub.
+  `streamable_models(model: &Value, router: Option<&dyn RouterView<K>>, team_id, check: &dyn StreamOptionsCheck) -> bool` replaces _model_deployments_support_stream_options (L489-L500): false for a non-string model; the candidates are the router's resolved models, or the model itself when the router has none or there is no router; true only when every candidate supports stream_options.
+  `file_search_store_ids(data) -> Result<BTreeSet<String>, PreCallFailure>` replaces _collect_response_file_search_vector_store_ids (L617-L640): walk `tools` when it is an array, take each object whose `type` is "file_search", read `vector_store_ids` (missing, null, false, 0 or empty count as an empty list); a non-array, or an entry that is not a non-empty string, fails with `Http` status 400 and detail `{"error": "file_search.vector_store_ids must be a list of strings"}`. The set is sorted, as LiteLLM's `sorted()` authorizes them.
+  `request_model(data) -> RequestModel` replaces _request_model (L698-L702): `RequestModel` is `One(String)`, `Many(Vec<String>)` or `Absent`; a list with any non-string element, or any other JSON type, is Absent.
+  `apply_overrides(data, &CliOverrides)` writes temperature, request_timeout, max_tokens and api_base from `CliOverrides` (the proxy CLI's user_* values) when each is set and truthy: a zero number or an empty text is skipped, as Python's `if user_temperature:` does (L2081-L2088).
+  `apply_aliases(data, alias_map: &BTreeMap<String, String>, key: &K)` replaces L2090-L2103: when the data's model is a string found in the config map, replace it; then, when it is still a string and the key's aliases object has it, replace it with that value as given.
+  `write_queue_time(data, bucket: &str, start: f64)`: when `proxy_server_request.arrival_time` is a number, put `start - arrival_time` as `queue_time_seconds` into the bucket object, creating the bucket or replacing a non-object bucket with an empty object first (L2050-L2068). The caller picks the bucket with B1102's metadata variable name for the request route.
+
+  Config section pre_call. `PreCallSection` holds `always_include_stream_usage: Option<bool>` from general_settings.always_include_stream_usage (unset by default, so only a chat stream on a model that supports stream_options gets usage injected) and `model_alias_map: BTreeMap<String, String>` from litellm_settings.model_alias_map (empty by default). It reaches the step as config.sections.pre_call. Add config_yaml seeds named pre-call-* that set both keys.
+
+  Tests live in pre_call/tests.rs (`pre_call::tests::`) and the section's tests.rs (`sections::pre_call::tests::`). Helper oracle cases with the b8800 helper compare stream_usage_updates (the helper passes a lambda that returns the case's `supports` value), file_search_store_ids and request_model with LiteLLM.
+scope:
+  paths:
+    - crates/betterlite-server/src/pre_call.rs
+    - crates/betterlite-server/src/pre_call/**
+    - crates/betterlite-config/src/sections/pre_call.rs
+    - crates/betterlite-config/src/sections/pre_call/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/pre-call-*
+    - tools/oracle/cases/helpers/pre-call/**
+    - tools/oracle/helpers/b8800.py
+    - tools/oracle/helpers/b8800/**
+    - tools/oracle/src/helpers/server/b8800.rs
+    - tools/oracle/src/helpers/server/b8800/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1913-L2241
+    why: common_processing_pre_call_logic, the route type Literal and every place the ports and rewrites are used.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L481-L530
+    why: The stream_options support check and _stream_usage_tracking_updates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L617-L735
+    why: The file_search store id walk, the per-request alias resolver, _request_model and the tag budget check the ports stand behind.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L273-L276
+    why: resolve_litellm_call_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18213
+    why: always_include_stream_usage is a Boolean general setting.
+dod:
+  - text: RouteType parses and prints every LiteLLM route type text, the underscored ones included, and rejects unknown text.
+    proof: [pre-call-tests]
+  - text: stream_usage_updates gives the scrub key, the always-include object merge, the chat-only injection after the support check and no call to the check when it is not needed.
+    proof: [pre-call-tests, oracle, helper-python]
+  - text: file_search_store_ids collects sorted ids from file_search tools and fails with the 400 detail for a non-list or a bad id; request_model keeps a string or a string list and drops anything else.
+    proof: [pre-call-tests, oracle, helper-python]
+  - text: resolve_call_id keeps a 1 to 256 character header and makes a UUID otherwise; apply_overrides skips falsy values; apply_aliases applies the config map before the key aliases; write_queue_time creates or replaces the bucket; streamable_models uses the router's models or the model itself.
+    proof: [pre-call-tests]
+  - text: The pre_call section loads general_settings.always_include_stream_usage and litellm_settings.model_alias_map with their defaults, and the new seeds replay.
+    proof: [section-tests, config-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: pre-call-tests
+      why: a route type, a rewrite or a port shape is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pre_call::/)'
+    - id: section-tests
+      why: the section does not load a key or its default
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::pre_call::tests::/)'
+    - id: config-corpus
+      why: the new config seeds are missing or do not replay
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/pre-call-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: the pure functions have no pinned LiteLLM comparison through the b8800 helper
+      run: test -f tools/oracle/helpers/b8800.py && grep -qE '^[[:space:]]+b8800:' tools/oracle/fuzz/corpus/helper_case/b8800-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/pre-call/stream-usage-updates.yaml
+  - tools/oracle/cases/helpers/pre-call/file-search-store-ids.yaml
+  - tools/oracle/cases/helpers/pre-call/request-model.yaml
+deviations:
+  - what: The collaborators LiteLLM imports from proxy_server (the router, ProxyLogging, the prisma client, the key cache) sit behind the ports in ports.rs.
+    why: betterlite wires dependencies through constructors; B8802 fills the ports from shared server state, and what a client sees is the same.
+  - what: The proxy CLI user_* values come in as CliOverrides; the betterlite binary has no --temperature, --max_tokens, --request_timeout or --api_base flag, so they stay unset.
+    why: These are proxy_cli.py options; betterlite's CLI does not take them, and an unset value is LiteLLM's default.
+out_of_scope:
+  - "The step that runs these pieces in order and the rate-limit fallback loop (common_processing_pre_call_logic, _pre_call_with_fallbacks, _configured_fallbacks): B8801."
+  - "The production ports over shared server state: B8802. The callers: B8803 (chat), B8804 (the B1100 route modules) and B8694 (pass-through)."
+  - "add_litellm_data_to_request: B1103. resolve_inference_model, reject_url_valued_destination, get_tags_from_request_body and the metadata variable name: B1102. refresh_proxy_server_request_body_snapshot: B1105. drop_fallback_errors_flag: B8605. validate_router_weights: B7950. resolve_model_group_alias: B302."
+  - "The rest of the class (base_process_llm_request, _process_llm_request, get_custom_headers, _handle_llm_api_exception, the streaming generators): B7324, B8604, B8605, B8693, B8694 and the merged chat code."
+pitfalls:
+  - "`_arealtime` and `_aresponses_websocket` start with an underscore, so a derive that snake-cases variant names gets them wrong."
+  - "_stream_usage_tracking_updates checks `stream` with `is not True`, so a stream value of 1 or \"true\" gets only the scrub key."
+  - "The scrub key `_litellm_strip_stream_usage: false` is returned only when the key was already in the data, and the injection branch returns true instead of the scrub."
+  - "The support check runs last and only for acompletion with always_include unset; calling it earlier costs a router lookup per request."
+  - "`vector_store_ids: null` counts as an empty list through `or []`, but a string value fails with 400."
+  - "The key aliases value replaces the model as given, even when it is not a string."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

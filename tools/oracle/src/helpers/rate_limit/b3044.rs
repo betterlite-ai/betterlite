@@ -1,7 +1,7 @@
+use betterlite_config::sections::rate_limit_usage::TokenRateLimitType;
 use betterlite_rate_limit::usage_resolution::{
-    ResponseAPIUsage, ResponseObject, TokenRateLimitType, Usage, aggregate_only_total_tokens,
-    get_rate_limit_type, get_total_tokens_from_usage, reconcile_io_usage,
-    resolve_rerank_token_usage, response_usage,
+    ResponseAPIUsage, ResponseObject, Usage, aggregate_only_total_tokens, get_rate_limit_type,
+    get_total_tokens_from_usage, reconcile_io_usage, resolve_rerank_token_usage, response_usage,
 };
 use serde::Deserialize;
 

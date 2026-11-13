@@ -30,7 +30,6 @@ description: >-
   lines; plan 260 transformation, 220 tests, 120 adapters and 60 wiring lines under 725.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,xai_chat}.rs
     - crates/betterlite-openai/src/xai_chat.rs
     - crates/betterlite-openai/src/xai_chat/**
     - crates/betterlite-openai/fuzz/corpus/{chat_response,sse_events}/xai*

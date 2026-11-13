@@ -14,7 +14,14 @@ pub fn redact_chat_input(
 ) -> bool {
     let uses_input = request_data.contains_key("input") && !request_data.contains_key("messages");
     let mut messages = strip_tool_definition_message(request_data, sanitized_messages);
-    let has_instructions = !matches!(Json::field(request_data, "instructions"), Json::Null);
+    let has_instructions = !matches!(
+        Json::parse(
+            request_data
+                .get("instructions")
+                .map_or("null", |raw| raw.get())
+        ),
+        Json::Null
+    );
     if has_instructions {
         let instructions_redacted =
             redact_responses_instructions(request_data, sanitized_text, messages.as_deref());
@@ -73,7 +80,9 @@ fn extract_instruction_text(messages: &[Fields]) -> Option<String> {
         .iter()
         .filter(|message| is_instruction_role(message))
         .find_map(|message| {
-            let text = normalize_content(&Json::field(message, "content"));
+            let text = normalize_content(&Json::parse(
+                message.get("content").map_or("null", |raw| raw.get()),
+            ));
             (!text.is_empty()).then_some(text)
         })
 }
@@ -88,7 +97,7 @@ fn non_instruction_messages(messages: Option<Vec<Fields>>) -> Option<Vec<Fields>
 
 fn is_instruction_role(message: &Fields) -> bool {
     matches!(
-        Json::field(message, "role"),
+        Json::parse(message.get("role").map_or("null", |raw| raw.get())),
         Json::Text(role) if matches!(role.to_lowercase().as_str(), "system" | "developer")
     )
 }
@@ -108,7 +117,7 @@ fn rewrite_messages(request_data: &mut Fields, uses_input: bool, messages: &[Fie
 
 fn rewrite_with_text(request_data: &mut Fields, uses_input: bool, text: &str) -> bool {
     if uses_input {
-        let original = Json::field(request_data, "input");
+        let original = Json::parse(request_data.get("input").map_or("null", |raw| raw.get()));
         let Some(rewritten) = rewrite_input_text(&original, text) else {
             return false;
         };
@@ -121,7 +130,9 @@ fn rewrite_with_text(request_data: &mut Fields, uses_input: bool, text: &str) ->
 }
 
 fn clear_input_tool_arguments(request_data: &mut Fields) -> bool {
-    let Json::List(raw_messages) = Json::field(request_data, "messages") else {
+    let Json::List(raw_messages) =
+        Json::parse(request_data.get("messages").map_or("null", |raw| raw.get()))
+    else {
         return false;
     };
     let mut applied = false;
@@ -144,7 +155,9 @@ fn clear_input_tool_arguments(request_data: &mut Fields) -> bool {
 }
 
 fn redact_last_user_message(request_data: &mut Fields, text: &str) -> bool {
-    let Json::List(raw_messages) = Json::field(request_data, "messages") else {
+    let Json::List(raw_messages) =
+        Json::parse(request_data.get("messages").map_or("null", |raw| raw.get()))
+    else {
         return false;
     };
     let target = raw_messages
@@ -156,8 +169,8 @@ fn redact_last_user_message(request_data: &mut Fields, text: &str) -> bool {
                 return None;
             };
             let is_user =
-                matches!(Json::field(&message, "role"), Json::Text(role) if role == "user");
-            let has_text_content = matches!(Json::field(&message, "content"), Json::Text(_));
+                matches!(Json::parse(message.get("role").map_or("null", |raw| raw.get())), Json::Text(role) if role == "user");
+            let has_text_content = matches!(Json::parse(message.get("content").map_or("null", |raw| raw.get())), Json::Text(_));
             (is_user && has_text_content).then_some(index)
         });
     let Some(position) = target else {

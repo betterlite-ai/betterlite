@@ -1,0 +1,6 @@
+kind: helper
+name: vector-store-index-list-rejects-literal
+call:
+  vector_store_records: {operation: invalid_index_list_literal, record: {object: other, data: []}}
+env: {}
+compare: {ignore: []}

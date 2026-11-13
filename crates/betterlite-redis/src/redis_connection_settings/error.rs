@@ -2,6 +2,11 @@ mod tests;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RedisSettingsError {
+    #[error(transparent)]
+    Environment {
+        #[from]
+        source: betterlite_env::EnvError,
+    },
     #[error("Either 'host' or 'url' must be specified for redis.")]
     MissingTarget,
     #[error("REDIS_CLUSTER_NODES is not valid JSON: {source}", source = source)]

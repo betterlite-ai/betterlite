@@ -45,7 +45,7 @@ description: >-
 
   SpendLogsWindow is a pair of datetimes without added ordering validation. DailyActivityProxyReads
   is an injected async recovery contract taking resolved metadata, the requested frozenset of keys
-  and an optional window, returning a metadata mapping. Its proxy implementation remains B074.
+  and an optional window, returning a metadata mapping. B3092 builds its proxy implementation.
   DailyActivityRow exposes id/date/api_key, nullable model/model_group/custom_llm_provider/
   mcp_namespaced_tool_name/endpoint, the rollup counters and financial fields above, all metrics
   nonnullable and without ptu_flat_cost. DailyRowsPage holds total_count and an ordered row tuple.
@@ -115,7 +115,7 @@ deviations:
 out_of_scope:
   - B727 owns timezone, WHERE, aggregate, entity-rollup and key-page functions in daily_activity_sql.py L43-L301 and its two expression constants L14-L15.
   - B728 owns search, rankings and export functions in daily_activity_sql.py L304-L526.
-  - B729 executes queries and validates returned records; B074 implements authorization, request parsing and recover_key_metadata in common_daily_activity.py.
+  - B729 executes queries and validates returned records; B3094 and B3095 implement authorization, B3096 to B3098 request parsing and B3092 recover_key_metadata in common_daily_activity.py.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as daily_activity_contracts in the db group. Replace the stub Op in tools/oracle/src/helpers/db/daily_activity_contracts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/daily_activity_contracts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Nullable dataclass fields remain required constructor arguments except ptu_flat_cost; Option alone must not invent omission defaults.

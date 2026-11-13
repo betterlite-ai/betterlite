@@ -20,7 +20,7 @@ description: >-
   Own the package's get_vertex_ai_partner_model_config factory too: anthropic selects B1333,
   ai21 selects B1335's AI21 config, openapi or mistralai selects its Llama config, and every
   other publisher raises ValueError. The model argument does not influence a successful
-  choice. Export this closed response-config selector for B091 passthrough logging. Its 13
+  choice. Export this closed response-config selector for B3642 passthrough logging. Its 13
   nonblank noncomment function lines are tested through pure helper vertex_partner_factory,
   comparing returned config kind for claude, ai21, openapi, mistralai and unsupported publisher.
   Add booted-proxy HTTP fixtures for POST /v1/chat/completions and /chat/completions with
@@ -34,10 +34,13 @@ description: >-
   single-response iterator to B1336 through its factory; test native_messages_binding and
   gemma_stream_factory there. No server handler is changed. Budget 260 composition,
   260 HTTP/unit assertions and 240 helpers/wiring/fixtures, maximum 800.
+
+  B010 registers the VertexPartner variants of OperationRequest, OperationResult and PreparedRequest as stubs in
+  crates/betterlite-provider/src/vertex_partner_dispatch.rs. Fill them there and leave provider.rs, operation.rs
+  and prepared.rs as they are.
 scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_partner_dispatch}.rs
     - crates/betterlite-provider/src/vertex_partner_dispatch.rs
     - crates/betterlite-provider/src/vertex_partner_dispatch/**
     - crates/betterlite-core/src/{dispatch,operation}.rs
@@ -85,7 +88,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_partner_factory.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Factory comparisons call the pinned package selector and project its returned config kind without HTTP.
     - id: partner-factory-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_partner_factory*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::vertex_partner_factory::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_partner_factory*')" && cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^vertex_partner_factory::/)'
       why: New HelperCase seeds must select call.vertex_partner_factory and reach the production selector.
 oracle_cases:
   - tools/oracle/cases/chat/vertex-partner/claude.yaml

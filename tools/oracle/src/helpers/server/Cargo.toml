@@ -1,0 +1,60 @@
+[package]
+name = "betterlite-oracle-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+async-trait = "0.1.92"
+aws-smithy-eventstream = "=0.61.6"
+aws-smithy-types = "=1.9.1"
+axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+base64 = "0.23.1"
+betterlite = { path = "../../../../../crates/betterlite" }
+betterlite-auth = { path = "../../../../../crates/betterlite-auth" }
+betterlite-config = { path = "../../../../../crates/betterlite-config" }
+betterlite-context = { path = "../../../../../crates/betterlite-context" }
+betterlite-core = { path = "../../../../../crates/betterlite-core" }
+betterlite-db = { path = "../../../../../crates/betterlite-db" }
+betterlite-guardrails = { path = "../../../../../crates/betterlite-guardrails" }
+betterlite-http = { path = "../../../../../crates/betterlite-http" }
+betterlite-mcp = { path = "../../../../../crates/betterlite-mcp" }
+betterlite-ocr = { path = "../../../../../crates/betterlite-ocr" }
+betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
+betterlite-roi = { path = "../../../../../crates/betterlite-roi" }
+betterlite-semantic = { path = "../../../../../crates/betterlite-semantic" }
+betterlite-server = { path = "../../../../../crates/betterlite-server" }
+betterlite-transcribe = { path = "../../../../../crates/betterlite-transcribe" }
+chrono.workspace = true
+flate2 = "1.1.5"
+futures-util = { version = "0.3.34", default-features = false }
+hex = "0.4.3"
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+quick-xml.workspace = true
+rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
+rmcp = { version = "=3.9.0", default-features = false, features = ["server"] }
+rust_decimal.workspace = true
+secrecy = { version = "0.10.3", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
+sha2.workspace = true
+soft-canonicalize = "0.5.6"
+tempfile = "3.27.0"
+thiserror = "2.0.17"
+tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
+tower = { workspace = true, features = ["util"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "registry"] }
+
+[dev-dependencies]
+betterlite-oracle = { path = "../../.." }
+rstest = "=0.27.0"
+serde-saphyr = "2.0.0"
+
+[lints]
+workspace = true

@@ -1,0 +1,13 @@
+kind: helper
+name: media-fetch-content-type-header-wins
+call:
+  b5083:
+    call: read_response
+    status: 200
+    headers:
+      Content-Type: "image/gif"
+    body_base64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    url: "https://example.com/image.png"
+env: {}
+compare:
+  ignore: []

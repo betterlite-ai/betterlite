@@ -1,0 +1,20 @@
+kind: helper
+name: gemini-media-https-passthrough
+call:
+  gemini_media:
+    call: https_passthrough
+    cases:
+      - url: "https://example.com/cat.jpg"
+      - url: "https://example.com/cat.JPG"
+      - url: "https://example.com/cat.png?sig=1"
+      - url: "https://example.com/clip.mp4"
+      - url: "https://example.com/cat.jpeg?v=1"
+      - url: "https://example.com/clip.bin"
+        hints:
+          format: "video/webm"
+      - url: "https://example.com/clip.bin"
+        hints:
+          format: "IMAGE/JPG"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,1 @@
+{"kind":"helper","name":"pattern-spans-with-keyword-context","call":{"b3693":{"function":"spans","pattern":"\\d{3}","keyword":"id","allow_word_numbers":true,"text":"id 123; 456 id; 789"}},"env":{},"compare":{"ignore":[]}}

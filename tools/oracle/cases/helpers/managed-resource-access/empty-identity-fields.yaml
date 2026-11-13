@@ -1,0 +1,10 @@
+kind: helper
+name: managed-resource-access-empty-identity-fields
+call:
+  managed_resource_access:
+    principal: {user_id: "", team_id: null, token: null, api_key: null, user_role: internal_user}
+    records:
+      - {id: empty-user, created_by: "", team_id: null}
+env: {}
+compare:
+  ignore: []

@@ -34,7 +34,8 @@ impl PromptTemplate {
         template_id: Option<String>,
     ) -> Result<Self, TemplateError> {
         let model = string_field(&metadata, "model", TemplateError::ModelNotString)?;
-        let input_schema = schema_field(&metadata, "input")?;
+        let input_section = section(&metadata, "input")?;
+        let input_schema = nested_schema(&input_section, "input")?;
         let (output_format, output_schema) = output_field(&metadata)?;
         let optional_params = metadata
             .iter()
@@ -81,11 +82,6 @@ fn nested_schema(section: &Object, field: &'static str) -> Result<Object, Templa
         Some(Json::Object(schema)) => Ok(schema.clone()),
         Some(_) => Err(TemplateError::SchemaNotMapping(field)),
     }
-}
-
-fn schema_field(metadata: &Object, field: &'static str) -> Result<Object, TemplateError> {
-    let section = section(metadata, field)?;
-    nested_schema(&section, field)
 }
 
 fn output_field(metadata: &Object) -> Result<(Option<String>, Object), TemplateError> {

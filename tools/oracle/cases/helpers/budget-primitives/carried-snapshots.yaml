@@ -1,0 +1,85 @@
+kind: helper
+name: carried-snapshots
+call:
+  budget_primitives:
+    calls:
+      - function: carry_team_user
+        value:
+          token: {metadata: {team: carried}}
+          team:
+            team_id: t
+            budget_reset_at: "2026-02-01T00:00:00+02:00"
+            max_budget: 12.5
+            model_max_budget: {gpt-4: 1.5}
+          user:
+            user_id: u
+            user_alias: ali
+            budget_reset_at: null
+            max_budget: 3.5
+      - function: carry_team_user
+        value:
+          token: {team_budget_snapshot: {budget_reset_at: "2026-01-01T00:00:00Z", max_budget: 7.5}}
+      - function: carry_team_user
+        value:
+          token: {}
+          team:
+            team_id: t
+            budget_reset_at: null
+            max_budget: null
+            model_max_budget: {}
+          user: null
+      - function: carry_team_user
+        value:
+          token: {}
+          team:
+            team_id: t
+            budget_reset_at: "2026-03-01T10:20:30.400000-05:00"
+            max_budget: -2.5
+      - function: carry_organization
+        value:
+          token: {}
+          organization:
+            organization_id: o
+            organization_alias: acme
+            budget_id: b
+            spend: 12.5
+            created_by: c
+            updated_by: u
+      - function: carry_organization
+        value:
+          token: {}
+          organization:
+            organization_id: o
+            organization_alias: acme
+            budget_id: b
+            spend: 1.5
+            created_by: c
+            updated_by: u
+            litellm_budget_table: {max_budget: 9.5}
+      - function: carry_organization
+        value:
+          token: {organization_alias: old, org_budget_snapshot: {spend: 0.5, max_budget: 1.5}}
+          organization:
+            organization_id: o
+            organization_alias: null
+            budget_id: b
+            spend: 2.5
+            created_by: c
+            updated_by: u
+      - function: carried_metadata
+        value:
+          token:
+            team_budget_snapshot: {budget_reset_at: "2026-01-01T00:00:00Z", max_budget: 1.5}
+            user_budget_snapshot:
+              budget_reset_at: null
+              max_budget: 2.5
+              user_alias: ali
+            org_budget_snapshot: {spend: 3.5, max_budget: null}
+      - function: carried_metadata
+        value: {token: {}}
+      - function: carried_metadata
+        value:
+          token:
+            user_budget_snapshot: {budget_reset_at: null, max_budget: null, user_alias: null}
+env: {}
+compare: {ignore: []}

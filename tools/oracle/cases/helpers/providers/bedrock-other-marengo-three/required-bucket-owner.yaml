@@ -1,0 +1,12 @@
+kind: helper
+name: required-bucket-owner
+call:
+  bedrock_other_marengo_three:
+    required_bucket_owner:
+      model: marengo-embed-3-0-v1:0
+      input: s3://bucket/key.png
+      inference_params:
+        inputType: image
+env: {}
+compare:
+  ignore: []

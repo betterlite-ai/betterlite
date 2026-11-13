@@ -1,0 +1,59 @@
+kind: helper
+name: azure-certificate-denied-seed
+call:
+  azure_certificate:
+    steps:
+    - certificate: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCsb3PFs3hBbOjX
+        H7iEb8cOIgUK4QwdXFsAAJatrtqycNPlq92q8hCF30rOOhCCs4DIbn3hUvPAZrwZ
+        +q++tM4kvvUTzHymSwzAHnMlLpljJKFuWcb7Wunobww1NReO8J+Em1yp9d6VS3Hw
+        mKkxYzODTDFhzqn7r4r8TPGlZA8PffQdfvazqnxfLGMz+eED2fM6BQ0yJu1y51jh
+        VCndUZIlHQyk1/uP56svgel6W2SzpcsTedlYP6oZNY/zK+YjYbSGl2Ikl5ETjq3M
+        IwGsV8dxceNXHwm+JyrhqEQzW0MIh5Z9HAseArmFXVts/5VW1emOJyCnqgijMSb+
+        lqyJmSAXAgMBAAECggEAGW6uwp//wpaPmPsCufXKhBkcaUhcAxCWE2AC2UcK1nqx
+        phQ9M3NUYIpYfCYwPTbAbc9uHYegj+YXJDXHKfd82AqaFvt3/wbesI9NKFTBJtBG
+        RwJSyMvV6ARI5qgX+2sd++72MdMjqx1fhr7dZX1eIaVhOy3CAG8ZrrCii2RAnGYX
+        VLBA7DMGNrAwvFwyiJrwm40+W0gUvfnhtYMrgHWJPVzny4Jik5jDupqJBhLg7RQT
+        mldaTwCcqj0sTEtxg57a3UJdMaKK2mTS3ptXjX0G1L/04xQIn0uT4wBJdV9brHsg
+        0/fg1+r62M4a/xk87dVDkS+GX0w7g3Kl80PF1s3ZgQKBgQDYJjT15JPOKjkYNvpK
+        pFQ+GPeNYS9N2c5hHLkKYVlfbhVfNS7t4ADY+cWaqc7vsCBAOxAc5a7KQo7uN6nh
+        H1eyjeRH8C5vL79NILMUC60N6eVu50sTA1rh1sZzY+3F5Jt6m0HFyvtlo2gFdI1S
+        0+4ufIpLKizWPvIn0XgNKepuNwKBgQDMOgqOb77Yv6p5vtdBEk6j9D6oN8TTS2AP
+        kTPb9Vjtg28mCTaVtmGfHIPn05ILmzLkdUhLnSD1lhX1cBYt7snm9EVJB42CX/p2
+        CAWP2aV46buN1anO6iWqfY5FZ4iU0mGqcjpV2yoAkV30hz64VuH5FXNRXQDAMtJR
+        6pkBTGjtIQKBgCgfJ3OBQ2JgegqhoeIbELwaHFF0+bfktydVko93tIQ/Rd5PW++x
+        xdaAvopP/OaG9eWWUQ5cIA7RPgC/+lucWsX9CqPD1Iq0/TiO2k7dP/k2Mm1cp5XW
+        6JbFLD8dDHTQU3/1s8bIP9QE+fkRQm5egnbEjVMYeAwo0QBNJJCk+CwPAoGABdb7
+        Ckujt2rzovuUCCZP3VxUllbR6ADVxFwwkW+YlWIWwY2t4+YNMJGOLAjeujo74FCC
+        OrdJg/xAsH3+BF45o8MEYCw5HatE7C8aiZx9oNF+LXYYnvQPE6r3cICfZTIG3Orb
+        RC06LD3748wiPP8vAwJcA82XAefyH6mHqoPW1EECgYA/5ihI8tibfkWGpPDPml16
+        +nOloINqn3nh27D8S8kK7/3ajuyobPp34VyQO1wfrxaiP4fxyD0Bv58GISABGXXE
+        2zlQ7Ra4tjwZKHM0pFLJWmalD6Sr9qKE6Y/RloPZRu2k6Iqg7MebRjKNY6Eo76oj
+        wx1PMWwEB1QkX7TPdPvOLg==
+        -----END PRIVATE KEY-----
+        -----BEGIN CERTIFICATE-----
+        MIICzDCCAbSgAwIBAgIUb2Ljpg1lbRfvhDKtq7RsRlhdWU0wDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFzEVMBMGA1UEAwwMZml4dHVyZSBsZWFmMIIBIjANBgkqhkiG
+        9w0BAQEFAAOCAQ8AMIIBCgKCAQEArG9zxbN4QWzo1x+4hG/HDiIFCuEMHVxbAACW
+        ra7asnDT5avdqvIQhd9KzjoQgrOAyG594VLzwGa8GfqvvrTOJL71E8x8pksMwB5z
+        JS6ZYyShblnG+1rp6G8MNTUXjvCfhJtcqfXelUtx8JipMWMzg0wxYc6p+6+K/Ezx
+        pWQPD330HX72s6p8XyxjM/nhA9nzOgUNMibtcudY4VQp3VGSJR0MpNf7j+erL4Hp
+        eltks6XLE3nZWD+qGTWP8yvmI2G0hpdiJJeRE46tzCMBrFfHcXHjVx8Jvicq4ahE
+        M1tDCIeWfRwLHgK5hV1bbP+VVtXpjicgp6oIozEm/pasiZkgFwIDAQABoxAwDjAM
+        BgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQAzCgcl9YCHrkwcfkGvHp54
+        qCNjsFmGE1F4GlOOTO+WobRjK9p3amxy7LmljBtYWjc3xoSz50P3qvvVLHkGwZT3
+        LzQeLtUE108z0C5aLDUiCi0q0ISbpvDmC9G/UVV4RyvFPJPjqOxb115m+hmGFnW0
+        0L0sxSQLtJcpG/8vPygVjHxOOZsp7O+7WXIHlcG4020STw9CPel6IjUE8VEhM8pB
+        wed805MMHoyi1Y45CYzk27YIbRpquGMA4zOIgbcQ5q4j040n2vnTQPcC7MnrvTK6
+        pxTxDq/yj8RWpLeFyyXaW+oLA77nJbknE10SqoPPNV2ypKFHgzj1vnhNxRLB9t3o
+        -----END CERTIFICATE-----
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 400
+        body: '{"error":"invalid_client"}'
+env: {}
+compare:
+  ignore: []

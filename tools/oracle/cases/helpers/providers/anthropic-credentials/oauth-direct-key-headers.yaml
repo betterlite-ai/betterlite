@@ -1,0 +1,5 @@
+kind: helper
+name: oauth-direct-key-headers
+call: {anthropic_credentials: {function: handle_oauth, headers: [{name: x-api-key, value: lower-stale}, {name: X-Api-Key, value: upper-stale}, {name: Authorization, value: "Bearer kept"}], api_key: sk-ant-oat-raw, environment: {}}}
+env: {}
+compare: {ignore: []}

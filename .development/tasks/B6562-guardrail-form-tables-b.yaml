@@ -1,0 +1,103 @@
+id: B6562
+title: Guardrail provider form tables, second group
+description: >-
+  Write the form field tables for the remaining 24 providers whose guardrail class returns a settings model, in crates/betterlite-server/src/guardrails/form_tables_b.rs and form_tables_b/. B6560 defines `FormModel`, `FormField` and `project_model` (read `provider_forms/spec.rs` first), and B6561 does the first 25 providers. The route /guardrails/ui/provider_specific_params serves all of them from one map keyed by registry name.
+
+  Expose `pub fn tables_b() -> Vec<(&'static str, FormModel)>`, each pair being the registry key from the hook folder's `__init__.py` and the model with its `ui_friendly_name`. Keep every file under 250 lines, for example `form_tables_b/identity.rs`, `form_tables_b/network.rs`, `form_tables_b/vendors.rs`, with `form_tables_b/tests.rs` for the checks.
+
+  The providers, by hook folder under litellm/proxy/guardrails/guardrail_hooks/: agent_365, deepkeep, vigil_guard, cato_networks, custom_code (CustomCodeGuardrailConfigModel, defined in custom_code_guardrail.py), repelloai, aporia_ai, tool_permission, ibm_guardrails (ibm_detector.py), pangea, prompt_security, enkryptai, straiker, cisco_ai_defense, aim, singulr, onyx, akto, pillar, lasso, generic_guardrail_api, ovalix, compresr and model_armor. Their model classes are in litellm/types/proxy/guardrails/guardrail_hooks/<name>.py, except two. DeepKeep, Lasso and Pillar have an older class in litellm/types/guardrails.py with the same name as the hook model, so open the hook class's `get_config_model` and write what it returns. For generic_guardrail_api, read the class `get_config_model` returns and the nested optional params it uses (its default is built with `default_factory`, L113 of generic_guardrail_api.py in the types folder).
+
+  `tool_permission` is also built by B6560's core tables for the route's fixed first step. The registry loop replaces that entry, so write it here from the class `get_config_model` returns, and B3684 puts these tables after the core ones so this version wins.
+
+  Oracle: the helper operation takes `provider`, a registry key from the list above. The Python side looks the class up in `guardrail_class_registry`, calls `get_config_model()`, runs `_get_fields_from_model` and adds `ui_friendly_name`. The Rust side projects its table and adds the same entry.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/form_tables_b.rs
+    - crates/betterlite-server/src/guardrails/form_tables_b/**
+    - tools/oracle/cases/helpers/guardrail-form-tables-b/**
+    - tools/oracle/fuzz/corpus/helper_case/guardrail-form-tables-b-*
+    - tools/oracle/helpers/b6562.py
+    - tools/oracle/helpers/b6562/**
+    - tools/oracle/src/helpers/server/b6562.rs
+    - tools/oracle/src/helpers/server/b6562/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1976-L2003
+    why: The registry loop and the dictionary assignment that lets a registry entry replace an earlier one with the same key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/straiker.py#L178-L200
+    why: A model with a nested optional params class, and a secret flag in json_schema_extra.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/cisco_ai_defense.py#L119-L146
+    why: Optional params class used as the generic argument.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/enkryptai.py#L142-L145
+    why: A model that inherits fields from a second class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/compresr.py#L105-L135
+    why: Largest remaining model with nested optional params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L100-L130
+    why: CustomCodeGuardrailConfigModel, the one model defined in a hook file in this group.
+dod:
+  - text: Every provider listed in this task has an entry under its registry key, and the entry projects to the same JSON as LiteLLM's class, ui_friendly_name included.
+    proof: [tables-b-tests, oracle, helper-python]
+  - text: Nested optional params, inherited fields and json_schema_extra settings of the group are in the tables.
+    proof: [tables-b-tests, oracle]
+  - text: The new helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: tables-b-tests
+      why: a table is missing, has a wrong key or does not project to the expected JSON
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::form_tables_b::tests::/)'
+    - id: helper-python
+      why: the oracle adapter is missing or fails strict lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6562)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no new helper case was added or the shared parser fails on one
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-form-tables-b-*)" &&
+        grep -lE '^[[:space:]]+b6562:' tools/oracle/fuzz/corpus/helper_case/guardrail-form-tables-b-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/agent-365.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/deepkeep.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/vigil-guard.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/cato-networks.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/custom-code.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/repelloai.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/aporia-ai.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/tool-permission.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/ibm-guardrails.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/pangea.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/prompt-security.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/enkryptai.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/straiker.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/cisco-ai-defense.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/aim.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/singulr.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/onyx.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/akto.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/pillar.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/lasso.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/generic-guardrail-api.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/ovalix.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/compresr.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-b/model-armor.yaml
+deviations:
+  - what: Provider settings are written as data tables and no longer read off the classes.
+    why: Rust has no annotation reflection, and the oracle cases compare each table to the real class.
+out_of_scope:
+  - "The types and the projection function: B6560. The first 25 providers: B6561."
+  - "The settings structs the guardrails use at run time: the provider tasks own them. A table here lists form fields only."
+  - "bedrock, presidio, lakera_v2 and hide-secrets: they are fixed entries of the route and B6560 owns them."
+pitfalls:
+  - "DeepKeep, Lasso and Pillar each have two classes with similar names (litellm/types/guardrails.py and the hook types file); only the one `get_config_model` returns counts."
+  - "A secret flag in `json_schema_extra` (straiker) is not a key the projection reads, so it adds nothing to the output."
+  - "A model that lists two parents (enkryptai) takes fields from both, with the child's declaration winning on a name clash."
+  - "A model with a `Generic[T]` parent whose argument is a real optional-params class gets that class as a nested model under `optional_params`; check the output with the oracle instead of guessing."
+  - "Registry keys differ from folder names (ibm_guardrails registers its detector under its own key), so read each `__init__.py`."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

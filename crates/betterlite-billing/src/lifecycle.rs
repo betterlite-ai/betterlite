@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::billing_metrics::Settings;
@@ -55,7 +55,12 @@ pub fn build_recorder(
 }
 
 pub fn shutdown_recorder(registry: &ActiveRecorderRegistry) {
-    if let Some(recorder) = registry.pop() {
+    let popped = registry
+        .recorder
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take();
+    if let Some(recorder) = popped {
         recorder.shutdown();
     }
 }

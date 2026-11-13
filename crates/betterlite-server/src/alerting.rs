@@ -1,2 +1,9 @@
+pub mod bindings;
 pub mod budget_alerts;
 pub mod deployment_reports;
+pub mod model_alerts;
+pub mod parity;
+pub mod runtime;
+pub mod spend_report_jobs;
+pub mod spend_reports;
+pub mod user_spend_alerts;

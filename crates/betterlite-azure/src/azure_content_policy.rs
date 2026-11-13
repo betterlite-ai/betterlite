@@ -68,21 +68,21 @@ pub struct ContentPolicyError {
 #[must_use]
 pub fn content_policy_error(input: &ContentPolicyInput) -> ContentPolicyError {
     let (azure_error, inner_error) = extract_azure_error(&input.body);
-    let provider_message = provider_field(
-        &azure_error,
-        "message",
-        JsonValue::String(input.message.clone()),
-    );
-    let provider_type = provider_field(
-        &azure_error,
-        "type",
-        JsonValue::String("invalid_request_error".to_owned()),
-    );
-    let provider_code = provider_field(
-        &azure_error,
-        "code",
-        JsonValue::String("content_policy_violation".to_owned()),
-    );
+    let provider_message = azure_error
+        .get("message")
+        .filter(|value| is_truthy(value))
+        .cloned()
+        .unwrap_or_else(|| JsonValue::String(input.message.clone()));
+    let provider_type = azure_error
+        .get("type")
+        .filter(|value| is_truthy(value))
+        .cloned()
+        .unwrap_or_else(|| JsonValue::String("invalid_request_error".to_owned()));
+    let provider_code = azure_error
+        .get("code")
+        .filter(|value| is_truthy(value))
+        .cloned()
+        .unwrap_or_else(|| JsonValue::String("content_policy_violation".to_owned()));
     let body = openai_body(&provider_message, &provider_type, &provider_code);
     let provider_specific_fields = azure_extensions(azure_error, inner_error);
     let message = violation_message(&provider_message);
@@ -101,11 +101,6 @@ pub fn content_policy_error(input: &ContentPolicyInput) -> ContentPolicyError {
         body,
         provider_specific_fields,
     }
-}
-
-fn provider_field(error: &JsonMap, name: &str, fallback: JsonValue) -> JsonValue {
-    let chosen = error.get(name).filter(|value| is_truthy(value)).cloned();
-    chosen.unwrap_or(fallback)
 }
 
 fn openai_body(message: &JsonValue, error_type: &JsonValue, code: &JsonValue) -> JsonMap {

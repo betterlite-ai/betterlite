@@ -20,8 +20,15 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-a2a/**
-  - tools/oracle/cases/a2a/**
+  - crates/betterlite-a2a/src/pydantic_ai_transformation.rs
+  - crates/betterlite-a2a/src/pydantic_ai_transformation/**
+  - crates/betterlite-a2a/src/pydantic_ai_submit.rs
+  - crates/betterlite-a2a/src/pydantic_ai_submit/**
+  - crates/betterlite-a2a/src/pydantic_ai_handler.rs
+  - crates/betterlite-a2a/src/pydantic_ai_handler/**
+  - crates/betterlite-a2a/src/pydantic_ai_provider.rs
+  - crates/betterlite-a2a/src/pydantic_ai_provider/**
+  - tools/oracle/cases/a2a/pydantic-ai-*.yaml
   - tools/oracle/helpers/b4806.py
   - tools/oracle/helpers/b4806/**
   - tools/oracle/src/helpers/oracle/b4806.rs
@@ -81,7 +88,7 @@ checks:
   commands:
   - id: a2a-pydantic-tests
     why: provider or integration tests fail or do not exist
-    run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^pydantic_ai_(handler|provider|submit)/) - test(/replays_the_.*_corpus/)'
+    run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^(pydantic_ai_handler|pydantic_ai_provider|pydantic_ai_submit|pydantic_ai_transformation)::(.*::)?pydantic_ai_(handler|provider|submit)/) - test(/replays_the_.*_corpus/)'
 
 oracle_cases:
 - tools/oracle/cases/a2a/pydantic-ai-submit.yaml

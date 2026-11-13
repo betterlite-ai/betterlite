@@ -233,7 +233,7 @@ out_of_scope:
 - Execution of tool calls (B4121's _run_tool_call parses arguments and executes code).
 - Post-hook response merging (B4121's async_post_agentic_loop_response_hook inserts code_interpreter_calls).
 - Provider model name resolution (B174 provides get_llm_provider).
-- AgenticLoopPlan and AgenticLoopRequestPatch type definitions (external contracts).
+- AgenticLoopPlan and AgenticLoopRequestPatch type definitions (B4119 owns them in betterlite_context::agentic_loop_plan).
 pitfalls:
 - enabled_providers is None when absent, not an empty list; filtering is skipped only when the field is None, not when it is empty.
 - Stream conversion happens before tool rewriting and happens only once per root request, not per iteration.

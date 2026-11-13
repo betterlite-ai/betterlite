@@ -1,0 +1,11 @@
+kind: helper
+name: email_only_request_matches_user_row_email
+call:
+  member_removal_identity:
+    operation: addresses_user
+    user: {user_id: "u2", user_email: "a@example.com"}
+    user_id: null
+    user_email: "a@example.com"
+env: {}
+compare:
+  ignore: []

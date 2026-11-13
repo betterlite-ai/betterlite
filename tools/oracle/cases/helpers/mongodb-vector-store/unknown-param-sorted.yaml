@@ -1,0 +1,48 @@
+kind: helper
+name: unknown-param-sorted
+call:
+  b7811:
+    calls:
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, mongodb_zeta: 1, mongodb_alpha: 2}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, mongodb_text_field: body, mongodb_embedding_field: vector, mongodb_num_candidates: 150}
+          optional_params: {}
+          query: q
+      - call: mongodb_validate_environment
+        input:
+          headers: {X-Trace: t}
+          litellm_params: {api_key: k, mongodb_zet: 1}
+          env: {}
+      - call: mongodb_validate_environment
+        input:
+          headers: {}
+          litellm_params: {api_key: k, mongodb_text_field: body}
+          env: {}
+      - call: mongodb_validate_environment
+        input:
+          headers: {X-Trace: t}
+          litellm_params: {api_key: explicit-key}
+          env: {MONGODB_SIDECAR_API_KEY: env-key}
+      - call: mongodb_validate_environment
+        input:
+          headers: {}
+          litellm_params: {}
+          env: {MONGODB_SIDECAR_API_KEY: env-key}
+      - call: mongodb_validate_environment
+        input:
+          headers: {}
+          litellm_params: {api_key: ""}
+          env: {MONGODB_SIDECAR_API_KEY: env-key}
+      - call: mongodb_validate_environment
+        input: {headers: {}, litellm_params: null, env: {}}
+      - call: mongodb_validate_environment
+        input: {headers: {}, litellm_params: {}, env: {}}
+      - call: mongodb_validate_environment
+        input: {headers: {}, litellm_params: {}, env: {MONGODB_SIDECAR_API_KEY: ""}}
+env: {}
+compare: {ignore: []}

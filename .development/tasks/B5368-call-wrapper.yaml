@@ -1,0 +1,177 @@
+id: B5368
+title: The call wrapper around SDK functions
+description: >-
+  In LiteLLM every public SDK function sits under the `client` decorator at L1674-L2315. Budget checks, the response cache,
+  retries, context window fallbacks, stream assembly and success and failure logging all live in that wrapper, and each call
+  goes through them in a fixed order. This task builds that order once in `crates/betterlite-sdk/src/call_wrapper.rs`,
+  with submodules under `call_wrapper/`.
+
+
+  A `CallTarget` trait stands for the wrapped function: its name, a call that takes the request as `serde_json::Map` and
+  returns B5367's `CallOutcome`, and a retry entry. `CallWrapper` holds what the decorator read from module state: the
+  callback lists, the cache handler from B4300, a `BudgetState` with `max_budget` and `_current_cost` as `Decimal`, the
+  retry defaults, a clock and an id source. `CallWrapper::call` is `wrapper_async` and `CallWrapper::call_blocking` is
+  `wrapper`. Only the async path stamps correlation ids and logs in the background worker from B191.
+
+
+  Sync order (`wrapper`, L1681-L1975). A request flagged async by `_is_async_request` takes a short path: the retry limit
+  check, the call, and for a stream with `complete_response` set, draining it into `stream_chunk_builder`. Any other request
+  goes through the debug text, `litellm_call_id` when absent, `function_setup`, the budget check (BudgetExceededError when
+  `_current_cost` is above `max_budget`), the retry limit ("Max retries per request hit!" through B206's
+  `max_retries_per_request_hit`), the cache lookup, the max tokens check, the call, stream handling with B2232 and B2235,
+  `post_call_processing` (L1587-L1671, with JSON schema validation from B200), the cache write and success dispatch from B250.
+
+
+  Async order (`wrapper_async`, L1976-L2315). It sets `litellm_call_id`, runs `function_setup`, then
+  `async_pre_call_deployment_hook`, the budget check, the cache lookup and the max tokens check. The call sits in its own
+  error handler that runs `async_post_call_failure_deployment_hook`. Then come stream handling, `post_call_processing`,
+  `async_post_call_success_deployment_hook`, the cache write with B4304 and `_dispatch_success_logging`. This path has no
+  retry limit check, and the sync path runs none of the deployment hooks.
+
+
+  Sync failure (L1899-L1975). Only a `completion` call retries. The count is the request's `num_retries`, then the wrapper
+  default, and a `retry_policy` replaces it and is reset. The default is then cleared so the retry can't loop. A call with
+  `model_group` in its metadata comes from the router and isn't retried here. With a count left and an OpenAI API, timeout or
+  connection error, the target's retry entry runs (it stands for `completion_with_retries`). A ContextWindowExceededError
+  with the model in `context_window_fallback_dict` calls the target again with the mapped model. The Responses path
+  uses `responses_with_retries`. Failure logging runs last, in the same thread, and the original error is raised.
+
+
+  Async failure (L2208-L2315). Failure logging from B251 runs first. Then `_get_wrapper_num_retries` (L1434-L1456, retry
+  policy from B306) and `_get_wrapper_timeout` (L1459-L1467) feed the same retry and fallback branches in their async
+  forms. `_restore_correlation_context_if_supported` runs on the way out.
+
+
+  Logging order: `_dispatch_success_logging` (L1347-L1368), `_schedule_async_success_logging` (L1371-L1408) and
+  `_client_async_logging_helper` (L1411-L1431). `claim_async_success_log` makes the innermost wrapper win, so nested
+  wrappers log once. `_defer_async_logging` and `_enqueue_deferred_logging` hold a log until the caller's stream is done, and
+  the helper skips the `completion_with_fallbacks` parent.
+
+
+  `return_raw_request` (L10344-L10389) runs a target with a logging state in raw request mode and the key
+  "my-fake-api-key", and returns the captured request or a dict with `error`.
+
+
+  The oracle operation is `b5368`. Its Python adapter decorates a stub with `litellm.utils.client`, and the stub returns or
+  raises what the fixture says. It sets `litellm.max_budget`, `litellm._current_cost`, `litellm.cache` and the callback lists
+  for each case, then reports the result, the error type and message, and the number of stub calls.
+scope:
+  paths:
+  - crates/betterlite-sdk/Cargo.toml
+  - crates/betterlite-sdk/src/call_wrapper.rs
+  - crates/betterlite-sdk/src/call_wrapper/**
+  - tools/oracle/cases/helpers/call-wrapper/**
+  - "tools/oracle/fuzz/corpus/helper_case/call_wrapper-*"
+  - tools/oracle/helpers/b5368.py
+  - tools/oracle/helpers/b5368/**
+  - tools/oracle/src/helpers/sdk/b5368.rs
+  - tools/oracle/src/helpers/sdk/b5368/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1347-L1467
+  why: Success logging dispatch, retry count and timeout lookups.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1587-L1671
+  why: The post-call step.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674-L2315
+  why: The client decorator. Read both inner wrappers side by side before writing code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10344-L10389
+  why: Raw request capture.
+dod:
+- text: >-
+    A successful sync and async call give LiteLLM's result with one stub call, and each gets a `litellm_call_id` when the
+    request has none.
+  proof: [call-order, oracle, helper-python]
+- text: >-
+    `_current_cost` above `max_budget` raises BudgetExceededError before the stub runs, with LiteLLM's message, and the
+    comparison uses `Decimal`.
+  proof: [budget-stop, oracle, helper-python]
+- text: On the sync path a request past its limit raises "Max retries per request hit!", and the async path has no such check.
+  proof: [retry-paths, oracle, helper-python]
+- text: >-
+    A failure with retries left calls the retry entry with LiteLLM's count and timeout, a retry policy overrides the
+    request's count and is reset after use, and a call with `model_group` in its metadata is not retried here.
+  proof: [retry-paths, oracle, helper-python]
+- text: A context window error with a fallback map retries on the mapped model, and with no map the original error surfaces.
+  proof: [context-fallback, oracle, helper-python]
+- text: A cache hit returns the stored response without calling the stub, and a stored response logs as LiteLLM logs it.
+  proof: [cache-path, oracle, helper-python]
+- text: A streamed call yields every chunk, and `complete_response` gives the assembled response.
+  proof: [stream-path, oracle, helper-python]
+- text: >-
+    Nested wrappers log success once, the `completion_with_fallbacks` parent is skipped, and a deferred log runs after the
+    stream ends.
+  proof: [success-logging]
+- text: '`return_raw_request` returns the captured request, or `error` with the failure text.'
+  proof: [raw-request]
+- text: New helper corpus seeds call `b5368` and replay through the shared parser.
+  proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+  - id: call-order
+    why: The fixed order of steps was changed.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_wrapper::.*call_order/)'
+  - id: budget-stop
+    why: A call runs past the budget, or a float compares money.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_wrapper::.*budget/)'
+  - id: retry-paths
+    why: Retries run too often, too rarely or with the wrong timeout.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_wrapper::.*retry/)'
+  - id: context-fallback
+    why: A context window error takes the wrong model or hides the error.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_wrapper::.*context_window/)'
+  - id: cache-path
+    why: A hit calls the provider, or a miss isn't stored.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_wrapper::.*cache/)'
+  - id: stream-path
+    why: Chunks go missing or the assembled response differs.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_wrapper::.*stream/)'
+  - id: success-logging
+    why: Spend and traces double when nested wrappers both log.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_wrapper::.*success_log/)'
+  - id: raw-request
+    why: The capture path returns nothing or sends a real key.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_wrapper::.*raw_request/)'
+  - id: helper-python
+    why: Without a checked b5368 adapter the oracle cases prove nothing.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5368)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers/b5368 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5368/pyrightconfig.json
+  - id: helper-case-corpus
+    why: The shared parser has to read b5368 seeds.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/call_wrapper-*")"
+      && grep -lE '^[[:space:]]+b5368:' tools/oracle/fuzz/corpus/helper_case/call_wrapper-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/call-wrapper/success.yaml
+- tools/oracle/cases/helpers/call-wrapper/budget-stop.yaml
+- tools/oracle/cases/helpers/call-wrapper/retry-limit.yaml
+- tools/oracle/cases/helpers/call-wrapper/retry-policy.yaml
+- tools/oracle/cases/helpers/call-wrapper/context-window-fallback.yaml
+- tools/oracle/cases/helpers/call-wrapper/cache-hit.yaml
+- tools/oracle/cases/helpers/call-wrapper/stream.yaml
+deviations:
+- what: A generic `CallWrapper` over a `CallTarget` trait replaces the Python decorator, and `BudgetState` replaces `litellm._current_cost`.
+  why: Rust has no runtime decorator over any function, and the inject-dependencies rule bars the module-level counter.
+out_of_scope:
+- >-
+  Wiring `completion`, `embedding` and the other SDK functions onto `CallTarget` is B158 and the tasks that build them,
+  and the request flags and hooks this wrapper calls are B5367.
+- The B157 task file lists owners for everything else in litellm/utils.py.
+pitfalls:
+- >-
+  The budget check runs before the call and compares `Decimal` values. Reading cost from a float would let a call through
+  at the boundary.
+- >-
+  Success logging runs once per call. Nested wrappers exist in LiteLLM (a function under `client` calling another), so
+  `claim_async_success_log` isn't optional, and without it spend counts double.
+- >-
+  The sync and async wrappers look alike and differ in small ways. Read both before sharing code between them, and keep a
+  difference when the source has one.
+- >-
+  Failure logging runs last on the sync path and first on the async path. The router's retry and fallback logic reads what
+  the sync failure handler wrote, so don't move it to a background task.
+- '`return_raw_request` must not send a real key: it uses "my-fake-api-key" whatever the request holds.'
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,101 @@
+id: B8520
+title: Pass-through config create, update and delete routes
+description: >-
+  B3617 serves the two GET routes for stored pass-through endpoints. This task adds the three routes that change them,
+  from litellm/proxy/pass_through_endpoints/pass_through_endpoints.py L3607-L3912, and the startup read of the stored
+  ones (`initialize_pass_through_endpoints_in_db`, L3943-L3948). The list lives in the `pass_through_endpoints` field of
+  general_settings in the config table, and every change also installs or removes the live routes, so a created
+  endpoint answers at once without a restart.
+
+  Code goes in crates/betterlite-server/src/endpoints/passthrough_config_writes.rs and passthrough_config_writes/
+  (routes.rs, update.rs, create.rs, delete.rs, settings_port.rs, error.rs, tests.rs). Expose `routes() ->
+  axum::Router<AppState>` like B3617 does; B8640 mounts it. Reuse, do not copy: `PassThroughGenericEndpoint`
+  (B3600's wire records), `find_endpoint_by_id`, `config_field_endpoints`, `get_pass_through_endpoints_from_db` and
+  `PassThroughEndpointResponse` (B3617, endpoints::passthrough_config_reads), `remove_endpoint_routes` (B3614,
+  passthrough_route_registry), and `add_exact_path_route`, `add_subpath_route`, `set_env_variables_in_header` and
+  `initialize_pass_through_endpoints` (B3616, passthrough::route_registration). Read each for exact names.
+
+  LiteLLM reads and writes the field through proxy_server.py's `get_config_general_settings` (L18532) and
+  `update_config_general_settings` (L18264). They are not this task's, so settings_port.rs holds the trait
+  `GeneralSettingsStore` with `get_field(&self, name: &str) -> impl Future<Output = Result<ConfigFieldInfo,
+  GeneralSettingsError>> + Send` and `update_field(&self, update: ConfigFieldUpdate) -> impl Future<Output = Result<(),
+  GeneralSettingsError>> + Send`, plus a test double. The real store answers 400 with
+  {"error": CommonProxyErrors.db_not_connected_error} when no database is connected; `GeneralSettingsError` carries the status and detail it
+  was given so the route can return it unchanged.
+
+  All three routes take `user_api_key_auth` and nothing more, as in LiteLLM (no admin check).
+  - `POST /config/pass_through_endpoint/{endpoint_id}` (update): a failed read or an empty list is 404 {"error": "No
+    pass-through endpoints found"}; an unknown id is 404 "Endpoint with ID '<id>' not found". Merge only the fields the
+    caller sent (exclude unset and null, and drop is_from_config) over the stored entry, keep the stored id when none
+    was sent, store the list, remove the old routes for that id, resolve the headers and add the route again (subpath
+    or exact by include_subpath, with endpoint_id the entry's id or the path id). Answer {"endpoints": [updated]}.
+  - `POST /config/pass_through_endpoint` (create): a failed read counts as an empty field. Dump the body without
+    is_from_config, give it a new UUID v4 id when id is null, append it (or start the list), store it, install its
+    route and answer {"endpoints": [created]}.
+  - `DELETE /config/pass_through_endpoint?endpoint_id=<id>` (delete): a failed read or no list is 400 {"error": "There
+    are no pass-through endpoints setup."}; an unknown id is 400 "Endpoint with ID '<id>' was not found in pass-through
+    endpoint list."; otherwise drop it, remove its routes, store the list and answer {"endpoints": [deleted]}.
+  `initialize_pass_through_endpoints_in_db(store, registry)` reads the stored endpoints with
+  get_pass_through_endpoints_from_db and hands them to initialize_pass_through_endpoints. Its call at startup sits in
+  proxy_server.py and is wired by the server startup task, not here.
+scope:
+  paths:
+    - crates/betterlite-server/src/endpoints/passthrough_config_writes.rs
+    - crates/betterlite-server/src/endpoints/passthrough_config_writes/**
+    - tools/oracle/helpers/b8520.py
+    - tools/oracle/helpers/b8520/**
+    - tools/oracle/src/helpers/server/b8520.rs
+    - tools/oracle/src/helpers/server/b8520/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3607-L3737
+    why: The update route, its 404 texts, the exclude_unset merge and the route reinstall.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3740-L3830
+    why: The create route, the generated id and the route install.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3833-L3912
+    why: The delete route and its 400 texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3943-L3948
+    why: initialize_pass_through_endpoints_in_db.
+  - url: https://docs.litellm.ai/docs/proxy/pass_through
+    why: The pass-through endpoint fields users send.
+
+dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports. B8640 mounts the routes and proves them over HTTP with the oracle cases that were listed here.
+    proof: [writes-tests]
+  - text: Update merges only the sent fields, keeps the stored id and auth value, reinstalls the route, and answers 404 with LiteLLM's texts for no list and an unknown id.
+    proof: [writes-tests]
+  - text: Create gives a missing id a UUID, appends the entry, installs its route at once and answers with it.
+    proof: [writes-tests]
+  - text: Delete removes the entry and its routes and answers 400 with LiteLLM's texts for no list and an unknown id.
+    proof: [writes-tests]
+  - text: The three routes refuse a request without a valid key, and initialize_pass_through_endpoints_in_db installs the stored endpoints.
+    proof: [writes-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: writes-tests
+      why: a pass-through write route stores, installs or answers differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^endpoints::passthrough_config_writes::/)'
+
+deviations:
+  - what: The general settings read and write go through the GeneralSettingsStore trait.
+    why: proxy_server.py owns those two functions; B8640 passes the real store (B8641, over shared.general_settings).
+
+out_of_scope:
+  - "The GET routes and the read helpers: B3617. Route install and removal: B3616 and B3614."
+  - "get_config_general_settings, update_config_general_settings and the startup call of initialize_pass_through_endpoints_in_db: B8595 builds the two routes; B8384 owns the startup call (_init_pass_through_endpoints_in_db)."
+  - "config_management_endpoints/pass_through_endpoints.py: its router is never included in proxy_server.py at the pin, so the stub settings route is not built."
+
+pitfalls:
+  - 'Update merges with exclude_unset, so an omitted auth keeps the stored false instead of the model default true.'
+  - 'Delete takes endpoint_id as a query parameter, while update takes it in the path.'
+  - 'Update and delete look the id up twice (the entry, then its index), and the second miss has its own text "Could not find index for endpoint with ID ..." with 404 for update and 400 for delete.'
+  - 'The routes are installed with forward_headers, merge_query_params and dependencies set to None, whatever the stored entry holds.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+oracle_cases: []

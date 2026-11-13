@@ -1,9 +1,9 @@
 id: B3900
 milestone: M7 observability
 title: Langfuse settings and credential resolution
-status: todo
+status: done
 depends_on: [B002, B188]
-file: null
+file: tasks/B3900-langfuse-settings.yaml
 covers:
   - "litellm/integrations/langfuse/langfuse.py"
   - "litellm/integrations/langfuse/langfuse_sdk.py"
@@ -11,7 +11,7 @@ covers:
   - "litellm/types/integrations/langfuse.py"
 parent: B112
 split_from: B112
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 970

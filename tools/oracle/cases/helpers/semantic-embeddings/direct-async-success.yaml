@@ -1,0 +1,16 @@
+kind: helper
+name: semantic-embeddings-direct-async-success
+call:
+  b4381:
+    embedding_model: text-embedding-3-small
+    prompt: hello world
+    metadata: {user: a}
+    embedding_max_input_tokens: 1
+    embedding_timeout: null
+    router_present: false
+    model_list: null
+    method: async
+    outcome: success
+    vectors: [[0.25, 0.5], [0.75, 1.0]]
+env: {}
+compare: {ignore: []}

@@ -48,7 +48,7 @@ description: >-
   Move agent_caller.py _header L24-L26 and agent_caller_from_headers L29-L37 down here: only a truthy
   agent_id enables first case-insensitive x-litellm-user-id/x-litellm-team-id lookup; strip values and
   treat empty as absent. With neither return None, otherwise a typed AgentCaller. These headers only
-  narrow access through B748 and never replace grants; B141 retains other agent services.
+  narrow access through B748 and never replace grants; B8646 installs the other agent services.
 
   WebSocket authentication constructs a GET request with original query/headers, shared state,
   scope.path default empty and optional root_path/app_root_path. The URL may carry Host input but
@@ -74,6 +74,7 @@ description: >-
   allow_user_auth_default_false_exact_true, post_checks_default_false and uninstalled_backend_rejected
   call its loader and replay new config_yaml seeds. No parser is added. Budget 300 production, 300
   table-driven tests, 100 wiring and 70 config lines, 770 within 800.
+  B1100 registers state/virtual_key_auth.rs as a stub slot, so fill only crates/betterlite-server/src/state/virtual_key_auth.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-server/src/virtual_key_auth.rs
@@ -81,10 +82,8 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
+    - crates/betterlite-server/src/state/virtual_key_auth.rs
+    - crates/betterlite-server/src/state/virtual_key_auth/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/virtual-key-auth-*
     - tools/oracle/cases/auth/virtual-key-auth/**

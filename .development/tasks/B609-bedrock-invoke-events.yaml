@@ -267,7 +267,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_deepseek_stream_chunks$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_events.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_events.py tools/oracle/helpers/bedrock_invoke_events)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -299,7 +299,7 @@ checks:
     why: Outside bytes lack replay through the actual decoder.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_invoke_events)"
       && grep -q 'decode_bedrock_event_json' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_invoke_events.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_invoke_events_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_invoke_events_corpus(::|$)/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-invoke-events/claude3-invoke-stream.yaml
 - tools/oracle/cases/helpers/providers/bedrock-invoke-events/json-mode-tool-chunk.yaml

@@ -1,0 +1,23 @@
+kind: helper
+name: bedrock-other-count-tokens-empty-tools
+call:
+  bedrock_other_count_tokens:
+    empty_tools_omission:
+      requests:
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          tools: false
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          tools: not-a-list
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          tools: {}
+env: {}
+compare: {ignore: []}

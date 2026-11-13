@@ -65,7 +65,7 @@ impl crate::helpers::Helper for Op {
                 messages,
                 input: input_text,
                 mask,
-            } => lifecycle_result(messages, input_text.as_deref(), *mask),
+            } => json!(lifecycle::run(messages, input_text.as_deref(), *mask, None).inspected),
             Input::PostCall {
                 response,
                 masked,
@@ -91,7 +91,10 @@ impl crate::helpers::Helper for Op {
             Input::IsOnlyPiiViolation { response } => {
                 json!(lakera_masking::is_only_pii_violation(Some(response)))
             }
-            Input::Blocked { response } => blocked_result(response),
+            Input::Blocked { response } => {
+                let error = lakera_masking::blocked_error(Some(response));
+                json!({"status_code": error.status().as_u16(), "detail": {"error": error.to_string(), "lakera_guardrail_response": error.response()}})
+            }
         };
         Ok(result)
     }
@@ -107,16 +110,6 @@ fn mask_pii_result(messages: &[LakeraMessage], response: &LakeraResponse) -> Val
     let mut counts = BTreeMap::new();
     let masked = lakera_masking::mask_pii_in_messages(messages, Some(response), &mut counts);
     json!({"messages": masked, "counts": counts})
-}
-
-fn blocked_result(response: &LakeraResponse) -> Value {
-    let error = lakera_masking::blocked_error(Some(response));
-    json!({"status_code": error.status().as_u16(), "detail": {"error": error.to_string(), "lakera_guardrail_response": error.response()}})
-}
-
-fn lifecycle_result(messages: &[OpenAiMessage], input: Option<&str>, mask: bool) -> Value {
-    let result = lifecycle::run(messages, input, mask, None);
-    json!(result.inspected)
 }
 
 fn choice_projection(choice: &ResponseChoice) -> Value {

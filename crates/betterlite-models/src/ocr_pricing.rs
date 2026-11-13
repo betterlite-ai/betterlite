@@ -1,3 +1,5 @@
+mod logging;
+
 use crate::price_fields::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexeme};
 use crate::price_lookup::{PriceLookup, PriceRecord};
 use crate::tiered_pricing::Scalar;
@@ -135,14 +137,6 @@ pub fn layered_ocr_pricing(sources: &[Option<&PriceRecord>]) -> Result<OcrPricin
     })
 }
 
-pub fn first_price(
-    source: Option<&PriceRecord>,
-    keys: &[&str],
-) -> Result<Option<Decimal>, OcrCostError> {
-    let pairs: Vec<(Option<&PriceRecord>, &str)> = keys.iter().map(|key| (source, *key)).collect();
-    first_numeric(&pairs)
-}
-
 // An absent provider is spelled "None" to match Python's str(None) in the same log line.
 #[must_use]
 pub fn single_log_line(value: Option<&str>) -> String {
@@ -251,9 +245,10 @@ pub fn ocr_batch_cost(
 ) -> Result<Decimal, OcrCostError> {
     let pages_processed = usage.pages_processed;
     let annotation_pages = usage.pages_processed_annotation;
-
-    let deployment_page_rate = first_price(deployment_info, &BATCH_PAGE_RATE_KEYS)?;
-    let deployment_annotation_rate = first_price(deployment_info, &BATCH_ANNOTATION_RATE_KEYS)?;
+    let deployment_page_rate =
+        first_numeric(&BATCH_PAGE_RATE_KEYS.map(|key| (deployment_info, key)))?;
+    let deployment_annotation_rate =
+        first_numeric(&BATCH_ANNOTATION_RATE_KEYS.map(|key| (deployment_info, key)))?;
     let needs_published_pricing = (pages_processed > 0 && deployment_page_rate.is_none())
         || (annotation_pages > 0 && deployment_annotation_rate.is_none());
 
@@ -263,28 +258,19 @@ pub fn ocr_batch_cost(
         None
     };
     if needs_published_pricing && published.is_none() {
-        tracing::warn!(
-            model = single_log_line(Some(model)),
-            custom_llm_provider = single_log_line(custom_llm_provider),
-            "OCR batch cost: no pricing entry; billing only the families the deployment prices"
-        );
+        logging::warn_missing_published_pricing(model, custom_llm_provider);
     }
 
     let page_rate = match deployment_page_rate {
         Some(rate) => Some(rate),
-        None => first_price(published.as_ref(), &BATCH_PAGE_RATE_KEYS)?,
+        None => first_numeric(&BATCH_PAGE_RATE_KEYS.map(|key| (published.as_ref(), key)))?,
     };
     let annotation_rate = match deployment_annotation_rate {
         Some(rate) => Some(rate),
-        None => first_price(published.as_ref(), &BATCH_ANNOTATION_RATE_KEYS)?,
+        None => first_numeric(&BATCH_ANNOTATION_RATE_KEYS.map(|key| (published.as_ref(), key)))?,
     };
     if page_rate.is_none() && pages_processed > 0 {
-        tracing::warn!(
-            model = single_log_line(Some(model)),
-            custom_llm_provider = single_log_line(custom_llm_provider),
-            pages_processed = pages_processed,
-            "OCR batch cost: no ocr_cost_per_page is configured; returning 0.0 cost for those pages"
-        );
+        logging::warn_batch_missing_page_rate(model, custom_llm_provider, pages_processed);
     }
     let effective_annotation_rate = annotation_rate.or(page_rate);
 

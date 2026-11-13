@@ -1,0 +1,5 @@
+kind: helper
+name: foundry-router-cost-cost-seed
+call: {foundry_router_cost: {operation: cost, catalog: {azure_ai/model_router: {input_cost_per_token: 0.5}}, calls: [{model: model_router, prompt_tokens: 8, completion_tokens: 4}]}}
+env: {}
+compare: {ignore: []}

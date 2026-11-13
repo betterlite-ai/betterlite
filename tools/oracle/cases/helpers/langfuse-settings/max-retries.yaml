@@ -1,0 +1,24 @@
+kind: helper
+name: langfuse-settings-max-retries
+call:
+  b3900:
+    function: read
+    reading: max_retries
+    steps:
+      - environment: {}
+      - environment:
+          LANGFUSE_MAX_RETRIES: "5"
+      - environment:
+          LANGFUSE_MAX_RETRIES: "0"
+      - environment:
+          LANGFUSE_MAX_RETRIES: "1000"
+      - environment:
+          LANGFUSE_MAX_RETRIES: "1001"
+      - environment:
+          LANGFUSE_MAX_RETRIES: "lots"
+      - environment:
+          LANGFUSE_MAX_RETRIES: ""
+      - environment:
+          LANGFUSE_MAX_RETRIES: " 7 "
+env: {}
+compare: {ignore: []}

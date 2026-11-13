@@ -1,0 +1,21 @@
+kind: helper
+name: resolve-guardrails-explicit-policy-names
+call:
+  b3241:
+    policy_memory_matching_resolver:
+      action: resolve_guardrails
+      policies:
+        first:
+          guardrails:
+            add: [zeta]
+        second:
+          guardrails:
+            add: [alpha]
+        unused:
+          guardrails:
+            add: [beta]
+      context:
+        model: gpt-4
+      policy_names: [second, first]
+env: {}
+compare: {ignore: []}

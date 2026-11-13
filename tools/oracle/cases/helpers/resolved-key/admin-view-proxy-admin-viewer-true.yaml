@@ -1,0 +1,9 @@
+kind: helper
+name: admin-view-proxy-admin-viewer-true
+call:
+  resolved_key:
+    function: admin_view
+    value:       {user_role: proxy_admin_viewer}
+env: {}
+compare:
+  ignore: []

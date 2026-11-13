@@ -1,0 +1,3 @@
+litellm_settings:
+  timezone: Asia/Kolkata
+  budget_reset_time: "06:00"

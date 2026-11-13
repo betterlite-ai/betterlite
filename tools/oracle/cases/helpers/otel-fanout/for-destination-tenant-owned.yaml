@@ -1,0 +1,17 @@
+kind: helper
+name: for-destination-tenant-owned
+call:
+  b3849:
+    function: for_destination
+    endpoint: http://collector:4318
+    span:
+      name: chat gpt-4
+      attributes:
+        gen_ai.operation.name: chat
+        gen_ai.request.model: gpt-4
+        gen_ai.usage.cache_read.input_tokens: 12
+        error.message: provider rejected the request
+        http.url: https://provider.example/v1/chat?api-version=2024
+        http.request.header.authorization: Bearer sk-1
+env: {}
+compare: {ignore: []}

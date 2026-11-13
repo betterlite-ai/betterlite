@@ -1,0 +1,72 @@
+id: B8543
+title: Docker guide and non-root image structure test
+description: >-
+  LiteLLM's docker/ folder has three files no other part covers: README.md (the Docker development guide), tests/nonroot.yaml (a
+  container-structure-test file for the non-root image) and install_auto_router.sh. The other B151 parts put betterlite's
+  container files in packaging/docker/: B5070 the entrypoints, B5071 the source images, B5072 docker-compose.yml,
+  docker-compose.quickstart.yml, proxy_server_config.yaml, prometheus.yml and .env.example, B5073 Dockerfile.non_root and
+  docker-compose.hardened.yml. Read those files first; this task documents and tests what they hold and writes no other file.
+
+  packaging/docker/README.md follows LiteLLM's sections in the same order: the quickstart note (curl the quickstart Compose file,
+  write a .env with LITELLM_MASTER_KEY and LITELLM_SALT_KEY from `openssl rand -hex 32`, `docker compose -f
+  docker-compose.quickstart.yml up -d`), Prerequisites, Building and Running (set LITELLM_MASTER_KEY in .env, `docker compose up -d
+  --build`, which services start, `docker compose ps`, `docker compose logs -f litellm`, `docker compose down`), Hardened / Offline
+  Testing, and Troubleshooting. Keep every command and env var name a LiteLLM user already types. Rewrite only what is not true for
+  betterlite: the image builds two Rust binaries (betterlite and betterlite-db-admin) instead of Prisma engines and a Node toolchain,
+  so the hardened section lists the tmpfs mounts and read-only UI folders B5073's overlay really has and drops the
+  `prisma --version` offline check; the build_admin_ui.sh troubleshooting entry stays only if B5070's build_admin_ui.sh is still in
+  the image. Name the service names and paths exactly as B5072's and B5073's files write them. Commands run from packaging/docker/,
+  not the repo root, because that is where the Compose files are. Plain Markdown, no HTML, no badges.
+
+  packaging/docker/tests/nonroot.yaml keeps LiteLLM's container-structure-test format (schemaVersion 2.0.0, metadataTest,
+  fileExistenceTests). metadataTest: the entrypoint and workdir that B5073's Dockerfile.non_root sets and its numeric user. The two
+  Prisma checks become checks that /usr/local/bin/betterlite and /usr/local/bin/betterlite-db-admin exist and that
+  /var/lib/litellm/ui and /var/lib/litellm/assets exist with the owner B5073 gives them. The worker sandbox has no docker socket, so
+  the file is checked statically here; CI runs container-structure-test against a built image later.
+
+  packaging/docker/tests/guide.sh is a bash script with no framework and no docker calls, in the style of B5073's
+  non_root_image.sh: it fails on the first problem with a message naming it and prints only "ok". It checks that the README has the
+  five section headings, that every `docker compose -f <file>` it names exists in packaging/docker/, that it never says Prisma or
+  Node, that nonroot.yaml has schemaVersion 2.0.0, that its user equals the last USER line of Dockerfile.non_root and its
+  entrypoint equals the Dockerfile's ENTRYPOINT, and that every path in fileExistenceTests is created or copied by the Dockerfile.
+scope:
+  paths:
+    - packaging/docker/README.md
+    - packaging/docker/tests/nonroot.yaml
+    - packaging/docker/tests/guide.sh
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/README.md#L1-L103
+    why: The guide's sections, commands and env vars.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/tests/nonroot.yaml#L1-L18
+    why: The structure test format and the metadata it checks.
+  - url: https://github.com/GoogleContainerTools/container-structure-test#metadata-test
+    why: The metadataTest and fileExistenceTests field names.
+dod:
+  - text: The README keeps LiteLLM's sections and commands and describes only files that exist in packaging/docker/.
+    proof: [guide-test]
+  - text: nonroot.yaml checks the non-root image's user, entrypoint, workdir, binaries and writable folders as B5073 builds them.
+    proof: [guide-test]
+checks:
+  optional: []
+  commands:
+    - id: guide-test
+      why: The guide, the structure test or their agreement with the Dockerfile and Compose files is missing or wrong
+      run: >-
+        test -f packaging/docker/README.md && test -f packaging/docker/tests/nonroot.yaml &&
+        bash -n packaging/docker/tests/guide.sh && bash packaging/docker/tests/guide.sh
+oracle_cases: []
+deviations:
+  - what: The guide's hardened section has no offline Prisma check and the structure test checks the Rust binaries instead of Prisma's site-packages folder.
+    why: betterlite's image has no Python, Prisma or Node.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/README.md#L72-L96
+out_of_scope:
+  - "The Dockerfiles, entrypoints and Compose files themselves: B5070 to B5075."
+  - "docker/install_auto_router.sh: its only line is a comment saying semantic-router comes from uv sync, and no Dockerfile or script calls it at the pin, so it is not built."
+pitfalls:
+  - LiteLLM's README says to run Compose from the repo root, but betterlite's Compose files sit in packaging/docker/, so copying the text as is gives commands that fail.
+  - nonroot.yaml's user must be the numeric uid from the final USER line, since container-structure-test compares the string.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

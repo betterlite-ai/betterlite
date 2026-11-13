@@ -1,0 +1,29 @@
+task: B4053
+deviations:
+  - what: "GitLabClient reaches GitLab through an injected GitLabTransport trait that returns the status and at most 1 MiB of body, instead of LiteLLM's HTTPHandler. A file larger than the cap is a transport failure."
+    why: reqwest is on this crate's deny list, so the HTTP client lives in the caller. The cap keeps an oversized repository file from filling memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L140-L141
+  - what: "Raw file bodies and base64 payloads are decoded as UTF-8 with replacement characters. The charset in a text/* content-type header is not consulted."
+    why: Python's resp.text follows the declared charset; GitLab serves repository files as UTF-8 and the transport trait does not expose headers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L200-L206
+  - what: "A failure while fetching from the JSON endpoint is the fallback's own typed error (authentication, access denied, or a JSON endpoint failure), not Python's second wrap of it inside \"Failed to fetch file '<path>': ...\"."
+    why: Python re-catches the fallback exception in get_file_content and wraps its str a second time; a typed error names the failure once, and every caller branches on the variant rather than on the prefix.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L193-L218
+  - what: "The _parse_yaml_basic parser is a FrontmatterParser::Basic choice made by the caller; the default parser is YAML. LiteLLM switches to it only when `import yaml` fails."
+    why: A Rust build always has its YAML parser, so the import failure can never happen; the selector keeps the fallback reachable and tested.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L187-L195
+  - what: "Frontmatter YAML is read into JSON values, so a mapping key that is not text (a number, or a YAML 1.1 boolean spelling such as yes) is rejected as invalid YAML and the metadata is empty."
+    why: PyYAML would keep the key under its Python type (int or bool); metadata here is a string-keyed JSON object and the keys are only ever read by name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L191
+  - what: "Templates render in a sandbox with a 1,000,000-unit fuel limit, so a runaway loop ends with an error."
+    why: ImmutableSandboxedEnvironment has no such cap and would hang the gateway worker; dotprompt's sandbox here has the same limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L111-L120
+  - what: "GitLabClient's eager auth header setup (Private-Token vs Bearer) happens in construction, not on each request; auth_method=\"oauth\" uses Authorization: Bearer, else uses Private-Token."
+    why: LiteLLM behavior at the pinned commit; the HTTP handler reuses the headers dict on every request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L127-L135
+  - what: "get_file_content falls back to the JSON endpoint only on 404 from the raw endpoint, not on other errors."
+    why: LiteLLM behavior at the pinned commit; other errors surface to the caller rather than triggering the fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L179-L219
+  - what: "Parsing a prompt file swallows invalid YAML with no warning and returns empty metadata rather than raising."
+    why: LiteLLM behavior at the pinned commit; the silent fallback keeps repository templates usable even with broken metadata.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L187-L195

@@ -1,16 +1,21 @@
 use std::collections::BTreeMap;
 
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 
 mod aggregation_projection;
+pub mod billing_counters;
 pub mod error;
 mod field;
 pub mod interactions;
 pub mod modality_projection;
+pub mod server_tool_projection;
 mod token_count;
+pub mod tool_projection;
 pub mod transcription;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct CostUsage {
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
@@ -21,7 +26,8 @@ pub struct CostUsage {
     pub numeric_extras: BTreeMap<String, Decimal>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct PromptDetails {
     pub text_tokens: Option<i64>,
     pub audio_tokens: Option<i64>,
@@ -30,7 +36,8 @@ pub struct PromptDetails {
     pub web_search_requests: Option<i64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(default)]
 pub struct CompletionDetails {
     pub text_tokens: Option<i64>,
     pub audio_tokens: Option<i64>,

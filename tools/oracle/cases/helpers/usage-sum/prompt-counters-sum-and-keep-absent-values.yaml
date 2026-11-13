@@ -1,0 +1,9 @@
+kind: helper
+name: prompt-counters-sum-and-keep-absent-values
+call:
+  usage_sum:
+    usages:
+      - prompt_tokens_details: {web_search_requests: 1, google_maps_grounding_requests: 2, tool_use_tokens: 3, character_count: 4, image_count: 5, query_count: 6}
+      - prompt_tokens_details: {web_search_requests: 10, tool_use_tokens: 30, image_count: 50}
+compare: {ignore: []}
+env: {}

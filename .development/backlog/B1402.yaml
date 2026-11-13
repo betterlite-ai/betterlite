@@ -1,7 +1,7 @@
 id: B1402
 milestone: M3 providers
 title: xAI credential selection, usage reconciliation and reported charges
-status: todo
+status: done
 depends_on: [B002, B004, B173, B193, B204, B171]
 file: tasks/B1402-xai-identity-usage.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/xai/chat/transformation.py"
 parent: B036
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 765

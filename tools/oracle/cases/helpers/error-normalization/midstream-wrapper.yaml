@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-midstream-wrapper
+call: {"error_normalization": {"message": "MidStreamFallbackError", "status_code": 418}}
+env: {}
+compare: {ignore: []}

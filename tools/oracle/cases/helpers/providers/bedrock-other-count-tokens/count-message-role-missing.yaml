@@ -1,0 +1,11 @@
+kind: helper
+name: count-message-role-missing
+call:
+  bedrock_other_count_tokens:
+    count_message_role_missing:
+      request:
+        model: anthropic.claude-3-5-sonnet-20241022-v2:0
+        messages:
+          - content: hi
+env: {}
+compare: {ignore: []}

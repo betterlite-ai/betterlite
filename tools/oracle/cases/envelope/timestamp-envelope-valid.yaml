@@ -1,0 +1,15 @@
+kind: helper
+name: timestamp-envelope-valid
+call:
+  b4297:
+    get_cache_logic:
+      cached:
+        timestamp: 9999999999
+        response:
+          choices:
+            - {role: assistant, content: hi}
+          usage: {prompt_tokens: 3, completion_tokens: 4}
+      max_age: 60
+env: {}
+compare:
+  ignore: []

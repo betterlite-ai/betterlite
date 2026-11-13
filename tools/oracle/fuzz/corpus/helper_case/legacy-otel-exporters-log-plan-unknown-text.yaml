@@ -1,0 +1,10 @@
+kind: helper
+name: log-plan-unknown-text
+call:
+  b3855:
+    function: log_exporter_plan
+    config:
+      exporter: jaeger
+      endpoint: http://collector:4318
+env: {}
+compare: {ignore: []}

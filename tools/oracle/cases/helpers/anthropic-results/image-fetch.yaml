@@ -1,0 +1,11 @@
+kind: helper
+name: anthropic-results-image-fetch
+call:
+  anthropic_results:
+    function: image_param
+    image_url_input: "http://example.test/a.png"
+    data_urls:
+      "http://example.test/a.png": "data:image/png;base64,QUJD"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,1 @@
+{"redis_pipeline_increment":{"key":"k","increment_value":1.5,"ttl":30}}

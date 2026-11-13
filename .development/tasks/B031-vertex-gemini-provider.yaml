@@ -25,9 +25,21 @@ description: >-
   Exercise B004/B005's already mounted POST /v1/chat/completions, /chat/completions,
   /engines/{model:path}/chat/completions and /openai/deployments/{model:path}/chat/completions
   through both booted proxies. Use vertex_ai/gemini-2.5-flash and vertex_ai_beta/gemini-2.5-flash
-  fixtures with deterministic Google auth endpoints, not ambient credentials. auth-reuse sends
-  two requests through one deployment and asserts a single successful token exchange plus two
-  inference calls; a different credential identity must exchange separately. Cache traces cover
+  fixtures with deterministic Google auth endpoints, not ambient credentials. A vertex_ai
+  deployment's vertex_credentials is an authorized_user JSON string whose token_uri is
+  {{upstream}}/token, and the mock answers that refresh first with access_token, token_type
+  Bearer and expires_in 3600. google-auth posts the refresh as a form body and betterlite's
+  Google auth posts it as JSON, so every case that refreshes names that one request with B9850's
+  selector /upstream/<index>/body and that reason, keeps authorization in upstream_headers and
+  leaves content-type out. Never use a service_account credential: google-auth exchanges a
+  signed JWT at token_uri while google-cloud-auth signs its own token and sends no request, so
+  the request counts differ. auth-reuse is a `kind: http_scenario` case, since browser step
+  flows take no selector. Step one sends a request through deployment vertex-a and the mock sees
+  the refresh (selector /upstream/0/body) and the inference call; step two sends a second
+  request through vertex-a and the mock sees only the inference call with the same Bearer
+  token; step three goes through vertex-b, whose authorized_user credential has another
+  refresh_token, and the mock sees a new refresh (selector /upstream/0/body) and its inference
+  call. Cache traces cover
   explicit cached_content including empty, below minimum, a second-page hit, a 403 list followed
   by creation, absent cachedContents, 100 repeated pages, a non-403 list failure and create timeout
   408. Compare stripped tools, tools:null on creation, untouched skipped options and final
@@ -37,14 +49,17 @@ description: >-
   legacy wrapper selection, unsupported_operation and counter installation. Allocate 280
   composition, 190 native/config tests and 290 HTTP fixtures/wiring, maximum 800; existing
   request, SSE and cache decoders retain their own fuzz targets.
+
+  B010 registers Provider::VertexAi and the VertexAi variants of OperationRequest, OperationResult and
+  PreparedRequest as stubs in crates/betterlite-provider/src/vertex_dispatch.rs. Fill them there and leave
+  provider.rs, operation.rs and prepared.rs as they are.
 scope:
   paths:
     - crates/betterlite-core/Cargo.toml
-    - crates/betterlite-core/src/{lib,dispatch,operation,vertex_completion_dispatch}.rs
+    - crates/betterlite-core/src/{dispatch,operation,vertex_completion_dispatch}.rs
     - crates/betterlite-core/src/vertex_completion_dispatch.rs
     - crates/betterlite-core/src/vertex_completion_dispatch/**
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_dispatch}.rs
     - crates/betterlite-provider/src/vertex_dispatch.rs
     - crates/betterlite-provider/src/vertex_dispatch/**
     - crates/betterlite-config/src/{env,settings}.rs
@@ -67,6 +82,8 @@ references:
     why: Four existing authenticated chat aliases used by the integration cases.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L109-L591
     why: B1318/B1324 cache effects observed through actual chat requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L191-L219
+    why: An authorized_user credential refreshes through its token_uri and takes quota_project_id only when no project is given.
 dod:
   - text: The normal and beta entry points reach the installed operations with their original option mutation and alias rules.
     proof: [vertex-core-dispatch, vertex-provider-dispatch, oracle]
@@ -110,5 +127,7 @@ pitfalls:
   - Main dispatch intentionally omits the VERTEX_LOCATION fallback that VertexBase's safe location getter accepts.
   - A truthy vertex_project leaves vertex_ai_project in the provider's copied options because Python or short-circuits the second pop.
   - An Agent Engine request must receive resolved credentials in litellm_params before its base HTTP handler runs.
+  - A body selector belongs only to a step that refreshes; on a step that reuses the token it matches nothing and B9850 fails the case.
+  - An authorized_user credential has no project_id, so each vertex_ai deployment sets vertex_project; without it LiteLLM takes quota_project_id and otherwise fails with "Could not resolve project_id".
 budget: {max_changed_lines: 800, max_new_expects: 0}
 review_level: security

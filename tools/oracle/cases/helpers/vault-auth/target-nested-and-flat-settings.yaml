@@ -1,0 +1,26 @@
+kind: helper
+name: vault-auth-target-nested-and-flat-settings
+env: {}
+compare: {ignore: []}
+call:
+  b4416:
+    env: {HCP_VAULT_TOKEN: token-1}
+    routes: []
+    steps:
+      - op: target
+        name: DB_PASSWORD
+        params:
+          secret_manager_settings:
+            namespace: teams/team-b
+            mount: kv-prod
+            path_prefix: virtual-keys
+            data: password
+      - op: target
+        name: OPENAI_API_KEY
+        params: {namespace: teams/team-a, mount: kv-team}
+      - op: target
+        name: SHARED
+        params: {secret_manager_settings: {}, namespace: teams/team-a, mount: kv-team}
+      - op: target
+        name: SHARED
+        params: {secret_manager_settings: null, namespace: teams/team-a}

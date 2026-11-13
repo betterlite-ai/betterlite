@@ -1,0 +1,103 @@
+id: B6561
+title: Guardrail provider form tables, first group
+description: >-
+  Write the form field tables for the first 25 providers whose guardrail class returns a settings model from `get_config_model`, in crates/betterlite-server/src/guardrails/form_tables_a.rs and form_tables_a/. The route /guardrails/ui/provider_specific_params walks `guardrail_class_registry`, and for each class that returns a model it projects the model's fields and adds `ui_friendly_name`. B6560 owns the `FormModel` and `FormField` types and `project_model`; this task only fills in data with them. Read B6560's `provider_forms/spec.rs` for the exact type shapes before you write a line.
+
+  Expose `pub fn tables_a() -> Vec<(&'static str, FormModel)>`. The first item of each pair is the registry key, the name the provider is registered under in its hook folder's `__init__.py` (`guardrail_class_registry = {...}`); the second is the model with its `ui_friendly_name`. Group the data in files of at most 250 lines, for example `form_tables_a/security.rs`, `form_tables_a/cloud.rs`, `form_tables_a/content.rs` and `form_tables_a/mod_list.rs` for the function that joins them; the names are yours but each file's tests live in `form_tables_a/tests.rs`.
+
+  The providers, by hook folder under litellm/proxy/guardrails/guardrail_hooks/ and the class that holds the fields (types live in litellm/types/proxy/guardrails/guardrail_hooks/<name>.py unless noted): decision_model (DecisionModelGuardrailConfigModel, in the hook file), crowdstrike_aidr, panw_prisma_airs, noma (NomaGuardrailConfigModel, from types/guardrails.py or noma.py, whichever class `get_config_model` returns), noma_v2 (NomaV2GuardrailConfigModel), conduct, typesafe, dynamoai, headroom, promptguard, qualifire, microsoft_purview (purview_dlp.py), block_code_execution, qohash, hiddenlayer, javelin, mcp_end_user_permission, openai (moderations.py), xecguard, azure (prompt_shield.py and text_moderation.py, two keys), alice, litellm_content_filter, zscaler_ai_guard and guardrails_ai. For each, open the hook class, read what `get_config_model` returns and write that model's fields. Some models inherit fields from a parent class (openai_moderation.py has a base and a child, and enkryptai is in B6562); include the inherited fields. `optional_params` is a field of every model that inherits GuardrailConfigModel, and many give it a nested model of its own: write the nested model out.
+
+  Oracle: the helper operation for this task takes `provider`, one of the registry keys above. The Python side finds the class in `guardrail_class_registry`, reads `get_config_model()`, runs `_get_fields_from_model` and adds `ui_friendly_name`, as the route does. The Rust side answers `project_model` of its table plus the same name entry. A provider whose `get_config_model` returns nothing is not in the table and the case for it is not written.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/form_tables_a.rs
+    - crates/betterlite-server/src/guardrails/form_tables_a/**
+    - tools/oracle/cases/helpers/guardrail-form-tables-a/**
+    - tools/oracle/fuzz/corpus/helper_case/guardrail-form-tables-a-*
+    - tools/oracle/helpers/b6561.py
+    - tools/oracle/helpers/b6561/**
+    - tools/oracle/src/helpers/server/b6561.rs
+    - tools/oracle/src/helpers/server/b6561/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1976-L2003
+    why: The registry loop that calls get_config_model, projects the fields and adds ui_friendly_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L95-L102
+    why: guardrail_class_registry and the hook-folder merge that fills it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/base.py#L9-L20
+    why: GuardrailConfigModel, the parent class with optional_params and the abstract ui_friendly_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/litellm_content_filter.py#L115-L172
+    why: The largest model in this group, with nested content filter options.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/zscaler_ai_guard.py#L11-L142
+    why: Models with ui_type bool and options set in json_schema_extra.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/block_code_execution.py#L42-L74
+    why: A multiselect with options from json_schema_extra.
+dod:
+  - text: Every provider in the list above that returns a settings model from get_config_model has an entry with its registry key, and the entry projects to the same JSON as LiteLLM's class, ui_friendly_name included.
+    proof: [tables-a-tests, oracle, helper-python]
+  - text: Nested models, inherited fields, ui_type overrides and json_schema_extra options of the group are in the tables.
+    proof: [tables-a-tests, oracle]
+  - text: The new helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: tables-a-tests
+      why: a table is missing, has a wrong key or does not project to the expected JSON
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::form_tables_a::tests::/)'
+    - id: helper-python
+      why: the oracle adapter is missing or fails strict lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6561)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no new helper case was added or the shared parser fails on one
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/guardrail-form-tables-a-*)" &&
+        grep -lE '^[[:space:]]+b6561:' tools/oracle/fuzz/corpus/helper_case/guardrail-form-tables-a-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/decision-model.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/crowdstrike-aidr.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/panw-prisma-airs.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/noma.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/noma-v2.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/conduct.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/typesafe.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/dynamoai.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/headroom.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/promptguard.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/qualifire.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/microsoft-purview.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/block-code-execution.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/qohash.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/hiddenlayer.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/javelin.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/mcp-end-user-permission.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/openai-moderation.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/xecguard.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/azure-prompt-shield.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/azure-text-moderation.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/alice.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/litellm-content-filter.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/zscaler-ai-guard.yaml
+  - tools/oracle/cases/helpers/guardrail-form-tables-a/guardrails-ai.yaml
+deviations:
+  - what: Provider settings are written as data tables and no longer read off the classes.
+    why: Rust has no annotation reflection, and the oracle cases compare each table to the real class.
+out_of_scope:
+  - "The types and the projection function: B6560."
+  - "The second group of providers (agent_365 to model_armor) and tool_permission: B6562 and B6560."
+  - "The settings structs the guardrails use at run time: the provider tasks own them. A table here lists form fields only."
+  - "Providers whose class returns no model from get_config_model: LiteLLM leaves them out of the response, so they are not in a table."
+pitfalls:
+  - "The registry key is not always the folder name: read `guardrail_class_registry` in the folder's `__init__.py` (noma and noma_v2 share one folder, and azure registers two keys)."
+  - "A model declared as GuardrailConfigModel[BaseModel] (decision_model and headroom) gives `optional_params` as a plain string field, while an unparametrized parent hides it. The oracle shows which."
+  - "A `ui_type` of `GuardrailParamUITypes.BOOL` is an Enum member and goes out as its value, the string 'bool'."
+  - "Descriptions are long and sometimes built from implicitly joined string literals, so copy the final joined text, including spaces at the joins."
+  - "A field with `default_factory` has no plain default, so check what `field.default` is for it before you decide whether `default_value` is present."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

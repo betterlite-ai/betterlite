@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8191_allowlist_load_blank_names","call":{"b8191":{"operation":"allowlist_load","settings":{"mcp_allowed_clients":[],"mcp_client_id_header":"","litellm_jwtauth":{"mcp_client_id_jwt_field":""}}}},"env":{},"compare":{"ignore":[]}}

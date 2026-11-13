@@ -3,6 +3,10 @@ name = "betterlite-streaming-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
@@ -10,6 +14,13 @@ cargo-fuzz = true
 [dependencies]
 betterlite-streaming = { path = ".." }
 libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "provider_stream_chunk"
+path = "fuzz_targets/provider_stream_chunk.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "stream_content_assembly"

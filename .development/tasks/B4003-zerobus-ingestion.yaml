@@ -65,16 +65,16 @@ checks:
   commands:
     - id: zerobus-init-params
       why: ZerobusInitParams defaults or Pydantic validation gt=0 are missing or wrong
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_init_params::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus::client|zerobus::row)::(.*::)?zerobus_init_params::/)' -- --include-ignored
     - id: zerobus-url-construction
       why: insert_url, token_url or trailing-slash stripping is wrong
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_url_construction::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus::client|zerobus::row)::(.*::)?zerobus_url_construction::/)' -- --include-ignored
     - id: zerobus-auth-construction
       why: _basic_auth encoding or Authorization header is wrong
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_auth_construction::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus::client|zerobus::row)::(.*::)?zerobus_auth_construction::/)' -- --include-ignored
     - id: zerobus-auth-details
       why: Authorization details formatting does not match Databricks requirements
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus_auth_details::/)' -- --include-ignored
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(zerobus::client|zerobus::row)::(.*::)?zerobus_auth_details::/)' -- --include-ignored
     - id: zerobus-token-cache
       why: Token caching logic, leeway calculation or malformed JSON handling is wrong
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^zerobus::token::/)' 2>/dev/null | grep -E '(PASS|FAIL)' | head -20

@@ -1,0 +1,112 @@
+id: B8330
+title: Databricks, Snowflake and OCI dispatch in main.py
+description: >-
+  One of the wiring parts of the cloud ML platform group (B042). The provider code is already planned: B5841 (Databricks chat), B5980 (Databricks auth, embeddings, Responses), B5844 (Snowflake), B5940 (OCI signing and credentials), B5941 (OCI embeddings) and B5843 (OCI chat). Nothing calls them yet. This task owns the main.py side for these three providers: the dispatch functions, their completion and embedding arms, the environment reads the parts left to the caller, the two HTTP calls the parts left out, and the HTTP oracle cases. Put the code in the module data_cloud_dispatch of betterlite-provider and plug the arms into the dispatch table through B2230's selection, the same way B050 and B8157 do. Unknown providers still fail as before.
+
+
+  _complete_databricks (main.py L3335-L3404, arm L5987-L5988 for custom_llm_provider databricks). api_base is the context value, else the global litellm.api_base, else DATABRICKS_API_BASE. api_key is the context value, else the global litellm.api_key, else litellm.databricks_key, else DATABRICKS_API_KEY; the global key comes before the Databricks key. headers is the context value, else the global headers. Call the shared HTTP completion handler with custom_llm_provider set to the literal "databricks". When the handler fails, log post_call with the messages, the key, the error text as original_response and {"headers": headers} as additional_args, then return the same error unchanged. When optional_params has a truthy stream, log post_call once more with the stream as original_response and the same additional_args.
+
+
+  Databricks embedding arm (L6556-L6574): the same base and key order (DATABRICKS_API_BASE here is read through get_secret, so the same lookup), then B5980's databricks_embedding with an empty embedding response, the timeout, the client and the aembedding flag. Fill B5980's DatabricksEnv from DATABRICKS_CLIENT_ID, DATABRICKS_CLIENT_SECRET, DATABRICKS_API_BASE and LITELLM_USER_AGENT (else DATABRICKS_USER_AGENT) at call time, and back its OauthTokenSource with the OAuth M2M request from databricks/common_utils.py L209-L262: POST to the scheme and host of the api base plus /oidc/v1/token (path, query and fragment dropped), form body grant_type=client_credentials and scope=all-apis, HTTP basic auth with client id and secret, Content-Type application/x-www-form-urlencoded, a 30 second timeout, on B173's pooled client. A transport failure is DatabricksError 500 "OAuth M2M token request failed: <error>", a status other than 200 is DatabricksError with that status and "OAuth M2M token request failed: <body text>", and the access_token comes from B5980's reply decoder. Also take the Databricks branch of the Responses config selection (utils.py L9205-L9209, inside B157's broad ownership): provider databricks returns B5980's Responses config only when the lower-cased model contains "gpt", else no config.
+
+
+  _complete_snowflake (L4655-L4705, arm L6043-L6044: custom_llm_provider snowflake, or the model is one of the catalog models whose litellm_provider is snowflake). It resolves nothing itself: key and base come from get_llm_provider, which B211 already built (SNOWFLAKE_JWT). Use the dispatch client when there is one, else the pooled client with the request timeout. Call the shared handler with the context provider. On a failure log post_call exactly as Databricks does (error text, {"headers": headers}) and return the error; there is no stream post_call. Snowflake embedding arm (L7297-L7312): api_key is the context value, else SNOWFLAKE_JWT; call the shared embedding handler with empty litellm_params. Pass SNOWFLAKE_ACCOUNT_ID to B5844's base URL function as its account_id_env argument. Take the Snowflake branch of the embedding config selection (utils.py L8826-L8827), returning B5844's embedding config.
+
+
+  _complete_oci (L3224-L3256, arm L5981-L5982) passes the context fields to the shared handler with no fallback. OCI embedding arm (L6640-L6657): headers None becomes an empty map, then the shared embedding handler with the full litellm_params. Take the OCI branch of the embedding config selection (L8794-L8797), returning B5941's config. Read OCI_REGION, OCI_USER, OCI_FINGERPRINT, OCI_TENANCY, OCI_KEY, OCI_KEY_FILE and OCI_COMPARTMENT_ID into B5940's OciEnvValues at call time and hand it to resolve_oci_credentials. Send the stream request that B5843 left out (oci/chat/transformation.py L632-L713, get_sync_custom_stream_wrapper and get_async_custom_stream_wrapper): use the dispatch client when it fits the path, else the pooled client; POST to the api base with the signed headers and the signed body bytes when signing produced them, else the JSON of the request; stream the reply with B5843's 300 second timeout; an HTTP status error or a status other than 200 becomes OciError with the status and the body text; then hand the text stream to B5843's SSE decoder. Sign after the body is final, so the signed hash matches the bytes sent.
+
+
+  Config. Add the section data_cloud_credentials with litellm_settings.databricks_key (default None). The environment variables above are read when the call runs, through betterlite-env, as LiteLLM's get_secret and os.getenv do; an empty value counts as unset. litellm.api_key, litellm.api_base and litellm.headers come from B002's loader.
+
+
+  Plan about 420 lines of module code, 250 of tests, 60 for the section and the case files. Where the source and this text differ, the source at the pinned commit wins.
+scope:
+  paths:
+    - crates/betterlite-provider/src/data_cloud_dispatch.rs
+    - crates/betterlite-provider/src/data_cloud_dispatch/**
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-config/src/sections/data_cloud_credentials.rs
+    - crates/betterlite-config/src/sections/data_cloud_credentials/**
+    - Cargo.lock
+    - tools/oracle/cases/providers/data-cloud/**
+    - tools/oracle/helpers/b8330.py
+    - tools/oracle/helpers/b8330/**
+    - tools/oracle/src/helpers/provider/b8330.rs
+    - tools/oracle/src/helpers/provider/b8330/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3224-L3404
+    why: _complete_oci and _complete_databricks, with the Databricks key order and both post_call logs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4655-L4705
+    why: _complete_snowflake, its client choice and the post_call on failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5981-L6044
+    why: The oci, databricks and snowflake arms of the completion dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6556-L6657
+    why: The databricks and oci embedding arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7297-L7312
+    why: The snowflake embedding arm and its SNOWFLAKE_JWT fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/common_utils.py#L209-L262
+    why: The OAuth M2M token request this task sends.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/chat/transformation.py#L632-L713
+    why: The two OCI stream requests, the client choice and the status check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8794-L8827
+    why: The OCI and Snowflake branches of the embedding config selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9205-L9209
+    why: The Databricks Responses config branch and its gpt model check.
+dod:
+  - text: _complete_databricks, _complete_snowflake and _complete_oci resolve base, key and headers in LiteLLM's order and call their configs through the shared handler.
+    proof: [data-cloud-dispatch-tests, oracle]
+  - text: Databricks and Snowflake log post_call on a handler failure and return the same error, and Databricks logs it again for a stream.
+    proof: [data-cloud-dispatch-tests]
+  - text: The databricks, snowflake and oci embedding arms reach their configs with the same arguments as LiteLLM.
+    proof: [data-cloud-dispatch-tests, oracle]
+  - text: The OAuth M2M request and the OCI stream request send the same URL, headers and body and map failures to the same errors.
+    proof: [data-cloud-dispatch-tests, oracle]
+  - text: The arms reach these functions through the dispatch table, and an unknown provider still fails as before.
+    proof: [data-cloud-dispatch-tests]
+  - text: litellm_settings.databricks_key loads into the data_cloud_credentials section.
+    proof: [data-cloud-config-tests]
+  - text: New HTTP cases for these providers exist.
+    proof: [data-cloud-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: data-cloud-dispatch-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^data_cloud_dispatch::/)'
+      why: Without the dispatch module there are no such tests, so the check fails on the base branch.
+    - id: data-cloud-config-tests
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::data_cloud_credentials::/)'
+      why: The section is a stub on the base branch and has no tests.
+    - id: data-cloud-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/providers/data-cloud)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/providers/data-cloud/databricks-chat.yaml
+  - tools/oracle/cases/providers/data-cloud/databricks-chat-stream.yaml
+  - tools/oracle/cases/providers/data-cloud/databricks-upstream-500.yaml
+  - tools/oracle/cases/providers/data-cloud/databricks-oauth-m2m.yaml
+  - tools/oracle/cases/providers/data-cloud/databricks-embedding.yaml
+  - tools/oracle/cases/providers/data-cloud/snowflake-chat.yaml
+  - tools/oracle/cases/providers/data-cloud/snowflake-embedding.yaml
+  - tools/oracle/cases/providers/data-cloud/snowflake-upstream-400.yaml
+  - tools/oracle/cases/providers/data-cloud/oci-chat.yaml
+  - tools/oracle/cases/providers/data-cloud/oci-chat-stream.yaml
+  - tools/oracle/cases/providers/data-cloud/oci-embedding.yaml
+deviations:
+  - what: Reply ids LiteLLM generates and token usage it estimates are compared as present, not equal, and the OCI signature header is compared as present.
+    why: The ids are random, usage depends on each side's tokenizer and the OCI signature covers the date header.
+out_of_scope:
+  - "B5841, B5980, B5844, B5940, B5941, B5942 and B5843 own every provider transform, the OAuth reply decoder and the SSE decoder; only calls to them are here."
+  - "B211 owns the snowflake branch of get_llm_provider (get_llm_provider_logic.py L811-L815) and its SNOWFLAKE_JWT default."
+  - "The other branches of the embedding and Responses config selection stay with B157 and the family tasks that extract them; only the three named branches are here."
+  - "The other main.py functions of B042 belong to B8331 (SAP, watsonx, SageMaker) and B8332 (Hugging Face, Replicate, Predibase); heroku, datarobot and gdc belong to B038 and ovhcloud to B039."
+pitfalls:
+  - "_complete_databricks reads DATABRICKS_API_BASE with os.getenv and the embedding arm with get_secret; both treat an empty value as unset, so one lookup serves both."
+  - "In the Databricks key chain litellm.api_key comes before litellm.databricks_key, so a global key hides the Databricks one."
+  - "The token URL keeps only scheme and host: https://x.cloud.databricks.com/serving-endpoints gives https://x.cloud.databricks.com/oidc/v1/token."
+  - "The OCI embedding arm turns headers None into an empty map before the call, while the chat path passes headers as they are."
+  - "The Responses branch lowers the model before the gpt check, so GPT-5 matches and a model without gpt gets no config at all."
+  - "The snowflake arm also matches a model in the snowflake catalog list when the provider is something else, so keep it after the arms that come before it at L6043."
+  - "databricks-oauth-m2m.yaml scripts both replies in the case field upstream, a list the mock answers in arrival order: the token reply first, then the chat reply. A request past the end fails with provider answer sequence exhausted. Only case env values get the mock address, through {{upstream}} (DATABRICKS_API_BASE: {{upstream}}/serving-endpoints); reply bodies are sent as written."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: security

@@ -1,0 +1,26 @@
+kind: helper
+name: anthropic-prompt-system-tools
+call:
+  anthropic_prompt:
+    messages:
+      - role: system
+        content: be brief
+      - role: user
+        content: "weather?"
+      - role: assistant
+        content: null
+        tool_calls:
+          - id: call.1
+            type: function
+            function:
+              name: get_weather
+              arguments: '{"city":"Boston, MA"}'
+      - role: tool
+        tool_call_id: call.1
+        content: sunny
+    model: claude-sonnet-4-5
+    llm_provider: anthropic
+    modify_params: false
+env: {}
+compare:
+  ignore: []

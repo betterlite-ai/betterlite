@@ -33,7 +33,7 @@ description: >-
   models; a nonempty dict key budget plus database, models and nonnull token invokes B753 fallback
   checks in order. Re-resolve the models after possible rewrites; then user model checks and nonempty
   dict end-user model budgets with a nonnull end-user ID. The limiter port defined here exposes
-  is_end_user_within_model_budget; B071 supplies it, and its boolean return is ignored unless it raises.
+  is_end_user_within_model_budget; B8481 supplies it from B3006's limiter, and its boolean return is ignored unless it raises.
 
 
   Fetch a team for nonnull team_id, treating UI_TEAM_ID as TeamNotFoundError. Catch HTTPException only
@@ -107,6 +107,11 @@ description: >-
   and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
   stage; the failure test asserts its public error translation and that the downstream handler was not
   called. These tests are part of the behavior-test allowance already budgeted above.
+  B1100 registers state/auth_key_validation.rs as a stub slot, so fill only crates/betterlite-server/src/state/auth_key_validation.rs and leave state.rs as it is.
+  The slot builds the production B736 UserLookup with db_cache_expiry set to the DEFAULT_IN_MEMORY_TTL value B735 loads in
+  config.sections.auth_prefetch (int env, default 5). Test user_lookup_config_expiry under
+  betterlite-server::auth::auth_key_validation::tests misses a user, then creates that user row, and shows the next
+  request sees the row with DEFAULT_IN_MEMORY_TTL=0 but not with the default 5.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_key_validation.rs
@@ -121,10 +126,8 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/auth-key-validation-*
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
+    - crates/betterlite-server/src/state/auth_key_validation.rs
+    - crates/betterlite-server/src/state/auth_key_validation/**
     - tools/oracle/cases/auth/auth-key-validation/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-key-validation-*
@@ -180,7 +183,7 @@ dod:
       - config-tests
       - config-corpus
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
-      execution.
+      execution, and user_lookup_config_expiry shows the user lookup gets DEFAULT_IN_MEMORY_TTL as its expiry.
     proof:
       - stage-wiring-tests
       - behavior-tests
@@ -226,7 +229,7 @@ oracle_cases:
   - tools/oracle/cases/auth/auth-key-validation/scim-inactive-owner.yaml
 deviations: []
 out_of_scope:
-  - B855/B1221 own common admission after this function. B071 implements the end-user model-budget
+  - B855/B1221 own common admission after this function. B8481 implements the end-user model-budget
     limiter port; B753 owns the other limiter protocols and the fallback rewrite.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate

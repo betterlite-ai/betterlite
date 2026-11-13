@@ -1,0 +1,75 @@
+kind: probe
+name: cooldown-failure-ratio-minimum-samples
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure: {class: internal_server, status: 500, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 4}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure: {class: internal_server, status: 500, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 5}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure: {class: internal_server, status: 500, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 3, failures: 3}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure: {class: internal_server, status: 500, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 2, failures: 3}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 1, has_alternatives: false, provider_default: false}
+        failure: {class: internal_server, status: 500, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 999}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 1, has_alternatives: false, provider_default: false}
+        failure: {class: internal_server, status: 500, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 1000}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 1, has_alternatives: false, provider_default: false}
+        failure: {class: internal_server, status: 500, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 5}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure: {class: bad_request, status: 400, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 5}
+        allowed_fails_before: 0

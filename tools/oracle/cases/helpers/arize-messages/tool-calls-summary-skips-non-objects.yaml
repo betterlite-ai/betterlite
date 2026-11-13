@@ -1,0 +1,16 @@
+kind: helper
+name: tool-calls-summary-skips-non-objects
+call:
+  b3860:
+    function: summarize_tool_calls
+    tool_calls:
+      - 7
+      - plain
+      - null
+      - id: call_2
+        function:
+          name: lookup
+          arguments: ""
+      - function: not-an-object
+env: {}
+compare: {ignore: []}

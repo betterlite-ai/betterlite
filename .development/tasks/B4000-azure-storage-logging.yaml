@@ -37,6 +37,8 @@ scope:
     - tools/oracle/helpers/b4000/**
     - tools/oracle/src/helpers/logging/b4000.rs
     - tools/oracle/src/helpers/logging/b4000/**
+    - crates/betterlite-logging/src/registry/catalog/azure_storage.rs
+    - crates/betterlite-logging/src/registry/catalog/azure_storage/**
   lint_tables: false
 
 references:
@@ -66,6 +68,8 @@ references:
     why: "upload_to_azure_data_lake_with_azure_account_key uses DataLakeServiceClient from azure-storage-file-datalake SDK, creates dated directories, creates file, appends content, flushes."
 
 dod:
+  - text: "The Azure Data Lake logger implements CallbackLogger, and registry/catalog/azure_storage.rs builds it with an account key or Entra credentials taken from CatalogInputs.env (tests named callback_logger_* in azure_storage_logging and registry/catalog/azure_storage/tests.rs)."
+    proof: [callback-logger]
   - text: "AzureBlobStorageLogger initializes with environment variable validation, credential provider setup, batch state and periodic-flush wiring from B256."
     proof: [azure-init-test, azure-init-oracle]
 
@@ -96,6 +100,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: azure_storage is not built or the Data Lake logger lacks the trait
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::azure_storage::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_storage_logging::(.*::)?callback_logger_/)'
     - id: azure-init-test
       why: Initialization tests missing or failing
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_storage_logging::.*init($|::)/) - test(replays_the_helper_case_corpus)'

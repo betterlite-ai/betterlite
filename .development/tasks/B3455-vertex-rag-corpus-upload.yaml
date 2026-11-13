@@ -1,0 +1,256 @@
+id: B3455
+title: Vertex RAG corpus creation and multipart upload
+description: >-
+  Build LiteLLM's VertexAIRAGIngestion in betterlite-core as module `rag::vertex_ingestion`
+  (crates/betterlite-core/src/rag/vertex_ingestion.rs). B3451 owns the shared ingestion state and the abstract
+  `store` contract in `rag::ingestion`; read crates/betterlite-core/src/rag/ingestion.rs first and reuse its state
+  type, its store trait and its result tuple, and do not redefine them. This task is the Vertex provider: a struct
+  `VertexIngestion` that holds B3451's ingestion state plus two injected ports and implements B3451's store trait.
+  The module does no HTTP and no token work itself. B3460 later builds the two ports: the token port on
+  B1302's credential cache and the HTTP port on B173's pooled client.
+
+  Ports, declared here as small async traits with typed requests. `PortError` holds the lower failure as its source
+  and its message. `VertexTokenPort::access_token` takes the optional credentials (a secrecy value) and the project
+  and returns the bearer token (secrecy value) plus the resolved project. It stands for `_ensure_access_token`
+  with custom_llm_provider "vertex_ai". `VertexRagHttp` has three methods, each with a timeout and the bearer
+  token, and each returns the status and the body bytes: `post_json(url, body_bytes, timeout)` sends header
+  Content-Type application/json; `get(url, timeout)` sends only Authorization; `post_multipart(url, metadata_json,
+  filename, file_bytes, file_content_type, timeout)` sends a form with a part "metadata" (no filename, content type
+  application/json) and a part "file", plus header X-Goog-Upload-Protocol: multipart. All three send
+  `Authorization: Bearer <token>`. A non-2xx status is not a port error: the module reads the status itself.
+
+  Construction (vertex_ai_ingestion.py L80-L94). The vector store options are B3450's `VertexAIVectorStoreOptions`
+  in betterlite-config (crates/betterlite-config/src/rag/document/ingest.rs), already merged with any stored
+  credential by B3451. Resolve the project, location and credentials through B1301's getters in betterlite-vertex
+  (safe_get_vertex_ai_project, get_vertex_ai_location, safe_get_vertex_ai_credentials: aliases vertex_project then
+  vertex_ai_project, vertex_location then vertex_ai_location, vertex_credentials then vertex_ai_credentials, then
+  settings and VERTEXAI_* env). Location falls back to "us-central1" when the getter gives nothing. Read B1301's file
+  for the exact names and input type; if a getter takes a different input than the options record, build that input
+  here. `supports_existing_file_id` keeps B3451's default false, and `existing_file_id` is ignored by store. The embed
+  step does nothing and returns None (Vertex embeds when a file joins a corpus); expose it as a method that always
+  returns None.
+
+  Store (L109-L157), in this order. 1. No project: return `VertexIngestionError::MissingProject` with the message
+  "vertex_project is required for Vertex AI RAG ingestion. Set it in vector_store config." before any port call.
+  2. corpus id = options vector_store_id; empty counts as absent. When absent, create a corpus named the ingest name,
+  else "litellm-rag-corpus" (empty name also falls back), with options.description. 3. When file_content is non-empty
+  (empty bytes do NOT upload, unlike OpenAI's store), filename is non-empty and the corpus id is non-empty: upload and
+  return the new file id. Otherwise the file id is None. 4. Return (corpus id, file id). Any error returns at once;
+  a corpus created in step 2 is not removed when the upload fails.
+
+  Base URL. Use `get_vertex_base_url(location)` from B1305 (betterlite-vertex model_urls); an invalid location is
+  `VertexIngestionError::Location` carrying that error. This task adds the betterlite-vertex dependency to
+  crates/betterlite-core/Cargo.toml (betterlite-vertex has no betterlite dependencies, so there is no cycle) and lets Cargo.lock follow. API version is v1beta1 everywhere.
+
+  Create corpus (L159-L244, L246-L312). Get a token from the port, then POST
+  `{base}/v1beta1/projects/{project}/locations/{location}/ragCorpora` with a 60 second timeout. Body is JSON with
+  camelCase keys: `displayName` always; `description` only when non-empty; `vectorDbConfig` only when non-empty.
+  When options.embedding_model is non-empty, vectorDbConfig is a copy of options.vector_db_config (the passthrough
+  JSON object, empty when absent) with the key `ragEmbeddingModelConfig` set to
+  `{"vertexPredictionEndpoint": {"endpoint": <embedding_model>}}`, replacing any key of that name. A status other
+  than 200 or 201 is `CreateCorpus` with the message "Failed to create RAG corpus: " plus the body text. The body is
+  a long-running operation. When `done` is true, the corpus id is `response.name`, or "" when missing; "" then
+  behaves as an absent id in step 3, so store returns ("", None). Otherwise poll operation `name` (default ""):
+  GET `{base}/v1beta1/{operation_name}`, 60 second timeout, the same token (no refresh between polls), at most 30
+  attempts. Status other than exactly 200 is `Poll` with "Failed to poll operation: " plus body text. If `done`: when
+  the key `error` is present (even null) fail with "Operation failed: " plus the error as compact JSON; else take
+  `response.name`, and when empty fail with "No corpus name in operation response: " plus the operation as compact
+  JSON; otherwise return the name. If not done, sleep 2 seconds (after every not-done attempt, including the last)
+  and try again. After 30 attempts fail with "Operation timed out after 30 attempts". Use `tokio::time::sleep` so
+  tests run with the paused clock.
+
+  Upload (L314-L413). Get a token again, then POST `{base}/upload/v1beta1/{corpus id}/ragFiles:upload` with a 300
+  second timeout. Metadata JSON uses snake_case keys here: `rag_file` is `{"display_name": filename}` plus
+  `description` set to options.file_description when non-empty; `upload_rag_file_config` is present only when
+  chunking_strategy.chunk_size or chunk_overlap is nonzero, and is
+  `{"rag_file_transformation_config": {"rag_file_chunking_config": {"fixed_length_chunking": {...}}}}` holding
+  `chunk_size` and `chunk_overlap` only for the nonzero ones. Unlike the import path, no 1024 default applies. The
+  file part content type is the given one, else "application/octet-stream" (empty also falls back). The chunking
+  strategy is B3451's state value; sizes that were never sent are absent (B5134 made them Option). A status other
+  than 200 or 201 is `Upload` with "Failed to upload file: " plus the body text. On success the file id is
+  `ragFile.name`, else top-level `name`, else "". If the body is not a JSON object, or `ragFile` is present but not an
+  object, log a warning and return the literal "uploaded" instead of failing.
+
+  Logging stays as in Python: debug lines for the request URL and body ("Creating RAG corpus", "Request body",
+  "Create corpus response", "Polling operation", "Operation not done yet, attempt N/30", "Created RAG corpus",
+  "Uploading file to RAG corpus", "Metadata", "Upload complete. File ID"), error lines for the three failed-status
+  messages, and the warning "Could not parse upload response". The token never appears in a log line or Debug text.
+
+  Oracle helper. Add helper cases that replay `VertexAIRAGIngestion.store` against scripted HTTP. Python side:
+  construct the class from the case's options, patch `get_async_httpx_client` in the ingestion module with a fake
+  client whose post and get record url, json or files, headers and timeout and return the scripted status and body,
+  patch `_ensure_access_token` to return a fixed token and project, and patch `asyncio.sleep` to record its delay.
+  Rust side: the same script drives scripted ports. Both sides project the ordered requests (method, url, JSON body
+  or the multipart metadata plus file part filename, size and content type, header names, timeout, sleeps) plus the
+  returned tuple or the error message. The token appears as present only. The skeleton creates the helper operation
+  named after this task id; the worker writes the adapter files and the case files listed in scope.
+
+  Native tests live in `rag::vertex_ingestion::tests` and use scripted ports with `#[tokio::test(start_paused =
+  true)]` for polling. The Python file has 492 lines. The owned code (init, embed, store, _create_rag_corpus,
+  _poll_operation, _upload_file_to_corpus) is about 215 nonblank, non-comment lines. Allow 270 implementation, 260
+  tests, 130 adapters and 80 case and corpus lines.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/rag/vertex_ingestion.rs
+    - crates/betterlite-core/src/rag/vertex_ingestion/**
+    - crates/betterlite-core/Cargo.toml
+    - Cargo.lock
+    - tools/oracle/cases/helpers/vertex-rag-store/**
+    - "tools/oracle/fuzz/corpus/helper_case/vertex_rag_store-*"
+    - tools/oracle/helpers/b3455.py
+    - tools/oracle/helpers/b3455/**
+    - tools/oracle/src/helpers/core_ops/b3455.rs
+    - tools/oracle/src/helpers/core_ops/b3455/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L80-L107
+    why: Constructor (project, location default us-central1, credentials) and the no-op embed override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L109-L157
+    why: store, with the project check, the corpus fallback name and the upload conditions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L159-L244
+    why: Corpus create request, camelCase body, embedding model merge and the immediate-done branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L246-L312
+    why: Operation polling, 30 attempts, 2 second delay and the four failure messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py#L314-L413
+    why: Multipart upload, snake_case metadata, chunking config and the "uploaded" fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L46-L52
+    why: INGESTION_REGISTRY maps vertex_ai to this class; this is the registry the ingest pipeline reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L444-L458
+    why: get_vertex_base_url, owned by B1305 and used here for every URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L1165-L1215
+    why: Project, location and credential getters with their alias order, owned by B1301.
+  - url: https://docs.cloud.google.com/vertex-ai/generative-ai/docs/model-reference/rag-api-v1
+    why: Wire shapes of ragCorpora create, operations and ragFiles:upload.
+
+dod:
+  - text: VertexIngestion keeps supports_existing_file_id false, ignores existing_file_id, and its embed step returns no embeddings.
+    proof: [flags-tests]
+  - text: Store fails with the typed missing-project error and calls no port when no project resolves, and the location defaults to us-central1.
+    proof: [project-tests, oracle]
+  - text: A missing or empty vector_store_id creates a corpus named after the ingest name (default litellm-rag-corpus) with camelCase displayName, description and vectorDbConfig sent only when non-empty.
+    proof: [corpus-create-tests, oracle]
+  - text: A non-empty embedding_model is merged into vectorDbConfig as ragEmbeddingModelConfig with a vertexPredictionEndpoint endpoint, replacing a same-named key.
+    proof: [corpus-create-tests, oracle]
+  - text: A done operation gives the corpus name at once, and an empty name makes store return an empty corpus id with no file id.
+    proof: [corpus-create-tests, oracle]
+  - text: A pending operation is polled up to 30 times with 2 second sleeps, and non-200 status, operation error, empty name and timeout fail with the exact messages.
+    proof: [poll-tests, oracle]
+  - text: Upload posts the multipart form to the ragFiles:upload URL with snake_case metadata, the fixed_length_chunking config only for nonzero sizes, the octet-stream content type default and the multipart protocol header.
+    proof: [upload-tests, oracle]
+  - text: No upload happens for empty file content (including empty bytes), an empty filename or an empty corpus id.
+    proof: [upload-tests, oracle]
+  - text: The file id comes from ragFile.name, then name, then empty, and an unparseable response body returns the literal uploaded.
+    proof: [upload-tests, oracle]
+  - text: A failed create, poll or upload status returns the typed error with the response body text, and a corpus created before a failed upload is not removed.
+    proof: [error-tests, oracle]
+  - text: The bearer token and credentials never appear in Debug output, errors or logs.
+    proof: [secret-tests]
+  - text: The helper adapter passes strict lint and type checks.
+    proof: [helper-python]
+  - text: Newly added helper corpus cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: flags-tests
+      why: the existing-file flag, the ignored existing_file_id or the no-op embed override is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::vertex_ingestion::tests::flags_/)'
+    - id: project-tests
+      why: the missing-project error, its message or the us-central1 default is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::vertex_ingestion::tests::project_/)'
+    - id: corpus-create-tests
+      why: corpus creation, its body fields, the embedding model merge or the done branch is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::vertex_ingestion::tests::corpus_create_/)'
+    - id: poll-tests
+      why: operation polling, its sleeps, limit or failure messages are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::vertex_ingestion::tests::poll_/)'
+    - id: upload-tests
+      why: the multipart upload, metadata, skip conditions or file id parsing is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::vertex_ingestion::tests::upload_/)'
+    - id: error-tests
+      why: a failed status does not return the typed error, or a created corpus is rolled back
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::vertex_ingestion::tests::error_/)'
+    - id: secret-tests
+      why: the token or credentials leak into Debug output, errors or logs
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::vertex_ingestion::tests::secret_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3455)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3455 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3455/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added Vertex store cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/vertex_rag_store-*")" &&
+        grep -lE '^[[:space:]]+b3455:' tools/oracle/fuzz/corpus/helper_case/vertex_rag_store-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-rag-store/missing-project.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/existing-corpus-upload.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/create-corpus-done.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/create-corpus-embedding-model.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/create-corpus-polled.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/poll-operation-error.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/poll-timeout.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/create-status-failure.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/upload-chunking-config.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/upload-skipped.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/upload-unparseable-response.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/upload-status-failure.yaml
+
+deviations:
+  - what: Token creation, the corpus and upload HTTP calls run through two injected ports, and a port failure surfaces as a typed error carrying the lower message.
+    why: The module stays testable without HTTP and keeps the crate graph acyclic. B3460 builds the ports on B1302 and B173, so the message a user sees is the lower layer's.
+  - what: The error and response JSON in the "Operation failed" and "No corpus name in operation response" messages is compact JSON text, not Python's dict repr.
+    why: docs/compatibility.md leaves Python repr text out of scope. The prefix text is identical.
+  - what: The multipart metadata part is compact JSON text, not json.dumps with spaces after separators.
+    why: Only the parsed JSON is observable to Google. The oracle compares the parsed value.
+  - what: A response that has a null `name` or a non-string `name` under ragFile counts as missing, so the id falls through to top-level `name`, then "".
+    why: Python would return None or a non-string through its untyped dict; the declared type is str and betterlite keeps types real.
+
+out_of_scope:
+  - BaseRAGIngestion state, credential overlay, upload, OCR, chunk and the abstract store contract; B3451 owns them.
+  - The ingest pipeline that calls embed and store, and the failed-result envelope; B3460 owns them.
+  - INGESTION_REGISTRY and provider selection for "vertex_ai"; B3450 owns them and B3460 constructs the class.
+  - "_import_files_from_gcs (L415-L492): no caller at the pin, and the live Vertex import path is the separate class in litellm/llms/vertex_ai/rag_engine/ingestion.py that B1385 owns. Its cases go too."
+  - "The `if not self.project_id: self.project_id = project_id` line in _create_rag_corpus (L181-L183): store has already rejected an empty project, so it never runs."
+  - get_vertex_base_url (B1305), the project, location and credential getters (B1301), and token caching and refresh (B1302, B1303).
+  - The pooled HTTP client behind the HTTP port; B173 owns it and B3460 builds the port on it.
+  - The HTTP route and request validation for ingest; B3460 and B3462 own them. No HTTP oracle case belongs here because no route reaches this module yet.
+
+pitfalls:
+  - store uploads only when file_content is truthy, so empty bytes skip the upload here although OpenAI's store uploads them; the result is (corpus id, None).
+  - The create body uses camelCase (displayName, vectorDbConfig, ragEmbeddingModelConfig, vertexPredictionEndpoint) but the upload metadata uses snake_case (rag_file, display_name, rag_file_transformation_config, fixed_length_chunking).
+  - Only the upload metadata has no 1024 default for chunk_size; a chunk_size or chunk_overlap of 0 counts as not sent, and when both are 0 or absent `upload_rag_file_config` is left out entirely.
+  - A done operation with an empty `response.name` is not an error in the create path (store returns an empty corpus id and no upload), but the same shape inside the poll loop fails with "No corpus name in operation response".
+  - The poll loop fails on any `error` key once the operation is done, even when its value is null, and it sleeps 2 seconds after the last not-done attempt before failing with the timeout.
+  - The poll status check is exactly 200, while create and upload accept 200 and 201.
+  - A token is requested once per create and once per upload, and the poll loop reuses the create call's token.
+  - The ingest name fallback is "litellm-rag-corpus", not the "litellm-rag-ingest" that the OpenAI store uses.
+  - description and vectorDbConfig are dropped when empty (falsy), not only when absent; an empty embedding_model adds nothing.
+  - The upload file part's content type falls back to application/octet-stream for an empty string as well as for None.
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

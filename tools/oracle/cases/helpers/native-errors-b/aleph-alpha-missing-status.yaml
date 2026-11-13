@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-b-aleph-alpha-missing-status
+call:
+  native_errors_b:
+    provider: aleph_alpha
+    model: aleph_alpha/luminous-base
+    error_str: "boom"
+    status_code: null
+    message: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

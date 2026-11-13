@@ -1,0 +1,42 @@
+kind: helper
+name: candidate-count-out-of-range
+call:
+  b7811:
+    calls:
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, mongodb_num_candidates: 9}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, mongodb_num_candidates: 10001}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, mongodb_num_candidates: 4}
+          optional_params: {max_num_results: 5}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, mongodb_num_candidates: 0}
+          optional_params: {}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {max_num_results: 0}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {max_num_results: 51}
+          query: q
+      - call: mongodb_prepare_search
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {max_num_results: -1}
+          query: q
+env: {}
+compare: {ignore: []}

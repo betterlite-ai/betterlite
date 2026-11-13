@@ -39,6 +39,21 @@ description: >-
   level-by-level precedence.
 scope:
   paths:
+    - "tools/oracle/src/lib.rs"
+    - "tools/oracle/litellm/probes/registry.py"
+    - "crates/betterlite-models/src/passthrough_policies/sdk_timeout.rs"
+    - "crates/betterlite-models/src/passthrough_policies/sdk_timeout"
+    - "crates/betterlite-models/src/passthrough_policies/query_merge.rs"
+    - "crates/betterlite-models/src/passthrough_policies/query_merge"
+    - "crates/betterlite-models/src/passthrough_policies/protected_headers.rs"
+    - "crates/betterlite-models/src/passthrough_policies/protected_headers"
+    - "crates/betterlite-models/src/passthrough_policies/passthrough_headers.rs"
+    - "crates/betterlite-models/src/passthrough_policies/passthrough_headers"
+    - "crates/betterlite-models/src/passthrough_policies/header_forwarding.rs"
+    - "crates/betterlite-models/src/passthrough_policies/header_forwarding"
+    - "crates/betterlite-models/src/passthrough_policies/generic_timeout.rs"
+    - "crates/betterlite-models/src/passthrough_policies/generic_timeout"
+    - "crates/betterlite-models/src/lib.rs"
     - crates/betterlite-models/src/passthrough_policies.rs
     - crates/betterlite-models/src/passthrough_policies/**
     - crates/betterlite-models/fuzz/fuzz_targets/query_parsing.rs

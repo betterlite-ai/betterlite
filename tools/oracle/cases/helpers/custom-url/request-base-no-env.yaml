@@ -1,0 +1,7 @@
+kind: helper
+name: request-base-no-env
+call:
+  b7323: {"function":"get_custom_url","proxy_base_url":null,"request_base_url":"https://request.example.com","request_root_path":"","route":"/v1/chat"}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,123 @@
+id: B8992
+title: Native Google A2A and MCP guardrail HTTP parity
+description: >-
+  Add the native-protocol HTTP evidence B1391, B6163 and B3818 deferred to B3680,
+  whose own case list omits it. This is approximately 750 lines of oracle fixtures,
+  not another translation implementation. The proxy must select the existing
+  concrete translation and live generic_guardrail_api class through normal config.
+  Use a master key and mock upstream credentials, with api_base on the configured
+  guardrail and the native endpoint's existing model/agent/MCP server setup. The
+  scanner is the real B3771 HTTP integration; mock only its remote replies and the
+  remote provider. Compare its captured inputs and the final provider request or
+  client response so merely obtaining a 200 cannot satisfy these cases.
+
+  Google calls POST /v1beta/models/{model_name}:generateContent and
+  /models/{model_name}:generateContent, plus the corresponding
+  /v1beta/models/{model_name}:streamGenerateContent and
+  /models/{model_name}:streamGenerateContent. A request case mixes systemInstruction
+  and contents text with an inline image; assert that system text precedes content
+  text and only text locations change. A post-call case returns multiple candidates
+  and rewrites each candidate in order. A second response returns the wrong number
+  of replacement texts and must remain unchanged. A streaming case returns a
+  replacement for combined text but the original native frames must reach the
+  client: this handler detects and blocks streams but intentionally ignores rewrites.
+  A distinct streaming block case proves raw frames actually reached the scanner.
+  Keep native SSE framing and its lack of an OpenAI [DONE] marker; inspect the final
+  in-stream failure rather than assuming that a late block changes HTTP 200 to 400.
+
+  A2A uses POST /a2a/{agent_id}, /a2a/{agent_id}/message/send and
+  /v1/a2a/{agent_id}/message/send. Reuse B8648's configured-agent fixture and JSON-RPC
+  message/send body. One request case scans only nonempty kind:text parts, preserving
+  file/data parts, message ids and context ids. A result case returns a valid task
+  with status.message and multiple artifacts, then rewrites every collected text
+  while keeping the JSON-RPC envelope. A wrong-length scanner reply leaves those
+  parts unchanged. Exercise all three route aliases across these cases. For a
+  message/stream request return valid agent task updates split across text chunks;
+  the guardrail receives their concatenation without a separator, places a rewrite
+  in the first text chunk and clears subsequent text parts, with original ids and
+  nontext fields intact. Use the existing A2A transport framing rather than a chat
+  completion envelope. Add a pre-call block and verify no message reached the agent.
+
+  Google and A2A use mode pre_call for input and post_call for output cases; use
+  default_on true on each fixture's guardrail so endpoint-specific request metadata
+  cannot accidentally omit it. MCP uses pre_mcp_call for discovery and post_mcp_call
+  for tool output. MCP calls GET /mcp-rest/tools/list and POST /mcp-rest/tools/call; these routes have
+  no /v1 alias. Use B8626's HTTP MCP fixture and the declared remote tool's name,
+  description and schema; scripted initialize/list/call replies must be real MCP
+  protocol replies. A discovery case rewrites tool and nested schema descriptions
+  and leaves schema names/types intact. A call result case rewrites both content
+  text blocks and string leaves of structuredContent in one scan. A result-label
+  case asks the scanner to change a structuredContent object key or numeric label
+  and must fail closed with 400 rather than changing the contract. A wrong-length
+  reply also fails with 400. Do not duplicate B105's MCP argument-masking case:
+  these cases cover discovery and output projection, which that case does not.
+
+  List and compare content-type, status, error type/param/code, and complete JSON
+  or SSE payloads, plus upstream method/path/body and auth. Normalize only the
+  endpoint's documented generated ids and timing fields. Multi-step alias cases
+  may share one config; each step keeps its own expected upstream sequence. The
+  ordinary oracle gate runs all cases against betterlite and the pinned proxy;
+  --self-check may diagnose a fixture but cannot prove this task. No test imports
+  FastAPI route functions or replaces ProxyLogging with a fake. The existing
+  route owners retain all mounts, and existing decoders retain fuzz ownership.
+scope:
+  paths:
+    - tools/oracle/cases/guardrails/native-http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L17-L141
+    why: Native generation and streaming decorators, aliases and raw SSE flags.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/guardrail_translation/handler.py#L60-L255
+    why: System/content extraction, exact-length writeback and detection-only streaming.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L635-L650
+    why: The three agent invocation decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/guardrail_translation/handler.py#L40-L286
+    why: Request, result and accumulated-stream guardrail calls with guarded positional rewrites.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/guardrail_translation/handler.py#L288-L406
+    why: All task text locations and writeback paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L935-L950
+    why: The tools/list decorator under the /mcp-rest router prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1159-L1175
+    why: The tools/call decorator and its authenticated boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/guardrail_translation/handler.py#L140-L310
+    why: MCP discovery description scanning, result redaction and fail-closed output mapping.
+dod:
+  - text: Native Google requests and candidates are rewritten positionally, mismatched counts are ignored, and streamed rewrites are ignored while blocks propagate.
+    proof: [oracle]
+  - text: Every A2A invocation alias reaches the guardrail, task-result locations are preserved, and a stream rewrite is delivered without duplicate text.
+    proof: [oracle]
+  - text: MCP discovery and output scans run through the mounted REST surface, with both structured and textual output covered and invalid writebacks rejected.
+    proof: [oracle]
+checks:
+  optional: []
+  commands: []
+oracle_cases:
+  - tools/oracle/cases/guardrails/native-http/google-request-aliases.yaml
+  - tools/oracle/cases/guardrails/native-http/google-candidate-rewrite.yaml
+  - tools/oracle/cases/guardrails/native-http/google-length-mismatch.yaml
+  - tools/oracle/cases/guardrails/native-http/google-stream-rewrite-ignored.yaml
+  - tools/oracle/cases/guardrails/native-http/google-stream-block.yaml
+  - tools/oracle/cases/guardrails/native-http/a2a-request.yaml
+  - tools/oracle/cases/guardrails/native-http/a2a-task-result.yaml
+  - tools/oracle/cases/guardrails/native-http/a2a-length-mismatch.yaml
+  - tools/oracle/cases/guardrails/native-http/a2a-stream-rewrite.yaml
+  - tools/oracle/cases/guardrails/native-http/a2a-block.yaml
+  - tools/oracle/cases/guardrails/native-http/mcp-discovery.yaml
+  - tools/oracle/cases/guardrails/native-http/mcp-result-rewrite.yaml
+  - tools/oracle/cases/guardrails/native-http/mcp-result-label-block.yaml
+  - tools/oracle/cases/guardrails/native-http/mcp-length-mismatch.yaml
+deviations: []
+out_of_scope:
+  - B1391 implements Google text projection and B3680 its adapter; B6163 owns A2A translation and B3818 MCP translation.
+  - B3506/B8774 own Google handlers/mounting, B8589/B8648 A2A handlers/mounting, B4682 MCP discovery scanning, B8198 MCP post-call execution and B8626 REST mounting.
+  - B6370 owns stream wrapper composition; B8632 owns the production stream item bridge and must carry raw native text/bytes through the wrapper.
+  - MCP session/toolset and protocol mounts remain B8701/B9950/B8728; no additional MCP endpoint is registered here.
+pitfalls:
+  - Google streaming replacement text is deliberately ignored even when the same guardrail rewrites a nonstreaming candidate.
+  - A2A task output extraction visits every artifact but its stream text extractor takes the first applicable location per chunk.
+  - MCP structuredContent keys and numeric labels participate in scanning but cannot be rewritten.
+  - A2A JSON-RPC ids and native SSE framing are part of the compared result, not normalization noise.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

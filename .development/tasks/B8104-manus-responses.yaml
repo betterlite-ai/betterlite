@@ -1,0 +1,115 @@
+id: B8104
+title: Manus Responses API config
+description: >-
+  Build the Manus provider for the Responses API, model manus/{agent_profile}, in the module manus_responses of betterlite-provider.
+  It covers litellm/llms/manus/responses/transformation.py (ManusResponsesAPIConfig, 239 code lines). The class extends the OpenAI
+  Responses config; call B507's request builder, B508's reply decoding and B509's retrieve path through the provider contract of
+  B1114 and override only what this file overrides. litellm/llms/manus/__init__.py and the two responses and files __init__.py files
+  hold no code.
+
+
+  Provider. custom_llm_provider is manus. should_fake_stream is true exactly when stream is true (Manus runs a task and returns it,
+  so streaming is faked). supports_native_websocket is false. The agent profile is the text after the first "/" in the model, else
+  the whole model (manus/manus-1.6 gives manus-1.6).
+
+
+  Headers. The key is litellm_params api_key, else the global api_key, else MANUS_API_KEY (read through the shared secret getter). No
+  key raises ValueError "Manus API key is required. Set MANUS_API_KEY environment variable or pass api_key parameter." Headers get
+  API_KEY set to the key (the header name is exactly API_KEY, not Authorization) and Content-Type application/json, which is also
+  needed for GET requests.
+
+
+  URL. The base is api_base, else the global api_base, else MANUS_API_BASE, else https://api.manus.im, with trailing slashes
+  removed. The URL is {base}/responses when the base already ends with /v1, else {base}/v1/responses.
+
+
+  Create request. Start from the OpenAI request body. Then set task_mode = "agent" and agent_profile = the profile. Then, when the
+  optional request params hold a non-empty extra_body object, merge its keys on top of the body, so extra_body can overwrite
+  task_mode and agent_profile.
+
+
+  Replies (create and retrieve share one routine in LiteLLM, but they are two functions; build one routine and call it twice).
+  Log the raw text through post_call first. Parse JSON; a parse failure raises the OpenAI error type with the raw text as message and
+  the HTTP status. When createdAt is present and created_at is absent, created_at takes createdAt converted by the shared created-field
+  converter; then any present created_at is converted. Missing or null reasoning and text become empty objects, missing or null output
+  becomes an empty list, missing or null usage becomes input_tokens 0, output_tokens 0, total_tokens 0, and a missing or null id
+  becomes "unknown-" plus the first 8 hex characters of a new uuid4. The body is validated as the Responses reply record; when
+  validation fails it is built without validation (debug log "Error constructing ResponsesAPIResponse: ..."). The processed response
+  headers go into additional_headers and the raw headers into headers of the hidden params.
+
+
+  Retrieve. transform_get_response_api_request returns the URL {api_base}/{encoded id} with the id encoded by B171's
+  encode_url_path_segment (field name response_id), and an empty body. The api_base argument is already the full responses URL.
+
+
+  Provider selection. utils.py L9201 returns ManusResponsesAPIConfig for provider manus in the native Responses selector (B2202 lists it, B1440 consults it first). This task adds that manus arm and builds the config value the arm returns. The get_llm_provider defaults for manus (MANUS_API_BASE with default https://api.manus.im, MANUS_API_KEY; get_llm_provider_logic.py L922-L925) are already merged by B211 in betterlite-models, so this task does not rebuild them.
+scope:
+  paths:
+    - crates/betterlite-provider/src/manus_responses.rs
+    - crates/betterlite-provider/src/manus_responses/**
+    - tools/oracle/cases/helpers/manus-responses/**
+    - tools/oracle/helpers/b8104.py
+    - tools/oracle/helpers/b8104/**
+    - tools/oracle/src/helpers/provider/b8104.rs
+    - tools/oracle/src/helpers/provider/b8104/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L34-L76
+    why: Provider name, fake streaming and agent profile extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L78-L121
+    why: The API_KEY header and URL building.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L123-L162
+    why: Create request additions and extra_body merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L164-L234
+    why: Reply decoding with the createdAt conversion and field defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L236-L320
+    why: Retrieve URL and the second copy of the reply decoding.
+  - url: https://open.manus.im/docs/openai-compatibility
+    why: Manus differences from the OpenAI Responses API.
+dod:
+  - text: Headers carry API_KEY and Content-Type, and a missing key raises the ValueError text.
+    proof: [manus-responses-tests, oracle]
+  - text: The URL handles the default base, a trailing slash and a base that already ends with /v1.
+    proof: [manus-responses-tests, oracle]
+  - text: The create body gets task_mode agent, the agent_profile and the extra_body keys on top.
+    proof: [manus-responses-tests, oracle]
+  - text: Replies convert createdAt and fill reasoning, text, output, usage and id defaults, for create and retrieve alike.
+    proof: [manus-responses-tests, oracle]
+  - text: A body that fails record validation is still returned.
+    proof: [manus-responses-tests]
+  - text: Streaming is faked and websockets are off.
+    proof: [manus-responses-tests]
+checks:
+  optional: []
+  commands:
+    - id: manus-responses-tests
+      why: the manus_responses behavior tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^manus_responses::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/manus-responses/agent-profile.yaml
+  - tools/oracle/cases/helpers/manus-responses/url-default.yaml
+  - tools/oracle/cases/helpers/manus-responses/url-base-with-v1.yaml
+  - tools/oracle/cases/helpers/manus-responses/request-task-mode.yaml
+  - tools/oracle/cases/helpers/manus-responses/request-extra-body-override.yaml
+  - tools/oracle/cases/helpers/manus-responses/response-created-at-camel.yaml
+  - tools/oracle/cases/helpers/manus-responses/response-defaults.yaml
+  - tools/oracle/cases/helpers/manus-responses/get-request-encoded-id.yaml
+deviations:
+  - what: The generated unknown- id suffix is random in both implementations, so cases ignore the id when the body had none.
+    why: A uuid4 cannot be compared.
+out_of_scope:
+  - "The OpenAI Responses base behavior (request building, reply decoding, retrieve) belongs to B506, B507, B508 and B509; the provider contract belongs to B1114."
+  - "Choosing ManusResponsesAPIConfig for the manus provider (utils.py L9201) and the manus branch in get_llm_provider_logic.py L922-L925 (MANUS_API_BASE default https://api.manus.im, MANUS_API_KEY) have no owner yet, see the notes."
+  - "The Manus files API belongs to B8105."
+pitfalls:
+  - "The manus selection arm and the config live here. The get_llm_provider base and key defaults are B211's merged table, so do not add a second copy of them."
+  - The header is API_KEY in upper case with an underscore; the Authorization header is not sent.
+  - extra_body is merged after task_mode and agent_profile, so it can replace them.
+  - A createdAt value is ignored when created_at is already present, but created_at is still passed through the converter.
+  - "A reply with reasoning set to null gets an empty object because the OpenAI record rejects None."
+  - The validation fallback means a malformed Manus body returns a loosely built record instead of an error; only invalid JSON raises.
+  - The retrieve URL is built from api_base as given (already ending in /v1/responses); do not add the path again.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

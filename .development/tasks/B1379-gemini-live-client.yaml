@@ -33,7 +33,6 @@ description: >-
   95 fuzz/seed lines within 700.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,gemini_live_client}.rs
     - crates/betterlite-vertex/src/gemini_live_client.rs
     - crates/betterlite-vertex/src/gemini_live_client/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

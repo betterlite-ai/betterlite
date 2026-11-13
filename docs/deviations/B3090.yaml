@@ -1,0 +1,26 @@
+task: B3090
+deviations:
+  - what: >-
+      SpendMetrics and DailySpendMetadata hold spend, flat cost and savings in
+      rust_decimal::Decimal and serialize them through rust_decimal's float adapter, where
+      LiteLLM declares float fields.
+    why: >-
+      The workspace money rule keeps spend and cost out of binary floats. The float adapter
+      writes the same JSON numbers LiteLLM's pydantic float fields write.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/common_daily_activity.py#L19-L36
+  - what: >-
+      SpendAnalyticsPaginatedResponse is spelled DailySpendPage in Rust and carries
+      serde(rename = "SpendAnalyticsPaginatedResponse").
+    why: >-
+      The workspace name rule caps identifiers at 30 characters and the LiteLLM name is 31;
+      the serde rename keeps LiteLLM's spelling attached to the type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/common_daily_activity.py#L122-L124
+  - what: >-
+      gateway_injected_caching_savings_spend, total_cache_creation_input_tokens,
+      total_compression_savings_spend, total_prompt_caching_savings_spend and
+      total_gateway_injected_caching_savings_spend keep shorter Rust field names and carry
+      LiteLLM's spelling in serde(rename).
+    why: >-
+      The workspace name rule caps identifiers at 30 characters. Serde writes LiteLLM's field
+      names into every response, so the wire format is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/common_daily_activity.py#L29-L36

@@ -1,0 +1,104 @@
+id: B8623
+title: Build the MCP OAuth flow ports and the authorization server state
+description: >-
+  B7321, B7530, B7531, B7532 and the gateway tasks B4674, B4675 and B4676 build the OAuth authorization server of the
+  MCP gateway (the discoverable_endpoints.py flows) behind ports. B7321's own text lists the fixes the composition root
+  owes and leaves them undone. This task writes those ports and builds B7321's OauthRoot, B7531's DcrFlows and B7532's
+  flow struct as one `McpOauth` value. B8624 and B8702 mount the routers; this task mounts nothing.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/oauth_flows.rs and app/mcp/oauth_flows/ (cipher.rs, upstream.rs,
+  users.rs, gateway.rs, store.rs, a tests.rs beside each). `McpOauth::build(core: &McpCore, identity: &McpIdentity,
+  tokens: &McpTokens, shared: &Shared) -> McpOauth`, Arc fields, no global; this task adds it as the field `oauth` of B8620's McpState and one
+  line in McpState::build (app/mcp/state.rs). It reads `shared.http`, `shared.db`,
+  `shared.redis`, `shared.cache` and `shared.jwt_signer`.
+
+
+  cipher.rs. SealCipher (B7530) over B1600's StoredCipher: encrypt is encrypt_value_helper, decrypt is
+  decrypt_value_helper with return_original_value false, so any failure is None; the field argument is only a log
+  label. The same value goes to B7321, B7531 and B7971.
+
+
+  upstream.rs, all over `shared.http`. UpstreamHttp (B7531) posts JSON with Content-Type and Accept application/json
+  using the Oauth2Register client settings. UpstreamForm (B7532) posts a form with the headers given using the
+  Oauth2Check settings. Both return status, body text and content type, and a connect, DNS, TLS or timeout error is a
+  TransportFailure. FaultRenderer (B7531's dcr_rejection and B7532's token_rejection and protocol_fault) calls B7970's
+  classify_upstream_dcr_rejection with dcr_fault_detail, classify_upstream_token_rejection with render_token_fault, and
+  UpstreamProtocolFault, mapping B7532's CredentialSource one to one onto B7970's copy.
+
+
+  users.rs. B7532's UserAccess: session_user_id is the BYOK session cookie reader of B4678 (LiteLLM's
+  _user_id_from_session_cookie, decoded and liveness-checked by B4655); authorize_credential_user,
+  uses_gateway_credential and extract_user_id go to B4658 and B4666 as B7532's text maps them; can_store_credential is
+  B4666's CredentialWrites from McpIdentity, reloading the admitted user when a sealed code gave one; user_can_reach is
+  the reachability lookup (B4673's user reload, then McpIdentity's McpAccess server check). BridgeMint is McpIdentity's
+  BridgePrep (prepare_bridge_mint, prepare_bridge_refresh, finish_bridge_mint). IdentityBinding is B4659's
+  enforce_oauth_identity_binding with McpIdentity's IssuerJwks. UserTokenStore stores through B4713's
+  store_user_oauth_credential, and warm_cache runs B4715's invalidate_user_token_cache over McpTokens' UserTokenCaches
+  and then sets the per-user token cache entry B4662 owns.
+
+
+  store.rs. B7531's ClientStore: server_row is B4711's get_mcp_server, store_client is B4712's
+  get_mcp_server_oauth_client_credentials, update_server_credentials is B4712's update_mcp_server with touched_by
+  "mcp_oauth_dcr" (its outcome mapped to Updated, NotFound or IdentifierConflict), upsert_store_client is B4712's
+  upsert, refresh_registry is B6765's update_server on McpCore's RegistryMutator, and is_config_declared asks McpCore's
+  registry whether the id is a config server. With no database every async method fails with the StoreFailure B7531
+  defines for it. DiscoveryJoin is B6762's ensure_oauth_metadata_discovered on the DiscoverySlots inside shared.mcp_registry. Decryptor is B6763's trait implemented here over B1600's StoredCipher.
+
+
+  gateway.rs. B4674's SingleUseGuard gets ClaimAuthority::Shared with a ClaimBackend over the Redis client when
+  `shared.redis` holds one (increment with expiry and read, LiteLLM's user_api_key_cache.redis_cache), otherwise
+  ClaimAuthority::Local with a MemoryClaimStore; the choice is made once here. B4675's FlowTokenSource draws from the
+  OS random source and RenderConsentPage is B1612's renderer. B4676's ports: the live user reload is B4658's
+  ActiveSubjects, proxy credential minting is B4658's credential mint with the master key, the IdP subject token proof
+  is B4663's (through McpTokens' assertion store) and SessionEntropy is the OS random source.
+
+
+  OauthRoot (B7321) holds the registry lookup (McpCore), the master key, the SealCipher, the session guard, the flows
+  and a system clock. Its JwtSigner port reads `shared.jwt_signer` (B8254's JwtSignerSlot) on every request: jwks is
+  B3816's get_jwks and jwks_max_age its max age, and an empty slot means no signer. B7321's implementation of B4719's
+  OauthFlows port is kept in McpOauth so B8624 can hand it to B4719's OauthRoutes.
+
+
+  Tests in app::mcp::oauth_flows:: : SealCipher round-trips and returns None for a tampered value; UpstreamHttp and
+  UpstreamForm against a local axum test server send the expected headers and map a refused connection to a
+  TransportFailure; the guard is Local without Redis and a second claim of the same key is replayed; JwtSigner reports no
+  signer on an empty slot and the signer's JWKS after one is set; ClientStore answers the no-database failure; and
+  McpOauth builds from McpCore, McpIdentity and McpTokens built from config only.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp/state.rs
+    - crates/betterlite-server/src/app/mcp/oauth_flows.rs
+    - crates/betterlite-server/src/app/mcp/oauth_flows/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L4656-L4962
+    why: The authorize, token, revoke, introspect and CLI discovery routes whose globals become the ports here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L5603-L5662
+    why: openid_configuration and jwks_json, which read get_mcp_jwt_signer on every request.
+dod:
+  - text: SealCipher, UpstreamHttp, UpstreamForm, FaultRenderer, UserAccess, BridgeMint, IdentityBinding, UserTokenStore, ClientStore, DiscoveryJoin and Decryptor have production implementations.
+    proof: [oauth-flow-tests]
+  - text: The single-use guard is Shared over Redis when a client exists and Local otherwise, chosen once.
+    proof: [oauth-flow-tests]
+  - text: OauthRoot reads the JWT signer from the shared slot on every request.
+    proof: [oauth-flow-tests]
+checks:
+  optional: []
+  commands:
+    - id: oauth-flow-tests
+      why: a flow port, the guard choice or the McpOauth build is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::oauth_flows::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Mounting OauthRoot's router and its HTTP cases: B8624. The browser routers: B8702."
+  - "The flow logic itself: B7321, B7530, B7531, B7532, B4674 to B4676 and B7970."
+pitfalls:
+  - The JWT signer slot must be read per request, not copied at build time, because a guardrail can set the signer after start.
+  - The Redis claim backend must fail closed; B4674 turns a backend error into unavailable and never falls back to the local store, so the adapter must return the error, not a count.
+  - UpstreamHttp is the Oauth2Register client and UpstreamForm the Oauth2Check client; they carry different timeouts in B173's special provider table.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

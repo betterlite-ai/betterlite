@@ -242,7 +242,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_cases::case_[0-9]+_agent_token_missing_value_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_agent_runs.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_agent_runs.py tools/oracle/helpers/foundry_agent_runs)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -255,7 +255,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_agent_runs)"
       && grep -q 'decode_agent_run_status' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_agent_runs.rs &&
-      cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_agent_runs_corpus$/)'
+      cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_agent_runs_corpus(::|$)/)'
   - id: case-dispatch-and-client-defaults
     why: Truthy acompletion plus truthy stream chooses B561 native async SSE; sync ignores stream and runs normal
       polling. None client creates B173 sync/azure_ai async transport with ssl_verify from litellm_params, default

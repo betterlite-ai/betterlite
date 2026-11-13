@@ -1,0 +1,94 @@
+id: B7873
+title: Python list_batches, cancel_batch and the batches package
+description: >-
+  This is the last part of the batches entry. It adds `list_batches`, `alist_batches`, `cancel_batch` and `acancel_batch`,
+  and writes `batches/main.py` and `batches/__init__.py` so that `from betterlite.batches.main import create_batch` works. The
+  provider calls are Rust (B1129 lists, B1038 cancels).
+
+
+  Native side, the family `batch_listing`: `src/batch_listing.rs` with `register` that adds `NativeBatchListSession` and
+  `NativeBatchListError`. Methods `list`, `cancel`, `alist`, `acancel` take `(payload_text, blobs)` and give JSON text. Don't
+  edit `lib.rs`; the architect writes the lines. Conversion is in `src/batch_listing/convert.rs`, tests named `request_*` and
+  `error_*`.
+
+
+  Python side, `python/betterlite/batches/_list_cancel.py`. `list_batches(after=None, limit=None, custom_llm_provider="openai",
+  extra_headers=None, extra_body=None, **kwargs)` returns a `SyncCursorPage`-style list of `LiteLLMBatch` (B167 provides the
+  class). `alist_batches` also takes `metadata` and the sync one does not (L700-L707 against L743-L750): keep that difference.
+  `cancel_batch(batch_id, model=None, custom_llm_provider="openai", metadata=None, extra_headers=None, extra_body=None)`
+  accepts a `model` because Bedrock needs one. The provider Literals differ between the functions (list has
+  `ListBatchesSupportedProvider`, cancel has six names), and each is kept. Sync functions accept `alist_batches=True` and
+  `acancel_batch=True` and return a coroutine then.
+
+
+  `main.py` re-exports the six names of B7872 and the four of this task, with an explicit `__all__`, and `__init__.py` is empty
+  as at the pin. The architect writes one star line in `python/betterlite/__init__.py` for `betterlite.batches.main`; never
+  edit that file.
+scope:
+  paths:
+  - crates/betterlite-python/src/batch_listing.rs
+  - crates/betterlite-python/src/batch_listing/**
+  - crates/betterlite-python/python/betterlite/_native_batch_listing.pyi
+  - crates/betterlite-python/python/betterlite/batches/_list_cancel.py
+  - crates/betterlite-python/python/betterlite/batches/main.py
+  - crates/betterlite-python/python/betterlite/batches/__init__.py
+  - crates/betterlite-python/tests/test_batch_list_cancel.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L699-L886
+  why: alist_batches and list_batches
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L887-L1085
+  why: acancel_batch and cancel_batch
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L1087-L1130
+  why: _handle_async_invoke_status, reached by the cancel branch for Bedrock
+dod:
+- text: The four functions keep LiteLLM's signatures, including the extra `metadata` on `alist_batches`.
+  proof: [list-signature]
+- text: List sends `after` and `limit` and gives the same page as LiteLLM, and the sync function returns a coroutine under `alist_batches=True`.
+  proof: [list-page]
+- text: Cancel gives the same `LiteLLMBatch`, passes `model`, and a provider error keeps its class and cause.
+  proof: [list-cancel]
+- text: "`betterlite.batches.main` exports the ten batch names and no more."
+  proof: [list-package]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [list-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: list-signature
+    why: A caller's keyword is refused.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_batch_list_cancel.py -k signature
+  - id: list-page
+    why: The page differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_batch_list_cancel.py -k page
+  - id: list-cancel
+    why: Cancel loses model or error class.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_batch_list_cancel.py -k cancel
+  - id: list-package
+    why: A name is missing.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_batch_list_cancel.py -k package
+  - id: list-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^batch_listing::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for the list and cancel calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`client` is refused with `UnsupportedCallArgument`."
+  why: A Python HTTP client can't drive the Rust one (B158).
+- what: This task has no helper oracle cases.
+  why: pytest compares both packages against one server.
+out_of_scope:
+- "`_handle_async_invoke_status` L1087 is the Bedrock status mapping and belongs to B1038."
+- "create and retrieve are B7872, and litellm/batches/batch_utils.py belongs to B1039 and B1040."
+pitfalls:
+- "`list_batches` has no `metadata` argument, `alist_batches` does, so `list_batches(metadata=...)` lands in `**kwargs` and must not be sent as a query."
+- "`cancel_batch` for OpenAI ignores `model`, but Bedrock reads it, so it must always reach Rust."
+- "`limit` of 0 is a value, not a missing one, so test `is None` and not truthiness."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -86,7 +86,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(agentops_callback_)'
     - id: agentops-tests
       why: AgentOps callback tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^agentops::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::callbacks::(.*::)?agentops::/)'
     - id: levo-health
       why: Levo health check tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(levo_health_)'
@@ -95,16 +95,16 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^levo.*partial/)'
     - id: levo-tests
       why: Levo callback tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^levo::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::callbacks::(.*::)?levo::/)'
     - id: logfire-tests
       why: Logfire callback tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logfire::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::callbacks::(.*::)?logfire::/)'
     - id: traceloop-tests
       why: Traceloop callback tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^traceloop::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::callbacks::(.*::)?traceloop::/)'
     - id: weave-tests
       why: Weave callback tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^weave::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::callbacks::(.*::)?weave::/)'
 
 oracle_cases: []
 
@@ -138,7 +138,8 @@ pitfalls:
   - Weave's _handle_success must never call span.end() on parent_span or parent spans from kwargs; only child spans created by _start_primary_span are ended.
   - Logfire must handle missing response_obj (default to empty dict), missing usage and missing choices gracefully; line 95 guards response_obj with default empty dict before calling get().
   - Traceloop's actual behavior silently fails if response_obj.get("choices") returns None (TypeError caught by outer except on line 138-139), leaving the span unclosed; betterlite reproduces this without adding defensive defaults.
-
+  - "Call get_arize_config and get_arize_phoenix_config; do not build them. Pass redact_messages, computed with B188's PrivacyRequest::decide (Decision.content), to B3861's set_attributes."
+  - "The Weave callback calls B3861's set_weave_otel_attributes."
 review_level: security
 
 budget:

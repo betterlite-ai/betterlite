@@ -1,0 +1,9 @@
+kind: helper
+name: destination-urlsplit
+call:
+  b3795:
+    destination:
+      request_data:
+        api_base: "https://user:secret@api.example.com:8443/v1"
+env: {}
+compare: {ignore: []}

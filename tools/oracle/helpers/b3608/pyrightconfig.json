@@ -1,0 +1,6 @@
+{
+  "include": ["../b3608.py"],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}

@@ -1,0 +1,12 @@
+kind: helper
+name: cached-string-json-decode
+call:
+  b4297:
+    get_cache_logic:
+      cached:
+        timestamp: 9999999999
+        response: '{"choices": [], "usage": null}'
+      max_age: 60
+env: {}
+compare:
+  ignore: []

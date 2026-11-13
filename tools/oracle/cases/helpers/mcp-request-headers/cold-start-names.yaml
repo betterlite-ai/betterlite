@@ -1,0 +1,5 @@
+kind: helper
+name: "cold-start-names"
+call: {"b4654":{"function":"target_selection","mode":"cold_start","path":"/foo/mcp","header_servers":["foo","other"]}}
+env: {}
+compare: {"ignore":[]}

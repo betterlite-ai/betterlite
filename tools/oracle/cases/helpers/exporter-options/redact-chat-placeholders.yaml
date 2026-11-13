@@ -1,0 +1,27 @@
+kind: helper
+name: exporter-options-redact-chat-placeholders
+call:
+  b3931:
+    operation: redact
+    turn_off_message_logging: true
+    excluded_fields: []
+    redacts_messages_itself: false
+    stamp: {id: chatcmpl-stamp, created: 1704067200}
+    details:
+      standard_logging_object:
+        id: slp-1
+        messages: [{role: user, content: secret}]
+        response: {id: chatcmpl-original, choices: [{message: {role: assistant, content: hi}}]}
+        classifier_input: {prompt: classify}
+        originating_request_masked: {body: masked}
+      proxy_server_request:
+        url: http://example.test/chat
+        classifier_input: {c: 3}
+        originating_request_masked: {d: 4}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/standard_logging_object/response/id
+      why: LiteLLM generates a fresh chatcmpl id for the placeholder response
+    - pointer: /value/standard_logging_object/response/created
+      why: LiteLLM stamps the placeholder response with the current Unix time

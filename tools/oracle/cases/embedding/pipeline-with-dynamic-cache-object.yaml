@@ -1,0 +1,25 @@
+kind: helper
+name: pipeline-with-dynamic-cache-object
+call:
+  b4298:
+    async_add_cache_pipeline:
+      request:
+        key:
+          params:
+            - {name: model, value: text-embedding-3-small}
+            - {name: input, value: [hello, world]}
+      result:
+        model: text-embedding-3-small
+        data:
+          - {embedding: [0.1, 0.2], index: 0, object: embedding}
+          - {embedding: [0.3, 0.4], index: 1, object: embedding}
+        usage:
+          prompt_tokens: 10
+      cache_type: local
+      mode: default_on
+      settings:
+        ttl: 120.0
+      dynamic: true
+env: {}
+compare:
+  ignore: []

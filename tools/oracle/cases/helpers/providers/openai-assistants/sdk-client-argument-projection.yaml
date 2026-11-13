@@ -1,0 +1,5 @@
+kind: helper
+name: openai-assistants-sdk-client-argument-projection
+call: {openai_assistants: {client_arguments: {kind: async, options: {api_key: sk-test, api_base: 'https://example.test/v1', timeout: 2.5, max_retries: 0, organization: org-1}}}}
+env: {}
+compare: {ignore: []}

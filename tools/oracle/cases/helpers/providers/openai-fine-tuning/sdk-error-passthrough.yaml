@@ -1,0 +1,5 @@
+kind: helper
+name: openai-fine-tuning-sdk-error-passthrough
+call: {"openai_fine_tuning": {"steps": [{"action": "retrieve", "client": "sync", "job_id": "ft_1", "reply": {"status": 404, "body": {"error": {"message": "nope", "type": "invalid_request_error", "param": "x", "code": "not_found"}}}}, {"action": "create", "is_async": true, "client": "async", "data": {"model": "m", "training_file": "f"}, "reply": {"status": 429, "body": {"error": {"message": "slow down", "type": "rate_limit", "param": null, "code": "rate_limited"}}}}]}}
+env: {}
+compare: {ignore: []}

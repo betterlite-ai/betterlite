@@ -1,0 +1,62 @@
+id: B8776
+title: Prove the eval run create and list routes over HTTP
+description: >-
+  B8775 mounts B3428's router (crates/betterlite-server/src/api/eval_run_create_list_routes), so POST and GET
+  /v1/evals/{eval_id}/runs answer through the booted proxy for the first time. B3428 tests its handlers with tower's
+  oneshot over its own router, and its HTTP cases moved here under the file names below. This task writes those cases
+  and changes no product code; when a case shows a bug, the fix goes to B3428's module in a follow-up.
+
+
+  Write each case from B3428's text, with the mock OpenAI upstream it names. The create cases cover model selection in
+  LiteLLM's order (header x-litellm-model, then query model, then body model, then completion.model only when
+  completion is a map), a completion that is not a map, the path eval_id overriding a body value, custom_llm_provider
+  from the body and as null, and a malformed JSON body. The list cases cover the default and an explicit limit, the
+  after, before and order pagination parameters, model from header and query, the default and a query provider, and a
+  GET that sends a body, which LiteLLM ignores.
+scope:
+  paths:
+    - tools/oracle/cases/evals/runs/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19979
+    why: The evals router, which carries the run routes, is included inside the key check.
+dod:
+  - text: Over HTTP, the eval run create and list cases answer the same status, body and upstream request as LiteLLM.
+    proof: [eval-run-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: eval-run-cases
+      why: the eval run routes have no booted-proxy case on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/evals/runs)"
+oracle_cases:
+  - tools/oracle/cases/evals/runs/create-run-basic.yaml
+  - tools/oracle/cases/evals/runs/create-run-model-header.yaml
+  - tools/oracle/cases/evals/runs/create-run-model-query.yaml
+  - tools/oracle/cases/evals/runs/create-run-model-body.yaml
+  - tools/oracle/cases/evals/runs/create-run-model-completion.yaml
+  - tools/oracle/cases/evals/runs/create-run-completion-not-dict.yaml
+  - tools/oracle/cases/evals/runs/create-run-path-eval-id-override.yaml
+  - tools/oracle/cases/evals/runs/create-run-provider-body.yaml
+  - tools/oracle/cases/evals/runs/create-run-provider-null.yaml
+  - tools/oracle/cases/evals/runs/create-run-malformed-json.yaml
+  - tools/oracle/cases/evals/runs/list-runs-basic.yaml
+  - tools/oracle/cases/evals/runs/list-runs-limit-default.yaml
+  - tools/oracle/cases/evals/runs/list-runs-limit-explicit.yaml
+  - tools/oracle/cases/evals/runs/list-runs-pagination-after.yaml
+  - tools/oracle/cases/evals/runs/list-runs-pagination-before.yaml
+  - tools/oracle/cases/evals/runs/list-runs-pagination-order.yaml
+  - tools/oracle/cases/evals/runs/list-runs-model-header.yaml
+  - tools/oracle/cases/evals/runs/list-runs-model-query.yaml
+  - tools/oracle/cases/evals/runs/list-runs-provider-default.yaml
+  - tools/oracle/cases/evals/runs/list-runs-provider-query.yaml
+  - tools/oracle/cases/evals/runs/list-runs-no-body-support.yaml
+deviations: []
+out_of_scope:
+  - "The handlers: B3428. The mount and the other eval cases: B8775."
+pitfalls:
+  - "completion.model counts only when completion is a map, so a case with a string completion must fall back to the default model."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

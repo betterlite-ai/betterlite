@@ -1,0 +1,8 @@
+kind: helper
+name: headers-text-first-equals
+call:
+  b3855:
+    function: headers_dictionary
+    headers: "authorization=Basic%20dG9rZW4%3D, x-key=a=b"
+env: {}
+compare: {ignore: []}

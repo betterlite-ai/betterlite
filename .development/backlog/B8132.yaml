@@ -1,0 +1,16 @@
+id: B8132
+milestone: M11 distribution
+title: Standalone Helm chart scaling and ingress
+status: blocked
+depends_on: [B8130]
+file: tasks/B8132-helm-chart-scaling.yaml
+covers:
+  - "helm/litellm-helm/templates/hpa.yaml"
+  - "helm/litellm-helm/templates/ingress.yaml"
+  - "helm/litellm-helm/templates/keda.yaml"
+parent: B151
+split_from: B152
+resolution: null
+superseded_by: null
+blocked_reason: "waits for Max: the gate has no pinned helm or helm-unittest, and the bundled postgresql and redis subcharts need network or vendored chart archives"
+pr: null

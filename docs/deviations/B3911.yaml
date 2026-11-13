@@ -1,0 +1,17 @@
+task: B3911
+deviations:
+  - what: >-
+      The clock and the UUID source are arguments of the payload functions (a DateTime<Utc> and an IdSource), where LiteLLM calls datetime.now(timezone.utc) and uuid.uuid4() inside the callback.
+    why: >-
+      Dependencies are injected so a test can fix the dotted-order timestamp and the generated run id; the values written to the run are the same. Environment resolution stays inside get_credentials_from_env, as LiteLLM has it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L543-L546
+  - what: >-
+      make_dot_order is not a separate function; its format expression lives where ensure_required_ids builds a missing dotted_order, the only production call site.
+    why: >-
+      The no-one-line-functions rule deletes a function whose whole body is one expression, so the expression moved to its caller; the dot_order_format test proves the same timestamp plus run id output through ensure_required_ids.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L543-L546
+  - what: >-
+      A litellm_params.metadata value that is not a JSON string is treated as absent for project_name, run_name, run_id, parent_run_id, trace_id, session_id and dotted_order; LiteLLM copies whatever value the dict holds into the run body.
+    why: >-
+      The run fields are typed strings, and LangSmith expects a string id there, so the value LiteLLM would send cannot belong to a working setup. A non-string run_id therefore gets a generated UUID instead of an id LangSmith rejects, matching the metadata projection other logging integrations in betterlite use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L128-L138

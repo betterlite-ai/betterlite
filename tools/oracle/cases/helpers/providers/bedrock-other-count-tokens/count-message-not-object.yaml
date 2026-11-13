@@ -1,0 +1,10 @@
+kind: helper
+name: count-message-not-object
+call:
+  bedrock_other_count_tokens:
+    count_message_not_object:
+      request:
+        model: anthropic.claude-3-5-sonnet-20241022-v2:0
+        messages: [42]
+env: {}
+compare: {ignore: []}

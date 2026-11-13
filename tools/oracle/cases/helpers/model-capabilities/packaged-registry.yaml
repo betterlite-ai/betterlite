@@ -1,0 +1,5 @@
+kind: helper
+name: packaged-registry
+call: {model_capabilities: {operation: packaged_registry}}
+env: {}
+compare: {ignore: []}

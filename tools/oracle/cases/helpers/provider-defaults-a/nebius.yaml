@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-a-nebius
+call:
+  provider_defaults_a:
+    provider: nebius
+    model: any-model
+env: {}
+compare: {ignore: []}

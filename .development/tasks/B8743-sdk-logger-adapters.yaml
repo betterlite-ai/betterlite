@@ -1,0 +1,82 @@
+id: B8743
+title: Catalog adapters for the literalai, opik, deepeval and braintrust loggers
+description: >-
+  Four loggers are merged with their own call types and no way to receive a real call: Literal AI
+  (crates/betterlite-logging/src/literal_ai.rs, B3969), Opik (opik.rs, B3973 and B3974), DeepEval (deepeval.rs,
+  B3972) and Braintrust (braintrust_logging.rs, B3962). Each exposes inherent methods such as
+  `log_success_event(&self, call: Call<'_>)` over its own `Call` or `SuccessEvent` type and takes its transport
+  and clock through traits. This task makes each one reachable by its callback name: implement B8740's
+  CallbackLogger for it and fill its catalog module.
+
+
+  For each logger write a wrapper struct next to its catalog module, in
+  crates/betterlite-logging/src/registry/catalog/<name>.rs and <name>/ (names literalai, opik, deepeval, braintrust).
+  The wrapper holds the merged logger with production transports and implements CallbackLogger by building the
+  logger's own input from the LoggerEvent: each field of Call or SuccessEvent comes from the standard logging payload
+  field with the same LiteLLM kwargs key (read the merged module's input type first; most already name the payload
+  key in a comment or doc). Forward only the events the merged logger has: literalai and deepeval have success and
+  failure, sync and async; opik has success only; braintrust has the sync and async success event. A method the
+  merged logger lacks keeps the trait default. Map the merged logger's error into LoggerError::Delivery with its text.
+
+
+  Production transports. Where the merged module defines a transport trait and no production type implements it,
+  write one in the wrapper's folder over `CatalogInputs.http` (the ProxiedClient), posting exactly what the trait
+  method describes. Opik's native SDK client (NativeOpikClient) has no Rust counterpart: select the HTTP path the
+  merged code takes when the native client is absent. Clocks and id sources use the system clock and random UUIDs.
+
+
+  build(inputs) follows LiteLLM's arm for the name: literalai L4574-L4580, opik L4702-L4708, deepeval L4876-L4881,
+  braintrust L4548-L4556. Read credentials through `inputs.env` with the env var names the merged settings types
+  already use. Where LiteLLM's constructor raises for a missing key, return CatalogError::Init with LiteLLM's message,
+  so the catalog logs it and skips the name. Batch loggers start their flush loop on `inputs.tracker` and stop it on
+  `inputs.shutdown`.
+
+
+  Tests in each <name>/tests.rs: build with a fake environment resolves to a logger named after the callback, a
+  missing required key gives Init with LiteLLM's message, and a success event (and a failure event where the logger
+  has one) reaches a fake transport with the payload fields mapped. Use the merged modules' existing fakes where
+  they are public.
+scope:
+  paths:
+    - crates/betterlite-logging/src/registry/catalog/literalai.rs
+    - crates/betterlite-logging/src/registry/catalog/literalai/**
+    - crates/betterlite-logging/src/registry/catalog/opik.rs
+    - crates/betterlite-logging/src/registry/catalog/opik/**
+    - crates/betterlite-logging/src/registry/catalog/deepeval.rs
+    - crates/betterlite-logging/src/registry/catalog/deepeval/**
+    - crates/betterlite-logging/src/registry/catalog/braintrust.rs
+    - crates/betterlite-logging/src/registry/catalog/braintrust/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4548-L4580
+    why: The braintrust, argilla and literalai arms; each returns the held instance before building one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4702-L4708
+    why: The opik arm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4876-L4881
+    why: The deepeval arm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3477-L3525
+    why: How the async success handler calls a CustomLogger; the wrapper sees the same sequence through B250.
+dod:
+  - text: literalai, opik, deepeval and braintrust resolve by name to wrappers that implement CallbackLogger over the merged loggers with production transports.
+    proof: [adapter-tests]
+  - text: Each wrapper maps the payload into the merged logger's input, forwards only the events that logger has, and a missing credential gives LiteLLM's init message.
+    proof: [adapter-tests]
+checks:
+  optional: []
+  commands:
+    - id: adapter-tests
+      why: a wrapper is missing, maps the payload wrong or the catalog module still returns Unavailable
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::(literalai|opik|deepeval|braintrust)::/)'
+oracle_cases: []
+deviations:
+  - what: Opik always sends through its HTTP API; LiteLLM uses the opik SDK client when the package is installed.
+    why: There is no Rust opik SDK; the merged code already has the HTTP path LiteLLM falls back to.
+out_of_scope:
+  - "The merged loggers' payload building and delivery: B3969, B3972, B3973, B3974 and B3962. Calling the events: B250 and B251."
+pitfalls:
+  - opik has no failure event in LiteLLM, so its wrapper must not invent one; the trait default keeps it silent.
+  - Literal AI keeps its own StandardLoggingPayload struct in literal_ai/; build it from B254's payload field by field, never by serializing one into the other.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

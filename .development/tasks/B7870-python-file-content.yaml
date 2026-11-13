@@ -1,0 +1,115 @@
+id: B7870
+title: Python file_content, afile_content and the streaming file response
+description: >-
+  A LiteLLM user downloads a stored file with `litellm.file_content(file_id=..., custom_llm_provider="openai")` and can pass
+  `stream=True` to get the bytes in chunks. This task makes the same calls work from the betterlite wheel. Python gathers
+  the arguments into JSON, calls a native session, and wraps what comes back in Python objects. The download, the provider
+  choice and the logging live in Rust (B1030 and B1080), so no provider logic is written here.
+
+
+  Native side, the family `file_content`. `src/file_content.rs` has `pub(crate) fn register(module: &Bound<'_, PyModule>) ->
+  PyResult<()>` that adds the class `NativeFileContentSession`, the class `NativeFileStream` and the exception
+  `NativeFileContentError` (made with `pyo3::create_exception!`, error JSON keys as in B5659). The architect writes the `mod`
+  and `register` lines in `src/lib.rs` and the import line in the `.pyi` package, so never edit `lib.rs`. The session takes JSON
+  settings text, like B5659's. `content(payload_text, blobs)` blocks with the GIL released and `acontent(payload_text, blobs)`
+  returns an awaitable. A non-streaming call returns JSON with the response headers and the body as the first blob entry, so
+  the file bytes cross once and never as base64. A call with `stream=True` returns a `NativeFileStream` with `next_chunk()`,
+  `anext_chunk()`, `close()` and `aclose()` that give `bytes` or `None` at the end. Conversion code is in
+  `src/file_content/convert.rs` and its tests start with `request_` and `error_`.
+
+
+  Python side, in `python/betterlite/files/_content.py` and `python/betterlite/files/streaming.py`. `file_content(file_id,
+  custom_llm_provider="openai", extra_headers=None, extra_body=None, chunk_size=1024 * 1024, stream=False, **kwargs)` and
+  `afile_content` keep LiteLLM's names, order and defaults (a test compares `inspect.signature`). `afile_content` is a
+  coroutine function, and `file_content(..., afile_content=True)` returns a coroutine, as `file_content` does at
+  files/main.py L853. The plain result is `HttpxBinaryResponseContent`: keep its `.content`, `.text`, `.headers`, `.status_code`,
+  `.json()` and `.read()` over the bytes. With `stream=True` the result is `FileContentStreamingResult(stream_iterator,
+  headers)` from files/types.py, and `stream_iterator` is a `FileContentStreamingResponse`.
+
+
+  `FileContentStreamingResponse` (files/streaming.py L17-L191) wraps the native stream. `__iter__` and `__next__` raise
+  `TypeError("File content stream does not support sync iteration")` when the native stream has no sync path, and
+  `__aiter__` and `__anext__` do the same with "async iteration". `close()` and `aclose()` are idempotent. After a close,
+  iteration yields nothing. The success and failure callbacks run once, when the iterator stops or fails: that part is
+  Rust's (B1080), so Python only needs `_hidden_params` with `litellm_model_name` and `response_cost` (None), plus `file_id`,
+  `model`, `custom_llm_provider` and `standard_logging_object` as plain attributes.
+
+
+  `FilesAPIUtils` (files/utils.py L23-L45) is built here. Use B6040's `to_call_payload`, `call_native`, `acall_native`,
+  `read_settings` and `proxy_headers`. The files package `__init__` and `main.py` belong to B7871. B7871 depends on this task.
+scope:
+  paths:
+  - crates/betterlite-python/src/file_content.rs
+  - crates/betterlite-python/src/file_content/**
+  - crates/betterlite-python/python/betterlite/_native_file_content.pyi
+  - crates/betterlite-python/python/betterlite/files/_content.py
+  - crates/betterlite-python/python/betterlite/files/streaming.py
+  - crates/betterlite-python/python/betterlite/files/utils.py
+  - crates/betterlite-python/python/betterlite/files/types.py
+  - crates/betterlite-python/tests/file_server.py
+  - crates/betterlite-python/tests/test_file_content.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L805-L1011
+  why: afile_content, file_content and file_content_streaming
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/streaming.py#L1-L191
+  why: FileContentStreamingResponse and its close and logging rules
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/utils.py#L1-L45
+  why: FilesAPIUtils
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/types.py#L1-L8
+  why: FileContentProvider and the streaming result record
+dod:
+- text: "`file_content` and `afile_content` keep LiteLLM's signature, and `afile_content` is a coroutine function."
+  proof: [content-signature]
+- text: A plain call against the local server gives bytes, headers and status equal to LiteLLM's, and `file_content(afile_content=True)` returns a coroutine.
+  proof: [content-plain]
+- text: "`stream=True` gives the same chunks on the sync and async paths, closes cleanly, and refuses the wrong iteration path with LiteLLM's TypeError text."
+  proof: [content-stream]
+- text: A provider 404 raises the matching exception class with the native error as cause.
+  proof: [content-error]
+- text: The native register function adds the session, the stream and the error class, and conversion has tests without an interpreter.
+  proof: [content-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: content-signature
+    why: A caller's keyword is refused.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_file_content.py -k signature
+  - id: content-plain
+    why: The bytes or headers differ from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_file_content.py -k plain
+  - id: content-stream
+    why: A stream never ends, loses a chunk or skips the TypeError.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_file_content.py -k stream
+  - id: content-error
+    why: A missing file raises a generic exception.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_file_content.py -k error
+  - id: content-native
+    why: A header or body is lost on the way across.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^file_content::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for the streaming wrapper.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`FileContentStreamingResponse.stream_iterator` is a native stream handle and not the provider's httpx iterator."
+  why: The bytes come from Rust. Iteration, close and the callbacks behave the same, but `isinstance(stream_iterator, httpx.Response)` is false.
+- what: The `client` argument of `file_content_streaming` is not accepted.
+  why: A Python HTTP client can't drive the Rust one, so a call that passes `client` raises `UnsupportedCallArgument` (B158).
+- what: This task has no helper oracle cases.
+  why: The tests compare both packages against one local server. That covers more than a helper call would.
+out_of_scope:
+- "`_should_sdk_support_streaming` L83-L90 and `_file_content_logging_obj` L92-L113 belong to B1030, and the provider choice inside `file_content_streaming` from L1034 is Rust."
+- "`create_file`, `file_retrieve`, `file_delete` and `file_list` belong to B7871, and the `files` package `__init__` and `main.py` are written there."
+- "The `@client` wrapper behavior (callbacks, retries, caching) belongs to B5368 and runs on the Rust side."
+pitfalls:
+- "`close()` swaps the inner iterator for an empty one before closing it, so a second `next()` after `close()` ends the loop instead of raising."
+- "An async-only native stream must still allow `close()` from sync code, and a sync-only one must allow `aclose()`, since LiteLLM tries both close methods."
+- "`chunk_size` is bytes and defaults to 1048576, so a test that streams a small file sees one chunk, not many."
+- "The non-streaming bytes arrive as a blob, so build `HttpxBinaryResponseContent` from the blob and don't decode text from the JSON."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,11 @@
+kind: helper
+name: load-vault-fresher-than-file
+call:
+  b4592:
+    operation: load
+    file: '{"base_url":"https://gateway.example","key":"sk-old","user_id":"u-1","refresh_token":"rt-old","timestamp":1000.0}'
+    vault:
+      blob: '{"base_url":"https://gateway.example","key":"sk-vault","jwt_token":"","refresh_token":"rt-vault","timestamp":2000.0}'
+    failures: {}
+env: {}
+compare: {ignore: []}

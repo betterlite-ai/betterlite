@@ -1,0 +1,36 @@
+kind: helper
+name: gdc-auth-projection-authorization-and-quota-header-casing
+call:
+  gdc_auth_projection:
+    scenarios:
+      - config:
+          model_list:
+            - litellm_params: {vertex_project: project-a}
+        validations:
+          - api_key: '{"type":"gdch_service_account","format_version":"1","private_key_id":"key-id","private_key":"-----BEGIN EC PRIVATE KEY-----\nfixture\n-----END EC PRIVATE KEY-----\n","name":"service-identity","project":"credential-project","token_uri":"https://identity.example/authenticate"}'
+            base: "https://gateway.example"
+            deployment: 0
+            headers:
+              - {name: Authorization, value: "Bearer stale"}
+              - {name: authorization, value: lowercase}
+              - {name: Content-Type, value: text/plain}
+              - {name: X-Goog-User-Project, value: projects/stale}
+          - api_key: '{"type":"gdch_service_account","format_version":"1","private_key_id":"key-id","private_key":"-----BEGIN EC PRIVATE KEY-----\nfixture\n-----END EC PRIVATE KEY-----\n","name":"service-identity","project":"credential-project","token_uri":"https://identity.example/authenticate"}'
+            base: "https://gateway.example"
+            deployment: 0
+            headers:
+              - {name: content-type, value: text/plain}
+              - {name: X-GOOG-USER-PROJECT, value: projects/stale}
+              - {name: X-Goog-User-Project, value: projects/stale-two}
+          - api_key: '{"type":"gdch_service_account","format_version":"1","private_key_id":"key-id","private_key":"-----BEGIN EC PRIVATE KEY-----\nfixture\n-----END EC PRIVATE KEY-----\n","name":"service-identity","project":"credential-project","token_uri":"https://identity.example/authenticate"}'
+            base: "https://gateway.example"
+            deployment: 0
+            headers:
+              - {name: Content-type, value: text/plain}
+          - api_key: sk-plain-token
+            base: "https://gateway.example"
+            deployment: 0
+            headers:
+              - {name: Authorization, value: "Bearer own"}
+env: {}
+compare: {ignore: []}

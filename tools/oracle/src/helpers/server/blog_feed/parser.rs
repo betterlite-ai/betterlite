@@ -60,8 +60,15 @@ fn run_events(reader: &mut Reader<&[u8]>, collector: &mut Collector) -> Result<(
             Event::Start(tag) => handle_start(&tag, collector)?,
             Event::End(tag) => handle_end(&tag, collector),
             Event::Empty(tag) => handle_empty(&tag, collector)?,
-            Event::Text(text) => handle_text(&text, collector)?,
-            Event::CData(text) => handle_cdata(&text, collector)?,
+            Event::Text(text) => {
+                let decoded = text.xml10_content().map_err(ParseFailure::Decode)?;
+                let value = unescape(decoded.as_ref()).map_err(ParseFailure::Escape)?;
+                collector.push_text(&value)?;
+            }
+            Event::CData(text) => text
+                .xml10_content()
+                .map_err(ParseFailure::Decode)
+                .and_then(|decoded| collector.push_text(&decoded))?,
             Event::GeneralRef(reference) => handle_reference(&reference, collector)?,
             Event::Eof => return Ok(()),
             Event::Decl(_) | Event::PI(_) | Event::DocType(_) | Event::Comment(_) => {}
@@ -108,33 +115,14 @@ fn handle_empty(
     Ok(())
 }
 
-fn push_unescaped(raw: &str, collector: &mut Collector) -> Result<(), ParseFailure> {
-    let value = unescape(raw).map_err(ParseFailure::Escape)?;
-    collector.push_text(&value)
-}
-
-fn handle_text(
-    text: &quick_xml::events::BytesText<'_>,
-    collector: &mut Collector,
-) -> Result<(), ParseFailure> {
-    let decoded = text.xml10_content().map_err(ParseFailure::Decode)?;
-    push_unescaped(decoded.as_ref(), collector)
-}
-
-fn handle_cdata(
-    text: &quick_xml::events::BytesCData<'_>,
-    collector: &mut Collector,
-) -> Result<(), ParseFailure> {
-    let decoded = text.xml10_content().map_err(ParseFailure::Decode)?;
-    collector.push_text(&decoded)
-}
-
 fn handle_reference(
     reference: &quick_xml::events::BytesRef<'_>,
     collector: &mut Collector,
 ) -> Result<(), ParseFailure> {
     let decoded = reference.decode().map_err(ParseFailure::Decode)?;
-    push_unescaped(&format!("&{decoded};"), collector)
+    let raw = format!("&{decoded};");
+    let value = unescape(&raw).map_err(ParseFailure::Escape)?;
+    collector.push_text(&value)
 }
 
 fn tag_info(
@@ -142,12 +130,12 @@ fn tag_info(
     tag: &quick_xml::events::BytesStart<'_>,
 ) -> Result<(TagKind, bool), ParseFailure> {
     for attribute in tag.attributes() {
-        attribute.map_err(|error| ParseFailure::Xml(error.into()))?;
+        attribute.map_err(|error| ParseFailure::Xml(quick_xml::Error::from(error)))?;
     }
     let inherited = collector.default_namespace.last().copied().unwrap_or(false);
     let declaration = tag
         .try_get_attribute(b"xmlns")
-        .map_err(|error| ParseFailure::Xml(error.into()))?;
+        .map_err(|error| ParseFailure::Xml(quick_xml::Error::from(error)))?;
     let default_namespace = declaration
         .as_ref()
         .map_or(inherited, |attribute| !attribute.value.is_empty());

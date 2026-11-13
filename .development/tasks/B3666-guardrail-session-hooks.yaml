@@ -1,0 +1,225 @@
+id: B3666
+title: Guardrail session deduplication and deployment hooks
+description: >-
+  Add the modules `guardrail_scan_cache` and `guardrail_deployment` to betterlite-guardrails, and the config section `guardrail_scan_cache`. They hold the rest of LiteLLM's `CustomGuardrail` that no other task owns: the cache that lets a session scan each text only once, the marker that stops a guardrail from running twice, the two hooks that run a guardrail right around the provider call, and the `logging_only` scan. Request bodies are `BTreeMap<String, GuardrailValue>`, called `data` below. `GuardrailValue` is from `betterlite_config::sections::guardrail_identity::item`, and `GuardrailBase`, `GuardrailFailure`, `GuardrailContract` and `session_id_from_request` are from `guardrail_base` (B5471). Flags are plain `bool`. Python gets the guardrail from `self`, and Rust has no inheritance, so every function here is a method in an `impl GuardrailBase` block, and anything that must reach the provider's own code goes through a trait the caller implements.
+
+
+  Section `guardrail_scan_cache`. It reads the env var `GUARDRAIL_SCANNED_MESSAGES_CACHE_TTL_SECONDS` through `lookup.lookup` and gives `Settings { ttl_seconds: i64 }`, default 86400. Follow `sections/mcp_tool_helpers.rs` for the shape. Trim the text and parse it as a decimal integer. LiteLLM runs `int()` on it at import, so text that is not an integer is a `ConfigError` that names the variable, and a negative value is kept as given. A caller passes `config.sections.guardrail_scan_cache.ttl_seconds` into `mark_texts_scanned`.
+
+
+  Module `guardrail_scan_cache`. `ScanCacheStore: Sync` is the trait for LiteLLM's `DualCache`, with `type Error: std::error::Error + Send + Sync + 'static`. Its methods are `get(&self, key: &str) -> impl Future<Output = Result<Option<Vec<String>>, Self::Error>> + Send` and `set(&self, key: &str, hashes: Vec<String>, ttl_seconds: i64) -> impl Future<Output = Result<(), Self::Error>> + Send`. Startup connects it to the shared cache, and B3727's Bedrock code passes one in. Nothing here names a cache crate. `scanned_text_hash(text: &str) -> String` is the lowercase hex SHA-256 of the UTF-8 bytes, built with the `sha2` and `hex` crates already in the manifest. `scan_cache_key(guardrail_name: Option<&str>, session_id: &str) -> String` is `guardrail_scanned_texts:{name}:{session_id}`, and a missing name prints `None`, as Python's f-string does.
+
+
+  `filter_new_texts_for_session<S: ScanCacheStore>(&self, texts: Option<&[String]>, request_data: &BTreeMap<String, GuardrailValue>, cache: &S) -> Option<Vec<String>>` returns `None` to say "scan everything" and a list (possibly empty) to say "scan only these". The steps run in this order and the first that answers ends the call. `None` when `only_scan_new_messages` is off or `texts` is missing or empty. Then, when `mask_request_content` or `mask_response_content` is on, a `tracing::warn!` with the text `Guardrail {name}: only_scan_new_messages is not supported with masking; scanning full context.` and `None`. Then `session_id_from_request(request_data)`, and with no id a `tracing::debug!` and `None`. Then the cache read, and a read error gives a `warn!` that names the guardrail and the error, and `None`. At the end the result holds the texts whose hash is not in the stored list, in their original order and with duplicates kept.
+
+
+  `mark_texts_scanned<S: ScanCacheStore>(&self, texts: Option<&[String]>, request_data: &BTreeMap<String, GuardrailValue>, cache: &S, ttl_seconds: i64)` records the hashes of every text after a scan that let the request through. It returns quietly, with no log, when the feature is off, `texts` is missing or empty, masking is on, or there is no session id. Otherwise it reads the stored list (a missing one counts as empty), appends the hashes of `texts`, removes repeats and keeps the first occurrence of each hash, and writes the list back with `ttl_seconds`. A read or write error is one `warn!` and nothing more, because the cache is best effort and a failure only makes the next call scan again. The function never returns an error.
+
+
+  Module `guardrail_deployment`, file `markers.rs`. `PRE_CALL_EXECUTED_GUARDRAILS_KEY` is the public constant `_pre_call_executed_guardrails`. `PreCallToken` wraps a string. `PreCallToken::new(String)` takes a fixed one for tests and `PreCallToken::generate()` returns 32 lowercase hex characters from `uuid::Uuid::new_v4().simple()`, the same size as LiteLLM's `secrets.token_hex(16)`. Startup makes one per process and passes it to every call, because no module-level state is allowed. `pre_call_marker(&self, token: &PreCallToken) -> Option<String>` is `{token}:{guardrail_name}`, and `None` only when the guardrail has no name. An empty name is used as given. `mark_pre_call_hook_ran(&self, token: &PreCallToken, data: &mut BTreeMap<String, GuardrailValue>)` does nothing without a marker. Otherwise it looks at `metadata`, then `litellm_metadata`, and takes the first of them that is an object. In that object, a list under the key gets the marker appended unless it is already there, and any other value (missing, null or not a list) is replaced by a one-entry list. When neither is an object, `data["metadata"]` is set to a new object holding that one-entry list, replacing whatever `metadata` held. `pre_call_hook_already_ran(&self, token: &PreCallToken, data: &BTreeMap<String, GuardrailValue>) -> bool` is true when the marker is in the list of either object, and false without a marker. The token is why a caller cannot forge the field: the proxy strips the key from client metadata, and a client that tried through the direct SDK path would have to guess a token it never sees.
+
+
+  File `hook_target.rs`. `HookTarget` is `Own` or `Unified`. `hook_target(&self) -> HookTarget` is `Own` when `switches.uses_apply_guardrail_interface` is off or `switches.use_native_lifecycle_hooks` is on, and `Unified` otherwise (`_deployment_hook_target`). LiteLLM raises `ImportError` here when the proxy extras are missing, and betterlite always has them, so there is no error. `StampedKeyFields { user_id, team_id, end_user_id, api_key, request_route }`, each `Option<String>`, stands for the `UserAPIKeyAuth` the hooks receive, because the full auth type lives in a crate this one can't depend on. `stamped_key_fields(data) -> StampedKeyFields` is `_user_api_key_auth_from_request`. It reads the metadata bucket named by `litellm_metadata` when that key exists in `data` and `metadata` otherwise, and takes the text values of `user_api_key_user_id`, `user_api_key_team_id`, `user_api_key_end_user_id`, `user_api_key_hash` (into `api_key`) and `user_api_key_request_route`. A bucket that is not an object, or a value that is not text, gives `None`.
+
+
+  `PreCallOutcome` is `Unchanged`, `Data(BTreeMap<String, GuardrailValue>)`, `Text(String)` or `Failure(GuardrailFailure)`, for the four kinds of value `async_pre_call_hook` returns (None, a dict, a string, a returned exception). `DeploymentHookTarget: Sync` is the trait the caller implements for one guardrail. `pre_call(&self, target: HookTarget, key: &StampedKeyFields, data: &mut BTreeMap<String, GuardrailValue>, call_type: CallType) -> impl Future<Output = Result<PreCallOutcome, GuardrailFailure>> + Send` is `target.async_pre_call_hook`. `post_call_success(&self, target: HookTarget, key: &StampedKeyFields, data: &mut BTreeMap<String, GuardrailValue>, response: GuardrailValue) -> impl Future<Output = Result<Option<GuardrailValue>, GuardrailFailure>> + Send` is `target.async_post_call_success_hook`. `Own` means the guardrail's own hook. `Unified` means the unified guardrail runs this guardrail, which replaces LiteLLM's `guardrail_to_apply` key in the request, so nothing writes that key. B3680 builds the `Unified` side, and this task must not depend on it. `CallType` is `betterlite_core::routes::CallType` (B207).
+
+
+  File `hooks.rs`. `pre_call_deployment_hook<H: DeploymentHookTarget>(&self, hooks: &H, token: &PreCallToken, suppressed: &BTreeSet<String>, kwargs: BTreeMap<String, GuardrailValue>, call_type: Option<CallType>) -> Result<BTreeMap<String, GuardrailValue>, DeploymentHookError>` is `async_pre_call_deployment_hook`. It returns `kwargs` untouched unless every step passes, in this order. The `guardrails` key must be a list. `pre_call_hook_already_ran` must be false. `should_run_guardrail(&kwargs, GuardrailEventHooks::PreCall, suppressed)` from B3665 must be true, and its error is returned, never turned into false. The call type must be `Completion` or `Acompletion`. Then it calls `hooks.pre_call` with `hook_target()`, `stamped_key_fields(&kwargs)`, `&mut kwargs` and that call type. Only a `Data` outcome matters: when its `messages` key exists and is not null, `kwargs["messages"]` is replaced by it. The other outcomes change nothing, which is what LiteLLM's `isinstance(result, dict)` does.
+
+
+  `post_call_success_deployment_hook<H: DeploymentHookTarget>(&self, hooks: &H, suppressed: &BTreeSet<String>, request_data: &mut BTreeMap<String, GuardrailValue>, response: GuardrailValue) -> Result<Option<GuardrailValue>, DeploymentHookError>` is `async_post_call_success_deployment_hook`. `None` unless `guardrails` is a list and the gate with `GuardrailEventHooks::PostCall` is true. Then it calls `hooks.post_call_success` and returns what comes back. LiteLLM's `call_type` argument is never read, so it is dropped, and `_is_valid_response_type` has no Rust form, because the trait already returns a response and a `None` is the only invalid value. `DeploymentHookError` is the module's thiserror enum with `Selection(#[from] GuardrailSelectionError)` and `Hook(#[from] GuardrailFailure)`.
+
+
+  `pre_call_hook_on_messages<H: DeploymentHookTarget>(&self, hooks: &H, request_data: &BTreeMap<String, GuardrailValue>, messages: &[GuardrailValue]) -> Result<Vec<GuardrailValue>, MessagesHookError>` is `async_pre_call_hook_on_messages`, which the vector store hook calls to scan retrieved content. It builds `scan_request` from every entry of `request_data` except the nine content keys `messages`, `input`, `prompt`, `system`, `instructions`, `tools`, `functions`, `function_call` and `tool_choice`, then sets `messages` to the given list. For `HookTarget::Unified` it also sets `litellm_metadata` to the metadata bucket (the one `stamped_key_fields` picks) when that bucket is an object. Build the key fields from `scan_request` after that, not from `request_data`. Call `hooks.pre_call` with `CallType::Acompletion`. `Unchanged` returns the given messages. `Data` returns its `messages` when that is a list, and the given messages otherwise. `Text(message)` is `MessagesHookError::Rejected`. `Failure(failure)` is `Failed`. An `Err` from the hook is `Failed`, except `GuardrailFailure::SensitiveDataRoute`, which becomes `Rejected` with the message `{name} asked to reroute the request to {route_to_model} over retrieved content; a request cannot be rerouted after retrieval, so it was blocked`, where `name` is the failure's guardrail name or else this guardrail's name (`None` prints as `None`). Both variants carry `guardrail_name: Option<String>` and `event_hook: Option<LitellmParamsMode>` copied from the settings, because the caller turns `Rejected` into a 400 with detail `{"error": message}` and adds both values to the detail when set (B3663's `pre_call_rejection` and `enrich_http_exception_with_guardrail_context` live in betterlite-server, which this crate can't call).
+
+
+  File `logging_hook.rs`. `logging_hook<T, G>(&self, guardrail: &G, registry: &TranslationRegistry<T>, kwargs: BTreeMap<String, GuardrailValue>, result: &GuardrailValue, result_kind: LoggedResultKind, call_type: &str) -> Result<BTreeMap<String, GuardrailValue>, LoggingHookError>` is `async_logging_hook` and returns the new `kwargs`, since the result is never changed. `T: BaseTranslation` and `TranslationRegistry` come from B3679 and B3661, and `G` is the guardrail value the translation takes, as B3661's trait declares. `LoggedResultKind` is `ModelResponse` or `Other`, because Rust can't test `isinstance(result, ModelResponse)` on a `GuardrailValue`. The caller has already asked the gate with `logging_only`, so this method doesn't. It returns `kwargs` untouched, in this order, when `switches.uses_apply_guardrail_interface` is off, when `event_hook_is_event_type(logging_only)` (B3665) is false, when `call_type` does not parse as a `CallType`, and when the registry has no entry for it (a `debug!` for the last two, with the text `Guardrail {name}: no guardrail translation for call_type={call_type}, skipping logging_only scan`).
+
+
+  Then `response` is `async_complete_streaming_response` from `kwargs`, else `complete_streaming_response`, else `result`, where a missing or null key moves to the next. The output translation is the registry entry for `Acompletion` when the response is a model response (`result_kind` is `ModelResponse`, and a streaming key counts as one), otherwise the same entry as the input; a missing `Acompletion` entry is `LoggingHookError::NoOutputTranslation`. `scratch_metadata` is `kwargs["litellm_params"]["metadata"]` without the key `standard_logging_guardrail_information`, and a missing or null level reads as an empty object. `scratch_request` holds, with null for anything absent: `model` and `litellm_call_id` from `kwargs`, `messages` and `input` both set to a copy of `kwargs["messages"]` else `kwargs["input"]`, `tools` from `kwargs["optional_params"]["tools"]`, and `metadata` set to `scratch_metadata`. The scan calls the input translation's `process_input_messages` on `scratch_request`, and then, when `response` exists, the output translation's `process_output_response` with a copy of the response and `scratch_request` as `request_data`, passing nothing for the logging object and the key. A scan error is one `warn!` with `Guardrail {name}: logging_only scan raised: {error}` and the hook goes on with whatever was recorded. Python shares one dict between `scratch_metadata` and `scratch_request`, so read the record back from `scratch_request["metadata"]["standard_logging_guardrail_information"]` after the scan.
+
+
+  The record is the value under that key, and a missing, null or empty one returns `kwargs` untouched, as does a `standard_logging_object` that is not an object. Otherwise the entries are the record when it is a list and a one-entry list of it otherwise. The result is `kwargs` with `standard_logging_object` replaced by a copy whose `guardrail_information` is the old list (missing or null counts as empty) followed by the entries. An old value that is neither a list nor null is `LoggingHookError::ExistingNotList`. `LoggingHookError` also has `NotObject { field }` for a `litellm_params`, `metadata` or `optional_params` value that is neither an object nor null. Use `to_value` and `from_value` for conversions and never bytes, because the workspace turns on serde_json's `arbitrary_precision` and bytes into `GuardrailValue` mangle floats.
+
+
+  Oracle helper. The task's operation takes `function`, `guardrail_name`, `event_hook`, `default_on`, `only_scan_new_messages`, `mask_request_content`, `mask_response_content` and `data`, and the functions are `scan_filter` (with `texts` and `cached`), `scan_mark` (with `texts` and `existing`, answering the stored list), `mark_pre_call`, `already_ran`, `stamped_key_fields`, `deployment_pre` (with `kwargs`, `call_type` and `suppressed`) and `deployment_post` (with `request_data` and `suppressed`). Both sides answer `{result: <value>}`. The Python side builds `CustomGuardrail` (a subclass whose `async_pre_call_hook` returns `{"messages": [{"role": "user", "content": "hooked"}]}` and whose `async_post_call_success_hook` returns a `ModelResponse`), sets `custom_guardrail._PRE_CALL_EXECUTED_TOKEN` to `fixed-token` for the call, uses an in-memory `DualCache` seeded from `cached` or `existing`, and sets `_suppressed_compression_guardrails` from `litellm.proxy.guardrails.auto_router_compression` the way B3665's helper does. `deployment_post` answers true when the hook returned a response. The Rust adapter implements `ScanCacheStore` with a map and `DeploymentHookTarget` with a fixed `Data` outcome. Copy each helper case into `tools/oracle/fuzz/corpus/helper_case/` with the prefix `guardrail_session_hooks-`. Native tests live in `guardrail_scan_cache::tests` and `guardrail_deployment::tests` with the name prefixes in the check filters below.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/guardrail_scan_cache.rs
+    - crates/betterlite-guardrails/src/guardrail_scan_cache/**
+    - crates/betterlite-guardrails/src/guardrail_deployment.rs
+    - crates/betterlite-guardrails/src/guardrail_deployment/**
+    - crates/betterlite-config/src/sections/guardrail_scan_cache.rs
+    - crates/betterlite-config/src/sections/guardrail_scan_cache/**
+    - tools/oracle/cases/helpers/guardrail-session-hooks/**
+    - "tools/oracle/fuzz/corpus/helper_case/guardrail_session_hooks-*"
+    - tools/oracle/helpers/b3666.py
+    - tools/oracle/helpers/b3666/**
+    - tools/oracle/src/helpers/guardrails/b3666.rs
+    - tools/oracle/src/helpers/guardrails/b3666/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L60-L62
+    why: The per-process secret that tags every pre-call marker.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L112-L136
+    why: _user_api_key_auth_from_request and _unified_hook_fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L464-L556
+    why: The scan cache key, the hash, filter_new_texts_for_session and mark_texts_scanned.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L714-L733
+    why: _is_valid_response_type, which has no Rust form.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L769-L810
+    why: The marker format, mark_pre_call_hook_ran and _pre_call_hook_already_ran.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L812-L857
+    why: uses_apply_guardrail_interface, _deployment_hook_target and async_pre_call_deployment_hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L859-L938
+    why: async_pre_call_hook_on_messages and async_post_call_success_deployment_hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L940-L1016
+    why: async_logging_hook and _scan_logged_call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1554-L1556
+    why: The nine content keys the on-messages scan drops from the request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L251
+    why: PRE_CALL_EXECUTED_GUARDRAILS_KEY.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L402-L404
+    why: GUARDRAIL_SCANNED_MESSAGES_CACHE_TTL_SECONDS and its default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/exception_utils.py#L15-L40
+    why: What the caller does with a rejection or failure from the on-messages scan.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3402-L3423
+    why: The caller asks the gate with logging_only before it calls the logging hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L3094-L3145
+    why: The one caller of the scan cache.
+dod:
+  - text: A missing env var gives a TTL of 86400, a trimmed integer is used as given, and text that is not an integer is a config error naming the variable.
+    proof: [scan-section-tests]
+  - text: The cache key and hash match LiteLLM, including `None` for a guardrail without a name.
+    proof: [filter-tests, oracle, helper-python]
+  - text: filter gives `None` for a feature that is off, no texts, masking on, no session id and a failed read, and the masking case warns.
+    proof: [filter-tests, oracle, helper-python]
+  - text: filter returns only the texts whose hash is not stored, in order, and an empty list when all were seen.
+    proof: [filter-tests, oracle, helper-python]
+  - text: mark does nothing for the same four early exits, merges new hashes after the stored ones without repeats, writes with the given TTL, and a failing store never fails the call.
+    proof: [mark-tests, oracle, helper-python]
+  - text: The marker is `{token}:{name}`, absent without a name, and appended to the list in `metadata` first, then `litellm_metadata`, replacing a non-list value.
+    proof: [marker-tests, oracle, helper-python]
+  - text: With no object bucket the marker creates `metadata`, and already_ran sees a marker in either bucket and ignores one with another token.
+    proof: [marker-tests, oracle, helper-python]
+  - text: Key fields come from `litellm_metadata` when that key exists and from `metadata` otherwise, and a non-text value gives `None`.
+    proof: [stamped-tests, oracle, helper-python]
+  - text: hook_target gives `Own` unless the guardrail uses the apply interface without native lifecycle hooks.
+    proof: [stamped-tests]
+  - text: The pre-call deployment hook returns kwargs untouched without a `guardrails` list, after a marker, when the gate says false and for call types other than the two completions, and replaces `messages` when the hook returns them.
+    proof: [pre-hook-tests, oracle, helper-python]
+  - text: A suppressed name and a tag-based hook stop the pre-call hook before the provider hook runs, the first by skipping and the second with the gate's error.
+    proof: [pre-hook-tests, oracle, helper-python]
+  - text: The post-call deployment hook gives `None` without a `guardrails` list or when the gate says false, and returns the hook's response otherwise.
+    proof: [post-hook-tests, oracle, helper-python]
+  - text: The on-messages scan drops the nine content keys, adds `litellm_metadata` only for `Unified`, and builds the key fields after that.
+    proof: [messages-hook-tests]
+  - text: The on-messages scan maps each outcome as described, turns `SensitiveDataRoute` into a rejection with the reroute message, and carries the guardrail name and event hook.
+    proof: [messages-hook-tests]
+  - text: The logging hook skips for a guardrail without the apply interface, without `logging_only`, with an unknown call type and with no registry entry.
+    proof: [logging-hook-tests]
+  - text: The logging hook scans copies, drops the old record from the scratch metadata, reads the record back from the scratch request, and appends it to `guardrail_information` after the old entries.
+    proof: [logging-hook-tests]
+  - text: A scan error is logged and the hook still returns kwargs, and a missing record or `standard_logging_object` returns kwargs untouched.
+    proof: [logging-hook-tests]
+  - text: Newly added helper corpus cases replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: scan-section-tests
+      why: the TTL env var is missing or accepts text LiteLLM rejects
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_scan_cache::/)'
+    - id: filter-tests
+      why: a text is scanned twice, skipped by mistake, or the early exits differ
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_scan_cache::tests::filter_/)'
+    - id: mark-tests
+      why: scanned hashes are lost, repeated or written with the wrong TTL
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_scan_cache::tests::mark_/)'
+    - id: marker-tests
+      why: a guardrail runs twice or a forged marker suppresses it
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_deployment::tests::marker_/)'
+    - id: stamped-tests
+      why: key fields come from the wrong bucket or the hook target is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_deployment::tests::stamped_/)'
+    - id: pre-hook-tests
+      why: the pre-call deployment hook runs in the wrong order or at the wrong time
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_deployment::tests::pre_hook_/)'
+    - id: post-hook-tests
+      why: the post-call deployment hook skips the gate or drops the response
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_deployment::tests::post_hook_/)'
+    - id: messages-hook-tests
+      why: the retrieval scan keeps content keys or maps an outcome to the wrong error
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_deployment::tests::messages_hook_/)'
+    - id: logging-hook-tests
+      why: the logging_only scan changes the logged call or loses its record
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_deployment::tests::logging_hook_/)'
+    - id: helper-python
+      why: the strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3666)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3666 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3666/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added session and hook cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/guardrail_session_hooks-*")" &&
+        grep -lE '^[[:space:]]+b3666:' tools/oracle/fuzz/corpus/helper_case/guardrail_session_hooks-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-session-hooks/scan-filter-unseen.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/scan-filter-all-seen.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/scan-filter-no-session.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/scan-filter-masking.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/scan-filter-unnamed.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/scan-mark-merge.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/scan-mark-skipped.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/marker-append.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/marker-replaces-non-list.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/marker-creates-metadata.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/marker-litellm-metadata-second.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/already-ran-either-bucket.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/stamped-litellm-metadata.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/pre-hook-replaces-messages.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/pre-hook-no-guardrails-list.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/pre-hook-marker-skips.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/pre-hook-suppressed.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/pre-hook-other-call-type.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/pre-hook-tag-mode.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/post-hook-returns-response.yaml
+  - tools/oracle/cases/helpers/guardrail-session-hooks/post-hook-gate-false.yaml
+deviations:
+  - what: The pre-call deployment hook does not leave a `guardrail_to_apply` key in the request kwargs, where LiteLLM leaves its guardrail object there for the unified path.
+    why: The guardrail object can't live in a `GuardrailValue` map, so `DeploymentHookTarget` receives which guardrail runs through its own receiver.
+  - what: The on-messages scan returns a typed `Rejected` or `Failed` error with the guardrail name and event hook, where LiteLLM raises an `HTTPException` it has already filled in.
+    why: The HTTP error types live in betterlite-server, which this crate can't depend on, so the caller builds the 400 from the error.
+out_of_scope:
+  - "`_is_valid_response_type` and the module-level `dc` DualCache have no Rust form. The hook trait returns a response type, and each target holds its own cache."
+  - B3665 owns should_run_guardrail and the other request gates. This task calls the gate and passes `suppressed` through from the caller, and B3546 supplies the names.
+  - B3664 owns the invocation records that the `logging_only` scan writes into the scratch request, and B5471 owns the base settings, GuardrailFailure and session_id_from_request.
+  - B3680 builds the unified guardrail that implements `HookTarget::Unified`, and this task must not depend on it.
+  - B5470 owns every function of litellm/proxy/guardrails/_content_utils.py, and walk_user_text there has no caller at the pin.
+  - The loops that call these hooks for every callback (async_pre_call_deployment_hook and async_post_call_success_deployment_hook in litellm/utils.py, the logging loop in litellm_logging.py, ProxyLogging in litellm/proxy/utils.py and the policy pipeline executor) belong to their own tasks. They own the calls to mark_pre_call_hook_ran and the gate for `logging_only`.
+  - B3727 owns the Bedrock code that calls the scan cache, and the vector store hook that calls the on-messages scan is its own task's.
+  - B3663 owns enrich_http_exception_with_guardrail_context and pre_call_rejection in betterlite-server.
+pitfalls:
+  - A masking guardrail must never use the scan cache, because scanning only new texts skips the old ones and a rewrite would then miss them.
+  - mark_texts_scanned runs only after the guardrail let the request through, so a blocked text is never stored and a retry scans it again.
+  - The key says `None` for an unnamed guardrail, so two unnamed guardrails share one list in a session, and that is LiteLLM's behavior to keep.
+  - A cache read failure in filter means "scan everything", and the same failure in mark loses nothing but a skipped future scan, so neither may raise.
+  - The marker holds a per-process secret token, so a marker from a client body or another process must never count, and tests use `PreCallToken::new` with a fixed string.
+  - mark_pre_call_hook_ran stops at the first object bucket, but pre_call_hook_already_ran checks both, so a marker written to `metadata` is still found when `litellm_metadata` also exists.
+  - The deployment hook reads `guardrails` from the top level of kwargs, because the router spreads a deployment's model-level list there, and a missing `guardrails` list means the proxy hook already handled it.
+  - should_run_guardrail can return the tag-mode error, which must reach the caller. Treating it as false would let a configured guardrail go silent.
+  - The on-messages scan builds the key fields after the `litellm_metadata` copy, so for `Unified` a request that used `metadata` now reads its fields from the copy.
+  - The reroute rejection applies only to an `Err` from the hook. A `SensitiveDataRoute` returned inside `PreCallOutcome::Failure` is raised as it is.
+  - The logging hook must scan copies, since the guardrail edits its inputs in place and the real logged request must not change.
+  - The record from the `logging_only` scan is read from the scratch request, because Rust has no dict shared with `scratch_metadata`.
+  - The output translation is the `Acompletion` one for any model response, even when the call type is an embedding or a speech call.
+  - "`logging_only` runs after the response, so a scan error must only warn. Raising would fail a request that already finished."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

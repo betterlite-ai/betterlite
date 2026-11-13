@@ -1,0 +1,23 @@
+task: B675
+deviations:
+  - what: The username-password token request sends Accept application/json and nothing else, while MSAL also sends x-client-sku, x-client-ver, x-client-os and x-ms-lib-capability telemetry headers.
+    why: Those headers identify the Python MSAL client and its version; a Rust gateway has no MSAL.Python build and Azure does not require them, so no working setup can depend on them.
+    link: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.37.0/msal/application.py#L846-L855
+  - what: The username-password token request carries no X-AnchorMailbox routing header, while MSAL sends X-AnchorMailbox upn:<username> on the ROPC request.
+    why: The header is an Exchange/CCS routing hint that repeats the username in plaintext; Entra returns a token without it, and a working setup does not read the header it sent.
+    link: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.37.0/msal/application.py#L208-L212
+  - what: A cached token is renewed once 300 seconds or less remain before expires_on; azure-core's bearer policy subtracts a random 0-60 second jitter from that window, so it sometimes serves a token with 240 to 299 seconds left without a request.
+    why: The jitter spreads refresh load across clients and is not reproducible; betterlite always renews below the policy's base window, so it never serves a token the SDK would treat as spent, and the token is valid either way.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-core_1.41.0/sdk/core/azure-core/azure/core/pipeline/policies/_authentication.py#L41-L75
+  - what: An access token reply with a non-integer expires_in or a non-string token_type is an error, where Python's int() and dict lookup accept floats, booleans and numeric strings for the integer field and keep a non-string token_type.
+    why: The SDK's variable declarations type expires_in as int and token_type as text, and betterlite rejects a value of the wrong type by naming the field instead of silently coercing a token lifetime.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_internal/interactive.py#L237-L244
+  - what: A token reply whose client_info is not base64 fails with Failed to build AuthenticationRecord from unexpected identity token, while MSAL's token-cache account parse fails first with Authentication failed followed by the base64 decoder text.
+    why: The base64 decoder text is an accident of MSAL's cache-add path and no working identity provider sends an undecodable client_info; betterlite reports the same ClientAuthenticationError with the fixed authentication-record message instead of reproducing a binascii string.
+    link: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.37.0/msal/token_cache.py#L325-L336
+  - what: An account that the user realm endpoint reports as Federated is refused with an error that names the federated account, and no password grant is sent, while MSAL fetches a WS-Trust SAML assertion from the account's identity provider and exchanges it with a SAML bearer grant. Betterlite also asks the realm endpoint on every password grant, where MSAL stops asking a host for the rest of the process once it has answered 404.
+    why: The WS-Trust exchange is a separate SOAP and SAML flow against the customer's own identity provider and no betterlite credential has it; sending the password to Entra instead would only produce an Entra rejection for a federated user, so the typed error is the honest outcome, and the per-process 404 memory is Python class state with no effect on the token.
+    link: https://github.com/AzureAD/microsoft-authentication-library-for-python/blob/1.37.0/msal/application.py
+  - what: Each renewal sends grant_type=password with the password again, and the refresh_token in the token reply is dropped, while azure-identity first calls MSAL's silent path, which renews with grant_type=refresh_token and sends the password only when that renewal fails.
+    why: Keeping a refresh_token means holding a second long-lived secret per credential and matching MSAL's cached account; the password grant returns the same access token and identity claims, so a working setup receives a valid token either way, at the cost of sending the password on every renewal.
+    link: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_internal/interactive.py

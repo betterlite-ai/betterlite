@@ -278,7 +278,7 @@ checks:
     why: Outside bytes lack replay through the actual decoder.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/anthropic_count_tokens)"
       && grep -q 'decode_count_response' crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_count_tokens.rs
-      && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_count_tokens_corpus$/)'
+      && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_count_tokens_corpus(::|$)/)'
   - id: credential-identity-isolation
     why: Distinct configured identities cannot share credentials, headers or cache entries.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::count_tokens_credential_identity_isolation$/)'

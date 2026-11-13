@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-ascii-inside-unicode",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/éÉ",
+      "pattern": "/(?u:(.)(?ai:\\1))"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

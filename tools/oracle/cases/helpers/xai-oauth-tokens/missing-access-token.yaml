@@ -1,0 +1,7 @@
+kind: helper
+name: missing_access_token
+call:
+  xai_oauth_tokens: {"record": {"now": 1000, "payload": {"refresh_token": "r"}, "token_endpoint": "https://auth.x.ai/t", "fallback": null}}
+env: {}
+compare:
+  ignore: []

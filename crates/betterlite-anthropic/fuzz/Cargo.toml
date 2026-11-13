@@ -3,6 +3,10 @@ name = "betterlite-anthropic-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
@@ -10,6 +14,48 @@ cargo-fuzz = true
 [dependencies]
 betterlite-anthropic = { path = ".." }
 libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "anthropic_count_tokens"
+path = "fuzz_targets/anthropic_count_tokens.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "anthropic_credentials"
+path = "fuzz_targets/anthropic_credentials.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "anthropic_files"
+path = "fuzz_targets/anthropic_files.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "anthropic_response_content"
+path = "fuzz_targets/anthropic_response_content.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "anthropic_skills"
+path = "fuzz_targets/anthropic_skills.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "anthropic_stream_events"
+path = "fuzz_targets/anthropic_stream_events.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "cache_plan_decoder"
@@ -24,5 +70,3 @@ path = "fuzz_targets/messages_errors.rs"
 test = false
 doc = false
 bench = false
-
-[workspace]

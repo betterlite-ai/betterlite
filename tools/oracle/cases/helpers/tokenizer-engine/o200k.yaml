@@ -1,0 +1,9 @@
+kind: helper
+name: o200k
+call:
+  tokenizer_engine:
+    operation: encode
+    engine: o200k_base
+    text: hello world
+env: {}
+compare: {ignore: []}

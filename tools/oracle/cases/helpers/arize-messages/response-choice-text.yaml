@@ -1,0 +1,10 @@
+kind: helper
+name: response-choice-text
+call:
+  b3860:
+    function: set_response
+    response:
+      choices:
+        - message: {role: assistant, content: Hello there}
+env: {}
+compare: {ignore: []}

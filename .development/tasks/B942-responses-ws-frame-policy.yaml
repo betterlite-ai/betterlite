@@ -2,7 +2,7 @@ id: B942
 title: Responses ws frame policy
 description: >-
   Implement the pure policy that prepares and filters decoded native Responses WebSocket frames. It receives typed
-  quota callbacks, an authenticated key record, a Presidio callback, a separate B104-supplied
+  quota callbacks, an authenticated key record, a Presidio callback, a separate B3805-supplied
   `unmask_pii_text(text, pii_tokens) -> text` function, response-ID/encrypted-content codecs, request defaults,
   the authorized model, request metadata and the client send effect. The unmask function is passed explicitly beside
   the B902 `PresidioGuardrailCallback`; it is not discovered from that callback by attribute lookup. The policy has
@@ -55,7 +55,7 @@ description: >-
   (L2250-L2263), `_unmask_response_event` (L2265-L2328), `_mask_response_completed` (L2330-L2408), and
   `_enforce_or_reject_frame` (L2410-L2437).
 
-  Direct inputs are B071's project-quota callback, B104's Presidio implementation and separate unmask function,
+  Direct inputs are B3042's project-quota callback (`enforce_project_io_token_quota_for_frame`, a rate-limit hook at the pin, not a budget), B3805's Presidio implementation and separate unmask function (B3806 and B3807 own response and stream unmasking),
   B163's `RateLimitError`, B171's helper protocol, B902's WebSocket/default types and Presidio callback shape,
   B903's response-ID and encrypted-item wrapper codecs, B904's encrypted input-item traversal, B925's JSON/type
   helpers and quota protocol, and B732's authenticated key record. B925 owns the source `_UnmasksPiiText` protocol
@@ -70,8 +70,6 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_ws_frame_policy.rs
   - crates/betterlite-core/src/api/responses_ws_frame_policy/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
@@ -300,7 +298,7 @@ out_of_scope:
 - 'litellm/responses/streaming_iterator.py: B943 owns ResponsesWebSocketStreaming construction, event/input storage, backend_to_client, client_to_backend and bidirectional_forward (L1900-L2099, L2439-L2477). It consumes this task’s transformed frame and owns connection termination.'
 - 'litellm/responses/streaming_iterator.py: B944 owns ManagedResponsesWebSocketHandler and its quota call site (L2519-L3016); B942 supplies the shared quota policy but not managed routing, history or provider calls.'
 - 'litellm/responses/utils.py: B903 owns _wrap_encrypted_content_with_model_id and previous-response-id codec functions; B904 owns _restore_encrypted_content_item_ids_in_input. B942 injects these seams and does not reimplement them.'
-- 'litellm/types/responses/streaming_websocket.py: B902 owns ResponsesClientWebSocket, ResponsesBackendWebSocket, PresidioGuardrailCallback and ResponsesWebSocketRequestDefaults declarations (L10-L54). The callback has no unmask method; B104 supplies the separate typed unmask function consumed here.'
+- 'litellm/types/responses/streaming_websocket.py: B902 owns ResponsesClientWebSocket, ResponsesBackendWebSocket, PresidioGuardrailCallback and ResponsesWebSocketRequestDefaults declarations (L10-L54). The callback has no unmask method; B3805 supplies the separate typed unmask function consumed here.'
 - 'litellm/exceptions.py: B163 owns RateLimitError construction and fields; B942 only catches that type in _enforce_or_reject_frame.'
 - 'The owned ranges contain no environment variable, config key, query parameter, route decorator, HTTP status/type/param/code, database write, warning-and-drop log or provider call; no such case belongs here.'
 pitfalls:

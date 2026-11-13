@@ -1,0 +1,17 @@
+kind: helper
+name: langfuse-observation-attributes-span
+call:
+  b3901:
+    steps:
+      - function: observation_attributes
+        fields:
+          observation_type: span
+          input: guardrail-input
+          output: guardrail-output
+          metadata:
+            guardrail: pii
+          level: DEFAULT
+          status_message: checked
+env: {}
+compare:
+  ignore: []

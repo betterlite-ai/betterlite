@@ -1,0 +1,26 @@
+kind: helper
+name: caching-batch-miss-tracking-answers-later-reads
+call:
+  b4330:
+    namespace: ns
+    default_ttl: 60
+    replies:
+      MGET: [{array: [nil, {bulk: "2"}]}, {array: [{bulk: "9"}]}]
+      SET: [{simple: OK}]
+      DEL: [{int: 1}]
+    steps:
+      - declare: {kind: mget, keys: [a, b]}
+      - await: 0
+      - missing: a
+      - missing: b
+      - declare: {kind: set, key: a, value: written}
+      - missing: a
+      - declare: {kind: delete, key: b}
+      - missing: b
+      - await: 1
+      - await: 2
+      - declare: {kind: mget, keys: [a]}
+      - await: 3
+      - missing: a
+env: {}
+compare: {ignore: []}

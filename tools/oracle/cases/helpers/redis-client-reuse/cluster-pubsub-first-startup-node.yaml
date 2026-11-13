@@ -1,0 +1,10 @@
+kind: helper
+name: redis-client-reuse-cluster-pubsub-first-startup-node
+call:
+  b4325:
+    function: cluster_pubsub_node
+    startup_nodes:
+      - {host: first.internal, port: 7000}
+      - {host: second.internal, port: 7001}
+env: {}
+compare: {ignore: []}

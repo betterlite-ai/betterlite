@@ -1,0 +1,37 @@
+kind: helper
+name: gemini-media-resolution-maximum
+call:
+  gemini_media:
+    call: resolution_maximum
+    messages:
+      - role: user
+        content:
+          - type: image_url
+            image_url:
+              url: "https://example.com/a.png"
+              detail: high
+          - type: file
+            file:
+              file_data: "gs://bucket/b.mp4"
+              detail: medium
+      - role: user
+        content:
+          - type: text
+            text: "hello"
+      - role: assistant
+        content: "plain string"
+      - role: user
+        content:
+          - type: image_url
+            image_url:
+              url: "https://example.com/c.png"
+              detail: ""
+      - role: user
+        content:
+          - type: image_url
+            image_url:
+              url: "https://example.com/d.png"
+              detail: "bogus"
+env: {}
+compare:
+  ignore: []

@@ -1,14 +1,14 @@
 id: B224
 milestone: M1 openai data plane
 title: Anthropic tool-history repair
-status: todo
+status: done
 depends_on: [B178, B179]
 file: tasks/B224-anthropic-history.yaml
 covers:
   - "litellm/litellm_core_utils/prompt_templates/factory.py"
 parent: B010
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 706

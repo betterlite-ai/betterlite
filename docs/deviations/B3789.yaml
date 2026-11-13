@@ -1,0 +1,11 @@
+task: B3789
+deviations:
+  - what: Text selection always includes system-role messages; betterlite has no skip_system_message_in_guardrail or scan_only_tool_results setting, so the reasoning-text offset and the scannable roles never drop system text.
+    why: Neither setting exists in betterlite-config yet, and silently ignoring a configured value would scan or skip text the operator did not ask for. LiteLLM reads the global flag when it aligns Responses reasoning items and instructions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L194-L200
+  - what: A per-request metadata value that is not a string (for example profile_name sent as a number) is ignored instead of being forwarded to PANW; the configured profile_name then applies.
+    why: betterlite models the metadata dict as GuardrailValue and passes the PANW metadata fields as typed strings, so a non-string value cannot enter the scan payload. LiteLLM passes the value through unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L840-L900
+  - what: Masked MCP arguments for structured original arguments are parsed with serde_json, so text nested deeper than 128 JSON levels is rejected as invalid JSON and blocks with HTTP 400 where Python's json.loads would accept it.
+    why: serde_json bounds recursion so hostile masked text cannot exhaust the stack; rule bounded-inputs asks for a limit on every parse of outside data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L607-L671

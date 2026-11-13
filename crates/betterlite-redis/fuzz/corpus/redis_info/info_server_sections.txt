@@ -1,0 +1,17 @@
+# Server
+redis_version:7.2.4
+redis_git_sha1:00000000
+redis_mode:standalone
+os:Linux 6.12.0 x86_64
+arch_bits:64
+multiplexing_api:epoll
+uptime_in_seconds:123456
+uptime_in_days:1
+hz:10
+used_cpu_sys:1.5
+used_cpu_user:0.25
+
+# Clients
+connected_clients:3
+blocked_clients:0
+tracking_clients:0

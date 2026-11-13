@@ -1,0 +1,19 @@
+kind: helper
+name: content-inspection-responses-input
+call:
+  b5470:
+    function: build_inspection_messages
+    data:
+      messages: null
+      input:
+        - plain prompt
+        - type: message
+          role: system
+          content:
+            - {type: input_text, text: "system line"}
+        - role: user
+          content: "content string"
+        - {type: function_call, name: lookup}
+env: {}
+compare:
+  ignore: []

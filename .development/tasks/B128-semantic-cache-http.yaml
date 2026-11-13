@@ -1,0 +1,212 @@
+id: B128
+title: Exercise semantic cache construction and lookup through the proxy
+description: >-
+  Finish the semantic-cache umbrella with HTTP oracle coverage. B4380, B4381, B4382, B4383 and
+  B8296 already implement the records, embeddings and three backends. B8651 assembles them,
+  B8612 replaces the shared response-cache slot, B8613 builds it at startup, and B8650 mounts
+  the cache management routers. Those tasks have no semantic-cache inference HTTP cases.
+  This task adds cases only; it neither implements a backend nor registers a route.
+
+  B9560 is the generic inference-cache wiring this task needs: it connects B8610's response-cache
+  slot to the authenticated chat and embeddings routes through B4305's lookup and B4304's writes,
+  including the cache controls and the cache-key response header. B014 leaves response caching to
+  the cache tasks, and B8630 assembles RouterCompletion without a route calling it, so B9560 is the
+  only path. Do not make these cases pass by replacing the production route with a test handler or
+  by monkeypatching LiteLLM.
+
+  Reuse the existing HTTP case format, MockProvider, {{upstream}} substitution in config
+  and env, and steps support. The current loader uses an omitted kind for HTTP cases;
+  kind: helper is not appropriate here. Give every file a distinct model_name or cache
+  namespace so grouping by config cannot make one file consume another file's startup
+  answers. These cases need no database, Redis service, Qdrant process or paid embedding
+  call. They use only declared input types and JSON cached values.
+
+  Common settings are litellm_settings.cache: true and cache_params with one of the exact
+  types redis-semantic, valkey-semantic and qdrant-semantic. similarity_threshold is required;
+  use 0.75. Leave semantic_cache_embedding_timeout absent and
+  SEMANTIC_CACHE_EMBEDDING_TIMEOUT_SECONDS unset to exercise its 5-second default.
+  The three per-backend embedding-model keys default to text-embedding-ada-002. Routed
+  embedding cases set the applicable key to embed-route and include that model_name in
+  model_list, targeting openai/text-embedding-ada-002 at {{upstream}} with api_key oracle-key.
+  Direct cases omit the embedding deployment and set OPENAI_API_BASE to {{upstream}} and
+  OPENAI_API_KEY to oracle-key in env. Use a configured OpenAI chat deployment for the client
+  request. Authentication is Bearer oracle-master except in the no-key case.
+
+  For Qdrant, set qdrant_api_base to {{upstream}}/qdrant, qdrant_api_key to oracle-qdrant-key,
+  qdrant_collection_name to the case's unique name and qdrant_semantic_cache_vector_size to 3.
+  Script constructor traffic before inference traffic: GET /collections/{name}/exists returns
+  {result: {exists: true}}, GET /collections/{name} returns collection details, and PUT
+  /collections/{name}/index returns a successful keyword-index response. The full recorded
+  paths include /qdrant. Then script the OpenAI embedding response with [1, 0, 0] and the
+  Qdrant points/search response. Compare request bodies and the api-key upstream header as
+  well as the client result, so the filter, vector, limit, rescore and oversampling are checked.
+
+  Inference requests in the read cases carry cache: {no-store: true} and cache_key:
+  oracle-semantic-scope. That public cache_key input makes the mocked payload's
+  litellm_cache_key deterministic without guessing a hash of auth metadata. A hit payload
+  contains litellm_cache_key, text, and response, with response a JSON string encoding
+  {timestamp: 1700000000, response: <complete OpenAI chat completion>}; no s-maxage is set.
+  This exercises both the backend decoder and the cache-envelope decoder. Use fixed id,
+  created, model, choices and usage fields in that completion. Do not send Python repr text.
+  Every miss case adds one distinguishable chat-provider answer after the search answer;
+  a hit has no chat-provider answer. The mock's strict consumption and upstream-count
+  comparison must fail if a supposed hit silently calls the model or lookup never runs.
+
+  Write the following independent HTTP cases under tools/oracle/cases/semantic-cache-http.
+  ping-redis and ping-valkey use redis_url: redis://127.0.0.1:1 and GET /cache/ping; both must
+  boot and report their exact semantic cache_type without touching that endpoint.
+  ping-qdrant uses the constructor script and reports qdrant-semantic. These three exercise
+  B8651 through the actual startup path, rather than its direct constructor tests.
+
+  qdrant-routed-hit uses score 0.9 and the routed embedder; qdrant-direct-threshold-hit uses
+  score 0.75 and the default direct embedder. qdrant-below-threshold uses 0.74 and must call
+  the chat provider. qdrant-wrong-scope uses score 0.9 and a different litellm_cache_key;
+  qdrant-legacy-payload omits that field. Both must miss. qdrant-empty-result returns an
+  empty result list. qdrant-search-failure returns HTTP 500 with a valid JSON error object
+  but no result field: although Qdrant's backend raises, the outer Cache.async_get_cache
+  catches the error and the HTTP chat request succeeds through the provider. These cases
+  establish the observable caller policy without comparing backend exception class names.
+
+  redis-embedding-failure and valkey-embedding-failure configure the routed embedder and
+  redis_url: redis://127.0.0.1:1, then return a terminal 400 from the embedding provider and
+  a 200 chat response. No RedisVL index or Valkey command is reached: the embedding fails
+  first and no-store suppresses the later write. Keep the provider model's retries at zero.
+  These cases must record exactly the embedding attempt and the chat call; they test
+  B4381's error propagation into each backend and the fail-open HTTP result without needing
+  an optional redisvl install or pretending that a missing Python import is a cache outage.
+
+  qdrant-cache-bypass sends cache: {no-cache: true, no-store: true}; after collection startup
+  it records only the chat call, with neither embedding nor search. qdrant-chat-aliases is
+  one steps case performing hits on POST /v1/chat/completions, /chat/completions,
+  /engines/{model}/chat/completions and /openai/deployments/{model}/chat/completions, using
+  the configured model name in the last two paths. Give each step its own embedding/search
+  answers after the single constructor script. valkey-without-key calls
+  /v1/chat/completions without Authorization and must return 401 before embedding or cache
+  access, with an empty upstream list.
+
+  Compare status, response body and content-type throughout; compare x-litellm-cache-key
+  on hits and the established model-group/model-name headers on inference responses.
+  Durations and x-litellm-version are presence checks, not equality checks. For /cache/ping
+  ignore only /litellm_cache_params, whose Python object display is outside compatibility.
+  For authentication errors ignore /error/message with the reason that betterlite writes
+  its own message, but keep error type, param and code. Preserve all other stable fields.
+  Successful cache writes, real vector indexes and threshold math remain covered by the
+  backend tasks' native tests; do not weaken those tests or add a second vector-store mock
+  framework to this HTTP regression task.
+scope:
+  paths:
+    - tools/oracle/cases/semantic-cache-http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/valkey_semantic_cache.py#L53-L113
+    why: B8296's lazy constructor and configuration, exercised through startup rather than reimplemented here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/valkey_semantic_cache.py#L297-L337
+    why: B8296's async calls swallow embedding failures; the HTTP suite exercises the read failure through its caller.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L508-L550
+    why: B4381's routed and direct embedding calls disable recursive cache access and retries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L573-L575
+    why: B4310's embedding deadline defaults to 5.0 seconds through SEMANTIC_CACHE_EMBEDDING_TIMEOUT_SECONDS.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_semantic_cache.py#L592-L657
+    why: B4382's async read converts an embedding exception into a miss before building RedisVL's index.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L57-L173
+    why: B4383's startup requests and the existing-collection branch used by the HTTP scripts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L184-L218
+    why: B4383's filter, keyword index and rejection of legacy or mismatched scope payloads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/qdrant_semantic_cache.py#L433-L501
+    why: B4383's async search and inclusive similarity threshold, exercised through chat HTTP responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L187-L260
+    why: Backend selection belongs to B4299 and its B8651 composition; this task verifies its HTTP effect.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L648-L682
+    why: B4297's outer cache catches backend errors, including Qdrant errors, and returns a miss.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L813-L832
+    why: B4300 honors the client cache_key and forwards the remaining request arguments to the cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L50-L119
+    why: B4309's authenticated GET /cache/ping distinguishes plain Redis from semantic types; B8650 mounts it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L12024
+    why: Existing authenticated chat handler and all four aliases; this task adds cases, never registrations.
+dod:
+  - text: All three semantic backend types initialize through the booted proxy and report their exact type through GET /cache/ping.
+    proof: [startup-cases, oracle]
+  - text: Routed and direct Qdrant hits avoid chat transport, equality meets the threshold, and low similarity, wrong scope, legacy payloads, empty results and search errors produce provider-backed responses.
+    proof: [lookup-cases, oracle]
+  - text: Redis and Valkey embedding failures become HTTP cache misses, while no-cache plus no-store suppresses embedding and search entirely.
+    proof: [control-cases, oracle]
+  - text: All four chat aliases reach semantic lookup, and missing authentication rejects a Valkey-configured chat request before any upstream call.
+    proof: [route-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: startup-cases
+      why: semantic backend startup HTTP cases are missing or were not added by this task
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/cases/semantic-cache-http/ping-*.yaml')" &&
+        test -f tools/oracle/cases/semantic-cache-http/ping-redis.yaml &&
+        test -f tools/oracle/cases/semantic-cache-http/ping-valkey.yaml &&
+        test -f tools/oracle/cases/semantic-cache-http/ping-qdrant.yaml
+    - id: lookup-cases
+      why: a hit, threshold, scope or search-failure HTTP case is absent
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/cases/semantic-cache-http/qdrant-*.yaml')" &&
+        test -f tools/oracle/cases/semantic-cache-http/qdrant-routed-hit.yaml &&
+        test -f tools/oracle/cases/semantic-cache-http/qdrant-direct-threshold-hit.yaml &&
+        test -f tools/oracle/cases/semantic-cache-http/qdrant-below-threshold.yaml &&
+        test -f tools/oracle/cases/semantic-cache-http/qdrant-wrong-scope.yaml &&
+        test -f tools/oracle/cases/semantic-cache-http/qdrant-legacy-payload.yaml &&
+        test -f tools/oracle/cases/semantic-cache-http/qdrant-empty-result.yaml &&
+        test -f tools/oracle/cases/semantic-cache-http/qdrant-search-failure.yaml
+    - id: control-cases
+      why: backend fail-open and cache-control HTTP cases are missing
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/semantic-cache-http)" &&
+        test -f tools/oracle/cases/semantic-cache-http/redis-embedding-failure.yaml &&
+        test -f tools/oracle/cases/semantic-cache-http/valkey-embedding-failure.yaml &&
+        test -f tools/oracle/cases/semantic-cache-http/qdrant-cache-bypass.yaml
+    - id: route-cases
+      why: semantic lookup alias coverage or the authenticated boundary case is absent
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/semantic-cache-http)" &&
+        test -f tools/oracle/cases/semantic-cache-http/qdrant-chat-aliases.yaml &&
+        test -f tools/oracle/cases/semantic-cache-http/valkey-without-key.yaml
+oracle_cases:
+  - tools/oracle/cases/semantic-cache-http/ping-redis.yaml
+  - tools/oracle/cases/semantic-cache-http/ping-valkey.yaml
+  - tools/oracle/cases/semantic-cache-http/ping-qdrant.yaml
+  - tools/oracle/cases/semantic-cache-http/qdrant-routed-hit.yaml
+  - tools/oracle/cases/semantic-cache-http/qdrant-direct-threshold-hit.yaml
+  - tools/oracle/cases/semantic-cache-http/qdrant-below-threshold.yaml
+  - tools/oracle/cases/semantic-cache-http/qdrant-wrong-scope.yaml
+  - tools/oracle/cases/semantic-cache-http/qdrant-legacy-payload.yaml
+  - tools/oracle/cases/semantic-cache-http/qdrant-empty-result.yaml
+  - tools/oracle/cases/semantic-cache-http/qdrant-search-failure.yaml
+  - tools/oracle/cases/semantic-cache-http/redis-embedding-failure.yaml
+  - tools/oracle/cases/semantic-cache-http/valkey-embedding-failure.yaml
+  - tools/oracle/cases/semantic-cache-http/qdrant-cache-bypass.yaml
+  - tools/oracle/cases/semantic-cache-http/qdrant-chat-aliases.yaml
+  - tools/oracle/cases/semantic-cache-http/valkey-without-key.yaml
+deviations: []
+out_of_scope:
+  - >-
+    Every ValkeySemanticCache implementation function remains B8296's: __init__, _build_valkey_url,
+    _scope_tag, _embedding_to_bytes, _index_schema, _index_definition, _is_index_exists_error,
+    _extract_index_dim, _assert_dim_matches, _ensure_index_sync, _ensure_index_async, _doc_key,
+    _doc_mapping, _knn_query, _async_search, _first_hit, _record_similarity, _embedding_metadata,
+    _resolve_hit, set_cache, get_cache, async_set_cache, async_get_cache, async_set_cache_pipeline
+    and _index_info; its existing synchronous-operation deviations also stay with B8296.
+  - Shared prompt extraction and cached-response decoding are B4380; embedding generation is B4381; embedding routing, truncation and timeout settings are B4310.
+  - Redis index construction and cache operations are B4382; Qdrant collection construction and cache operations are B4383.
+  - Cache construction and callback registration are B4299, with semantic backend and embedder composition in B8651; this task verifies their existing settings without adding a config section.
+  - Cache-key derivation is B4296, response envelopes and fail-open outer reads are B4297, request normalization is B4300, hit conversion is B4302, lookup orchestration is B4305 and writes are B4304.
+  - ResponseCacheReinit and the shared slot are B8612, startup is B8613, server state and area aggregation are B8610, and cache route mounts are B8650.
+  - Readiness cache reports are B4448 and B8540; Valkey inherits RedisSemanticCache, so their production index-info adapter must support B8296 as well as B4382.
+  - HTTP handlers and authentication remain with B014, B4309 and their auth dependencies; the generic inference-cache connection is B9560's ResponseCacheStep.
+pitfalls:
+  - Qdrant performs three HTTP requests during existing-collection startup, so putting the embedding answer first breaks startup instead of testing a cache hit.
+  - GET /cache/ping does not ping redis-semantic or valkey-semantic, since its live Redis branch checks the exact type string redis.
+  - Qdrant's keyword-filter payload field is litellm_cache_key, and a high score does not rescue a hit whose payload lacks that field.
+  - Fail the embedding before index construction in the Redis HTTP failure case, or a missing redisvl install can disguise the behavior the case intends to prove.
+  - Never ignore the whole chat response or upstream request bodies to accommodate cache differences, because doing so would allow a missing cache to pass.
+  - The no-store control is necessary for these read-only scripts, since a miss otherwise schedules another embedding and a background cache write.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

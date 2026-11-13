@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-status-working-empty-message
+call: {b4803: {operation: working, message_text: '', request_id: req, message: {role: user, parts: []}}}
+env: {}
+compare: {ignore: []}

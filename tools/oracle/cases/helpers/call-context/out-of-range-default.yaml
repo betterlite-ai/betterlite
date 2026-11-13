@@ -1,0 +1,5 @@
+kind: helper
+name: out-of-range-default
+call: {env_integer: {value: '12', default: 9, minimum: 0, maximum: 10}}
+env: {}
+compare: {ignore: []}

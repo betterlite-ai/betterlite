@@ -1,0 +1,67 @@
+kind: helper
+name: gigachat-reply-and-usage
+call:
+  b8177:
+    steps:
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{"id": "reply-1", "created": 123, "choices": [{"index": 0, "message": {"role": "assistant", "content": "hello"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}}'
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{"choices": [{"message": {"role": "assistant", "function_call": {"name": "lookup", "arguments": {"city": "prague"}}}, "finish_reason": "function_call"}]}'
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{"choices": [{"message": {"function_call": {}}, "finish_reason": "function_call"}]}'
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{"choices": [{"message": {"function_call": {"name": "lookup"}}, "finish_reason": "stop"}]}'
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{"choices": [{"message": {"content": "hi"}}]}'
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{"id": "by-id", "choices": []}'
+      - kind: reply
+        status: 502
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{not json'
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14, "precached_prompt_tokens": 6}}'
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{"choices": [], "usage": {"prompt_tokens": 1}}'
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{"id": "no-usage"}'
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{"choices": [{"message": {"content": "x"}, "finish_reason": "blacklist"}]}'
+      - kind: reply
+        status: 200
+        model: gigachat/GigaChat
+        created: 1700000000
+        body: '{"choices": [{"message": {"content": "x"}, "finish_reason": "error"}]}'
+env: {}
+compare: {ignore: []}

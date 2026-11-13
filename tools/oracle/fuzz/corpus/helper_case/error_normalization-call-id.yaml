@@ -1,0 +1,5 @@
+kind: helper
+name: error-call-id-seed
+call: {error_call_id: {enabled: true, call_id: seed-call-id}}
+env: {}
+compare: {ignore: []}

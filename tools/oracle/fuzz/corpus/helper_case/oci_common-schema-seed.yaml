@@ -1,0 +1,14 @@
+kind: helper
+name: oci-common-schema-seed
+call:
+  b5940:
+    function: schema
+    schema:
+      $defs:
+        A:
+          type: string
+      properties:
+        a:
+          $ref: "#/$defs/A"
+env: {}
+compare: {ignore: []}

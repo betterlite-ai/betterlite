@@ -30,6 +30,8 @@ description: >-
 
   Build in crates/betterlite-server as the pass_through_logging::tinyfish module.
 
+  The module exports for B3626: `pub fn is_allowed_tinyfish_endpoint(method, path)`, `pub fn resolve_tinyfish_api_base()`, `pub const TINYFISH_TIMEOUT_SECONDS: f64 = 1500.0`, and the field sets `TINYFISH_RUN_AUTH_FIELDS` (use_profile, profile_id, use_vault, credential_item_ids) and `TINYFISH_ENVELOPE_FIELDS` (custom_body, stream, query_params).
+
 scope:
   paths:
     - crates/betterlite-server/src/pass_through_logging/tinyfish.rs
@@ -93,6 +95,9 @@ dod:
       The async route detector identifies POST /v1/automation/run-async requests
       by checking if the URL path ends with that suffix.
     proof: [async-route-detection-tests]
+  - text: >-
+      The module exports is_allowed_tinyfish_endpoint, resolve_tinyfish_api_base, TINYFISH_TIMEOUT_SECONDS (1500.0), TINYFISH_RUN_AUTH_FIELDS and TINYFISH_ENVELOPE_FIELDS for B3626, with the field sets holding exactly the keys named in the description.
+    proof: [endpoint-validation-tests, api-base-resolution-tests]
 
 checks:
   optional: []

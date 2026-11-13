@@ -1,0 +1,140 @@
+id: B8066
+title: Python Cache class, cache switches and the local backend classes
+description: >-
+  Give `betterlite` the cache setup users call: `Cache(...)`, `enable_cache`, `update_cache`, `disable_cache`, `CacheMode`,
+  `LiteLLMCacheType`, and the backend classes `BaseCache`, `InMemoryCache`, `DiskCache`, `RedisCache` and `DualCache`. The
+  rules are Rust: B4299 configuration and callback lifecycle, B4290 contracts and the memory cache, B4291 disk, B4292 client
+  lifecycle, B4293 to B4295 the dual cache. B8065 supplies the operations as the mixin `CacheOperations` and the native
+  family `cache` (`NativeCache`). This task adds a second native family `cache_backends` for stand-alone backend handles,
+  and the Python classes. `Cache` itself is `class Cache(CacheOperations)`.
+
+
+  Native family `cache_backends`, as B5659 describes it: `src/cache_backends.rs` with one `register` function, code in
+  `src/cache_backends/**`, types in `python/betterlite/_native_cache_backends.pyi`, B5369 declares the `cache_backends` family in `lib.rs` and `_native.pyi` with a stub `register` that this task fills. Pyclasses `NativeMemory`, `NativeDisk`, `NativeRedis` and `NativeDual` are built from JSON settings and have
+  `set(key, value_json, ttl)`, `get(key)`, `increment(key, value, ttl)`, `delete(keys)`, `ttl(key)`, `flush()`, `ping()` and
+  `close()`, each with an async twin on the Tokio runtime. Conversions sit in `src/cache_backends/convert.rs` with tests named
+  `backends_request_` and `backends_result_`.
+
+
+  Python lives in `python/betterlite/caching/` (the package, not a `_` name, since LiteLLM users import
+  `litellm.caching.caching`): `__init__.py` exports by name `Cache`, `LiteLLMCacheType`, `CacheMode`, `DiskCache`,
+  `DualCache`, `InMemoryCache`, `RedisCache` and `BaseCache`; `caching.py` holds `Cache`, `CacheMode`, `enable_cache`,
+  `update_cache`, `disable_cache` and `print_verbose` (L62); the backend classes are in `in_memory_cache.py`,
+  `disk_cache.py`, `redis_cache.py`, `dual_cache.py` and `base_cache.py`. Files stay under 300 lines.
+
+
+  `Cache.__init__` takes LiteLLM's keyword list in order (L80-L124 of caching.py) and defaults. It picks the backend by `type`:
+  `local` gives `InMemoryCache`, `redis` gives `RedisCache` (single node; `redis_startup_nodes` or `REDIS_CLUSTER_NODES`
+  raises `NotImplementedError` naming the unbuilt cluster backend), `disk` gives `DiskCache(disk_cache_dir)`. An `_backend`
+  argument is used as given. Any other `type` raises `NotImplementedError("... cache type is not built yet")`. It then adds
+  `"cache"` to `betterlite.input_callback`, `success_callback` and `_async_success_callback` once, through
+  `litellm.logging_callback_manager`-style adders that B5368 provides, and sets the attributes B8065 lists. `ttl` is
+  `default_in_memory_ttl` for `local` and `default_in_redis_ttl` for `redis` when those are given (L184-L191), and `namespace`
+  goes to Redis. `semantic_cache_scope` is normalised through `SemanticCacheScope` (B4290). It builds a `NativeCache` from the
+  same arguments for B8065's methods. Passwords and keys stay out of `repr` and logs.
+
+
+  `enable_cache(type=LOCAL, host=None, port=None, password=None, supported_call_types=<default>, **kwargs)` adds the three
+  callback entries and builds a `Cache` only when `betterlite.cache is None`. `update_cache` always builds a new one.
+  `disable_cache` removes the three entries (ignoring `ValueError` for a missing one) and sets `betterlite.cache = None`.
+  Their debug lines go through `print_verbose`. `InMemoryCache(max_size_in_memory=200, default_ttl=600, max_size_per_item=1024,
+  clock=None)` raises `UnsupportedCallArgument` for a non-default `clock`. `DiskCache(disk_cache_dir=None)` uses
+  `.litellm_cache` as default. `DualCache(in_memory_cache=None, redis_cache=None, default_in_memory_ttl=None,
+  default_redis_ttl=None, default_redis_batch_cache_expiry=None, default_max_redis_batch_cache_size=...)` composes the
+  native handles of its two parts. A user class that subclasses `BaseCache` works as `dynamic_cache_object`.
+
+
+  Tests build the same objects in LiteLLM and betterlite: `Cache()` attributes, `Cache(type="disk", disk_cache_dir=tmp)`,
+  `enable_cache` then `disable_cache` leaving callback lists as before, `update_cache` replacing the cache, the three
+  `ttl` rules, an unsupported type, then set/get/increment/delete/ttl on each backend class. The Redis tests run against `tests/fake_redis_server.py`, an in-process RESP server on a thread that this task writes. It answers the commands the backends send (HELLO, CLIENT, SELECT, PING, SET with EX, GET, MGET, INCRBY, EXPIRE, TTL, DEL, FLUSHALL and the pipeline forms) and replies with a RESP error to any other command, so a missing command fails the test. LiteLLM and betterlite connect to the same fake. This is the same idea as the in-process `FakeClient` that the Rust Redis tests use for `AsyncRedisCommands` (crates/betterlite-redis/src/cache_primitives/protocol/tests.rs). No test needs `redis-server` or Docker, and none skips.
+scope:
+  paths:
+  - crates/betterlite-python/src/cache_backends.rs
+  - crates/betterlite-python/src/cache_backends/**
+  - crates/betterlite-python/python/betterlite/_native_cache_backends.pyi
+  - crates/betterlite-python/Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-python/python/betterlite/caching/**
+  - crates/betterlite-python/tests/test_cache_setup.py
+  - crates/betterlite-python/tests/test_cache_backends.py
+  - crates/betterlite-python/tests/fake_redis_server.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L46-L125
+  why: Cache enum, class header and constructor parameters.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L125-L335
+  why: Backend choice, callback registration and attribute setup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1015-L1120
+  why: enable_cache, update_cache and disable_cache.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/__init__.py#L1-L11
+  why: The names the package exports.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L22-L60
+  why: The BaseCache contract.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L32-L60
+  why: InMemoryCache constructor.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L87-L110
+  why: DualCache constructor.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/disk_cache.py#L15-L26
+  why: DiskCache default directory.
+dod:
+- text: "`Cache(...)` for `local`, `redis` and `disk` sets the same public attributes as LiteLLM, including the `ttl` rules and the callback entries added once."
+  proof: [cache-setup-init]
+- text: "An unsupported `type`, a Redis cluster setting, and a non-default `clock` raise the named errors, and no key or password appears in `repr`."
+  proof: [cache-setup-init]
+- text: "`enable_cache`, `update_cache` and `disable_cache` leave `betterlite.cache` and the three callback lists as LiteLLM does."
+  proof: [cache-setup-switches]
+- text: "`InMemoryCache`, `DiskCache`, `RedisCache` and `DualCache` return LiteLLM's values for set, get, increment, delete and ttl, sync and async."
+  proof: [cache-setup-backends]
+- text: "A user `BaseCache` subclass works as `dynamic_cache_object` of B8065's `get_cache` and `add_cache`."
+  proof: [cache-setup-backends]
+- text: "`from betterlite.caching import Cache, DualCache, InMemoryCache` works."
+  proof: [cache-setup-init]
+- text: JSON conversions for every native class parse without an interpreter, and malformed text gives an error, not a panic.
+  proof: [cache-setup-native]
+- text: The `caching` package passes ruff and strict basedpyright.
+  proof: [python-lint]
+- text: >-
+    This task adds every Cargo.toml dependency it uses and no unused ones.
+  proof: [cache-setup-init]
+checks:
+  optional: []
+  commands:
+  - id: cache-setup-init
+    why: Constructor attributes, errors or exports differ from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cache_setup.py -k "init or import or repr"
+  - id: cache-setup-switches
+    why: The cache switches leave other state behind.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cache_setup.py -k "enable or update or disable"
+  - id: cache-setup-backends
+    why: A backend operation differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cache_backends.py -k ""
+  - id: cache-setup-native
+    why: A conversion breaks or panics.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^cache_backends::/)'
+  - id: python-lint
+    why: A strict type error in the caching package.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`s3`, `gcs`, `azure-blob`, `redis-cluster`, `redis-semantic`, `valkey-semantic` and `qdrant-semantic` raise `NotImplementedError`, and their classes are not exported."
+  why: Their Rust backends are separate tasks (B4320 and later, B4350 and later, B4380 and later). The error names the type.
+- what: "`InMemoryCache` refuses a custom `clock`, and `DiskCache` stores through Rust's disk cache, not the `diskcache` package."
+  why: A Python callable cannot drive the Rust cache, and `diskcache` is not a dependency of the wheel. The cache directory layout differs, so a folder written by LiteLLM is not read.
+- what: This task has no helper oracle cases.
+  why: The pytest files compare both packages, and the backend cases belong to B4290 to B4295.
+out_of_scope:
+- "Key, lookup and write methods of `Cache` are B8065."
+- "`Cache.test_connection` style health checks and the cache settings routes are B4306 to B4309."
+- "`DualCache` batch reads and deferred writes (B4294, B4295) are exposed through the same methods LiteLLM has, but their queue rules stay in Rust."
+- "`_internal_lru_cache.py` has no caller at the pin and B8502 lists it as not built; `Readme.md` of litellm/caching is prose."
+pitfalls:
+- "`enable_cache` does nothing to an existing `betterlite.cache`, and tests must start from `None`."
+- "`Cache.__init__` appends to `input_callback` only when `\"cache\"` is missing, and the success lists use the callback manager, so a plain list append is wrong."
+- "`ttl` for `local` is overwritten only when `default_in_memory_ttl` is given, and for `redis` only when `default_in_redis_ttl` is given."
+- "`DualCache()` with no arguments creates a default `InMemoryCache` and a default `RedisCache`, and the Redis one connects only on first use."
+- "A `redis_startup_nodes` list and `REDIS_CLUSTER_NODES` both select cluster mode."
+- "A Redis test that skips when `redis-server` is missing checks nothing in CI. Keep every Redis case on the fake server, and have the fake fail the test on a command it does not know."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

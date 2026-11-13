@@ -1,0 +1,5 @@
+kind: helper
+name: openai-threads-seed-add-message
+call: {openai_threads: {add_message: {options: {api_key: sk-seed, api_base: 'https://example.test/v1'}, thread_id: thread_1, data: {role: user, content: hi, attachments: [], metadata: {team: core}}, a_add_message: true, reply: {status: 200, body: '{"id":"msg_1","object":"thread.message","created_at":7,"thread_id":"thread_1","role":"user","content":[{"type":"text","text":{"value":"hi","annotations":[]}}],"status":null}'}}}}
+env: {}
+compare: {ignore: []}

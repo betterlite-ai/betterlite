@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-processor-user-blocks
+call:
+  bedrock_processor:
+    function: convert
+    messages:
+      - role: user
+        content:
+          - {type: text, text: hello}
+          - {type: guarded_text, text: guarded}
+          - {type: grounding_source, text: source}
+          - {type: query, text: question}
+          - {type: image_url, image_url: {url: "data:image/png;base64,AAAA"}}
+          - {type: text, text: after, cache_control: {type: ephemeral}}
+    modify_params: false
+env: {}
+compare: {ignore: []}

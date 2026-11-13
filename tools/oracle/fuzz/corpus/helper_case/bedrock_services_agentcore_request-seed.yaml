@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-services-agentcore-request-seed
+call:
+  bedrock_services_agentcore_request:
+    scenario: runtime_arn_required
+    models:
+      - agentcore/arn:aws:bedrock-agentcore:us-west-2:1:runtime/agent
+env: {}
+compare: {ignore: []}

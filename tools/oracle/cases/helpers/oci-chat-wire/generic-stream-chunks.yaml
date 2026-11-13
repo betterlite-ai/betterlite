@@ -1,0 +1,22 @@
+kind: helper
+name: oci-chat-wire-generic-stream-chunks
+call:
+  b5942:
+    function: generic_stream
+    chunks:
+      - message:
+          role: ASSISTANT
+          content:
+            - type: TEXT
+              text: "he"
+      - message:
+          content:
+            - type: TEXT
+              text: "llo"
+        finishReason: COMPLETE
+      - index: 1
+        message:
+          toolCalls:
+            - arguments: '{"a": 1}'
+env: {}
+compare: {ignore: []}

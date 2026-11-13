@@ -1,0 +1,8 @@
+kind: helper
+name: token-formatting-unknown-model
+call:
+  token_formatting:
+    function: encoding_name
+    model: some-unknown-model
+env: {}
+compare: {ignore: []}

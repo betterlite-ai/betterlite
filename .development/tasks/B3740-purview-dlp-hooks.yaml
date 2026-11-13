@@ -82,7 +82,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/::purview_dlp_hooks::purview_async_logging_hook(::|$)/) - test(/replays_the_.*_corpus/)'
   - id: purview-dlp-oracle
     why: oracle cases fail or are missing
-    run: test -n "$(ls -A tools/oracle/cases/guardrails/purview-dlp-hooks)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^guardrails::b3740(::|$)/)'
+    run: test -n "$(ls -A tools/oracle/cases/guardrails/purview-dlp-hooks)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::guardrails::b3740::(.*::)?guardrails::b3740(::|$)/)'
 oracle_cases:
 - tools/oracle/cases/guardrails/purview-dlp-hooks/chat-pre-call-block.yaml
 - tools/oracle/cases/guardrails/purview-dlp-hooks/chat-pre-call-pass.yaml
@@ -107,17 +107,17 @@ deviations:
   why: U6 contract is not finalized; the exact location and API are determined by B104.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L1
 - what: betterlite does not decorate hooks with @log_guardrail_information; that decorator is resolved in U1.
-  why: U1 contract for guardrail logging decoration and standard logging object updates is not finalized; determined by B104.
+  why: B3664 replaces the decorator with a value the caller starts and finishes.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1
 - what: betterlite's logging hook delegates to async_logging_hook when async context is detected, without explicit framework dispatch.
-  why: Framework dispatch and CustomGuardrail callback resolution are determined by B104 (U3).
+  why: Live class dispatch is B8666 and the unified lifecycle is B3680.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L1
 out_of_scope:
 - Bedrock guardrails (B3720–B3727), Azure guardrails (B3728–B3730), OpenAI guardrails (B3731), Model Armor (B3732–B3735), IBM guardrails (B3736–B3737), Agent 365 (B3741–B3742).
 - B3738's Graph authentication, B3739's DLP evaluation and text extraction.
 - B2227's stream assembly and chunk building.
 - B732's auth context and user identity accessors.
-- Framework guardrail registry, initialization and decorator contract (B104, U1, U3).
+- Guardrail construction (B5471), invocation logging (B3664), the unified lifecycle (B3680) and live class dispatch (B8666).
 - Response/error record construction and wire format (U6).
 - The async-context detection and background-thread scheduling are production behavior; duplicates in logging bridge are acceptable for clarity.
 pitfalls:

@@ -4,7 +4,7 @@ description: >-
   Add betterlite-logging::spend_bodies and config::spend_storage for the source body/session
   functions listed below. Resolve general_settings.store_prompts_in_spend_logs as true only
   for Boolean true or a string whose lowercase value is exactly true, then OR with
-  STORE_PROMPTS_IN_SPEND_LOGS resolved by B129. False config never overrides true env.
+  STORE_PROMPTS_IN_SPEND_LOGS resolved by B8500. False config never overrides true env.
   At startup parse MAX_STRING_LENGTH_PROMPT_IN_DB as an integer, default 2048; malformed
   initial input fails loading. Retain that initial value as fallback when a later runtime
   snapshot lacks the env value or supplies an invalid integer. Zero/negative values retain

@@ -32,8 +32,6 @@ description: >-
   50 wiring/config lines fit a 750-line ceiling.
 scope:
   paths:
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/copilot_responses.rs
     - crates/betterlite-core/src/api/copilot_responses/**
     - crates/betterlite-config/src/providers/copilot.rs

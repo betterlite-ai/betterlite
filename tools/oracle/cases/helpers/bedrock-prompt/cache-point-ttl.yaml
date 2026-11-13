@@ -1,0 +1,21 @@
+kind: helper
+name: bedrock-prompt-cache-point-ttl
+call:
+  bedrock_prompt:
+    messages:
+      - role: user
+        content:
+          - type: text
+            text: cache me
+            cache_control: {type: ephemeral, ttl: 1h}
+    tools:
+      - type: function
+        function:
+          name: get_weather
+          description: Get the weather
+          parameters: {type: object}
+        cache_control: {type: ephemeral, ttl: 1h}
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+    capabilities: {cache_points: extended_ttl, supports_strict_tools: true}
+env: {}
+compare: {ignore: []}

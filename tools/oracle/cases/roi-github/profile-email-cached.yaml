@@ -1,0 +1,5 @@
+kind: helper
+name: profile-email-cached
+call: {"b3152": {"operation": "profile_email", "calls": [{"login": "OctoCat", "fallback": "first@example.com"}, {"login": "octocat", "fallback": "second@example.com"}], "replies": [{"status": 200, "body": {"email": "User@Example.COM"}}]}}
+env: {}
+compare: {ignore: []}

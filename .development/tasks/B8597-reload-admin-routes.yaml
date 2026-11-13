@@ -1,0 +1,52 @@
+id: B8597
+title: Adaptive router state and the root route
+description: >-
+  Two small routes from proxy_server.py (L19860-L19897), both behind the normal key check (B052). Build them in
+  crates/betterlite-server/src/root_routes.rs (the skeleton declares it) with `pub fn routes()` like the sibling route
+  modules. The manual reload, schedule, cancel, status and source routes next to them are B8586's, in reload_routes.rs;
+  this task does not call or touch them.
+
+
+  GET / (LiteLLM's `home`) answers the JSON string "LiteLLM: RUNNING" with 200 to any caller that passes the key check.
+
+
+  GET /adaptive_router/state (LiteLLM's `get_adaptive_router_state`, tag adaptive_router). A caller that fails B2314's
+  user_api_key_has_admin_view gets 403 with detail `{"error": "Admin-only endpoint. Not allowed to access this."}`
+  (CommonProxyErrors.not_allowed_access). With no router, or a router with no adaptive routers, it answers 404 with
+  detail `{"error": "No adaptive_router is configured on this proxy."}`. Otherwise it answers
+  `{"routers": [...]}` with one B339 state snapshot (AdaptiveRouter.get_state_snapshot) per adaptive router deployment,
+  in the order of the router's adaptive_routers map and of the deployments under each key. The handler takes the
+  router from the server state; the admin view check runs before the router check.
+scope:
+  paths:
+    - crates/betterlite-server/src/root_routes.rs
+    - crates/betterlite-server/src/root_routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19860-L19897
+    why: The root route and /adaptive_router/state, with the admin view check, the 404 and the snapshot list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4397
+    why: The not_allowed_access text of the 403.
+dod:
+  - text: 'GET / answers 200 with the JSON string "LiteLLM: RUNNING" to an authenticated caller.'
+    proof: [root-route-tests]
+  - text: /adaptive_router/state answers 403 for a caller without admin view before it looks at the router, 404 with LiteLLM's detail when no adaptive router is configured, and otherwise one snapshot per adaptive router deployment in map order.
+    proof: [root-route-tests]
+checks:
+  optional: []
+  commands:
+    - id: root-route-tests
+      why: the root route or the adaptive router state route differs from LiteLLM in status, detail or body
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^root_routes::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Mounting the routes and their HTTP oracle cases: B8676."
+  - "The manual cost map and beta header reload, schedule, cancel, status and source routes: B8586. The snapshot itself: B339."
+pitfalls:
+  - "The state route accepts an admin viewer, not only PROXY_ADMIN, and its 403 detail is the not_allowed_access text, not the reload routes' role message."
+  - "Both 403 and 404 put the message under detail.error, not as a bare detail string."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

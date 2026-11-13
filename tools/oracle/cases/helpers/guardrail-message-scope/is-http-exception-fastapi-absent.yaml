@@ -1,0 +1,6 @@
+kind: helper
+name: is-http-exception-fastapi-absent
+call:
+  b3663: {"function": "is_http_exception", "fastapi": "absent", "raised": "http", "status_code": 400, "block_status_codes": [400]}
+env: {}
+compare: {ignore: []}

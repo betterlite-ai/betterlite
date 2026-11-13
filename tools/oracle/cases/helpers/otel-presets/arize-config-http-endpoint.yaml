@@ -1,0 +1,11 @@
+kind: helper
+name: arize-config-http-endpoint
+call:
+  b3850:
+    function: arize_config
+    environment:
+      ARIZE_HTTP_ENDPOINT: http://arize-collector:6006
+env:
+  ARIZE_HTTP_ENDPOINT: http://arize-collector:6006
+compare:
+  ignore: []

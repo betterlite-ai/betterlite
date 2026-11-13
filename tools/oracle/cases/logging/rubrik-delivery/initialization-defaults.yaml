@@ -1,0 +1,10 @@
+kind: helper
+name: rubrik-delivery-initialization-defaults
+call:
+  b3976:
+    environment: {}
+    init: {api_base: "https://rubrik.test"}
+    replies: []
+    actions: []
+env: {}
+compare: {ignore: []}

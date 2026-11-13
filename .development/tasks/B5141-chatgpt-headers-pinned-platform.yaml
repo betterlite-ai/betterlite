@@ -1,0 +1,108 @@
+id: B5141
+title: Pin the platform in the chatgpt-headers oracle cases
+description: >-
+  The chatgpt_headers oracle helper builds its user agent from the host it runs on. The Rust side
+  passes SystemPlatformEnvironment (tools/oracle/src/helpers/openai/chatgpt_headers.rs), and the
+  Python side lets LiteLLM call platform.system(), platform.release() and platform.machine()
+  (litellm/llms/chatgpt/common_utils.py get_chatgpt_user_agent). The helper answer cache keys an
+  answer by the keyed files, the call and the case env, never by the host
+  (tools/oracle/src/helpers/answers.rs key). So a LiteLLM answer cached on one GitHub runner image
+  carries that image's kernel release, and a run on another image fails four cases on
+  /value/headers/user-agent. Main run 41659127731 failed this way: it ran on ubuntu-24.04 image
+  20261018.96.1 and restored answers that 4ae4991a's run cached on image 20261025.353.1. Any merge
+  queue run that affects betterlite-oracle can fail the same way.
+
+
+  The fix makes the platform part of the case. The helper input gains a required platform object
+  with system, release and machine strings. The Rust helper passes a small struct that implements
+  betterlite_openai::chatgpt::headers::PlatformEnvironment and returns those three values. The
+  Python helper patches platform.system, platform.release and platform.machine on the platform
+  module common_utils imports, with unittest.mock.patch.object, for the duration of the call, the
+  way b3691.py patches its module. Every case under tools/oracle/cases/helpers/chatgpt-headers
+  sends system "Linux", release "6.1.0-oracle" and machine "x86_64". The input is part of the
+  cache key, so the new cases get fresh LiteLLM answers and no host value reaches the cache again.
+scope:
+  paths:
+    - tools/oracle/src/helpers/openai/chatgpt_headers.rs
+    - tools/oracle/src/helpers/openai/chatgpt_headers/**
+    - tools/oracle/helpers/chatgpt_headers.py
+    - tools/oracle/cases/helpers/chatgpt-headers/**
+    - tools/oracle/fuzz/corpus/helper_case/chatgpt_headers-*
+  lint_tables: false
+references:
+  - url: https://github.com/betterlite-ai/betterlite/actions/runs/41659127731
+    why: The failing main run; its tests job lists the four chatgpt-headers cases and the restored oracle-answers key.
+  - url: https://docs.python.org/3/library/unittest.mock.html#patch-object
+    why: patch.object replaces one attribute of a module for the length of a with block.
+  - url: https://docs.python.org/3/library/platform.html#platform.release
+    why: platform.system, platform.release and platform.machine read uname; these three feed the user agent.
+dod:
+  - text: >-
+      The Rust helper never reads the host platform, and every chatgpt-headers case and helper_case
+      seed sends a platform object. On today's main the helper passes SystemPlatformEnvironment, so
+      the check fails there.
+    proof: [chatgpt-headers-platform]
+  - text: >-
+      All six chatgpt-headers cases match LiteLLM with the pinned platform, and the user agent in
+      each answer reads (Linux 6.1.0-oracle; x86_64) or comes from CHATGPT_USER_AGENT.
+    proof: [chatgpt-headers-cases]
+  - text: The Python helper passes ruff and basedpyright.
+    proof: [chatgpt-headers-python]
+  - text: The helper_case corpus still decodes.
+    proof: [chatgpt-headers-seeds]
+checks:
+  optional: []
+  commands:
+    - id: chatgpt-headers-platform
+      why: the helper still builds the user agent from the host, or a case or seed has no platform object
+      run: |-
+        status=0
+        grep -n 'SystemPlatformEnvironment' tools/oracle/src/helpers/openai/chatgpt_headers.rs && status=1
+        for f in tools/oracle/cases/helpers/chatgpt-headers/*.yaml tools/oracle/fuzz/corpus/helper_case/chatgpt_headers-*; do
+          grep -q '^    platform:' "$f" || { echo "$f sends no platform"; status=1; }
+        done
+        exit $status
+    - id: chatgpt-headers-cases
+      why: a chatgpt-headers case differs from LiteLLM, or an answer still carries a host kernel release
+      run: |-
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::openai::chatgpt_headers::tests::/)' || exit 1
+        for f in tools/oracle/cases/helpers/chatgpt-headers/*.yaml; do
+          grep -q 'CHATGPT_USER_AGENT:' "$f" && continue
+          grep -q 'release: "6.1.0-oracle"' "$f" || { echo "$f does not pin release 6.1.0-oracle"; exit 1; }
+        done
+    - id: chatgpt-headers-python
+      why: the Python helper fails lint or type checks
+      run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/chatgpt_headers.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: chatgpt-headers-seeds
+      why: a helper_case seed no longer decodes
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/chatgpt-headers/terminal-priority.yaml
+  - tools/oracle/cases/helpers/chatgpt-headers/empty-terminal-version.yaml
+  - tools/oracle/cases/helpers/chatgpt-headers/ascii-sanitization.yaml
+  - tools/oracle/cases/helpers/chatgpt-headers/session-precedence.yaml
+  - tools/oracle/cases/helpers/chatgpt-headers/model-dump-failure.yaml
+  - tools/oracle/cases/helpers/chatgpt-headers/instruction-override.yaml
+deviations: []
+out_of_scope:
+  - crates/betterlite-openai. SystemPlatformEnvironment and get_chatgpt_user_agent stay as they are; the gateway keeps reading the real host.
+  - The answer cache key in tools/oracle/src/helpers/answers.rs. Pinning the input fixes this helper without making every other answer depend on the runner image.
+  - A case for empty platform values. In Rust the "Unknown", "0" and "unknown" fallbacks live in SystemPlatformEnvironment, not in get_chatgpt_user_agent, so a fixed empty value would differ from LiteLLM. That belongs to a product task.
+pitfalls:
+  - >-
+    Patch the platform module that common_utils imports (common_utils.platform), not a copy, and
+    keep the patches inside the with block around the calls in run().
+  - >-
+    platform is a required field on both sides, with no serde default and no Python default, so a
+    case that forgets it fails to decode instead of reading the host.
+  - >-
+    The Rust struct that implements PlatformEnvironment lives in the helper file, takes the three
+    strings from the input and returns clones of them. No other trait method or field.
+  - >-
+    Local runs read ~/.cache/betterlite-oracle first. The new input changes every case key, so the
+    first run computes six fresh LiteLLM answers.
+  - Keep use statements at the top of the file. A file never starts with a comment.
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

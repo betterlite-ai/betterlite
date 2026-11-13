@@ -1,0 +1,14 @@
+kind: helper
+name: detect-no-bucket-arn
+call:
+  b3456:
+    step: detect
+    vector:
+      vector_store_id: KB123
+    environment: {}
+    data_sources:
+      - dataSourceId: DS1
+    data_source:
+      dataSource: {}
+env: {}
+compare: {ignore: []}

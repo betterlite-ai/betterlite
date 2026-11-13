@@ -1,0 +1,8 @@
+name: auth-route-patterns-http-query-not-route
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request: {"method": "GET", "path": "/v1/models?public=/health/liveliness", "headers": {"Authorization": "Bearer oracle-master"}, "body": null}
+upstream: []
+compare: {"headers": ["content-type"], "headers_present": [], "upstream_headers": [], "ignore": []}

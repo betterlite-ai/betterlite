@@ -1,7 +1,7 @@
 id: B4566
 title: Agent model listing and OpenCode provider projection
 description: >-
-  Build the opencode module for betterlite-management-cli, translating LiteLLM's
+  Build the opencode module for betterlite-cli, translating LiteLLM's
   model listing decoder and OpenCode provider projection. Fetch the proxy's model
   list with GET /v1/models using Bearer auth and a 10-second timeout, returning
   a tuple of ListedModel or a skip reason on network error, non-200 status or
@@ -18,8 +18,8 @@ description: >-
   OPENCODE_PROVIDER_NAME and OPENCODE_PROVIDER_NPM constants from B4564.
 scope:
   paths:
-    - tools/management-cli/src/opencode.rs
-    - tools/management-cli/src/opencode/tests.rs
+    - crates/betterlite-cli/src/opencode.rs
+    - crates/betterlite-cli/src/opencode/tests.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L257-L287
@@ -69,22 +69,22 @@ checks:
   commands:
     - id: chat-mode-filtering
       why: chat_models does not filter correctly by mode or return models
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^opencode::tests::chat_mode_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^opencode::tests::chat_mode_/)'
     - id: fetch-endpoint
       why: fetch_model_listing does not fetch /v1/models or does not send Bearer auth or timeout correctly
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^opencode::tests::fetch_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^opencode::tests::fetch_/)'
     - id: opencode-limits
       why: opencode_model_entry does not map max_input_tokens/max_output_tokens to context/output or does not omit limits when incomplete
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^opencode::tests::model_entry_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^opencode::tests::model_entry_/)'
     - id: opencode-config
       why: opencode_provider_config does not return JSON or does not include the "litellm" provider or models
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^opencode::tests::provider_config_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^opencode::tests::provider_config_/)'
     - id: sync-env
       why: opencode_model_sync_env does not check for existing OPENCODE_CONFIG_CONTENT or does not return env dict or skip reason
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^opencode::tests::model_sync_env_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^opencode::tests::model_sync_env_/)'
     - id: shared-types
       why: ListedModel, ModelSyncSkipped, ModelSyncArgs or ModelSyncResult are not defined and exported
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^opencode::tests::contracts_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^opencode::tests::contracts_/)'
 oracle_cases: []
 deviations: []
 out_of_scope:

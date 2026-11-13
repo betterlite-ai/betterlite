@@ -1,0 +1,9 @@
+kind: helper
+name: azure-chat-base-policy-defaults-seed
+call:
+  azure_chat_base_policy:
+    action: azure_class_defaults
+    steps:
+      - values: {}
+env: {}
+compare: {ignore: []}

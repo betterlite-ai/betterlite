@@ -39,7 +39,7 @@ description: >-
   wiring, maximum 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,voyage_multimodal,voyage_rerank}.rs
+    - crates/betterlite-openai/src/{voyage_multimodal,voyage_rerank}.rs
     - crates/betterlite-openai/src/{voyage_multimodal,voyage_rerank}/**
     - crates/betterlite-openai/src/voyage_embedding/**
     - crates/betterlite-openai/src/voyage_embedding.rs

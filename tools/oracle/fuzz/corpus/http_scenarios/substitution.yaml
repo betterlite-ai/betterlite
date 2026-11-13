@@ -1,0 +1,19 @@
+kind: http_scenario
+name: corpus-substitution
+config: |-
+  model_list: []
+env: {}
+steps:
+  - name: capture
+    request:
+      method: GET
+      path: /first
+    capture:
+      - name: status
+        pointer: /status
+      - name: slash
+        pointer: /body/data~1id
+  - name: substitute
+    request:
+      method: GET
+      path: /second/${capture.status}?d=${capture.slash}

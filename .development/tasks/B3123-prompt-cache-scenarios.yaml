@@ -118,10 +118,10 @@ checks:
       run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^cache_aware_routing::minimum_/)'
     - id: transforms-cases
       why: has_request_transforms tests are missing or transform detection fails
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^prompt_cache_prediction::has_request_transforms/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::prompt_cache_scenarios::(.*::)?prompt_cache_prediction::has_request_transforms/)'
     - id: total-tokens-cases
       why: CacheTokenBuckets.total_tokens tests are missing or sum is wrong
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cache_token_buckets::total_tokens/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::prompt_cache_scenarios::(.*::)?cache_token_buckets::total_tokens/)'
 
 oracle_cases: []
 
@@ -138,7 +138,7 @@ out_of_scope:
   - "Management endpoints for predict-cache and prompt-caching-requests routes; B3125 owns the route registrations and HTTP adapter."
   - "Authorization checks and model allowlist filtering; B886 and B732 own those decisions."
   - "Cost calculation for non-cache scenarios; B068 and B2225 own completion_cost and tariff resolution."
-  - "Minimum prompt cache token threshold with env-var override and default fallback (get_prompt_cache_min_tokens); B157 (unplanned)."
+  - "Minimum prompt cache token threshold with env-var override and default fallback (get_prompt_cache_min_tokens); B5366."
 
 pitfalls:
   - "price_cache_tokens returns None for negative completion_tokens, even when other prices are valid; the sign check comes before price validation."

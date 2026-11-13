@@ -1,0 +1,15 @@
+task: B3016
+deviations:
+  - what: A flush with no Redis configured detaches the queued increments and clears them; LiteLLM returns true with the queue left in place for the life of the process.
+    why: The queue would grow with every completed request until the process restarts, a leak no working setup can depend on; the spend itself already lives in the in-memory cache.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L615-L629
+  - what: A requeued batch sums the costs of one key as exact decimals; LiteLLM sums Python floats, so its merged increment can differ in the last bits.
+    why: betterlite keeps spend as rust_decimal::Decimal, so the merged value written by Redis INCRBYFLOAT is exact for the costs the module was given.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L432-L453
+  - what: >-
+      A failed increment pipeline is not logged again here. betterlite-redis's RedisCache already logs pipeline and connection failures at ERROR
+      under its own message, a breaker-open rejection is not logged there, and no line is throttled the way LiteLLM's log_redis_failure does.
+    why: >-
+      The pipeline, breaker and errors live in betterlite-redis (B5640), whose facade logs each failure with its cause; this module receives only a bool
+      and has no breaker policy or clock to pick LiteLLM's ERROR-or-DEBUG decision without duplicating or spamming the line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L485

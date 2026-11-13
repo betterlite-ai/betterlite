@@ -1,11 +1,11 @@
 id: B4664
 milestone: M9 agents and mcp
-title: MCP SSO assertion renewal and ID-JAG exchange
+title: MCP SSO assertion renewal
 status: todo
-depends_on: [B4650, B4656, B4657, B4663, B173]
-file: null
+depends_on: [B4650, B4656, B4657, B4661, B4663]
+file: tasks/B4664-mcp-sso-assertion-renewal.yaml
 covers:
-  - "litellm/proxy/_experimental/mcp_server/outbound_credentials/{sso_assertion_refresher,resolver}.py"
+  - "litellm/proxy/_experimental/mcp_server/outbound_credentials/sso_assertion_refresher.py"
 parent: B137
 split_from: B137
 resolution: null

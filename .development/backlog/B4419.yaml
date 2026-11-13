@@ -1,7 +1,7 @@
 id: B4419
 milestone: M8 platform
 title: Load custom Python secret managers and expose their live methods
-status: todo
+status: done
 depends_on: [B4410]
 file: tasks/B4419-custom-secret-managers.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/integrations/custom_secret_manager.py"
 parent: B129
 split_from: B129
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 673

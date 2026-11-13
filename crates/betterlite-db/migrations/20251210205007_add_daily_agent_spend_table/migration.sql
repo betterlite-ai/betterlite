@@ -42,3 +42,4 @@ CREATE INDEX IF NOT EXISTS "LiteLLM_DailyAgentSpend_mcp_namespaced_tool_name_idx
 
 -- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "LiteLLM_DailyAgentSpend_agent_id_date_api_key_model_custom__key" ON "LiteLLM_DailyAgentSpend"("agent_id", "date", "api_key", "model", "custom_llm_provider", "mcp_namespaced_tool_name");
+

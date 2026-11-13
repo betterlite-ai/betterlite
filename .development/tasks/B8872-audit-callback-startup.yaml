@@ -1,0 +1,102 @@
+id: B8872
+title: Install audit callbacks during config load and warn when auditing is disabled
+description: >-
+  Complete the audit_log_callbacks branch of ProxyConfig.load_config at L6518-L6547.
+  B065 builds audit delivery, B2330 supplies the audit record contracts, and B165 loads
+  Python callback objects. None owns resetting and populating the audit callback list
+  during proxy config load or the disabled-policy warning. Implement app::callbacks::audit_startup
+  in betterlite-server, taking B065's live audit service, the shared PythonHooks service,
+  the optional configured callback list and the already resolved audit policy. Its error
+  type belongs in this module. The architect invokes it at this existing load_config
+  position from B8374/B8613; it does not register a route or another callback startup loop.
+
+  When the audit_log_callbacks key is absent, do nothing. When present, including [],
+  reset the service's named-callback cache first, clear its configured callback list,
+  and append each configured item in order. A string containing a dot goes through
+  PythonHooks::load_callback(AuditLogCallbacks, value) with the operator's config path.
+  A dotless string stays a named callback and is resolved lazily by B065, not eagerly
+  through the inference callback catalog. Use B065's existing representation of named
+  callbacks and loaded Python objects. The audit list does not perform the callbacks-only
+  class/callable validation: retain the loaded value and let B065 ignore non-logger
+  objects at dispatch. A failed import stops config loading and leaves the successfully
+  appended prefix; it is not a warning-and-skip or an atomic replacement.
+
+  Only after the list is loaded, ask B065's audit policy with the explicit
+  litellm_settings.store_audit_logs value when supplied, otherwise its current configured
+  value. The source's setting is nullable, its environment fallback is LITELLM_STORE_AUDIT_LOGS,
+  and callback-list default is []. Reuse the config and policy owners, including B065's
+  recorded no-paid-tier default-on deviation; no new env read or competing default lives
+  here. If auditing is disabled, log exactly "'audit_log_callbacks' is configured but audit
+  logging is not enabled. Audit log callbacks will not fire." at warning. Explicit []
+  still reaches that warning. If enabled, report initialization without printing loaded
+  objects or credentials. A disabled policy does not suppress imports and does not make
+  a broken dotted handler valid. Cache reset happens before a failure too.
+
+  Tests under app::callbacks::audit_startup::tests load production Config for an absent list,
+  an explicit empty list, a mixed named/dotted list, store_audit_logs=false and a true
+  setting overriding a false environment value. Use temporary Python modules with a
+  valid callback instance, a class and a failing import. Drive the real B065 service to
+  prove cache invalidation, ordered prefix retention, no eager named resolution and
+  reuse of the configured list by its dispatcher. Python objects remain owned by the
+  shared host; this module does not start a second interpreter. No handler runs during
+  import testing. The service entry point is also used for an explicit config reload;
+  do not attach it to unrelated periodic model or database reloads.
+
+  Preserve key presence in the resolved config input: the architect must expose this
+  distinction from B065's config section before this task runs. B124 adds a booted HTTP
+  case for a valid dotted audit callback with store_audit_logs=false. Startup failures
+  and diagnostics have native tests because they are not HTTP responses, and enabled
+  audit delivery stays with B065's native no-paid-tier tests. Allow 170 implementation
+  lines, 240 behavior tests and 30 Python fixture lines; no new byte decoder is added.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/callbacks/audit_startup.rs
+    - crates/betterlite-server/src/app/callbacks/audit_startup/**
+    - crates/betterlite-server/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6518-L6547
+    why: Cache reset, list replacement, ordered imports and the enabled/disabled initialization diagnostic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L27-L40
+    why: The existing policy's explicit-value, setting and environment precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L64-L97
+    why: Named instances are cached at dispatch and this config branch invalidates that same cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L137-L159
+    why: Loaded non-logger objects are ignored at dispatch, without callbacks-list validation at startup.
+dod:
+  - text: Absent config preserves the live list, while a present list resets the cache and appends callbacks in order with partial progress retained on an import failure.
+    proof: [installation-tests]
+  - text: The resolved audit policy controls the exact disabled warning, including for an explicit empty list, without bypassing handler imports.
+    proof: [policy-tests]
+  - text: The real audit service reads the installed Python objects and named callbacks without eager name resolution or a second interpreter.
+    proof: [service-tests]
+checks:
+  optional: []
+  commands:
+    - id: installation-tests
+      why: Audit callback replacement, cache reset, presence handling or import failure order is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::audit_startup::tests::installation::/)'
+    - id: policy-tests
+      why: Loaded audit settings or the disabled-policy diagnostic differ at config startup.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::audit_startup::tests::policy::/)'
+    - id: service-tests
+      why: Callback installation does not update the service that dispatches audit events.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::audit_startup::tests::service::/)'
+oracle_cases: []
+deviations:
+  - what: Enabled initialization logs callback names instead of printing Python callback objects.
+    why: Callback objects can expose credentials; only the disabled warning is reproduced verbatim.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6538-L6547
+out_of_scope:
+  - B065 owns audit enablement, named resolution, callback dispatch and persistence; B2330 owns the audit record contract. Their overlapping older descriptions must be reconciled by the architect, not implemented twice here.
+  - B165 owns load_callback and its AuditLogCallbacks slot; B8042 owns the actual imports and config-file provenance checks.
+  - The rest of ProxyConfig.load_config belongs to B8590, B8374, B165, B189 and the setting/registry owners enumerated in B124; this task takes only its audit_log_callbacks branch.
+  - B124 owns the booted callback-config HTTP case and B8374/B8613 own the single startup invocation.
+pitfalls:
+  - An explicit empty audit_log_callbacks list clears cached instances and still warns when auditing is disabled.
+  - Dotless audit callback names are not eagerly rejected by the inference callback catalog.
+  - store_audit_logs=false does not prevent importing a configured Python callback and cannot hide its import failure.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

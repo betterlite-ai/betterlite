@@ -1,0 +1,1 @@
+[{"type":"function","function":{"name":"lookup","description":"Find a record","parameters":{"type":"object","properties":{"id":{"type":"string"},"limit":{"type":"integer","enum":[1,5,10]}},"required":["id"]}}}]

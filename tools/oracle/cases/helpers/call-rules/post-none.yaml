@@ -1,0 +1,12 @@
+kind: helper
+name: post-none
+call:
+  rule_decision:
+    phase: post
+    model: gpt-4o
+    input: null
+    rules:
+      - false
+env: {}
+compare:
+  ignore: []

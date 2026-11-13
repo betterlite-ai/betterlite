@@ -23,8 +23,14 @@ scope:
   - crates/betterlite-error/src/normalize/**
   - crates/betterlite-error/src/envelope.rs
   - crates/betterlite-error/src/envelope/**
-  - crates/betterlite-config/**
-  - crates/betterlite-server/**
+  - crates/betterlite-config/src/sections/error_body_call_id.rs
+  - crates/betterlite-config/src/sections/error_body_call_id/**
+  - "crates/betterlite-config/fuzz/corpus/config_yaml/error-normalization-*"
+  - crates/betterlite-server/src/server.rs
+  - crates/betterlite-server/src/routes/chat.rs
+  - crates/betterlite-server/src/routes/chat/streaming.rs
+  - crates/betterlite-server/src/routes/chat/tests.rs
+  - crates/betterlite-server/src/routes/chat/tests/stream/tests.rs
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/error/normalization.rs
   - tools/oracle/src/helpers/error/normalization/**
@@ -131,6 +137,7 @@ pitfalls:
   The call id belongs beside the error's fields at the helper-defined location, not an invented top-level envelope
   field.
 - A 429 message mentioning a budget can normalize differently from a generic 429.
+- 'The call id setting is its own config section at crates/betterlite-config/src/sections/error_body_call_id.rs parsing general_settings.include_call_id_in_error_body, not a new field on GeneralSettings; wire it from crates/betterlite-server/src/server.rs into routes/chat.rs and its streaming.rs failure path, and leave routes/embeddings.rs alone.'
 review_level: standard
 budget:
   max_changed_lines: 1500

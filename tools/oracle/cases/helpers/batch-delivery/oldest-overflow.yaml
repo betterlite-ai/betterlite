@@ -1,0 +1,12 @@
+kind: helper
+name: batch-delivery-oldest-overflow
+call:
+  batch_delivery:
+    flush:
+      settings: {batch_size: 4, flush_interval_seconds: 5, max_queue_size: 3}
+      steps:
+        - {op: enqueue, events: [a, b]}
+        - {op: flush, during: [c, d], script: [{outcome: failed}]}
+env: {}
+compare:
+  ignore: []

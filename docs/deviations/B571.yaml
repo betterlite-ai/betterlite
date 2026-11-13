@@ -1,0 +1,22 @@
+task: B571
+deviations:
+  - what: >-
+      An advisor_tool_result whose content is neither a string nor a list, or whose first text block
+      carries a non-string text value, yields empty advice: the matching server_tool_use and the
+      result are dropped without an <advisor_feedback> block. LiteLLM iterates that content value
+      and raises TypeError, and renders a non-string text value with an f-string.
+    why: >-
+      Anthropic declares the result content as a string or a list of text blocks, so no working
+      setup sends anything else. Betterlite treats the malformed block as empty advice, where
+      LiteLLM's unhandled TypeError would fail the request its own strip is meant to repair.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L1258-L1266
+  - what: >-
+      The empty text and thinking predicates use Rust's Unicode White_Space set. Python's str.strip
+      also removes U+001C to U+001F, so a text or thinking value made only of those four control
+      characters counts as empty in LiteLLM and is kept by betterlite.
+    why: >-
+      The project strips whitespace with str::trim everywhere. Those four separators come from
+      Python's string methods rather than from any client, and every other whitespace character
+      that matters to Anthropic (space, tab, newline, carriage return, form feed, vertical tab,
+      no-break space) is stripped by both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L1431-L1450

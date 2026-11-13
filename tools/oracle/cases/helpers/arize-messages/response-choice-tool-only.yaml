@@ -1,0 +1,18 @@
+kind: helper
+name: response-choice-tool-only
+call:
+  b3860:
+    function: set_response
+    response:
+      choices:
+        - message:
+            role: assistant
+            content: null
+            tool_calls:
+              - id: call_1
+                type: function
+                function:
+                  name: get_weather
+                  arguments: '{"city": "Paris"}'
+env: {}
+compare: {ignore: []}

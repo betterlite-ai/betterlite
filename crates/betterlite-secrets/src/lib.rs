@@ -9,6 +9,7 @@
 
 pub mod callback_vars;
 pub mod error;
+pub mod gateway_key;
 pub mod master_key;
 pub mod secret_codec;
 pub mod stored_cipher;

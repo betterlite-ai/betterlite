@@ -1,0 +1,113 @@
+{
+  "provenance": {
+    "python": "3.13",
+    "boto3": "1.43.118",
+    "botocore": "1.43.118",
+    "fixed_time": "2026-11-09T12:00:00Z",
+    "note": "Captured by running the pinned botocore locally: botocore.auth.get_current_datetime is frozen to the fixed time, generate_db_auth_token produces the tokens, and the STS request bodies come from a before-send reply stub on the sts client."
+  },
+  "fixed_time_unix_seconds": 1794225600,
+  "tokens": [
+    {
+      "name": "direct_credentials",
+      "source": "direct",
+      "access_key_id": "AKIDEXAMPLE",
+      "secret_access_key": "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+      "session_token": null,
+      "region": "us-east-1",
+      "host": "db.example.com",
+      "port": "5432",
+      "user": "admin",
+      "token": "db.example.com:5432/?Action=connect&DBUser=admin&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20261109%2Fus-east-1%2Frds-db%2Faws4_request&X-Amz-Date=20261109T120000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=8148465c362620d9800b655eae972a60dc3d24d8c1b8e200640ddc0f06d389af"
+    },
+    {
+      "name": "no_session_token_special_user",
+      "source": "direct",
+      "access_key_id": "AKIDEXAMPLE",
+      "secret_access_key": "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+      "session_token": null,
+      "region": "eu-west-1",
+      "host": "rds-primary.internal",
+      "port": "5433",
+      "user": "user@example.com/weird +name",
+      "token": "rds-primary.internal:5433/?Action=connect&DBUser=user%40example.com%2Fweird%20%2Bname&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20261109%2Feu-west-1%2Frds-db%2Faws4_request&X-Amz-Date=20261109T120000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=08761843bc52266474bbc03fd1d94269d4d7c635af422abcedd5bc97e8e6aba2"
+    },
+    {
+      "name": "empty_access_key",
+      "source": "direct",
+      "access_key_id": "",
+      "secret_access_key": "secret",
+      "session_token": null,
+      "region": "us-east-1",
+      "host": "db.internal",
+      "port": "5432",
+      "user": "app",
+      "token": "db.internal:5432/?Action=connect&DBUser=app&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=%2F20261109%2Fus-east-1%2Frds-db%2Faws4_request&X-Amz-Date=20261109T120000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=9834f0032a9122d2dba1fbebf2f06fa493f3117992fd1ba97d6a5f1e19847799"
+    },
+    {
+      "name": "default_https_port",
+      "source": "direct",
+      "access_key_id": "AKIDEXAMPLE",
+      "secret_access_key": "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+      "session_token": null,
+      "region": "us-east-1",
+      "host": "db.example.com",
+      "port": "443",
+      "user": "admin",
+      "token": "db.example.com:443/?Action=connect&DBUser=admin&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20261109%2Fus-east-1%2Frds-db%2Faws4_request&X-Amz-Date=20261109T120000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=17e11c9e472e3e9a6b97eb60fc6e7ba5f8568f6296840397023ba120bae19414"
+    },
+    {
+      "name": "mixed_case_host",
+      "source": "direct",
+      "access_key_id": "AKIDEXAMPLE",
+      "secret_access_key": "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+      "session_token": null,
+      "region": "eu-west-1",
+      "host": "MyDB.Cluster.EU-West-1.rds.amazonaws.com",
+      "port": "5434",
+      "user": "Admin",
+      "token": "MyDB.Cluster.EU-West-1.rds.amazonaws.com:5434/?Action=connect&DBUser=Admin&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIDEXAMPLE%2F20261109%2Feu-west-1%2Frds-db%2Faws4_request&X-Amz-Date=20261109T120000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=aa7d7cf3bd0008c2e43afa53f2ec0fa943d2b5afd3b902b30ed6d032db8836cd"
+    },
+    {
+      "name": "temporary_web_identity",
+      "source": "web_identity",
+      "access_key_id": "ASIAWEB",
+      "secret_access_key": "websecret",
+      "session_token": "webtoken",
+      "region": "us-east-1",
+      "host": "db.example.com",
+      "port": "5432",
+      "user": "admin",
+      "token": "db.example.com:5432/?Action=connect&DBUser=admin&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIAWEB%2F20261109%2Fus-east-1%2Frds-db%2Faws4_request&X-Amz-Date=20261109T120000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Security-Token=webtoken&X-Amz-Signature=00a75c7f6a88a9d8c803c9c58335591228efa45157ab7d511c49cae330e61621"
+    },
+    {
+      "name": "temporary_assume_role",
+      "source": "assume_role",
+      "access_key_id": "ASIAROLE",
+      "secret_access_key": "rolesecret",
+      "session_token": "roletoken",
+      "region": "us-east-1",
+      "host": "db.example.com",
+      "port": "5432",
+      "user": "admin",
+      "token": "db.example.com:5432/?Action=connect&DBUser=admin&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=ASIAROLE%2F20261109%2Fus-east-1%2Frds-db%2Faws4_request&X-Amz-Date=20261109T120000Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Security-Token=roletoken&X-Amz-Signature=ec090856b222d7ebb2bde871482b5943098cc22647d552041776d20c7e331679"
+    }
+  ],
+  "sts": {
+    "region": "us-east-1",
+    "assume_role_with_web_identity": {
+      "role_arn": "arn:aws:iam::123456789012:role/oidc",
+      "role_session_name": "session-name",
+      "web_identity_token": "oidc-token-value",
+      "duration_seconds": 3600,
+      "url": "https://sts.us-east-1.amazonaws.com/",
+      "body": "Action=AssumeRoleWithWebIdentity&Version=2011-06-15&RoleArn=arn%3Aaws%3Aiam%3A%3A123456789012%3Arole%2Foidc&RoleSessionName=session-name&WebIdentityToken=oidc-token-value&DurationSeconds=3600"
+    },
+    "assume_role": {
+      "role_arn": "arn:aws:iam::123456789012:role/db",
+      "role_session_name": "db-session",
+      "url": "https://sts.us-east-1.amazonaws.com/",
+      "body": "Action=AssumeRole&Version=2011-06-15&RoleArn=arn%3Aaws%3Aiam%3A%3A123456789012%3Arole%2Fdb&RoleSessionName=db-session"
+    }
+  }
+}

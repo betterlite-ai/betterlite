@@ -25,12 +25,10 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_lifecycle_write.rs
   - crates/betterlite-core/src/api/responses_lifecycle_write/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/responses_lifecycle_write.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/responses_lifecycle_write.py
   - tools/oracle/cases/sdk-http/responses-lifecycle-write/**

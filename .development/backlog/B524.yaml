@@ -1,15 +1,15 @@
 id: B524
 milestone: M3 providers
 title: OpenAI Decisions intermediate representation
-status: todo
-depends_on: [B500, B173, B171, B099, B129]
+status: done
+depends_on: [B500, B173, B171, B3510, B3511, B8500]
 file: tasks/B524-openai-decisions.yaml
 covers:
   - "litellm/llms/openai/decisions/transformation.py"
   - "litellm/llms/base_llm/decisions/transformation.py"
 parent: B024
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1259

@@ -1,0 +1,25 @@
+kind: helper
+name: explicit_cache_rates_remove_and_price_tokens
+call:
+  batch_token_cost:
+    kind: calculator
+    model: gpt-4o
+    custom_llm_provider: openai
+    usage:
+      prompt_tokens: 1000
+      completion_tokens: 100
+      prompt_details: {audio_tokens: 100, image_tokens: 50, video_tokens: 25}
+      cache_read_tokens: 200
+    prompt_extras:
+      cache_creation_tokens: 100
+      cache_creation_token_details: {ephemeral_5m_input_tokens: 40, ephemeral_1h_input_tokens: 60}
+    model_info:
+      input_cost_per_token_batches: 0.5
+      output_cost_per_token_batches: 1.5
+      cache_read_input_token_cost_batches: 0.25
+      cache_creation_input_token_cost_batches: 0.125
+      input_cost_per_audio_token_batches: 2
+      input_cost_per_image_token_batches: 3
+      input_cost_per_video_token_batches: 4
+env: {}
+compare: {ignore: []}

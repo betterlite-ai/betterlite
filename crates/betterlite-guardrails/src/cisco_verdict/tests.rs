@@ -37,7 +37,7 @@ fn value_action(value: &Json) -> String {
     let Json::Object(fields) = value else {
         return String::new();
     };
-    match Json::field(fields, "action") {
+    match Json::parse(fields.get("action").map_or("null", |raw| raw.get())) {
         Json::Text(action) => action,
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
             String::new()
@@ -74,6 +74,20 @@ fn cisco_verdict_extracts_sanitized_text_from_result() {
 fn cisco_verdict_ignores_direct_arguments_outside_payload() {
     let value = Json::parse(r#"{"arguments": {"q": "x"}}"#);
     assert!(super::extract_mcp_args(&value).is_none());
+}
+
+#[rstest]
+#[case::params(r#"{"params":{"arguments":{"q":"clean"}}}"#)]
+#[case::sanitized_payload(r#"{"sanitized_payload":{"params":{"arguments":{"q":"clean"}}}}"#)]
+#[case::modified_payload(r#"{"modifiedPayload":{"arguments":{"q":"clean"}}}"#)]
+#[case::skip_empty(r#"{"sanitized_payload":{},"modified_payload":{"arguments":{"q":"clean"}}}"#)]
+#[case::result(r#"{"result":{"sanitizedPayload":{"arguments":{"q":"clean"}}}}"#)]
+fn cisco_verdict_extracts_mcp_arguments(#[case] input: &str) {
+    let arguments = super::extract_mcp_args(&Json::parse(input)).expect("sanitized arguments");
+    assert_eq!(
+        serde_json::to_string(&arguments).unwrap(),
+        r#"{"q":"clean"}"#
+    );
 }
 
 #[test]

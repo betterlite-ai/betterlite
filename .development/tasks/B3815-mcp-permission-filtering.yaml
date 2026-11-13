@@ -5,6 +5,8 @@ description: >-
 
   The end-user guardrail runs on request input only (pre_call), using the same cached get_end_user_object path that auth already uses so no extra database round-trip occurs when the cache is warm. Missing end_user_id, missing DB, missing identity, lookup failure and empty permission restrictions all pass through, with a warning on lookup failure. Split MCP tool names at the first hyphen to extract the server name (github-create_issue → github); non-MCP tools and unrecognized formats are kept unchanged.
 
+  Read the end user id from the route's own metadata key too: user_api_key_end_user_id at the top level, in litellm_metadata, and in `metadata` (the key chat completions use, per metadata_variable_name_for_route). LiteLLM reads only the first two, so on /v1/chat/completions it never finds the end user and never filters. This is a deviation.
+
   The security guardrail extracts server names from tools with type=mcp and litellm_proxy server_url prefix, compares against the registered MCP server manager's registry keys and reports unregistered names sorted alphabetically in HTTP 400 errors when blocking. It defaults off (default_on=false) and defaults to alert behavior unless on_violation is explicitly set to "block". It does not branch on input_type despite its request-only documentation.
 
   Both guardrails register through initialize_guardrail functions following the existing callback pattern. End-user defaults to on unless the raw guardrail dict explicitly sets default_on to false; the security initializer maps anything except literal on_violation=block to alert. Both use the cached auth lookup from B739; preserve its existing failure boundary and behavior.
@@ -43,7 +45,7 @@ references:
 dod:
   - text: MCPEndUserPermissionGuardrail applies to pre_call events only and filters tools on the request side.
     proof: [mcp-permission-tests]
-  - text: End user ID is resolved from user_api_key_end_user_id in request_data or litellm_metadata, and end user object is fetched through the same cached auth path as B739.
+  - text: End user ID is resolved from user_api_key_end_user_id in request_data, litellm_metadata or metadata, and end user object is fetched through the same cached auth path as B739.
     proof: [mcp-permission-tests]
   - text: When no end_user_id, missing DB, lookup failure or empty mcp_servers and mcp_access_groups restrictions exist, all tools pass through unchanged, with a warning logged on lookup failure.
     proof: [mcp-permission-tests]
@@ -89,13 +91,19 @@ oracle_cases:
   - tools/oracle/cases/guardrails/mcp_security/unregistered-servers-blocked.yaml
   - tools/oracle/cases/guardrails/mcp_security/unregistered-servers-alert.yaml
   - tools/oracle/cases/guardrails/mcp_security/mixed-mcp-types.yaml
-deviations: []
+deviations:
+  - what: >-
+      The end user id is also read from the request's `metadata` dict, where chat completions keep it.
+      LiteLLM reads only the top level and litellm_metadata, so it finds no end user on /v1/chat/completions and never filters MCP tools there.
+    why: >-
+      A restricted end user would otherwise get every MCP tool on chat completions; the filter exists to prevent that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_end_user_permission/mcp_end_user_permission.py#L136-L139
 out_of_scope:
   - Tool permission evaluation at call time (B3813) and response enforcement (B3814).
   - Access group expansion via MCPRequestHandler._get_mcp_servers_from_access_groups, owned by B4669.
   - MCP server registry management beyond registry lookups.
   - Configuration UI and settings exposure beyond the basic config model.
-  - CustomGuardrail base class implementation and callback dispatcher integration (B104 foundation).
+  - CustomGuardrail base class implementation and callback dispatcher integration (B5471 for the base class, B8666 for live class dispatch).
   - Tool name extraction from LiteLLM's lower tool_name_extraction module.
 pitfalls:
   - The end-user guardrail defaults to on (default_on=true) only when the raw guardrail dict does not explicitly set default_on to false; normalize the None case upfront to avoid confusion with Pydantic's false normalization.

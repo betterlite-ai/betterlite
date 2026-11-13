@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-a-anyscale
+call:
+  provider_defaults_a:
+    provider: anyscale
+    model: llama-3
+    environment:
+      ANYSCALE_API_KEY: any-key
+env: {}
+compare: {ignore: []}

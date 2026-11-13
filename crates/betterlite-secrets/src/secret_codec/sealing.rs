@@ -12,7 +12,7 @@ const AES_NONCE: usize = 12;
 const LEGACY_NONCE: usize = 24;
 
 // LiteLLM keys both ciphers with one unsalted SHA-256; a real KDF would strand every stored row
-pub(crate) fn seal<N>(
+pub fn seal<N>(
     algorithm: Algorithm,
     secret: &SecretString,
     nonces: &N,
@@ -54,19 +54,6 @@ where
     };
     let prefix = nonce.get(..used).ok_or(SecretError::Truncated)?;
     Ok([prefix, &sealed].concat())
-}
-
-// LiteLLM's encrypt_value: raw SecretBox bytes, nonce then MAC and ciphertext, for callers that pick their own key
-pub fn seal_legacy<N>(
-    plaintext: &SecretString,
-    signing_key: &SecretString,
-    nonces: &N,
-) -> Result<Vec<u8>, SecretError>
-where
-    N: NonceSource,
-{
-    let bytes = plaintext.expose_secret().as_bytes();
-    seal(Algorithm::XSalsa20Poly1305, signing_key, nonces, bytes, b"")
 }
 
 // PyNaCl reads an empty legacy buffer as empty plaintext, before it looks for a nonce

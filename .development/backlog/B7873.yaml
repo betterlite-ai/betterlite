@@ -1,0 +1,14 @@
+id: B7873
+milestone: M12 python
+title: Python list_batches, cancel_batch and the batches package
+status: todo
+depends_on: [B7872, B6040, B158, B167, B1129, B1038]
+file: tasks/B7873-python-batch-list-cancel.yaml
+covers:
+  - "litellm/batches/main.py"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

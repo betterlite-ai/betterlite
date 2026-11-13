@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-invokes-document-file-seed
+call: {anthropic_invokes: {function: process_openai_file_message, messages: [{type: file, file: {file_id: 'https://example.test/seed.pdf'}}], data_urls: {}}}
+env: {}
+compare: {ignore: []}

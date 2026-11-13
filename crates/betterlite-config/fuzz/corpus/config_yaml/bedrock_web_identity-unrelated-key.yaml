@@ -1,0 +1,3 @@
+litellm_settings:
+  bedrock_max_policy_size: 120
+model_list: []

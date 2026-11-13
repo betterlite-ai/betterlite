@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-stream-exact-chunks
+call: {b4805: {operation: stream, chunk_size: 5, response: {result: {artifacts: [{parts: [{kind: text, text: "0123456789"}]}]}}}}
+env: {}
+compare: {ignore: []}

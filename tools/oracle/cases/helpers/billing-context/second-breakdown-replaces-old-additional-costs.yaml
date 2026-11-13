@@ -1,0 +1,29 @@
+kind: helper
+name: billing-context-second-breakdown-replaces-old-additional-costs
+call:
+  billing_context:
+    calls:
+      - function: breakdown
+        breakdowns:
+          - input_cost: 1.0
+            output_cost: 2.0
+            total_cost: 3.0
+            tool_usage_cost: 0.25
+            additional_costs: {azure_model_router_flat_cost: 0.00014}
+            cache_read_cost: 0.5
+            reasoning_cost: 0.75
+            data_residency: eu
+            billed_token_rates:
+              input_cost_per_token: 0.1
+              output_cost_per_token: 0.2
+              cache_read_input_token_cost: 0.3
+              audio_read: 0.4
+              cache_write: 0.5
+              cache_write_1h: 0.6
+              reasoning: 0.7
+          - input_cost: 4.0
+            output_cost: 5.0
+            total_cost: 9.0
+            tool_usage_cost: 0.0
+env: {}
+compare: {ignore: []}

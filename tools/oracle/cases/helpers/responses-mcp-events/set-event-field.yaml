@@ -1,0 +1,9 @@
+kind: helper
+name: set-event-field
+call:
+  responses_mcp_events:
+    operation: set_event_field
+    field: custom_marker
+    value: kept
+env: {}
+compare: {ignore: []}

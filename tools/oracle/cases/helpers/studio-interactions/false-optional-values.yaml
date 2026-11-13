@@ -1,0 +1,24 @@
+kind: helper
+name: studio-interactions-false-optional-values
+call:
+  studio_interactions:
+    calls:
+      - function: transform_request
+        model: "gemini-2.5-flash"
+        input: ""
+        optional_params:
+          tools: []
+          system_instruction: ""
+          stream: false
+          store: false
+          background: false
+          environment: ""
+          response_modalities: []
+          previous_interaction_id: ""
+      - function: transform_request
+        model: "gemini-2.5-flash"
+        optional_params:
+          tools: null
+          stream: null
+env: {}
+compare: {ignore: []}

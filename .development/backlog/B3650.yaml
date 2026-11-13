@@ -2,8 +2,8 @@ id: B3650
 milestone: M5 api families
 title: Shared passthrough chat and Cohere embedding logging
 status: todo
-depends_on: [B3630, B3635, B068, B190, B668]
-file: null
+depends_on: [B3630, B3605, B247, B068, B190, B1414, B1416, B1418, B2227, B5652, B5653]
+file: tasks/B3650-passthrough-chat-cohere-logging.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/cohere_passthrough_logging_handler.py"
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py"

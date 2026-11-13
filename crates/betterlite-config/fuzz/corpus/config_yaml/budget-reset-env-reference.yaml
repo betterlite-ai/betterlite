@@ -1,0 +1,3 @@
+litellm_settings:
+  timezone: os.environ/BUDGET_RESET_TIMEZONE
+  budget_reset_time: os.environ/BUDGET_RESET_CLOCK

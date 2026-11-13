@@ -1,0 +1,19 @@
+kind: helper
+name: savings-excludes-provider-geo-multiplier
+call:
+  billed_tokens:
+    operation: savings
+    model_info:
+      input_cost_per_token: 2
+      cache_read_input_token_cost: 1
+      cache_creation_input_token_cost: 0.5
+      cache_creation_input_token_cost_above_1hr: 0
+      regional_processing_uplift_multiplier_us: 2
+      regional_endpoint_uplift_multiplier: 3
+      provider_specific_entry: {us: 10}
+    residency: us
+    vertex_location: us-central1
+    inference_geo: us
+    usage: {detail_cache_read: 4, detail_cache_creation: 8, detail_cache_creation_5m: -2, detail_cache_creation_1h: 3}
+compare: {ignore: []}
+env: {}

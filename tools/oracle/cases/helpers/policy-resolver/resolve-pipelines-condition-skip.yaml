@@ -1,0 +1,36 @@
+kind: helper
+name: resolve-pipelines-condition-skip
+call:
+  b3241:
+    policy_memory_matching_resolver:
+      action: resolve_pipelines
+      policies:
+        parent:
+          guardrails:
+            add: [pii-blocker]
+        child:
+          inherit: parent
+          guardrails:
+            add: [hipaa-audit]
+          condition:
+            model: claude.*
+          pipeline:
+            mode: post_call
+            steps:
+              - guardrail: pii-blocker
+        flat-pipeline:
+          guardrails:
+            add: [audit]
+          pipeline:
+            mode: pre_call
+            steps:
+              - guardrail: audit
+      attachments:
+        - policy: child
+          scope: "*"
+        - policy: flat-pipeline
+          scope: "*"
+      context:
+        model: gpt-4
+env: {}
+compare: {ignore: []}

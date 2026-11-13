@@ -2,8 +2,8 @@ id: B4719
 milestone: M9 agents and mcp
 title: MCP management OAuth browser navigation routes
 status: todo
-depends_on: [B4718, B4717, B1100, B1102, B741, B743, B732]
-file: null
+depends_on: [B4718, B4717, B4731, B6590, B6760, B4654, B2314, B1100, B1102, B741]
+file: tasks/B4719-mcp-oauth-browser-routes.yaml
 covers:
   - "litellm/proxy/management_endpoints/mcp_management_endpoints.py"
 parent: B139

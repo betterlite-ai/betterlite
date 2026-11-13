@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-history-fallback
+call: {b4805: {operation: extract, response: {result: {artifacts: [{parts: [{kind: text, text: ""}]}], history: [{role: user, messageId: u1, parts: [{kind: text, text: question}]}, {role: agent, messageId: old, parts: [{kind: text, text: "old answer"}]}, {role: agent, messageId: last, parts: [{kind: text, text: "last answer"}]}, {role: user, messageId: u2, parts: [{kind: text, text: again}]}]}}}}
+env: {}
+compare: {ignore: []}

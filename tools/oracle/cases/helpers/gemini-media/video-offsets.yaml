@@ -1,0 +1,46 @@
+kind: helper
+name: gemini-media-video-offsets
+call:
+  gemini_media:
+    call: video_offsets
+    cases:
+      - url: "gs://bucket/clip.mp4"
+        video_metadata:
+          fps: 1
+          start_offset: "1s"
+          end_offset: "2s"
+      - url: "gs://bucket/clip.mp4"
+        model: "gemini-2.5-flash"
+        video_metadata:
+          fps: 1
+          start_offset: "1s"
+          end_offset: "2.5s"
+      - url: "gs://bucket/clip.mp4"
+        model: "gemini-2.5-flash"
+        video_metadata:
+          fps: 2
+      - url: "gs://bucket/clip.mp4"
+        model: "gemini-2.5-flash"
+        video_metadata:
+          fps: null
+      - url: "gs://bucket/clip.mp4"
+        model: "gemini-2.5-flash"
+        video_metadata: {}
+      - url: "gs://bucket/clip.mp4"
+        model: "gemini-3-pro-preview"
+        detail: "ultra_high"
+      - url: "gs://bucket/clip.mp4"
+        model: "gemini-2.5-flash"
+        detail: "high"
+      - url: "gs://bucket/clip.mp4"
+        model: "gemini-2.5-flash"
+        detail: "low"
+        video_metadata:
+          start_offset: "1.5s"
+      - url: "data:video/mp4;base64,YWJj"
+        model: "gemini-2.5-flash"
+        video_metadata:
+          fps: 3
+env: {}
+compare:
+  ignore: []

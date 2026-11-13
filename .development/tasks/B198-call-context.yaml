@@ -31,8 +31,16 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-context/**
-  - crates/betterlite-config/**
+  - crates/betterlite-context/Cargo.toml
+  - crates/betterlite-context/src/call_context.rs
+  - crates/betterlite-context/src/call_context/**
+  - crates/betterlite-context/src/aws_partition.rs
+  - crates/betterlite-context/src/aws_partition/**
+  - crates/betterlite-context/src/core_settings.rs
+  - crates/betterlite-context/src/core_settings/**
+  - crates/betterlite-config/src/env_integer.rs
+  - crates/betterlite-config/src/env_integer/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/request_timeout-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/context/call_context.rs
   - tools/oracle/src/helpers/context/call_context/**

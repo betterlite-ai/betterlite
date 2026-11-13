@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-usage-speed-tier-geography
+call:
+  anthropic_usage:
+    usage: {input_tokens: 1, output_tokens: 2, speed: fast, service_tier: standard, inference_geo: us, cache_read_input_tokens: null}
+    reasoning_content: null
+    completion_response: null
+    speed: slow
+env: {}
+compare: {ignore: []}

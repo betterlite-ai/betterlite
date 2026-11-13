@@ -1,0 +1,18 @@
+kind: helper
+name: langfuse-exporter-retryable-429
+call:
+  b3902:
+    public_key: pk-lf-b3902
+    secret_key: sk-lf-b3902
+    base_url: https://cloud.langfuse.com
+    environment:
+      LANGFUSE_MAX_RETRIES: "1"
+    spans:
+      - name: generation
+        attributes:
+          - [langfuse.observation.input, "hello"]
+    replies:
+      - status: 429
+      - status: 200
+env: {}
+compare: {ignore: []}

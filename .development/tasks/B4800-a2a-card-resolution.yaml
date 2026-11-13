@@ -11,7 +11,11 @@ description: >-
 scope:
   paths:
     - Cargo.toml
-    - crates/betterlite-a2a/**
+    - crates/betterlite-a2a/Cargo.toml
+    - crates/betterlite-a2a/src/card_resolver.rs
+    - crates/betterlite-a2a/src/card_resolver/**
+    - crates/betterlite-a2a/src/errors.rs
+    - crates/betterlite-a2a/src/errors/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L40-L46
@@ -56,10 +60,10 @@ checks:
   commands:
     - id: card-resolver-tests
       why: card resolver behavior tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^card_resolver_behavior($|::)/)'
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^card_resolver::/)'
     - id: error-tests
       why: error type tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^a2a_error($|::)/)'
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^errors::/)'
     - id: localhost-patterns
       why: localhost pattern matching does not match LiteLLM
       run: grep -qE '"localhost"|"127\.0\.0\.1"|"0\.0\.0\.0"|"::"' crates/betterlite-a2a/src/errors.rs || grep -qE 'localhost|127\.0\.0\.1|0\.0\.0\.0|::' crates/betterlite-a2a/src/card_resolver.rs
@@ -81,6 +85,10 @@ pitfalls:
   - Protobuf AgentCard mutation (CopyFrom, field assignment) requires types from the a2a crate at its version; confirm the proto layout matches before mutation.
   - First non-404 status means the first response that is not 404; all non-response failures (network, timeout, parse) are collected and reported in the error.
   - Interface normalization triggers on lowercase bindings anywhere in the binding string, not just an exact lowercase match.
+  - All of this task's code lives in crates/betterlite-a2a/src/card_resolver.rs and crates/betterlite-a2a/src/errors.rs,
+    plus their own folders for tests. Probing needs the pooled client from B173, so add betterlite-http (and any
+    other crate the probe calls need) to crates/betterlite-a2a/Cargo.toml. No other file in betterlite-a2a is this
+    task's to touch, including lib.rs, agent_card.rs and client.rs.
 review_level: standard
 budget:
   max_changed_lines: 1500

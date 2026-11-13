@@ -1,0 +1,31 @@
+kind: helper
+name: strip-provider-specific-fields
+call:
+  anthropic_message_replay:
+    function: provider_fields
+    messages:
+    - pass-through
+    - role: assistant
+      provider_specific_fields:
+        message: kept
+      content:
+      - type: text
+        text: x
+        provider_specific_fields:
+          a: 1
+      - type: tool_use
+        id: t
+        input:
+          provider_specific_fields:
+            nested: true
+      - opaque
+    - role: user
+      content: string
+    - role: user
+    - role: assistant
+      content:
+      - type: text
+        text: y
+env: {}
+compare:
+  ignore: []

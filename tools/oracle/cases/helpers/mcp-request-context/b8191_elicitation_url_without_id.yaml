@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8191_elicitation_url_without_id","call":{"b8191":{"operation":"elicitation","scenarios":[{"params":{"mode":"url","message":"sign in","url":"https://idp.test/login"},"session":{"result":{"action":"accept"}}}]}},"env":{},"compare":{"ignore":[]}}

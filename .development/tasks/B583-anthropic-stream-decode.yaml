@@ -207,7 +207,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_decode_cases::case_[0-9]+_truncated_final_event$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_stream_decode.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_stream_decode.py tools/oracle/helpers/anthropic_stream_decode)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -220,7 +220,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/anthropic_stream_decode)"
       && grep -q 'decode_anthropic_event' crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_stream_decode.rs
-      && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_stream_decode_corpus$/)'
+      && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_stream_decode_corpus(::|$)/)'
   - id: case-passthrough-chunk-conversion
     why: 'convert_str_chunk_to_generic_chunk scans first data: for both bytes and strings, JSON-decodes the entire
       remaining string once (no accumulation), then dispatches B582. Invalid JSON propagates JSONDecodeError directly;

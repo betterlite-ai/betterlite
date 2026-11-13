@@ -1,0 +1,214 @@
+id: B094
+title: Prove container deployment affinity and ownership through HTTP
+description: >-
+  Complete the Containers API with booted HTTP evidence for the seams its parts test separately.
+  No unassigned function remains in the original covers: B7326 implements create_container,
+  list_containers and its nested fetch_page, retrieve_container and delete_container; B3372 owns
+  the file-registration call at endpoints.py L478-L483. The package initializer is empty and
+  containers/README.md describes an architecture already assigned to B3360-B3372 and B7430.
+  B8631 constructs the router executors, and B8635 constructs the ownership/request adapters,
+  merges both route families and supplies their ordinary OpenAI HTTP cases. Do not register
+  another route or rebuild a service. This task adds only the missing cross-request evidence:
+  deployment affinity after ID decoding, stored-ID recovery, direct dispatch without a router,
+  bounded owner-filtered pagination and conflicts after an upstream create.
+
+  Write ordinary HTTP cases under tools/oracle/cases/containers/composition/. The current case
+  schema selects HTTP when kind is absent. Use its existing steps and captures for stateful
+  transcripts; run the normal betterlite-versus-LiteLLM oracle, never a helper that invokes a
+  FastAPI handler or --self-check as parity evidence. Set general_settings.master_key to a
+  case-specific inert value, router_settings.num_retries to 0 for routed cases, and disable
+  fallback configuration in deliberate routing failures. For persisted ownership use
+  database.seed.dashboard: {} from B9740, plus B860's users and keys with disjoint user IDs and
+  internal_user roles. B9740 installs the independent final pinned schema, including
+  LiteLLM_ManagedObjectTable; B860's historical baseline alone lacks that table. B5076 supplies
+  the Python Prisma client. Let the runner inject database_url and schema-update settings.
+  Create ownership rows through POST /containers, never SQL or a mocked ownership service.
+
+  Use explicit stable model_info.id values, known model names openai/gpt-4o and azure/gpt-4o,
+  inert distinct deployment keys and api_base values below {{upstream}}. Give two deployments
+  different path prefixes and keys so selecting the wrong one changes the captured request.
+  Global fallback credentials use OPENAI_API_KEY and OPENAI_BASE_URL={{upstream}}/global/v1;
+  the oracle substitutes the mock URL in env. For Azure fallback settings use AZURE_API_KEY
+  and AZURE_API_BASE, with no Azure AD credential discovery. Do not inject litellm_metadata,
+  model_info or a fake successful SDK result into an HTTP request. Populate complete valid
+  ContainerObject and ContainerFileObject mock replies with fixed IDs and timestamps.
+  Add a small CSV asset at tools/oracle/fixtures/multipart-oracle/container-composition.csv.
+  Reuse it for multipart file parts and the raw download answer with body_kind: bytes and
+  fixture: container-composition.csv in the existing multipart-oracle format; do not encode
+  a download as a JSON string. This is the suite's only supporting fixture file.
+
+  routed-openai.yaml creates a container with a body model selecting deployment A and captures
+  its managed id. Retrieve through that id, list its files, upload a small file, retrieve the
+  file metadata, delete the file and delete the container. Every upstream request must use A's
+  URL prefix and Bearer key, never deployment B or the global fallback. The upstream receives
+  the native container id, while create returns the managed id; asynchronous retrieve and
+  delete return the native provider id because main.py's re-encoding branch does not run on
+  the pending coroutine. Compare these IDs rather than ignoring them. Use a fixed file ID
+  containing a space to exercise the existing path-segment encoder without putting a slash in
+  an axum path segment. The upload must preserve filename, media type and bytes through
+  RouterContainer's generic-call representation. Managed IDs captured from a response use the
+  case format's query encoding when interpolated into a path.
+
+  azure-stored-id.yaml selects an Azure deployment whose api_base ends in
+  /openai/responses?api-version=2025-04-01-preview while its api_version field says
+  2024-02-15-preview. Create as the owner, then retrieve by the fixed native ID from the mock
+  reply with custom-llm-provider: azure, without a model query or body. B3362 must recover the
+  deployment ID from the ownership row, and B7430 must use it for credentials and routing.
+  Download a .csv file through the managed ID without a provider hint, proving that decoded
+  azure replaces the default openai hint. Both follow-ups use the selected deployment's
+  api-key and normalized /openai/containers path with api-version=2025-04-01-preview; they
+  must not use the configured older version, the responses suffix or global credentials.
+  Preserve raw download bytes and text/csv; charset=utf-8. azure-default-version.yaml uses a
+  resource-root Azure api_base with no api_version and a real model-selected create, then
+  retrieves the result: the URL uses /openai/v1/containers and api-version=v1. These are HTTP
+  proofs of B547's existing transformation, not new provider implementations.
+
+  requested-model-fallback.yaml sends an admin create with an unknown model while a router
+  with an unrelated deployment exists. It succeeds via the configured global OpenAI base/key:
+  the requested-model branch permits passthrough when no deployment matches. In contrast,
+  managed-model-missing.yaml supplies an otherwise valid managed ID encoding a nonexistent
+  model_id to an admin retrieve. Use the exact cntr_ base64 envelope documented by B903,
+  constructed as a fixture literal, not a malformed ID. The managed-model branch fails with
+  the pinned handled error and makes no upstream request; it must not fall back to global
+  credentials. Capture LiteLLM's complete error envelope instead of guessing a router error
+  code from the provider's HTTP status.
+
+  direct-create-upload.yaml omits model_list entirely and uses the master key. POST a create
+  body with an explicit inert api_key and no model, then upload through the native returned
+  ID with the api_key as a multipart text field. OPENAI_BASE_URL supplies the mock destination,
+  so no request body needs mock-URL interpolation. The explicit credential key selects
+  route_llm_request's no-router direct branch, reaching B3369 and B3367 rather than the
+  generated router upload. Expect raw IDs, the explicit Bearer key and unchanged file bytes.
+  Include a missing-proxy-key create with the same provider credential and prove it is still
+  rejected with 401 and no upstream call. no-router-list.yaml has neither model_list nor a
+  CLI user_model and calls GET /containers as admin: expect the handled model-not-found 400
+  and zero upstream requests, even with global OpenAI credentials present. Do not invent a
+  YAML user_model setting or assert that every no-router operation succeeds.
+
+  owner-pages.yaml first lists as owner A with an empty provider page, populating its empty
+  allowed-ID cache. Then create two distinct containers as A and one as unrelated owner B.
+  List as A with limit=1 and order=asc. Script a first page containing A's first container then
+  B's container with has_more=true, then a second page containing A's second one with has_more=false.
+  The first page's last_id is deliberately different from its last data item's id. Upstream
+  requests use limit=100, and the next after is the last data item's ID, not last_id and not
+  the last filtered result. The caller receives one owned record with recomputed first_id,
+  last_id and has_more=true from limit+1 lookahead. This also proves a successful create
+  invalidates A's previously cached empty allow-set without restarting the proxy or waiting
+  for the 60-second TTL. owner-page-cap.yaml uses an authenticated non-admin with no owned
+  containers and five nonempty pages of unowned records, each has_more=true. It returns an
+  empty page with null first_id/last_id and has_more=true after exactly five upstream calls,
+  all limit=100, even though another page is advertised. Small valid pages suffice; do not
+  allocate 500 fixture records just because the request page size is 100.
+
+  owner-conflict.yaml has A and B create against a mock that returns the same native ID twice.
+  The first succeeds; the second performs its upstream POST and then returns plain
+  403 {"detail":"Forbidden"}, outside the common LLM exception wrapper. A can still retrieve
+  that container, while B's follow-up retrieve is denied before any upstream call. Keep both
+  upstream creates in the transcript: owner recording is after creation and has no rollback.
+
+  Exercise both registered prefixes across the suite. The complete existing surface is POST
+  and GET /containers, GET and DELETE /containers/{container_id}, GET and POST
+  /containers/{container_id}/files, GET and DELETE /containers/{container_id}/files/{file_id},
+  and GET /containers/{container_id}/files/{file_id}/content, each also under /v1. There are no
+  /openai/v1/containers or /azure/v1/containers proxy aliases; Azure's /openai/v1 path above is
+  upstream only. B8635 retains the full alias/auth/content-type/basic-provider-choice matrix.
+
+  Compare status, stable JSON, raw bytes, content-type, upstream method/path/query/body,
+  request count/order and Authorization/api-key headers. Compare stable x-litellm-* values
+  when present and require presence for nondeterministic request IDs/timing headers instead
+  of comparing their values. Error cases ignore only human message leaves with a reason,
+  normally /error/message, retaining type, param and code and the plain ownership detail.
+  Stable managed IDs, provider IDs, cursors and selected deployment IDs must not be ignored.
+  Isolate transcripts with distinct config/master-key values so process grouping cannot
+  carry ownership caches between cases. A parity failure belongs to the implementation owner
+  named below; preserve the failing transcript rather than add a test-only route or weaken
+  comparison. This task introduces no decoder, fuzz target, helper or production source.
+  About 600-800 compact case lines and zero newly ported LiteLLM logic fit one task.
+scope:
+  paths:
+    - tools/oracle/cases/containers/composition/**
+    - tools/oracle/fixtures/multipart-oracle/container-composition.csv
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/endpoints.py#L29-L158
+    why: Create decorators, provider selection and ownership recording after the guarded upstream call; HTTP evidence only, implementation B7326.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/endpoints.py#L161-L263
+    why: List decorators, typed pagination, per-page fetch closure and admin versus owner filtering; implementation B7326.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/endpoints.py#L266-L483
+    why: Retrieve/delete decorators, access checks and forwarding, plus the file registration delegated to B3372.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/handler_factory.py#L449-L506
+    why: Both aliases for every generated file route; B3372 registers them and B8635 mounts them once.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/handler_factory.py#L271-L446
+    why: Upload and JSON request maps preserve credentials and replace container/provider/model forwarding fields; implementations B3371/B3372.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/handler_factory.py#L164-L268
+    why: Binary file forwarding, CSV media type and copied processing headers; B3371 implements this path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L69-L101
+    why: B3362's decoded provider and stored unified-ID recovery, tested through follow-up HTTP requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L177-L249
+    why: B3362's conflict checks, post-create database writes and caller allow-set invalidation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/ownership.py#L317-L455
+    why: Access boundary, list rebuilding, cursor from the last data item, five-page bound and limit+1 lookahead.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7050-L7106
+    why: B7430's managed-ID affinity, forwarded model_id, requested-model fallback and direct executor selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L470-L497
+    why: Explicit credentials choose the direct SDK path when there is no router.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L717-L725
+    why: No-router calls without explicit credentials or a CLI user_model reach model-not-found.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L661-L692
+    why: The HTTP async retrieve returns the native ID; B3370 owns the conditional synchronous encoding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L887-L907
+    why: Delete has the same pending-coroutine encoding distinction, implemented by B3370.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L712-L727
+    why: B903's exact managed-ID envelope for the missing-deployment fixture.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/containers/transformation.py#L27-L83
+    why: B547's Azure authentication, responses-suffix normalization and URL-version precedence exposed through routed calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L781-L830
+    why: B2200's inherited v1 path and query construction, with the container override's default v1.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/README.md#L188-L241
+    why: Provider-selection flow and documented file endpoints; explanatory material, not additional functions to port.
+dod:
+  - text: Managed IDs and stored native IDs preserve deployment URL/key selection across CRUD, file operations and Azure version normalization through the booted proxy.
+    proof: [composition-cases, oracle]
+  - text: Unknown requested models may use the direct fallback, missing managed deployments may not, and no-router create/upload and list take their distinct pinned paths.
+    proof: [composition-cases, oracle]
+  - text: Owner pagination crosses upstream pages, invalidates an empty allow-set after creation, rebuilds cursors and stops at five fetches without exposing another owner's records.
+    proof: [composition-cases, oracle]
+  - text: An ownership conflict is a plain 403 after the second upstream create, leaves the original owner authorized and blocks the conflicting owner's later access before upstream execution.
+    proof: [composition-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: composition-cases
+      why: The task added no new HTTP transcript for the container composition remainder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/containers/composition)"
+oracle_cases:
+  - tools/oracle/cases/containers/composition/routed-openai.yaml
+  - tools/oracle/cases/containers/composition/azure-stored-id.yaml
+  - tools/oracle/cases/containers/composition/azure-default-version.yaml
+  - tools/oracle/cases/containers/composition/requested-model-fallback.yaml
+  - tools/oracle/cases/containers/composition/managed-model-missing.yaml
+  - tools/oracle/cases/containers/composition/direct-create-upload.yaml
+  - tools/oracle/cases/containers/composition/no-router-list.yaml
+  - tools/oracle/cases/containers/composition/owner-pages.yaml
+  - tools/oracle/cases/containers/composition/owner-page-cap.yaml
+  - tools/oracle/cases/containers/composition/owner-conflict.yaml
+deviations: []
+out_of_scope:
+  - "All four handlers and nested fetch_page in endpoints.py: B7326; its sole register_container_file_endpoints call: B3372. container_endpoints/__init__.py is empty. The README has no executable functions."
+  - "File catalog/records B3360, parameters/provider selection B3361, ownership functions B3362, file executor B3363, collection/resource HTTP B3364/B3365, explicit list/upload B3366/B3367, generated operations B3368 and container SDK operations B3369/B3370 retain implementation ownership."
+  - "Handler factory binary/upload processors and access adapter: B3371; every other live factory function and route registration: B3372. Its get_all_route_types and _get_container_provider_config have no caller at the pin, as B3372 records."
+  - "Router registration, plans and direct SDK selection: B7430; executor construction: B8631; production server adapters, mounts and the existing basic route HTTP matrices: B8635, beneath B8610's composition root."
+  - "OpenAI transforms B522, Azure overrides B547, base Azure URL/auth B2200, ID encoding/decoding B903 and generic router fallback B6021 are dependencies reached through B8635, not new B094 implementations."
+  - "Independent final-schema fixture support: B9740; isolated databases and principal seeds: B860; Prisma boot tooling: B5076. No fixture registry or product schema is changed here."
+  - "Python package exports and native Python calls: B7880/B7881. Deepgram WebSocket handoffs naming B094 are stale: B3628 owns those routes, B8606 their mount and B3653 their billing."
+pitfalls:
+  - "A native Azure ID carries no deployment payload; the stored unified_object_id must recover model_id before the router selects credentials."
+  - "Global provider credentials alone do not make the no-router list path callable; its route has no body api_key and user_model is a CLI input."
+  - "The pagination cursor comes from the last upstream data record, even when that record is filtered out, rather than the provider's last_id field."
+  - "A fifth nonempty page with has_more=true yields an empty owned page that still has has_more=true; the bound must not silently rewrite it to false."
+  - "The Azure URL's api-version is extracted before /openai/responses normalization discards the old query."
+  - "Create can fail ownership after the provider has already created a container; asserting zero provider requests for that 403 would invert the source's order."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

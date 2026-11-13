@@ -1,0 +1,16 @@
+model_list:
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_base: https://api.example.com/v1
+
+litellm_settings:
+  provider_url_destination_allowed_hosts:
+    - api.example.com
+    - internal.test:8443
+    - "https://secure.example.com"
+
+general_settings:
+  provider_url_destination_allowed_hosts:
+    - "https://api.example.com"
+    - "[::1]:8080"

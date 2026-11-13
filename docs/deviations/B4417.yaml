@@ -1,0 +1,11 @@
+task: B4417
+deviations:
+  - what: Rotation messages redact secret values instead of echoing them.
+    why: LiteLLM logs and returns the expected and retrieved values (lines 611-620 and 629-634); betterlite never puts a secret value in a log or an error response and still reports that a mismatch happened.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L611-L620
+  - what: A Vault response body over 1 MiB fails the operation instead of being parsed.
+    why: Every outside body has a size limit in betterlite; LiteLLM reads any size, and B4416 records the same cap for its decoders.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L408-L414
+  - what: A Vault answer outside 2xx fails the operation, 3xx included.
+    why: raise_for_status raises only for 4xx and 5xx, so LiteLLM would parse the body of an unfollowed redirect; the client follows redirects, so a working Vault sees 2xx or an error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L412

@@ -1,0 +1,12 @@
+kind: helper
+name: cache-coordination-single-loader
+call:
+  b4291:
+    coordinator_single_loader:
+      value:
+        model: gpt-4o
+        spend: 12.5
+      requests: 3
+env: {}
+compare:
+  ignore: []

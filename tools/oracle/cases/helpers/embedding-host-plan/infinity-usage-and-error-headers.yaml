@@ -1,0 +1,13 @@
+kind: helper
+name: embedding-host-plan-infinity-usage-and-error-headers
+call:
+  embedding_host_plan:
+    jina: {model: jina-v3, input: [hello], base: "https://jina.test/v1"}
+    infinity:
+      model: bge
+      input: [hello]
+      base: "https://infinity.test"
+      reply: {status: 200, body: '{"model":"bge","object":"list","data":[{"object":"embedding","embedding":[1.0],"index":0}],"usage":{"prompt_tokens":5}}'}
+      error: {status: 429, message: busy, headers: {retry-after: "3"}}
+env: {}
+compare: {ignore: []}

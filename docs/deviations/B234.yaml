@@ -1,0 +1,8 @@
+task: B234
+deviations:
+  - what: The file id mapping functions reject more than 1024 messages or 256 content parts per message, more than 1024 Responses input items or 256 content parts per item, more than 256 tools, 256 vector_store_ids per file_search tool and 256 container file_ids per code_interpreter tool, each with a named FileIdsError.
+    why: The task asks for bounded typed projections. The caps bound the clone and rewrite work before any item is touched, where LiteLLM walks whatever list the request carries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L518-L786
+  - what: get_file_ids_from_messages rejects more than 1024 messages or 256 content parts per message with a named FileIdsError.
+    why: The same bound applies to the same bounded chat projection, so the extraction cannot allocate in proportion to an unbounded request either.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1648-L1671

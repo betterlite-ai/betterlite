@@ -25,3 +25,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+## MPL-2.0 components
+The tokenizer stack pulls in `colored` (https://crates.io/crates/colored, source at https://github.com/colored-rs/colored) and `option-ext` (https://crates.io/crates/option-ext, source at https://github.com/soc/option-ext), both used unmodified under MPL-2.0. The full license text is at https://www.mozilla.org/en-US/MPL/2.0/.
+betterlite-transcribe reads MP3 durations with `symphonia-core` (https://crates.io/crates/symphonia-core) and `symphonia-bundle-mp3` (https://crates.io/crates/symphonia-bundle-mp3), source at https://github.com/pdeljanov/Symphonia, both used unmodified under MPL-2.0.

@@ -124,7 +124,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/session-iteration-limits/agent-params-precedence.yaml
 deviations: []
 out_of_scope:
-  - Agent lookup through AgentRegistry.get_agent_by_id. B4776 owns this implementation in crates/betterlite-agent/src/registry.rs.
+  - Agent lookup through AgentRegistry.get_agent_by_id. B4776 owns this implementation in crates/betterlite-auth/src/agent_registry.
   - Redis script registration through DualCache.async_register_script. B4328 owns this implementation in crates/betterlite-redis/**.
 pitfalls:
   - The oracle helper for this task is pre-registered as b3054 in the rate_limit group. Replace

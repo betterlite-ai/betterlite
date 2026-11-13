@@ -1,0 +1,2 @@
+litellm_settings:
+  DEFAULT_MAX_LRU_CACHE_SIZE: os.environ/LRU_SIZE

@@ -1,0 +1,9 @@
+kind: helper
+name: config-api-url-orchestrator
+call:
+  b3736:
+    configure:
+      settings: {base_url: "https://ibm.test", detector_id: jailbreak-detector, is_detector_server: false, verify_ssl: false}
+      environment: {IBM_GUARDRAILS_AUTH_TOKEN: env-token}
+env: {IBM_GUARDRAILS_AUTH_TOKEN: env-token}
+compare: {ignore: []}

@@ -1,0 +1,95 @@
+use betterlite_guardrails::generic_guardrail_contracts::UnreachableFallback;
+use betterlite_guardrails::vigil_guard::error::VigilGuardError;
+use betterlite_guardrails::vigil_guard::failure::handle_backend_failure;
+use betterlite_guardrails::vigil_guard::transient::TransportError;
+use reqwest::StatusCode;
+
+use crate::support::{failure_context, inputs, text, tool_call};
+
+fn backend_failure() -> VigilGuardError {
+    VigilGuardError::Transport {
+        source: TransportError::Timeout,
+    }
+}
+
+#[test]
+fn fail_open_allows_the_request_unchanged() {
+    let inputs = inputs(Some(vec!["a".to_owned()]), None);
+    let final_texts = vec!["a".to_owned()];
+    let result = handle_backend_failure(
+        &failure_context(UnreachableFallback::FailOpen),
+        &backend_failure(),
+        &inputs,
+        &final_texts,
+        None,
+    )
+    .expect("fail_open allows the request");
+    assert_eq!(result, inputs);
+}
+
+#[test]
+fn fail_open_keeps_sanitized_texts_and_drops_structured_messages() {
+    let mut inputs = inputs(Some(vec!["a".to_owned(), "b".to_owned()]), None);
+    inputs.images = Some(vec![text("image")]);
+    inputs.tools = Some(vec![text("tool")]);
+    inputs.structured_messages = Some(vec![text("stale")]);
+    let final_texts = vec!["sanitized".to_owned(), "b".to_owned()];
+    let result = handle_backend_failure(
+        &failure_context(UnreachableFallback::FailOpen),
+        &backend_failure(),
+        &inputs,
+        &final_texts,
+        None,
+    )
+    .expect("fail_open allows the request");
+    assert_eq!(result.texts, Some(final_texts));
+    assert_eq!(result.images, inputs.images);
+    assert_eq!(result.tools, inputs.tools);
+    assert_eq!(result.structured_messages, None);
+    assert_eq!(result.model, None);
+}
+
+#[test]
+fn fail_open_keeps_a_changed_tool_call_list() {
+    let inputs = inputs(Some(vec!["a".to_owned()]), Some(vec![tool_call("old")]));
+    let final_calls = vec![tool_call("new")];
+    let final_texts = vec!["a".to_owned()];
+    let result = handle_backend_failure(
+        &failure_context(UnreachableFallback::FailOpen),
+        &backend_failure(),
+        &inputs,
+        &final_texts,
+        Some(&final_calls),
+    )
+    .expect("fail_open allows the request");
+    assert_eq!(result.tool_calls, Some(final_calls));
+}
+
+#[test]
+fn a_missing_config_error_names_the_field() {
+    let error = VigilGuardError::MissingConfig { field: "api_base" };
+    assert_eq!(
+        error.to_string(),
+        "Vigil Guard api_base is required; set it in the guardrail config"
+    );
+}
+
+#[test]
+fn fail_closed_raises_a_backend_failure_that_is_not_a_content_block() {
+    let inputs = inputs(Some(vec!["a".to_owned()]), None);
+    let final_texts = vec!["a".to_owned()];
+    let error = handle_backend_failure(
+        &failure_context(UnreachableFallback::FailClosed),
+        &backend_failure(),
+        &inputs,
+        &final_texts,
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
+    assert!(matches!(error, VigilGuardError::BackendUnavailable));
+    assert_eq!(
+        error.to_string(),
+        "Vigil Guard backend unreachable; request blocked by fail_closed policy."
+    );
+}

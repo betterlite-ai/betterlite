@@ -13,7 +13,7 @@ use serde_json::json;
 
 use super::answers::{Answers, Layer, key};
 use crate::OracleError;
-use crate::case::{HelperCase, parse_helper_case};
+use crate::case::{HelperCase, helper::validate_helper};
 
 #[rstest::rstest]
 #[case::hung_child("exec sleep 5", "helper timed out and was reaped")]
@@ -43,13 +43,25 @@ fn helper_runner_tests_behavior(#[case] script: &str, #[case] expected: &str) {
 #[case::missing_dot_paths_path("call: {dot_paths: {delete: {data: {}}}}", "missing field")]
 fn helper_cases_reject_unknown_and_duplicate_fields(#[case] fields: &str, #[case] reason: &str) {
     let source = format!("kind: helper\nname: a\nenv: {{}}\ncompare: {{ignore: []}}\n{fields}\n");
-    assert!(parse_helper_case(&source).unwrap_err().contains(reason));
+    assert!(
+        serde_saphyr::from_str(&source)
+            .map_err(|error| error.to_string())
+            .and_then(|parsed| validate_helper(Path::new("<helper>"), &parsed)
+                .map_err(|error| error.to_string()))
+            .unwrap_err()
+            .contains(reason)
+    );
 }
 
 #[test]
 fn management_helper_case_rejects_unknown_fields() {
     let source = "kind: helper\nname: invalid\ncall: {management_oracle: {domain: models, operation: {path_encoding: {function: segment, value: a, field_name: id, extra: true}}}}\nenv: {}\ncompare: {ignore: []}\n";
-    let error = parse_helper_case(source).unwrap_err();
+    let error = serde_saphyr::from_str(source)
+        .map_err(|error| error.to_string())
+        .and_then(|parsed| {
+            validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
+        })
+        .unwrap_err();
     assert!(error.contains("unknown field"));
 }
 
@@ -60,7 +72,14 @@ fn helper_cases_are_validated(#[case] name: &str, #[case] pointer: &str, #[case]
     let source = format!(
         "kind: helper\nname: {name}\ncall: {{url_path: {{function: segment, value: a, field_name: id}}}}\nenv: {{}}\ncompare: {{ignore: [{{pointer: '{pointer}', why: w}}]}}\n"
     );
-    assert!(parse_helper_case(&source).unwrap_err().contains(reason));
+    assert!(
+        serde_saphyr::from_str(&source)
+            .map_err(|error| error.to_string())
+            .and_then(|parsed| validate_helper(Path::new("<helper>"), &parsed)
+                .map_err(|error| error.to_string()))
+            .unwrap_err()
+            .contains(reason)
+    );
 }
 
 #[test]
@@ -82,6 +101,33 @@ fn helper_case_cannot_disable_the_local_cost_map() {
         super::run_case(&case, false).expect("helper should run"),
         super::HelperRun::Match
     ));
+}
+
+#[rstest::rstest]
+#[case::nested_number("/value/interval/ms", "5")]
+#[case::object("/value/interval", "{\"ms\":5}")]
+#[case::missing("/value/missing", "absent")]
+fn a_failed_helper_case_shows_the_value_at_the_pointer(#[case] pointer: &str, #[case] shown: &str) {
+    let output = super::HelperOutput {
+        ok: true,
+        value: Some(json!({"interval": {"ms": 5_i32}})),
+        error: None,
+        warnings: Vec::new(),
+        effects: Vec::new(),
+    };
+    assert_eq!(super::value_at(&output, pointer), shown);
+}
+
+#[test]
+fn a_failed_helper_case_shows_at_most_400_characters() {
+    let output = super::HelperOutput {
+        ok: true,
+        value: Some(json!("x".repeat(1000))),
+        error: None,
+        warnings: Vec::new(),
+        effects: Vec::new(),
+    };
+    assert_eq!(super::value_at(&output, "/value").chars().count(), 400);
 }
 
 #[rstest::rstest]
@@ -116,6 +162,45 @@ fn dot_paths_adapter_reports_path_errors(#[case] prefix: &str, #[case] message: 
     assert!(error.message.starts_with(message));
 }
 
+fn group_operations(root: &Path) -> BTreeSet<String> {
+    let entries: Vec<PathBuf> = fs::read_dir(root.join("src/helpers"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    let group_files = entries
+        .iter()
+        .filter(|path| path.extension() == Some(OsStr::new("rs")))
+        .filter(|path| {
+            !["answers.rs", "mod.rs", "python.rs", "tests.rs"]
+                .iter()
+                .any(|name| path.ends_with(name))
+        })
+        .cloned()
+        .chain(
+            entries
+                .iter()
+                .map(|path| path.join("lib.rs"))
+                .filter(|path| path.is_file()),
+        );
+    group_files
+        .flat_map(|path| {
+            // operation names are the quoted strings on lines that open with a quote, several to a line
+            fs::read_to_string(path)
+                .unwrap()
+                .lines()
+                .filter(|line| line.trim_start().starts_with('"'))
+                .flat_map(|line| {
+                    line.split('"')
+                        .skip(1)
+                        .step_by(2)
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
 #[test]
 fn dispatch_py_lists_exactly_the_registered_operations() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -129,28 +214,7 @@ fn dispatch_py_lists_exactly_the_registered_operations() {
         .filter_map(|line| line.trim().strip_prefix('"')?.strip_suffix("\","))
         .map(str::to_owned)
         .collect();
-    let group_files = fs::read_dir(root.join("src/helpers"))
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.extension() == Some(OsStr::new("rs")))
-        .filter(|path| {
-            !["answers.rs", "mod.rs", "python.rs", "tests.rs"]
-                .iter()
-                .any(|name| path.ends_with(name))
-        });
-    let rust: BTreeSet<String> = group_files
-        .flat_map(|path| {
-            // a group file quotes nothing but operation names, several to a line
-            fs::read_to_string(path)
-                .unwrap()
-                .split('"')
-                .skip(1)
-                .step_by(2)
-                .map(str::to_owned)
-                .collect::<Vec<_>>()
-        })
-        .collect();
-    assert_eq!(rust, python);
+    assert_eq!(group_operations(root), python);
 }
 
 fn answer_scratch(name: &str) -> PathBuf {
@@ -230,7 +294,11 @@ fn python_failures_carry_the_exception_status() {
         "builtin_prompts: {family: ollama, messages: [{role: other, content: x}], model: injected-model}",
     )
     .unwrap();
-    let role_error = super::python::run_python(&root, &role_call, &case_env)
+    let role_error = super::python::python_stdout(&root, &role_call, &case_env)
+        .and_then(|stdout_output| {
+            serde_json::from_slice::<super::HelperOutput>(&stdout_output)
+                .map_err(OracleError::HelperJson)
+        })
         .unwrap()
         .error
         .unwrap();
@@ -239,7 +307,11 @@ fn python_failures_carry_the_exception_status() {
     let path_call: super::HelperCall =
         serde_saphyr::from_str("url_path: {function: segment, value: '..', field_name: file_id}")
             .unwrap();
-    let path_error = super::python::run_python(&root, &path_call, &case_env)
+    let path_error = super::python::python_stdout(&root, &path_call, &case_env)
+        .and_then(|stdout_output| {
+            serde_json::from_slice::<super::HelperOutput>(&stdout_output)
+                .map_err(OracleError::HelperJson)
+        })
         .unwrap()
         .error
         .unwrap();
@@ -268,4 +340,15 @@ fn answer_cache_stores_a_miss_in_the_write_layer_only() {
     assert_eq!(stored, [OsString::from(name)]);
     assert!(!own_written);
     assert_eq!(output.value, super::invoke(&call).value);
+}
+
+#[test]
+fn a_null_success_value_is_sent_as_no_value_like_python_does() {
+    let call: super::HelperCall = serde_saphyr::from_str(
+        "database_url_policy: {function: unsupported_db_scheme, database_url: \"postgresql://u:p@host/db\"}",
+    )
+    .unwrap();
+    let output = super::invoke(&call);
+    assert!(output.ok);
+    assert_eq!(output.value, None);
 }

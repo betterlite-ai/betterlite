@@ -1,0 +1,49 @@
+{
+  "kind": "helper",
+  "name": "vendor-mapping-tool-attributes-optional-and-metadata",
+  "call": {
+    "b3846": {
+      "function": "tool_attributes",
+      "optional_tools": [
+        {
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "description": "Weather",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "not": "a tool"
+        },
+        {
+          "type": "function",
+          "function": {
+            "name": "no_params",
+            "parameters": null
+          }
+        }
+      ],
+      "metadata_tools": [
+        {
+          "name": "meta_tool",
+          "description": "Meta"
+        },
+        {
+          "name": "bare_tool"
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

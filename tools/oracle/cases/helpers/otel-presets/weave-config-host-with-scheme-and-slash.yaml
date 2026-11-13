@@ -1,0 +1,15 @@
+kind: helper
+name: weave-config-host-with-scheme-and-slash
+call:
+  b3850:
+    function: weave_config
+    environment:
+      WANDB_API_KEY: abc
+      WANDB_PROJECT_ID: entity/project
+      WANDB_HOST: https://wandb.example/
+env:
+  WANDB_API_KEY: abc
+  WANDB_PROJECT_ID: entity/project
+  WANDB_HOST: https://wandb.example/
+compare:
+  ignore: []

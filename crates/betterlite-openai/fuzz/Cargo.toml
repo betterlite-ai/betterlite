@@ -3,18 +3,83 @@ name = "betterlite-openai-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
 
 [dependencies]
+betterlite-http = { path = "../../betterlite-http" }
 betterlite-openai = { path = ".." }
+betterlite-prompts = { path = "../../betterlite-prompts" }
+betterlite-tokenizer = { path = "../../betterlite-tokenizer" }
+http = "1.5.0"
 libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
+uuid = { version = "1.28.0", default-features = false }
+
+[[bin]]
+name = "aleph_lines"
+path = "fuzz_targets/aleph_lines.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "aleph_reply"
+path = "fuzz_targets/aleph_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "audio_duration"
+path = "fuzz_targets/audio_duration.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "auth_record"
+path = "fuzz_targets/auth_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "batch_records"
+path = "fuzz_targets/batch_records.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bytez_reply"
+path = "fuzz_targets/bytez_reply.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "chat_request"
 path = "fuzz_targets/chat_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cloudflare_decisions_reply"
+path = "fuzz_targets/cloudflare_decisions_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "codestral_record"
+path = "fuzz_targets/codestral_record.rs"
 test = false
 doc = false
 bench = false
@@ -27,8 +92,92 @@ doc = false
 bench = false
 
 [[bin]]
+name = "compatible_line"
+path = "fuzz_targets/compatible_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "copilot_key"
+path = "fuzz_targets/copilot_key.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "device_reply"
+path = "fuzz_targets/device_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "embedding"
 path = "fuzz_targets/embedding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_files"
+path = "fuzz_targets/openai_files.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rerank_contracts"
+path = "fuzz_targets/rerank_contracts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "responses_shapes"
+path = "fuzz_targets/responses_shapes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "responses_objects"
+path = "fuzz_targets/responses_objects.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "infinity_embedding"
+path = "fuzz_targets/infinity_embedding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cohere_embeddings"
+path = "fuzz_targets/cohere_embeddings.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "voyage_embedding_reply"
+path = "fuzz_targets/voyage_embedding_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vector_store_records"
+path = "fuzz_targets/vector_store_records.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_vector_stores"
+path = "fuzz_targets/openai_vector_stores.rs"
 test = false
 doc = false
 bench = false
@@ -40,4 +189,287 @@ test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "cohere_chat_v2"
+path = "fuzz_targets/cohere_chat_v2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cohere_chat_v1"
+path = "fuzz_targets/cohere_chat_v1.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cohere_legacy_embedding"
+path = "fuzz_targets/cohere_legacy_embedding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cohere_line"
+path = "fuzz_targets/cohere_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "responses_event_records"
+path = "fuzz_targets/responses_event_records.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_count_tokens"
+path = "fuzz_targets/openai_count_tokens.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "oauth_reply"
+path = "fuzz_targets/oauth_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xai_callback"
+path = "fuzz_targets/xai_callback.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xai_oauth"
+path = "fuzz_targets/xai_oauth.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_image_generation"
+path = "fuzz_targets/openai_image_generation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_fine_tuning"
+path = "fuzz_targets/openai_fine_tuning.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_assistants"
+path = "fuzz_targets/openai_assistants.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vector_file_contracts"
+path = "fuzz_targets/vector_file_contracts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_batches"
+path = "fuzz_targets/openai_batches.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_chat_choices"
+path = "fuzz_targets/openai_chat_choices.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xai_models"
+path = "fuzz_targets/xai_models.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "passthrough_bytes"
+path = "fuzz_targets/passthrough_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_threads"
+path = "fuzz_targets/openai_threads.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_thread_runs"
+path = "fuzz_targets/openai_thread_runs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "watsonx_iam_token"
+path = "fuzz_targets/watsonx_iam_token.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "huggingface_provider_mapping"
+path = "fuzz_targets/huggingface_provider_mapping.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "milvus_vector_store"
+path = "fuzz_targets/milvus_vector_store.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vercel_ai_gateway_reply"
+path = "fuzz_targets/vercel_ai_gateway_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ragflow_vector_store"
+path = "fuzz_targets/ragflow_vector_store.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nlp_cloud_reply"
+path = "fuzz_targets/nlp_cloud_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "nlp_cloud_stream_lines"
+path = "fuzz_targets/nlp_cloud_stream_lines.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mongodb_vector_store"
+path = "fuzz_targets/mongodb_vector_store.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_workload_identity"
+path = "fuzz_targets/openai_workload_identity.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_transcription"
+path = "fuzz_targets/openai_transcription.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "huggingface_embedding_response"
+path = "fuzz_targets/huggingface_embedding_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "compatible_reply"
+path = "fuzz_targets/compatible_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gigachat_stream_chunk"
+path = "fuzz_targets/gigachat_stream_chunk.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "host_named_reply"
+path = "fuzz_targets/host_named_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "volcengine_embedding_reply"
+path = "fuzz_targets/volcengine_embedding_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "comet_embedding_reply"
+path = "fuzz_targets/comet_embedding_reply.rs"
+test = false
+
+[[bin]]
+name = "openai_response_params"
+path = "fuzz_targets/openai_response_params.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xai_batch"
+path = "fuzz_targets/xai_batch.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_response_input"
+path = "fuzz_targets/openai_response_input.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_response_events"
+path = "fuzz_targets/openai_response_events.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "voxtral_reply"
+path = "fuzz_targets/voxtral_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xai_uploads"
+path = "fuzz_targets/xai_uploads.rs"
+test = false
+doc = false
+bench = false

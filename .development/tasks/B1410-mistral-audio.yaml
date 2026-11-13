@@ -33,16 +33,15 @@ description: >-
   implementation, 210 tests/config, 140 adapters and 100 fuzz/export lines, cap 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,mistral_audio,mistral_identity}.rs
+    - crates/betterlite-openai/src/{mistral_audio,mistral_identity}.rs
     - crates/betterlite-openai/src/{mistral_audio,mistral_identity}/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/voxtral_reply.rs
     - crates/betterlite-openai/fuzz/corpus/voxtral_reply/**
-    - crates/betterlite-config/src/{lib,config,settings,model,env,providers,tests}.rs
-    - crates/betterlite-config/src/providers/mistral.rs
-    - crates/betterlite-config/src/providers/mistral/**
     - crates/betterlite-config/src/providers/mistral/resources.rs
     - crates/betterlite-config/src/providers/mistral/resources/**
+    - crates/betterlite-config/src/sections/mistral_resources.rs
+    - crates/betterlite-config/src/sections/mistral_resources/**
     - crates/betterlite-config/src/tests/mistral_resources.rs
     - crates/betterlite-config/src/tests/mistral_resources/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/mistral_resources*
@@ -75,7 +74,7 @@ checks:
   optional: [mutants]
   commands:
     - id: voxtral-tests
-      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^mistral_(audio|identity)::/) - test(replays_voxtral_reply_corpus)'
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^(mistral_audio|mistral_identity)::(.*::)?mistral_(audio|identity)::/) - test(replays_voxtral_reply_corpus)'
       why: A shared audio auth implementation would change the transcription override behavior.
     - id: mistral-resource-config
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(mistral_resource_settings)'
@@ -105,5 +104,6 @@ pitfalls:
   - Transcription sends Bearer None when no key exists, while speech rejects the same input with 401.
   - A successful speech transform replaces the upstream status with 200 and rebuilds the audio headers.
   - Only recognized voice aliases are case-folded; unknown voice IDs keep their original case.
+  - Mistral resource settings use two files. The env lookup lives in crates/betterlite-config/src/providers/mistral/resources.rs, shaped like providers/mistral/options.rs. The new Section wrapper exposing config.sections.mistral_resources lives in crates/betterlite-config/src/sections/mistral_resources.rs, shaped like sections/mistral_options.rs. sections/mistral_options.rs and sections/mistral_credentials.rs belong to B1408 and B036; read them, don't edit them.
 budget: {max_changed_lines: 800, max_new_expects: 1}
 review_level: security

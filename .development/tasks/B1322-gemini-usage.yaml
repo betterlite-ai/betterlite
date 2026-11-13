@@ -22,7 +22,7 @@ description: >-
   200 assertions and 150 oracle lines; integer accounting must not introduce floating arithmetic.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,gemini_usage,grounding_requests}.rs
+    - crates/betterlite-vertex/src/{gemini_usage,grounding_requests}.rs
     - crates/betterlite-vertex/src/{gemini_usage,grounding_requests}/**
     - tools/oracle/src/helpers/vertex/gemini_usage.rs
     - tools/oracle/src/helpers/vertex/gemini_usage/**

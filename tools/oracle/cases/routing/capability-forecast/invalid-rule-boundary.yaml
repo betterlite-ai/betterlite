@@ -1,0 +1,55 @@
+kind: probe
+name: invalid-rule-boundary
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.1"}
+        reply: {kind: text, content: '{"crux":"mismatched pair","primary_rule":"SUP-1","capability_boundary":"unsupported","p_solve":0.9}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.1"}
+        reply: {kind: text, content: '{"crux":"   ","primary_rule":"none","capability_boundary":"unmatched","p_solve":0.9}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.1"}
+        reply: {kind: text, content: '{"crux":"extra field","primary_rule":"none","capability_boundary":"unmatched","p_solve":0.9,"recommended_route":"efficient"}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: validate_config
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "1.5"}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: validate_config
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.3"}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: validate_config
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", calibration: {version: v1, slope: "-1.0", intercept: "0.0"}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: validate_config
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", max_output_tokens: 0}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: validate_config
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", calibration: {version: " ", slope: "1.0", intercept: "0.0"}}
+compare: {ignore: []}

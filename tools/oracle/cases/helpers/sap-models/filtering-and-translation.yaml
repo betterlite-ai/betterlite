@@ -1,0 +1,35 @@
+kind: helper
+name: sap-models-filtering-and-translation
+call:
+  b5951:
+    calls:
+      - model: orchestration_request
+        data:
+          config:
+            modules:
+              - prompt_templating:
+                  prompt: {template: []}
+                  model: {name: m}
+                filtering:
+                  input:
+                    filters:
+                      - {type: azure_content_safety, config: {hate: 0, sexual: 2, violence: 4, self_harm: 6, prompt_shield: false}}
+                      - {config: {hate: 2}}
+                  output:
+                    filters:
+                      - {type: llama_guard_3_8b, config: {hate: true, elections: false}}
+                      - {type: azure_content_safety, config: {protected_material_code: true}}
+                    stream_options: {overlap: 10000}
+                translation:
+                  input:
+                    type: sap_document_translation
+                    translate_messages_history: true
+                    config:
+                      source_language: de-DE
+                      target_language: en-US
+                      apply_to: [{category: placeholders, items: [q], source_language: de-DE}]
+                  output:
+                    config:
+                      target_language: {category: template_roles, items: [system], source_language: de-DE}
+env: {}
+compare: {ignore: []}

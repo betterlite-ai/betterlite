@@ -1,0 +1,17 @@
+name: route-match-sibling-prefix-denied
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: GET
+  path: /fake-openai-proxy-600
+  headers:
+    Authorization: Bearer oracle-master
+  body: null
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

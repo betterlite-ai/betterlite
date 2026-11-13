@@ -3,8 +3,8 @@ title: Request-local spend-counter reads and shared batch scopes
 description: >-
   Implement betterlite-auth::spend_counter_batch for spend_tracking/spend_counter_batch.py below
   authentication prefetch, reservation and post-call accounting. B070 retains spend persistence,
-  B071 reservations and B124 the live-counter read/write policy; all call this lower component.
-  Use B126 Redis/request-pipeline primitives, B733 shared counter keys and B2314 resolved key
+  B3003, B3004 and B8480 reservations and B124 the live-counter read/write policy; all call this lower component.
+  Use B4330 and B4331 Redis/request-pipeline primitives, B733 shared counter keys and B2314 resolved key
   fields. PendingSpendIncrement is an immutable pair of required counter_key and increment; it
   does not perform a write or impose positivity. Monetary values use checked Decimal, retaining
   negatives and exact finite values. No environment setting or new outside-byte parser is added.
@@ -68,7 +68,7 @@ description: >-
   without promising iteration order. The pure spend_counter_batch oracle calls the actual source
   key constructors; normalize only set ordering in the adapter.
 
-  Native tests with the real B126 batch abstraction and recording Redis transport cover scopes,
+  Native tests with the real B4331 batch abstraction and recording Redis transport cover scopes,
   suspended-read races, error fallback, map validation and command order. Source float validation
   permits numeric strings and bools (0/1); retain those finite conversions. Nonfinite or out-of-range
   results cause the native whole-map validation failure and DEBUG fallback, not a partially loaded
@@ -143,7 +143,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L116-L135
 out_of_scope:
   - SpendCounterBatch.counter_keys has no production caller at the pin and is not exposed as a new API.
-  - B126 owns request Redis batches and their byte decoder; B070 owns reseeding and persistence, B071 reservations and B124 counter-write policy.
+  - B4331 owns request Redis batches and B4324 their byte decoder; B070 owns reseeding and persistence, B3003, B3004 and B8480 reservations and B124 counter-write policy.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as spend_counter_batch in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/spend_counter_batch.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_counter_batch.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A present null from MGET is authoritative, while an absent map entry demands another read path.

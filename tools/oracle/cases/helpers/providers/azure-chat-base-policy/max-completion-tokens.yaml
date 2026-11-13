@@ -1,0 +1,31 @@
+kind: helper
+name: max-completion-tokens
+call:
+  azure_chat_base_policy:
+    action: max_completion_tokens
+    settings: {}
+    models:
+      - gpt-5
+      - azure/gpt-5-chat
+      - gpt-6-mini
+      - gpt5_series/model
+      - GPT-5
+      - gpt-4o
+    steps:
+      - model: gpt-5
+        non_default: {max_tokens: 100}
+      - model: azure/gpt-5-chat
+        non_default: {max_tokens: 100}
+      - model: gpt-4o
+        non_default: {max_tokens: 100}
+      - model: gpt-5
+        non_default: {max_tokens: 100, temperature: 0.2}
+      - model: gpt-5
+        non_default: {max_completion_tokens: 7}
+      - model: gpt-5
+        non_default: {max_tokens: 100}
+        optional: {max_completion_tokens: 7}
+      - model: GPT-5
+        non_default: {max_tokens: 100}
+env: {}
+compare: {ignore: []}

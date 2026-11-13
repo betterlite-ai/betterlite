@@ -1,0 +1,199 @@
+id: B3860
+title: Arize multimodal messages and response projections
+description: >-
+  Port the part of LiteLLM's Arize attribute code that turns chat messages and a finished response into OpenInference span attributes. Everything lives under `crates/betterlite-logging/src/otel/integrations/arize_messages.rs` and its folder. Nothing calls it yet: B3861 wires it into the Arize `set_attributes` flow.
+
+
+  B3844 already gives `SafeSetAttribute::safe_set_attribute(&mut self, key: &str, value: &OtelModelValue)` on every `opentelemetry::trace::Span`, the `LLMObsAttributes` trait and `OtelModelValue` (in `otel/model/utils/coercion.rs`). Use them. `MetadataMap` is `BTreeMap<String, OtelModelValue>`. Every function below takes the span as `&mut S` with `S: opentelemetry::trace::Span`. The Python code takes dicts or Pydantic objects; Rust reads `OtelModelValue` only, so `_safe_get`, `_to_plain_dict` and `model_dump` have no Rust form. `_safe_emit` only swallows exceptions, and no function here can fail, so it has none either.
+
+
+  Keep the OpenInference attribute names in a `keys` submodule of public `&str` constants, from `litellm/integrations/_types/open_inference.py`. Message keys are joined with dots, for example `llm.input_messages.0.message.role`. The constants you need are `input.value`, `output.value`, `llm.input_messages`, `llm.output_messages`, `message.role`, `message.content`, `message.contents`, `message.name`, `message.tool_calls`, `message.tool_call_id`, `message.reasoning_summary`, `message_content.type`, `message_content.text`, `image.url`, `audio.url`, `audio.mime_type`, `audio.transcript`, `embedding.vector`, `embedding.text`, `tool_call.id`, `tool_call.function.name`, `tool_call.function.arguments`, and the `llm.token_count.*` keys (`total`, `prompt`, `completion`, `prompt_details.cache_read`, `prompt_details.cache_write`, `prompt_details.audio`, `completion_details.reasoning`). The image part URL key is the literal `message_content.image.image.url`. B189's task does not build the `open_inference.py` classes, so this module is the only place they exist for now.
+
+
+  `ArizeOtelAttributes` is a unit struct that implements `LLMObsAttributes`. Its `set_messages(span, kwargs: &MetadataMap)` is LiteLLM's `ArizeOTELAttributes.set_messages`. `kwargs["messages"]` must be a non-empty array, else nothing is written. `input.value` is the last message's `content` (absent becomes the empty string). Then for each message at index `idx`, with `prefix = "llm.input_messages.{idx}"`, write `{prefix}.message.role` from `role` and `{prefix}.message.content` from `content` (absent or null both write the empty string), and then call `emit_input_message_extras`. Entries that are not objects are skipped. `set_response_output_messages` stays the empty default.
+
+
+  `emit_input_message_extras(span, prefix, message: &MetadataMap)` writes, in this order: `{prefix}.message.name` when `name` is a non-empty string; `{prefix}.message.tool_call_id` when `tool_call_id` is a non-empty string; the tool calls through `emit_message_tool_calls`; then the structured parts when `content` is an array. For part `part_idx`, `part_prefix = "{prefix}.message.contents.{part_idx}"`, and non-object parts are skipped but still use up their index. A part whose `type` is `text` or `input_text` and whose `text` is a string writes `{part_prefix}.message_content.type = "text"` and `{part_prefix}.message_content.text`. A part whose `type` is `image_url`, `image` or `input_image` finds its URL like this: `image_url` as an object gives its `url`; `image_url` as a string is the URL itself. If that gives nothing (absent, null or empty), try `source`: when `source` is an object with a non-empty `data`, the URL is `data:{media_type};base64,{data}` with `media_type` defaulting to `image/jpeg` only when the key is absent. Only when `source` is not an object with data, a string `url` on the part itself is used. A non-empty URL writes `{part_prefix}.message_content.type = "image"` and `{part_prefix}.message_content.image.image.url`. Other part types write nothing. The plain `message.content` write from `set_messages` is never replaced.
+
+
+  Tool calls live in `tool_calls.rs`. `normalize_tool_call(&OtelModelValue) -> Option<NormalizedToolCall>` returns None unless the value is an object. The result holds `id` and `type` (default `"function"` when absent), and `function` with `name` and `arguments`, both read from the object under `function` (None when it isn't an object). Arguments that are not null and not a string become their `serde_json::to_string` text. `summarize_tool_calls_for_output(tool_calls: &[OtelModelValue]) -> String` is `{"tool_calls":[...]}` over the normalized calls that are not None, where each call serializes with the keys `id`, `type` and `function` (`name`, `arguments`), and a missing id, name or arguments serializes as null. `emit_message_tool_calls(span, prefix, message: &MetadataMap)` does nothing unless `tool_calls` is a non-empty array. For each entry at `tc_idx` that normalizes, with `tc_prefix = "{prefix}.message.tool_calls.{tc_idx}"`, it writes `{tc_prefix}.tool_call.id` when the id is a non-empty string, `{tc_prefix}.tool_call.function.name` when the name is a non-empty string, and `{tc_prefix}.tool_call.function.arguments` when the arguments are not None (an empty string is written).
+
+
+  `text.rs` holds `coerce_text(value: &OtelModelValue) -> Option<String>`, which B3861 also calls. Null gives None, a string is returned as is, and an array gives the parts joined with a newline: a string part is taken, an object part gives its `text` when that is a non-empty string, else its `input_text` when that is a string, and anything else is dropped. An array with no collected part, and every other value, gives None.
+
+
+  `set_response_attributes(span, response: &OtelModelValue)` is `_set_response_attributes`. It returns at once unless `response` is an object, then runs these six steps in this order against the same span: choices, images, audio, embeddings, structured outputs, usage. Later steps overwrite `output.value` set by earlier ones, as in LiteLLM.
+
+
+  Choices (`output.rs`): for each entry of `choices` (absent gives none) at `idx`, `message` is the choice's `message` object (empty when absent) and `content` is its `content`. `output_value` is the content, but when the content is null, absent or the empty string and `tool_calls` is a non-empty array, it becomes `summarize_tool_calls_for_output` of the calls. Write `output.value` from `output_value` (null writes the empty string), then `llm.output_messages.{idx}.message.role` from `role` and `llm.output_messages.{idx}.message.content` from `content`, then `emit_message_tool_calls` with prefix `llm.output_messages.{idx}`. With several choices the last one's `output.value` stays.
+
+
+  Images: for each object in `data` at `i`, the URL is `url` when that is a non-null value, else `data:image/png;base64,{b64_json}` when `b64_json` is a non-empty string. No URL skips the entry. Index 0 writes `output.value`. Every URL writes `image.url.{i}`. Audio: for each object in the top-level `audio` array at `i`, the URL is `url` when non-null, else `data:audio/wav;base64,{b64_json}` for a non-empty `b64_json`. A URL writes `audio.url.{i}` and, for index 0, `output.value`. A non-empty `mime_type` writes `audio.mime_type.{i}` and a non-empty `transcript` writes `audio.transcript.{i}`, with or without a URL. Embeddings: for each object in `data` at `i`, a non-empty `embedding` array writes `embedding.vector.{i}` (and `output.value` for index 0) as the text `[a, b, c]`, each number written the way `serde_json::Number` displays it and joined with a comma and a space. A non-empty `text` string writes `embedding.text.{i}`. A `data` or `audio` value that is not an array is ignored.
+
+
+  Structured outputs: each entry of `output` at `i` that is an object with a string `type` is read. For `reasoning` with a `summary` array, every summary object that has a `text` writes `llm.output_messages.{i}.message.reasoning_summary`, so the last summary wins. For `message` with a `content` key, `message_content` is the `text` of the first content object, or the empty string when the content is empty or has no text. The role is `role` or `assistant` when absent. Write `output.value` and `llm.output_messages.{i}.message.content` from the text and `llm.output_messages.{i}.message.role` from the role. Other types write nothing.
+
+
+  Usage (`usage.rs`): `usage` must be a non-empty object, else nothing is written. `llm.token_count.total` is always written from `total_tokens`, and a missing value writes the empty string. `completion` is `completion_tokens`, falling back to `output_tokens` when the first is missing, null or 0. `prompt` is `prompt_tokens` falling back to `input_tokens` the same way. A nonzero value is written to `llm.token_count.completion` and `llm.token_count.prompt`. `reasoning_tokens` comes from `completion_tokens_details`, falling back to `output_tokens_details` when the first is missing, null or an empty object, and a nonzero value goes to `llm.token_count.completion_details.reasoning`. The prompt details object is `prompt_tokens_details` falling back to `input_tokens_details` on the same rule. `cache_read` is its `cached_tokens` falling back to `usage.cache_read_input_tokens` when 0 or missing, and a nonzero value goes to `llm.token_count.prompt_details.cache_read`. A nonzero `cache_creation_input_tokens` goes to `llm.token_count.prompt_details.cache_write`. A nonzero `audio_tokens` of the prompt details goes to `llm.token_count.prompt_details.audio`.
+
+
+  Tests live in `arize_messages/tests.rs`, declared with `#[path]`. They read attributes back through `opentelemetry_sdk::trace::InMemorySpanExporter`, as B3844's tests do. Test names start with `input_`, `multimodal_`, `tool_calls_`, `choices_`, `media_`, `embedding_`, `structured_`, `usage_` and `text_`. The oracle adapter is operation `b3860`. Tagged inputs: `{"function": "set_messages", "messages": [...]}`, `{"function": "set_response", "response": {...}}`, `{"function": "coerce_text", "value": ...}` and `{"function": "summarize_tool_calls", "tool_calls": [...]}`. The two span functions answer `{"result": {attribute key: value}}` and the other two answer `{"result": ...}` with the text or null, or with the summary parsed as JSON. On both sides, a value stored under `output.value` or under a key ending in `.function.arguments` is replaced by its parsed JSON when it parses, so spacing in `json.dumps` text never matters. For `set_messages`, both sides drop `input.value` and `llm.input_messages.{n}.message.content` when that message's `content` is an array, since LiteLLM writes Python's list repr there. The Python adapter calls the real functions with a recording span that keeps what `set_attribute` receives. Because Responses output items are Pydantic objects in LiteLLM, the adapter turns each item under `output` into a `SimpleNamespace` (nested lists and objects too) before the call.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/integrations/arize_messages.rs
+    - crates/betterlite-logging/src/otel/integrations/arize_messages/**
+    - tools/oracle/cases/helpers/arize-messages/**
+    - tools/oracle/helpers/b3860.py
+    - tools/oracle/helpers/b3860/**
+    - tools/oracle/src/helpers/logging/b3860.rs
+    - tools/oracle/src/helpers/logging/b3860/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L33-L79
+    why: ArizeOTELAttributes.set_messages, and the note that set_response_output_messages is not overridden.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L81-L222
+    why: _set_response_attributes and the choice, image, audio, embedding and structured output writers, in call order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L225-L304
+    why: _safe_get and _set_usage_outputs with every fallback between the Chat Completions and Responses usage names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L620-L644
+    why: _coerce_text, shared with the passthrough and MCP code in B3861.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L664-L756
+    why: _get_tool_calls, the normalized tool call shapes, _summarize_tool_calls_for_output and _emit_message_tool_calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L759-L833
+    why: _emit_input_message_extras, with the text and image part branches and the Anthropic source fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry_utils/base_otel_llm_obs_attributes.py#L8-L37
+    why: BaseLLMObsOTELAttributes and safe_set_attribute, already built by B3844.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/_types/open_inference.py#L1-L345
+    why: The attribute name strings for SpanAttributes, MessageAttributes, MessageContentAttributes, ImageAttributes, AudioAttributes, EmbeddingAttributes and ToolCallAttributes.
+  - url: https://arize-ai.github.io/openinference/spec/semantic_conventions.html
+    why: The OpenInference attribute reference these keys come from.
+
+dod:
+  - text: set_messages writes input.value from the last message, the role and content of every message, and nothing for an empty or missing messages list.
+    proof: [input-messages, oracle, helper-python]
+  - text: A message's name, tool_call_id and assistant tool calls are written under their own keys without touching message.content.
+    proof: [input-messages, tool-calls, oracle, helper-python]
+  - text: Text and image parts of array content become message.contents entries, including the Anthropic base64 source, the string image_url and the part-level url.
+    proof: [multimodal-parts, oracle, helper-python]
+  - text: normalize_tool_call, summarize_tool_calls_for_output and emit_message_tool_calls follow LiteLLM for object arguments, missing ids and empty names.
+    proof: [tool-calls, oracle, helper-python]
+  - text: A choice with empty content and tool calls puts the tool call summary into output.value, and role and content are written for every choice.
+    proof: [choice-outputs, oracle, helper-python]
+  - text: Image and audio outputs write url attributes, with the b64_json data URL fallback, and output.value from index 0.
+    proof: [media-outputs, oracle, helper-python]
+  - text: Embedding vectors and texts are written per index in Python list text form.
+    proof: [embedding-outputs, oracle, helper-python]
+  - text: Responses API reasoning and message items write the reasoning summary, content, role and output.value.
+    proof: [structured-outputs, oracle, helper-python]
+  - text: Usage writes the total always and the other counts only when nonzero, with the Responses API and cache fallbacks.
+    proof: [usage-outputs, oracle, helper-python]
+  - text: coerce_text joins string and text-bearing parts and returns None when nothing is left.
+    proof: [text-coercion, oracle, helper-python]
+
+checks:
+  optional: []
+  commands:
+    - id: input-messages
+      why: the input message tests are missing or input.value, role, content or the extras differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_messages::tests::input_/)'
+    - id: multimodal-parts
+      why: the multimodal tests are missing or a text or image part lands under the wrong key
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_messages::tests::multimodal_/)'
+    - id: tool-calls
+      why: the tool call tests are missing or normalization, the summary or the emitted keys differ
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_messages::tests::tool_calls_/)'
+    - id: choice-outputs
+      why: the choice tests are missing or output.value, role or content differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_messages::tests::choices_/)'
+    - id: media-outputs
+      why: the image and audio tests are missing or a url, mime type or transcript differs
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_messages::tests::media_/)'
+    - id: embedding-outputs
+      why: the embedding tests are missing or a vector or text attribute differs
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_messages::tests::embedding_/)'
+    - id: structured-outputs
+      why: the Responses output tests are missing or a reasoning or message item writes the wrong keys
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_messages::tests::structured_/)'
+    - id: usage-outputs
+      why: the usage tests are missing or a token count, fallback or zero rule differs
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_messages::tests::usage_/)'
+    - id: text-coercion
+      why: the text tests are missing or coerce_text joins or drops the wrong parts
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_messages::tests::text_/)'
+    - id: helper-python
+      why: the oracle adapter is untouched or fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3860.py tools/oracle/helpers/b3860)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/arize-messages/messages-basic-roles.yaml
+  - tools/oracle/cases/helpers/arize-messages/messages-empty-list.yaml
+  - tools/oracle/cases/helpers/arize-messages/messages-null-content.yaml
+  - tools/oracle/cases/helpers/arize-messages/messages-name-and-tool-call-id.yaml
+  - tools/oracle/cases/helpers/arize-messages/messages-assistant-tool-calls.yaml
+  - tools/oracle/cases/helpers/arize-messages/messages-multimodal-text-and-image-url.yaml
+  - tools/oracle/cases/helpers/arize-messages/messages-image-url-string-and-input-types.yaml
+  - tools/oracle/cases/helpers/arize-messages/messages-image-anthropic-source.yaml
+  - tools/oracle/cases/helpers/arize-messages/messages-image-source-without-data-uses-url.yaml
+  - tools/oracle/cases/helpers/arize-messages/messages-non-object-part-keeps-index.yaml
+  - tools/oracle/cases/helpers/arize-messages/tool-calls-summary-object-arguments.yaml
+  - tools/oracle/cases/helpers/arize-messages/tool-calls-summary-skips-non-objects.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-choice-text.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-choice-tool-only.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-two-choices-last-output-wins.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-image-url-and-b64.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-audio-fields.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-embedding-vector-and-text.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-structured-reasoning-and-message.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-structured-empty-message-content.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-usage-chat.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-usage-responses-api.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-usage-cache-anthropic.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-usage-zero-counts.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-usage-missing-total.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-usage-empty-object.yaml
+  - tools/oracle/cases/helpers/arize-messages/response-not-an-object.yaml
+  - tools/oracle/cases/helpers/arize-messages/coerce-text-string.yaml
+  - tools/oracle/cases/helpers/arize-messages/coerce-text-parts.yaml
+  - tools/oracle/cases/helpers/arize-messages/coerce-text-no-text.yaml
+
+deviations:
+  - what: A Responses API output list whose items are plain objects with a `type` is read like LiteLLM reads Pydantic items. LiteLLM skips a plain dict item, because `hasattr(item, "type")` is false for a dict.
+    why: >-
+      betterlite holds every response as JSON, so it cannot tell a Pydantic item from a dict. The Responses API logging path hands LiteLLM Pydantic items, which is the case this branch exists for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L197-L222
+  - what: An embedding vector is written as `[0.1, 0.2]` with numbers in serde_json's shortest form. Python's `str(list)` writes a float below 1e-4 or from 1e16 as `1e-05` style text, and serde_json writes `1e-5`.
+    why: >-
+      The Python float repr is not reproduced. Real embedding values in that range are rare, and the text is a display value in Arize.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L170-L194
+  - what: A message whose `content` is an array writes the array's JSON text to `input.value` and `message.content`. LiteLLM writes Python's repr of the list.
+    why: >-
+      The repr is a Python runtime habit that docs/compatibility.md leaves out of the contract. The structured `message.contents` entries carry the same data in a stable shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L41-L59
+
+out_of_scope:
+  - _infer_open_inference_span_kind and _set_tool_attributes (_utils.py L307-L410) belong to B3846.
+  - set_attributes, _sanitize_optional_params, _set_metadata_attributes, _extract_metadata_tools, _extract_optional_tools, _set_request_attributes, _set_model_params and _set_early_span_kind (_utils.py L413-L592) belong to B3861, together with the try and except around the calls into this task.
+  - _coerce_response_obj_for_attrs (L591-L617), _set_session_and_user_attrs, _set_response_cost_attr, the passthrough helpers (L908-L1086) and the MCP tool helpers _maybe_set_mcp_tool_attrs, _has_only_text_parts and _set_mcp_tool_output (L1089-L1151) belong to B3861. They call coerce_text from this task.
+  - _safe_emit, _safe_get and _to_plain_dict (L225-L244, L570-L577, L647-L661) are not built. They bridge exceptions and Pydantic objects, and Rust reads OtelModelValue and cannot fail here.
+  - safe_set_attribute, cast_as_primitive_value_type and the LLMObsAttributes trait belong to B3844.
+  - Weave attributes and the Weave types belong to B3861. Arize and Phoenix callbacks that call these functions belong to B3862.
+
+pitfalls:
+  - input.value comes from the last message only and ignores earlier turns, and a missing `content` writes the empty string, not an absent attribute.
+  - safe_set_attribute turns null into the empty string, so a missing `role` or a null `content` still writes an attribute with an empty value.
+  - emit_input_message_extras reads `image_url` first, and only when that gives no URL does it look at `source`; a `source` object with empty `data` falls through to the part-level `url`.
+  - A non-object entry in a content array writes nothing but still uses up its index, so the next part is numbered one higher.
+  - Usage truthiness matters, since total_tokens is written even when missing (as the empty string), but completion, prompt, reasoning, cache and audio counts of 0 are skipped, and 0 triggers the fallback name (`output_tokens`, `input_tokens`, `output_tokens_details`).
+  - A choice with null or empty content and tool calls writes the JSON summary into output.value, while `llm.output_messages.N.message.content` still gets the empty content.
+  - The image and embedding writers both read `data`. An embedding row has no `url` or `b64_json` so the image writer skips it, and an image row has no `embedding` so the embedding writer skips it.
+  - Audio mime_type and transcript are written even when the item has no url, but output.value comes only from a url at index 0.
+  - Several Responses reasoning summaries write the same `reasoning_summary` key, so only the last text remains.
+  - The `tool_call.function.arguments` value is written for empty-string arguments (only None is skipped), while id and name are skipped when empty.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

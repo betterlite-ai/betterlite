@@ -1,0 +1,24 @@
+kind: helper
+name: fresh-id-created-zero
+call:
+  bedrock_services_agentcore_stream:
+    model: agentcore-model
+    ids:
+      - 00000000-0000-4000-8000-000000000061
+      - 00000000-0000-4000-8000-000000000062
+      - 00000000-0000-4000-8000-000000000063
+      - 00000000-0000-4000-8000-000000000064
+      - 00000000-0000-4000-8000-000000000065
+    scenarios:
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"a"}},"metadata":{"usage":{}}}}
+            data: {"message":{}}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"one"}}}}
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"two"}}}}
+      - reads: ['{"result":{"content":[{"text":"json"}]}}']
+        headers: [[content-type, application/json]]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,1 @@
+{"redis_pipeline_set":{"key":"k","value":{"nested":[1,true,null]},"ttl":null}}

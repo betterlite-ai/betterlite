@@ -1,0 +1,16 @@
+kind: helper
+name: vector-store-optional-parameter-filters
+call:
+  vector_store_contracts:
+    operation: optional_parameter_filters
+    create:
+      - {name: "", file_ids: [], expires_after: null, chunking_strategy: {type: auto}, metadata: {}, unknown: 1}
+      - {file_ids: [file_a], metadata: {tag: x}, expires_after: {anchor: last_active_at, days: 3}}
+      - {}
+    search:
+      - {filters: {}, max_num_results: 0, ranking_options: null, rewrite_query: false, unknown: 1}
+      - {max_num_results: -1, filters: null}
+      - {ranking_options: {ranker: default-2024-11-15}, rewrite_query: true}
+      - {}
+env: {}
+compare: {ignore: []}

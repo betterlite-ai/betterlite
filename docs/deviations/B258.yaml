@@ -1,0 +1,64 @@
+task: B258
+deviations:
+  - what: >-
+      Exact image counting reads local bytes only. calculate_img_tokens and the dimension helpers take a
+      data URL and never fetch an http or https URL, while LiteLLM downloads the URL inside
+      get_image_dimensions. An explicit use_default_image_token_count=true still returns the default
+      count without a fetch.
+    why: >-
+      B009, B183 and the bounded-inputs rule forbid fetching request-supplied media URLs. A caller that
+      needs the exact count passes the image bytes as a data URL.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L219-L248
+  - what: >-
+      Open, waiting for Max: token counting keeps no remote image fetch and works from local bytes with
+      default-count behavior, instead of sharing SSRF-checked remote dimensions with the B009/B183
+      downloader. The public counting helpers default use_default_image_token_count to false and may
+      fetch in LiteLLM.
+    why: >-
+      B009 and the bounded-inputs rule keep request-derived URLs away from outbound calls until Max
+      decides between no remote fetch and the shared SSRF-checked downloader.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L408-L443
+  - what: >-
+      Image bytes are decoded through B183's bounded data-URL decoder: the string must be a data: URL
+      with a ;base64, marker, the base64 must be canonical, and the decoded payload may not exceed 50
+      MiB. LiteLLM splits the string on its first comma, decodes the rest leniently, and has no cap for
+      inline bytes.
+    why: >-
+      The task reuses B183's single bounded byte boundary so request bytes are counted and capped before
+      allocation; every data URL a working setup sends is canonical and under the cap.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L248-L249
+  - what: >-
+      resize_image_high_res divides with exact integer arithmetic where LiteLLM divides in binary64 and
+      truncates. When the scaled long side exceeds MAX_LONG_SIDE_FOR_IMAGE_HIGH_RES, the recomputed
+      short side can be one pixel larger here: 800x6, 1200x9 and 2000x15 return (2000, 15) instead of
+      (2000, 14), 6x800 returns (15, 2000) instead of (14, 2000), and 800x24 returns (2000, 60) instead
+      of (2000, 59). A brute-force search of sides up to 8200 finds more than 3000 such pairs; the
+      first, non-clamped formula never differs in that range.
+    why: >-
+      clippy::float_arithmetic is denied and this task's expect budget is zero, so binary64 is not
+      available. The token count stays equal at the default 512 tiles in that search, but a tile size
+      such as MAX_TILE_HEIGHT=14 can move the count when the extra pixel crosses a tile boundary.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L134-L169
+  - what: >-
+      The seven constants the helpers read (DEFAULT_IMAGE_TOKEN_COUNT, DEFAULT_IMAGE_WIDTH,
+      DEFAULT_IMAGE_HEIGHT, MAX_SHORT_SIDE_FOR_IMAGE_HIGH_RES, MAX_LONG_SIDE_FOR_IMAGE_HIGH_RES,
+      MAX_TILE_WIDTH, MAX_TILE_HEIGHT) are injected Settings values pinned to LiteLLM's defaults;
+      betterlite's tokenizer never reads their environment variables, so a deployment that sets one
+      still gets the pinned default.
+    why: >-
+      Rule inject-dependencies keeps environment reads in the config crate, and the config section that
+      would parse these variables is outside this task's scope with no owning task named. LiteLLM reads
+      them at import from constants.py lines 99, 133-134, 443-444 and 468-469.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L99-L139
+  - what: >-
+      A negative base_tokens value is refused instead of producing a negative token count as LiteLLM
+      does.
+    why: >-
+      Token counts are unsigned in betterlite and no working setup counts negative tokens.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L297-L330

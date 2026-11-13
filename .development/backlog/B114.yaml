@@ -1,14 +1,14 @@
 id: B114
 milestone: M7 observability
 title: Evaluation and product analytics loggers
-status: todo
+status: done
 depends_on: [B3960, B3961, B3962, B3963, B3964, B3965, B3966, B3967, B3968, B3969, B3970, B3971, B3972, B3973, B3974, B3975, B3976, B3977, B3978, B3979, B002, B173, B189, B192, B256]
 file: null
 covers:
   - "litellm/integrations/generic_api/**"
 parent: null
 split_from: null
-resolution: null
-superseded_by: null
+resolution: superseded
+superseded_by: B8252
 blocked_reason: null
 pr: null

@@ -7,7 +7,8 @@ description: >-
   The reset operation itself (zeroing and timestamp updates) stays distinct from cache invalidation to keep failure policy clear: the database write commits before any cache is dropped so a failed cache clear cannot leave a stale spending constraint in memory.
 scope:
   paths:
-    - crates/betterlite-db/**
+    - crates/betterlite-db/src/budget_reset_policy.rs
+    - crates/betterlite-db/src/budget_reset_policy/**
     - Cargo.toml
   lint_tables: true
 references:
@@ -72,7 +73,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - "Actual phase implementations (key reset, user reset, team reset, budget cascade, window reset) are owned by B3010-B3013; this task only exports the shared machinery."
-  - "Budget reset settings parsing and storage; B3000 owns those and this task reads them through the constructor."
+  - "Budget reset settings parsing and storage; B2317 owns those and this task reads them through the constructor."
 pitfalls:
   - "Spend counter invalidation must happen after the database commits, not before. If the cache is cleared before the database write succeeds, a stale DB row with pre-reset spend could be read alongside an empty cache, allowing budget checks to incorrectly permit requests."
   - "Cache invalidation failures are logged as warnings, not exceptions; one failing sink (spend counter or user_api_key_cache) must still invalidate the other. Catch and log each sink separately."

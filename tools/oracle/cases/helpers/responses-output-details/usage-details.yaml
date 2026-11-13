@@ -1,0 +1,30 @@
+kind: helper
+name: responses-output-details-usage-details
+call:
+  responses_output_details:
+    images: []
+    finish_reason: null
+    annotations: null
+    usage:
+      prompt_tokens: 2
+      completion_tokens: 3
+      total_tokens: 99
+      cost: 0.125
+      prompt_tokens_details:
+        cached_tokens: null
+        text_tokens: 5
+        audio_tokens: 0
+        image_tokens: 2
+        video_tokens: 1
+        cache_write_tokens: 4
+        cache_creation_tokens: 7
+        web_search_requests: 0
+        google_maps_grounding_requests: 2
+        cached_tokens_details: {text_tokens: 6, audio_tokens: 1, image_tokens: 2}
+      completion_tokens_details:
+        reasoning_tokens: null
+        audio_tokens: 0
+        text_tokens: 5
+        image_tokens: 2
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+task: B3935
+deviations:
+  - what: A captured response string nested deeper than 128 containers is refused by the bounded decoder, and the span is sent without output messages.
+    why: The decoder must not recurse without bound on a provider-supplied string; LiteLLM's ast.literal_eval raises a recursion error there that its narrow except does not catch, so it loses the whole span.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L802-L817
+  - what: A tool-argument JSON document nested deeper than 128 levels stays the raw string, where LiteLLM's json.loads returns the object.
+    why: serde_json bounds recursion at 128 levels to protect the stack, and a document nested that deep has no working setup behind it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L285
+  - what: A value inside a captured response literal that Python reads but JSON cannot carry (bytes, a complex number, the Ellipsis written as three dots, a non-string dict key, set(), a float past f64's range, an integer past u128 or 4300 digits, a surrogate escape, or a \N{name} escape whose closed, non-empty name this workspace has no table to check) is recorded as "<unrepresentable literal>", a replacement character or the escape's literal text, where LiteLLM keeps the Python value.
+    why: The record is JSON, so the unrepresentable part becomes a placeholder that keeps the rest of the response and its choice message in the span; refusing the literal would drop the message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L811

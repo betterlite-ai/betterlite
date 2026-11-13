@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-aws-endpoints-sts-kwargs-seed
+call:
+  bedrock_aws_endpoints:
+    sts_kwargs:
+      cases:
+        - endpoint: 'https://sts.eu-west-1.amazonaws.com'
+          verify: null
+          configured_region: ap-south-1
+          environment: {AWS_REGION: us-east-1}
+env: {}
+compare: {ignore: []}

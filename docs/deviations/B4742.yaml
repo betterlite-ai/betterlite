@@ -1,0 +1,23 @@
+task: B4742
+deviations:
+  - what: The adapter rejects a request that already carries a Date header with an error, instead of signing it.
+    why: aws-sigv4 sets x-amz-date and cannot sign a Date header the way botocore does, and an MCP request does not carry one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L350-L373
+  - what: A plus sign in the query string is read as a space and signed as %20. botocore signs the raw query text, so it keeps the plus.
+    why: AWS services read a plus in a query as a space, so the botocore signature for such a URL does not verify. The aws-sigv4 crate follows the service.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L350-L373
+  - what: Signing and role assumption use the Rust AWS crates (aws-sigv4, aws-sdk-sts, aws-config) in place of boto3 and botocore, so the ImportError path for a missing boto3 does not exist.
+    why: The Rust crates are always linked in, and the default chain needs no optional package.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L262-L300
+  - what: The error for missing credentials names the three options (explicit keys, AssumeRole, default credentials) in its own words.
+    why: The text is not part of any declared type, and helper cases never compare an error's class or message, so the wording stays betterlite's own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L300-L330
+  - what: The default credential chain reads the environment, files and HTTP client from injected sources, not from the process.
+    why: The rules forbid globals, and injection makes the chain testable without touching the real environment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L300-L330
+  - what: Default-chain credentials that carry an expiry are fetched again when they are within ten minutes of expiring; botocore's refreshable providers refresh on access at their own advisory time.
+    why: boto3's credential objects refresh themselves when read, and the Rust providers return a fixed value until asked again, so a small cache decides when to ask.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L330-L350
+  - what: The adapter does not add the Host and Content-Length headers that httpx adds to a request. The caller sends the request it wants signed.
+    why: The Rust request type does not add them. Host is derived by the signer from the URL.
+    link: ""

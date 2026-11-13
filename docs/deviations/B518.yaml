@@ -1,0 +1,5 @@
+task: B518
+deviations:
+  - what: The fine-tuning client timeout is a number of seconds. An httpx.Timeout object with separate connect, read, write and pool limits has no Rust counterpart here.
+    why: The configured settings carry timeouts as seconds, and the SDK transport that applies them belongs to the transport task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L63-L72

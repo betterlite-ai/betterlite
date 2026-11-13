@@ -1,0 +1,15 @@
+kind: helper
+name: callback-registry-phase-order
+call:
+  callback_registry:
+    max_callbacks: 100
+    steps:
+      - {op: register, list: callbacks, callback: {class_name: General}}
+      - {op: register, list: success_callback, callback: {class_name: Success}}
+      - {op: register, list: failure_callback, callback: {class_name: Failure}}
+      - {op: register, list: input_callback, callback: {class_name: Input}}
+      - {op: register, list: service_callback, callback: {class_name: Service}}
+      - {op: register, list: callbacks, callback: {class_name: Second}}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,12 @@
+kind: helper
+name: explicit-request-timeout-between-router-and-fallback
+call:
+  b3571:
+    operation: sdk_timeout
+    request: {}
+    deployment: {}
+    router: {}
+    configured_timeout: 25
+    settings_timeout: 30
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,18 @@
+kind: helper
+name: a2a-send-params-v03-file-part-bytes-and-uri
+call:
+  b6950:
+    params:
+      message:
+        messageId: m1
+        role: user
+        parts:
+          - kind: file
+            file: {bytes: "aGk=", mime_type: text/plain, name: hi.txt}
+          - kind: file
+            file: {uri: "https://f"}
+            metadata: {z: 2}
+          - kind: data
+            data: {n: 5}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,85 @@
+id: B6804
+title: Azure AI OCR providers for Mistral and Cohere Parse
+description: >-
+  Add modules `azure_ai_ocr` and `azure_cohere_ocr` to betterlite-ocr. `AzureAiOcrConfig` ports
+  azure_ai/ocr/transformation.rs and common_utils.rs. It reuses B6801's option mapping, request and
+  response code for Mistral models hosted on Azure AI. The URL is the api_base completed with
+  providers/mistral/azure/ocr, with the query string kept and no doubled path. The api_base comes from
+  the request or AZURE_AI_API_BASE, and a missing one fails with the missing-API-base error
+  "Set AZURE_AI_API_BASE environment variable or pass api_base parameter". Header rules in order:
+  a supplied authorization header wins (and if an Azure AD token provider is set, still resolve it
+  once for its checks); else the request api_key; else AZURE_AI_API_KEY; else an Azure Entra token
+  from B6800's `AzureTokenSource`; else MissingAzureAiCredentials. Key headers are
+  Authorization Bearer. A remote document URL is downloaded and sent inline through
+  inline_remote_document, and validate_request_body requires an inline document.
+  Refuse to send a host credential (environment key or Entra token) to an api_base that came from the
+  request: fail with "host credentials cannot be sent to a request-controlled Azure endpoint". A key
+  or header that the request itself supplied is allowed. Export `validate_destination` and
+  `resolve_entra` from `azure_ai_ocr` because B6805 reuses them.
+  `AzureAICohereParseConfig` ports cohere_parse_transformation.rs. It reuses B6803's types and
+  validate_document, the Azure key rules above and the URL rule: a base already ending in /v2/parse
+  is used as is, a trailing /models is removed, and otherwise providers/cohere/v2/parse is appended,
+  keeping the query. A non-http base fails with RequestField path api_base. It downloads remote
+  images inline before sending.
+  Both configs share the secret names: AZURE_AI_API_KEY, AZURE_AI_API_BASE and the Azure auth names
+  that the Azure credential task defines.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-ocr/Cargo.toml
+    - crates/betterlite-ocr/src/azure_ai_ocr.rs
+    - crates/betterlite-ocr/src/azure_ai_ocr/**
+    - crates/betterlite-ocr/src/azure_cohere_ocr.rs
+    - crates/betterlite-ocr/src/azure_cohere_ocr/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/azure_ai/ocr/transformation.rs#L1-L358
+    why: Azure AI Mistral URL, key order, destination refusal and inline download.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/azure_ai/ocr/common_utils.rs#L1-L56
+    why: Entra token resolution and the request-controlled endpoint refusal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/azure_ai/ocr/cohere_parse_transformation.rs#L1-L177
+    why: The Cohere Parse URL rule and the reuse of Cohere types.
+
+dod:
+  - text: The Azure Mistral URL completes a bare base, keeps a query string, and leaves a base that already ends in providers/mistral/azure/ocr unchanged.
+    proof: [azure-ai-tests]
+  - text: Header order is supplied authorization, request key, AZURE_AI_API_KEY, Entra token, then MissingAzureAiCredentials, and a missing api_base returns the exact message above.
+    proof: [azure-ai-tests]
+  - text: An environment key or Entra token is never sent to a request-supplied api_base, while a request-supplied key to that base is allowed.
+    proof: [azure-ai-tests]
+  - text: A remote document URL is downloaded and sent as inline data, and the Mistral body and response equal B6801's.
+    proof: [azure-ai-tests]
+  - text: The Cohere Parse URL rule handles the five forms (bare, /models, /providers/cohere/v2, /providers/cohere/v2/parse, /v2/parse) with the query kept, and a relative base fails.
+    proof: [azure-cohere-tests]
+  - text: Cohere Parse on Azure rejects non-image documents with CohereImageOnly and otherwise matches B6803's body and response.
+    proof: [azure-cohere-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: azure-ai-tests
+      why: Azure Mistral URL, key order, destination refusal or inline download is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^azure_ai_ocr::tests::/)'
+    - id: azure-cohere-tests
+      why: Azure Cohere Parse URL or validation is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^azure_cohere_ocr::tests::/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - Azure Document Intelligence is B6805. Azure token acquisition is B529 and the other Azure auth tasks.
+  - Passthrough response conversion for Foundry (passthrough_response) is B6808.
+
+pitfalls:
+  - Azure AD token provider set together with a supplied authorization header still triggers one token resolution in the Rust file. Keep that order and test it.
+  - The header list puts Authorization first, then the caller's extra headers.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

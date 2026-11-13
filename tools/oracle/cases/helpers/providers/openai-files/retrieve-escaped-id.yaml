@@ -1,0 +1,14 @@
+kind: helper
+name: openai-files-retrieve-escaped-id
+call:
+  openai_files:
+    action: retrieve_file
+    client: {api_key: sk-files, api_base: 'https://files.test/v1', supplied: null, is_async: false}
+    request:
+      file_id: 'file/a b?c#d%e;f:g@h'
+    reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      json: {id: 'file/a b?c#d%e;f:g@h', object: file, bytes: 5, created_at: 1700000003, filename: c.txt, purpose: assistants, status: processed}
+env: {}
+compare: {ignore: []}

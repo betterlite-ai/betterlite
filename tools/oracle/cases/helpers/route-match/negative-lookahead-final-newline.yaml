@@ -1,0 +1,11 @@
+kind: helper
+name: negative-lookahead-final-newline
+call:
+  route_match:
+    function: check_route_access
+    route: "/foo\n"
+    allowed_routes:
+      - "/foo(?!\\n)"
+env: {}
+compare:
+  ignore: []

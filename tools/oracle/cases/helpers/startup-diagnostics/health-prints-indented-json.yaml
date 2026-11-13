@@ -1,0 +1,5 @@
+kind: helper
+name: health-prints-indented-json
+call: {"b4175": {"operation": "health_prints_indented_json", "host": "0.0.0.0", "port": 4000, "body": '{"healthy_endpoints": [], "unhealthy_count": 0}'}}
+env: {}
+compare: {ignore: []}

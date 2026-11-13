@@ -3,13 +3,13 @@ title: Model deprecation dates and alert formatting
 description: >-
   Implement ModelDeprecations over B013 catalog dates and deployment overrides with an injected date.
   Preserve provider/model lookup precedence, classification buckets, deduplication, ordering and escaped
-  Slack mrkdwn payload formatting. B116 sends alerts; this task only produces typed facts and text.
+  Slack mrkdwn payload formatting. B4030 sends alerts; this task only produces typed facts and text.
 
 
   Read deployments through B844 get_model_list and catalog entries through B013; inject both catalog
   and UTC clock. Own _ResolvedDeprecation plus all response fields and constants in the covered types
   file: DEFAULT_DEPRECATION_WARN_DAYS=30, DEFAULT_DEPRECATION_CHECK_INTERVAL_SECONDS=86400 and
-  DEPRECATION_IDLE_POLL_SECONDS=30. The latter two are exported for B116, not new environment settings.
+  DEPRECATION_IDLE_POLL_SECONDS=30. The latter two are exported for B4030, not new environment settings.
   ModelDeprecationInfo requires model_name/date/days/status and defaults litellm_model and
   litellm_provider to None. Response buckets default empty; warn_within_days and checked_at are required.
 
@@ -194,7 +194,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/model-deprecation/unknown-provider-alert.yaml
 deviations: []
 out_of_scope:
-  - B116 owns Slack delivery, deduplication TTL and polling; the model-info route owner calls this collector.
+  - B4030 owns Slack delivery, deduplication TTL and polling; the model-info route owner calls this collector.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as model_deprecation in the server group. Replace the stub Op in tools/oracle/src/helpers/server/model_deprecation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/model_deprecation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Two deployments with the same public name and date report the first deployment's metadata, even if their providers differ.

@@ -3,7 +3,7 @@
 use rstest::rstest;
 use rust_decimal::Decimal;
 
-use super::{RoutingDecision, numeric_savings, recorded_autorouter_savings};
+use super::{RoutingDecision, numeric_savings, recorded_autorouter_savings, round_decimal_lexeme};
 use crate::savings_evidence::metadata::Metadata;
 use crate::tiered_pricing::Scalar;
 
@@ -30,6 +30,34 @@ fn numeric_savings_accepts_finite_signed_numbers_only(
 ) {
     let value = scalar(text);
     assert_eq!(numeric_savings(Some(&value)), expected.map(decimal));
+}
+
+#[rstest]
+#[case::float_residue("-2.7755575615628914e-17", Some("-0.0000000000000000277555756156"))]
+#[case::plain_residue(
+    "0.000000000000000055511151231257830",
+    Some("0.0000000000000000555111512313")
+)]
+#[case::excess_precision_after_integer("8.00000000000000000000000000001", Some("8"))]
+#[case::below_resolution("1e-30", Some("0"))]
+#[case::huge_negative_exponent("1e-99999999999", Some("0"))]
+#[case::overflow("1e30", None)]
+#[case::huge_positive_exponent("1e99999999999", None)]
+fn numeric_savings_rounds_a_lexeme_past_28_places(
+    #[case] lexeme: &str,
+    #[case] expected: Option<&str>,
+) {
+    assert_eq!(round_decimal_lexeme(lexeme).ok(), expected.map(decimal));
+}
+
+#[rstest]
+#[case::under_resolution("-1e-30")]
+#[case::half_resolution("-1e-29")]
+#[case::rounds_down("-4e-29")]
+fn numeric_savings_preserves_negative_sign_when_rounding_to_zero(#[case] lexeme: &str) {
+    let value = round_decimal_lexeme(lexeme).expect("a tiny finite amount rounds to zero");
+    assert!(value.is_zero());
+    assert!(value.is_sign_negative());
 }
 
 #[test]

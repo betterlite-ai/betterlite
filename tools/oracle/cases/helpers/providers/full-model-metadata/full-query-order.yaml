@@ -1,0 +1,39 @@
+kind: helper
+name: full-model-metadata-full-query-order
+call:
+  full_model_metadata:
+    fixture:
+      model_cost:
+        gpt-4o: {litellm_provider: openai, mode: chat, input_cost_per_token: 1, output_cost_per_token: 2}
+        llama3.2: {litellm_provider: ollama, mode: chat, input_cost_per_token: 1, output_cost_per_token: 2}
+      dynamic: {key: runtime, max_tokens: 32}
+      cache_maxsize: 8
+    steps:
+      - op: call
+        model: gpt-4o
+        custom_llm_provider: openai
+        parameters: {kind: value, body: [temperature, max_tokens, response_format, user]}
+      - op: call
+        model: llama3.2
+        custom_llm_provider: ollama
+        api_base: "http://fixture-host:11434"
+        parameters: {kind: value, body: [temperature, max_tokens]}
+      - op: call
+        model: llama3.2
+        custom_llm_provider: ollama
+        parameters: {kind: absent}
+      - op: call
+        model: llama3.2
+        custom_llm_provider: ollama
+        api_base: "http://failure-host:11434"
+        parameters: {kind: error}
+      - op: call
+        model: unmapped-model
+        custom_llm_provider: openai
+        parameters: {kind: absent}
+      - op: call
+        model: unmapped-model
+        custom_llm_provider: openai
+        parameters: {kind: absent}
+env: {}
+compare: {ignore: []}

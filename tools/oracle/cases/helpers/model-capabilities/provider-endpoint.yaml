@@ -1,0 +1,12 @@
+kind: helper
+name: provider-endpoint
+call:
+  model_capabilities:
+    operation: provider_endpoint
+    routes:
+      - {provider: anthropic, endpoint: messages}
+      - {provider: abliteration, endpoint: messages}
+      - {provider: anthropic, endpoint: sandbox}
+      - {provider: not-a-provider, endpoint: messages}
+env: {}
+compare: {ignore: []}

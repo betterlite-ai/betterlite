@@ -1,0 +1,15 @@
+kind: helper
+name: redis-semantic-cache-zero-ttl
+call:
+  b4382:
+    operation: store
+    key: scope-1
+    messages:
+      - role: user
+        content: "zero ttl prompt"
+    ttl: 0
+    vector: [0.25, 0.5, 0.75]
+    value: {choices: []}
+env: {}
+compare:
+  ignore: []

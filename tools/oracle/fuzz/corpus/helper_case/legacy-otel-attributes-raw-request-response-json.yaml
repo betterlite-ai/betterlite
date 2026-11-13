@@ -1,0 +1,12 @@
+kind: helper
+name: raw-request-response-json
+call:
+  b3856:
+    function: set_raw_request_attributes
+    kwargs:
+      litellm_params: {custom_llm_provider: anthropic}
+      additional_args:
+        complete_input_dict: {model: claude-3, max_tokens: 1024}
+      original_response: '{"model": "claude-3-5", "stop_reason": "end_turn"}'
+env: {}
+compare: {ignore: []}

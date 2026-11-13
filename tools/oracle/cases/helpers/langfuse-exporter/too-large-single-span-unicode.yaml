@@ -1,0 +1,20 @@
+kind: helper
+name: langfuse-exporter-too-large-single-span-unicode
+call:
+  b3902:
+    public_key: pk-lf-b3902
+    secret_key: sk-lf-b3902
+    base_url: https://cloud.langfuse.com
+    spans:
+      - name: generation
+        attributes:
+          - [langfuse.observation.input, "привет мир"]
+          - [langfuse.observation.output, "abcdefghijkl"]
+          - [langfuse.observation.metadata.model, "gpt"]
+    replies:
+      - status: 413
+      - status: 413
+      - status: 413
+      - status: 200
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: unicode-kelvin
+call:
+  route_match:
+    function: check_route_access
+    route: "/models/K"
+    allowed_routes:
+      - "/models/(?i:k)"
+env: {}
+compare:
+  ignore: []

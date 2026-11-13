@@ -1,0 +1,190 @@
+id: B4294
+title: Reserve and share dual-cache batch reads
+description: >-
+  Add the `batch_reads` module to betterlite-cache. It holds every batch-read operation of LiteLLM's DualCache as
+  an `impl DualCache` block, so B4293's `DualCache` struct is reused and not copied. B4293 must make the fields this
+  module touches visible to the crate: the memory tier, the optional Redis tier, `last_redis_batch_access_time`
+  (the `LimitedSizeOrderedDict` and its lock), `redis_batch_cache_expiry` and `default_in_memory_ttl`. It also
+  owns `_backfill_kwargs`, which this module calls to put the memory TTL on every value read back from Redis.
+
+  Types. `PendingBatchRead` is the state between the memory half and the Redis half of a read: `keys`, `result`
+  (one `Option<Json>` per key, from memory), `redis_keys` (the keys that must go to Redis) and
+  `previous_access_times` (key to the reserved access time it replaced, `None` when there was none).
+  `DeclaredBatchRead` has `keys`, a `PendingBatchRead` and an optional `BatchResult` of the Redis MGET (B4330);
+  it is `None` when no key needs Redis. Values are the `arguments::json::Json` type, as in B4293.
+
+  Reservation. `reserve_redis_batch_keys(current_time, keys, result)` takes the access-time lock once and walks the
+  keys in order. A key whose memory value is present is skipped. A key with no recorded access time, or whose
+  recorded time is at least `redis_batch_cache_expiry` seconds old, is added to the returned key list, its old time
+  is remembered (or `None`) and `current_time` is stored as its new access time. Everything happens under one lock
+  hold, so two concurrent callers never both fetch the same key. `rollback_redis_batch_key_reservations` puts every
+  remembered time back, and removes the key when there was none, also under the lock. The public
+  `reserve_redis_batch_reads(keys)` returns two empty collections when Redis is absent. Otherwise it reads the
+  memory tier with `batch_get_cache` (all `None` if the tier gives nothing), calls the reservation with the wall
+  clock, and returns the keys and previous times. B382's routing prefetch calls it, then rolls back through the
+  same function if its read fails.
+
+  Sync read. `batch_get_cache(keys, parent_otel_span, local_only, kwargs)` reads memory first. It returns the memory
+  result right away when every key hit, when Redis is absent, or when `local_only` is set. Otherwise it reserves,
+  returns the memory result if no key is due, and calls Redis `batch_get_cache` with the due keys. On a Redis error
+  it rolls back the reservations; for B393's circuit-open error it logs at debug level and returns the memory
+  result, and for any other error it falls to the outer handler. On success it backfills every non-`None` Redis
+  value into memory with the backfill kwargs and returns the memory result with each `None` slot replaced by the
+  Redis value for that key. The outer handler logs through B393's `log_redis_failure` at ERROR with the message
+  "LiteLLM Cache: exception in batch_get_cache" and returns `None`, so a failed read is a miss, not an error.
+
+  Async read. `prepare_batch_get(keys, local_only, throttle_redis, kwargs)` reads memory with
+  `async_batch_get_cache`, and when a key is missing, Redis is present and `local_only` is false it picks the Redis
+  keys: the reservation when `throttle_redis` is true, and every missing key (no throttle, duplicates kept) when it
+  is false. `apply_batch_get(pending, redis_result, kwargs)` returns `pending.result` unchanged when the Redis
+  result is absent or holds only `None`; otherwise it merges (the Redis value wins for keys in the Redis result,
+  the memory value stays for the rest) and backfills each non-`None` Redis value into memory with the backfill
+  kwargs. `async_batch_get_cache(keys, parent_otel_span, local_only, throttle_redis, kwargs)` runs prepare, returns
+  `pending.result` when there are no Redis keys, calls the Redis `async_batch_get_cache`, handles the circuit-open
+  error and other errors exactly like the sync read, then applies. The outer handler logs
+  "LiteLLM Cache: exception in async_batch_get_cache" and returns `None`.
+
+  Declared read. `declare_batch_get(keys, batch)` runs prepare with `local_only` false and `throttle_redis` false
+  (declared reads take every missing key, since B4331's request pipeline already de-duplicates the round trip),
+  and returns a `DeclaredBatchRead` whose result is `batch.mget(redis_keys)` or `None` when the list is empty.
+  `async_resolve_batch_get(declared)` awaits that result if there is one and applies it. An error from the awaited
+  result propagates; it is not caught here. proxy_server.py:3879 and :3891 are the callers.
+
+  Shared read. `async_batch_get_cache_shared(reads, parent_otel_span)` takes a slice of `(DualCache, keys)` pairs and
+  returns one `Option<Vec<Option<Json>>>` per pair, in order. The first pair's Redis client is the shared one. A
+  cache whose Redis client is not that same client (compare identity, not equality) is read on its own with
+  `async_batch_get_cache`. For each other cache, prepare runs with `local_only` false and throttling on, and a
+  prepare error is logged (see below) and leaves that slot `None`. The Redis keys of all prepared caches are
+  merged in first-seen order without duplicates and sent in one `async_batch_get_cache` call on the shared client;
+  if there are no keys, or no shared client, the memory results are returned as they are. If the shared read fails,
+  every prepared cache rolls back its reservations. For the circuit-open error the memory results stay and one
+  debug line "LiteLLM Cache: async_batch_get_cache_shared served from memory only: <error>" is logged. For any
+  other error, each cache that had Redis keys gets `None` and one error is logged. On success each cache is given
+  only its own keys from the shared result (the ones in its `redis_keys` that appear in the result), runs apply, and
+  a failed apply gives `None` for that slot and logs. The log helper writes "LiteLLM Cache: exception in
+  async_batch_get_cache_shared" through `log_redis_failure` at ERROR with the traceback.
+
+  Errors. The module owns a `BatchReadsError` enum for failures of the memory tier or of Redis; the read operations
+  above turn it into the logged-and-`None` result, never into a panic or a returned `Err`. Only
+  `async_resolve_batch_get` returns the error to its caller. Use the typed error names from B2226, B4290, B360
+  and B393 as sources, and no `unwrap` or `expect` in the module.
+
+  Crate: betterlite-cache. No config key or environment variable is read here; `redis_batch_cache_expiry` is set
+  by B4293's constructor (default 10 seconds from `litellm.default_redis_batch_cache_expiry`).
+
+  Tests. Native tests live under `batch_reads::tests`. Name them by branch: `reserve_` (skip on memory hit, first
+  reserve, still throttled inside the expiry, due again at exactly the expiry, rollback restoring and removing),
+  `sync_read_` (all hit, local_only, Redis absent, backfill with the memory TTL, circuit-open, other error returns
+  `None`), `async_read_` (throttle on and off, duplicate keys, merge, all-`None` Redis result), `declared_` (empty
+  list gives no result, resolve applies and backfills) and `shared_` (different Redis client, merged keys without
+  duplicates, circuit-open, other failure, per-cache slice, apply failure).
+
+scope:
+  paths:
+    - crates/betterlite-cache/src/batch_reads.rs
+    - crates/betterlite-cache/src/batch_reads/**
+    - tools/oracle/cases/helpers/dual-cache-batch-reads/**
+    - tools/oracle/helpers/b4294.py
+    - tools/oracle/helpers/b4294/**
+    - tools/oracle/src/helpers/cache/b4294.rs
+    - tools/oracle/src/helpers/cache/b4294/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L52-L69
+    why: PendingBatchRead and DeclaredBatchRead, the two records that carry a read between its memory and Redis halves.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L218-L259
+    why: Sync batch_get_cache, the reservation, rollback and circuit-open handling, and the list built from memory and Redis.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L299-L347
+    why: Atomic reservation of access times, reserve_redis_batch_reads and the rollback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L349-L399
+    why: _prepare_batch_get, _apply_batch_get, declare_batch_get and async_resolve_batch_get.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L401-L435
+    why: Async batch read with the throttle_redis switch and its error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L437-L503
+    why: async_batch_get_cache_shared and its failure logger.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L138-L148
+    why: The backfill kwargs that put the memory TTL on values read from Redis.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L297-L305
+    why: RedisBatch.mget, the declared Redis half of a read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3869-L3893
+    why: Caller of declare_batch_get and async_resolve_batch_get, including the keys-must-match check on the armed read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/routing_read_batch.py#L85-L125
+    why: Caller of reserve_redis_batch_reads for cooldown and usage keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/routing_read_batch.py#L220-L236
+    why: Caller of the prepare and apply halves on a local-only prepare.
+
+dod:
+  - text: The reservation picks only memory-missed keys that have no recorded access time or one at least redis_batch_cache_expiry old, stores the new time under one lock hold, and rollback restores or removes each key.
+    proof: [batch-reads-reserve, oracle, helper-python]
+  - text: reserve_redis_batch_reads returns empty results without Redis and otherwise reserves from the memory tier's current contents.
+    proof: [batch-reads-reserve]
+  - text: Sync batch_get_cache returns the memory result for full hits, local_only and missing Redis, backfills Redis values with the memory TTL, keeps the memory result on a circuit-open error and returns None on any other error, rolling back reservations in both cases.
+    proof: [batch-reads-sync, oracle, helper-python]
+  - text: Async batch_get_cache honors throttle_redis, merges Redis values over memory misses only, leaves the result untouched for an all-None Redis result, and handles errors like the sync read.
+    proof: [batch-reads-async, oracle, helper-python]
+  - text: declare_batch_get takes every missing key without throttling and issues no MGET for an empty list, and async_resolve_batch_get applies the awaited result with backfill.
+    proof: [batch-reads-declared]
+  - text: async_batch_get_cache_shared sends one merged, de-duplicated Redis read for caches on the same client, reads other clients on their own, and reports a failed read per cache as None, or as the memory result for a circuit-open error.
+    proof: [batch-reads-shared, oracle, helper-python]
+
+checks:
+  optional: []
+  commands:
+    - id: batch-reads-reserve
+      why: reservation, rollback or reserve_redis_batch_reads behavior is missing
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^batch_reads::tests::reserve_/)'
+    - id: batch-reads-sync
+      why: sync batch_get_cache behavior is missing
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^batch_reads::tests::sync_read_/)'
+    - id: batch-reads-async
+      why: async batch_get_cache or prepare and apply behavior is missing
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^batch_reads::tests::async_read_/)'
+    - id: batch-reads-declared
+      why: declared read or its resolve behavior is missing
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^batch_reads::tests::declared_/)'
+    - id: batch-reads-shared
+      why: shared multi-cache read behavior is missing
+      run: cargo nextest run --locked -p betterlite-cache --no-tests=fail -E 'test(/^batch_reads::tests::shared_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4294)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4294 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4294/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/dual-cache-batch-reads/reserve-throttle-and-rollback.yaml
+  - tools/oracle/cases/helpers/dual-cache-batch-reads/sync-read-backfill.yaml
+  - tools/oracle/cases/helpers/dual-cache-batch-reads/sync-read-errors.yaml
+  - tools/oracle/cases/helpers/dual-cache-batch-reads/async-read-throttle-switch.yaml
+  - tools/oracle/cases/helpers/dual-cache-batch-reads/shared-read-merge.yaml
+  - tools/oracle/cases/helpers/dual-cache-batch-reads/shared-read-failures.yaml
+
+deviations:
+  - what: Reads that fail are logged and returned as a miss (`None`) exactly as LiteLLM does, but the failure is a typed `BatchReadsError` value logged through B393's helper, not a caught Python `Exception`.
+    why: Rust has no catch-all exception; the observable result (None plus one ERROR log line) is the same.
+
+out_of_scope:
+  - LimitedSizeOrderedDict, the DualCache constructor, _backfill_kwargs, single-key get_cache and async_get_cache, and every write, increment and delete operation of dual_cache.py; B4293 and B4295 own them and this module only reads their fields.
+  - RedisBatch, BatchResult and the request pipeline (`mget`, `active_request_redis_batch`); B4330 and B4331 own them. declare_batch_get receives the batch from its caller.
+  - The Redis client's own batch_get_cache and async_batch_get_cache and the circuit breaker; B360 and B393.
+  - The memory tier's batch_get_cache and async_batch_get_cache; B2226 and B4290.
+  - Arming the routing and update_cache prefetch slots in routing_read_batch.py and proxy_server.py; B382 and the proxy server tasks call this module.
+
+pitfalls:
+  - The sync read returns the memory result as is (a tuple in LiteLLM) when nothing goes to Redis, but a fresh list after a Redis read; the Rust return type is one `Vec<Option<Json>>` and callers see equal contents either way.
+  - The reservation stores the new time for a due key before the Redis call, so a key skipped inside `redis_batch_cache_expiry` stays skipped until the window passes; only the rollback after a failed read lifts it.
+  - A repeated key in one `keys` list is fetched once when throttled (its second occurrence sees the time just stored) and twice when `throttle_redis` is false, which is what `declare_batch_get` uses.
+  - "`LimitedSizeOrderedDict` drops its oldest entry when it holds `max_size` items, even on an update of an existing key; the reservation relies on B4293's behavior and must not add its own eviction."
+  - In the shared read, the shared client is the first pair's client; if that cache has no Redis, every other cache with Redis is read on its own, and caches that also lack Redis go through the prepare path with no Redis keys.
+  - In the shared read an empty `reads` slice returns an empty list and no Redis call; the other early return (no Redis keys) returns the memory results, with a failed prepare still `None`.
+  - After a non-circuit failure of the shared read only caches that had Redis keys become `None`; a cache served entirely from memory keeps its result.
+  - "`apply_batch_get` gets only a cache's own keys in the shared read, so one cache's backfill never writes another cache's keys into its memory tier."
+  - "`async_resolve_batch_get` is the only read that does not swallow errors; the proxy caller decides what a failed declared read means."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

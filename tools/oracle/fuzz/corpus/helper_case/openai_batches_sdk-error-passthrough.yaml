@@ -1,0 +1,10 @@
+kind: helper
+name: openai-batches-sdk-error-passthrough-seed
+call:
+  openai_batches:
+    is_async: false
+    settings: {api_key: sk-fixture, api_base: null, timeout: null, max_retries: null, organization: null}
+    request: {retrieve: {batch_id: batch_1}}
+    answer: {failure: {status: 429, type: rate_limit_error, param: limit, code: rate_limited, message: slow down}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: jwt-four-segments-false
+call:
+  resolved_key:
+    function: is_jwt
+    value: a.b.c.d
+env: {}
+compare:
+  ignore: []

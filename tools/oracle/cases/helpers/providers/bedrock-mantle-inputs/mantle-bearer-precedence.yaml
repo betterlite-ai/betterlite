@@ -1,0 +1,19 @@
+kind: helper
+name: mantle-bearer-precedence
+call:
+  bedrock_mantle_inputs:
+    mantle_bearer_precedence:
+      cases:
+        - {}
+        - api_key: explicit-key
+        - api_key: ''
+          environment: {BEDROCK_MANTLE_API_KEY: mantle-key}
+        - environment: {BEDROCK_MANTLE_API_KEY: mantle-key}
+        - environment: {BEDROCK_MANTLE_API_KEY: mantle-key, AWS_BEARER_TOKEN_BEDROCK: standard-key}
+        - environment: {BEDROCK_MANTLE_API_KEY: '', AWS_BEARER_TOKEN_BEDROCK: standard-key}
+        - environment: {AWS_BEARER_TOKEN_BEDROCK: standard-key}
+        - environment: {AWS_BEARER_TOKEN_BEDROCK: ''}
+        - api_key: explicit-key
+          environment: {BEDROCK_MANTLE_API_KEY: mantle-key, AWS_BEARER_TOKEN_BEDROCK: standard-key}
+env: {}
+compare: {ignore: []}

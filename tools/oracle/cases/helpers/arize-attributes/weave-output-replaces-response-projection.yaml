@@ -1,0 +1,14 @@
+kind: helper
+name: weave-output-replaces-response-projection
+call:
+  b3861:
+    function: set_weave_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: acompletion
+    response:
+      id: chatcmpl-1
+      choices:
+        - message: {role: assistant, content: hello}
+env: {}
+compare: {ignore: []}

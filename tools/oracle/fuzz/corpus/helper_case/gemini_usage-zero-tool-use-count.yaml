@@ -1,0 +1,11 @@
+kind: helper
+name: gemini-usage-zero-tool-use-count
+call:
+  gemini_usage:
+    usage_metadata:
+      promptTokenCount: 10
+      candidatesTokenCount: 2
+      totalTokenCount: 12
+      toolUsePromptTokenCount: 0
+env: {}
+compare: {ignore: []}

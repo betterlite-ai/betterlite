@@ -1,0 +1,9 @@
+kind: helper
+name: rerank-with-document
+call:
+  b5240:
+    function: "output_choices"
+    response: {"results": [{"index": 0, "relevance_score": 0.5, "document": {"text": "doc"}}]}
+env: {}
+compare:
+  ignore: []

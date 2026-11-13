@@ -1,0 +1,11 @@
+kind: helper
+name: partial-config-validation-versus-chargeable-terms
+call:
+  ptu_pricing:
+    operation: config_error
+    model_info:
+      ptu_count: 2
+      ptu_effective_from: "2026-01-01T00:00:00Z"
+      team_id: team-capacity
+compare: {ignore: []}
+env: {}

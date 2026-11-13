@@ -1,0 +1,32 @@
+task: B4291
+deviations:
+  - what: >-
+      DiskCache persists typed cache values as JSON rows in a SQLite database in the cache directory, while LiteLLM hands
+      Python objects to diskcache, which pickles small values and writes larger ones to separate files.
+    why: A cache value is typed JSON here and there is no pickle, and a directory written by one side is not read by the other.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/disk_cache.py#L14-L26
+  - what: >-
+      LiteLLM runs json.loads on a truthy stored value, so a stored string that parses as JSON reads back decoded ("0"
+      becomes 0); betterlite reads every value back as the typed value it stored.
+    why: A cache value is written as JSON exactly once, so there is no second decode; callers store the typed value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/disk_cache.py#L31-L38
+  - what: >-
+      set_cache returns an error for a CacheValue::Bytes or CacheValue::Credential value, while LiteLLM stores any
+      picklable Python object, bytes included.
+    why: Those variants are not JSON values and the store writes JSON text; an error that names the key beats a silent change.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/disk_cache.py#L28-L32
+  - what: >-
+      EventDrivenCacheCoordinator takes a wait timeout and returns WaitTimeout when no load signal arrives, while
+      LiteLLM's waiters block on asyncio.Event.wait() for as long as the loader runs.
+    why: Every wait here has a bound; a caller keeps LiteLLM's unbounded wait by passing a long timeout at construction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_coordinator.py#L163-L196
+  - what: >-
+      The disk store has no size limit and no least-recently-used eviction, while diskcache defaults to a 1 GiB size limit
+      and culls entries past it.
+    why: The size limit is a policy of the storage library LiteLLM delegates to, not of the DiskCache wrapper this task ports.
+    link: https://grantjenks.com/docs/diskcache/api.html#diskcache.Cache
+  - what: >-
+      increment_cache fails with IncrementOutOfRange and leaves the counter unchanged when the sum leaves the i64 range,
+      while LiteLLM's Python integers grow without bound.
+    why: A counter past i64 cannot be stored in the typed cache value, and no working counter reaches it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/disk_cache.py#L46-L53

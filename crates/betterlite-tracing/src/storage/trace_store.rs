@@ -7,7 +7,7 @@ use base64::engine::general_purpose::URL_SAFE;
 use betterlite_logging::trace_types::{SpanDetail, SpanErrorPage, Trace, TracePage, TraceScope};
 use betterlite_logging::ui_content::to_ui_content;
 
-use crate::cursor::{ErrorCursor, decode_error_cursor, decode_trace_cursor, encode_trace_cursor};
+use crate::cursor::{ErrorCursor, TraceCursorPayload, decode_error_cursor, decode_trace_cursor};
 use crate::projections::{NANOS_PER_MS, trace_from_rows, trace_summary_from_row};
 use crate::spend::{SPEND_WINDOW_MS, SpendRow};
 use crate::storage::error::StorageError;
@@ -172,7 +172,10 @@ where
         let next_cursor = (rows.len() == self.page_size)
             .then(|| rows.last())
             .flatten()
-            .map(|row| encode_trace_cursor(row.start_ms, &row.trace_ref));
+            .map(|row| {
+                let payload = TraceCursorPayload(row.start_ms, row.trace_ref.clone());
+                URL_SAFE.encode(serde_json::to_string(&payload).unwrap_or_default())
+            });
         Ok(TracePage { data, next_cursor })
     }
 

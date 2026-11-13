@@ -1,0 +1,148 @@
+{
+  "info": {
+    "title": "LiteLLM API",
+    "version": "0.1.0",
+    "description": "Proxy Server to call 100+ LLMs in the OpenAI format. [**Customize Swagger Docs**](https://docs.litellm.ai/docs/proxy/enterprise#swagger-docs---custom-routes--branding)\n\n👉 [```LiteLLM Admin Panel on /ui```](/ui). Create, Edit Keys with SSO. Having issues? Try [```Fallback Login```](/fallback/login)\n\n💸 [```LiteLLM Model Cost Map```](https://models.litellm.ai/).\n\n🔎 [```LiteLLM Model Hub```](/ui/model_hub_table). See available models on the proxy. [**Docs**](https://docs.litellm.ai/docs/proxy/ai_hub)"
+  },
+  "routes": [
+    {
+      "path": "/v1/chat/completions",
+      "method": "post",
+      "name": "chat_completion",
+      "summary": null,
+      "tags": ["Chat"],
+      "parameters": [],
+      "request_body": null,
+      "error_responses": false
+    },
+    {
+      "path": "/chat/completions",
+      "method": "post",
+      "name": "chat_completion",
+      "summary": null,
+      "tags": ["Chat"],
+      "parameters": [],
+      "request_body": null,
+      "error_responses": false
+    },
+    {
+      "path": "/engines/{model}/chat/completions",
+      "method": "post",
+      "name": "chat_completion",
+      "summary": null,
+      "tags": ["Chat"],
+      "parameters": [],
+      "request_body": null,
+      "error_responses": false
+    },
+    {
+      "path": "/openai/deployments/{model}/chat/completions",
+      "method": "post",
+      "name": "chat_completion",
+      "summary": null,
+      "tags": ["Chat"],
+      "parameters": [],
+      "request_body": null,
+      "error_responses": true
+    },
+    {
+      "path": "/v1/embeddings",
+      "method": "post",
+      "name": "embeddings",
+      "summary": null,
+      "tags": ["Embeddings"],
+      "parameters": [],
+      "request_body": null,
+      "error_responses": false
+    },
+    {
+      "path": "/embeddings",
+      "method": "post",
+      "name": "embeddings",
+      "summary": null,
+      "tags": ["Embeddings"],
+      "parameters": [],
+      "request_body": null,
+      "error_responses": false
+    },
+    {
+      "path": "/engines/{model}/embeddings",
+      "method": "post",
+      "name": "embeddings",
+      "summary": null,
+      "tags": ["Embeddings"],
+      "parameters": [],
+      "request_body": null,
+      "error_responses": false
+    },
+    {
+      "path": "/openai/deployments/{model}/embeddings",
+      "method": "post",
+      "name": "embeddings",
+      "summary": null,
+      "tags": ["Embeddings"],
+      "parameters": [],
+      "request_body": null,
+      "error_responses": false
+    },
+    {
+      "path": "/v1/responses",
+      "method": "post",
+      "name": "responses_api",
+      "summary": null,
+      "tags": ["Responses"],
+      "parameters": [],
+      "request_body": null,
+      "error_responses": false
+    },
+    {
+      "path": "/responses",
+      "method": "post",
+      "name": "responses_api",
+      "summary": null,
+      "tags": ["Responses"],
+      "parameters": [],
+      "request_body": null,
+      "error_responses": false
+    },
+    {
+      "path": "/openai/v1/responses",
+      "method": "post",
+      "name": "responses_api",
+      "summary": null,
+      "tags": ["Responses"],
+      "parameters": [],
+      "request_body": null,
+      "error_responses": false
+    }
+  ],
+  "websockets": [
+    {
+      "path": "/v1/realtime",
+      "name": "realtime",
+      "query_params": [{"name": "model", "required": true}]
+    }
+  ],
+  "llm_schemas": {
+    "chat_completion": {
+      "type": "object",
+      "properties": {
+        "model": {"type": "string"},
+        "messages": {"type": "array", "items": {"type": "object"}},
+        "stream": {"type": "boolean"}
+      },
+      "required": ["model", "messages"]
+    },
+    "embedding": {
+      "type": "object",
+      "properties": {"model": {"type": "string"}, "input": {}},
+      "required": ["model", "input"]
+    },
+    "responses": {
+      "type": "object",
+      "properties": {"model": {"type": "string"}, "input": {"type": "string"}},
+      "required": ["model", "input"]
+    }
+  },
+  "server_root_path": ""
+}

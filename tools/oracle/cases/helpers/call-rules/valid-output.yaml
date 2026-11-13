@@ -1,0 +1,15 @@
+kind: helper
+name: valid-output
+call:
+  schema_validation:
+    mode: validate
+    schema:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string}
+        age: {type: integer}
+    response: '{"name": "Ada", "age": 36}'
+env: {}
+compare:
+  ignore: []

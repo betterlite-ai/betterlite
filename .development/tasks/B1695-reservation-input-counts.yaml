@@ -79,7 +79,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/reservation-tokens/tool-schema-keys-in-size-estimate.yaml
 deviations: []
 out_of_scope:
-  - B071 owns reservation admission, lease settlement and budget enforcement; this task supplies counts and never reserves money.
+  - B8480 owns reserve_budget_for_request and its lease renewal, B3004 counter admission and budget enforcement, and B3003 settlement; this task supplies counts and never reserves money.
   - The rust_bridge package is excluded by the repository inventory; input_tokens.py's _native_counts and fork-specific runtime machinery are not reachable with the pinned TOKEN_COUNTER=PYTHON_ONLY rule.
   - B195/B196/B197/B259 retain tokenizer algorithms and their existing asset/input policies; this task adds no acquisition path or alternate tokenizer selection.
 pitfalls:

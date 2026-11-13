@@ -1,0 +1,25 @@
+kind: helper
+name: repeated-mapping-cycle-and-depth-boundary
+call:
+  spend_sanitize:
+    operation: sanitize_and_project
+    max_string_length: 2048
+    sanitize_body:
+      $py: mapping
+      id: 1
+      entries:
+        first: {$py: mapping, id: 2, entries: {api_key: sk-one}}
+        second: {$py: ref, id: 2, kind: mapping}
+        cycle: {$py: mapping, id: 3, entries: {self: {$py: ref, id: 3, kind: mapping}, leaf: kept}}
+    project_body:
+      $py: mapping
+      id: 10
+      entries:
+        first: {$py: mapping, id: 11, entries: {leaf: one}}
+        second: {$py: ref, id: 11, kind: mapping}
+        cycle: {$py: mapping, id: 12, entries: {self: {$py: ref, id: 12, kind: mapping}}}
+        model: {$py: model, id: 13, entries: {a: 1, b: {c: 2}}}
+        object: {$py: object, id: 14, entries: {x: [1, 2]}}
+        deep: {n: {n: {n: {n: {n: {n: {n: {n: {n: {n: {n: {n: {n: {n: {n: {n: {n: {n: {n: {n: {leaf: value}}}}}}}}}}}}}}}}}}}}}
+env: {}
+compare: {ignore: []}

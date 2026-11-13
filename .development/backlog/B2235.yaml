@@ -1,14 +1,14 @@
 id: B2235
 milestone: M3 providers
 title: Stream usage accumulation and estimation
-status: todo
+status: done
 depends_on: [B004, B196, B171, B2239]
 file: tasks/B2235-stream-usage-assembly.yaml
 covers:
   - "litellm/litellm_core_utils/streaming_chunk_builder_utils.py"
 parent: B005
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 997

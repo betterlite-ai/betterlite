@@ -1,0 +1,27 @@
+kind: helper
+name: agents-pi-launch
+call:
+  b4568:
+    steps:
+      - agent: pi
+        scenario: launch
+        command: ["pi", "--version"]
+        binary: /usr/local/bin/pi
+        models:
+          - {id: gpt-4o}
+          - {id: claude}
+      - agent: pi
+        scenario: skip
+        command: ["pi"]
+        binary: /usr/bin/pi
+        models:
+          - {id: gpt-4o}
+      - agent: pi
+        scenario: launch
+        command: ["/usr/local/bin/pi", "--version"]
+        binary: /usr/local/bin/pi
+        models:
+          - {id: gpt-4o}
+env: {}
+compare:
+  ignore: []

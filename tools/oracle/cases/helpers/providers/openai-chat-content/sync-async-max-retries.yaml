@@ -1,0 +1,49 @@
+kind: helper
+name: openai-chat-content-sync-async-max-retries
+call:
+  openai_chat_content:
+    transform_requests:
+      requests:
+        - model: gpt-4o
+          provider: openai
+          messages:
+            - {role: user, content: hi}
+          optional_params:
+            max_retries: 3
+        - model: gpt-4o
+          provider: openai
+          mode: async_base_class
+          messages:
+            - {role: user, content: hi}
+          optional_params:
+            max_retries: 3
+        - model: gpt-4o
+          provider: openai
+          mode: async_subclass
+          messages:
+            - {role: user, content: hi}
+          optional_params:
+            max_retries: 3
+        - model: gpt-4o
+          provider: openai
+          messages:
+            - {role: user, content: hi}
+          optional_params:
+            max_retries: 2
+            seed: 7
+            tools:
+              - type: function
+                function:
+                  name: f
+                  parameters:
+                    type: object
+                    properties:
+                      id: {type: string, pattern: '^\p{Cc}+$'}
+        - model: gpt-4o
+          provider: openai
+          messages:
+            - {role: user, content: hi}
+          optional_params:
+            model: override-model
+env: {}
+compare: {ignore: []}

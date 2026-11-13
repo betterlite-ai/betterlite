@@ -1,0 +1,2 @@
+litellm_settings:
+  azure_oidc_exchange_unrelated_key: 1

@@ -1,0 +1,31 @@
+kind: helper
+name: classifier-extra-body-and-redaction
+call:
+  spend_bodies:
+    function: classifier
+    store_bodies: true
+    max_string_length: 2048
+    turn_off_message_logging: true
+    litellm_params:
+      proxy_server_request:
+        body:
+          model: gpt-4o
+          messages:
+            - {role: user, content: secret prompt}
+    standard_logging_object:
+      classifier_input: '{"prompt": "pick"}'
+      originating_request_masked:
+        messages: []
+    snapshots:
+      - value:
+          model: gpt-4o
+          extra_headers: {a: b}
+          extra_query: {q: 1}
+          extra_body: {temperature: 1, model: override}
+        openai_sdk: true
+      - value: [1, 2]
+        openai_sdk: false
+      - value: '{"prompt": "pick"}'
+        openai_sdk: false
+env: {}
+compare: {ignore: []}

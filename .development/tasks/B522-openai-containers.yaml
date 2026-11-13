@@ -1,10 +1,11 @@
 id: B522
 title: OpenAI containers and container files
 description: >-
-  Add typed ContainerCreate/ContainerReply/ContainerFile records and provider create/list/retrieve/delete, file
-  list and content methods. Use the source query-preserving path join for resource IDs; the initial get_complete_url
+  Implement B3360 BaseContainerConfig for OpenAI: the create, list, retrieve, delete, file list and
+  content methods. The records (ContainerObject, ContainerListResponse, DeleteContainerResult, ContainerFileObject,
+  ContainerFileListResponse, the optional param structs) and ContainerError come from B3360 and are not declared here. Use the source query-preserving path join for resource IDs; the initial get_complete_url
   unconditionally appends /containers. Preserve cursor/order fields. Container file uploads and public handlers
-  are B094.
+  are B3363, B3367 and B3368 (uploads), B7430 (router registration), B3371, B3372 and B7326 (handlers) and B8635 (mounts).
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/containers/transformation.py:
@@ -42,7 +43,7 @@ description: >-
   unchanged; get_error_class raises BaseLLMException with the supplied status/message/headers.
 
 
-  Reuse B500 config loading and B129 secret resolution for the key/base chains; B171 owns encode_url_path_segment
+  Reuse B500 config loading and B8500 secret resolution for the key/base chains; B171 owns encode_url_path_segment
   and B2202 owns BaseLLMException.
 
 
@@ -56,7 +57,7 @@ description: >-
 
 
   Implement crates/betterlite-openai/src/containers.rs with adjacent tests under containers/. Keep each Rust module
-  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  at most 300 lines. Import the B3360 records, trait and error from betterlite-openai api::container_contracts and use the direct prerequisites listed in backlog.yaml; a provider leaf never
   imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
   tests and oracle adapters.
 
@@ -224,7 +225,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_file_list_and_content$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_containers.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_containers.py tools/oracle/helpers/openai_containers)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -237,7 +238,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_containers)"
       && grep -q 'decode_container_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_containers.rs && cargo
-      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_containers_corpus$/)'
+      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_containers_corpus(::|$)/)'
   - id: case-container-auth-chain
     why: Resolve api_key then litellm.api_key then litellm.openai_key then OPENAI_API_KEY using truthiness; overwrite
       the exact Authorization key with Bearer <resolved key>, including Bearer None when unresolved.

@@ -130,7 +130,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_logger::tests::budget_enforcement(::|$)/)'
   - id: type-definitions
     why: all new types must compile and serialize correctly
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse::tests::type_definitions(::|$)/)'
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(langfuse_handler|langfuse_logger)::(.*::)?langfuse::tests::type_definitions(::|$)/)'
 oracle_cases: []
 
 deviations:

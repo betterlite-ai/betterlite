@@ -28,7 +28,7 @@ description: >-
   parked logs through B1749 and runs B1744 when its complete queue census is nonzero.
   It does not catch a preceding balance failure. The tag adapter chooses Redis or memory
   and logs any ordinary failure without a traceback, preserving the source's diagnostic
-  distinction from spend_log_error. B124 owns periodic scheduling and B070 assembles these
+  distinction from spend_log_error. B8372 owns periodic scheduling and B070 assembles these
   handles. Test two independent pod owners, lock refusal after successful publication,
   partial entity and daily commits, unsafe windows, restoration failure and tag cancellation
   with the real isolated Redis fixture and PostgreSQL. These live methods and job adapters
@@ -76,7 +76,7 @@ deviations: []
 out_of_scope:
   - B1747 supplies non-Redis queues and monitor/shutdown handling; B1737/B1738 own Redis serialization, destructive reads, publication and restoration.
   - B1745 commits balances and B1746 owns daily/turn commits plus their safety state; B1749 stores request logs. B070/B1742/B1743/B1744 own the remaining writer entry and projection functions.
-  - B124 retains proxy/utils.py helpers outside the explicit spend extractions and all proxy_server.py scheduler registration.
+  - B124 retains proxy/utils.py helpers outside the explicit spend extractions; B8372 owns all proxy_server.py scheduler registration.
 pitfalls:
   - The main Redis path does not flush tool discovery; that call exists only in the non-Redis writer branch at the pin.
   - Publishing to Redis must still occur on a pod that subsequently fails to acquire the database-writer lease.

@@ -1,0 +1,13 @@
+id: no-nested-functions
+language: python
+severity: error
+message: a function or class inside a function, or a lambda, is a closure over hidden state; write a module-level function and pass what it needs
+rule:
+  any:
+    - kind: lambda
+    - any:
+        - kind: function_definition
+        - kind: class_definition
+      inside:
+        stopBy: end
+        kind: function_definition

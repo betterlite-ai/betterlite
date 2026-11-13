@@ -1,0 +1,9 @@
+kind: helper
+name: moderation-flagged-categories
+call:
+  b5240:
+    function: "output_choices"
+    response: {"results": [{"flagged": true, "categories": {"harassment": true, "hate": true, "violence": false}}]}
+env: {}
+compare:
+  ignore: []

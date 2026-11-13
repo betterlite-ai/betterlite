@@ -1,0 +1,108 @@
+id: B8132
+title: Single-deployment chart scaling, ingress and monitoring
+description: >-
+  Add the scaling and exposure templates of the betterlite-helm chart (values and helpers come from B8130, the Deployment from B8131): templates/hpa.yaml, templates/keda.yaml, templates/poddisruptionbudget.yaml, templates/ingress.yaml, templates/servicemonitor.yaml, and the three Helm test pod templates under templates/tests/. Use betterlite.fullname, betterlite.labels and betterlite.selectorLabels; do not edit helpers or values.
+  hpa.yaml renders an autoscaling/v2 HorizontalPodAutoscaler named <fullname> only when autoscaling.enabled. Metrics: a cpu Resource metric at autoscaling.targetCPUUtilizationPercentage (a ContainerResource metric on the proxy container when collector.enabled and collector.scaleOnProxyContainerCpu are both true), a memory Resource metric when targetMemoryUtilizationPercentage is set, and Pods metrics litellm_requests_per_second and litellm_tokens_per_second with an AverageValue (written as a quoted string) when targetRequestsPerSecond or targetTokensPerSecond is set. behavior is copied from autoscaling.behavior when set.
+  keda.yaml renders a KEDA ScaledObject (keda.sh/v1alpha1) named <fullname> only when keda.enabled and not autoscaling.enabled. It writes pollingInterval, cooldownPeriod, min and max replica counts, an optional fallback (failureThreshold default 3, replicas default keda.maxReplicas), the user triggers, and two prometheus triggers built from keda.prometheus.requestsPerSecond and tokensPerSecond with queries over litellm_proxy_total_requests_metric_total and litellm_total_tokens_metric_total, selected by namespace and job (job is <fullname>, or <fullname>-metrics when metricsServer.enabled). The render fails with "keda.prometheus.serverAddress is required when keda.prometheus.requestsPerSecond or tokensPerSecond is set" when a threshold is set without the address. advanced.restoreToOriginalReplicaCount and the optional horizontalPodAutoscalerConfig.behavior come from values.
+  poddisruptionbudget.yaml (policy/v1, only when pdb.enabled): minAvailable wins over maxUnavailable, and maxUnavailable: 1 is the default when neither is set. ingress.yaml (only when ingress.enabled) picks apiVersion by the cluster version (networking.k8s.io/v1 from 1.19, v1beta1 from 1.14, else extensions/v1beta1), writes ingressClassName from 1.18 or the kubernetes.io/ingress.class annotation before it, tls, and one rule per host and path with pathType only from 1.18, backend service <fullname> on service.port. servicemonitor.yaml (only when serviceMonitor.enabled): selector from betterlite.selectorLabels, namespaceSelector defaulting to the release namespace, one endpoint on port "metrics" when metricsServer.enabled else "http", path /metrics/, interval, scrapeTimeout, scheme http and relabelings.
+  The Helm test pods (annotation helm.sh/hook: test) are templates/tests/test-connection.yaml (a busybox pod that retries wget of /health/readiness on the Service for 30 attempts), templates/tests/test-env-vars.yaml (checks the EXAMPLE_ENV value from envVars) and templates/tests/test-servicemonitor.yaml (a kubectl pod that checks the ServiceMonitor port, path, interval and scheme; renders only when serviceMonitor.enabled). The kubectl image comes from the values key test.kubectlImage that B8130 defines; read it and do not edit values.yaml.
+scope:
+  paths:
+    - packaging/helm/betterlite-helm/templates/hpa.yaml
+    - packaging/helm/betterlite-helm/templates/keda.yaml
+    - packaging/helm/betterlite-helm/templates/poddisruptionbudget.yaml
+    - packaging/helm/betterlite-helm/templates/ingress.yaml
+    - packaging/helm/betterlite-helm/templates/servicemonitor.yaml
+    - packaging/helm/betterlite-helm/templates/tests/test-connection.yaml
+    - packaging/helm/betterlite-helm/templates/tests/test-env-vars.yaml
+    - packaging/helm/betterlite-helm/templates/tests/test-servicemonitor.yaml
+    - packaging/helm/betterlite-helm/tests/hpa_tests.yaml
+    - packaging/helm/betterlite-helm/tests/keda_tests.yaml
+    - packaging/helm/betterlite-helm/tests/pdb_tests.yaml
+    - packaging/helm/betterlite-helm/tests/ingress_tests.yaml
+    - packaging/helm/betterlite-helm/tests/servicemonitor_tests.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/hpa.yaml#L1-L64
+    why: Metric list and the ContainerResource switch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/keda.yaml#L1-L58
+    why: ScaledObject, prometheus triggers and the serverAddress failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/poddisruptionbudget.yaml
+    why: PDB precedence and default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/ingress.yaml#L1-L64
+    why: Version-dependent apiVersion, class and pathType rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/servicemonitor.yaml
+    why: Endpoint port switch and namespace default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/tests/test-connection.yaml
+    why: Connection test pod.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/tests/test-servicemonitor.yaml
+    why: ServiceMonitor test pod.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/tests/hpa_tests.yaml#L1-L144
+    why: Behaviors to cover in the HPA suite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/tests/keda_tests.yaml#L1-L106
+    why: Behaviors to cover in the KEDA suite.
+dod:
+  - text: The HPA renders only when enabled with the cpu, memory, requests and tokens metrics and the ContainerResource switch.
+    proof: [hpa-suite]
+  - text: The ScaledObject renders only for keda without the HPA, builds both prometheus triggers and fails without serverAddress.
+    proof: [keda-suite]
+  - text: The PDB, the Ingress for old and new cluster versions, and the ServiceMonitor render as described.
+    proof: [pdb-suite, ingress-suite, monitor-suite]
+  - text: The three Helm test pod templates render with the hook annotation, and the ServiceMonitor test pod only when serviceMonitor.enabled.
+    proof: [test-pods]
+  - text: The chart lints and renders with the CI values.
+    proof: [chart-lint]
+checks:
+  optional: []
+  commands:
+    - id: hpa-suite
+      why: an HPA behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/hpa_tests.yaml
+    - id: keda-suite
+      why: a KEDA behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/keda_tests.yaml
+    - id: pdb-suite
+      why: a PDB behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/pdb_tests.yaml
+    - id: ingress-suite
+      why: an Ingress behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/ingress_tests.yaml
+    - id: monitor-suite
+      why: a ServiceMonitor behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/servicemonitor_tests.yaml
+    - id: test-pods
+      why: a Helm test pod template is missing
+      run: |-
+        test -f packaging/helm/betterlite-helm/templates/tests/test-connection.yaml &&
+        test -f packaging/helm/betterlite-helm/templates/tests/test-env-vars.yaml &&
+        test -f packaging/helm/betterlite-helm/templates/tests/test-servicemonitor.yaml &&
+        grep -q 'helm.sh/hook.*test' packaging/helm/betterlite-helm/templates/tests/test-connection.yaml
+    - id: chart-lint
+      why: the chart does not lint or render with the new templates
+      run: test -f packaging/helm/betterlite-helm/templates/ingress.yaml && sh packaging/helm/tests/helm_checks.sh lint packaging/helm/betterlite-helm packaging/helm/betterlite-helm/ci/test-values.yaml
+oracle_cases: []
+deviations:
+  - what: The HPA and KEDA queries still use the metric names litellm_requests_per_second, litellm_tokens_per_second, litellm_proxy_total_requests_metric_total and litellm_total_tokens_metric_total.
+    why: betterlite keeps LiteLLM's Prometheus metric names so existing dashboards and adapters work (B3886 owns them).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/keda.yaml#L36-L48
+  - what: The env test pod checks EXAMPLE_ENV instead of DD_ENV, DD_SERVICE and USE_DDTRACE.
+    why: The native server has no ddtrace.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/tests/test-env-vars.yaml
+out_of_scope:
+  - Values, helpers, Secrets and ConfigMap belong to B8130; Deployment, Job and Services belong to B8131.
+  - The chart README belongs to B152.
+pitfalls:
+  - >-
+    The ingress template writes into .Values.ingress.annotations with set for old clusters; use a deepCopy so a render does not change values seen by other templates.
+  - >-
+    When autoscaling.enabled and keda.enabled are both true, only the HPA renders; the Deployment leaves out replicas when either one is on.
+  - >-
+    The AverageValue and threshold numbers go through toJson and trimAll so 0.5 and "0.5" both print as the quoted string "0.5".
+  - >-
+    The ServiceMonitor path ends with a slash (/metrics/) on purpose; the proxy redirects /metrics without it.
+  - >-
+    helm unittest cannot know the cluster version unless the suite sets capabilities.majorVersion and minorVersion, so the old-version ingress cases must set them.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

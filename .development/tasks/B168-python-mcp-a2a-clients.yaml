@@ -1,0 +1,95 @@
+id: B168
+title: Python MCP and A2A clients
+description: >-
+  This is the last part of the entry. With the native bridges (B8080, B8081) and the Python layers over them (B8082, B8083)
+  in place, finish the public surface so LiteLLM's import paths work: `betterlite.experimental_mcp_client`,
+  `betterlite.experimental_mcp_client.client`, `betterlite.experimental_mcp_client.tools`, `betterlite.a2a_protocol` and
+  `betterlite.a2a_protocol.client`. This task adds the `A2AClient` class, the two package `__init__.py` files and the tests that
+  run whole flows.
+
+
+  `crates/betterlite-python/python/betterlite/experimental_mcp_client/__init__.py` imports `call_openai_tool` and
+  `load_mcp_tools` from `.tools` and sets `__all__ = ["call_openai_tool", "load_mcp_tools"]`. It keeps no try/except for the
+  missing `mcp` package, since the wheel needs none (litellm/experimental_mcp_client/__init__.py L1-L8).
+
+
+  `crates/betterlite-python/python/betterlite/a2a_protocol/client.py` has `A2AClient(base_url, timeout=60.0,
+  extra_headers=None)` with the attributes `base_url`, `timeout`, `extra_headers` and a private `_a2a_client` that starts as
+  None (litellm/a2a_protocol/client.py L40-L106). `_get_client` calls `create_a2a_client` once on first use and reuses the result,
+  so two sends make one `create_client` call. `get_agent_card()` calls `aget_agent_card` with the same base URL, timeout and
+  headers and creates no client. `send_message(request)` awaits `asend_message(a2a_client=..., request=...)`.
+  `send_message_streaming(request)` is an async generator that yields what `asend_message_streaming` yields. The default timeout
+  stays 60.0 here even though `create_a2a_client` defaults to `DEFAULT_A2A_AGENT_TIMEOUT`.
+
+
+  `crates/betterlite-python/python/betterlite/a2a_protocol/__init__.py` imports `A2AClient`, the four exception classes
+  `A2AAgentCardError`, `A2AConnectionError`, `A2AError` and `A2ALocalhostURLError`, `LiteLLMSendMessageResponse`,
+  `aget_agent_card`, `asend_message`, `asend_message_streaming`, `create_a2a_client` and `send_message`, and sets `__all__` to
+  the same eleven names in LiteLLM's order (litellm/a2a_protocol/__init__.py L37-L69). `A2AAgentCardDiscoveryError` stays
+  importable from `.exceptions` and is not exported, as at the pin.
+
+
+  The flow tests run LiteLLM and betterlite side by side. The MCP test starts `tests/mcp_server.py` (B8080), opens
+  `MCPClient(server_url=...)` on both sides, runs `run_with_session` with `load_mcp_tools(session, format="openai")`, then
+  `call_openai_tool` with a tool call taken from the first tool, and compares both results with `model_dump(by_alias=True,
+  exclude_none=True)`. It also checks that a bearer token set with `auth_type="bearer_token"` reaches the server as an
+  `Authorization` header. The A2A test starts `tests/a2a_server.py` (B8081), runs `A2AClient` through card, send and streaming
+  on both sides, and checks that the recorded request headers match, including `extra_headers`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/experimental_mcp_client/__init__.py
+  - crates/betterlite-python/python/betterlite/a2a_protocol/__init__.py
+  - crates/betterlite-python/python/betterlite/a2a_protocol/client.py
+  - crates/betterlite-python/tests/test_mcp_flow.py
+  - crates/betterlite-python/tests/test_a2a_client_flow.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/client.py#L1-L106
+  why: The A2AClient class.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/__init__.py#L1-L69
+  why: The exported names and their order.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/__init__.py#L1-L8
+  why: The two exported MCP functions.
+dod:
+- text: "`betterlite.experimental_mcp_client` and `betterlite.a2a_protocol` export the same names as LiteLLM's packages, in the same order."
+  proof: [clients-exports]
+- text: "`A2AClient` makes its underlying client once, reuses it, and gives the same card, send result and stream events as LiteLLM against one local agent, with the same headers on the wire."
+  proof: [a2a-client-flow]
+- text: "`MCPClient` with `run_with_session`, `load_mcp_tools` and `call_openai_tool` gives the same tools and tool result as LiteLLM against one local server, with the credential header sent."
+  proof: [mcp-flow]
+- text: The new files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: clients-exports
+    why: An import path or an exported name is missing.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "a2a-sdk==1.1.0" --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_a2a_client_flow.py crates/betterlite-python/tests/test_mcp_flow.py -k exports
+  - id: a2a-client-flow
+    why: The class client differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "a2a-sdk==1.1.0" --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_a2a_client_flow.py -k "not exports"
+  - id: mcp-flow
+    why: A tool load or call through the client differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_mcp_flow.py -k "not exports"
+  - id: python-lint
+    why: The public layer is where an untyped dict would creep back in.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`A2AClient` takes and returns dict-backed objects, not `a2a.types` models, and `_a2a_client` holds a `NativeA2aClient`."
+  why: The wheel has no `a2a` package. B8083 lists the reason with the other A2A deviations.
+- what: "`betterlite.experimental_mcp_client` imports without the `mcp` package and never raises LiteLLM's 'MCP client dependencies are missing' ImportError."
+  why: The wheel carries the MCP client in Rust and needs no optional package.
+out_of_scope:
+- The MCP client, the tool functions and the result objects are B8082.
+- The A2A functions, error classes and response objects are B8083.
+- The native bridges and both test servers are B8080 and B8081.
+- The Rust parts of both entries are B4740 to B4746 (MCP client, umbrella B140) and B4800 to B4814 (A2A, umbrella B142). The A2A server side, proxy agent cards and the completion bridge are not part of this entry.
+pitfalls:
+- '`A2AClient.__init__` does no I/O, so a test must show that building the object makes no request and the first send makes the card request.'
+- '`send_message_streaming` on the class is a generator over `asend_message_streaming`, so stopping the loop early has to close the native stream through the inner `finally`.'
+- '`__all__` of `a2a_protocol` is sorted alphabetically at the pin, with uppercase names first, so copy the order and do not sort it again.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

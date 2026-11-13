@@ -1,0 +1,11 @@
+kind: helper
+name: user-url-allowlisted-private-host
+call:
+  b5082:
+    call: validate_url
+    url: "http://10.0.0.5/x"
+    user_url_allowed_hosts: ["10.0.0.5"]
+    ssl_verify: true
+env: {}
+compare:
+  ignore: []

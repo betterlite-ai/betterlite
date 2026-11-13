@@ -1,0 +1,99 @@
+id: B8131
+title: Single-deployment chart proxy workload and migration Job
+description: >-
+  Add the workload templates of the betterlite-helm chart (B8130 wrote its values.yaml and helpers): templates/deployment.yaml, templates/migrations-job.yaml, templates/service.yaml, templates/service-metrics.yaml, templates/extra-resources.yaml and templates/NOTES.txt. Use the helpers betterlite.fullname, betterlite.labels, betterlite.selectorLabels, betterlite.proxyEnv, betterlite.proxyMetricsEnv, betterlite.collectorEnv, betterlite.collector.socketDir and betterlite.serviceAccountName from B8130 and do not edit them.
+  Deployment: name <fullname>, annotations from deploymentAnnotations, labels plus deploymentLabels. spec.replicas is written only when neither keda.enabled nor autoscaling.enabled. strategy comes from values, minReadySeconds from deploymentMinReadySeconds when non-zero. The pod gets checksum/config (sha256 of configmap-betterlite.yaml, only when proxyConfigMap.create), podAnnotations rendered through tpl, podLabels, imagePullSecrets, serviceAccountName, podSecurityContext, extraInitContainers, and terminationGracePeriodSeconds (default 90). The main container is named after betterlite.name, uses image.repository:(image.tag or Chart.AppVersion), the env from betterlite.proxyEnv and betterlite.proxyMetricsEnv (plus betterlite.collectorEnv when collector.enabled), envFrom from environmentSecrets and environmentConfigMaps, the command from values when set, and the args from values or else "--config /etc/betterlite/config.yaml" plus "--num_workers N" when numWorkers is set. Ports: http on service.port and metrics on metricsServer.port when enabled. Liveness, readiness and startup probes are httpGet on port "http" with every field from the matching values block. It mounts the config ConfigMap at /etc/betterlite/config.yaml, mounts emptyDir volumes for /tmp when securityContext.readOnlyRootFilesystem is true, the collector socket folder when collector.enabled and its address starts with unix://, and the user volumeMounts. lifecycle, extraContainers (through tpl), volumes, nodeSelector, affinity, tolerations and topologySpreadConstraints come from values.
+  The collector sidecar (collector.enabled) is a second container named <name>-collector with the same image, securityContext and betterlite.proxyEnv, plus betterlite.collectorEnv, LITELLM_JOB_ROLE=collector and CONFIG_FILE_PATH=/etc/betterlite/config.yaml unless envVars sets it. Its command is collector.command from values; the default in values.yaml is ["betterlite", "collector"] and the chart treats it as opaque.
+  Migrations Job (migrationJob.enabled): name <fullname>-migrations, ArgoCD PreSync annotations when hooks.argocd.enabled, Helm pre-install and pre-upgrade hook annotations (delete policy before-hook-creation, weight default "1") when hooks.helm.enabled, and a checksum/config annotation. The container is named db-migrations, runs command ["betterlite-db-admin", "migrate"] from PATH (B1232), takes the database variables of the existing database or DATABASE_URL for the bundled one, envVars, extraEnvVars, and sets DISABLE_SCHEMA_UPDATE=false last. It uses betterlite.migrationServiceAccountName, restartPolicy OnFailure, ttlSecondsAfterFinished, backoffLimit and activeDeadlineSeconds from migrationJob.
+  Service: type, port, annotations, loadBalancerClass for type LoadBalancer, targetPort "http". service-metrics: a ClusterIP Service <fullname>-metrics on metricsServer.port when enabled. extra-resources: each entry of extraResources as its own document. NOTES.txt prints how to reach the Service by ingress, NodePort, LoadBalancer or ClusterIP port-forward and the PDB line.
+scope:
+  paths:
+    - packaging/helm/betterlite-helm/templates/deployment.yaml
+    - packaging/helm/betterlite-helm/templates/migrations-job.yaml
+    - packaging/helm/betterlite-helm/templates/service.yaml
+    - packaging/helm/betterlite-helm/templates/service-metrics.yaml
+    - packaging/helm/betterlite-helm/templates/extra-resources.yaml
+    - packaging/helm/betterlite-helm/templates/NOTES.txt
+    - packaging/helm/betterlite-helm/tests/deployment_tests.yaml
+    - packaging/helm/betterlite-helm/tests/deployment_command_args_labels_tests.yaml
+    - packaging/helm/betterlite-helm/tests/migrations_job_tests.yaml
+    - packaging/helm/betterlite-helm/tests/collector_tests.yaml
+    - packaging/helm/betterlite-helm/tests/metrics_server_tests.yaml
+    - packaging/helm/betterlite-helm/tests/service_tests.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/deployment.yaml#L1-L250
+    why: The whole Deployment including the collector sidecar and volumes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/migrations-job.yaml#L1-L125
+    why: Job hooks, environment and the always-run DISABLE_SCHEMA_UPDATE override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/service.yaml
+    why: Service fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/service-metrics.yaml
+    why: Metrics Service.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/NOTES.txt
+    why: Post-install notes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/tests/deployment_tests.yaml#L1-L494
+    why: Behaviors to cover in the deployment suites.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/tests/migrations-job_tests.yaml#L1-L344
+    why: Hook, env, service account and deadline behaviors of the Job.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/tests/collector_tests.yaml#L1-L272
+    why: Sidecar behaviors.
+dod:
+  - text: The Deployment renders the replica rule, strategy, env, args, ports, three probes, volumes and scheduling fields from values.
+    proof: [deployment-suites]
+  - text: The collector sidecar renders only when enabled, with its role variable, socket volume and command from values.
+    proof: [collector-suite]
+  - text: The migrations Job runs betterlite-db-admin migrate with the right hooks, service account, deadline and DISABLE_SCHEMA_UPDATE=false.
+    proof: [job-suite]
+  - text: The Services, the metrics Service and the metrics port render as described.
+    proof: [service-suites]
+  - text: The chart lints and renders as a whole with the CI values.
+    proof: [chart-lint]
+checks:
+  optional: []
+  commands:
+    - id: deployment-suites
+      why: a Deployment behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/deployment_tests.yaml tests/deployment_command_args_labels_tests.yaml
+    - id: collector-suite
+      why: the collector sidecar behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/collector_tests.yaml
+    - id: job-suite
+      why: a migrations Job behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/migrations_job_tests.yaml
+    - id: service-suites
+      why: a Service behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/service_tests.yaml tests/metrics_server_tests.yaml
+    - id: chart-lint
+      why: the chart does not lint or render once the workload templates exist
+      run: test -f packaging/helm/betterlite-helm/templates/deployment.yaml && sh packaging/helm/tests/helm_checks.sh lint packaging/helm/betterlite-helm packaging/helm/betterlite-helm/ci/test-values.yaml
+oracle_cases: []
+deviations:
+  - what: The migrations Job runs betterlite-db-admin migrate, with no python, workingDir or prisma_migration.py.
+    why: B1232 owns the native migration command; the image has no Python or Prisma.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/migrations-job.yaml#L58-L62
+  - what: The container mounts only an emptyDir at /tmp when readOnlyRootFilesystem is true, not /.cache and /.npm.
+    why: Those two folders belong to Node and Prisma, and the native image has neither.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/deployment.yaml#L175-L183
+  - what: The test-values USE_DDTRACE variable has no effect.
+    why: B5070 makes the entrypoint ignore it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/ci/test-values.yaml
+out_of_scope:
+  - Values, helpers, Secrets and the ConfigMap belong to B8130.
+  - hpa, keda, pdb, ingress, servicemonitor and the helm test pods belong to B8132 and B152.
+  - The collector program and the betterlite-db-admin binary are not built here (B1708 and B1232).
+pitfalls:
+  - >-
+    The pod annotation checksum/config includes configmap-betterlite.yaml by template path, so renaming that file in B8130 breaks the include.
+  - >-
+    The migrations Job and the Deployment both list envVars, and the Job sets DISABLE_SCHEMA_UPDATE=false after them while the Deployment sets true after them; both must stay last.
+  - >-
+    A command or args value of {} (the values.yaml default) is falsy in the template, so the default args apply; a list replaces them completely.
+  - >-
+    The trailing space after the initContainers block in the LiteLLM Job template is not needed and must not be copied.
+  - >-
+    ArgoCD hooks default to enabled and Helm hooks to disabled in this chart; the componentized chart has the opposite defaults.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

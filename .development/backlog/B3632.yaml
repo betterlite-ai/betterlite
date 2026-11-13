@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Anthropic interrupted stream usage recovery
 status: todo
 depends_on: [B3630, B3631, B196, B218, B251]
-file: null
+file: tasks/B3632-anthropic-interrupted-stream-usage.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py"
 parent: B103

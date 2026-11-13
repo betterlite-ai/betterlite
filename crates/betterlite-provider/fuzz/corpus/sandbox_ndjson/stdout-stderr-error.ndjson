@@ -1,0 +1,6 @@
+{"type":"stdout","text":"hello "}
+{"type":"stderr","text":"warn\n"}
+{"type":"stdout","text":"world"}
+{"type":"number_of_executions","execution_count":3}
+{"type":"error","name":"ValueError","value":"bad input","traceback":["line 1","line 2"]}
+{"type":"result","data":{"x":1},"text":"repr"}

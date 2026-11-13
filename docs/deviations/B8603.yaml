@@ -1,0 +1,8 @@
+task: B8603
+deviations:
+  - what: The router and the global interval reach stream_keepalive through the KeepaliveRouter trait and constructor arguments instead of the llm_router and litellm module globals, and a deployment's litellm_params arrive as a JSON object from that port instead of as pydantic attributes read with getattr.
+    why: betterlite wires dependencies through constructors, and rule inject-dependencies keeps module globals out. The interval a client sees is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9685-L9732
+  - what: The wrapper waits for the next item with tokio::time::timeout on StreamExt::next instead of creating an asyncio task and cancelling it when the loop ends.
+    why: rules.yaml async-hygiene forbids detached tasks. The timeout on next is cancel safe, so a ping never drops an item and dropping the wrapper cancels the pending wait, the same behavior a cancelled asyncio task gave.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9634-L9682

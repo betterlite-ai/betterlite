@@ -28,7 +28,7 @@ description: >-
   Prefix all table names with LiteLLM_. Do not wrap different tables in one transaction.
   Outcome priority is aborted, budget_exhausted, batch_cap_reached, completed; disabled
   groups contribute no result. Completed summaries log at info, other summaries warn.
-  Expose a reusable owned job handle to B124's existing startup/reload scheduler, which
+  Expose a reusable owned job handle to B8371 startup and reload scheduling, which
   owns cron/interval and schedule-attempt tracking; no second retention job is registered
   here. About 320 source lines form this runner. The 750-line budget includes controlled
   clock and cancellation tests plus PostgreSQL fixtures proving partition stragglers,
@@ -48,7 +48,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L493-L820
     why: Table identities, group sequencing, deadline shares and run finalization.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7761-L7832
-    why: B124's rescheduling caller consumes this runner without owning its deletion logic.
+    why: B8371 rescheduling caller consumes this runner without owning its deletion logic.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10862-L10911
     why: Existing startup scheduler decides whether a cleanup job is needed.
 dod:
@@ -75,7 +75,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - B1740 owns constructor and settings/batch helpers in spend_log_cleanup.py; B1739 supplies partition and metric operations.
-  - B124 owns proxy_server.py cleanup trigger construction, startup registration, schedule comparison and dynamic rescheduling.
+  - B8371 owns proxy_server.py cleanup trigger construction, startup registration, schedule comparison and dynamic rescheduling.
 pitfalls:
   - A configured health-check or daily-tag retention alone must keep the cleanup job useful even when spend-log retention is unset.
   - Dropping a partition does not increment the runner's row-deletion progress counters.

@@ -1,0 +1,13 @@
+kind: helper
+name: budget-primitives-carry-seed
+call:
+  budget_primitives:
+    calls:
+      - function: carry_team_user
+        value:
+          token: {metadata: {throttle_on_budget_exceeded: true}, tpm_limit: 0}
+          team: {team_id: seed, budget_reset_at: "2026-01-01T00:00:00Z", max_budget: 1.5}
+      - function: throttled_limit
+        value: {limit: 0, percentage: 0.5}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+id: B8133
+milestone: M11 distribution
+title: Component Helm chart core
+status: blocked
+depends_on: [B8130]
+file: tasks/B8133-helm-component-chart-core.yaml
+covers:
+  - "helm/litellm/Chart.yaml"
+  - "helm/litellm/values.yaml"
+  - "helm/litellm/templates/_helpers.tpl"
+parent: B151
+split_from: B152
+resolution: null
+superseded_by: null
+blocked_reason: "waits for Max: the gate has no pinned helm or helm-unittest, and the bundled postgresql and redis subcharts need network or vendored chart archives"
+pr: null

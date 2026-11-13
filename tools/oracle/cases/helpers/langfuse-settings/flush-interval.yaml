@@ -1,0 +1,31 @@
+kind: helper
+name: langfuse-settings-flush-interval
+call:
+  b3900:
+    function: flush_interval
+    steps:
+      - default: 7
+        environment:
+          LANGFUSE_FLUSH_INTERVAL: "5"
+      - default: 7
+        environment:
+          LANGFUSE_FLUSH_INTERVAL: " 5 "
+      - default: 7
+        environment:
+          LANGFUSE_FLUSH_INTERVAL: "0"
+      - default: 7
+        environment:
+          LANGFUSE_FLUSH_INTERVAL: "-5"
+      - default: 7
+        environment:
+          LANGFUSE_FLUSH_INTERVAL: "1.5"
+      - default: 7
+        environment:
+          LANGFUSE_FLUSH_INTERVAL: "   "
+      - default: 7
+        environment:
+          LANGFUSE_FLUSH_INTERVAL: ""
+      - default: 7
+        environment: {}
+env: {}
+compare: {ignore: []}

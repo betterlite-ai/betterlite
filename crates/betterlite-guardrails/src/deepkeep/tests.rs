@@ -36,7 +36,6 @@ fn guardrail() -> DeepKeepGuardrail {
             deepkeep_firewall_id: "fixed".to_owned(),
             unreachable_fallback: UnreachableFallback::FailClosed,
             timeout: Duration::from_secs(600),
-            extra_headers: BTreeMap::new(),
         },
         client,
     }
@@ -208,22 +207,10 @@ fn deepkeep_guardrail_empty_replacements_are_preserved() {
 fn deepkeep_guardrail_headers_include_secrets_without_debug_disclosure() {
     let mut deepkeep = guardrail();
     deepkeep.settings.api_key = SecretString::from("private-api-key");
-    deepkeep.settings.extra_headers.insert(
-        "Authorization".to_owned(),
-        SecretString::from("Bearer private-extra-header"),
-    );
     let headers = deepkeep.request_headers().expect("headers");
     assert_eq!(headers["content-type"], "application/json");
     assert_eq!(headers["x-api-key"], "private-api-key");
-    assert_eq!(headers["authorization"], "Bearer private-extra-header");
     assert!(!format!("{headers:?}").contains("private"));
-    deepkeep.settings.extra_headers.insert(
-        "X-API-Key".to_owned(),
-        SecretString::from("private-override"),
-    );
-    let overridden = deepkeep.request_headers().expect("headers");
-    assert_eq!(overridden["x-api-key"], "private-override");
-    assert!(!format!("{overridden:?}").contains("private"));
 }
 
 #[test]
@@ -261,13 +248,14 @@ fn deepkeep_config_leaves_lasso_entries_to_lasso_section() {
     assert_eq!(guardrails[0].guardrail_name, "firewall");
 }
 
-#[test]
-fn deepkeep_guardrail_config_default_timeout_matches_http_handler() {
-    assert_eq!(guardrail().settings.timeout, Duration::from_secs(600));
-}
-
-#[test]
-fn deepkeep_guardrail_blocked_action_has_default_reason() {
+#[rstest]
+#[case::named_reason(Some("banned content".to_owned()), "banned content")]
+#[case::missing_reason(None, "Content violates policy")]
+#[case::empty_reason(Some(String::new()), "Content violates policy")]
+fn deepkeep_guardrail_blocked_action_keeps_the_reason(
+    #[case] blocked_reason: Option<String>,
+    #[case] expected: &str,
+) {
     let returned = Response {
         action: Some("BLOCKED".to_owned()),
         texts: None,
@@ -275,10 +263,36 @@ fn deepkeep_guardrail_blocked_action_has_default_reason() {
         tools: None,
         tool_calls: None,
         structured_messages: None,
-        blocked_reason: None,
+        blocked_reason,
     };
     let error = DeepKeepGuardrail::build_return_inputs(&inputs(), returned).expect_err("blocked");
-    assert!(error.to_string().contains("Content violates policy"));
+    assert!(matches!(error, DeepKeepError::Blocked { reason } if reason == expected));
+}
+
+#[test]
+fn deepkeep_guardrail_blocked_action_logs_a_warning() {
+    let log_path = env::temp_dir().join(format!("betterlite-deepkeep-blocked-{}", process::id()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .with_writer(Arc::new(fs::File::create(&log_path).expect("log file")))
+        .finish();
+    let returned = Response {
+        action: Some("BLOCKED".to_owned()),
+        texts: None,
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        blocked_reason: Some("banned content".to_owned()),
+    };
+    let guard = set_default(subscriber);
+    let error = DeepKeepGuardrail::build_return_inputs(&inputs(), returned).expect_err("blocked");
+    drop(guard);
+    assert!(matches!(error, DeepKeepError::Blocked { .. }));
+    let written = fs::read_to_string(&log_path).expect("log contents");
+    fs::remove_file(&log_path).expect("remove log");
+    assert!(written.contains("WARN"));
+    assert!(written.contains("banned content"));
 }
 
 #[rstest]
@@ -354,11 +368,61 @@ async fn deepkeep_guardrail_fail_open_never_bypasses_request_build_errors() {
     assert!(matches!(result, Err(DeepKeepError::RequestBuild { .. })));
 }
 
+#[rstest]
+#[case::unreachable_under_fail_closed(
+    UnreachableFallback::FailClosed,
+    StatusCode::BAD_GATEWAY,
+    "502"
+)]
+#[case::client_error_under_fail_open(UnreachableFallback::FailOpen, StatusCode::BAD_REQUEST, "400")]
 #[tokio::test]
-async fn deepkeep_guardrail_fail_open_logs_a_warning_with_guardrail_identity() {
-    let log_path = env::temp_dir().join(format!("betterlite-deepkeep-fail-open-{}", process::id()));
+async fn deepkeep_guardrail_fail_closed_logs_the_api_error(
+    #[case] unreachable_fallback: UnreachableFallback,
+    #[case] status: StatusCode,
+    #[case] expected_status: &str,
+) {
+    let log_path = env::temp_dir().join(format!(
+        "betterlite-deepkeep-fail-closed-{}-{expected_status}",
+        process::id()
+    ));
     let subscriber = tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::WARN)
+        .with_max_level(tracing::Level::ERROR)
+        .with_writer(Arc::new(fs::File::create(&log_path).expect("log file")))
+        .finish();
+    let (base, mut server) = serve(
+        status,
+        "upstream failure echoing api_key=super-secret-fail-closed-token"
+            .as_bytes()
+            .to_vec(),
+    )
+    .await;
+    let mut deepkeep = guardrail();
+    deepkeep.settings.api_key = SecretString::from("super-secret-fail-closed-token");
+    deepkeep.settings.api_base = base;
+    deepkeep.settings.unreachable_fallback = unreachable_fallback;
+    let guard = set_default(subscriber);
+    let result = deepkeep.apply(inputs(), context()).await;
+    drop(guard);
+    assert!(matches!(
+        result,
+        Err(DeepKeepError::Api { status: code, .. }) if code == status
+    ));
+    let written = fs::read_to_string(&log_path).expect("log contents");
+    fs::remove_file(&log_path).expect("remove log");
+    assert!(written.contains("firewall"));
+    assert!(written.contains(expected_status));
+    assert!(!written.contains("super-secret-fail-closed-token"));
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn deepkeep_guardrail_fail_open_logs_an_error_with_call_identity() {
+    let log_path = env::temp_dir().join(format!(
+        "betterlite-deepkeep-fail-open-identity-{}",
+        process::id()
+    ));
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::ERROR)
         .with_writer(Arc::new(fs::File::create(&log_path).expect("log file")))
         .finish();
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
@@ -369,13 +433,29 @@ async fn deepkeep_guardrail_fail_open_logs_a_warning_with_guardrail_identity() {
     deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;
     deepkeep.settings.timeout = Duration::from_millis(100);
     let guard = set_default(subscriber);
-    let result = deepkeep.apply(inputs(), context()).await;
+    let result = deepkeep
+        .apply(
+            inputs(),
+            RequestContext {
+                request_data: BTreeMap::new(),
+                input_type: InputType::Response,
+                litellm_call_id: Some("call-1".to_owned()),
+                litellm_trace_id: Some("trace-1".to_owned()),
+                litellm_version: "1.105.1".to_owned(),
+                dynamic_params: BTreeMap::new(),
+            },
+        )
+        .await;
     drop(guard);
     assert_eq!(result.expect("fail-open passthrough"), inputs());
     let written = fs::read_to_string(&log_path).expect("log contents");
     fs::remove_file(&log_path).expect("remove log");
+    assert!(written.contains("ERROR"));
     assert!(written.contains("firewall"));
     assert!(written.contains("fail_open"));
+    assert!(written.contains("call-1"));
+    assert!(written.contains("trace-1"));
+    assert!(written.contains("response"));
     assert!(!written.contains("key"));
 }
 
@@ -386,23 +466,18 @@ async fn deepkeep_guardrail_fail_open_never_logs_upstream_response_body() {
         process::id()
     ));
     let subscriber = tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::WARN)
+        .with_max_level(tracing::Level::ERROR)
         .with_writer(Arc::new(fs::File::create(&log_path).expect("log file")))
         .finish();
     let (base, mut server) = serve(
         StatusCode::BAD_GATEWAY,
-        "upstream failure echoing api_key=super-secret-upstream-token and \
-         header Authorization: Bearer super-secret-extra-header"
+        "upstream failure echoing api_key=super-secret-upstream-token"
             .as_bytes()
             .to_vec(),
     )
     .await;
     let mut deepkeep = guardrail();
     deepkeep.settings.api_key = SecretString::from("super-secret-upstream-token");
-    deepkeep.settings.extra_headers = BTreeMap::from([(
-        "X-API-Key".to_owned(),
-        SecretString::from("super-secret-extra-header"),
-    )]);
     deepkeep.settings.api_base = base;
     deepkeep.settings.unreachable_fallback = UnreachableFallback::FailOpen;
     deepkeep.settings.timeout = Duration::from_secs(5);
@@ -415,8 +490,6 @@ async fn deepkeep_guardrail_fail_open_never_logs_upstream_response_body() {
     assert!(written.contains("fail_open"));
     assert!(written.contains("502"));
     assert!(!written.contains("super-secret-upstream-token"));
-    assert!(!written.contains("super-secret-extra-header"));
-    assert!(!written.contains("Authorization"));
     server.shutdown().await;
 }
 
@@ -507,11 +580,6 @@ async fn deepkeep_guardrail_bounds_upstream_responses(
 
 #[rstest]
 #[case::api_key(StatusCode::UNAUTHORIZED, "invalid secret-api-token", false)]
-#[case::extra_header(
-    StatusCode::UNAUTHORIZED,
-    "Authorization: Bearer secret-header-token",
-    false
-)]
 #[case::invalid_json(StatusCode::OK, r#""secret-api-token""#, false)]
 #[case::blocked_reason(
     StatusCode::OK,
@@ -528,10 +596,6 @@ async fn deepkeep_guardrail_errors_redact_echoed_credentials(
     let mut deepkeep = guardrail();
     deepkeep.settings.api_base = base;
     deepkeep.settings.api_key = SecretString::from("secret-api-token");
-    deepkeep.settings.extra_headers.insert(
-        "Authorization".to_owned(),
-        SecretString::from("Bearer secret-header-token"),
-    );
     let error = deepkeep
         .apply(inputs(), context())
         .await

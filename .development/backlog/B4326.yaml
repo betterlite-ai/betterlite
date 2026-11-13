@@ -1,14 +1,14 @@
 id: B4326
 milestone: M8 platform
 title: Probe Redis health and expose cache administration operations
-status: todo
-depends_on: [B393, B4323, B4324, B4325]
-file: null
+status: done
+depends_on: [B4323, B4324, B4325, B5220]
+file: tasks/B4326-redis-cache-admin.yaml
 covers:
   - "litellm/caching/{redis_cache,redis_cluster_cache}.py"
 parent: B126
 split_from: B126
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 968

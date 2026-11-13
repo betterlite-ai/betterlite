@@ -5,6 +5,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 
 use crate::sections::Sections;
+use crate::sections::fallback_plans::chains::FallbackTarget;
+use crate::tls::VerifySetting;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -25,6 +27,7 @@ pub struct ModelDeployment {
 
 #[derive(Debug, Clone)]
 pub struct LiteLlmParams {
+    pub ssl_verify: Option<bool>,
     pub model: Option<String>,
     pub api_base: Option<String>,
     pub api_key: Option<SecretString>,
@@ -68,7 +71,7 @@ pub enum RoutingStrategy {
     UsageBasedRoutingV2,
     Lar1,
 }
-pub type RouterFallback = BTreeMap<String, Vec<String>>;
+pub type RouterFallback = BTreeMap<String, Vec<FallbackTarget>>;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ProxyTrust {
@@ -78,6 +81,11 @@ pub struct ProxyTrust {
 
 #[derive(Debug, Clone)]
 pub struct LiteLlmSettings {
+    pub ssl_verify: Option<VerifySetting>,
+    pub ssl_certificate: Option<String>,
+    pub http2: Option<bool>,
+    pub ssl_ecdh_curve: Option<String>,
+    pub ssl_security_level: Option<String>,
     pub num_retries: Option<u32>,
     pub request_timeout: Option<f64>,
     pub drop_params: Option<bool>,

@@ -1,0 +1,119 @@
+id: B079
+title: Prove live policy database and request-state composition through HTTP
+description: >-
+  Close the policy umbrella with the remaining stateful HTTP flows. The sole exclusive path, architecture.md,
+  describes loading, matching and inheritance as one system; all executable functions in the original six paths
+  already have owners. B9320 supplies the missing runtime/config boundary and B9321 the inspection/enrichment
+  mounts. B9322 proves loaded configuration, B9323 inference/retrieval and B9324 the old unloaded API matrix.
+  This task exercises database writes that must be visible to inspection and real inference through the same
+  live registries. It does not register a route or implement any registry, persistence or version function.
+
+  Write four self-contained ordinary HTTP transcripts in policies/composition, using the existing steps and
+  per-gateway captures. Each starts its own config and database fixture; no case consumes another case's state.
+  Set database.seed.dashboard_governance: {} from B9750 to install policy and attachment tables, use B860's
+  identities where required and B5076's pinned Prisma setup. Do not inject database_url or disable schema setup
+  in gateway config. General settings provide a master key; use distinct config/master-key values to prevent
+  independent stateful cases sharing a process accidentally. Inference uses an OpenAI deployment with stable
+  model_info.id, inert api_key and api_base {{upstream}}. Configure named generic_guardrail_api guards at the
+  scripted mock with mode pre_call and default_on false; their passing replies carry action NONE.
+
+  config-shadow-delete.yaml starts with a config policy and then POSTs /policies to create a production policy
+  of the same name. Give the two definitions distinct descriptions and at most one effective guardrail each.
+  GET /policy/info/{policy_name} and POST /v1/chat/completions selecting that name must immediately see the DB
+  definition and its scanner. DELETE /policies/{policy_id} returns the production-deletion warning, and the next
+  inspection/chat requests see the original config definition again. Compare /policies/list before and after
+  deletion as well, including definition_location and counts; do not hide an unsynchronized reader with force_sync.
+
+  source-version-and-compare.yaml creates a production policy, then POSTs /policies/name/{policy_name}/versions
+  with an explicit source_policy_id. Change the resulting draft through PUT /policies/{policy_id}, then GET
+  /policies/compare?version_a=...&version_b=.... The clone retains its parent link and content, starts draft and
+  increments version_number; comparison includes only changed content fields in field_diffs. Also compare equal
+  ids to observe an empty diff. Use the exact source-id path here: B9752 already proves the page's empty-body
+  version creation and normal draft/edit/publish/promote lifecycle.
+
+  force-sync-version-override.yaml independently creates production and a differently guarded draft. Select the
+  draft by policy_<id> in request policies before and after POST /policies/resolve?force_sync=true. A newly created
+  draft has not entered the hot-path by-ID cache; explicit sync populates it and changes the later request's
+  scanner/attribution without changing named production resolution. Include a global attachment so /policies/resolve
+  also returns the production definition's effective_guardrails and matched_policies. Keep policy and attachment
+  registries alive throughout the transcript, and prove subsequent GET /policy/info still shows production.
+
+  delete-all-restores-config.yaml creates a production override plus another version over a configured policy,
+  DELETEs /policies/name/{policy_name}/all-versions, then GETs its versions, info and plural list and sends a chat
+  request by name. Check the deletion message, config-fallback warning, empty versions response and restored config
+  guardrail. Deletion must not silently promote another DB version. Ordinary attachment writes and page flows
+  stay with B9752; this suite isolates cache sharing, explicit source comparison and APIs the page does not call.
+
+  All management paths above are unversioned, with no provider or /openai/v1 aliases. Existing B8669 mounts
+  versions and CRUD and B9321 mounts inspection/resolve. Requests are authenticated through their production
+  wrappers. Capture generated policy ids separately on each gateway and feed them into later URLs and bodies.
+  Normalize only the individual generated-id and timestamp leaves, keeping parent links meaningful through
+  captures; retain statuses, error type/param/code, version values, warnings, definitions and field_diffs. Compare
+  scanner/provider method, path, auth, body and call order along with attribution headers. Never inject private
+  _guardrail_pipelines metadata or replace persisted records through a fixture between HTTP steps.
+
+  Run the normal oracle against built betterlite and pinned LiteLLM, with no kind field and no self-check as parity
+  evidence. About 500-750 fixture lines are expected. There are no new production callables, byte decoders or fuzz
+  targets. A mismatch is sent to B3243/B3244/B3248/B3250/B9320 or the request owner with its transcript; do not
+  weaken the comparison or add test-only state hooks. This task depends only on the runtime, mounts, inference
+  adapter and database fixtures it actually uses, not every policy child or the independent HTTP suites.
+scope:
+  paths:
+    - tools/oracle/cases/policies/composition/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/architecture.md#L1-L54
+    why: Exclusive umbrella path describes the composition whose remaining database behavior is proved here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/policy_engine.py#L1-L36
+    why: This retained cover has only compatibility imports and __all__, already owned by B7948.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/__init__.py#L1-L110
+    why: This retained cover only re-exports types; B167 owns that surface rather than this umbrella.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L74-L380
+    why: Decorators for list, create, version clone, compare and delete-all, mounted by B8669.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L419-L524
+    why: Draft update and delete-by-id decorators and their validation/error ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L491-L545
+    why: Inspection reads the current live definition through its authenticated route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolve_endpoints.py#L215-L315
+    why: Explicit force_sync executes policy refresh before attachment refresh, then resolves production names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L637-L707
+    why: Sync populates production names and the by-ID cache while retaining config fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3234-L3475
+    why: B1108 selects explicit policy ids, records attribution and removes policies before provider forwarding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11958
+    why: Existing chat decorators; these stateful transcripts use the /v1/chat/completions path.
+dod:
+  - text: Production DB overrides and their deletion are immediately visible through inspection, listing and actual inference using one shared runtime.
+    proof: [database-transcripts, oracle]
+  - text: Explicit-source cloning and comparison retain lineage and report only changed fields, including empty diffs for equal ids.
+    proof: [database-transcripts, oracle]
+  - text: force_sync populates draft-id selection without replacing named production behavior, and deleting all DB versions restores configured behavior.
+    proof: [database-transcripts, oracle]
+checks:
+  optional: []
+  commands:
+    - id: database-transcripts
+      why: a passing CRUD handler test does not prove that later inference sees its writes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/policies/composition)"
+oracle_cases:
+  - tools/oracle/cases/policies/composition/config-shadow-delete.yaml
+  - tools/oracle/cases/policies/composition/source-version-and-compare.yaml
+  - tools/oracle/cases/policies/composition/force-sync-version-override.yaml
+  - tools/oracle/cases/policies/composition/delete-all-restores-config.yaml
+deviations: []
+out_of_scope:
+  - "types/policy_engine.py has imports and __all__ only, owned by B7948; types/proxy/policy_engine/__init__.py has imports and __all__ only, owned by B167."
+  - "policy_engine/__init__.py and init_policies.py composition moved to B9320; B3250 implements _print_policies_on_startup, init_policies and get_policies_summary, while init_policies_sync has no caller at the pin."
+  - "management_endpoints/policy_endpoints/__init__.py composition moved to B9321; re-exported functions remain with B3249/B3250/B3251/B3252/B3253."
+  - "B3240/B3241 own values and registries, B3242/B3243/B3244 records/persistence/versions, B3245 validation, B3246/B3247 execution and B3269 retrieval; no callable is transferred here."
+  - "B8669 owns CRUD/version mounts and B8790 pipeline, impact, preview, compliance and catalog/suggestion mounts; B9321 adds inspection/enrichment without re-registering them."
+  - "B9322/B9323/B9324 own the other missing HTTP suites, B9752 ordinary dashboard writes, B8993 native streaming, and B3254-B3268 template data."
+  - "architecture.md is an explanation of existing composition, not a request for a documentation copy or another engine."
+pitfalls:
+  - Creating a draft does not itself fill the hot-path policy_<id> cache; force_sync changes that observation.
+  - Removing production restores config without promoting another DB version.
+  - Reusing an oracle process across stateful fixtures can leak DB writes, so fixture configs must remain distinct.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

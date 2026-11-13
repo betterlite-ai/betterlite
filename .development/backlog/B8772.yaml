@@ -1,0 +1,14 @@
+id: B8772
+milestone: M6 guardrails
+title: Serve and mount the guardrail and policy usage dashboard routes
+status: todo
+depends_on: [B8610, B8667, B3689, B3688, B3682, B726, B052]
+file: tasks/B8772-guardrail-usage-routes.yaml
+covers:
+  - "litellm/proxy/guardrails/usage_endpoints.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

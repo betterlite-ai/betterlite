@@ -1,0 +1,80 @@
+kind: helper
+name: oci-common-schema-refs-and-anyof
+call:
+  b5940:
+    function: schema
+    schema:
+      $defs:
+        Inner:
+          type: object
+          properties:
+            x:
+              type: string
+              title: X
+        Loop:
+          $ref: "#/$defs/Loop"
+      type: object
+      properties:
+        a:
+          $ref: "#/$defs/Inner"
+        b:
+          $ref: "#/$defs/Nope"
+        c:
+          $ref: "#/$defs/Loop"
+        d:
+          $ref: "https://example.com/schema.json"
+        e:
+          $ref: 7
+        f:
+          anyOf:
+            - type: "null"
+            - type: string
+              maxLength: 3
+          description: d
+        g:
+          type:
+            - "null"
+            - integer
+          title: G
+          default: null
+        h:
+          anyOf:
+            - type: "null"
+        i:
+          type: array
+        j:
+          type: array
+          items:
+            type: any
+        k:
+          type: object
+          required:
+            - a
+            - zz
+          properties:
+            a:
+              type: string
+        l:
+          type: object
+          required: a
+        m:
+          type:
+            - "null"
+        n:
+          anyOf:
+            - weird
+            - type: "null"
+        o:
+          anyOf:
+            - type: object
+              properties:
+                z:
+                  type: number
+          title: O
+        p:
+          $ref: null
+        q:
+          type: array
+          items: null
+env: {}
+compare: {ignore: []}

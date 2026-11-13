@@ -1,0 +1,13 @@
+kind: helper
+name: invalid-end-does-not-open-the-window
+call:
+  ptu_pricing:
+    operation: terms
+    model_info:
+      ptu_count: 1
+      cost_per_ptu_per_hour: 1000000
+      team_id: team-capacity
+      ptu_effective_from: "2026-01-01T00:00:00Z"
+      ptu_effective_to: "not-a-date"
+compare: {ignore: []}
+env: {}

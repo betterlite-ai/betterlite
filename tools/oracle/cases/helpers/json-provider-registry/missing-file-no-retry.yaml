@@ -1,0 +1,8 @@
+kind: helper
+name: json-provider-registry-missing-file-no-retry
+call:
+  json_provider_registry:
+    missing: true
+    retry: '{"helicone":{"base_url":"later","api_key_env":"B"}}'
+env: {}
+compare: {ignore: []}

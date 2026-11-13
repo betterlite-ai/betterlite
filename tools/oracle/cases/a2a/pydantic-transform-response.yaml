@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-transform-response
+call: {b4805: {operation: transform, request_id: req-1, response: {result: {artifacts: [{parts: [{kind: text, text: hello}, {kind: file, file: {uri: "file:///a"}}]}], status: {state: completed}}}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: agent-search-failed-embeddings
+call:
+  b4783:
+    function: failures
+    query: query
+    agents:
+      - {agent_id: a1, agent_name: alpha, agent_card_params: {}}
+    top_k: 5
+    embedding_model: test-embedding
+    message: boom
+    http_status: 429
+    http_detail: slow down
+env: {}
+compare: {ignore: []}

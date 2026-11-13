@@ -1,0 +1,30 @@
+guardrails:
+
+  # Example 1: a detector server. It scans every text of one request in a single call.
+  - guardrail_name: "ibm-jailbreak-detector"
+    litellm_params:
+      guardrail: ibm_guardrails
+      auth_token: os.environ/IBM_GUARDRAILS_AUTH_TOKEN
+      base_url: "https://your-detector-server.com"
+      detector_id: "jailbreak-detector"
+      is_detector_server: true
+      verify_ssl: true
+      optional_params:
+        detector_params: {}
+        score_threshold: 0.8
+        block_on_detection: true
+
+  # Example 2: an FMS Guardrails Orchestrator. It scans one text per call.
+  - guardrail_name: "ibm-orchestrator-detector"
+    litellm_params:
+      guardrail: ibm_guardrails
+      auth_token: os.environ/IBM_GUARDRAILS_AUTH_TOKEN
+      base_url: "https://your-orchestrator-server.com"
+      detector_id: "jailbreak-detector"
+      is_detector_server: false
+      optional_params:
+        # Detector arguments the orchestrator forwards to the detector.
+        detector_params:
+          some_param: "value"
+        score_threshold: 0.7
+        block_on_detection: false

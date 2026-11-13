@@ -1,0 +1,11 @@
+model_list:
+  - model_name: claude-code
+    litellm_params:
+      model: openai/gpt-4o
+      tags: [default, team-a]
+      tag_regex:
+        - "^User-Agent: claude-code/"
+        - "(?i)internal-tool"
+  - model_name: plain
+    litellm_params:
+      model: openai/gpt-4o-mini

@@ -1,0 +1,1 @@
+{"kind":"helper","name":"indexed-nondecimal","call":{"b3693":{"function":"tag","format":"{pattern_name[\u00b2]}","name":"email"}},"env":{},"compare":{"ignore":[]}}

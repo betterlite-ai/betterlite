@@ -1,0 +1,14 @@
+id: B8210
+milestone: M6 guardrails
+title: Decision model guardrail
+status: todo
+depends_on: [B3514, B3662, B4080, B5471]
+file: tasks/B8210-decision-model-guard.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/decision_model/**"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

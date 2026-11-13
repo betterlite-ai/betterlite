@@ -1,0 +1,12 @@
+kind: helper
+name: passthrough-wrapper-response-string
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: llm_passthrough_route
+    response:
+      response: '{"content": [{"type": "text", "text": "wrapped"}]}'
+env: {}
+compare: {ignore: []}

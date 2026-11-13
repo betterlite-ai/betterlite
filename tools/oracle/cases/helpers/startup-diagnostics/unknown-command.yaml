@@ -1,0 +1,5 @@
+kind: helper
+name: unknown-command
+call: {"b4175": {"operation": "unknown_command", "args": ["foo", "bar"]}}
+env: {}
+compare: {ignore: []}

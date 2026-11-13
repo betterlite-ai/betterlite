@@ -1,0 +1,16 @@
+kind: helper
+name: cyberark-policy-409-retry-exponential-backoff
+env: {}
+compare: {ignore: []}
+call:
+  b4418:
+    env: {CYBERARK_API_KEY: key-1}
+    routes:
+      - route: "POST http://127.0.0.1:8080/authn/default/admin/authenticate"
+        replies: [{status: 200, body: '{"protected":"abc"}'}]
+      - route: "POST http://127.0.0.1:8080/policies/default/policy/root"
+        replies: [{status: 409, body: ""}, {status: 409, body: ""}, {status: 409, body: ""}, {status: 201, body: ""}]
+      - route: "POST http://127.0.0.1:8080/secrets/default/variable/db"
+        replies: [{status: 201, body: ""}]
+    steps:
+      - {op: write, name: db, value: v1}

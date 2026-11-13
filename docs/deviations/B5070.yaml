@@ -1,0 +1,14 @@
+task: B5070
+deviations:
+  - what: prod_entrypoint.sh and component_entrypoint.sh print one stderr line and carry on when USE_DDTRACE is true; LiteLLM switches to ddtrace-run and exports DD_TRACE_OPENAI_ENABLED=False.
+    why: The native server has no Datadog tracer to start, and the container must still boot with the setting LiteLLM users already have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/prod_entrypoint.sh#L3-L10
+  - what: entrypoint.sh runs betterlite-db-admin migrate and skips the Prisma client generation that prisma_migration.py ran after a good migration.
+    why: Native SQL needs no generated client, as B1232 already records.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/entrypoint.sh#L8-L16
+  - what: build_admin_ui.sh never takes the enterprise branch, so it exits 0 with the default-UI message even when enterprise_colors.json exists.
+    why: Enterprise-only code is not built; open-source LiteLLM never has that file.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/build_admin_ui.sh#L11-L15
+  - what: The scripts live in packaging/docker/ instead of docker/.
+    why: B5071, B5073 and B5074 already copy them from packaging/docker/; only the folder differs, not the file names.
+    link: ""

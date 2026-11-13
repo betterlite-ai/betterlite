@@ -1,0 +1,14 @@
+kind: helper
+name: attachment-global-scope
+call:
+  b3240:
+    function: attachment_scope
+    attachment:
+      policy: baseline
+      scope: "*"
+      teams: [healthcare-team]
+      keys: [dev-key]
+      models: [gpt-4]
+      tags: [prod]
+env: {}
+compare: {ignore: []}

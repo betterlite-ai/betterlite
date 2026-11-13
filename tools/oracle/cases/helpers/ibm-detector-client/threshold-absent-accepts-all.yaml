@@ -1,0 +1,13 @@
+kind: helper
+name: threshold-absent-accepts-all
+call:
+  b3736:
+    filter:
+      settings: {auth_token: test-token, base_url: "https://ibm.test", detector_id: jailbreak-detector}
+      environment: {}
+      detections:
+        - {detection_type: toxic, score: -0.5, text: mild}
+        - {detection_type: toxic, score: 0.1, text: bad}
+        - {detection_type: pii}
+env: {}
+compare: {ignore: []}

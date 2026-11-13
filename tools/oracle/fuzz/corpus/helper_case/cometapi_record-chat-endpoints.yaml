@@ -1,0 +1,18 @@
+kind: helper
+name: cometapi-record-seed-chat-endpoints
+call:
+  cometapi_record:
+    function: request
+    requests:
+      - {api_base: null, model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/v10", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "https://proxy.example/x?q=/v1", model: m, messages: [], optional_params: {}, env: {}}
+      - {api_base: "//host", model: m, messages: [], optional_params: {}, env: {}}
+      - api_base: null
+        model: m
+        messages: [{role: user, content: hi}]
+        optional_params: {extra_body: {a: 1}}
+        env: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+id: B8522
+milestone: M6 guardrails
+title: Lakera v2 guard call and lifecycle hooks
+status: todo
+depends_on: [B3663, B3664, B3665, B3681, B3779, B5471]
+file: tasks/B8522-lakera-v2-hooks.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py"
+parent: B107
+split_from: B107
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

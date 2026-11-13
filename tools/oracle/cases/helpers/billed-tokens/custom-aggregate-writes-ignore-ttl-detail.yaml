@@ -1,0 +1,9 @@
+kind: helper
+name: custom-aggregate-writes-ignore-ttl-detail
+call:
+  billed_tokens:
+    operation: custom_breakdown
+    custom_cost_per_token: {input_cost_per_token: 1, output_cost_per_token: 2, cache_read_input_token_cost: 0, cache_creation_input_token_cost: 3}
+    usage: {detail_reasoning: 2, detail_cache_read: 4, detail_cached_audio: 1, detail_cache_creation: 9, detail_cache_creation_5m: 1, detail_cache_creation_1h: 2}
+compare: {ignore: []}
+env: {}

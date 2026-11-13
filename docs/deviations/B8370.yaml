@@ -1,0 +1,20 @@
+task: B8370
+deviations:
+  - what: A step on a value above its field's maximum, for example "60/2 * * * *", prints the range as 0 in the rejection message where APScheduler prints -1, and an unknown month or weekday name prints in lower case.
+    why: The step and its range are unsigned here and names are matched after ASCII lowercasing, so only the message text differs; both reject the crontab.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7806-L7812
+  - what: Job runs are tokio tasks tracked in a JoinSet, not asyncio tasks on an executor, and job stores other than memory do not exist.
+    why: LiteLLM only ever uses MemoryJobStore and its AwaitableAsyncIOExecutor; the observable rules (grace, coalesce, instances, ids) are kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10584-L10601
+  - what: A stagger offset wrapped around an interval trigger leaves that job's schedule unshifted, while the same wrapper shifts a cron job's next fire.
+    why: APScheduler shifts an interval job through the start_date its IntervalTrigger fixed when it was built. betterlite's IntervalTrigger holds only the period, so rolling now back before asking it cancels the offset exactly; interval jobs therefore keep their unshifted phase after apply_scheduled_job_stagger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/scheduled_job_stagger.py#L124-L143
+  - what: An interval job with no explicit next run time has its first fire computed when it is added; APScheduler computes it when a stopped scheduler starts, from the trigger's construction-time start_date.
+    why: The two agree when startup is shorter than the interval, which is the normal case. A startup longer than the interval makes betterlite run once late inside the misfire grace instead of snapping forward to the next grid point.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10562-L10601
+  - what: A cron time inside the local spring-forward gap fires at the first valid instant after the gap, so "30 2 * * *" in New York on 2026-03-08 fires at 07:00Z where LiteLLM fires at 07:30Z, the missing 02:30 mapped with the pre-transition offset.
+    why: croner maps a missing wall time forward to the next valid second; APScheduler keeps the missing wall time and lets the zone offset map it. The fire differs by the gap length on that one day.
+    link: https://apscheduler.readthedocs.io/en/3.x/modules/triggers/cron.html
+  - what: APScheduler skips a daily "15 0 * * *" fire on the day after a spring-forward, firing in New York on 2026-03-07 and 2026-03-08 and then again on 2026-03-10, while betterlite fires on 2026-03-09 at the requested 00:15 local time.
+    why: APScheduler's field walk adds wall-clock differences in absolute time, which loses an hour after the offset change and drops the day. betterlite keeps the wall time the crontab asks for; a missing daily run is not a behavior a working setup can rely on, so this one is fixed rather than copied.
+    link: https://apscheduler.readthedocs.io/en/3.x/modules/triggers/cron.html

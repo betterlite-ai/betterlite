@@ -1,0 +1,15 @@
+id: B8147
+milestone: M11 distribution
+title: "GCP Terraform module: example root and README"
+status: blocked
+depends_on: [B8146]
+file: tasks/B8147-gcp-example-readme.yaml
+covers:
+  - "terraform/litellm/gcp/examples/**"
+  - "terraform/litellm/gcp/README.md"
+parent: B154
+split_from: B154
+resolution: null
+superseded_by: null
+blocked_reason: "waits for Max: the gate has no pinned terraform 1.13.x, and terraform init needs registry network for the aws, google and random providers"
+pr: null

@@ -5,6 +5,7 @@ call:
     operation: base
     model_info:
       input_cost_per_token: 0.000001
+      output_cost_per_token: 0.000003
       input_cost_per_token_priority: 0.000002
       output_cost_per_token_priority: invalid
       cache_read_input_token_cost: 0.0000001

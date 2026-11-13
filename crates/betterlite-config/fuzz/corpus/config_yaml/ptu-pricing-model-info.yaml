@@ -1,0 +1,12 @@
+model_list:
+  - model_name: gpt-4o-ptu
+    litellm_params:
+      model: azure/gpt-4o
+      api_key: os.environ/AZURE_API_KEY
+    model_info:
+      id: dep-7
+      team_id: team-capacity
+      ptu_count: 100
+      cost_per_ptu_per_hour: 2.5
+      ptu_effective_from: "2026-01-01T00:00:00Z"
+      ptu_effective_to: "2026-12-31T00:00:00Z"

@@ -1,8 +1,39 @@
-use betterlite_rate_limit::usage_resolution::TokenRateLimitType;
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
+
+pub const OUTPUT: &str = "output";
+pub const INPUT: &str = "input";
+pub const TOTAL: &str = "total";
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TokenRateLimitType {
+    Output,
+    Input,
+    #[default]
+    Total,
+}
+
+impl TokenRateLimitType {
+    #[must_use]
+    pub fn from_config(value: Option<&str>) -> Self {
+        match value {
+            Some(OUTPUT) => Self::Output,
+            Some(INPUT) => Self::Input,
+            _ => Self::Total,
+        }
+    }
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Output => OUTPUT,
+            Self::Input => INPUT,
+            Self::Total => TOTAL,
+        }
+    }
+}
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {

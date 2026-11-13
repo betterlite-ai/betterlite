@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "compile-basic", "call": {"b4056": {"mode": "compile", "prompt_id": "greeting", "variables": {"name": "Ann"}, "files": {"greeting": "---\nmodel: gpt-4\n---\nSystem: You greet users.\nUser: Hello {{ name }}"}}}, "env": {}, "compare": {"ignore": []}}

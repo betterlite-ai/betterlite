@@ -1,0 +1,5 @@
+kind: helper
+name: prepare-trimmed-base-explicit-timeout
+call: {openai_count_tokens: {"prepare": {"model": "gpt-5", "input": "hi", "api_key": "sk-other", "api_base": "http://h/v1///", "timeout": 30, "tools": [{"type": "web_search"}], "instructions": "be brief"}}}
+env: {}
+compare: {ignore: []}

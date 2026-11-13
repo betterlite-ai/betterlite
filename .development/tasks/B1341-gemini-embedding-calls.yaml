@@ -24,7 +24,6 @@ description: >-
   210 tests, 110 helper and 100 decoder/fuzz lines, maximum 800.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,gemini_embedding_call}.rs
     - crates/betterlite-vertex/src/gemini_embedding_call.rs
     - crates/betterlite-vertex/src/gemini_embedding_call/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

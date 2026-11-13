@@ -1,0 +1,18 @@
+kind: helper
+name: overdrawn-modalities-clamp-after-signed-subtraction
+call:
+  modality_cost:
+    operation: prompt
+    prompt_tokens: 40
+    cached_tokens: 20
+    text_tokens: -2
+    audio_tokens: 2
+    image_tokens: 2
+    cached_tokens_details: {audio_tokens: 9, text_tokens: -5, image_tokens: 9}
+    model_info: {input_cost_per_token: "0.5"}
+    prompt_base_cost: "0.5"
+    cache_read_cost: "0.25"
+    cache_creation_cost: "1"
+    cache_creation_cost_above_1hr: "2"
+compare: {ignore: []}
+env: {}

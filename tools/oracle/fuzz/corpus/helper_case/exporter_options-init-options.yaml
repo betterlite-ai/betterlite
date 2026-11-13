@@ -1,0 +1,11 @@
+kind: helper
+name: exporter-options-init-options
+call:
+  b3931:
+    operation: options
+    options:
+      turn_off_message_logging: null
+      message_logging: false
+      unrelated_exporter_key: dd-api-key
+env: {}
+compare: {ignore: []}

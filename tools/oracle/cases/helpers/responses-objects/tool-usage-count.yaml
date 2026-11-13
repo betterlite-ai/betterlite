@@ -1,0 +1,9 @@
+kind: helper
+name: responses-objects-tool-usage-count
+call:
+  responses_objects:
+    operation: tool_usage_count
+    tool_usage: {web_search: {num_requests: 2}}
+env: {}
+compare:
+  ignore: []

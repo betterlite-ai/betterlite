@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-services-s3-access-prefix-boundary
+call:
+  bedrock_services_s3_access:
+    operation: configured_prefix_boundary
+    s3_uri: "s3://configured/litellm-batch-outputs-x"
+    buckets: [other, configured]
+    legacy: false
+env: {}
+compare: {ignore: []}

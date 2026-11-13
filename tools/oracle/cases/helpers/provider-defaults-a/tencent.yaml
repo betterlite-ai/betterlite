@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-a-tencent
+call:
+  provider_defaults_a:
+    provider: tencent
+    model: any-model
+env: {}
+compare: {ignore: []}

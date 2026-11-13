@@ -1,0 +1,13 @@
+kind: helper
+name: freshness-max-age-exceeded
+call:
+  b4297:
+    get_cache_logic:
+      cached:
+        timestamp: 0
+        response:
+          choices: []
+      max_age: 60
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,337 @@
+[
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": "none"
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": "auto"
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": "required"
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "function",
+      "name": "f",
+      "provider": 7
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "mcp",
+      "server_label": "srv"
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "mcp",
+      "server_label": "srv",
+      "name": null
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "custom",
+      "name": "f"
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "allowed_tools",
+      "mode": "auto",
+      "tools": [
+        {
+          "type": "function",
+          "name": "f"
+        }
+      ]
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "file_search"
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "web_search_preview"
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "computer"
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "computer_use_preview"
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "computer_use"
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "web_search_preview_2025_03_11"
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "image_generation"
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "code_interpreter"
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "programmatic_tool_calling"
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "apply_patch"
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tool_choice": {
+      "type": "shell"
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "text": {}
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "text": {
+      "format": {
+        "type": "text"
+      },
+      "provider": 7
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "text": {
+      "format": {
+        "type": "json_schema",
+        "name": "sample",
+        "schema": {},
+        "strict": false
+      },
+      "verbosity": "high",
+      "provider": 7
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "text": {
+      "format": {
+        "type": "future",
+        "unknown": 7
+      },
+      "provider": 7
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tools": [
+      {
+        "name": "sample",
+        "type": "function"
+      },
+      {
+        "type": "file_search",
+        "vector_store_ids": []
+      },
+      {
+        "type": "computer"
+      },
+      {
+        "display_height": 1,
+        "display_width": 1,
+        "environment": "windows",
+        "type": "computer_use_preview"
+      },
+      {
+        "type": "web_search"
+      },
+      {
+        "server_label": "sample",
+        "type": "mcp"
+      },
+      {
+        "container": "sample",
+        "type": "code_interpreter"
+      },
+      {
+        "type": "programmatic_tool_calling"
+      },
+      {
+        "type": "image_generation"
+      },
+      {
+        "type": "local_shell"
+      },
+      {
+        "type": "shell"
+      },
+      {
+        "name": "sample",
+        "type": "custom"
+      },
+      {
+        "description": "sample",
+        "name": "sample",
+        "tools": [],
+        "type": "namespace"
+      },
+      {
+        "type": "tool_search"
+      },
+      {
+        "type": "web_search_preview"
+      },
+      {
+        "type": "apply_patch"
+      }
+    ]
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tools": [
+      {
+        "type": "future",
+        "custom": 7
+      }
+    ]
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "tools": [
+      {
+        "type": "function",
+        "name": "f",
+        "parameters": {},
+        "strict": false
+      },
+      {
+        "type": "future"
+      }
+    ]
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "incomplete_details": {}
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "usage": {
+      "input_tokens": 3,
+      "output_tokens": 2,
+      "total_tokens": 5,
+      "input_tokens_details": {
+        "cached_tokens_details": {
+          "provider": 7
+        }
+      },
+      "provider": 7
+    }
+  },
+  {
+    "id": "r",
+    "created_at": 1,
+    "output": [],
+    "temperature": 0.25,
+    "top_p": 0.5,
+    "store": false,
+    "parallel_tool_calls": false,
+    "max_output_tokens": 0,
+    "error": {},
+    "metadata": {},
+    "model": "",
+    "object": "",
+    "instructions": "",
+    "previous_response_id": "",
+    "user": ""
+  }
+]

@@ -1,0 +1,13 @@
+kind: helper
+name: stream-body-policy
+call:
+  bedrock_services_agentcore_request:
+    scenario: stream_body_policy
+    optional_params: {temperature: 0.5, stream: true, qualifier: prod}
+    headers: [[x-request-id, abc]]
+    error:
+      status: 429
+      message: upstream refused
+      headers: [[x-request-id, abc], [retry-after, '3']]
+env: {}
+compare: {ignore: []}

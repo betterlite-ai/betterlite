@@ -1,0 +1,13 @@
+kind: helper
+name: list-tools-success
+call:
+  responses_mcp_events:
+    operation: list_tools
+    base_item_id: mcp_list_1
+    servers:
+      - {server_label: zapier, server_url: litellm_proxy/mcp/zapier}
+    tools:
+      - {name: weather, description: Look up weather, input_schema: {type: object}}
+      - {name: bare}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: searchapi-doseq-url
+call:
+  b8024:
+    provider: searchapi
+    query: "rust"
+    optional_params:
+      location: ["Paris", "Lyon"]
+    api_key: "caller-key"
+    api_base: null
+    search_engine_id: null
+    environment: {}
+    headers: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+kind: helper
+name: cloudflare-wire-decisions-url-rules
+call:
+  b5836:
+    decisions_urls:
+      - {api_base: "https://api.cloudflare.com/client/v4/accounts/A/ai/run", model: "foo"}
+      - {api_base: "https://api.cloudflare.com/client/v4/accounts/A/ai/run/", model: "foo"}
+      - {api_base: "https://api.cloudflare.com/client/v4/accounts/A/ai/run//", model: "foo"}
+      - {api_base: "https://api.cloudflare.com/client/v4/accounts/A/ai/v1", model: "foo"}
+      - {api_base: "https://api.cloudflare.com/client/v4/accounts/A/ai/v1/", model: "@cf/cloudflare/foo"}
+      - {api_base: "https://api.cloudflare.com/client/v4/accounts/A/ai/v1//", model: "foo"}
+      - {api_base: "https://proxy.example//", model: "foo"}
+      - {api_base: "https://proxy.example", model: "meta/llama"}
+      - {api_base: "https://proxy.example/ai/v1/extra", model: "foo"}
+      - {api_base: "https://proxy.example/ai/run/extra", model: "foo"}
+env: {}
+compare: {ignore: []}

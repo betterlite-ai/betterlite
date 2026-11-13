@@ -1,0 +1,18 @@
+kind: helper
+name: legacy_missing_read_and_zero_write_prices
+call:
+  batch_token_cost:
+    kind: calculator
+    model: gpt-4o
+    custom_llm_provider: openai
+    usage:
+      prompt_tokens: 1000
+      completion_tokens: 100
+      cache_read_tokens: 200
+    prompt_extras: {cache_creation_tokens: 100}
+    model_info:
+      input_cost_per_token: 0.5
+      output_cost_per_token: 1
+      cache_creation_input_token_cost: 0
+env: {}
+compare: {ignore: []}

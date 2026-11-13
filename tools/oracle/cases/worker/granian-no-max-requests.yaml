@@ -1,0 +1,22 @@
+kind: helper
+name: granian-no-max-requests
+call:
+  b4177:
+    function: launch_plan
+    options:
+      backend: granian
+      host: 127.0.0.1
+      port: 4000
+      workers: 1
+      runtime_threads: null
+      certfile: null
+      keyfile: null
+      ciphers: null
+      max_requests: 100
+      max_requests_jitter: null
+      metrics_port: null
+      prometheus_dir: null
+    environment: {}
+env: {}
+compare:
+  ignore: []

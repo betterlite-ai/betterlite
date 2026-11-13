@@ -1,0 +1,39 @@
+kind: helper
+name: lemonade-model-metadata-positive-token-limits
+call:
+  lemonade_model_metadata:
+    operation: positive_int
+    values:
+      - 7
+      - 0
+      - -1
+      - 3.0
+      - true
+      - false
+      - null
+      - []
+      - {}
+      - "7"
+      - "  +42  "
+      - "007"
+      - "1_000"
+      - "-5"
+      - "0"
+      - "abc"
+      - ""
+      - "300.0"
+      - "1_"
+      - "_1"
+      - " 128000 "
+    model_infos:
+      - {recipe_options: {ctx_size: 10}, max_input_tokens: 20, context_window: 30, max_context_window: 40}
+      - {max_input_tokens: 20, context_window: 30, max_context_window: 40}
+      - {max_input_tokens: "bad", context_window: 30, max_context_window: 40}
+      - {max_input_tokens: 0, context_window: "", max_context_window: 40}
+      - {max_input_tokens: true, context_window: 1.5, max_context_window: "x"}
+      - {recipe_options: {ctx_size: 5.5}, max_input_tokens: 9}
+      - {recipe_options: "not a dict", context_window: 3}
+      - {context_window: null, max_context_window: "8"}
+      - {}
+env: {}
+compare: {ignore: []}

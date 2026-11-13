@@ -1,0 +1,26 @@
+kind: helper
+name: tracer-cache-reuse-and-lru
+call:
+  b3855:
+    function: tracer_cache_sequence
+    max_providers: 2
+    config:
+      exporter: console
+    requests:
+      - key:
+          config: {exporter: otlp_http, endpoint: "http://collector-a:4318", headers: null}
+        owns_exporter: true
+      - key:
+          config: {exporter: otlp_http, endpoint: "http://collector-a:4318", headers: null}
+        owns_exporter: true
+      - key:
+          headers: {authorization: "Bearer team-one"}
+        owns_exporter: false
+      - key:
+          config: {exporter: console, endpoint: null, headers: null}
+        owns_exporter: true
+      - key:
+          headers: {authorization: "Bearer team-two"}
+        owns_exporter: true
+env: {}
+compare: {ignore: []}

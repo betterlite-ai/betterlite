@@ -1,0 +1,11 @@
+kind: helper
+name: token-count-text-list-joined
+call:
+  token_count:
+    function: token_counter
+    model: gpt-3.5-turbo
+    text:
+      - hello
+      - " world"
+env: {}
+compare: {ignore: []}

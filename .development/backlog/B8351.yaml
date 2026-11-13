@@ -1,0 +1,14 @@
+id: B8351
+milestone: M2 routing
+title: Router catalog queries and messages fallback check
+status: todo
+depends_on: [B302, B306, B307, B309, B323, B399, B844, B847, B8440]
+file: tasks/B8351-router-catalog-queries.yaml
+covers:
+  - "litellm/router.py"
+parent: B162
+split_from: B162
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

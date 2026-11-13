@@ -1,0 +1,8 @@
+kind: helper
+name: gigachat-reply-no-token
+call:
+  b7325:
+    operation: reply
+    body: '{"exp":1}'
+env: {}
+compare: {ignore: []}

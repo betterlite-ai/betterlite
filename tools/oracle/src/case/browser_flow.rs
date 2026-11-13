@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
 
-use super::{BodyKind, Compare, Request, RequestBody, validate_ignores};
+use super::{BodyKind, Compare, Request, RequestBody, validate_contracts, validate_ignores};
 use crate::OracleError;
 use crate::multipart_oracle::request::request_body;
 
@@ -132,6 +132,7 @@ fn validate_step(
     let decoded =
         request_body(&step.request.body, step.request.body_kind).map_err(OracleError::Multipart)?;
     validate_ignores(path, &step.compare.ignore)?;
+    validate_contracts(path, &step.compare)?;
     let refs = step_placeholder_refs(step, &decoded).map_err(|source| {
         OracleError::CaseBrowserFlowPlaceholder {
             path: path.to_owned(),

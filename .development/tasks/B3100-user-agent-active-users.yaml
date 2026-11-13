@@ -37,7 +37,6 @@ scope:
   paths:
     - crates/betterlite-server/src/user_agent_analytics.rs
     - crates/betterlite-server/src/user_agent_analytics/**
-    - tools/oracle/cases/analytics/user-agent-*.yaml
     - tools/oracle/helpers/b3100.py
     - tools/oracle/helpers/b3100/**
     - tools/oracle/src/helpers/server/b3100.rs
@@ -59,35 +58,31 @@ dod:
     proof: [behavior-tests]
   - text: "_DistinctTagRow and _ActiveUsersRow row types parse correctly from SQL results via TypeAdapter without data loss."
     proof: [behavior-tests]
-  - text: "get_distinct_user_agent_tags returns tags filtered by pattern (User-Agent: or non-prefixed), ordered by count descending, limited to 250, without date or user filtering."
-    proof: [oracle]
+  - text: "get_distinct_user_agent_tags returns tags filtered by pattern (User-Agent: or non-prefixed), ordered by count descending, limited to 250, without date or user filtering. Tested with tower's oneshot here; B8661 proves it over HTTP."
+    proof: [behavior-tests]
   - text: "get_daily_active_users calculates active users per tag for last 7 days ending UTC tomorrow, supports both exact-match tag_filters (takes precedence) and substring tag_filter legacy mode, correctly joins with VerificationToken to count distinct user_id."
-    proof: [oracle, behavior-tests]
+    proof: [behavior-tests]
   - text: "get_weekly_active_users calculates active users per tag for 7 weeks (49 days), groups by 7-day period, generates descriptive week labels with ordinal and month names (e.g., \"Week 1 (Jan 15)\"), includes period_start and period_end dates, ordered with most recent week first."
-    proof: [oracle, behavior-tests]
+    proof: [behavior-tests]
   - text: "All three endpoints require user API key authentication, return HTTP 500 with \"Database not connected\" error when prisma_client is unavailable, and build SQL queries with parameter injection, not string templates."
-    proof: [oracle, behavior-tests]
+    proof: [behavior-tests]
   - text: "Tag filtering respects exact-list precedence (tag_filters with exact match before tag_filter substring search) and empty filter lists mean no filtering (fetch all)."
-    proof: [oracle, behavior-tests]
-  - text: "GET /tag/distinct returns HTTP 500 with message 'Failed to fetch distinct user agent tags: {e}' when a query execution error occurs."
-    proof: [oracle]
-  - text: "GET /tag/dau returns HTTP 500 with message 'Failed to fetch DAU analytics: {e}' when a query execution error occurs."
-    proof: [oracle]
-  - text: "GET /tag/wau returns HTTP 500 with message 'Failed to fetch WAU analytics: {e}' when a query execution error occurs."
-    proof: [oracle]
+    proof: [behavior-tests]
+  - text: "GET /tag/distinct returns HTTP 500 with message 'Failed to fetch distinct user agent tags: {e}' when a query execution error occurs. Tested with tower's oneshot here; B8661 proves it over HTTP."
+    proof: [behavior-tests]
+  - text: "GET /tag/dau returns HTTP 500 with message 'Failed to fetch DAU analytics: {e}' when a query execution error occurs. Tested with tower's oneshot here; B8661 proves it over HTTP."
+    proof: [behavior-tests]
+  - text: "GET /tag/wau returns HTTP 500 with message 'Failed to fetch WAU analytics: {e}' when a query execution error occurs. Tested with tower's oneshot here; B8661 proves it over HTTP."
+    proof: [behavior-tests]
+  - text: The three handlers answer through tower's oneshot over the module's own Router with fake ports; B8661 mounts the routes and proves them over HTTP.
+    proof: [behavior-tests]
 checks:
   optional: []
   commands:
     - id: behavior-tests
       why: Response types, row parsing, tag filtering or date range logic is broken
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_agent_analytics::/)'
-oracle_cases:
-  - tools/oracle/cases/analytics/user-agent-distinct.yaml
-  - tools/oracle/cases/analytics/user-agent-dau.yaml
-  - tools/oracle/cases/analytics/user-agent-wau.yaml
-  - tools/oracle/cases/analytics/user-agent-distinct-query-error.yaml
-  - tools/oracle/cases/analytics/user-agent-dau-query-error.yaml
-  - tools/oracle/cases/analytics/user-agent-wau-query-error.yaml
+oracle_cases: []
 deviations:
   - what: SQL parameter injection uses Rust's native parameterized query API instead of string formatting. Parameter indices match the count and order of provided values.
     why: Prevents SQL injection and matches betterlite's database abstraction patterns.

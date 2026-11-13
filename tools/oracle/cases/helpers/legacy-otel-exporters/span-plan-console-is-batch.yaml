@@ -1,0 +1,10 @@
+kind: helper
+name: span-plan-console-is-batch
+call:
+  b3855:
+    function: span_processor_plan
+    config:
+      exporter: console
+      headers: x-honeycomb-team=secret,x-team=one
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,186 @@
+id: B5471
+title: Guardrail base settings and shared behaviors
+description: >-
+  Add the module `guardrail_base` to betterlite-guardrails and the config section `guardrail_modes`. LiteLLM's `CustomGuardrail` is a base class every guardrail inherits, and Rust has no inheritance, so this task builds the same things as a settings struct, a value that owns them, a failure enum and a trait. Later guardrail tasks build on them. Request bodies are `BTreeMap<String, GuardrailValue>` with `GuardrailValue` and `GuardrailFlag` from `betterlite_config::sections::guardrail_identity::item`. `LitellmParams`, `LitellmParamsMode`, `Mode`, `ModeTarget` and `GuardrailEventHooks` come from B3662's `sections::guardrail_params`.
+
+  The section `guardrail_modes` reads the env var `LITELLM_STRICT_GUARDRAIL_MODES` through `lookup.lookup` and gives `Settings { strict: bool }`, default true. Follow `sections/mcp_tool_helpers.rs` for the shape. Trim the text and lowercase it: `true` is true, `false` is false, and an unset var or any other text stays strict. Don't use `betterlite_env::flag`, since it also accepts `1`, `yes` and `on`, and LiteLLM's `str_to_bool` treats those as unparsable. Callers pass `config.sections.guardrail_modes.strict` into `GuardrailBase::new`.
+
+  `GuardrailSettings` holds the constructor arguments as public fields: `guardrail_name: Option<String>`, `supported_event_hooks: Option<Vec<GuardrailEventHooks>>`, `event_hook: Option<LitellmParamsMode>`, `default_on`, `mask_request_content`, `mask_response_content`, `violation_message_template: Option<String>`, `end_session_after_n_fails: Option<i64>`, `on_violation: Option<String>`, `realtime_violation_message: Option<String>`, `on_sensitive_data: Option<String>`, `sensitive_data_route_to_model: Option<String>`, `sticky_session_routing`, `run_in_parallel`, `scan_raw_request`, `only_scan_new_messages`, `timeout: Option<f64>` and `switches: GuardrailSwitches`. The flags are `GuardrailFlag`, like the existing kwargs struct, because `clippy::struct_excessive_bools` is denied. A hand-written `Default` sets `sticky_session_routing` to true and every other flag to false. `GuardrailSwitches` (derives Default, all `GuardrailFlag`) stands in for what a Python subclass sets on itself: `use_native_during_call_hook`, `use_native_lifecycle_hooks`, `records_own_information` (LiteLLM's `records_own_guardrail_information`), `uses_apply_guardrail_interface` (LiteLLM compares the method to the base one, a Rust guardrail just sets this) and `deny_text_on_error` (LiteLLM looks for `CustomCodeGuardrail` in the class name).
+
+  `GuardrailBase { pub settings: GuardrailSettings, pub mode: Option<LitellmParamsMode> }` is built by `GuardrailBase::new(settings: GuardrailSettings, strict_modes: bool) -> Result<Self, GuardrailBaseError>`. When `supported_event_hooks` is a non-empty list, `new` calls `validate_event_hook(event_hook: Option<&LitellmParamsMode>, supported: &[GuardrailEventHooks], switches: &GuardrailSwitches) -> Result<(), GuardrailBaseError>`. A validation error is returned when `strict_modes` is true. Otherwise `new` logs one `tracing::warn!` with the text `{error}. LITELLM_STRICT_GUARDRAIL_MODES=false; continuing with unsupported event_hook. Set the env var to true (default) to enforce validation and fail at startup.` and goes on. The allowed set is `supported`, plus `logging_only` when `uses_apply_guardrail_interface` is on and `use_native_lifecycle_hooks` is off. A missing hook and an empty list pass. `One` and `Many` check each text. `Tagged` checks every tag value, with lists flattened, and then checks `default` only when it is present and non-empty. Text that names no hook gives `GuardrailBaseError::UnknownEventHook` with the message `'{hook}' is not a valid GuardrailEventHooks`. A real hook outside the allowed set gives `GuardrailBaseError::UnsupportedEventHook` with the message `Event hook {hook} is not in the supported event hooks [{supported}]`, printing wire names joined by `, ` from the `supported` list as given, so without the added `logging_only`.
+
+  `GuardrailBase::update_params(&mut self, params: &LitellmParams)` is LiteLLM's `update_in_memory_litellm_params`. It overwrites `default_on`, `mask_request_content`, `mask_response_content`, `violation_message_template`, `end_session_after_n_fails`, `on_violation`, `realtime_violation_message`, `on_sensitive_data`, `sensitive_data_route_to_model`, `sticky_session_routing`, `run_in_parallel`, `scan_raw_request`, `only_scan_new_messages` and `timeout` from `params.base.fields`, even where the params hold only their default: an empty optional clears the setting and an empty optional bool writes false. `on_violation` and `on_sensitive_data` are enums in B3662, so write their wire names. It sets `self.mode` to `params.mode`. It does not touch `guardrail_name`, `event_hook`, `supported_event_hooks` or `switches`.
+
+  `GuardrailFailure` is the error a guardrail hook returns, with one variant per LiteLLM exception that the status logic has to tell apart: `ModifyResponse`, `GuardrailRaised`, `BlockedPii`, `SensitiveDataRoute`, `Http { status: u16, detail: String }`, `HttpObject { status: u16, detail: IndexMap<String, serde_json::Value> }` (LiteLLM's HTTPException with a dict detail, key order kept; Display prints the object as JSON, and it follows `Http` in is_intervention) and `Other(String)`. Fields follow the exception constructors in the references, with `detection_info: BTreeMap<String, GuardrailValue>`, `request_data` as a map and `original_response: Option<GuardrailValue>`. It implements `std::error::Error`, and Display prints the exception's text: `Guardrail raised an exception, Guardrail: {guardrail_name}, Message: {message}` when the field `wrap_default_message` (LiteLLM's `should_wrap_with_default_message`) is true and the bare message when false, `Blocked entity detected: {entity_type} by Guardrail: {guardrail_name}. This entity is not allowed to be used in this request.`, the `message` of a ModifyResponse, the given message of a SensitiveDataRoute or its default `Sensitive data detected by {guardrail_name}. Routing to model: {route_to_model}`, the `detail` of `Http`, and the text of `Other`. Status codes default to 400 at the call site. `is_intervention(&self) -> bool` is one `match`: the first four variants are true, `Http` is true only for 400, 403 and 422, and `Other` is false.
+
+  `GuardrailApiInputs` is LiteLLM's `GenericGuardrailAPIInputs`, with Default, Serialize and Deserialize, every field optional and left out when absent: `texts` and `images` (`Vec<String>`), `tools` (`Vec<GuardrailToolParam>`), `tool_calls` (`Vec<GuardrailExtraValue>`), `structured_messages` (`Vec<GuardrailMessage>`), `model` (`String`) and `stream_holdback_chars` (`i64`). The element types are in `generic_guardrail_contracts`. `GuardrailLogTarget { litellm_params: Option<BTreeMap<String, GuardrailValue>>, model_call_params: Option<BTreeMap<String, GuardrailValue>> }` stands in for the two dicts on LiteLLM's logging object. B3664 writes to it.
+
+  `GuardrailContract: Sync` is the trait a guardrail implements. `apply_guardrail(&self, inputs: GuardrailApiInputs, request_data: &mut BTreeMap<String, GuardrailValue>, input_type: GuardrailInputType, logging_obj: Option<&mut GuardrailLogTarget>) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send` returns `inputs` unchanged by default. `get_config_model(&self) -> Option<GuardrailValue>` and `get_supported_event_hooks(&self) -> Option<Vec<GuardrailEventHooks>>` default to `None`, `supports_tool_result_scan(&self) -> bool` (LiteLLM's `supports_scan_only_tool_results`) to true and `messages_cover_full_request(&self) -> bool` (LiteLLM's `structured_messages_cover_full_request`) to false. The shorter names keep to the 30-character rule.
+
+  Methods on `GuardrailBase`. `render_violation_message(&self, default: &str, context: &[(&str, &str)]) -> String` returns `default` when the template is missing or empty. Otherwise it formats the template with `strfmt::strfmt_map`, with the key `default_message` set to `default` and `context` entries overriding it. When formatting fails it warns `Failed to format violation message template for guardrail {name}: {error}` and returns `default`. `panw_prisma_airs/error_detail.rs` has a local version to follow. `passthrough_failure(&self, message: &str, request_data: &BTreeMap<String, GuardrailValue>, detection_info: Option<BTreeMap<String, GuardrailValue>>, original_response: Option<GuardrailValue>) -> GuardrailFailure` returns `ModifyResponse` carrying a copy of the body, the guardrail name, the body's `model` text or `unknown` when it has no `model` key, and an empty map for missing detection info. LiteLLM raises here, and the caller returns this value as its `Err`.
+
+  Free items. `DEFAULT_ADVISORY_MESSAGE` holds LiteLLM's text with its `{reason}` placeholder. `inject_advisory_message(data: &mut BTreeMap<String, GuardrailValue>, message: &str) -> bool` tries these in order, with the advisory object being `{"role": "system", "content": message}`. A string `instructions` gets `\n\n` and the message appended, a `messages` list also gets the advisory object appended, and the result is true. Otherwise a string `input` does the same. Otherwise a non-null `input` of any other shape returns false and changes nothing. Otherwise a `messages` list gets the advisory appended and the result is true. Otherwise `messages` is set to a list of only the advisory and the result is true. `mask_content_in_string(content: &str, mask: &str, start: i64, end: i64) -> String` counts in code points and returns `content` unchanged unless `0 <= start < end <= length`. `session_id_from_request(data: &BTreeMap<String, GuardrailValue>) -> Option<String>` is LiteLLM's `get_session_id_from_request_data`. It tries `litellm_session_id`, then `session_id` inside `metadata`, then `session_id` inside `litellm_metadata`, skips null and empty text, and returns integers as decimal text.
+
+  The task's oracle helper takes `function` and that function's arguments, and it compares results only: for event hook validation the answer is accepted or rejected, not the message. Copy each helper case into `tools/oracle/fuzz/corpus/helper_case/` with the prefix `guardrail_base-`. Native tests live in `guardrail_base::tests` with the name prefixes in the check filters below, and the section's tests in `sections::guardrail_modes`.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/guardrail_base.rs
+    - crates/betterlite-guardrails/src/guardrail_base/**
+    - crates/betterlite-config/src/sections/guardrail_modes.rs
+    - crates/betterlite-config/src/sections/guardrail_modes/**
+    - tools/oracle/cases/helpers/guardrail-base/**
+    - "tools/oracle/fuzz/corpus/helper_case/guardrail_base-*"
+    - tools/oracle/helpers/b5471.py
+    - tools/oracle/helpers/b5471/**
+    - tools/oracle/src/helpers/guardrails/b5471.rs
+    - tools/oracle/src/helpers/guardrails/b5471/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L64-L109
+    why: The block status codes, the advisory text and is_guardrail_intervention.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L139-L169
+    why: The strict mode switch and get_session_id_from_request_data.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L172-L272
+    why: The class switches, the constructor defaults and the warning on a non-strict validation failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L274-L417
+    why: render_violation_message, raise_passthrough_exception and the order of inject_advisory_message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L611-L672
+    why: get_config_model, get_supported_event_hooks and _validate_event_hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L812-L813
+    why: uses_apply_guardrail_interface compares the method to the base one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1018-L1040
+    why: The defaults of supports_scan_only_tool_results and structured_messages_cover_full_request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1312-L1340
+    why: The apply_guardrail contract and its default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1448-L1471
+    why: mask_content_in_string and update_in_memory_litellm_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1079-L1122
+    why: GuardrailRaisedException and BlockedPiiEntityError fields and text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1201-L1270
+    why: ModifyResponseException and SensitiveDataRouteException fields and text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
+    why: GenericGuardrailAPIInputs field names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1305-L1313
+    why: The eight event hook names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L136
+    why: str_to_bool accepts only true and false after trimming and lowercasing.
+dod:
+  - text: LITELLM_STRICT_GUARDRAIL_MODES unset, set to `TRUE`, or set to `1` or `off` leaves `strict` true, and ` False ` makes it false, in a named section test.
+    proof: [modes-section-tests]
+  - text: validate_event_hook passes a missing hook, an empty list and a hook in the supported list, and rejects an unsupported single hook, one bad entry in a list, a bad tag value inside a tag list and a bad non-empty `default`.
+    proof: [validate-hook-tests, oracle, helper-python]
+  - text: A `Tagged` mode with an empty or missing `default` skips the default check, and text that names no hook is `UnknownEventHook`.
+    proof: [validate-hook-tests]
+  - text: "`logging_only` is allowed only when `uses_apply_guardrail_interface` is on and `use_native_lifecycle_hooks` is off, and the error message lists the supported hooks without it."
+    proof: [validate-hook-tests]
+  - text: GuardrailBase::new returns the validation error when strict, succeeds when not strict, and validates nothing when the supported list is missing or empty.
+    proof: [validate-hook-tests]
+  - text: Default settings have `sticky_session_routing` true and every other flag false, and new keeps `timeout` as given.
+    proof: [contract-tests]
+  - text: is_intervention is true for the four guardrail variants and for HTTP 400, 403 and 422, and false for HTTP 401, 408, 429, 500 and `Other`.
+    proof: [failure-tests, oracle, helper-python]
+  - text: HttpObject keeps its detail keys in insertion order, prints them as one JSON object in Display, and counts as an intervention for the same statuses as Http.
+    proof: [failure-tests]
+  - text: Display prints the wrapped and unwrapped GuardrailRaised text, the BlockedPii text and both SensitiveDataRoute forms.
+    proof: [failure-tests]
+  - text: render_violation_message returns the default with no or empty template, fills `default_message` and context keys, lets context override `default_message`, and returns the default for a template naming an unknown key.
+    proof: [violation-tests, oracle, helper-python]
+  - text: passthrough_failure carries the message, the guardrail name and the body's model, uses `unknown` with no model key, an empty map with no detection info, and the original response when given.
+    proof: [passthrough-tests, oracle, helper-python]
+  - text: inject_advisory_message follows the order instructions, string input, other input, messages, new messages, updates `messages` in the first two cases when it is a list, and returns false with data unchanged for a list input.
+    proof: [advisory-tests, oracle, helper-python]
+  - text: mask_content_in_string counts code points, so a mask after a multi-byte character lands right, and it returns the text unchanged for a negative start, start equal to end and end past the length.
+    proof: [mask-tests, oracle, helper-python]
+  - text: update_params overwrites listed fields with the params' defaults, clears a template the params leave empty, sets `mode`, and leaves `event_hook` and `guardrail_name` alone.
+    proof: [update-tests]
+  - text: session_id_from_request follows the three sources in order, skips empty values and returns an integer as text.
+    proof: [session-tests, oracle, helper-python]
+  - text: The default GuardrailContract returns its inputs unchanged, `None` from both lookups, true from supports_tool_result_scan and false from messages_cover_full_request.
+    proof: [contract-tests]
+  - text: GuardrailApiInputs writes only the fields that are set and reads back the same value.
+    proof: [contract-tests]
+  - text: Newly added helper corpus cases replay through the shared helper case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: modes-section-tests
+      why: the strict switch is missing or accepts text LiteLLM rejects
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::guardrail_modes::/)'
+    - id: validate-hook-tests
+      why: event hook validation or the strict and warning paths of new are wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_base::tests::validate_hook_/)'
+    - id: failure-tests
+      why: the failure text or the intervention rule is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_base::tests::failure_/)'
+    - id: violation-tests
+      why: template rendering or its fallback to the default is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_base::tests::violation_/)'
+    - id: passthrough-tests
+      why: the passthrough failure loses its model, name or detection info
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_base::tests::passthrough_/)'
+    - id: advisory-tests
+      why: the advisory lands in the wrong field or a list input is changed
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_base::tests::advisory_/)'
+    - id: mask-tests
+      why: masking cuts at byte offsets or ignores the bounds
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_base::tests::mask_/)'
+    - id: update-tests
+      why: updating params skips defaults or touches the wrong fields
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_base::tests::update_/)'
+    - id: session-tests
+      why: the session id source order is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_base::tests::session_/)'
+    - id: contract-tests
+      why: the settings defaults, trait defaults or inputs shape are wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_base::tests::contract_/)'
+    - id: helper-python
+      why: the strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5471)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5471 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5471/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added guardrail base cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/guardrail_base-*")" &&
+        grep -lE '^[[:space:]]+b5471:' tools/oracle/fuzz/corpus/helper_case/guardrail_base-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-base/event-hook-validation.yaml
+  - tools/oracle/cases/helpers/guardrail-base/failure-intervention.yaml
+  - tools/oracle/cases/helpers/guardrail-base/violation-template.yaml
+  - tools/oracle/cases/helpers/guardrail-base/violation-bad-key.yaml
+  - tools/oracle/cases/helpers/guardrail-base/passthrough-failure.yaml
+  - tools/oracle/cases/helpers/guardrail-base/advisory-injection.yaml
+  - tools/oracle/cases/helpers/guardrail-base/advisory-list-input.yaml
+  - tools/oracle/cases/helpers/guardrail-base/mask-content.yaml
+  - tools/oracle/cases/helpers/guardrail-base/session-id.yaml
+deviations:
+  - what: A `violation_message_template` using `str.format` features beyond named fields and width or alignment specs (`{a!r}`, `{a.b}`, `{a[0]}`) renders the default message, where LiteLLM would expand them.
+    why: strfmt, already used by panw_prisma_airs, has no such syntax, and a template that fails to format takes LiteLLM's own fallback to the default.
+  - what: "`get_config_model` returns an opaque `GuardrailValue` in place of a Pydantic class."
+    why: Rust has no class to return, and the default is `None` until a provider fills it in.
+out_of_scope:
+  - handle_sensitive_data_detection, should_route_on_sensitive_data, raise_sensitive_data_route_exception and _get_session_id_from_request_data have no caller at the pin, so they are not built. The `SensitiveDataRoute` variant stays because the intervention rule names it.
+  - B3664 owns add_standard_logging_guardrail_information_to_request_data, _process_response, _summarize_guardrail_response, _process_error, _inputs_were_modified, get_guardrails_messages_for_call_type, _append_slg_to_litellm_params, _sync_guardrail_info_to_logging_obj, _original_inputs_for, log_guardrail_information and the role of __init_subclass__.
+  - B3665 owns should_run_guardrail, _event_hook_is_event_type, get_guardrail_from_metadata, _guardrail_is_in_requested_guardrails, _get_admin_metadata, get_disable_global_guardrail, get_opted_out_global_guardrails_from_metadata, _suppressed_by_auto_router_compression, get_guardrail_dynamic_request_body_params and _validate_premium_user.
+  - B3666 owns _scanned_text_hash, _scanned_texts_cache_key, filter_new_texts_for_session, mark_texts_scanned, _pre_call_marker, mark_pre_call_hook_ran, _pre_call_hook_already_ran, _PRE_CALL_EXECUTED_TOKEN, dc, _deployment_hook_target, async_pre_call_deployment_hook, async_pre_call_hook_on_messages, async_post_call_success_deployment_hook, async_logging_hook, _scan_logged_call, _is_valid_response_type, _user_api_key_auth_from_request and _unified_hook_fields.
+  - Turning a GuardrailFailure into an HTTP error body. The route and hook tasks map it to `betterlite_error` types, and betterlite-guardrails doesn't depend on that crate.
+  - A user's own Python guardrail class. B164 covers that.
+pitfalls:
+  - "`GuardrailBaseInitKwargs` derives Default, so its `sticky_session_routing` is false while LiteLLM's default is true, and that is why `GuardrailSettings` has its own Default. Don't wrap the kwargs struct."
+  - Don't port the Python enum repr in the validation message. `{hook}` prints the wire name such as `post_call`, and the oracle compares only accepted or rejected.
+  - The `Mode.default` check is skipped for an empty list too, because LiteLLM tests truthiness there, while `tags` values are always checked.
+  - HTTP 401, 408 and 429 are outside the block set on purpose, they are provider trouble and must not count as an intervention, and only 400, 403 and 422 do.
+  - Both the instructions branch and the string input branch return true right after writing, so a request with both gets the note in `instructions` only, and `input` stays as it was.
+  - A list `input` wins over a `messages` list and gives false, because that endpoint reads only `input` and the caller has to fall back to blocking.
+  - Python slices strings by code point, so `mask_content_in_string` must not use byte offsets, and `start` and `end` are signed because providers send them as plain JSON numbers.
+  - "`update_in_memory_litellm_params` sets `mode` and never `event_hook`, so a later `event_hook` read still sees the constructor's value."
+  - "`GuardrailFailure` carries a whole request body, so box the big variants or `clippy::result_large_err` fails every function returning it."
+  - The new module sits next to the local `render_violation_message` in panw_prisma_airs. B3811 and other tasks keep that copy for now, so leave it alone.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

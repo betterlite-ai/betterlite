@@ -1,0 +1,14 @@
+kind: helper
+name: azure-openrouter-errors-azure-encrypted-code-no-status
+call:
+  azure_openrouter_errors:
+    provider: azure
+    model: gpt-4
+    custom_llm_provider: azure
+    error_str: "boom"
+    exception_provider: Azure
+    body:
+      error:
+        code: invalid_encrypted_content
+env: {}
+compare: {ignore: []}

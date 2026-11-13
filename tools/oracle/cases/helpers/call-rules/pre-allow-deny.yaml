@@ -1,0 +1,13 @@
+kind: helper
+name: pre-allow-deny
+call:
+  rule_decision:
+    phase: pre
+    model: gpt-4o
+    input: "hello there"
+    rules:
+      - true
+      - false
+env: {}
+compare:
+  ignore: []

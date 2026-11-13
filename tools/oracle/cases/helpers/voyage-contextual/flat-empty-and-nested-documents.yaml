@@ -1,0 +1,8 @@
+kind: helper
+name: voyage-contextual-flat-empty-and-nested-documents
+call:
+  voyage_contextual:
+    text: {model: voyage-3, input: [hello, world], options: {}, base: null}
+    contextual: {model: voyage-context-3, input: [], options: {}, base: null}
+env: {}
+compare: {ignore: []}

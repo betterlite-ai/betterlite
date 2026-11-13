@@ -24,6 +24,36 @@ fn connection_allowlist() {
     assert!(is_database_connection_error(ErrorType::Deadline));
     assert!(!is_database_connection_error(ErrorType::Prisma));
 }
+
+#[rstest::rstest]
+#[case::unrelated_prisma(ErrorType::Prisma, "permission denied", None, (false, false))]
+#[case::deadlock_code(ErrorType::Prisma, "conflict", Some("P2034"), (true, false))]
+#[case::deadlock_message(ErrorType::Data, "DEADLOCK DETECTED", None, (true, false))]
+#[case::read_only_sqlstate(
+    ErrorType::Data,
+    "PostgresError { code: \"25006\" }",
+    None,
+    (false, true)
+)]
+#[case::read_only_message(ErrorType::Prisma, "READ-ONLY TRANSACTION", None, (false, true))]
+#[case::non_prisma(
+    ErrorType::Other,
+    "deadlock detected; read-only transaction",
+    Some("P2034"),
+    (false, false)
+)]
+fn transaction_faults_require_matching_prisma_errors(
+    #[case] kind: ErrorType,
+    #[case] message: &str,
+    #[case] code: Option<&str>,
+    #[case] expected: (bool, bool),
+) {
+    let mut value = error(kind);
+    value.message = message.to_owned();
+    value.code = code.map(str::to_owned);
+    assert_eq!(is_deadlock_error(&value), expected.0);
+    assert_eq!(is_read_only_transaction_error(&value), expected.1);
+}
 #[test]
 fn infrastructure_data_exclusions() {
     assert!(!is_infrastructure_error(ErrorType::UniqueViolation));
@@ -71,11 +101,29 @@ fn deadline_and_engine_transport_are_distinct() {
     engine.message = "connection refused".to_owned();
     assert!(is_database_transport_error(&engine));
 }
-#[test]
-fn transport_keyword_matrix() {
+#[rstest::rstest]
+#[case::cant_reach_database_server("CAN'T REACH DATABASE SERVER")]
+#[case::cannot_reach_database_server("CANNOT REACH DATABASE SERVER")]
+#[case::cant_connect("CAN'T CONNECT")]
+#[case::cannot_connect("CANNOT CONNECT")]
+#[case::connection_error("CONNECTION ERROR")]
+#[case::connection_closed("CONNECTION CLOSED")]
+#[case::timed_out("TIMED OUT")]
+#[case::timeout("TIMEOUT")]
+#[case::connection_refused("CONNECTION REFUSED")]
+#[case::network_is_unreachable("NETWORK IS UNREACHABLE")]
+#[case::no_route_to_host("NO ROUTE TO HOST")]
+#[case::broken_pipe("BROKEN PIPE")]
+fn transport_keyword_matrix(#[case] message: &str) {
     let mut value = error(ErrorType::Prisma);
-    value.message = "NETWORK IS UNREACHABLE".to_owned();
+    value.message = message.to_owned();
     assert!(is_database_transport_error(&value));
+    value.error_type = ErrorType::Other;
+    assert!(!is_database_transport_error(&value));
+}
+
+#[test]
+fn http_client_closed_is_transport() {
     assert!(is_database_transport_error(&error(
         ErrorType::HttpClientClosed
     )));
@@ -86,17 +134,48 @@ fn unrelated_message_not_transport() {
     value.message = "query rejected".to_owned();
     assert!(!is_database_transport_error(&value));
 }
-#[test]
-fn deadlock_code_and_phrases() {
-    let mut value = error(ErrorType::Prisma);
-    value.code = Some("P2034".to_owned());
-    assert!(is_deadlock_error(&value));
+#[rstest::rstest]
+#[case::prisma_code(ErrorType::Prisma, Some("P2034"), "", true)]
+#[case::write_conflict_phrase(
+    ErrorType::Prisma,
+    None,
+    "Transaction failed due to a write conflict or a deadlock. Please retry your transaction",
+    true
+)]
+#[case::deadlock_phrase(ErrorType::Prisma, None, "Deadlock Detected", true)]
+#[case::sqlstate_phrase(ErrorType::Prisma, None, "ERROR: 40P01", true)]
+#[case::connect_with_code(ErrorType::Connect, Some("P2034"), "", false)]
+#[case::other_with_phrase(ErrorType::Other, None, "deadlock detected", false)]
+fn deadlock_code_and_phrases(
+    #[case] kind: ErrorType,
+    #[case] code: Option<&str>,
+    #[case] message: &str,
+    #[case] expected: bool,
+) {
+    let mut value = error(kind);
+    value.code = code.map(str::to_owned);
+    value.message = message.to_owned();
+    assert_eq!(is_deadlock_error(&value), expected);
 }
-#[test]
-fn read_only_code_and_phrase() {
-    let mut value = error(ErrorType::Prisma);
-    value.message = "ERROR \"25006\"".to_owned();
-    assert!(is_read_only_transaction_error(&value));
+
+#[rstest::rstest]
+#[case::quoted_code(ErrorType::Prisma, "ERROR \"25006\"", true)]
+#[case::phrase(
+    ErrorType::Prisma,
+    "cannot execute INSERT in a READ-ONLY TRANSACTION",
+    true
+)]
+#[case::unquoted_code(ErrorType::Prisma, "SQLSTATE 25006", false)]
+#[case::connect_quoted_code(ErrorType::Connect, "\"25006\"", false)]
+#[case::other_phrase(ErrorType::Other, "read-only transaction", false)]
+fn read_only_code_and_phrase(
+    #[case] kind: ErrorType,
+    #[case] message: &str,
+    #[case] expected: bool,
+) {
+    let mut value = error(kind);
+    value.message = message.to_owned();
+    assert_eq!(is_read_only_transaction_error(&value), expected);
 }
 #[test]
 fn meta_code_precedes_batch() {
@@ -117,9 +196,14 @@ fn batch_uppercase_five_chars() {
     value.message = "PostgresError { code: \"ABCDE\"".to_owned();
     assert_eq!(postgres_sqlstate(&value).as_deref(), Some("ABCDE"));
 }
-#[test]
-fn nondata_no_sqlstate() {
-    assert_eq!(postgres_sqlstate(&error(ErrorType::Prisma)), None);
+#[rstest::rstest]
+#[case::prisma(ErrorType::Prisma)]
+#[case::client_not_connected(ErrorType::ClientNotConnected)]
+fn nondata_no_sqlstate(#[case] kind: ErrorType) {
+    let mut value = error(kind);
+    value.meta_code = Some("23505".to_owned());
+    value.message = "PostgresError { code: \"40001\"".to_owned();
+    assert_eq!(postgres_sqlstate(&value), None);
 }
 #[test]
 fn engine_traceback_origin() {

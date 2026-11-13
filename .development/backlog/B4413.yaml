@@ -1,14 +1,14 @@
 id: B4413
 milestone: M8 platform
 title: Prepare and send AWS Secrets Manager actions
-status: todo
+status: done
 depends_on: [B002, B173, B198, B4410]
 file: tasks/B4413-aws-secret-requests.yaml
 covers:
   - "litellm/secret_managers/aws_secret_manager_v2.py"
 parent: B129
 split_from: B129
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 746

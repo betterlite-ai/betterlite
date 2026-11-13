@@ -1,0 +1,22 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-usage-cache-write",
+  "call": {
+    "b3843": {
+      "function": "usage",
+      "value": {
+        "metadata": {
+          "usage_object": {
+            "prompt_tokens_details": {
+              "cache_write_tokens": 4
+            }
+          }
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

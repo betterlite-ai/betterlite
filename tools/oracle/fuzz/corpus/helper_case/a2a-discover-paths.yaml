@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-discover-paths-seed
+call: {b8202: {operation: urls, base_url: https://agent.example, mode: langgraph_platform, params: {assistant_id: a1}}}
+env: {}
+compare: {ignore: []}

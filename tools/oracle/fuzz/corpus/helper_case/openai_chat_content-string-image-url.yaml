@@ -1,0 +1,15 @@
+kind: helper
+name: openai-chat-content-seed-string-image-url
+call:
+  openai_chat_content:
+    transform_requests:
+      requests:
+        - model: gpt-4o
+          provider: openai
+          messages:
+            - role: user
+              content:
+                - {type: image_url, image_url: https://example.com/a.png}
+                - {type: file, file: {file_data: 'data:application/pdf;base64,JVBERi0=', format: pdf}}
+env: {}
+compare: {ignore: []}

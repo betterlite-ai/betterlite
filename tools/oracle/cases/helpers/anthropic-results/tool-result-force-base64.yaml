@@ -1,0 +1,18 @@
+kind: helper
+name: anthropic-results-tool-result-force-base64
+call:
+  anthropic_results:
+    function: tool_result
+    id: fixed-id
+    force_base64: true
+    data_urls:
+      "https://example.test/a.png": "data:image/png;base64,QUJD"
+    message:
+      role: tool
+      tool_call_id: call
+      content:
+        - type: image_url
+          image_url: {url: "https://example.test/a.png"}
+env: {}
+compare:
+  ignore: []

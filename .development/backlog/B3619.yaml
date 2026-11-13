@@ -2,8 +2,8 @@ id: B3619
 milestone: M5 api families
 title: Pass-through common provider HTTP routes
 status: todo
-depends_on: [B3600, B3602, B3603, B3615, B3618, B002, B052, B567]
-file: null
+depends_on: [B3602, B3603, B3615, B3618, B3628, B002, B052, B567, B1601]
+file: tasks/B3619-passthrough-common-routes.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
   - "litellm/proxy/pass_through_endpoints/openai_passthrough_endpoints.py"

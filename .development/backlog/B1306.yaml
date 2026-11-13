@@ -1,7 +1,7 @@
 id: B1306
 milestone: M3 providers
 title: Vertex model routing, labels and catalog metadata
-status: todo
+status: done
 depends_on: [B1305, B193, B205, B240, B171]
 file: tasks/B1306-vertex-model-policy.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/llms/vertex_ai.py"
 parent: B031
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1069

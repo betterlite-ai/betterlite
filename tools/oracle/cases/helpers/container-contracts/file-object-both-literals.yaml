@@ -1,0 +1,10 @@
+kind: helper
+name: file-object-both-literals
+call:
+  b3360:
+    operation: record_decode
+    records:
+      - {kind: file_object, value: {id: file_abc, object: container.file, container_id: container_abc, bytes: 12, created_at: 1735689600, path: /mnt/data/report.csv, source: assistant, unknown_key: ignored}}
+      - {kind: file_object, value: {id: file_abc, object: container_file, container_id: container_abc, bytes: 12, created_at: 1735689600, path: /mnt/data/report.csv, source: user}}
+env: {}
+compare: {ignore: []}

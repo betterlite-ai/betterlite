@@ -1,0 +1,9 @@
+task: B2203
+deviations:
+  - what: get_bedrock_base_model returns a bare cross-region prefix (for example "global") unchanged instead of raising.
+    why: 'LiteLLM confirms potential_region is a cross-region prefix and then always indexes model.split(".", 1)[1];
+      a bare prefix with no dot raises an uncaught IndexError, so no working setup can rely on that crash. Proven by
+      crates/betterlite-context/src/bedrock_model/tests.rs base_model_nova_and_regions_case, which asserts
+      get_bedrock_base_model("global") == "global"; no oracle case covers this input because the real LiteLLM call
+      would crash and could never produce a matching comparison.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1091-L1095

@@ -1,0 +1,15 @@
+kind: helper
+name: rubrik-moderation-apply-guardrail-unknown-type
+call:
+  b3978:
+    environment: {}
+    init: {api_base: "https://rubrik.test", api_key: test-key, guardrail_name: safety}
+    clock: []
+    replies: []
+    logging_obj: null
+    request_data: null
+    input_type: stream
+    inputs:
+      texts: [hello]
+env: {}
+compare: {ignore: []}

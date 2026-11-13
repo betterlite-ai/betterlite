@@ -1,0 +1,16 @@
+kind: helper
+name: vector-store-managed-index-timestamp-forms
+call:
+  vector_store_records:
+    operation: managed_index_timestamp_forms
+    records:
+      - {id: i, index_name: n, litellm_params: {vector_store_index: n, vector_store_name: n}, created_at: "2025-01-02T03:04:05.123Z"}
+      - {id: i, index_name: n, litellm_params: {vector_store_index: n, vector_store_name: n}, created_at: "2025-01-02T03:04:05+00:00"}
+      - {id: i, index_name: n, litellm_params: {vector_store_index: n, vector_store_name: n}, created_at: "2025-01-02 03:04:05Z"}
+      - {id: i, index_name: n, litellm_params: {vector_store_index: n, vector_store_name: n}, created_at: 0}
+      - {id: i, index_name: n, litellm_params: {vector_store_index: n, vector_store_name: n}, created_at: "2025-01-02T03:04:05+02:00"}
+      - {id: i, index_name: n, litellm_params: {vector_store_index: n, vector_store_name: n}, created_at: "2025-01-02T03:04:05"}
+      - {id: i, index_name: n, litellm_params: {vector_store_index: n, vector_store_name: n}, created_at: "2025-01-02"}
+      - {id: i, index_name: n, litellm_params: {vector_store_index: n, vector_store_name: n}, updated_at: "2025-01-02T03:04:05.123456789Z"}
+env: {}
+compare: {ignore: []}

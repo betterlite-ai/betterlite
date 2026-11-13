@@ -2,7 +2,7 @@ id: B548
 title: Azure native passthrough preparation and logging
 description: >-
   Add AzurePassthroughPlan and typed response/stream logging projection for configured native paths. Preserve model-router
-  body-model inference, foreign deployment handling and api-version removal rules. B101/B103 own route registration
+  body-model inference, foreign deployment handling and api-version removal rules. B8690 and B103 own route registration
   and raw forwarding; this leaf plan never authorizes an arbitrary caller URL.
 
 
@@ -15,7 +15,7 @@ description: >-
   L176-L207; AzurePassthroughConfig.handle_logging_collected_chunks L209-L231.
 
 
-  B101 owns RelayShape, logged_relay_shape, replace_path_segment and strip_leading_model_segment; B103 owns OpenAIPassthroughLoggingHandler._build_complete_streaming_response.
+  B3570 owns RelayShape, logged_relay_shape, replace_path_segment and strip_leading_model_segment; B3636 owns OpenAIPassthroughLoggingHandler._build_complete_streaming_response.
 
 
   Reuse OpenAIResponsesAPIConfig.parse_terminal_event_from_stream_chunks from B508 (litellm/llms/openai/responses/transformation.py);
@@ -41,16 +41,16 @@ description: >-
   for router matching. foreign_deployment: Extract the first deployment path segment; exact model_group match is
   local, otherwise compare served_models case-insensitively using Python casefold. Return an unknown deployment
   verbatim; no callback is needed when no deployment or exact group match. api_version_removal: Resolve base from
-  explicit or AZURE_API_BASE only, else Exception Azure api base not found. Use B101 replacement of model_group
+  explicit or AZURE_API_BASE only, else Exception Azure api base not found. Use B3570 replacement of model_group
   path segments and strip leading actual model. A truthy request-query api-version removes every exact api-version
   from configured base, then overrides params version; empty caller version leaves existing base version. B2200
   builds the final URL; return it plus original resolved base. responses_stream_log: For slash-normalized endpoint
   ending the Responses relay suffix, B508 parses terminal events; only a found terminal changes logging.call_type
   to the Responses relay call type and returns the whole terminal event. Other non-chat streams return None. messages_relay_log:
-  Chat stream logging delegates B103 _build_complete_streaming_response; supply relayed request messages only when
+  Chat stream logging delegates B3636 _build_complete_streaming_response; supply relayed request messages only when
   RelayedCallDetails validation succeeds and request_data exists, otherwise None. nonstream_usage: For endpoint
   containing chat/completions use B668 chat response projection with user content no-message-pass-through-endpoint,
-  blank api_key and empty optional/litellm params; otherwise call B101 logged_relay_shape(OPENAI_RELAY_SHAPES).
+  blank api_key and empty optional/litellm params; otherwise call B3570 logged_relay_shape(OPENAI_RELAY_SHAPES).
   passthrough_auth_inputs: get_api_key is explicit or AZURE_API_KEY only; get_base_model is identity and get_models
   delegates to the inherited model-info owner. Validation overwrites params.api_key with the positional value even
   when None, then delegates B2200, so its global fallback may apply.
@@ -142,7 +142,7 @@ dod:
   - oracle
   - helper-python
 - text: 'api_version_removal: Resolve base from explicit or AZURE_API_BASE only, else Exception Azure api base not
-    found. Use B101 replacement of model_group path segments and strip leading actual model. A truthy request-query
+    found. Use B3570 replacement of model_group path segments and strip leading actual model. A truthy request-query
     api-version removes every exact api-version from configured base, then overrides params version; empty caller
     version leaves existing base version. B2200 builds the final URL; return it plus original resolved base.'
   proof:
@@ -156,14 +156,14 @@ dod:
   - case-responses-stream-log
   - oracle
   - helper-python
-- text: 'messages_relay_log: Chat stream logging delegates B103 _build_complete_streaming_response; supply relayed
+- text: 'messages_relay_log: Chat stream logging delegates B3636 _build_complete_streaming_response; supply relayed
     request messages only when RelayedCallDetails validation succeeds and request_data exists, otherwise None.'
   proof:
   - case-messages-relay-log
   - oracle
   - helper-python
 - text: 'nonstream_usage: For endpoint containing chat/completions use B668 chat response projection with user content
-    no-message-pass-through-endpoint, blank api_key and empty optional/litellm params; otherwise call B101 logged_relay_shape(OPENAI_RELAY_SHAPES).'
+    no-message-pass-through-endpoint, blank api_key and empty optional/litellm params; otherwise call B3570 logged_relay_shape(OPENAI_RELAY_SHAPES).'
   proof:
   - case-nonstream-usage
   - oracle
@@ -204,7 +204,7 @@ checks:
       no deployment or exact group match.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_foreign_deployment$/)'
   - id: case-api-version-removal
-    why: Resolve base from explicit or AZURE_API_BASE only, else Exception Azure api base not found. Use B101 replacement
+    why: Resolve base from explicit or AZURE_API_BASE only, else Exception Azure api base not found. Use B3570 replacement
       of model_group path segments and strip leading actual model. A truthy request-query api-version removes every
       exact api-version from configured base, then overrides params version; empty caller version leaves existing
       base version. B2200 builds the final URL; return it plus original resolved base.
@@ -215,16 +215,16 @@ checks:
       Other non-chat streams return None.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_responses_stream_log$/)'
   - id: case-messages-relay-log
-    why: Chat stream logging delegates B103 _build_complete_streaming_response; supply relayed request messages
+    why: Chat stream logging delegates B3636 _build_complete_streaming_response; supply relayed request messages
       only when RelayedCallDetails validation succeeds and request_data exists, otherwise None.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_messages_relay_log$/)'
   - id: case-nonstream-usage
     why: For endpoint containing chat/completions use B668 chat response projection with user content no-message-pass-through-endpoint,
-      blank api_key and empty optional/litellm params; otherwise call B101 logged_relay_shape(OPENAI_RELAY_SHAPES).
+      blank api_key and empty optional/litellm params; otherwise call B3570 logged_relay_shape(OPENAI_RELAY_SHAPES).
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_nonstream_usage$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_passthrough.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_passthrough.py tools/oracle/helpers/azure_passthrough)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus

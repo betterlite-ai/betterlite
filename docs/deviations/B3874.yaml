@@ -1,0 +1,17 @@
+task: B3874
+deviations:
+  - what: The factory returns metrics that expose labels, inc, set, observe and remove directly, and every value they carry is a MetricValue holding a Decimal or an explicit infinity/NaN variant instead of a float.
+    why: Independent emitters in B3876-B3882 call collector operations on the metrics they receive; a Decimal keeps money exact, and the explicit variants keep infinity and NaN out of money and gateway code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1183-L1232
+  - what: Configuration failures return typed thiserror errors that carry every collected metric and label message, and a metric with no declared label schema is a typed LabelSchema error instead of the AttributeError LiteLLM raises from getattr for a metric such as litellm_in_flight_requests.
+    why: A caller can match betterlite's errors, and a misconfigured startup exits with a named error instead of an unhandled exception traceback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L946-L1008
+  - what: pretty_print_validation_errors and pretty_print_prometheus_config return the rendered report instead of printing Rich tables, and the parser writes the report through tracing at error and info level.
+    why: Rust has no rich console; the caller chooses the sink and a display failure never fails startup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1027-L1167
+  - what: get_instance scans the exporter's CallbackRegistry of class-named entries and returns the logger held by the first entry whose class name is either the configured callback name "prometheus" or the class name "PrometheusLogger", instead of an isinstance check over litellm.callbacks.
+    why: B189's callback registry keeps identities and sinks rather than logger instances, and it records the configured callback name ("prometheus") where LiteLLM swaps that string for a PrometheusLogger instance; matching both names keeps the lookup working for a registered callback, and a matching entry that holds no logger is skipped so an unswapped string never hides the instance behind it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L257-L265
+  - what: The label defaults and caller-identity mode arrive through a LabelSchema trait implemented outside this crate instead of the process-wide litellm module state.
+    why: The label schema lives in betterlite-logging, which already depends on betterlite-prometheus, so a trait keeps the dependency direction and injects the schema through the factory constructor.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L956-L1023

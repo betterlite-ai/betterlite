@@ -1,0 +1,5 @@
+kind: helper
+name: openai-assistants-create-extra-field
+call: {openai_assistants: {create_assistant: {options: {api_key: sk-test, api_base: 'https://example.test/v1'}, data: {model: gpt-4o}, flag: false, reply: {status: 200, body: '{"id":"asst_9","object":"assistant","created_at":1,"model":"gpt-4o","tools":[],"reasoning_effort":"high"}'}}}}
+env: {}
+compare: {ignore: []}

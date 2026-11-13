@@ -1,0 +1,11 @@
+kind: helper
+name: duration_invalid
+call:
+  duration:
+    calls:
+      - {function: duration_in_seconds, duration: "5x", now: "2024-01-01T00:00:00Z"}
+      - {function: reset, duration: "abc", now: "2024-01-01T00:00:00Z", timezone: "Not/AZone"}
+      - {function: reset, duration: "2mo", now: "2024-01-01T00:00:00Z"}
+      - {function: reset, duration: "999999999999999999999999999999x", now: "2024-01-01T00:00:00Z"}
+env: {}
+compare: {ignore: []}

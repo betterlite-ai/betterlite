@@ -28,8 +28,6 @@ description: >-
   non-comment lines; allow 240 implementation, 210 tests, 100 adapters and 50 registration lines.
 scope:
   paths:
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/chatgpt_responses.rs
     - crates/betterlite-core/src/api/chatgpt_responses/**
     - tools/oracle/src/helpers/core_ops/chatgpt_responses.rs

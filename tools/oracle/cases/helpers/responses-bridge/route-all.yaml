@@ -1,0 +1,14 @@
+kind: helper
+name: responses-bridge-route-all
+call:
+  b5651:
+    request:
+      model: responses/gpt-4o
+      custom_llm_provider: openai
+      route_all_chat_openai_to_responses: true
+    capabilities:
+      model_info: {mode: chat, litellm_provider: openai}
+      resolved_openai_api_base: https://api.openai.com/v1
+env: {}
+compare:
+  ignore: []

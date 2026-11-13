@@ -1,0 +1,1 @@
+{"kind":"helper","name":"pattern-add-prebuilt-valid","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"prebuilt","action":"MASK","pattern_name":"email"}],"text":"Mail A@example.COM"}},"env":{},"compare":{"ignore":[]}}

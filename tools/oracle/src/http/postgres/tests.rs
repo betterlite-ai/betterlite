@@ -1,7 +1,7 @@
 #![cfg(test)]
 use crate::OracleError;
 use crate::case::Compare;
-use crate::case::decode_http_case;
+use crate::case::decode_case;
 use crate::cli::Options;
 use crate::compare::compare;
 use crate::http::Response;
@@ -16,7 +16,7 @@ use std::{fs, path::Path};
 
 #[test]
 fn legacy_case_without_database() {
-    let case = decode_http_case(b"name: legacy\nconfig: 'general_settings: {}'\nenv: {}\nrequest: {method: GET, path: /health/liveliness, headers: {}, body: null}\nupstream: []\ncompare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}\n").unwrap();
+    let case = decode_case(Path::new("<bytes>"), b"name: legacy\nconfig: 'general_settings: {}'\nenv: {}\nrequest: {method: GET, path: /health/liveliness, headers: {}, body: null}\nupstream: []\ncompare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}\n").unwrap();
     let options = Options {
         self_check: true,
         paths: Vec::new(),
@@ -29,9 +29,7 @@ fn legacy_case_without_database() {
 
 #[test]
 fn public_route_without_key() {
-    let case = decode_http_case(
-        b"name: public\nconfig: 'general_settings: {}'\nenv: {}\nrequest: {method: GET, path: /health/liveliness, headers: {}, body: null}\nupstream: []\ncompare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}\n",
-    )
+    let case = decode_case(Path::new("<bytes>"), b"name: public\nconfig: 'general_settings: {}'\nenv: {}\nrequest: {method: GET, path: /health/liveliness, headers: {}, body: null}\nupstream: []\ncompare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}\n")
     .unwrap();
     assert_eq!(case.request.path, "/health/liveliness");
     assert!(case.request.headers.is_empty());
@@ -62,17 +60,19 @@ fn public_route_without_key() {
 
 #[test]
 fn fixture_unknown_field() {
-    let result = decode_http_case(include_bytes!(
-        "../../../fuzz/corpus/http_case/postgres-unknown-field.yaml"
-    ));
+    let result = decode_case(
+        Path::new("<bytes>"),
+        include_bytes!("../../../fuzz/corpus/http_case/postgres-unknown-field.yaml"),
+    );
     assert!(matches!(result, Err(OracleError::CaseParse { .. })));
 }
 
 #[test]
 fn duplicate_identity() {
-    let result = decode_http_case(include_bytes!(
-        "../../../fuzz/corpus/http_case/postgres-duplicate-identity.yaml"
-    ));
+    let result = decode_case(
+        Path::new("<bytes>"),
+        include_bytes!("../../../fuzz/corpus/http_case/postgres-duplicate-identity.yaml"),
+    );
     assert!(matches!(
         result,
         Err(OracleError::HttpCaseFixture {
@@ -83,9 +83,10 @@ fn duplicate_identity() {
 
 #[test]
 fn missing_principal() {
-    let result = decode_http_case(include_bytes!(
-        "../../../fuzz/corpus/http_case/postgres-missing-principal.yaml"
-    ));
+    let result = decode_case(
+        Path::new("<bytes>"),
+        include_bytes!("../../../fuzz/corpus/http_case/postgres-missing-principal.yaml"),
+    );
     assert!(matches!(
         result,
         Err(OracleError::HttpCaseFixture {
@@ -96,17 +97,19 @@ fn missing_principal() {
 
 #[test]
 fn malformed_yaml() {
-    let result = decode_http_case(include_bytes!(
-        "../../../fuzz/corpus/http_case/postgres-malformed.yaml"
-    ));
+    let result = decode_case(
+        Path::new("<bytes>"),
+        include_bytes!("../../../fuzz/corpus/http_case/postgres-malformed.yaml"),
+    );
     assert!(matches!(result, Err(OracleError::CaseParse { .. })));
 }
 
 #[test]
 fn truncated_rows() {
-    let result = decode_http_case(include_bytes!(
-        "../../../fuzz/corpus/http_case/postgres-truncated-rows.yaml"
-    ));
+    let result = decode_case(
+        Path::new("<bytes>"),
+        include_bytes!("../../../fuzz/corpus/http_case/postgres-truncated-rows.yaml"),
+    );
     assert!(matches!(result, Err(OracleError::CaseParse { .. })));
 }
 
@@ -125,16 +128,18 @@ fn empty_configured_url_is_kept_for_the_fixture() {
 #[test]
 fn replays_the_http_case_corpus() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/http_case");
+    // a seed folder under http_case belongs to the fixture extension that replays it
     let mut paths = fs::read_dir(root)
         .unwrap()
         .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_file())
         .collect::<Vec<_>>();
     paths.sort();
     paths
         .into_iter()
         .try_for_each(|path| {
             let bytes = fs::read(path.as_path()).unwrap();
-            let result = decode_http_case(&bytes);
+            let result = decode_case(Path::new("<bytes>"), &bytes);
             let name = path.file_name().and_then(|value| value.to_str()).unwrap();
             match name {
                 "postgres-valid.yaml" => assert!(result.is_ok()),

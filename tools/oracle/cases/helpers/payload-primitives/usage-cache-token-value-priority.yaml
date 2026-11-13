@@ -1,0 +1,5 @@
+kind: helper
+name: payload-primitives-usage-cache-token-value-priority
+call: {b3843: {function: usage, value: {prompt_tokens: 20, metadata: {usage_object: {cache_creation_input_tokens: 0, prompt_tokens_details: {cache_creation_input_tokens: 7}}}}}}
+env: {}
+compare: {ignore: []}

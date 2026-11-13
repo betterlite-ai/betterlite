@@ -1,0 +1,25 @@
+kind: helper
+name: openai-chat-content-inline-pdf
+call:
+  openai_chat_content:
+    transform_requests:
+      requests:
+        - model: gpt-4o
+          provider: openai
+          messages:
+            - role: user
+              content:
+                - type: file
+                  file:
+                    file_data: data:application/pdf;base64,JVBERi0=
+                - type: file
+                  file:
+                    file_data: data:application/pdf;base64,JVBERi0=
+                    filename: paper.pdf
+                - type: file
+                  file:
+                    file_data: data:application/pdf;base64,JVBERi0=
+                    filename: missing/on/disk.pdf
+                    format: pdf
+env: {}
+compare: {ignore: []}

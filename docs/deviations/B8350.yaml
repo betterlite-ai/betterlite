@@ -1,0 +1,5 @@
+task: B8350
+deviations:
+  - what: as_output_cap turns a finite cap past i64::MAX into i64::MAX, where int(float(value)) in LiteLLM returns the exact Python int, so 1e19 gives 10^19 there and 9223372036854775807 here.
+    why: betterlite carries the cap as an i64 and saturates one that does not fit so the cap still exists, while Python's int is unbounded. Every provider token ceiling sits far below i64::MAX. Proven by crates/betterlite-router/src/router_predicates/tests.rs param_output_cap_coercions, whose above_i64 case asks for a cap from 1e19.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L751-L760

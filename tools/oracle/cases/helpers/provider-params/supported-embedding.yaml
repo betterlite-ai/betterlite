@@ -1,0 +1,30 @@
+kind: helper
+name: provider-params-supported-embedding
+call:
+  provider_params:
+    steps:
+      - function: supported_params
+        query:
+          provider: openai
+          call_type: embeddings
+          model: gpt-4o
+          config: gpt
+          capabilities: [catalog_model]
+      - function: supported_params
+        query:
+          provider: openai
+          call_type: embeddings
+          model: o3
+          config: o_series
+          capabilities: [catalog_model, function_calling, response_schema]
+      - function: supported_params
+        query:
+          provider: openai
+          call_type: embeddings
+          model: gpt-4
+          config: gpt
+          capabilities: [catalog_model]
+          base_model: gpt-4o
+          base_capabilities: [catalog_model]
+env: {}
+compare: {ignore: []}

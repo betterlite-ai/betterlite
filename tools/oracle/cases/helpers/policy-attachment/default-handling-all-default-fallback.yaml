@@ -1,0 +1,21 @@
+kind: helper
+name: default-handling-all-default-fallback
+call:
+  b3241:
+    policy_memory_matching_attachment:
+      action: attached_policies
+      attachments:
+        - policy: default-a
+          scope: "*"
+          default: true
+        - policy: default-b
+          teams: [team-a]
+          default: true
+        - policy: opt-in
+          tags: [opt-in]
+      context:
+        team_alias: team-a
+        key_alias: k
+        model: gpt-5.2
+env: {}
+compare: {ignore: []}

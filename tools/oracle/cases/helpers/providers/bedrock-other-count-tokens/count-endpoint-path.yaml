@@ -1,0 +1,53 @@
+kind: helper
+name: count-endpoint-path
+call:
+  bedrock_other_count_tokens:
+    count_endpoint_path:
+      cases:
+        - model: bedrock/converse/us.anthropic.claude-3-5-sonnet-20241022-v2:0
+          aws_region_name: eu-west-1
+          api_base: https://api.example
+          aws_bedrock_runtime_endpoint: https://runtime.example
+          environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: https://env.example}
+        - model: bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0
+          aws_region_name: eu-west-1
+          api_base: null
+          aws_bedrock_runtime_endpoint: https://runtime.example
+          environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: https://env.example}
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          aws_region_name: eu-west-1
+          api_base: null
+          aws_bedrock_runtime_endpoint: null
+          environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: https://env.example}
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          aws_region_name: eu-west-1
+          api_base: null
+          aws_bedrock_runtime_endpoint: null
+          environment: {}
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          aws_region_name: cn-north-1
+          api_base: null
+          aws_bedrock_runtime_endpoint: null
+          environment: {}
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          aws_region_name: eu-west-1
+          api_base: ''
+          aws_bedrock_runtime_endpoint: https://runtime.example
+          environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: https://env.example}
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          aws_region_name: eu-west-1
+          api_base: null
+          aws_bedrock_runtime_endpoint: ''
+          environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: https://env.example}
+        - model: bedrock/mantle/anthropic.claude-sonnet-5
+          aws_region_name: us-east-1
+          api_base: null
+          aws_bedrock_runtime_endpoint: null
+          environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: ''}
+        - model: 'arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude'
+          aws_region_name: us-east-1
+          api_base: null
+          aws_bedrock_runtime_endpoint: null
+          environment: {}
+env: {}
+compare: {ignore: []}

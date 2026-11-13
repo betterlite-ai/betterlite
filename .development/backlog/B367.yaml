@@ -1,14 +1,14 @@
 id: B367
 milestone: M2 routing
 title: Wildcard deployment matching
-status: todo
+status: done
 depends_on: [B008, B301]
 file: tasks/B367-wildcard-catalog.yaml
 covers:
   - "litellm/router_utils/pattern_match_deployments.py"
 parent: B016
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 840

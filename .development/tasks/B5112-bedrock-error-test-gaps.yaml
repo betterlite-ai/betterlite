@@ -1,0 +1,329 @@
+id: B5112
+title: Close the B239 Bedrock error test gaps
+description: >-
+  B239 ported LiteLLM's _map_bedrock_exception as map_bedrock_exception in
+  crates/betterlite-error/src/aws_errors/bedrock.rs. It is tested by the aws_errors_behavior_tests_behavior
+  rstest function in crates/betterlite-error/src/aws_errors/bedrock/tests.rs and by helper cases in
+  tools/oracle/cases/helpers/aws-errors/ that call the aws_errors operation. An Opus review after merge
+  found seven places where a branch has no test or a test can't fail. In all seven the classifier
+  already gives LiteLLM's answer, so this task changes only that tests.rs and those case files, and
+  bedrock.rs stays as it is. Each new row uses the function's five columns (custom_llm_provider,
+  error_str, status_code, expected family, expected provider). Each new case copies its neighbours:
+  provider bedrock under aws_errors, model claude-3, env {} and the name aws-errors-<file stem>.
+
+
+  Gap one. LiteLLM raises ContextWindowExceededError with llm_provider "bedrock" for six needles
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L891-L904).
+  Only "too many tokens" (rows branch_882 and branch_891) and "expected maxLength:" (branch-891.yaml)
+  are tested, so deleting "Input is too long", "prompt is too long", "prompt: length: 1.." or "Too many
+  input tokens" from CONTEXT_WINDOW_NEEDLES keeps every test and case green. Add one row and one case
+  per needle: context_window_input_is_too_long with "Input is too long for requested model.",
+  context_window_prompt_is_too_long with "prompt is too long: 210000 tokens > 200000 maximum",
+  context_window_prompt_length_range with "prompt: length: 1..200000" and
+  context_window_too_many_input_tokens with "Too many input tokens. Max input tokens: 8192". Each sends
+  custom_llm_provider bedrock_mantle and no status and expects context_window_exceeded with provider
+  bedrock. The cases are bedrock-input-is-too-long.yaml, bedrock-prompt-is-too-long.yaml,
+  bedrock-prompt-length-range.yaml and bedrock-too-many-input-tokens.yaml.
+
+
+  Gap two. Three OR predicates have a second string with no test. LiteLLM sends "The security token
+  included in the request is invalid" to AuthenticationError
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L926-L935),
+  lowercase "throttlingException" to RateLimitError
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L943-L949)
+  and "timed out" to Timeout with status 408
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L950-L956),
+  each with llm_provider "bedrock". Deleting the second string of any of the three from TEXT_CANDIDATES
+  passes today. Add rows security_token_invalid_auth ("The security token included in the request is
+  invalid."), lowercase_throttling_rate_limit ("throttlingException: rate exceeded") and
+  read_timed_out_timeout ("Read timed out. (read timeout=600)"). Each sends bedrock_mantle and no status
+  and expects authentication, rate_limit and timeout in that order, all with provider bedrock. The cases
+  are bedrock-security-token-invalid.yaml, bedrock-lowercase-throttling.yaml and
+  bedrock-read-timed-out.yaml.
+
+
+  Gap three. LiteLLM's image branch compares getattr(original_exception, "status_code", 500) with 500
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L957-L963),
+  so an explicit status 500 still gives InternalServerError with provider bedrock. The rows cover only
+  no status (branch_957) and 503, so writing that check in classify_by_predicate as
+  status_code.is_none() passes. A client whose error carries an explicit 500 would then get
+  ServiceUnavailable from the status fallback. Add row could_not_process_image_explicit_500_status
+  (bedrock_mantle, "Could not process image data", Some(500)) expecting internal_server with provider
+  bedrock, and case bedrock-image-status-500.yaml with status_code 500.
+
+
+  Gap four. LiteLLM raises the Mantle ContextWindowExceededError, with llm_provider set to the caller's
+  bedrock_mantle, before the elif chain runs
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L882-L891).
+  No row matches both, so swapping mantle_classification and classify_by_predicate in
+  map_bedrock_exception passes, and a Mantle error that also holds a chain needle would then report
+  provider bedrock. Add row mantle_match_wins_over_chain_needle (bedrock_mantle, "invalid_request_error:
+  prompt tokens (500) exceed model maximum (400); prompt is too long", no status) expecting
+  context_window_exceeded with provider bedrock_mantle, and case bedrock-mantle-before-chain.yaml.
+
+
+  Gap five. Every text branch, the image branch and the 500, 401, 400 and 404 status branches hard-code
+  llm_provider="bedrock"
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L899-L992),
+  and LiteLLM's dispatcher sends both bedrock and bedrock_mantle into this function
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2516-L2525).
+  Every row and case that reaches one of those branches sends custom_llm_provider bedrock, the same
+  string as the literal. So bedrock_context could return input.custom_llm_provider for Provider::Literal
+  and nothing would fail, while a Mantle client would see provider bedrock_mantle where LiteLLM says
+  bedrock. These can't fail today: rows branch_891_context_window_text,
+  branch_905_conversation_tool_blocks, branch_912_malformed_input,
+  branch_919_conversation_must_start_user, branch_926_credentials_auth, branch_936_access_denied,
+  branch_943_throttling, branch_950_connect_timeout, branch_957_image_processing_default_status,
+  branch_965_status_500, branch_972_status_401, branch_979_status_400 and branch_986_status_404, and the
+  cases branch-891, branch-905, branch-912, branch-919, branch-926, branch-936, branch-943, branch-950,
+  branch-957, branch-965, branch-972, branch-979 and branch-986. Each switches custom_llm_provider to
+  bedrock_mantle and keeps expecting provider bedrock. The new rows and cases of gaps one to three send
+  bedrock_mantle for the same reason.
+
+
+  Gap six. _get_bedrock_mantle_context_window_message returns None before its regex runs when error_str
+  holds neither "invalid_request_error" nor "validation_error"
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L857-L869).
+  Row branch_863_mantle_guard_neither_keyword and branch-863.yaml send "an unrelated failure", and the
+  regex misses that too. So deleting the keyword check in mantle_context_window_matches still returns
+  None, and both still pass. Rename the row to branch_863_mantle_guard_rejects_bare_token_message and
+  give it error_str "prompt tokens (500) exceed model maximum (400)" with bedrock_mantle and no status,
+  still expecting no class. branch-863.yaml takes the same error_str.
+
+
+  Gap seven. LiteLLM runs the Mantle block only when custom_llm_provider is "bedrock_mantle"
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L882-L890).
+  Row branch_882_non_mantle_provider_skips_mantle_block and branch-882.yaml send bedrock with "too many
+  tokens were supplied". The Mantle matcher misses that string anyway, so deleting the provider check in
+  mantle_classification still passes. Rename the row to branch_882_bedrock_provider_skips_mantle_match
+  with custom_llm_provider bedrock, error_str "invalid_request_error: prompt tokens (500) exceed model
+  maximum (400)" and no status, expecting no class: LiteLLM skips the Mantle block, and no chain needle
+  or status matches after it. branch-882.yaml takes the same input and drops its /value/result/message
+  ignore, since the answer is null.
+scope:
+  paths:
+  - crates/betterlite-error/src/aws_errors/bedrock/tests.rs
+  - tools/oracle/cases/helpers/aws-errors/bedrock-input-is-too-long.yaml
+  - tools/oracle/cases/helpers/aws-errors/bedrock-prompt-is-too-long.yaml
+  - tools/oracle/cases/helpers/aws-errors/bedrock-prompt-length-range.yaml
+  - tools/oracle/cases/helpers/aws-errors/bedrock-too-many-input-tokens.yaml
+  - tools/oracle/cases/helpers/aws-errors/bedrock-security-token-invalid.yaml
+  - tools/oracle/cases/helpers/aws-errors/bedrock-lowercase-throttling.yaml
+  - tools/oracle/cases/helpers/aws-errors/bedrock-read-timed-out.yaml
+  - tools/oracle/cases/helpers/aws-errors/bedrock-image-status-500.yaml
+  - tools/oracle/cases/helpers/aws-errors/bedrock-mantle-before-chain.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-863.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-882.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-891.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-905.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-912.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-919.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-926.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-936.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-943.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-950.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-957.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-965.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-972.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-979.yaml
+  - tools/oracle/cases/helpers/aws-errors/branch-986.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L857-L869
+  why: The Mantle message helper, whose keyword guard returns None before the token-count regex runs (gap six).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L882-L904
+  why: The Mantle block, gated on custom_llm_provider == "bedrock_mantle" and run before the elif chain, then the six context-window needles (gaps one, four and seven).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L926-L963
+  why: The authentication, rate limit and timeout OR predicates and the image branch with its getattr default of 500 (gaps two and three).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L964-L992
+  why: The 500, 401, 400 and 404 status branches. They hard-code llm_provider="bedrock" like every text branch above them (gap five).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2516-L2525
+  why: The dispatcher sends both bedrock and bedrock_mantle into _map_bedrock_exception, so bedrock_mantle is the caller that tells the literal provider apart (gap five).
+dod:
+- text: >-
+    Rows context_window_input_is_too_long, context_window_prompt_is_too_long,
+    context_window_prompt_length_range and context_window_too_many_input_tokens, and the cases
+    bedrock-input-is-too-long.yaml, bedrock-prompt-is-too-long.yaml, bedrock-prompt-length-range.yaml and
+    bedrock-too-many-input-tokens.yaml, each send one needle with bedrock_mantle and no status and expect
+    context_window_exceeded with provider bedrock. None of them exists on today's main, so
+    context-window-needles fails there. Once they exist, deleting any of the four needles from
+    CONTEXT_WINDOW_NEEDLES turns its row and case red.
+  proof: [context-window-needles, bedrock-tests, oracle]
+- text: >-
+    Rows security_token_invalid_auth, lowercase_throttling_rate_limit and read_timed_out_timeout, and the
+    cases bedrock-security-token-invalid.yaml, bedrock-lowercase-throttling.yaml and
+    bedrock-read-timed-out.yaml, send only the second string of their OR predicate and expect
+    authentication, rate_limit and timeout (original status 408) with provider bedrock. None exists on
+    today's main, so second-alternatives fails there. Once they exist, deleting that second string from
+    TEXT_CANDIDATES turns its row and case red.
+  proof: [second-alternatives, bedrock-tests, oracle]
+- text: >-
+    Row could_not_process_image_explicit_500_status and case bedrock-image-status-500.yaml send "Could not
+    process image data" with status 500 and expect internal_server with provider bedrock. Neither exists
+    on today's main, so image-status-500 fails there. Once they exist, an image check rewritten as
+    status_code.is_none() gives service_unavailable and turns both red.
+  proof: [image-status-500, bedrock-tests, oracle]
+- text: >-
+    Row mantle_match_wins_over_chain_needle and case bedrock-mantle-before-chain.yaml send a Mantle
+    token-count error that also holds "prompt is too long" and expect context_window_exceeded with
+    provider bedrock_mantle. Neither exists on today's main, so mantle-before-chain fails there. Once they
+    exist, running classify_by_predicate before mantle_classification reports provider bedrock and turns
+    both red.
+  proof: [mantle-before-chain, bedrock-tests, oracle]
+- text: >-
+    The thirteen literal-provider rows and cases named in gap five send custom_llm_provider bedrock_mantle
+    and still expect provider bedrock. On today's main they send bedrock and pass even when Provider::Literal
+    returns the caller's value, and literal-provider-cases fails there. After the change, that swap turns
+    them red.
+  proof: [literal-provider-cases, bedrock-tests, oracle]
+- text: >-
+    Row branch_863_mantle_guard_rejects_bare_token_message and branch-863.yaml send "prompt tokens (500)
+    exceed model maximum (400)" with bedrock_mantle and no status and expect no class. Today's
+    branch_863_mantle_guard_neither_keyword row and branch-863.yaml send "an unrelated failure" and pass
+    with the keyword guard deleted, and mantle-keyword-guard fails there. After the change, deleting that
+    guard gives context_window_exceeded and turns both red.
+  proof: [mantle-keyword-guard, bedrock-tests, oracle]
+- text: >-
+    Row branch_882_bedrock_provider_skips_mantle_match and branch-882.yaml send custom_llm_provider bedrock
+    with "invalid_request_error: prompt tokens (500) exceed model maximum (400)" and no status and expect
+    no class. Today's branch_882_non_mantle_provider_skips_mantle_block row and branch-882.yaml send "too
+    many tokens were supplied" and pass with the provider check deleted, and mantle-provider-guard fails
+    there. After the change, deleting that check gives context_window_exceeded and turns both red.
+  proof: [mantle-provider-guard, bedrock-tests, oracle]
+checks:
+  optional: [mutants]
+  commands:
+  - id: bedrock-tests
+    why: the bedrock rows were not touched, or a changed row or one of the other bedrock tests fails
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-error/src/aws_errors/bedrock/tests.rs)"
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^aws_errors::bedrock::tests::/)'
+  - id: context-window-needles
+    why: the four untested context-window needles still have no row or case
+    run: >-
+      test "$(git diff --name-only --diff-filter=A "$GATE_BASE" --
+      tools/oracle/cases/helpers/aws-errors/bedrock-input-is-too-long.yaml
+      tools/oracle/cases/helpers/aws-errors/bedrock-prompt-is-too-long.yaml
+      tools/oracle/cases/helpers/aws-errors/bedrock-prompt-length-range.yaml
+      tools/oracle/cases/helpers/aws-errors/bedrock-too-many-input-tokens.yaml | wc -l)" -eq 4
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail
+      -E 'test(/^aws_errors::bedrock::tests::aws_errors_behavior_tests_behavior::case_[0-9]+_context_window_(input_is_too_long|prompt_is_too_long|prompt_length_range|too_many_input_tokens)$/)'
+  - id: second-alternatives
+    why: the second strings of the authentication, rate limit and timeout predicates still have no row or case
+    run: >-
+      test "$(git diff --name-only --diff-filter=A "$GATE_BASE" --
+      tools/oracle/cases/helpers/aws-errors/bedrock-security-token-invalid.yaml
+      tools/oracle/cases/helpers/aws-errors/bedrock-lowercase-throttling.yaml
+      tools/oracle/cases/helpers/aws-errors/bedrock-read-timed-out.yaml | wc -l)" -eq 3
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail
+      -E 'test(/^aws_errors::bedrock::tests::aws_errors_behavior_tests_behavior::case_[0-9]+_(security_token_invalid_auth|lowercase_throttling_rate_limit|read_timed_out_timeout)$/)'
+  - id: image-status-500
+    why: the image branch with an explicit status 500 still has no row or case
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/aws-errors/bedrock-image-status-500.yaml)"
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail
+      -E 'test(/^aws_errors::bedrock::tests::aws_errors_behavior_tests_behavior::case_[0-9]+_could_not_process_image_explicit_500_status$/)'
+  - id: mantle-before-chain
+    why: no row or case matches both the Mantle block and a chain needle
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/aws-errors/bedrock-mantle-before-chain.yaml)"
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail
+      -E 'test(/^aws_errors::bedrock::tests::aws_errors_behavior_tests_behavior::case_[0-9]+_mantle_match_wins_over_chain_needle$/)'
+  - id: literal-provider-cases
+    why: a literal-provider case still sends custom_llm_provider bedrock, so it can't tell the literal from the caller's value
+    run: >-
+      test -z "$(grep -L 'custom_llm_provider: bedrock_mantle$'
+      tools/oracle/cases/helpers/aws-errors/branch-891.yaml
+      tools/oracle/cases/helpers/aws-errors/branch-905.yaml
+      tools/oracle/cases/helpers/aws-errors/branch-912.yaml
+      tools/oracle/cases/helpers/aws-errors/branch-919.yaml
+      tools/oracle/cases/helpers/aws-errors/branch-926.yaml
+      tools/oracle/cases/helpers/aws-errors/branch-936.yaml
+      tools/oracle/cases/helpers/aws-errors/branch-943.yaml
+      tools/oracle/cases/helpers/aws-errors/branch-950.yaml
+      tools/oracle/cases/helpers/aws-errors/branch-957.yaml
+      tools/oracle/cases/helpers/aws-errors/branch-965.yaml
+      tools/oracle/cases/helpers/aws-errors/branch-972.yaml
+      tools/oracle/cases/helpers/aws-errors/branch-979.yaml
+      tools/oracle/cases/helpers/aws-errors/branch-986.yaml)"
+  - id: mantle-keyword-guard
+    why: the branch-863 row and case still send a string the Mantle regex misses anyway
+    run: >-
+      grep -qF 'error_str: "prompt tokens (500) exceed model maximum (400)"' tools/oracle/cases/helpers/aws-errors/branch-863.yaml
+      && grep -q 'custom_llm_provider: bedrock_mantle$' tools/oracle/cases/helpers/aws-errors/branch-863.yaml
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail
+      -E 'test(/^aws_errors::bedrock::tests::aws_errors_behavior_tests_behavior::case_[0-9]+_branch_863_mantle_guard_rejects_bare_token_message$/)'
+  - id: mantle-provider-guard
+    why: the branch-882 row and case still send a string the Mantle matcher misses anyway
+    run: >-
+      grep -qF 'error_str: "invalid_request_error: prompt tokens (500) exceed model maximum (400)"' tools/oracle/cases/helpers/aws-errors/branch-882.yaml
+      && grep -q 'custom_llm_provider: bedrock$' tools/oracle/cases/helpers/aws-errors/branch-882.yaml
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail
+      -E 'test(/^aws_errors::bedrock::tests::aws_errors_behavior_tests_behavior::case_[0-9]+_branch_882_bedrock_provider_skips_mantle_match$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/aws-errors/bedrock-input-is-too-long.yaml
+- tools/oracle/cases/helpers/aws-errors/bedrock-prompt-is-too-long.yaml
+- tools/oracle/cases/helpers/aws-errors/bedrock-prompt-length-range.yaml
+- tools/oracle/cases/helpers/aws-errors/bedrock-too-many-input-tokens.yaml
+- tools/oracle/cases/helpers/aws-errors/bedrock-security-token-invalid.yaml
+- tools/oracle/cases/helpers/aws-errors/bedrock-lowercase-throttling.yaml
+- tools/oracle/cases/helpers/aws-errors/bedrock-read-timed-out.yaml
+- tools/oracle/cases/helpers/aws-errors/bedrock-image-status-500.yaml
+- tools/oracle/cases/helpers/aws-errors/bedrock-mantle-before-chain.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-863.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-882.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-891.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-905.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-912.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-919.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-926.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-936.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-943.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-950.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-957.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-965.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-972.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-979.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-986.yaml
+deviations: []
+out_of_scope:
+- >-
+  bedrock.rs itself. The classifier already gives LiteLLM's answer for every input above, so no product
+  code changes. A new row that fails on today's code is a classifier bug to report as a blocker, not
+  something to patch around in tests.rs.
+- >-
+  The SageMaker mapper in sagemaker.rs, its tests and the branch-1046 to branch-1133 cases. The review
+  found no gap there.
+- >-
+  The fixed status per error class. B5102 already merged it, so response_branches_answer_the_provider_status
+  and bedrock-access-denied-status.yaml stay as they are.
+- >-
+  Padded one-line functions. They belong to B5094, and this task doesn't touch the legacy lists under
+  .ast-grep/rules/.
+pitfalls:
+- >-
+  A compare.ignore pointer that hits no field fails the case with "compare.ignore points to no field", so
+  branch-882.yaml drops its /value/result/message ignore once its answer is null, and branch-863.yaml keeps
+  ignore: [].
+- >-
+  RateLimit and Timeout nest the shared fields under context, so bedrock-lowercase-throttling.yaml and
+  bedrock-read-timed-out.yaml ignore /value/result/context/message; every other new case ignores
+  /value/result/message.
+- >-
+  "ThrottlingException" does not contain "throttlingException", since the match is case-sensitive, so the
+  lowercase_throttling_rate_limit row must spell it with a lowercase t and carry no capitalized copy.
+- >-
+  Each needle row must hold only its own needle. "Too many input tokens" does not contain "too many
+  tokens" (capital T, and the word input in between), and none of the four strings may add another
+  needle, or deleting its own needle would leave the row green.
+- >-
+  Only bedrock and bedrock_mantle reach _map_bedrock_exception at the pin, so the literal-provider rows use
+  bedrock_mantle, not an invented provider. Their error_str must not contain invalid_request_error or
+  validation_error, or the Mantle block could answer first.
+- >-
+  rstest names each row case_<position>_<name>, and inserting rows shifts the positions, so every filter
+  matches case_[0-9]+_ before the row name.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

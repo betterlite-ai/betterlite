@@ -1,0 +1,5 @@
+kind: helper
+name: sse-defaults
+call: {"bedrock_event_frames": {"operation": "sse", "params": {"event": "", "data": null, "id": "", "retry": null}}}
+env: {}
+compare: {ignore: []}

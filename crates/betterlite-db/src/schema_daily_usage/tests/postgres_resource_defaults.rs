@@ -55,11 +55,11 @@ async fn team_permissions_and_key_routes_empty_nullable_arrays() {
         let permissions = column(&client, "LiteLLM_TeamTable", "team_member_permissions").await;
         assert_eq!(permissions.data_type, "ARRAY");
         assert!(permissions.is_nullable);
-        assert!(permissions.default.is_some());
+        assert_eq!(permissions.default.as_deref(), Some("ARRAY[]::text[]"));
         let routes = column(&client, "LiteLLM_VerificationToken", "allowed_routes").await;
         assert_eq!(routes.data_type, "ARRAY");
         assert!(routes.is_nullable);
-        assert!(routes.default.is_some());
+        assert_eq!(routes.default.as_deref(), Some("ARRAY[]::text[]"));
     })
     .await;
 }
@@ -112,7 +112,7 @@ async fn managed_file_actor_and_flat_ids() {
         let flat_ids = column(&client, "LiteLLM_ManagedFileTable", "flat_model_file_ids").await;
         assert_eq!(flat_ids.data_type, "ARRAY");
         assert!(flat_ids.is_nullable);
-        assert!(flat_ids.default.is_some());
+        assert_eq!(flat_ids.default.as_deref(), Some("ARRAY[]::text[]"));
     })
     .await;
 }
@@ -209,10 +209,10 @@ async fn object_permission_empty_arrays_and_four_set_null_foreign_keys() {
         .await;
         let mcp_servers = column(&client, "LiteLLM_ObjectPermissionTable", "mcp_servers").await;
         assert!(mcp_servers.is_nullable);
-        assert!(mcp_servers.default.is_some());
+        assert_eq!(mcp_servers.default.as_deref(), Some("ARRAY[]::text[]"));
         let vector_stores = column(&client, "LiteLLM_ObjectPermissionTable", "vector_stores").await;
         assert!(vector_stores.is_nullable);
-        assert!(vector_stores.default.is_some());
+        assert_eq!(vector_stores.default.as_deref(), Some("ARRAY[]::text[]"));
         assert_restrict_rules(
             &client,
             &[

@@ -120,12 +120,12 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L282-L294
 
 out_of_scope:
-  - "async_pre_call_hook, logging_hook, async_logging_hook, async_post_call_success_hook and streaming hooks: owned by lifecycle tasks."
+  - "async_pre_call_hook, logging_hook, async_logging_hook, async_post_call_success_hook and streaming hooks: owned by B9463."
   - "_is_anthropic_message_response, _process_anthropic_response_for_pii, _process_response_for_pii, _mask_output_response: owned by B3806 (response transformations)."
   - "_mask_buffered_model_response_stream, _stream_apply_output_masking, _stream_pii_unmasking, async_post_call_streaming_iterator_hook: owned by B3807 (streamed masking)."
   - "apply_guardrail, update_in_memory_litellm_params: owned by lifecycle/application tasks."
-  - "get_supported_event_hooks, __init__: owned by lifecycle tasks."
-  - "Example Presidio fixture (example_presidio_ad_hoc_recognizer.json): owned by the lifecycle task that loads ad-hoc recognizers."
+  - "get_supported_event_hooks, __init__: owned by B9463."
+  - "Example Presidio fixture (example_presidio_ad_hoc_recognizer.json): owned by B9463, which loads ad-hoc recognizers."
 
 pitfalls:
   - "Numbered tokens must be applied in reverse text order (from end to beginning) to prevent earlier replacements from shifting the offsets of later detections."

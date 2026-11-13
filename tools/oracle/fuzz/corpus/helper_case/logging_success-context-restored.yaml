@@ -1,0 +1,18 @@
+kind: helper
+name: logging-success-context-restored-seed
+call:
+  logging_success:
+    operations:
+      - operation: handler
+        probes:
+          - mode: sync
+            result: {kind: chat}
+            start_time: "2024-01-01T00:00:00+00:00"
+            end_time: "2024-01-01T00:00:01+00:00"
+            trace_id: inner-trace
+            session_id: inner-session
+            request_correlation: true
+            context: {trace_id: outer-trace, session_id: outer-session}
+            loggers: [{name: langfuse}]
+env: {}
+compare: {ignore: []}

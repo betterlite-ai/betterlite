@@ -32,8 +32,12 @@ scope:
   - tools/oracle/src/runner/**
   - tools/oracle/src/compare.rs
   - tools/oracle/src/compare/**
+  - tools/oracle/src/multipart_oracle/tests.rs
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/src/router_probes/comparison/**
+  - tools/oracle/src/router_probes/tests.rs
+  - tools/oracle/src/routing_component_oracle.rs
+  - tools/oracle/src/routing_scenarios/compare.rs
   - tools/oracle/cases/routing/probes/**
   - tools/oracle/fuzz/Cargo.toml
   - tools/oracle/fuzz/fuzz_targets/route_probe.rs

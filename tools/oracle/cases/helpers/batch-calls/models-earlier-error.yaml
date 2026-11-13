@@ -1,0 +1,9 @@
+kind: helper
+name: batch-calls-models-earlier-error
+call:
+  batch_calls:
+    mode: models
+    models: [m0, m1]
+    results: [{error: first failed}, {value: later success}]
+env: {}
+compare: {ignore: []}

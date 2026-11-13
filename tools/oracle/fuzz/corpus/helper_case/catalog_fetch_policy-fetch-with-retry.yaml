@@ -1,0 +1,15 @@
+kind: helper
+name: catalog-fetch-policy-fetch-with-retry
+call:
+  catalog_fetch_policy:
+    operation: fetch_with_retry
+    url: https://catalog.test/model.json
+    max_attempts: 2
+    jitter: ["0.25"]
+    replies:
+      - status: 503
+        body: '{}'
+      - status: 200
+        body: '{}'
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,14 @@
+model_list: []
+general_settings:
+  database_url: postgresql://user:password@db.example:5432/litellm
+  database_connection_pool_limit: 15
+  database_connection_timeout: 30
+  database_connection_pool_timeout: 45
+  database_connect_timeout: 5
+  database_socket_timeout: 7.5
+  database_disable_prepared_statements: "true"
+  database_extra_connection_params:
+    application_name: litellm
+  database_max_idle_connection_lifetime: 120
+  database_statement_timeout: 60
+  database_lock_timeout: 30

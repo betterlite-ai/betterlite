@@ -4,6 +4,11 @@ version = "0.0.0"
 publish = false
 edition = "2024"
 metadata.cargo-fuzz = true
+license.workspace = true
+
+[lints]
+workspace = true
+
 [dependencies]
 betterlite-context = { path = ".." }
 libfuzzer-sys = "0.4.9"
@@ -19,4 +24,3 @@ path = "fuzz_targets/cloud_object_path.rs"
 test = false
 doc = false
 bench = false
-[workspace]

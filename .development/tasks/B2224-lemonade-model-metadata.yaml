@@ -266,7 +266,7 @@ checks:
     why: Outside bytes lack replay through the actual decoder.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/lemonade_model_reply)"
       && grep -q 'decode_lemonade_model_reply' crates/betterlite-models/fuzz/fuzz_targets/lemonade_model_reply.rs
-      && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::replays_the_lemonade_model_reply_corpus$/)'
+      && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::replays_the_lemonade_model_reply_corpus(::|$)/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/lemonade-model-metadata/configured-origin-auth.yaml
 - tools/oracle/cases/helpers/providers/lemonade-model-metadata/positive-token-limits.yaml
@@ -275,11 +275,11 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/lemonade-model-metadata/model-limit-projection.yaml
 deviations: []
 out_of_scope:
-- Lemonade constructor is B2220; get_models, custom_llm_provider/get_config and chat transformations remain B040
+- Lemonade constructor is B2220; get_models, custom_llm_provider/get_config and chat transformations are B8157
   and reuse these shared auth/metadata helpers.
 - 'Function ownership inventory litellm/llms/lemonade/chat/transformation.py: LemonadeChatConfig.custom_llm_provider
   L63-L65; LemonadeChatConfig.get_config L67-L69; LemonadeChatConfig.get_models L71-L108; LemonadeChatConfig.transform_response
-  L224-L255 belong to B040.'
+  L224-L255 belong to B8157.'
 - 'Function ownership inventory litellm/llms/lemonade/chat/transformation.py: LemonadeChatConfig.__init__ L42-L61
   belong to B2220.'
 pitfalls:

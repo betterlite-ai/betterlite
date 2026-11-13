@@ -1,0 +1,62 @@
+kind: helper
+name: blocked_request_writes_no_entries
+call:
+  baseline_history:
+    groups:
+    - - request_id: uncertain
+        started_at: 100.0
+        available_at: 500.0
+        outcome: uncertain
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 5
+          total_tokens: 105
+          prompt_tokens_details:
+            text_tokens: 100
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 0
+              ephemeral_1h_input_tokens: 0
+        plan:
+          total_tokens: 100
+          breakpoints:
+          - fingerprint: a
+            ttl_seconds: 300
+            prefix_tokens: 50
+            lookback_fingerprints:
+            - a
+            content_fingerprint: c
+            lookback_content_fingerprints:
+            - c
+    - - request_id: blocked
+        started_at: 200.0
+        available_at: 200.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 5
+          total_tokens: 105
+          prompt_tokens_details:
+            text_tokens: 100
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 0
+              ephemeral_1h_input_tokens: 0
+        plan:
+          total_tokens: 100
+          breakpoints:
+          - fingerprint: b
+            ttl_seconds: 300
+            prefix_tokens: 50
+            lookback_fingerprints:
+            - b
+            content_fingerprint: d
+            lookback_content_fingerprints:
+            - d
+compare:
+  ignore: []
+env: {}

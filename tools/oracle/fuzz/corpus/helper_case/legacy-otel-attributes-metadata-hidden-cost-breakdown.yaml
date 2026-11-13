@@ -1,0 +1,22 @@
+kind: helper
+name: metadata-hidden-cost-breakdown
+call:
+  b3856:
+    function: set_attributes
+    kwargs:
+      litellm_params:
+        custom_llm_provider: openai
+        metadata: {user_api_key_team_metadata: {region: west, secret: hidden}}
+      standard_logging_object:
+        call_type: acompletion
+        model_group: public-model
+        model: gpt-4o
+        metadata:
+          trace_name: demo
+          user_api_key_request_route: /v1/chat/completions
+          user_api_key_team_id: team-1
+        hidden_params: {litellm_model_name: gpt-4o-2024, cache_key: abc}
+        cost_breakdown: {input_cost: 0.001, output_cost: null}
+    baggage_team_metadata_keys: [region]
+env: {}
+compare: {ignore: []}

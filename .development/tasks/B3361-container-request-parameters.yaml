@@ -95,22 +95,22 @@ checks:
   commands:
     - id: decode-container-id
       why: managed container IDs are not decoded correctly or routing metadata is lost
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^container_request_parameters::decode_managed_container_id/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^containers::(.*::)?container_request_parameters::decode_managed_container_id/)'
     - id: extract-create-params
       why: creation parameters are not extracted correctly or invalid params are included
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^container_request_parameters::(extract_create|get_requested_container_create)/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^containers::(.*::)?container_request_parameters::(extract_create|get_requested_container_create)/)'
     - id: filter-create-params
       why: creation parameters are not filtered or mapped through provider config
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^container_request_parameters::filter_create_params/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^containers::(.*::)?container_request_parameters::filter_create_params/)'
     - id: extract-list-params
       why: list parameters are not extracted correctly or invalid params are included
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^container_request_parameters::(extract_list|get_requested_container_list)/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^containers::(.*::)?container_request_parameters::(extract_list|get_requested_container_list)/)'
     - id: encode-response-id
       why: response IDs are not encoded with metadata or routing detection is incorrect
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^container_request_parameters::encode_container_id/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^containers::(.*::)?container_request_parameters::encode_container_id/)'
     - id: provider-config
       why: provider config selection does not return correct type or fails on invalid provider
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^container_request_parameters::provider_config/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^containers::(.*::)?container_request_parameters::provider_config/)'
 oracle_cases:
   - tools/oracle/cases/containers/request-parameters/decode-managed-id-with-metadata.yaml
   - tools/oracle/cases/containers/request-parameters/decode-unencoded-id.yaml

@@ -1,0 +1,14 @@
+kind: helper
+name: gcs-mock-get-mocked-storage-url-returns-canned-payload
+call:
+  b3996:
+    environment: {GCS_MOCK: "true"}
+    original: {status: 418, body: "original-response"}
+    requests:
+      - method: get
+        url: https://storage.googleapis.com/storage/v1/b/mock-bucket/o/mock-object?alt=media
+        params: {alt: media}
+        headers: {authorization: "Bearer mock-gcs-token"}
+        follow_redirects: false
+env: {}
+compare: {ignore: []}

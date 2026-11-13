@@ -2,8 +2,8 @@ id: B100
 milestone: M5 api families
 title: Prompt compression and native compaction
 status: todo
-depends_on: [B3540, B3541, B3542, B3543, B3544, B3545, B3546, B173, B188]
-file: null
+depends_on: [B8291, B4200, B122, B8610]
+file: tasks/B100-compaction-loopback-target.yaml
 covers:
   - "litellm/proxy/native_compaction.py"
   - "litellm/llms/custom_httpx/asgi_handler.py"

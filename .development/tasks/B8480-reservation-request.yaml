@@ -1,0 +1,98 @@
+id: B8480
+title: Reserve budget for a request and renew its lease
+description: >-
+  Build the module `reservation_request` in betterlite-auth: the port of LiteLLM's `reserve_budget_for_request` (litellm/proxy/spend_tracking/budget_reservation.py L248-L347), the two route filters in front of it (`_is_token_counting_route` and `_is_unbilled_route` with their constants, L225-L246) and the lease renewal it starts at the end (`_start_reservation_lease_renewal` and `_renew_reservation_lease`, L109-L148). Auth calls this once per request after the common checks (B1225's `_reserve_budget_after_common_checks`), and the record it returns is what the release layer (B8270), the cost callbacks and the settlement code (B3003) work on. Every step it calls is planned elsewhere, so this task wires them in LiteLLM's order and adds nothing of its own beyond the filters and the renewal.
+
+  The function. Inputs: the parsed request body (a JSON map), the route string, the router (optional), the token (`UserAPIKeyAuth`, optional), the team and user rows (optional), the end-user id and end-user object (optional), the database, key cache and logging handles that B3002's counter collection takes, `apply_user_budget_to_team_keys` and `fail_closed_budget_enforcement` (both default false; B1225 resolves them from general_settings) and the raw body bytes (optional). It returns `Option<ReservationHandle>` (B3003's shared reservation record) or the error B3004 raises (budget exceeded, or a counter that could not be loaded under fail-closed enforcement). Steps, in this order, each returning `None` where it says so:
+
+  1. No token, or `RouteChecks.is_llm_api_route(route)` (B882) is false: None.
+  2. The route is unbilled: None. A route is unbilled when it is exactly one of `/models`, `/v1/models`, `/utils/token_counter`, `/responses/input_tokens`, `/v1/responses/input_tokens`, `/openai/v1/responses/input_tokens`, or when it is a token counting route. A token counting route: take the text after the last `/`, split it at the first `:`; the part before is `count_tokens` or `count-tokens`, or the part after is exactly `countTokens`. Both checks are on the raw route string, case sensitive, with no prefix stripping.
+  3. `get_model_from_request(request_body, route, llm_router)` (B746, auth_utils.py L1982-L2061) finds no model: None.
+  4. Collect the counters with B3002's `_get_budget_counters` (passing the token, team, user, end-user id and object, the handles and `apply_user_budget_to_team_keys`). An empty list: None, before any token is counted.
+  5. Count input tokens with B3001's `count_request_input_tokens(request_body, route, llm_router, raw_body)`.
+  6. `reservation_cost = estimate_request_max_cost(request_body, route, llm_router, input_token_counts)` (B3001). None, zero or negative: None (the model has no token price, so only read-time enforcement applies).
+  7. Open B3003's counters batch scope (`_counters_batch_scope`) over the set of every counter's key, and inside it run B3004's `_initialize_reservation_counters(counters, fail_closed_budget_enforcement)` and then `_reserve_reservable_counters(reservable, token, applied_entries, reservation_cost, fail_closed_budget_enforcement)`, which returns the possibly resized cost. On any error from either, call B3003's `_release_applied_entries_best_effort(applied_entries, reservation_cost)` with the cost as it stood at that moment, then return the original error unchanged.
+  8. No applied entries: None.
+  9. `input_cost = estimate_request_input_cost(request_body, route, llm_router, input_token_counts)` (B3001). Build the record with `reserved_cost` = the final reservation cost, `entries` = the applied entries in order, `finalized` = false, `callback_bound` = false, `input_cost` = the smaller of (input_cost, or 0 when None) and reserved_cost, `input_tokens` = the largest value in the token count map, or none when the map is empty.
+  10. Start the lease renewal and return the record.
+
+  Lease renewal. A reservation lives inside spend counter keys that expire on their Redis TTL; renewal refreshes that TTL while the request runs. Start it only when the spend counter cache has a Redis backend and the record's counter keys (B3003's `get_reserved_counter_keys`) are not empty; otherwise do nothing. Spawn one tokio task that holds a weak reference to the shared record and the frozen key set. The interval is the spend counter Redis cache's default TTL divided by 2 (LiteLLM's BaseCache default TTL is 60 seconds, so 30 seconds unless configured); the deadline is now plus `litellm.request_timeout` (env `REQUEST_TIMEOUT`, default `DEFAULT_REQUEST_TIMEOUT_SECONDS` 6000.0; read the value B002 already resolves, do not read the env here). Loop until the deadline: sleep one interval, then stop if the record is finalized or can no longer be reached (every holder dropped it), otherwise call B3015's `refresh_spend_counter_ttl(counter_key)` for each key and ignore its boolean result. The task never changes spend and never fails the request.
+
+  Collaborators come in through a constructor: a `ReservationEntry` struct holding the counter collector, the token counter and cost estimator, the admission engine, the settlement helpers, the spend counter Redis handle (optional) with its TTL, the request timeout and a clock or sleep source the tests can drive. Tests use fakes for every one of them and tokio's paused time for the renewal.
+
+  Module layout: `crates/betterlite-auth/src/reservation_request.rs` for the struct and the function, `reservation_request/routes.rs` for the two filters and the route constants, `reservation_request/lease.rs` for the renewal, `reservation_request/error.rs` for the error enum (it wraps the errors of B3002, B3001 and B3004 without changing them) and `reservation_request/tests.rs`. The skeleton declares the module in lib.rs.
+scope:
+  paths:
+    - crates/betterlite-auth/src/reservation_request.rs
+    - crates/betterlite-auth/src/reservation_request/**
+    - tools/oracle/cases/helpers/reservation-request/**
+    - tools/oracle/helpers/b8480.py
+    - tools/oracle/helpers/b8480/**
+    - tools/oracle/src/helpers/auth/b8480.rs
+    - tools/oracle/src/helpers/auth/b8480/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L109-L148
+    why: The lease renewal set, the start conditions, the interval and deadline, and the stop conditions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L225-L246
+    why: The unbilled route set and the token counting route test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L248-L347
+    why: reserve_budget_for_request, the order of its early returns, the rollback on error and the record it builds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3721-L3728
+    why: refresh_spend_counter_ttl, which the renewal calls (B3015 builds it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L568-L576
+    why: DEFAULT_REQUEST_TIMEOUT_SECONDS and the REQUEST_TIMEOUT env read behind litellm.request_timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L23-L33
+    why: The default TTL of 60 seconds that sets the renewal interval.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3159-L3202
+    why: The caller (B1225), to see which arguments arrive and that a raised error leaves request state alone.
+dod:
+  - text: Each early return (no token, not an LLM route, unbilled route, no model, no counters, no positive estimate, nothing applied) gives None and calls none of the later steps.
+    proof: [request-tests]
+  - text: The six unbilled routes and the token counting forms (count_tokens, count-tokens, a countTokens action after a colon) are skipped, and near misses such as /v1/models/gpt-4o or a countTokensX action are not.
+    proof: [route-tests, new-cases, oracle]
+  - text: An error from counter initialization or reservation releases exactly the entries applied so far, with the cost at that moment, and returns the original error.
+    proof: [request-tests]
+  - text: A successful reservation returns the record with reserved_cost, entries, finalized false, callback_bound false, input_cost capped at reserved_cost and input_tokens as the largest count or none.
+    proof: [request-tests]
+  - text: Renewal starts only with Redis and at least one counter key, refreshes every key once per half TTL, and stops at finalization, when the record is gone, or at the request timeout.
+    proof: [lease-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: request-tests
+      why: the reservation entry point is missing or calls its steps in a different order
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_request::tests::request_/)'
+    - id: route-tests
+      why: the unbilled route filters are missing or match a different set
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_request::tests::route_/)'
+    - id: lease-tests
+      why: the lease renewal is missing, renews at the wrong interval or never stops
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_request::tests::lease_/)'
+    - id: new-cases
+      why: the route filters have no helper case on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/reservation-request)"
+oracle_cases:
+  - tools/oracle/cases/helpers/reservation-request/unbilled-routes.yaml
+  - tools/oracle/cases/helpers/reservation-request/token-counting-routes.yaml
+deviations:
+  - what: The renewal stops when the shared reservation record is finalized or no longer held by anyone, where LiteLLM stops when the asyncio task that took the reservation is done.
+    why: A tokio handler has no task handle to poll. The release layer (B8270) finalizes every unclaimed reservation when the request ends, and a claimed one is finalized by its cost callback, so the stop point is the same in practice.
+out_of_scope:
+  - "_get_budget_counters and the counter records: B3002. count_request_input_tokens, estimate_request_max_cost and estimate_request_input_cost: B3001."
+  - "_initialize_reservation_counters, _reserve_reservable_counters and the over-budget policy: B3004."
+  - "get_reserved_counter_keys, _counters_batch_scope, _release_applied_entries_best_effort, reconcile and release: B3003. Releasing an unclaimed reservation at request end: B8270."
+  - "refresh_spend_counter_ttl and the spend counter cache: B3015. RouteChecks.is_llm_api_route: B882. get_model_from_request: B746."
+  - "Reading general_settings and copying the record into request state: B1225."
+pitfalls:
+  - "The unbilled check runs before the model lookup and the counter reads, so /v1/models never touches the database even for a key with a budget."
+  - "rsplit then partition: for /v1beta/models/gemini-pro:countTokens the last segment is gemini-pro:countTokens and the action is countTokens, while /count_tokens/extra is not a token counting route."
+  - "No counters returns before count_request_input_tokens, so a key without budgets never pays for token counting."
+  - "On error the release uses reservation_cost as it was when the error happened; B3004 may already have resized it for an earlier counter group."
+  - "input_tokens is the max over the count map values and stays none for an empty map, not 0; input_cost is clamped to reserved_cost after a resize."
+  - "The renewal sleeps first and checks after, so a request shorter than half the TTL never refreshes; do not refresh right after reserving."
+  - "Do not keep a strong reference to the record in the renewal task, or a finished request keeps renewing until the 6000 second deadline."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

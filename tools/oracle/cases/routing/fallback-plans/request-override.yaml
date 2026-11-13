@@ -1,0 +1,66 @@
+kind: probe
+name: fallback-request-override
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [router-model]}
+          context_window_fallbacks:
+            - {gpt-4: [router-long]}
+          content_policy_fallbacks:
+            - {gpt-4: [router-safe]}
+          max_fallbacks: 5
+        request:
+          fallbacks:
+            - {gpt-4: [request-model]}
+          context_window_fallbacks:
+            - {gpt-4: [request-long]}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [router-model]}
+          max_fallbacks: 5
+        request:
+          fallbacks:
+            - {"*": [request-backup]}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [router-model]}
+          max_fallbacks: 5
+        request:
+          fallbacks:
+            - {other: [request-other]}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [router-model]}
+          max_fallbacks: 5
+        request:
+          num_retries: 0
+          model_group_retry_policy:
+            gpt-4: {RateLimitErrorRetries: 3}

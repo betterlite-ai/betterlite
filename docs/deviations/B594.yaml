@@ -1,0 +1,5 @@
+task: B594
+deviations:
+  - what: An AssumeRole credential TTL below zero is stored in the shared cache as a zero-second lifetime rather than as a negative float.
+    why: The process-shared credential cache holds a std::time::Duration, which cannot be negative; both a negative float and zero expire the entry at the next lookup with a real clock, and only a frozen test clock at the same instant can tell them apart.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1381-L1386

@@ -1,0 +1,8 @@
+kind: helper
+name: error-type-not-json
+call:
+  b3645:
+    function: error_type
+    body: not json
+env: {}
+compare: {ignore: []}

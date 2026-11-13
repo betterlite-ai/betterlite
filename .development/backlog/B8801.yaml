@@ -1,0 +1,14 @@
+id: B8801
+milestone: M1 openai data plane
+title: Shared pre-call step for every LLM route
+status: todo
+depends_on: [B8800, B1102, B1105, B7950, B302, B8605, B247, B248, B8740, B3930]
+file: tasks/B8801-shared-pre-call-step.yaml
+covers:
+  - "litellm/proxy/common_request_processing.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

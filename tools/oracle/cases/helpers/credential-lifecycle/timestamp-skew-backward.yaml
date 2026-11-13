@@ -1,0 +1,15 @@
+kind: helper
+name: timestamp-skew-backward
+call:
+  b4592:
+    operation: save
+    file: '{"base_url":"https://gateway.example","user_id":"u-1","timestamp":2000.0}'
+    record:
+      base_url: https://gateway.example
+      key: sk-new
+      user_id: u-1
+      timestamp: 1000.0
+    vault: {}
+    failures: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+task: B3786
+deviations:
+  - what: Only transient scan errors honor fallback_on_error='allow' (a warning is logged and the request goes through unscanned); permanent errors such as a config error or a missing call_id always block.
+    why: A configuration error fails closed, while an unavailable scan API may be waved through when the operator asked for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L797-L838
+  - what: response_masked_data is left out of the client-visible error detail, while prompt_masked_data stays in.
+    why: The model's generation is the operator's policy boundary, so returning it would defeat the block.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L155-L161
+  - what: The scan client never follows redirects, set once on the client instead of per request, and reads a response body up to 1 MiB; a larger successful body is a transient api_error while an error status keeps its own classification.
+    why: reqwest has no per-call redirect setting, and an unbounded body from a misbehaving endpoint should not be buffered.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L334-L593
+  - what: A timeout that is not a positive finite number of seconds falls back to the 10 second default.
+    why: Duration cannot hold a negative or non-finite value, and LiteLLM would hand such a value to httpx and fail on the first scan.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L163-L252
+  - what: An api_key that cannot be sent as an HTTP header value fails construction with a named error, where LiteLLM accepts it and fails every scan request instead.
+    why: A key with a control character can never become a valid x-pan-token, so failing once at construction surfaces the misconfiguration instead of turning every scan into an error (and, with fallback_on_error='allow', into an unscanned request).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L431-L436

@@ -1,0 +1,211 @@
+id: B9560
+title: Response cache lookup and store on the gateway chat and embeddings calls
+description: >-
+  LiteLLM checks its response cache inside the `client` decorator around every SDK call: wrapper_async in
+  litellm/utils.py looks the request up before the call (L2030-L2059), sends only the uncached embedding inputs
+  (L2094-L2100), and stores the answer after it (L2161-L2188). The proxy reaches that code because each router
+  attempt ends in litellm.acompletion or litellm.aembedding with `caching` set to the router's cache_responses, and
+  the proxy turns that flag on whenever litellm.cache exists (proxy_server.py L6890-L6892). The betterlite gateway never goes
+  through B5368's wrapper: /v1/chat/completions and /v1/embeddings pick a deployment and send through B014's
+  ChatExecutor. So `litellm_settings.cache: true` builds a cache (B8613 puts it in B8612's ResponseCacheSlot) and
+  nothing reads or writes it on a request. This task adds the cache step every gateway family uses and wires it into
+  the chat and embeddings routes. B9561 and B125 wire the other families through the same step.
+
+
+  Code goes in crates/betterlite-server, module `app::inference::response_cache`
+  (crates/betterlite-server/src/app/inference/response_cache.rs and response_cache/, tests in
+  response_cache/tests.rs; the skeleton declares the module), plus the edits in the two routes named below. Every
+  name stays at 30 characters or fewer.
+
+
+  The step. `ResponseCacheStep` is built once where a route set is built from the server state and holds three
+  shared values: `state.shared.response_cache` (B8612's `ResponseCacheSlot`), `state.shared.cache_writes` (B4304's
+  `CacheWriteTracker`) and `state.shared.router` (B8611's `RouterHandle`, whose `cache_responses()` is the router
+  flag). Read the slot with `get()` on every call, never once at build time, because POST /cache/settings swaps the
+  cache while the server runs. `begin(call_type, model, kwargs, logging)` starts one attempt and returns a
+  `CacheAttempt` that owns B4300's handler state (LiteLLM's LLMCachingHandler, one per wrapper call) for the cache
+  the slot holds at that moment. `CacheAttempt::lookup()` runs B4305's async lookup (_async_get_cache) and returns
+  what it found: nothing, a full hit with the converted result, or for embeddings the cached part with the inputs
+  still to send. `CacheAttempt::store(result, call_kwargs)` runs B4304's `store_response` (async_set_cache): it
+  spawns the write on the tracker and returns at once. `CacheAttempt::stream_chunk(chunk)` runs B4304's
+  `add_streaming_response_to_cache` for one parsed chunk. The call types are LiteLLM's names (`acompletion`,
+  `aembedding`, `atext_completion`, `arerank`, `atranscription`, `aresponses`, `anthropic_messages`); the step
+  does not decide which ones the cache supports, B4300's `is_call_type_supported_by_cache` does that from the
+  cache's supported_call_types.
+
+
+  The kwargs. The cache key, the eligibility checks and the hit context all read LiteLLM's kwargs, so the step is
+  handed the map litellm.acompletion would get from the router (router.py L3748-L3755): the deployment's
+  litellm_params first, then `messages`, then `caching` set to `cache_responses()`, then every field of the request
+  data the route holds after B8803's pre-call step, so a `caching` the client sent wins over the router flag. Its
+  `metadata` carries `model_group` (the deployment's model group, router.py L3853-L3858) and the key metadata the
+  pre-call step added (user_api_key, user_api_key_team_id, user_api_key_org_id, user_api_key_end_user_id), since
+  B4296's semantic scope reads them and a missing field would let one tenant read another tenant's answer.
+  `model` passed to the lookup is the deployment's litellm model (for example openai/gpt-4o-mini), the value
+  LiteLLM's get_llm_provider resolves on a hit. The map is only for the cache: the request sent upstream stays
+  what the route already sends, and `cache`, `caching` and `cache_key` never reach the provider.
+
+
+  Chat. In routes/chat.rs, per attempt, after the deployment is picked and the request data is final and right
+  before the send (stream or not), call `begin` with call type `acompletion` and `lookup`. A full hit answers the
+  client without an upstream call and without taking the deployment's send path: a non-stream request gets the
+  converted ModelResponse as JSON, and a stream request (stream true) gets B4302's replayed chunks as server sent
+  events, one `data: {chunk}` frame each and a closing `data: [DONE]`, with the chat stream headers. Both answers
+  carry `x-litellm-cache-key` with the key B4305 stamped into the result's hidden params, next to the route's
+  other headers (LiteLLM sets the header from hidden_params cache_key, common_request_processing.py L1777-L1781,
+  and a miss has no cache_key, so the header is absent there). On a miss send as today; after a complete
+  non-stream response call `store` with the response and the call kwargs. For a stream miss, feed each chunk the
+  relay parses to `stream_chunk` (LiteLLM's async_cache_streaming_response, streaming_handler.py L1674-L1686),
+  so the assembled answer is written once after the chunk with a finish reason. Put that one call where B8633's
+  chat_stream module sees each parsed chunk; change nothing else there.
+
+
+  Embeddings. In routes/embeddings.rs, the same `begin` with call type `aembedding` and `lookup` before the send.
+  When every input is a hit, answer B4305's final embedding response. When some are, send only the uncached
+  inputs (the request's `input` replaced by the lookup's uncached list, as call_kwargs does at L2094-L2100), then
+  store the fresh response with those call kwargs and answer B4303's merge of the cached part and the fresh
+  response (_combine_cached_embedding_response_with_api_result, L2169-L2188). With no hit at all, send as today
+  and store.
+
+
+  No cache in the slot, `caching` false in the kwargs, or `cache: {"no-cache": true}` means no lookup, and the
+  route behaves exactly as on main. The store has its own rule (_should_store_result_in_cache): it runs whenever a
+  cache exists and `cache: {"no-store": true}` is absent, so a request with `caching: false` still writes its answer.
+
+
+  Order with the other gateway steps. LiteLLM looks the cache up after the deployment hooks and after the router's
+  compaction, so the key is built from the request the provider would get. If B9825's deployment hooks or B9810's
+  compaction step are already merged in routes/chat.rs, call `begin` after them; if not, leave a clear seam right
+  before the send so they can go in front of it.
+
+
+  Tests in response_cache/tests.rs (`app::inference::response_cache::tests`) boot the chat and embeddings routes
+  from a test server state with an in-memory cache (B4299's Cache with type local) in the slot and a local tokio
+  TcpListener upstream that records each request and answers from a script. Names start with `kwargs_`, `chat_`,
+  `stream_`, `embed_` or `slot_`: the kwargs map carries model_group and the four key metadata fields and a client
+  `caching` wins over the router flag; a repeated chat request makes one upstream call and the second answer has
+  the cache key header; no-cache calls upstream again; no-store writes nothing; caching false skips the lookup and
+  still writes; a stream miss is written only after its last chunk and a stream hit is replayed as SSE ending in
+  `data: [DONE]`; an embeddings request with one cached and one new input sends only the new one upstream and
+  answers both in input order; swapping the slot between two requests makes the second use the new cache; an empty
+  slot sends every request upstream. Wait for the tracker with `wait_idle` before the read that expects a stored
+  answer.
+
+
+  HTTP oracle cases go in tools/oracle/cases/response-cache/. Each file is an `http_scenario` case with two or
+  three steps, in the format of tools/oracle/cases/harness/http-scenarios/capture-substitution.yaml, a step that
+  must not reach the provider has `upstream: []`, and every request uses Bearer oracle-master. Config:
+  `litellm_settings: {cache: true, cache_params: {type: local}}` and one openai deployment at {{upstream}} with
+  api_key oracle-key; every file uses its own model_name, because files with the same config share one booted proxy
+  and one in-memory cache. Compare content-type and x-litellm-cache-key on every step, and x-litellm-model-id and
+  x-litellm-model-api-base on hit steps, so whatever LiteLLM sends or leaves out on a hit is matched. Ignore only a
+  field that differs between two LiteLLM runs (check with `--self-check`), such as a replayed chunk's created time.
+  The cases: chat-miss-then-hit; chat-no-cache (second step sends cache {no-cache: true} and reaches upstream);
+  chat-no-store (first step sends cache {no-store: true}, second reaches upstream); chat-caching-false (first step
+  sends caching false and reaches upstream, second is a hit); chat-param-change (second step changes temperature
+  and reaches upstream); chat-namespace (cache {namespace: ns-a} then ns-b, both reach upstream);
+  chat-deployments-path (first step on /v1/chat/completions, second on
+  /openai/deployments/{model}/chat/completions, a hit); chat-stream-miss-then-hit (stream true on both steps, the
+  upstream answers SSE once); chat-no-cache-config (no litellm_settings, both steps reach upstream);
+  embeddings-miss-then-hit (input ["alpha", "beta"]); embeddings-partial-hit (input ["alpha"], then
+  ["alpha", "beta"], whose upstream request carries only ["beta"]; compare the upstream body);
+  embeddings-string-input (input "alpha" twice).
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/app/inference/response_cache.rs
+    - crates/betterlite-server/src/app/inference/response_cache/**
+    - crates/betterlite-server/src/routes/chat.rs
+    - crates/betterlite-server/src/routes/chat/**
+    - crates/betterlite-server/src/routes/embeddings.rs
+    - crates/betterlite-server/src/routes/embeddings/**
+    - crates/betterlite-server/src/app/inference/chat_stream.rs
+    - crates/betterlite-server/src/app/inference/chat_stream/**
+    - tools/oracle/cases/response-cache/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2030-L2059
+    why: The lookup inside wrapper_async, the early return of a full hit or an all-hit embedding, and the preset key kept for logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2094-L2100
+    why: The call is made with only the uncached embedding inputs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2161-L2188
+    why: The store after the call and the merge of cached and fresh embeddings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L258-L366
+    why: Lookup eligibility (caching None with a cache, or caching true, and no-cache not true), the hit path and the partial embedding path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L1032-L1134
+    why: async_set_cache and _should_store_result_in_cache ignore the caching flag and check only no-store and the call type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1674-L1686
+    why: Each streamed chunk feeds the cache unless the stream is itself a hit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3748-L3755
+    why: The kwargs order the router hands litellm.acompletion, with caching from cache_responses before the request kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3853-L3858
+    why: model_group goes into the request metadata, and the cache key uses it as the model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L358-L436
+    why: get_cache_key reads only the LLM API params and takes model_group over the deployment model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6890-L6892
+    why: The proxy builds its router with cache_responses true whenever litellm.cache exists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1777-L1781
+    why: x-litellm-cache-key comes from the result's hidden params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11952
+    why: The chat route and its four paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12275-L12299
+    why: The embeddings route and its four paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L26-L58
+    why: The call type names and the default supported_call_types.
+  - url: https://docs.litellm.ai/docs/proxy/caching
+    why: The per-request cache controls (no-cache, no-store, ttl, s-maxage, namespace) a client sends.
+dod:
+  - text: ResponseCacheStep reads the slot on every call, builds LiteLLM's kwargs map with the router flag and the request's own caching, model_group and the key metadata, and starts B4305's lookup and B4304's store and stream writes for any call type.
+    proof: [step-tests]
+  - text: A repeated chat request, stream or not, is answered from the cache without an upstream call and carries x-litellm-cache-key, while no-cache, no-store, caching false, a changed parameter and a changed namespace behave as in LiteLLM.
+    proof: [step-tests, cache-cases, oracle]
+  - text: An embeddings request sends only its uncached inputs and answers cached and fresh embeddings together in input order.
+    proof: [step-tests, cache-cases, oracle]
+  - text: With no cache configured the chat and embeddings routes behave as before, and their own tests still pass.
+    proof: [step-tests, route-tests, cache-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: step-tests
+      why: the step skips the lookup or the store, reads a stale cache, builds the key from the wrong kwargs, or a route answers a hit through the provider
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::response_cache::tests::/)'
+    - id: route-tests
+      why: the edits at the send points broke the chat, chat stream or embeddings tests
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-server/src/app/inference/response_cache.rs crates/betterlite-server/src/app/inference/response_cache)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::chat::/) | test(/^routes::embeddings::/) | test(/^app::inference::chat_stream::/)'
+    - id: cache-cases
+      why: the HTTP cases for the chat and embeddings cache were not added
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/response-cache)"
+oracle_cases:
+  - tools/oracle/cases/response-cache/chat-miss-then-hit.yaml
+  - tools/oracle/cases/response-cache/chat-no-cache.yaml
+  - tools/oracle/cases/response-cache/chat-no-store.yaml
+  - tools/oracle/cases/response-cache/chat-caching-false.yaml
+  - tools/oracle/cases/response-cache/chat-param-change.yaml
+  - tools/oracle/cases/response-cache/chat-namespace.yaml
+  - tools/oracle/cases/response-cache/chat-deployments-path.yaml
+  - tools/oracle/cases/response-cache/chat-stream-miss-then-hit.yaml
+  - tools/oracle/cases/response-cache/chat-no-cache-config.yaml
+  - tools/oracle/cases/response-cache/embeddings-miss-then-hit.yaml
+  - tools/oracle/cases/response-cache/embeddings-partial-hit.yaml
+  - tools/oracle/cases/response-cache/embeddings-string-input.yaml
+deviations: []
+out_of_scope:
+  - "The lookup pipeline and its eligibility checks: B4305. Handler state, request normalization and is_call_type_supported_by_cache: B4300. Hit conversion and stream replay: B4302. Hit callbacks: B4301. Embedding merge: B4303. Writes, the tracker and stream assembly: B4304. Cache keys: B4296."
+  - "The cache in the slot, its startup build and its replacement by POST /cache/settings: B8612, B8613 and B8502. The router's cache_responses flag: B8611."
+  - "The SDK path through B5368's call wrapper: B5368 does its own lookup and store; this task does not move the gateway onto it."
+  - "Text completions, rerank and transcriptions on the gateway: B9561. Responses and Anthropic Messages: B125."
+  - "Semantic cache HTTP cases: B128 runs them through this task's chat wiring."
+  - "The deployment hooks and the compaction step on the same attempt: B9825 and B9810."
+pitfalls:
+  - "Files with the same config share one booted proxy and one in-memory cache, so two case files with the same model_name make the second file hit on the first file's answers."
+  - "The store does not read `caching`; only `cache: {no-store: true}` stops it, so a client that sends caching false still fills the cache."
+  - "The router's `caching` goes into the kwargs before the request's own fields, so a client `caching: false` turns the lookup off even though cache_responses is true."
+  - "The cache key uses metadata.model_group, not the deployment model, so the four chat paths and two deployments of one group share entries."
+  - "A hit must not touch the deployment's send path: the oracle's strict upstream count fails a hit that still calls the provider."
+  - "Without user_api_key, user_api_key_team_id and user_api_key_org_id in the kwargs metadata, a semantic cache (B128) would serve one key's answer to another."
+  - "B4304's write is spawned and returns at once, so a test that reads the cache right after the answer must wait for the tracker first."
+  - "The partial embedding answer keeps the client's input order: cached entries sit at their own indexes and the fresh ones fill the gaps."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

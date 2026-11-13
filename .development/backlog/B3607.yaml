@@ -2,8 +2,8 @@ id: B3607
 milestone: M5 api families
 title: Pass-through success completion and byte relay
 status: todo
-depends_on: [B3600, B3605, B3606, B191, B1719]
-file: null
+depends_on: [B3600, B3605, B3606, B191, B247, B1719, B3646, B3647, B3648, B3649]
+file: tasks/B3607-passthrough-success-completion.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/success_handler.py"
   - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"

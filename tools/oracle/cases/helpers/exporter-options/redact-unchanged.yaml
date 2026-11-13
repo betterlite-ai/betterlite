@@ -1,0 +1,17 @@
+kind: helper
+name: exporter-options-redact-unchanged
+call:
+  b3931:
+    operation: redact
+    turn_off_message_logging: false
+    excluded_fields: []
+    redacts_messages_itself: false
+    stamp: {id: chatcmpl-stamp, created: 1704067200}
+    details:
+      standard_logging_object:
+        id: slp-1
+        messages: [{role: user, content: secret}]
+        response: {choices: [{message: {role: assistant, content: hi}}]}
+      proxy_server_request: {url: http://example.test/chat}
+env: {}
+compare: {ignore: []}

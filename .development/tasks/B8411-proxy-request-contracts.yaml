@@ -1,0 +1,128 @@
+id: B8411
+title: Key, user, customer, cost estimate and coordination Redis request contracts
+description: >-
+  Build the request and response records from litellm/proxy/_types.py that the key, user, customer, cost estimate and coordination Redis routes decode, with their pydantic validators. Many route tasks (key delete and info, spend reset, user create, update and info, password change, customer create, cost estimate, coordination Redis settings) expect these records and none of them declares them. Nothing here touches the database or the network.
+
+  Module `proxy_request_contracts` in betterlite-server (crates/betterlite-server/src/proxy_request_contracts.rs, submodules key.rs, user.rs, budget.rs, customer.rs, cost_estimate.rs and coordination_redis.rs under crates/betterlite-server/src/proxy_request_contracts/, each with its tests). Every record has `from_value(value: &serde_json::Value) -> Result<Self, ContractError>` that runs LiteLLM's before-validators on the raw JSON object first, then decodes the fields, then runs the after-validators. `ContractError` (thiserror, in proxy_request_contracts.rs) has `Validation { message: String }` for a validator's ValueError text and `Decode { source: serde_json::Error }` for a type or required-field failure; both are HTTP 422 at the route, which is not built here. Unknown keys are ignored unless a record says otherwise. Optional fields keep whether they were absent or null where a route needs it (an `Option<Option<T>>` or a fields-set list); plain defaults are fine elsewhere.
+
+  key.rs. `KeyRequest { keys: Option<Vec<String>>, key_aliases: Option<Vec<String>> }`, both default None. Before-validator validate_at_least_one: when keys is missing, null or an empty list AND key_aliases is missing, null or an empty list, fail with "At least one of 'keys' or 'key_aliases' must be provided.". `ResetSpendRequest { reset_to: f64 }` requires reset_to; a JSON boolean is rejected with "reset_to must be a number, not a boolean" before any number decoding (pydantic would turn true into 1.0); integers decode as floats.
+
+  user.rs. `NewUserRequestTeam { team_id: String, max_budget_in_team: Option<f64>, user_role: TeamUserRole }`, where TeamUserRole is "user" or "admin" and defaults to "user". `NewUserRequest` flattens B770's GenerateRequestBase and adds max_budget, user_email, user_alias, user_role, teams, auto_create_key, send_invite_email, sso_user_id, organizations and password (L1939-L1967). user_role accepts only proxy_admin, proxy_admin_viewer, internal_user and internal_user_viewer (use B2314's UserRole from betterlite-auth and reject the other three). teams is a list of strings or a list of NewUserRequestTeam. auto_create_key defaults true, everything else defaults None. Field validator password_not_supported: any non-null password, the empty string included, fails with "password cannot be set via /user/new. Users set their own password through an invitation link (POST /invitation/new).". `UpdateUserRequestNoUserIDorEmail` flattens GenerateRequestBase and adds password, spend, metadata, user_alias, user_role (same four roles) and max_budget, all default None (L1989-L2004); B2334's BulkUpdateUserRequest reuses it as user_updates. `UpdateUserRequest` adds user_id and user_email (default None) with before-validator check_user_info: when user_id and user_email are both missing or null, fail with "Either user id or user email must be provided". Empty strings pass. `ChangePasswordRequest { current_password: String, new_password: String }` and `ChangePasswordResponse { user_id: String, message: String }` (L2021-L2028). The password fields of ChangePasswordRequest and UpdateUserRequestNoUserIDorEmail are hidden from Debug output (LiteLLM uses repr=False so alerts never print them). `UserInfoResponse { user_id: Option<String>, user_info: Option<Value>, keys: Vec<Value>, teams: Vec<Value> }`: all four keys are required, user_id and user_info may be null. `UserInfoV2Response` (L3574-L3600) requires user_id and defaults user_email, user_alias, user_role, max_budget, budget_duration, budget_reset_at, metadata, created_at, updated_at, sso_user_id, object_permission (B2310's LiteLLMObjectPermissionTable), model_max_budget and model_max_budget_usage to None, spend to 0.0 and models and teams to empty lists.
+
+  budget.rs. `BudgetNewRequest` (L2042-L2071): budget_id, max_budget, soft_budget, max_parallel_requests, tpm_limit, rpm_limit, tpd_limit, budget_duration, model_max_budget and budget_reset_at, all optional and default None, in that declaration order (B829's settings route lists them in it). max_budget and soft_budget are f64, the four limits are integers, budget_duration is text, model_max_budget uses the type B770's GenerateRequestBase gives its model_max_budget field, and budget_reset_at is a UTC datetime. No validators. Keep which fields were sent, since B829's update writes only explicitly set fields and treats an explicit null budget_reset_at or budget_duration differently from an omitted one. `BudgetRequest { budgets: Vec<String> }` (L2074-L2075) and `BudgetDeleteRequest { id: String }` (L2078-L2079) require their field. B829 and B830 import these records; they are plain structs with no route code.
+
+  customer.rs. `NewCustomerRequest` flattens budget.rs's BudgetNewRequest and adds user_id (required), alias, blocked (default false), budget_id, spend, allowed_model_region ("eu" or "us"), default_model and object_permission (B770's LiteLLM_ObjectPermissionBase), all others default None (L2093-L2115). Before-validator check_user_info: when max_budget and budget_id are both present and non-null, fail with "Set either 'max_budget' or 'budget_id', not both.".
+
+  cost_estimate.rs. `CostEstimateRequest` (L5748-L5772): model, input_tokens and output_tokens required, cache_read_input_tokens, cache_creation_input_tokens and reasoning_tokens default 0, num_requests_per_day and num_requests_per_month default None; every count must be at least 0. After-validator validate_token_subsets, in this order: cache_read_input_tokens plus cache_creation_input_tokens greater than input_tokens fails with "cache_read_input_tokens plus cache_creation_input_tokens cannot exceed input_tokens"; reasoning_tokens greater than output_tokens fails with "reasoning_tokens cannot exceed output_tokens". `CostEstimateResponse` (L5775-L5820) with LiteLLM's field names, required fields and defaults, serialized in declaration order.
+
+  coordination_redis.rs. `CoordinationRedisNode { host: String, port: i64 }`, both required. `CoordinationRedisParams` (L2630-L2662): host, port, password, username, url, ssl, startup_nodes (list of nodes), sentinel_nodes (list of [host, port] pairs whose items are strings or integers), sentinel_password, service_name, aws_iam_auth (bool or string), aws_iam_user_name, aws_iam_cache_name, aws_iam_region and aws_iam_serverless (bool or string), all default None. Unknown keys are kept in an `extra: serde_json::Map` (extra="allow") and written back on serialize. password and sentinel_password are hidden from Debug. `has_connection_target(&self) -> bool` is true when any of host, url, startup_nodes or sentinel_nodes is not None; an empty string or an empty list still counts.
+
+  Fuzz target `proxy_request_contracts` in crates/betterlite-server/fuzz: parse the input bytes as JSON and run every from_value on it; none may panic. Replay its corpus in the test `replays_the_proxy_request_contracts_corpus`.
+scope:
+  paths:
+    - crates/betterlite-server/src/proxy_request_contracts.rs
+    - crates/betterlite-server/src/proxy_request_contracts/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/proxy_request_contracts.rs
+    - crates/betterlite-server/fuzz/corpus/proxy_request_contracts/**
+    - tools/oracle/cases/helpers/proxy-request-contracts/**
+    - tools/oracle/helpers/b8411.py
+    - tools/oracle/helpers/b8411/**
+    - tools/oracle/src/helpers/server/b8411.rs
+    - tools/oracle/src/helpers/server/b8411/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1498-L1521
+    why: ResetSpendRequest with its boolean guard and KeyRequest with validate_at_least_one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1933-L2028
+    why: NewUserRequestTeam, NewUserRequest and its password validator, the update requests with check_user_info, and the password change records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2039-L2115
+    why: BudgetNewRequest, BudgetRequest, BudgetDeleteRequest, AllowedModelRegion and NewCustomerRequest with its max_budget and budget_id check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2623-L2662
+    why: CoordinationRedisNode, CoordinationRedisParams and has_connection_target.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3567-L3600
+    why: UserInfoResponse and UserInfoV2Response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5748-L5820
+    why: CostEstimateRequest with validate_token_subsets and CostEstimateResponse.
+  - url: https://docs.pydantic.dev/latest/concepts/validators/#model-validators
+    why: Before-validators see the raw dict before field decoding; after-validators see the decoded model.
+dod:
+  - text: KeyRequest rejects a body where both lists are missing, null or empty, and ResetSpendRequest rejects a boolean reset_to with LiteLLM's message.
+    proof: [key-tests, oracle, helper-python]
+  - text: NewUserRequest keeps LiteLLM's defaults, accepts only the four user roles, takes team ids or team records, and rejects any non-null password including the empty string.
+    proof: [user-tests, oracle, helper-python]
+  - text: UpdateUserRequest fails only when user_id and user_email are both missing or null, and password fields never show in Debug output.
+    proof: [user-tests, oracle, helper-python]
+  - text: The user info response records require and default the fields LiteLLM does.
+    proof: [user-tests]
+  - text: BudgetNewRequest keeps every field optional with a None default and records which fields were sent, and BudgetRequest and BudgetDeleteRequest require their field.
+    proof: [budget-tests]
+  - text: NewCustomerRequest rejects max_budget together with budget_id and keeps every other default.
+    proof: [customer-tests, oracle, helper-python]
+  - text: CostEstimateRequest rejects negative counts and both subset violations in LiteLLM's order, and CostEstimateResponse keeps its defaults.
+    proof: [cost-estimate-tests, oracle, helper-python]
+  - text: CoordinationRedisParams keeps unknown keys, hides both passwords and reports a connection target when host, url, startup_nodes or sentinel_nodes is present.
+    proof: [redis-params-tests, oracle, helper-python]
+  - text: Newly added corpus inputs replay through every decoder without a panic.
+    proof: [contracts-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: key-tests
+      why: the key request or spend reset request validation is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^proxy_request_contracts::key::/)'
+    - id: user-tests
+      why: the user create, update, password or info records are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^proxy_request_contracts::user::/)'
+    - id: budget-tests
+      why: the budget create, info or delete request records are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^proxy_request_contracts::budget::/)'
+    - id: customer-tests
+      why: the customer request or its budget check is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^proxy_request_contracts::customer::/)'
+    - id: cost-estimate-tests
+      why: the cost estimate records or the token subset checks are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^proxy_request_contracts::cost_estimate::/)'
+    - id: redis-params-tests
+      why: the coordination Redis records or has_connection_target are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^proxy_request_contracts::coordination_redis::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8411)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8411 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8411/pyrightconfig.json
+    - id: contracts-corpus
+      why: the request contracts fuzz target or its fresh replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/proxy_request_contracts.rs &&
+        grep -q 'name = "proxy_request_contracts"' crates/betterlite-server/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/proxy_request_contracts)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_proxy_request_contracts_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/proxy-request-contracts/key-request-empty-lists.yaml
+  - tools/oracle/cases/helpers/proxy-request-contracts/reset-spend-boolean.yaml
+  - tools/oracle/cases/helpers/proxy-request-contracts/new-user-defaults.yaml
+  - tools/oracle/cases/helpers/proxy-request-contracts/new-user-empty-password.yaml
+  - tools/oracle/cases/helpers/proxy-request-contracts/update-user-selectors.yaml
+  - tools/oracle/cases/helpers/proxy-request-contracts/customer-budget-conflict.yaml
+  - tools/oracle/cases/helpers/proxy-request-contracts/cost-estimate-subsets.yaml
+  - tools/oracle/cases/helpers/proxy-request-contracts/redis-connection-target.yaml
+deviations:
+  - what: A failing record returns a typed ContractError whose message is the validator's text; the pydantic error list (loc, input, ctx, url) is not rebuilt.
+    why: The routes that turn it into a 422 own the error body; the status and the message a user reads stay LiteLLM's.
+out_of_scope:
+  - "GenerateRequestBase and LiteLLM_ObjectPermissionBase: B770. UserRole: B2314. LiteLLMObjectPermissionTable: B2310."
+  - "The routes that decode these records and map a ContractError to HTTP 422: B777, B778, B780, B809, B789, B791, B792, B2334, B829, B830, B1651 and B1652."
+  - "Redis client selection and startup from these params: B8377."
+  - "ModelInfo.set_model_info and ModelParams.set_model_info (L1207-L1265): no caller at the pin, ModelParams appears only in a docstring and the model routes use litellm.types.router.ModelInfo."
+pitfalls:
+  - 'validate_at_least_one runs before field decoding and tests truthiness, so {"keys": [], "key_aliases": []} fails the same way as {}.'
+  - 'The password check is a field validator on a value that is not None, so {"password": ""} fails while {"password": null} passes.'
+  - 'check_user_info on UpdateUserRequest tests `is None`, so {"user_id": ""} passes here and fails later in the route with a different error.'
+  - CostEstimateRequest checks the cache counts before the reasoning count, so a body that breaks both reports the cache message.
+  - 'has_connection_target ignores port, so {"port": 6379} alone has no target.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

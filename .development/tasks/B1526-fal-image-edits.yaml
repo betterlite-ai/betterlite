@@ -30,8 +30,6 @@ description: >-
   210 tests and 110 adapters/registration, capped at 600.
 scope:
   paths:
-    - crates/betterlite-core/src/api/fal.rs
-    - crates/betterlite-core/src/api/fal/**
     - crates/betterlite-core/src/api/fal/edit.rs
     - crates/betterlite-core/src/api/fal/edit/**
     - tools/oracle/src/helpers/core_ops/fal_edit.rs

@@ -1,0 +1,1 @@
+{"kind":"helper","name":"mixed-named-reference","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"(?a:(?P<x>\u00e9)(?P=x))(?u:(?P=x))","action":"MASK"}],"text":"\u00e9\u00e9\u00c9"}},"env":{},"compare":{"ignore":[]}}

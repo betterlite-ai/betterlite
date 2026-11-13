@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-model-routes-seed-prefixes
+call:
+  bedrock_model_routes:
+    price_map: {}
+    converse_models: []
+    request_metadata_fields: []
+    tool_names: {converted: original}
+    step:
+      prefixes:
+        models: [bedrock/converse/x, bedrock_mantle/x]
+        workspace:
+          - passed: {workspace_id: w, aws_workspace_id: null}
+            optional: {keep: "1"}
+env: {}
+compare: {ignore: []}

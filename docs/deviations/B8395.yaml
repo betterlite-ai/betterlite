@@ -1,0 +1,11 @@
+task: B8395
+deviations:
+  - what: The LLM-exception alert is spawned on a TaskTracker the server drains, and the sync failure handler runs on that tracker's blocking pool, instead of asyncio.create_task and a daemon thread.
+    why: betterlite forbids detached tasks, so a task must be owned and drained on shutdown; both still run without the failure path waiting for them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3245-L3252
+  - what: A proxy-only failure attaches a Rust backtrace from the failure site, where LiteLLM attaches traceback.format_exc().
+    why: There is no Python interpreter on the request path; log_client_error_tracebacks and the expected-client-error rule still decide whether a traceback is attached at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3458-L3465
+  - what: The LLM-exception alert message does not append litellm_debug_info to the exception text.
+    why: ProxyHookError (B8390) has no litellm_debug_info field and no betterlite error carries that debug text, so the append has nothing to add.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3240-L3243

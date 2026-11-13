@@ -41,7 +41,7 @@ description: >-
   Organization uses explicit, litellm.organization, OPENAI_ORGANIZATION, then None. headers uses truthy supplied
   map or litellm.headers. Merge B668 OpenAIConfig defaults only for absent optional keys, retaining explicit None,
   False, 0 and empty values. experimental_handler: EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER defaults False through
-  B129 boolean parsing. Only the normal path inserts extra_headers when non-None, including an empty map overwriting
+  B8500 boolean parsing. Only the normal path inserts extra_headers when non-None, including an empty map overwriting
   an earlier optional extra_headers; experimental dispatch does not perform this insertion. Both still receive headers
   separately. preview_metadata: enable_preview_features defaults False. When enabled and metadata is non-None, get_requester_metadata
   first sanitizes a nested dict requester_metadata using B668; return it only if the cleaned dict is truthy. Otherwise
@@ -113,13 +113,20 @@ description: >-
 
 
   Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/openai/openai_dispatch.rs
-  and its loader wiring: EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER, enable_preview_features. Module-level settings
+  and its loader wiring: EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER, enable_preview_features,
+  LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT. Module-level settings
   enter litellm_settings; deployment settings enter litellm_params; environment lookup is injected. Keep the defaults
   and precedence specified above and in the linked branches; existing key owners remain unchanged. Write config
   rstest openai_provider_config_cases with named cases loads_experimental_openai_base_llm_http_handler, loads_enable_preview_features,
-  plus rejects_unrelated_key. Each loads case calls the real config loader with that key and asserts the resolved
+  loads_default_embedding_encoding_format, plus rejects_unrelated_key. Each loads case calls the real config loader with that key and asserts the resolved
   value, default, precedence and secret redaction where applicable. Seed B002 config_yaml with new openai_provider*
   files for every key; reuse its parser/fuzz target.
+
+  Embedding encoding format (litellm/main.py L6529-L6537): this task owns this resolution, which runs before any provider arm. The requested
+  format is the explicit encoding_format argument, else optional_params encoding_format, else
+  LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT. When it is unset, or its trimmed lowercase text is the sentinel none,
+  encoding_format is dropped from optional_params; otherwise it is set to the requested text unchanged. B040's
+  hosted_vllm cases supply the HTTP proof.
 
 
   Write standalone openai_provider_unsupported_operation in betterlite-provider for this Rust-specific invariant;
@@ -130,22 +137,17 @@ description: >-
   docstrings; SDK overloads share an async implementation): 215 production lines, 270 behavior/config-test lines,
   115 combined Rust/Python adapter lines, 0 parser target/replay lines, 35 config/loader lines and 35 module/dispatch/shared-seed
   wiring lines; 670 planned, 725 maximum changed lines.
+
+  B010 builds Provider::OpenAi for chat, streaming and embeddings and registers the OpenAi variants of
+  OperationRequest, OperationResult and PreparedRequest as stubs in
+  crates/betterlite-provider/src/openai_dispatch.rs. Fill them there and leave provider.rs, operation.rs and
+  prepared.rs as they are.
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/openai_dispatch.rs
   - crates/betterlite-provider/src/openai_dispatch/**
   - crates/betterlite-openai/Cargo.toml
-  - crates/betterlite-provider/src/provider.rs
-  - crates/betterlite-provider/src/provider/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
-  - crates/betterlite-provider/src/prepared.rs
-  - crates/betterlite-provider/src/prepared/**
-  - crates/betterlite-core/src/dispatch.rs
-  - crates/betterlite-core/src/dispatch/**
-  - crates/betterlite-core/src/operation.rs
-  - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/Cargo.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/provider/openai_provider.rs
@@ -194,7 +196,7 @@ dod:
   - case-explicit-param-before-config
   - oracle
   - helper-python
-- text: 'experimental_handler: EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER defaults False through B129 boolean parsing.
+- text: 'experimental_handler: EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER defaults False through B8500 boolean parsing.
     Only the normal path inserts extra_headers when non-None, including an empty map overwriting an earlier optional
     extra_headers; experimental dispatch does not perform this insertion. Both still receive headers separately.'
   proof:
@@ -225,6 +227,10 @@ dod:
 - text: enable_preview_features is accepted by the config loader with the documented default and precedence.
   proof:
   - config-enable-preview-features
+  - config-corpus
+- text: LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT is accepted by the config loader, and the none sentinel drops encoding_format.
+  proof:
+  - config-default-embedding-encoding-format
   - config-corpus
 - text: Unrelated unsupported config still fails with its complete field path.
   proof:
@@ -281,7 +287,7 @@ checks:
       None, False, 0 and empty values.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_explicit_param_before_config$/)'
   - id: case-experimental-handler
-    why: EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER defaults False through B129 boolean parsing. Only the normal
+    why: EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER defaults False through B8500 boolean parsing. Only the normal
       path inserts extra_headers when non-None, including an empty map overwriting an earlier optional extra_headers;
       experimental dispatch does not perform this insertion. Both still receive headers separately.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_experimental_handler$/)'
@@ -297,7 +303,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_openai_provider_dispatch_http$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_provider.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_provider.py tools/oracle/helpers/openai_provider)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -314,6 +320,10 @@ checks:
     why: The enable_preview_features setting is not loaded with its required defaults and precedence.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_provider_config_cases::case_[0-9]+_loads_enable_preview_features$/)'
       && grep -lq 'enable_preview_features' crates/betterlite-config/fuzz/corpus/config_yaml/openai_provider*
+  - id: config-default-embedding-encoding-format
+    why: The LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT setting is not loaded, or the none sentinel keeps encoding_format.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_provider_config_cases::case_[0-9]+_loads_default_embedding_encoding_format$/)'
+      && grep -lq 'LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT' crates/betterlite-config/fuzz/corpus/config_yaml/openai_provider*
   - id: config-unknown-key
     why: The extension silently accepts unrelated unsupported configuration.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_provider_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
@@ -377,9 +387,9 @@ out_of_scope:
   L393-L401; unbind_budget_reservation_from_callbacks L404-L406; set_response_cost_in_hidden_params L762-L772 belong
   to B069.'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: redact_nested_match_and_regex_keys L715-L751
-  belong to B104.'
+  belong to B3688.'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: _get_parent_otel_span_from_kwargs L429-L450
-  belong to B110.'
+  belong to B3847.'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: safe_divide_seconds L33-L48; normalize_drop_params
   L54-L60; drop_params_flag L63-L67; drop_params_env_flag L73-L83; safe_divide L86-L104; _is_litellm_limit_rejection
   L107-L113; _is_proxy_rejection L116-L123; _is_provider_originated L126-L133; is_expected_client_error L136-L165;
@@ -426,7 +436,7 @@ out_of_scope:
   L363-L372; OpenAIChatCompletion._get_openai_client L374-L462; OpenAIChatCompletion.make_openai_chat_completion_request
   L464-L503; OpenAIChatCompletion.make_sync_openai_chat_completion_request L505-L545; OpenAIChatCompletion._call_agentic_completion_hooks_openai
   L547-L625; OpenAIChatCompletion.mock_streaming L627-L643; OpenAIChatCompletion.completion L645-L887; OpenAIChatCompletion.acompletion
-  L889-L1011 belong to B004.'
+  L889-L1011 belong to B004, except _call_agentic_completion_hooks_openai (L547-L625), which belongs to B119.'
 - 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.streaming L1013-L1068; OpenAIChatCompletion.async_streaming
   L1070-L1187; OpenAIChatCompletion.get_stream_options L1189-L1197 belong to B005.'
 - 'Function ownership inventory litellm/llms/openai/openai.py: _embedding_request_without_sdk_defaults L345-L356;
@@ -480,7 +490,7 @@ out_of_scope:
   _validated_tools L31-L36; _has_chat_tool L39-L40; _chat_tool_key L43-L48; _indexed_keys L51-L57; _namespace_members
   L60-L64; _function_fields L67-L69; _member_description L72-L75; _rebuilt_member L78-L96; _rebuilt_flattened_members
   L99-L113; _rebuilt_namespace L116-L140; _merged_original L143-L161; merge_guardrailed_tools L164-L185 belong to
-  B104.'
+  B3669.'
 - 'Function ownership inventory litellm/main.py: _complete_azure L1338-L1469; _complete_azure_text L1472-L1563 belong
   to B025.'
 - 'Function ownership inventory litellm/main.py: _complete_azure_ai L1617-L1768 belong to B026.'
@@ -495,21 +505,24 @@ out_of_scope:
 - 'Function ownership inventory litellm/main.py: _complete_cohere_chat L3047-L3109 belong to B037.'
 - 'Function ownership inventory litellm/main.py: _complete_deepseek L1566-L1614; _complete_text_completion_inception
   L4045-L4106 belong to B038.'
-- 'Function ownership inventory litellm/main.py: _complete_minimax L2500-L2543 belong to B039.'
+- 'Function ownership inventory litellm/main.py: _complete_minimax L2500-L2543 belong to B8312.'
 - 'Function ownership inventory litellm/main.py: _complete_hosted_vllm L2546-L2587; _complete_oobabooga L3301-L3332;
   _complete_vllm L4421-L4455; _complete_ollama L4458-L4495; _complete_ollama_chat L4498-L4537; _complete_triton
-  L4540-L4573; _complete_petals L4615-L4652; _complete_lemonade L4822-L4859 belong to B040.'
+  L4540-L4573; _complete_petals L4615-L4652; _complete_lemonade L4822-L4859 belong to B8157.'
 - 'Function ownership inventory litellm/main.py: _complete_fireworks_ai L1853-L1907; _complete_together_ai L1910-L1957;
-  _complete_groq L2111-L2170; _complete_cometapi L2451-L2497; _complete_replicate L2773-L2824; _complete_huggingface
-  L3181-L3221; _complete_openrouter L3444-L3518; _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649;
-  _complete_predibase L3936-L3992; _complete_cloudflare L4576-L4612; _complete_bytez L4782-L4819 belong to B041.'
-- 'Function ownership inventory litellm/main.py: _complete_heroku L1960-L2007; _complete_sap L2344-L2387; _complete_oci
-  L3224-L3256; _complete_databricks L3335-L3404; _complete_datarobot L3407-L3441; _complete_sagemaker_chat L4109-L4143;
-  _complete_sagemaker L4146-L4171; _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418; _complete_snowflake
-  L4655-L4705; _complete_gdc L4743-L4779; _complete_ovhcloud L4862-L4906 belong to B042.'
-- 'Function ownership inventory litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995;
-  _complete_aleph_alpha L2998-L3044; _complete_maritalk L3112-L3142; _complete_compactifai L3259-L3298; _complete_nadir
-  L3521-L3545; _complete_gradient_ai L4708-L4740 belong to B043.'
+  _complete_groq L2111-L2170; _complete_cloudflare L4576-L4612 belong to B8310. _complete_openrouter L3444-L3518;
+  _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649 belong to B8311. _complete_replicate L2773-L2824;
+  _complete_huggingface L3181-L3221; _complete_predibase L3936-L3992 belong to B8332. _complete_cometapi L2451-L2497;
+  _complete_bytez L4782-L4819 belong to B038.'
+- 'Function ownership inventory litellm/main.py: _complete_oci L3224-L3256; _complete_databricks L3335-L3404; _complete_snowflake
+  L4655-L4705 belong to B8330. _complete_sap L2344-L2387; _complete_sagemaker_chat L4109-L4143; _complete_sagemaker
+  L4146-L4171; _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418 belong to B8331. _complete_heroku
+  L1960-L2007; _complete_datarobot L3407-L3441; _complete_gdc L4743-L4779 belong to B038. _complete_ovhcloud L4862-L4906
+  belongs to B039.'
+- 'Function ownership inventory litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995 belong
+  to B8312. _complete_compactifai L3259-L3298; _complete_gradient_ai L4708-L4740 belong to B038. _complete_maritalk
+  L3112-L3142; _complete_nadir L3521-L3545 belong to B039. _complete_aleph_alpha L2998-L3044 belongs to B044.'
+
 - 'Function ownership inventory litellm/main.py: _complete_aiohttp_openai L2390-L2448; _complete_custom L4913-L4979;
   _complete_custom_providers L4982-L5042 belong to B044.'
 - 'Function ownership inventory litellm/main.py: _complete_fal_ai L3652-L3680 belong to B046.'
@@ -532,7 +545,8 @@ out_of_scope:
   L7385-L7386; atext_completion L7389-L7456; text_completion L7459-L7692; aadapter_completion L7698-L7726; aadapter_generate_content
   L7729-L7738; adapter_completion L7741-L7761; moderation L7767-L7789; amoderation L7792-L7864; atranscription L7870-L7929;
   transcription L7932-L8195; aspeech L8198-L8234; speech L8237-L8719; ahealth_check L8725-L8831; config_completion
-  L8845-L8853; acount_tokens L9277-L9372; __getattr__ L9400-L9411 belong to B158.'
+  L8845-L8853; acount_tokens L9277-L9372; __getattr__ L9400-L9411 belong to B158, except the embedding encoding_format
+  resolution at L6529-L6537, which belongs to this task, and the provider arms inside embedding, which belong to their provider tasks.'
 - 'Function ownership inventory litellm/main.py: _load_default_encoding L9394-L9397 belong to B195.'
 - 'Function ownership inventory litellm/main.py: _load_module_encoding L9379-L9382; _get_encoding L9385-L9391 belong
   to B196.'

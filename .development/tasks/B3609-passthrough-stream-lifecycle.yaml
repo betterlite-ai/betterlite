@@ -33,7 +33,7 @@ description: >-
   token, and for TinyFish only, scan for run_id in complete frames and spawn billing
   on first match. In the cost-injection path, collect complete frames via
   split_complete_sse_frames and pass them to _process_chunk_with_cost_injection
-  (gap D), yielding the transformed chunk. On GeneratorExit (client disconnect) or
+  (B8930 owns it; B8931 supplies it through the existing seam), yielding the transformed chunk. On GeneratorExit (client disconnect) or
   upstream Exception, call schedule_failure_logging with the exception and
   partial raw_bytes before re-raising. On clean completion (all chunks iterated,
   status < 400), schedule deferred logging if the success handler armed it, or
@@ -199,16 +199,6 @@ deviations:
       The finally block ensures exactly-once logging regardless of which path runs.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L235-L242
-  - what: >-
-      Cost injection reads _process_chunk_with_cost_injection from ProxyBaseLLMRequestProcessing
-      (B124/gap D); this task routes complete SSE frames to it and yields the transformed
-      chunk without buffering incomplete trailing frames.
-    why: >-
-      LiteLLM lines 222-223 call _process_chunk_with_cost_injection on split_complete_sse_frames;
-      betterlite defers the transformer implementation to gap D and focuses this task on the
-      stream-lifecycle mechanics and logging dispatch.
-    link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L220-L226
 
 out_of_scope:
   - "B3600 owns PassthroughStandardLoggingPayload and EndpointType enum."
@@ -219,7 +209,7 @@ out_of_scope:
   - "B251 owns record_partial_usage_for_failure and dispatch_failure_handlers for failure accounting."
   - "B1719 owns bind_budget_reservation_to_callbacks for spend-tracking attachment."
   - "B005 owns split_complete_sse_frames for SSE frame reassembly."
-  - "ProxyBaseLLMRequestProcessing._process_chunk_with_cost_injection (gap D) owns cost injection into SSE frames; this task routes frames to it."
+  - "ProxyBaseLLMRequestProcessing._process_chunk_with_cost_injection (B8930) owns cost injection into SSE frames; this task routes frames to it."
   - "Provider-leaf tasks (gap A) own handle_logging_tinyfish_collected_chunks, start_sse_run_billing, run_id_from_sse_frames, sse_poller_spawned, and AnthropicPassthroughLoggingHandler.record_partial_usage_for_failure."
 
 pitfalls:

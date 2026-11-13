@@ -1,0 +1,17 @@
+task: B3518
+deviations:
+  - what: >-
+      The execd endpoint, its headers and use_server_proxy live on betterlite's SandboxHandle, the value
+      acreate_sandbox and arun_code return, instead of inside ContainerHandle's hidden parameters, whose shared
+      record carries only api_key and api_base.
+    why: >-
+      The sandbox records from B3516 are shared with E2B and have no provider-specific fields; the endpoint is
+      still cached on the returned handle, so arun_code asks the API for it once and never again for that handle.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opensandbox/sandbox/transformation.py#L118-L124
+  - what: >-
+      A plain ContainerHandle cannot carry use_server_proxy, so arun_code's own argument decides the proxy flag
+      for it, while LiteLLM reads a stored value from the handle's hidden parameters first.
+    why: >-
+      The shared ContainerHandle record has no such field; a handle acreate_sandbox returned keeps the flag and
+      is returned unchanged by _ensure_handle, which is the path a working setup uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opensandbox/sandbox/transformation.py#L209

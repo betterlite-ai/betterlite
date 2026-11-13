@@ -1,0 +1,15 @@
+kind: helper
+name: provider-metadata-factory-seed-constructors
+call:
+  provider_metadata_factory:
+    metadata_constructors:
+      fireworks:
+        - {temperature: 0}
+        - {}
+        - {tools: [], tool_choice: "auto"}
+      lemonade:
+        - {repeat_penalty: 0.25, max_tokens: 0}
+        - {}
+      foundry: [null, ""]
+env: {}
+compare: {ignore: []}

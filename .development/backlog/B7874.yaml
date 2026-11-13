@@ -1,0 +1,14 @@
+id: B7874
+milestone: M12 python
+title: Python fine-tuning job functions
+status: todo
+depends_on: [B6040, B158, B167, B1052, B1053, B1141, B2487]
+file: tasks/B7874-python-fine-tuning.yaml
+covers:
+  - "litellm/fine_tuning/**"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

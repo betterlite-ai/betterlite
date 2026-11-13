@@ -1,0 +1,269 @@
+id: B5128
+title: Close the B4323 Redis client factory audit gaps
+description: >-
+  B4323 built the Redis client factories in crates/betterlite-redis/src/redis_client_factories. An
+  Opus review after merge found four gaps. Three are places where the built clients differ from
+  LiteLLM's. The fourth is LiteLLM's own debug mask. It shows most of a short secret, and Max decided
+  betterlite changes it as a deviation. All four check out against the LiteLLM checkout, and this
+  task closes them in the same module. B4323 has no oracle helper operation and no oracle cases, so
+  every gap is proven with a unit test in the module's own tests.rs files.
+
+
+  Gap one: a GCP or Azure credential provider never replaces the static credentials. B4321 resolves
+  gcp_service_account and azure_redis_ad_token into credential_provider_settings Gcp or Azure and
+  leaves credential_provider false, so username, password and a passthrough redis_connect_func stay
+  set. LiteLLM's _credential_provider_auth_kwargs turns that IAM callback into a
+  GCPIAMCredentialProvider or AzureADCredentialProvider, drops redis_connect_func, username and
+  password, and adds credential_provider
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L775-L806).
+  It runs for the sync cluster in init_redis_cluster
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L679-L705),
+  for every async target in get_redis_async_client
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L833-L837)
+  and for the pool in get_redis_connection_pool
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L906-L909).
+  get_redis_client's sync url, sentinel and direct paths skip it and keep the callback
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L809-L830).
+  Today build_client keeps username and password next to credential_provider_settings, and redis-py
+  rejects that mix with DataError once a connection opens
+  (https://github.com/redis/redis-py/blob/v8.1.0/redis/asyncio/connection.py#L641). The fix adds one
+  function in dispatch.rs that pool.rs also calls, credential_provider_auth(settings) ->
+  RedisConnectionSettings. When credential_provider_settings is Some, it returns a copy with
+  credential_provider true, username and password None, and no redis_connect_func passthrough key.
+  build_client applies it for Target::Cluster with either ClientKind and for every ClientKind::Async
+  target. build_connection_pool applies it before it builds the direct or the url connection. Sync
+  url, sentinel and direct clients stay as they are. No test on main sets a Gcp or Azure provider
+  next to a password, so nothing fails today. The only pool test with a provider,
+  a_url_target_builds_a_pool_carrying_the_url_socket_timeout_and_credential_provider, uses Explicit
+  with no password.
+
+
+  Gap two: a url client carries ssl and ssl_password. LiteLLM's _get_redis_url_kwargs allows only the
+  Connection class's init args plus url and max_connections
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L118-L147).
+  Connection takes no ssl and no ssl_* argument, so a url config gets TLS only from a rediss://
+  scheme, and ssl true or REDIS_SSL=true does nothing for a redis:// url. UrlClient in url.rs copies
+  ssl and ssl_password from the settings, so the url client and the url pool both carry a TLS flag
+  LiteLLM drops. The fix removes both fields from UrlClient. B4321's allowlist already drops ssl_*
+  passthrough keys for a url target, so the passthrough map needs no change. On main,
+  builds_a_url_client_from_the_url_field never sets ssl, so it can't fail on this.
+
+
+  Gap three: the pool has no size. get_redis_connection_pool builds an async BlockingConnectionPool
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L906-L932).
+  The url path passes int(max_connections) only when the config sets it, and the direct path passes
+  the kwargs through, so an unset max_connections gets redis-py's default of 50
+  (https://github.com/redis/redis-py/blob/v8.1.0/redis/asyncio/connection.py#L3035-L3046). redis-py's
+  ConnectionPool raises ValueError('"max_connections" must be a positive integer') for a negative
+  value (https://github.com/redis/redis-py/blob/v8.1.0/redis/asyncio/connection.py#L2617-L2626).
+  PoolConfig in pool.rs has only timeout_seconds and connection, so the cap of 50 is lost. The fix
+  adds pub max_connections: u64 to PoolConfig. It holds the configured value when that is 1 or more
+  and 50 when the config leaves it unset. A value of 0 or below makes build_connection_pool return a
+  new FactoryError::InvalidMaxConnections { value } in error.rs, whose message names max_connections
+  and the value. None of the seven pool tests on main reads a pool size.
+
+
+  Gap four, a deviation: the debug table masks a short secret the way LiteLLM does.
+  _pretty_print_redis_config runs every kwarg through SensitiveDataMasker.mask_dict
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L946-L966).
+  _mask_value returns an empty value as is, turns a value of 8 characters or fewer into one * per
+  character, and shows the first 4 and last 4 characters of anything longer
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/sensitive_data_masker.py#L57-L72).
+  So a 9 to 12 character password shows 8 of its characters, and redacted_config_rows in redact.rs
+  copies that through masker.mask_value. The fix changes only the password, sentinel_password and
+  ssl_password rows. A secret with fewer than 24 characters shows one * per character, and one of 24
+  or more keeps masker.mask_value's first 4 plus last 4. Characters are counted as Rust chars, the
+  same count as Python's len. A secret of 8 or fewer characters gets the same output as LiteLLM, and
+  an empty one stays empty. Every other sensitive row keeps masker.mask_value: the
+  credential_provider placeholder still reads <cre*************der>, and an ssl_keyfile passthrough
+  path keeps its first and last 4. The shared SensitiveDataMasker in betterlite-redact stays as it
+  is. The worker adds a fourth entry to docs/deviations/B4323.yaml that says what an operator sees in
+  the debug table. On main, redaction_masks_the_data_node_password and
+  redaction_masks_the_sentinel_password_too can't fail on this. They only assert that the whole
+  secret is absent, and supe**********alue passes that. Both must assert the exact all-star output
+  instead: 18 stars for super-secret-value and 19 for monitor-only-secret.
+scope:
+  paths:
+    - crates/betterlite-redis/src/redis_client_factories.rs
+    - crates/betterlite-redis/src/redis_client_factories/**
+    - docs/deviations/B4323.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L775-L806
+    why: _credential_provider_from_connect_func and _credential_provider_auth_kwargs, the step that swaps an IAM callback for a credential provider and drops redis_connect_func, username and password.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L679-L705
+    why: init_redis_cluster runs the credential step on the sync cluster path at L692, before the cluster kwargs are filtered.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L809-L830
+    why: get_redis_client's sync url, sentinel and direct paths; none of them runs the credential step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L833-L903
+    why: get_redis_async_client runs the credential step at L837 for every async target, and prints the debug table only on the direct path at L896.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L906-L932
+    why: get_redis_connection_pool runs the credential step at L909, passes max_connections to the url pool only when it is set, and builds the direct pool with BlockingConnectionPool's own defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L118-L147
+    why: _get_redis_url_kwargs, the url allowlist with no ssl or ssl_* key, and the docstring saying TLS on a url comes from the rediss:// scheme.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L935-L1032
+    why: _redis_kwargs_for_logging's placeholders and _pretty_print_redis_config's mask_dict call, the debug table the deviation changes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/sensitive_data_masker.py#L57-L72
+    why: _mask_value, the output to keep for values of 8 characters or fewer and for secrets of 24 or more.
+  - url: https://github.com/redis/redis-py/blob/v8.1.0/redis/asyncio/connection.py#L3035-L3046
+    why: BlockingConnectionPool defaults max_connections to 50.
+  - url: https://github.com/redis/redis-py/blob/v8.1.0/redis/asyncio/connection.py#L2617-L2626
+    why: ConnectionPool turns a falsy max_connections into 100 and raises ValueError for a negative one.
+  - url: https://github.com/redis/redis-py/blob/v8.1.0/redis/asyncio/connection.py#L641
+    why: AbstractConnection raises DataError when a username or password comes with a credential_provider.
+dod:
+  - text: >-
+      With credential_provider_settings Gcp or Azure next to a username, a password and a
+      passthrough redis_connect_func, the sync cluster, every async client and both pool connections
+      come out with credential_provider true, no username, no password and no redis_connect_func. An
+      async sentinel keeps sentinel_password as its monitor_password. The rstest
+      iam_provider_dispatch_replaces_static_credentials in dispatch/tests.rs (cases
+      sync_cluster_gcp, async_cluster_azure, async_url_gcp, async_sentinel_azure, async_direct_gcp)
+      and the rstest iam_provider_pool_replaces_static_credentials in pool/tests.rs (cases
+      direct_gcp, url_azure) fail on today's main, where username and password stay set.
+    proof: [iam-provider-auth-tests]
+  - text: >-
+      Sync url, sentinel and direct clients keep username, password and redis_connect_func next to a
+      Gcp or Azure provider, as get_redis_client does. The rstest
+      iam_provider_dispatch_keeps_static_credentials_on_sync_paths in dispatch/tests.rs (cases
+      sync_url_gcp, sync_sentinel_azure, sync_direct_gcp) fails if the step reaches those paths.
+    proof: [iam-provider-auth-tests]
+  - text: >-
+      UrlClient has no ssl and no ssl_password field, so a url client and a url pool get TLS only
+      from a rediss:// scheme. url_client_takes_tls_from_the_scheme_alone in url/tests.rs and
+      url_pool_takes_tls_from_the_scheme_alone in pool/tests.rs build from ssl Some(true), an
+      ssl_password and url redis://cache:6379. Both assert that the client's Debug output names no
+      ssl field and that the url is unchanged, and both fail on today's main.
+    proof: [url-tls-scheme-tests]
+  - text: >-
+      PoolConfig carries max_connections 50 when the config leaves it unset and the configured value
+      otherwise, for the direct and the url pool. The rstests pool_size_defaults_to_50_connections and
+      pool_size_follows_the_configured_max_connections in pool/tests.rs (cases direct and url in
+      each) fail on today's main, where PoolConfig has no size.
+    proof: [pool-size-tests]
+  - text: >-
+      A max_connections of 0 or below makes build_connection_pool return
+      FactoryError::InvalidMaxConnections, and its message names max_connections and the value. The
+      rstest pool_size_rejects_max_connections_below_one in pool/tests.rs (cases zero, negative) and
+      invalid_max_connections_names_the_field_and_the_value in error/tests.rs fail on today's main.
+    proof: [pool-size-tests]
+  - text: >-
+      In redacted_config_rows, a password, sentinel_password or ssl_password with fewer than 24
+      characters shows one * per character. The rstest
+      redaction_masks_a_secret_under_24_characters_fully in redact/tests.rs covers 9, 12 and 23
+      characters on each of the three rows, an 11-character secret with non-ASCII letters, an
+      8-character secret that matches LiteLLM's own output, and an empty secret that stays empty.
+      Its 9 to 23 character cases fail on today's main. The rstest
+      redaction_keeps_four_and_four_of_a_secret_of_24_characters_or_more covers 24 and 30
+      characters and fails if the fix masks those fully.
+    proof: [debug-mask-tests]
+  - text: >-
+      The credential_provider placeholder row still reads <cre*************der>, and an ssl_keyfile
+      passthrough path /etc/redis/client.key still reads /etc*************.key. The rstest
+      redaction_keeps_litellms_mask_for_non_secret_rows in redact/tests.rs (cases
+      credential_provider, ssl_keyfile) fails if the 24-character rule reaches those rows.
+    proof: [debug-mask-tests]
+  - text: >-
+      redaction_masks_the_data_node_password and redaction_masks_the_sentinel_password_too assert
+      the exact all-star output, 18 and 19 stars, instead of only checking that the whole secret is
+      absent. On today's main they only assert absence and pass while 8 characters show.
+    proof: [weak-redaction-tests-tightened]
+  - text: >-
+      docs/deviations/B4323.yaml has a fourth entry. It says that in the Redis Configuration debug
+      table a password, sentinel_password or ssl_password under 24 characters shows one * per
+      character, where LiteLLM shows the first 4 and last 4 of anything longer than 8, and that a
+      secret of 24 characters or more looks the same as in LiteLLM.
+    proof: [debug-mask-deviation-recorded]
+  - text: >-
+      Every other test under redis_client_factories still passes after UrlClient loses its TLS
+      fields, PoolConfig gains a size and build_client gains the credential step.
+    proof: [redis-factory-tests]
+checks:
+  optional: []
+  commands:
+    - id: iam-provider-auth-tests
+      why: a GCP or Azure provider still leaves username, password or redis_connect_func on a sync cluster, an async client or a pool, or the step also reaches a sync url, sentinel or direct client
+      run: >-
+        grep -q 'fn iam_provider_dispatch_replaces_static_credentials' crates/betterlite-redis/src/redis_client_factories/dispatch/tests.rs &&
+        grep -q 'fn iam_provider_dispatch_keeps_static_credentials_on_sync_paths' crates/betterlite-redis/src/redis_client_factories/dispatch/tests.rs &&
+        grep -q 'fn iam_provider_pool_replaces_static_credentials' crates/betterlite-redis/src/redis_client_factories/pool/tests.rs &&
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail -E
+        'test(/^redis_client_factories::.*iam_provider/)'
+    - id: url-tls-scheme-tests
+      why: UrlClient still carries ssl or ssl_password, so a redis:// url gets a TLS flag LiteLLM drops
+      run: >-
+        grep -q 'fn url_client_takes_tls_from_the_scheme_alone' crates/betterlite-redis/src/redis_client_factories/url/tests.rs &&
+        grep -q 'fn url_pool_takes_tls_from_the_scheme_alone' crates/betterlite-redis/src/redis_client_factories/pool/tests.rs &&
+        ! grep -qE '^ *pub ssl(_password)?:' crates/betterlite-redis/src/redis_client_factories/url.rs &&
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail -E
+        'test(/^redis_client_factories::.*tls_from_the_scheme/)'
+    - id: pool-size-tests
+      why: the pool loses BlockingConnectionPool's default of 50 connections, ignores a configured max_connections, or accepts one below 1
+      run: >-
+        grep -q 'fn pool_size_defaults_to_50_connections' crates/betterlite-redis/src/redis_client_factories/pool/tests.rs &&
+        grep -q 'fn pool_size_follows_the_configured_max_connections' crates/betterlite-redis/src/redis_client_factories/pool/tests.rs &&
+        grep -q 'fn pool_size_rejects_max_connections_below_one' crates/betterlite-redis/src/redis_client_factories/pool/tests.rs &&
+        grep -q 'fn invalid_max_connections_names_the_field_and_the_value' crates/betterlite-redis/src/redis_client_factories/error/tests.rs &&
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail -E
+        'test(/^redis_client_factories::.*(pool_size|invalid_max_connections)/)'
+    - id: debug-mask-tests
+      why: a secret under 24 characters still shows part of itself in the debug table, a longer one loses LiteLLM's first 4 plus last 4, or the new rule reaches a row that holds no secret
+      run: >-
+        grep -q 'fn redaction_masks_a_secret_under_24_characters_fully' crates/betterlite-redis/src/redis_client_factories/redact/tests.rs &&
+        grep -q 'fn redaction_keeps_four_and_four_of_a_secret_of_24_characters_or_more' crates/betterlite-redis/src/redis_client_factories/redact/tests.rs &&
+        grep -q 'fn redaction_keeps_litellms_mask_for_non_secret_rows' crates/betterlite-redis/src/redis_client_factories/redact/tests.rs &&
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail -E
+        'test(/^redis_client_factories::redact::/)'
+    - id: weak-redaction-tests-tightened
+      why: a password redaction test still only checks that the whole secret is absent, so it passes while 8 of its characters show
+      run: >-
+        grep -q 'fn redaction_masks_the_data_node_password' crates/betterlite-redis/src/redis_client_factories/redact/tests.rs &&
+        grep -q 'fn redaction_masks_the_sentinel_password_too' crates/betterlite-redis/src/redis_client_factories/redact/tests.rs &&
+        ! grep -qE 'contains\("(super-secret-value|monitor-only-secret)"\)' crates/betterlite-redis/src/redis_client_factories/redact/tests.rs &&
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail -E
+        'test(/^redis_client_factories::redact::tests::redaction_masks_the_(data_node_password|sentinel_password_too)$/)'
+    - id: debug-mask-deviation-recorded
+      why: docs/deviations/B4323.yaml does not record the 24-character debug mask
+      run: >-
+        test "$(grep -c '^  - what:' docs/deviations/B4323.yaml)" = "4" &&
+        grep -q '24 characters' docs/deviations/B4323.yaml
+    - id: redis-factory-tests
+      why: a factory test outside the new ones broke when UrlClient lost its TLS fields, PoolConfig gained a size or build_client gained the credential step
+      run: >-
+        grep -q 'pub max_connections: u64' crates/betterlite-redis/src/redis_client_factories/pool.rs &&
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail -E
+        'test(/^redis_client_factories::/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      In the Redis Configuration debug table, a password, sentinel_password or ssl_password with
+      fewer than 24 characters shows one * per character. LiteLLM shows the first 4 and last 4
+      characters of any value longer than 8, so a 12-character password shows 8 of them there. A
+      secret of 8 characters or fewer, or of 24 or more, looks the same as in LiteLLM.
+    why: >-
+      Showing 8 characters of a 9 to 12 character secret leaks most of it, and no working setup
+      relies on reading them. Max decided on 24 as the point where the first 4 and last 4 stop
+      giving most of a secret away.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/sensitive_data_masker.py#L57-L72
+out_of_scope:
+  - Padded one-line functions belong to B5094. It clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task does not touch .ast-grep/rules/.
+  - The fixed status per error class is B5102's and already merged.
+  - Building the GCPIAMCredentialProvider and AzureADCredentialProvider objects, including Azure's REDIS_USERNAME lookup, belongs to B4320. Resolving gcp_service_account, azure_redis_ad_token, REDIS_SSL and REDIS_MAX_CONNECTIONS into settings belongs to B4321. This task only applies what they produce.
+  - Printing the debug table. Nothing on main calls redacted_config_rows yet. LiteLLM prints it only on the async direct path, after the credential step, and the task that wires the print in decides which settings it passes.
+  - The shared SensitiveDataMasker in crates/betterlite-redact (B244) keeps LiteLLM's 4 plus 4 rule for every other caller.
+  - The Sentinel pool, the Sentinel socket timeout and the three existing entries in docs/deviations/B4323.yaml stay as they are.
+pitfalls:
+  - "_credential_provider_auth_kwargs never touches the url, so an async url client or a url pool keeps its URL userinfo. Only resolve.rs's explicit credential_provider path strips it."
+  - "cluster::build returns early for ClientKind::Sync, so the credential step must run in build_client before the cluster branch, not inside the async half of cluster::build."
+  - "The superseded keys are exactly redis_connect_func, username and password. sentinel_password stays and still becomes the async sentinel's monitor_password."
+  - "Explicit and Aws providers already arrive with credential_provider true and no static credentials from resolve.rs, so the step must leave them as they are."
+  - "redis-py turns max_connections 0 into 100 through 'max_connections or 100'. docs/compatibility.md says a setup that leans on truthiness gets an error naming the field, so 0 gets InvalidMaxConnections like a negative value, never 100 or 50."
+  - "An unset max_connections gets BlockingConnectionPool's 50, not ConnectionPool's 100: the url pool passes max_connections only when it is set, and an unset key never reaches the direct pool's kwargs, so BlockingConnectionPool's own default applies."
+  - "Count a secret with chars().count(), not len(). pässwörd-12 is 11 characters and 13 bytes, and Python's len gives 11."
+  - "The credential_provider placeholder '<credential provider>' is 21 characters, so the 24-character rule would turn it into 21 stars. Apply the rule to the password, sentinel_password and ssl_password rows only."
+  - "A secret of 24 characters or more still goes through masker.mask_value, so its max_work bound and REDACTED fallback stay in place. The all-star path only ever handles fewer than 24 characters."
+  - "Removing ssl and ssl_password from UrlClient breaks every UrlClient struct literal and field read; grep the module's tests for them before the first build."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

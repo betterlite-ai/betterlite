@@ -43,6 +43,6 @@ pub(crate) fn in_memory() -> (BillingMetricsRecorder, InMemoryMetricExporter) {
 }
 
 pub(crate) fn direct_policy() -> Arc<ProxyPolicy> {
-    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new());
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
     Arc::new(policy)
 }

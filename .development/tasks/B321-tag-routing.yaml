@@ -7,9 +7,7 @@ description: 'Wire B320 matching into B016 with typed policy resolution for rout
   or consumed here: enable_tag_filtering, tag_filtering_match_any, tag_routing_prefix. Pinned declaration
   defaults: enable_tag_filtering=None; tag_routing_prefix=None. Resolve env values once in betterlite-config,
   never in router code. Implement the owned native service in crates/betterlite-router/src/tag_routing.rs.
-  Add ProbeOperation::TagRouting in tools/oracle/src/router_probes/mod.rs and the corresponding B321 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::TagRouting and its Python entry as stubs, so fill only tools/oracle/src/router_probes/tag_routing.rs and tools/oracle/litellm/probes/tag_routing.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router_strategy/tag_based_routing.py: _chain_allows_fail_open
@@ -18,26 +16,18 @@ description: 'Wire B320 matching into B016 with typed policy resolution for rout
   (L413-L432), _tag_known_to_group (L435-L450), _request_tags_after_router_consumption (L453-L474), get_deployments_for_tag
   (L477-L647), _tags_in_metadata (L650-L665), _get_tags_from_request_kwargs (L668-L695). Implement these
   behaviors through the typed Rust services above; synchronous facades and structural accessors reuse
-  the same primitive instead of separate ports.'
+  the same primitive instead of separate ports.
+  B016 registers RouteStage::TagRouting as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/tag_routing.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/tag_routing.rs
   - crates/betterlite-router/src/tag_routing/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/tag_routing.rs
+  - crates/betterlite-router/src/context/tag_routing/**
   - crates/betterlite-server/src/routing/tag_routing.rs
   - crates/betterlite-server/src/routing/tag_routing/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/tag_routing.rs
   - tools/oracle/src/router_probes/tag_routing/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/tag_routing.py
   - tools/oracle/cases/routing/tag-routing/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/tag-routing-*

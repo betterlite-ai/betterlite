@@ -16,12 +16,10 @@ description: >-
   100 fixtures and 35 corpus/wiring lines, 610 within 650. Wire JSON decoding stays in B1071/B527.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_file_http_write.rs
   - crates/betterlite-core/src/api/vector_file_http_write/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/vector_file_write_transport.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/vector_file_write_transport.py
   - tools/oracle/cases/sdk-http/vector-file-write-transport/**

@@ -150,7 +150,7 @@ out_of_scope:
   - query_engine_reaper.py set_child_subreaper, _read_comm_and_ppid, list_orphaned_engine_pids,
     _try_reap, _send_signal, _await_reaped, terminate_and_reap, terminate_and_reap_all,
     reap_orphaned_engines, _reaper_loop and start_query_engine_reaper have no native process to supervise.
-  - B124 owns proxy/utils.py's PrismaClient reconnect/watchdog and _handle_writer_engine_replaced
+  - B2323 owns PrismaClient's reconnect and B8396 its watchdog; nothing builds _handle_writer_engine_replaced, the Prisma engine-watcher re-arm
     callback; B715 owns bounded lookup orchestration and B714 reader routing. Their services consume
     this replacement port; the generation tracker does not import its callers.
 pitfalls:

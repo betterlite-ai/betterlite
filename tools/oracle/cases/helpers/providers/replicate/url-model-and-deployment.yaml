@@ -1,0 +1,14 @@
+kind: helper
+name: replicate-url-model-and-deployment
+env: {}
+compare: {ignore: []}
+call:
+  b5847:
+    op: urls
+    models:
+      - owner/model
+      - owner/model:abc
+      - a:b:c
+      - owner/deployments/xyz
+      - deployments/a/b
+      - "owner/model:"

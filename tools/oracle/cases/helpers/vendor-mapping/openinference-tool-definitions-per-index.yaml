@@ -1,0 +1,59 @@
+{
+  "kind": "helper",
+  "name": "vendor-mapping-openinference-tool-definitions-per-index",
+  "call": {
+    "b3846": {
+      "function": "openinference_llm_call",
+      "payload": {
+        "id": "call-5",
+        "model": "gpt-4o",
+        "custom_llm_provider": "openai",
+        "call_type": "completion",
+        "model_parameters": {
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "get_weather",
+                "description": "Weather",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "city": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "no_description",
+                "parameters": {
+                  "type": "object"
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "dropped",
+                "description": "Beyond the budget",
+                "parameters": {
+                  "type": "object"
+                }
+              }
+            }
+          ]
+        }
+      },
+      "capture_content": false,
+      "tool_attr_budget": 6
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -1,0 +1,66 @@
+kind: helper
+name: zero-cost-diagnostic-four-round-depth-and-case-sensitive-rate-keys
+call:
+  zero_cost_diagnostic:
+    probes:
+      - usage:
+          prompt_tokens: 100
+          completion_tokens: 50
+          total_tokens: 150
+        pricing_model: model
+        pricing:
+          input_cost_per_token:
+            a_cost:
+              b_cost:
+                c_cost: 5
+        calculation_failed: false
+        model: model
+      - usage:
+          prompt_tokens: 100
+          completion_tokens: 50
+          total_tokens: 150
+        pricing_model: model
+        pricing:
+          input_cost_per_token:
+            a_cost:
+              b_cost:
+                c_cost:
+                  d_cost: 5
+        calculation_failed: false
+        model: model
+      - usage:
+          prompt_tokens: 100
+          completion_tokens: 50
+          total_tokens: 150
+        pricing_model: model
+        pricing:
+          input_cost_per_token:
+            COSTly: 5
+            pricing:
+              x_cost: 3
+          output_cost_per_token: "6"
+        calculation_failed: false
+        model: model
+      - usage:
+          prompt_tokens: 100
+          completion_tokens: 50
+          total_tokens: 150
+        pricing_model: model
+        pricing:
+          input_cost_per_token:
+            - nothing: 1
+            - x_cost: 2
+        calculation_failed: false
+        model: model
+      - usage:
+          prompt_tokens: 100
+          completion_tokens: 50
+          total_tokens: 150
+        pricing_model: model
+        pricing:
+          input_cost_per_token: "5"
+          output_cost_per_token: true
+        calculation_failed: false
+        model: model
+env: {}
+compare: {ignore: []}

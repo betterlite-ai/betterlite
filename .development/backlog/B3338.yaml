@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Video generation call and option precedence
 status: todo
 depends_on: [B3330, B3331, B3332, B3333, B174, B198, B247, B185, B186, B2228]
-file: null
+file: tasks/B3338-video-generation-call.yaml
 covers:
   - "litellm/videos/main.py"
   - "litellm/videos/utils.py"

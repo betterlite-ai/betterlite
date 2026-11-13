@@ -1,0 +1,26 @@
+kind: helper
+name: oci-chat-wire-cohere-chat-history-and-merged-tool-results
+call:
+  b5942:
+    function: cohere_messages
+    messages:
+      - role: user
+        content: "hello"
+      - role: assistant
+        content: ""
+        tool_calls:
+          - id: call_1
+            type: function
+            function:
+              name: lookup
+              arguments: '{"q": "x"}'
+      - role: tool
+        tool_call_id: call_1
+        content: "one"
+      - role: tool
+        tool_call_id: call_1
+        content: "two"
+      - role: user
+        content: "thanks"
+env: {}
+compare: {ignore: []}

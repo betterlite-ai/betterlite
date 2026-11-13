@@ -18,8 +18,13 @@ description: >-
 scope:
   paths:
     - Cargo.toml
-    - crates/betterlite-auth/**
-    - tools/oracle/cases/auth/**
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/src/fallback_budget.rs
+    - crates/betterlite-auth/src/fallback_budget/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/sections/fallback_budget.rs
+    - crates/betterlite-config/src/sections/fallback_budget/**
+    - tools/oracle/cases/auth/fallback-*.yaml
     - tools/oracle/helpers/b3008.py
     - tools/oracle/helpers/b3008/**
     - tools/oracle/src/helpers/oracle/b3008.rs

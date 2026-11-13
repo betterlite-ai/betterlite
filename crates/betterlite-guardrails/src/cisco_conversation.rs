@@ -54,12 +54,12 @@ pub fn normalize_content(content: &Json) -> String {
 }
 
 fn push_part_text(part: &Fields, parts: &mut Vec<String>) {
-    let text = Json::field(part, "text");
+    let text = Json::parse(part.get("text").map_or("null", |raw| raw.get()));
     if is_text_part(part) && text.truthy() {
         parts.push(text.python_str());
         return;
     }
-    let nested = Json::field(part, "content");
+    let nested = Json::parse(part.get("content").map_or("null", |raw| raw.get()));
     if !matches!(nested, Json::Null) {
         let nested_text = normalize_content(&nested);
         if !nested_text.is_empty() {
@@ -67,7 +67,7 @@ fn push_part_text(part: &Fields, parts: &mut Vec<String>) {
         }
     }
     for key in ["arguments", "output"] {
-        let value = Json::field(part, key);
+        let value = Json::parse(part.get(key).map_or("null", |raw| raw.get()));
         // LiteLLM appends the normalized value even when it comes back empty
         if value.truthy() {
             parts.push(normalize_content(&value));
@@ -76,7 +76,7 @@ fn push_part_text(part: &Fields, parts: &mut Vec<String>) {
 }
 
 fn is_text_part(part: &Fields) -> bool {
-    match Json::field(part, "type") {
+    match Json::parse(part.get("type").map_or("null", |raw| raw.get())) {
         Json::Text(kind) => TEXT_PART_TYPES.contains(&kind.as_str()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => false,
     }

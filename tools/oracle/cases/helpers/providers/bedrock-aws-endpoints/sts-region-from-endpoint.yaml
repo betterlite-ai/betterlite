@@ -1,0 +1,22 @@
+kind: helper
+name: sts-region-from-endpoint
+call:
+  bedrock_aws_endpoints:
+    sts_endpoint_region:
+      endpoints:
+        - 'https://sts.us-east-1.amazonaws.com'
+        - 'https://sts-fips.us-east-1.amazonaws.com'
+        - 'https://vpce-abc123.sts.eu-west-1.vpce.amazonaws.com'
+        - 'https://sts.cn-north-1.amazonaws.com.cn'
+        - 'https://sts.us-gov-west-1.amazonaws.com'
+        - 'https://STS.EU-WEST-1.AMAZONAWS.COM'
+        - 'https://sts.us-east-1.amazonaws.com.evil.example'
+        - 'https://user:info@sts.eu-west-1.amazonaws.com/path?x=1'
+        - 'https://xsts.us-east-1.amazonaws.com'
+        - 'https://example.com'
+        - 'sts.eu-west-1.amazonaws.com'
+        - ''
+        - null
+        - 'https://[::1'
+env: {}
+compare: {ignore: []}

@@ -6,10 +6,7 @@ use std::sync::{Arc, Mutex};
 use rstest::rstest;
 use secrecy::SecretString;
 
-use super::{
-    DEFAULT_MAX_SIZE_IN_MEMORY, DEFAULT_TTL_FOR_HTTPX_CLIENTS, DynamicLoggerCache, RemovalEffect,
-    get_cache_key,
-};
+use super::{DynamicLoggerCache, RemovalEffect, get_cache_key};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct FixtureLogger {
@@ -42,34 +39,33 @@ fn capturing_removal(log: &Arc<Mutex<Vec<FixtureLogger>>>) -> RemovalEffect<Fixt
     })
 }
 
-fn cache_with_capacity(
-    default_ttl: f64,
-    capacity: usize,
+fn cache_with(
     time: &Arc<Mutex<f64>>,
     stopped: &Arc<Mutex<Vec<FixtureLogger>>>,
 ) -> DynamicLoggerCache<FixtureLogger> {
-    DynamicLoggerCache {
-        default_ttl,
-        capacity,
-        clock: fake_clock(time),
-        on_remove: capturing_removal(stopped),
-        entries: Mutex::new(BTreeMap::new()),
-    }
+    DynamicLoggerCache::new(capturing_removal(stopped), fake_clock(time))
 }
 
-fn cache_with(
-    default_ttl: f64,
+fn set_first_two_hundred_credentials(
+    cache: &DynamicLoggerCache<FixtureLogger>,
     time: &Arc<Mutex<f64>>,
-    stopped: &Arc<Mutex<Vec<FixtureLogger>>>,
-) -> DynamicLoggerCache<FixtureLogger> {
-    cache_with_capacity(default_ttl, DEFAULT_MAX_SIZE_IN_MEMORY, time, stopped)
+) {
+    (0_u32..200_u32).for_each(|index| {
+        let credential = format!("team-{index}");
+        let creds = credentials(&[("api_key", &credential)]);
+        *time.lock().expect("fixture clock lock is not poisoned") = f64::from(index);
+        let name = if index == 0 { "earliest" } else { "filler" };
+        cache
+            .set_cache(&creds, "langfuse", FixtureLogger { name })
+            .expect("set succeeds");
+    });
 }
 
 #[test]
-fn set_cache_replaces_the_cached_value_without_stopping_the_overwritten_one() {
+fn set_cache_stops_the_live_value_it_replaces() {
     let time = Arc::new(Mutex::new(0.0_f64));
     let stopped = Arc::new(Mutex::new(Vec::new()));
-    let cache = cache_with(100.0_f64, &time, &stopped);
+    let cache = cache_with(&time, &stopped);
     let creds = credentials(&[("api_key", "k")]);
 
     cache
@@ -81,11 +77,12 @@ fn set_cache_replaces_the_cached_value_without_stopping_the_overwritten_one() {
 
     let value = cache.get_cache(&creds, "langfuse").expect("get succeeds");
     assert_eq!(value, Some(FixtureLogger { name: "second" }));
-    assert!(
+    assert_eq!(
         stopped
             .lock()
             .expect("fixture capture lock is not poisoned")
-            .is_empty()
+            .as_slice(),
+        [FixtureLogger { name: "first" }]
     );
 }
 
@@ -93,7 +90,7 @@ fn set_cache_replaces_the_cached_value_without_stopping_the_overwritten_one() {
 fn set_cache_keeps_the_original_expiry_when_overwriting_a_live_entry() {
     let time = Arc::new(Mutex::new(0.0_f64));
     let stopped = Arc::new(Mutex::new(Vec::new()));
-    let cache = cache_with(100.0_f64, &time, &stopped);
+    let cache = cache_with(&time, &stopped);
     let creds = credentials(&[("api_key", "k")]);
 
     cache
@@ -104,11 +101,11 @@ fn set_cache_keeps_the_original_expiry_when_overwriting_a_live_entry() {
         .set_cache(&creds, "langfuse", FixtureLogger { name: "second" })
         .expect("set succeeds");
 
-    *time.lock().expect("fixture clock lock is not poisoned") = 100.0_f64;
+    *time.lock().expect("fixture clock lock is not poisoned") = 3600.0_f64;
     let still_live = cache.get_cache(&creds, "langfuse").expect("get succeeds");
     assert_eq!(still_live, Some(FixtureLogger { name: "second" }));
 
-    *time.lock().expect("fixture clock lock is not poisoned") = 100.5_f64;
+    *time.lock().expect("fixture clock lock is not poisoned") = 3600.5_f64;
     let expired = cache.get_cache(&creds, "langfuse").expect("get succeeds");
     assert_eq!(expired, None);
     assert_eq!(
@@ -116,15 +113,18 @@ fn set_cache_keeps_the_original_expiry_when_overwriting_a_live_entry() {
             .lock()
             .expect("fixture capture lock is not poisoned")
             .as_slice(),
-        [FixtureLogger { name: "second" }]
+        [
+            FixtureLogger { name: "first" },
+            FixtureLogger { name: "second" }
+        ]
     );
 }
 
 #[test]
-fn default_ttl_for_httpx_clients_matches_litellms_one_hour_default() {
+fn new_cache_keeps_an_entry_for_exactly_one_hour() {
     let time = Arc::new(Mutex::new(0.0_f64));
     let stopped = Arc::new(Mutex::new(Vec::new()));
-    let cache = cache_with(DEFAULT_TTL_FOR_HTTPX_CLIENTS, &time, &stopped);
+    let cache = cache_with(&time, &stopped);
     let creds = credentials(&[("api_key", "k")]);
 
     cache
@@ -148,13 +148,13 @@ fn default_ttl_for_httpx_clients_matches_litellms_one_hour_default() {
 fn get_cache_evicts_and_stops_the_value_once_the_ttl_expires() {
     let time = Arc::new(Mutex::new(0.0_f64));
     let stopped = Arc::new(Mutex::new(Vec::new()));
-    let cache = cache_with(10.0_f64, &time, &stopped);
+    let cache = cache_with(&time, &stopped);
     let creds = credentials(&[("api_key", "k")]);
 
     cache
         .set_cache(&creds, "datadog", FixtureLogger { name: "metrics" })
         .expect("set succeeds");
-    *time.lock().expect("fixture clock lock is not poisoned") = 11.0_f64;
+    *time.lock().expect("fixture clock lock is not poisoned") = 3601.0_f64;
 
     let value = cache.get_cache(&creds, "datadog").expect("get succeeds");
     assert_eq!(value, None);
@@ -171,7 +171,7 @@ fn get_cache_evicts_and_stops_the_value_once_the_ttl_expires() {
 fn explicit_eviction_stops_the_cached_value() {
     let time = Arc::new(Mutex::new(0.0_f64));
     let stopped = Arc::new(Mutex::new(Vec::new()));
-    let cache = cache_with(100.0_f64, &time, &stopped);
+    let cache = cache_with(&time, &stopped);
     let creds = credentials(&[("api_key", "k")]);
 
     cache
@@ -194,7 +194,7 @@ fn explicit_eviction_stops_the_cached_value() {
 fn explicit_eviction_of_a_missing_key_is_a_harmless_no_op() {
     let time = Arc::new(Mutex::new(0.0_f64));
     let stopped = Arc::new(Mutex::new(Vec::new()));
-    let cache = cache_with(100.0_f64, &time, &stopped);
+    let cache = cache_with(&time, &stopped);
     let creds = credentials(&[("api_key", "k")]);
 
     cache.evict(&creds, "new_relic").expect("evict succeeds");
@@ -209,13 +209,10 @@ fn explicit_eviction_of_a_missing_key_is_a_harmless_no_op() {
 #[test]
 fn explicit_eviction_survives_a_panicking_stop_without_propagating() {
     let time = Arc::new(Mutex::new(0.0_f64));
-    let cache = DynamicLoggerCache {
-        default_ttl: 100.0_f64,
-        capacity: DEFAULT_MAX_SIZE_IN_MEMORY,
-        clock: fake_clock(&time),
-        on_remove: Arc::new(|_value: FixtureLogger| panic!("stop() is broken")),
-        entries: Mutex::new(BTreeMap::new()),
-    };
+    let cache = DynamicLoggerCache::new(
+        Arc::new(|_value: FixtureLogger| panic!("stop() is broken")),
+        fake_clock(&time),
+    );
     let creds = credentials(&[("api_key", "k")]);
 
     cache
@@ -288,7 +285,7 @@ fn get_cache_key_cases(
 fn cache_holds_an_arbitrary_value_type_with_no_reference_to_any_logger_crate() {
     let time = Arc::new(Mutex::new(0.0_f64));
     let stopped = Arc::new(Mutex::new(Vec::new()));
-    let cache = cache_with(100.0_f64, &time, &stopped);
+    let cache = cache_with(&time, &stopped);
     let creds = credentials(&[("api_key", "k")]);
 
     cache
@@ -304,14 +301,14 @@ fn cache_holds_an_arbitrary_value_type_with_no_reference_to_any_logger_crate() {
 fn set_cache_evicts_and_stops_an_expired_entry_without_ever_reading_it() {
     let time = Arc::new(Mutex::new(0.0_f64));
     let stopped = Arc::new(Mutex::new(Vec::new()));
-    let cache = cache_with(10.0_f64, &time, &stopped);
+    let cache = cache_with(&time, &stopped);
     let first = credentials(&[("api_key", "a")]);
     let second = credentials(&[("api_key", "b")]);
 
     cache
         .set_cache(&first, "datadog", FixtureLogger { name: "a" })
         .expect("set succeeds");
-    *time.lock().expect("fixture clock lock is not poisoned") = 11.0_f64;
+    *time.lock().expect("fixture clock lock is not poisoned") = 3601.0_f64;
 
     cache
         .set_cache(&second, "datadog", FixtureLogger { name: "b" })
@@ -327,42 +324,45 @@ fn set_cache_evicts_and_stops_an_expired_entry_without_ever_reading_it() {
 }
 
 #[test]
-fn set_cache_evicts_the_earliest_expiry_entry_once_capacity_is_full() {
+fn new_cache_evicts_the_earliest_entry_on_the_201st_credential_set() {
     let time = Arc::new(Mutex::new(0.0_f64));
     let stopped = Arc::new(Mutex::new(Vec::new()));
-    let cache = cache_with_capacity(100.0_f64, 2, &time, &stopped);
-    let first = credentials(&[("api_key", "first")]);
-    let second = credentials(&[("api_key", "second")]);
-    let third = credentials(&[("api_key", "third")]);
+    let cache = cache_with(&time, &stopped);
+    let earliest = credentials(&[("api_key", "team-0")]);
 
-    cache
-        .set_cache(&first, "langfuse", FixtureLogger { name: "first" })
-        .expect("set succeeds");
-    *time.lock().expect("fixture clock lock is not poisoned") = 10.0_f64;
-    cache
-        .set_cache(&second, "langfuse", FixtureLogger { name: "second" })
-        .expect("set succeeds");
-    cache
-        .set_cache(&third, "langfuse", FixtureLogger { name: "third" })
-        .expect("set succeeds");
-
-    assert_eq!(
-        cache.get_cache(&first, "langfuse").expect("get succeeds"),
-        None
+    set_first_two_hundred_credentials(&cache, &time);
+    assert!(
+        stopped
+            .lock()
+            .expect("fixture capture lock is not poisoned")
+            .is_empty()
     );
+
+    let newest = credentials(&[("api_key", "team-200")]);
+    *time.lock().expect("fixture clock lock is not poisoned") = 200.0_f64;
+    cache
+        .set_cache(&newest, "langfuse", FixtureLogger { name: "newest" })
+        .expect("set succeeds");
     assert_eq!(
         stopped
             .lock()
             .expect("fixture capture lock is not poisoned")
             .as_slice(),
-        [FixtureLogger { name: "first" }]
+        [FixtureLogger { name: "earliest" }]
     );
     assert_eq!(
-        cache.get_cache(&second, "langfuse").expect("get succeeds"),
-        Some(FixtureLogger { name: "second" })
+        cache
+            .get_cache(&earliest, "langfuse")
+            .expect("get succeeds"),
+        None
+    );
+    let next = credentials(&[("api_key", "team-1")]);
+    assert_eq!(
+        cache.get_cache(&next, "langfuse").expect("get succeeds"),
+        Some(FixtureLogger { name: "filler" })
     );
     assert_eq!(
-        cache.get_cache(&third, "langfuse").expect("get succeeds"),
-        Some(FixtureLogger { name: "third" })
+        cache.get_cache(&newest, "langfuse").expect("get succeeds"),
+        Some(FixtureLogger { name: "newest" })
     );
 }

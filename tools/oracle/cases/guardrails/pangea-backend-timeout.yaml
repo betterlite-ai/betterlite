@@ -1,0 +1,13 @@
+kind: helper
+name: pangea-backend-timeout
+call:
+  b3785:
+    backend_timeout:
+      api_key: test-key
+      guardrail_name: pangea-ai-guard
+      call_type: completion
+      messages:
+        - {role: user, content: "Hello"}
+      input_recipe: guard_llm_request
+env: {}
+compare: {ignore: []}

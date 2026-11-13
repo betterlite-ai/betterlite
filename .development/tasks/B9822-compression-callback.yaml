@@ -1,0 +1,105 @@
+id: B9822
+title: Register compression_interception in the SDK callback list
+description: >-
+  With `litellm_settings.callbacks: ["compression_interception"]` LiteLLM builds one CompressionInterceptionLogger at
+  startup (callback_utils.py L153-L163, `initialize_from_proxy_config` at handler.py L120-L135) and appends it to
+  litellm.callbacks. On every Anthropic Messages call its deployment hook compresses a long conversation and adds the
+  `litellm_content_retrieve` tool (handler.py L137-L209), and when the model calls that tool its agentic gate and plan
+  (L211-L307) answer it from the per-call cache and send the follow-up. B3543 built the settings, the cache and the hook,
+  B3544 the gate and the plan builder, B9821 the list with a builder slot for this name that still answers
+  UnavailableAdapter, and B9825 runs the list's seams on the gateway. This task fills the slot, so the name starts and the
+  interception runs through /v1/messages.
+
+
+  Code goes in crates/betterlite-server/src/state/sdk_callbacks/compression.rs and compression/ (tests.rs). Replace the
+  body of `build(inputs)` and touch no other file of the slot.
+
+
+  `CompressionCallback` holds one B3543 interception value built from the settings B3543's config section
+  (`config.sections.compression_interception_state`) resolved, which already applies LiteLLM's precedence:
+  litellm_settings.compression_interception_params wins over callback_settings.compression_interception, and both missing
+  give enabled true, compression_trigger 200000 and no target or embedding model. Built once, so the per-call cache is
+  shared by the first call and its follow-up, as the single LiteLLM object is. It implements:
+  - B5367's DeploymentHook: the pre-call method calls B3543's hook with the request and the call type and returns its
+    result; the success and failure methods keep the trait defaults, since the class overrides neither.
+  - B9820's AgenticCallback: `callback_name` "compression_interception", `overrides()` with should_run and build_plan
+    only, `should_run_agentic_loop` calling B3544's gate and `build_agentic_loop_plan` calling B3544's plan builder,
+    converting between B9820's call structs and the inputs those functions take. Run, post response and cleanup keep
+    the defaults.
+  `build` returns `SdkCallbackEntry { name: "compression_interception", deployment: Some(..), agentic: Some(..),
+  pre_request: None, search: None }`, every view the same Arc.
+
+
+  Tests in compression/tests.rs (`state::sdk_callbacks::compression::tests`): install with the name gives one entry with
+  the deployment and agentic views and no others, and both views point at the same object; the params from
+  litellm_settings win over callback_settings; overrides() reports exactly should_run and build_plan; a pre-call through
+  the deployment view on a long anthropic_messages request returns compressed messages and the retrieval tool, and the
+  gate through the agentic view on a response that calls litellm_content_retrieve with that call's key says run.
+
+
+  HTTP oracle cases in tools/oracle/cases/interception/compression/, through the booted proxies, each with a config of
+  one `anthropic/claude-sonnet-4-20250514` deployment named `claude-compress` with `api_base: "{{upstream}}"` and
+  `api_key: oracle-key`, `litellm_settings.callbacks: ["compression_interception"]` and
+  `compression_interception_params` with a small `compression_trigger`. Requests are POST /v1/messages with
+  `authorization: Bearer oracle-master` and `max_tokens`. Compare status, the body and every captured upstream request
+  (path and body); ignore only generated ids at their pointers. Size the conversations so the pinned LiteLLM compresses
+  them and confirm each case with `--self-check` before comparing betterlite.
+  - compresses-long-history.yaml: a history over the trigger; the upstream request carries the compressed messages and
+    the litellm_content_retrieve tool, and the upstream's plain text answer reaches the client.
+  - below-trigger-untouched.yaml: a short history; the upstream request has the client's messages and no added tool.
+  - retrieval-follow-up.yaml: the first upstream answer calls litellm_content_retrieve with the key from the compressed
+    request (keys come from the content, so both sides compute the same one; read it from the self-check capture), the
+    second upstream request carries the tool_result with the original text, and the client gets the second answer.
+  Add one http_case corpus seed per case.
+scope:
+  paths:
+    - crates/betterlite-server/src/state/sdk_callbacks/compression.rs
+    - crates/betterlite-server/src/state/sdk_callbacks/compression/**
+    - tools/oracle/cases/interception/compression/**
+    - tools/oracle/fuzz/corpus/http_case/interception-compression-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L153-L163
+    why: The name builds one logger from litellm_settings and callback_settings before any other name is checked.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L120-L135
+    why: initialize_from_proxy_config and its precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L137-L209
+    why: The deployment hook acts only on anthropic_messages (or no call type) at depth 0.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/compression_interception/handler.py#L211-L307
+    why: The two agentic hooks the class overrides; it overrides no run, post response or cleanup hook.
+dod:
+  - text: compression_interception in litellm_settings.callbacks installs one entry with the deployment and agentic views over one object built from LiteLLM's param precedence.
+    proof: [compression-tests]
+  - text: The views delegate to B3543's hook and B3544's gate and plan, and overrides() names only should_run and build_plan.
+    proof: [compression-tests]
+  - text: Through /v1/messages a long history is compressed with the retrieval tool added, a short one goes upstream untouched, and a retrieval call is answered from the cache with a follow-up whose answer reaches the client.
+    proof: [case-files, oracle]
+  - text: The new HTTP transcripts replay through the existing HTTP-case decoder.
+    proof: [http-corpus]
+checks:
+  optional: []
+  commands:
+    - id: compression-tests
+      why: the name still fails startup, a view is missing or points at another object, or the delegation is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^state::sdk_callbacks::compression::tests::/)'
+    - id: case-files
+      why: no compression interception case exists on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/interception/compression)"
+    - id: http-corpus
+      why: the HTTP transcripts never reach the production case parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/interception-compression-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/interception/compression/compresses-long-history.yaml
+  - tools/oracle/cases/interception/compression/below-trigger-untouched.yaml
+  - tools/oracle/cases/interception/compression/retrieval-follow-up.yaml
+deviations: []
+out_of_scope:
+  - "The settings, cache, savings metadata and the hook: B3543. The gate, the retrieval content and the plan: B3544. The compression itself: the betterlite-compression tasks."
+  - "Running the seams on the gateway: B9825. The list and the slot: B9821."
+pitfalls:
+  - "Build the interception once in build; a value per request would lose the cache between the compressed call and its follow-up, and the retrieval call would get \"[compressed content key '<key>' not found]\"."
+  - "The hook skips any call type other than anthropic_messages, so a chat or Responses request with this callback goes upstream unchanged on both sides; don't add cases that expect compression there."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,116 @@
+id: B7170
+title: RAG OpenAI, Gemini and Vertex store ports
+description: >-
+  Build the real implementations of the injected store ports that B3453 (OpenAI), B3454 (Gemini) and B3455
+  (Vertex) declare, in a new module `rag_store_ports` of betterlite-server (crates/betterlite-server/src/rag_store_ports.rs
+  and the folder beside it). B3460 puts them into its `RagIngestDeps`. They sit in betterlite-server because the
+  provider modules are in betterlite-core and the HTTP and cloud auth pieces are in lower crates that only the
+  top crate may join. No LiteLLM file is ported here: each port stands for the SDK call or helper that the
+  Python ingestion class makes, so the code is thin glue over existing native operations. Read the three provider
+  task files first and use the merged trait names and request types from crates/betterlite-core/src/rag. If a
+  trait or request type is private, stop and say so in the report.
+
+  OpenAI ports. `OpenAiStorePort` implements `VectorStorePort::create_store` over B1064's native
+  vector-store create (the function behind `litellm.vector_stores.acreate`), `OpenAiFilePort` implements
+  `VectorFilePort::attach` over B1072's native vector-file create, and `OpenAiUploadPort` implements
+  `FileUploadPort::upload` over B1028's native file create with purpose "assistants" (openai_ingestion.py
+  `litellm.acreate_file`). Pass api_key, api_base and the custom provider "openai" exactly as the port request
+  carries them; do not read the environment. Convert each native error into the port's `PortError` with the
+  native error as source and its Display as the message. The id the native response returns is the port's
+  result; a response with no id is a None result, not an error (B3453 states the rule).
+
+  Gemini port. `GeminiHttp` implements `GeminiTransport` (`post_json` and `put_bytes`) on betterlite-http.
+  Python uses `get_async_httpx_client(llm_provider=httpxSpecialProvider.RAG)` with timeouts the provider module
+  sends (60 s and 300 s), so use the RAG client policy the other RAG HTTP ports use: take the shared client
+  `betterlite-http` already builds for RAG (see B3457's `HttpRagTransport` over `Arc<ProxiedClient>`), do not
+  build a new client. A non-2xx status is a `GeminiReply`; only a failure to get a reply is `TransportError`.
+  Header values that carry the key are never logged. `GeminiDefaults` is filled from B1331's Studio identity
+  rules (GOOGLE_API_KEY, then GEMINI_API_KEY; GEMINI_API_BASE, then https://generativelanguage.googleapis.com);
+  call B1331's function, do not copy the rules.
+
+  Vertex ports. `VertexTokenSource` implements `VertexTokenPort::access_token` over the shared Vertex credential
+  loading (B1601's credential code and the Vertex token refresh in betterlite-vertex), with custom_llm_provider
+  "vertex_ai" semantics: explicit credentials win, otherwise application default credentials, and the project
+  resolves from the credentials when the caller gave none. `VertexRagHttp` implements the three methods
+  (`post_json`, `get`, `post_multipart`) on the same RAG HTTP client as the Gemini port. The multipart form has a
+  part "metadata" (content type application/json, no filename), a part "file", and the header
+  X-Goog-Upload-Protocol: multipart. Every request carries `Authorization: Bearer <token>`. The token never
+  shows in Debug, logs or errors.
+
+  No oracle case belongs here, because the ports only forward to native operations that other tasks test. The
+  provider tasks already compare behavior against a scripted port. Use local HTTP and fake-operation tests, and
+  assert on the exact requests that reach the fake.
+
+  Size. About 140 implementation lines, 220 test lines.
+
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/rag_store_ports.rs
+    - crates/betterlite-server/src/rag_store_ports/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/openai_ingestion.py
+    why: the three SDK calls the OpenAI ports stand for (vector_store_acreate, vector_store_file_acreate, acreate_file).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py
+    why: the two Gemini HTTP calls and the RAG client they use.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/vertex_ai_ingestion.py
+    why: the token helper and the three Vertex HTTP calls.
+
+dod:
+  - text: Each OpenAI port forwards the request fields, including api_key, api_base and purpose "assistants" for upload, to its native operation and returns its id, and a response without an id is a None result.
+    proof: [openai-ports]
+  - text: A native error becomes a PortError whose message is the native error text and whose source is the native error.
+    proof: [openai-ports]
+  - text: GeminiHttp sends post_json and put_bytes through the shared RAG client, returns non-2xx replies unchanged, and keeps the key out of logs.
+    proof: [gemini-http]
+  - text: VertexRagHttp sends the three request shapes with the bearer token, and the token never appears in Debug or error text.
+    proof: [vertex-http]
+  - text: VertexTokenSource returns the token and the resolved project from explicit credentials or application defaults.
+    proof: [vertex-token]
+  - text: GeminiDefaults comes from B1331's identity function.
+    proof: [gemini-defaults]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: openai-ports
+      why: an OpenAI port drops a field, uses a wrong purpose or loses the native error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_store_ports::openai::tests::/)'
+    - id: gemini-http
+      why: the Gemini transport changes a reply, builds its own client or logs the key
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_store_ports::gemini::tests::/)'
+    - id: vertex-http
+      why: a Vertex request shape or header is wrong or the token leaks
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_store_ports::vertex_http::tests::/)'
+    - id: vertex-token
+      why: token or project resolution differs from the explicit-then-default order
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_store_ports::vertex_token::tests::/)'
+    - id: gemini-defaults
+      why: the Gemini key and base come from somewhere other than B1331
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^rag_store_ports::gemini::defaults_tests::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The ports call native operations and shared clients directly, not the Python SDK functions with their decorator, logging and retry wrappers.
+    why: Those wrappers belong to the route layer (B012, B3465). The error text stays the native operation's Display.
+
+out_of_scope:
+  - The port trait definitions. B3453, B3454 and B3455 own them.
+  - The native vector store, vector file and file operations. B1064, B1072 and B1028 own them.
+  - The OCR, URL fetch, credential and embedding ports. B7171 owns them.
+  - Choosing a provider or building the ingest objects. B3460 owns them.
+
+pitfalls:
+  - api_key and api_base come from the request, never from the environment, except GeminiDefaults, which is the one place B1331's environment rules apply.
+  - Do not build a second HTTP client for the RAG calls; reuse the shared one, or timeouts and proxy settings diverge from B3457.
+  - A non-2xx reply is data for the provider module, so the transport must not turn a status into an error.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

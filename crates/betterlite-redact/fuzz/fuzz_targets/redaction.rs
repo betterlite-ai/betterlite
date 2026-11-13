@@ -12,8 +12,8 @@ fuzz_target!(|bytes: &[u8]| {
     let Ok(redactor) = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH) else {
         return;
     };
-    let _ = redactor.redact_string(text);
-    let _ = redactor.redact_internal_details(text);
-    let _ = redactor.redact_structured_value(Some("password"), text);
-    let _ = redactor.redact_structured_value(None, text);
+    let _redacted_string = redactor.redact_string(text);
+    let _redacted_details = redactor.redact_internal_details(text);
+    let _redacted_keyed = redactor.redact_structured_value(Some("password"), text);
+    let _redacted_unkeyed = redactor.redact_structured_value(None, text);
 });

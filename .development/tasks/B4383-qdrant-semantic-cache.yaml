@@ -124,7 +124,7 @@ deviations:
   - what: Credential-bearing config and key-isolation behavior require security review before shipment.
     why: API keys in URLs and cache-key filtering are security-critical and must be validated.
 out_of_scope:
-  - The cache factory (caching.py:221-261) that constructs backends; owned by the eventual backend composition task.
+  - The cache factory (caching.py:221-261) that constructs backends; B4299 owns Cache.__init__; B8651 constructs and injects semantic backends.
   - Embedding service dispatch and router/direct model selection; owned by B4381 and its prerequisites.
   - TTL handling; Qdrant has no per-call TTL. B4382 owns Redis `_get_ttl` and its synchronous/asynchronous callers.
   - The _collection_info method (qdrant_semantic_cache.py:503-504); no caller at the pin, kept for struct completeness.

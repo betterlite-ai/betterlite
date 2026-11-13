@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use crate::loader::ConfigLoader;
-use betterlite_rate_limit::usage_resolution::TokenRateLimitType;
+use crate::sections::rate_limit_usage::TokenRateLimitType;
 
 #[test]
 fn loads_token_rate_limit_type_from_general_settings() {

@@ -1,0 +1,28 @@
+kind: helper
+name: predibase-param-mapping
+env: {}
+compare: {ignore: []}
+call:
+  b5846:
+    op: map_params
+    max_new_tokens: 4096
+    cases:
+      - non_default: {temperature: 0}
+      - non_default: {temperature: 0.0}
+      - non_default: {temperature: 0.5}
+      - non_default: {top_p: 0.9}
+      - non_default: {stream: true}
+      - non_default: {stream: false}
+      - non_default: {stop: [x, y]}
+      - non_default: {response_format: {type: json_object}}
+      - non_default: {max_tokens: 0}
+      - non_default: {max_completion_tokens: 0}
+      - non_default: {max_tokens: 5}
+      - non_default: {max_completion_tokens: 7}
+      - non_default: {max_tokens: 5, max_completion_tokens: 7}
+      - non_default: {n: 3}
+      - non_default: {n: 1}
+      - non_default: {echo: true}
+      - non_default: {echo: false}
+      - non_default: {best_of: 2, other: 1}
+      - non_default: {}

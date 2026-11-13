@@ -1,0 +1,97 @@
+id: B3677
+title: Guardrail translation for image, speech, transcription and video endpoints
+description: >-
+  Build the handlers that apply a guardrail to the text of four media endpoints: the prompt of image generation and video requests, the input text of speech requests, and the transcribed text of a transcription response.
+  They are plain async functions in crates/betterlite-server/src/guardrails/, like the ones B5820 built for completion and embeddings, and the dispatcher (B3679, B3680) picks them by call type.
+  Request bodies are `BTreeMap<String, GuardrailValue>` and responses are `GuardrailValue`, both from `betterlite_config::sections::guardrail_identity::item`. `GuardrailApiInputs` (LiteLLM's `GenericGuardrailAPIInputs`), `GuardrailContract`, `GuardrailFailure` and `GuardrailLogTarget` come from B5471's `guardrail_base`. The guardrail is a generic `G: GuardrailContract`. Each module owns its error enum with one variant holding the `GuardrailFailure` the guardrail returned, boxed if `clippy::result_large_err` fires. Nothing here catches or rewrites a failure.
+  Every handler calls the guardrail at most once, passes the body as `request_data`, and sends the text as a one-element `texts`.
+
+  Module `image_translation` has `process_input_messages(data: &mut BTreeMap<String, GuardrailValue>, guardrail: &G, logging_obj: Option<&mut GuardrailLogTarget>) -> Result<(), ImageTranslationError>`, LiteLLM's `OpenAIImageGenerationHandler.process_input_messages`.
+  A missing or null `prompt` logs at debug `OpenAI Image Generation: No prompt found in request data` and returns. A text `prompt` calls the guardrail with `texts: [prompt]` and `model` only when `data["model"]` is a non-empty text, input type `Request`. The first returned text replaces `data["prompt"]`, and an absent or empty returned list keeps the prompt. Any other type logs at debug (not warn) `Unexpected prompt type` and returns. `process_output_response(response: &GuardrailValue)` logs `OpenAI Image Generation: Output processing not needed for image responses` and changes nothing.
+
+  Module `speech_translation` is the same for text to speech, with `input` in place of `prompt`: `process_input_messages(...) -> Result<(), SpeechTranslationError>`. Its debug lines say `OpenAI Text-to-Speech`, and a missing `input` logs `No input text found in request data`. The `model` is the voice model name and is added under the same non-empty text rule. Its `process_output_response(response: &GuardrailValue)` logs `Output processing not applicable (output is audio data, not text)` and changes nothing.
+
+  Module `transcription_translation` has `process_input_messages(data: &BTreeMap<String, GuardrailValue>)`, which logs `OpenAI Audio Transcription: Input processing not applicable (input is audio file, not text)` and changes nothing, and `process_output_response(response: &mut GuardrailValue, guardrail: &G, logging_obj: Option<&mut GuardrailLogTarget>, user_api_key_dict: Option<&BTreeMap<String, GuardrailValue>>, request_data: Option<&mut BTreeMap<String, GuardrailValue>>) -> Result<(), TranscriptionTranslationError>`.
+  A response without a `text` key, or with a null `text`, logs at debug `No text in response to process` and returns. A `text` that is not text logs at debug `Unexpected text type` and returns. Otherwise it prepares the request data with B5820's `response_context::add_response_context` (an empty map when `request_data` is `None`), calls the guardrail with `texts: [text]`, input type `Response`, and `model` from `response["model"]` when that is a non-empty text, and sets `response["text"]` to the first returned text, or keeps the original when the returned list is absent or empty. An empty transcript still goes to the guardrail, since the check is for text and not for non-empty.
+
+  Module `video_translation` is LiteLLM's `OpenAIVideoGenerationHandler`, used for the video create, remix, edit and extension calls. `process_input_messages(data: &mut BTreeMap<String, GuardrailValue>, guardrail: &G, logging_obj: Option<&mut GuardrailLogTarget>) -> Result<(), VideoTranslationError>` returns without a call when `prompt` is missing, null or not text. This module writes no log line at all. A text prompt, including an empty one, calls the guardrail with `texts: [prompt]` and sets `model` whenever `data["model"]` is text, an empty string included. This differs from the other three endpoints, which skip an empty model. The first returned text replaces `data["prompt"]`; an absent or empty list keeps it. LiteLLM returns a new dict `{**data, "prompt": ...}` built after the call, so changes the guardrail made to the request data stay in the result and the caller's dict is not changed. Mutating `data` in place gives the same result in Rust. `process_output_response(response: &GuardrailValue)` returns the response unchanged with no log.
+
+  Tests use a small fake guardrail defined in each module's tests, a struct that records the `GuardrailApiInputs`, the input type and a copy of the request data it was called with and returns a scripted `texts` list. They live in `<module>::tests` with the prefixes the checks use. The handlers are not reachable from a route yet, so HTTP cases come with the dispatcher umbrella (B3680) and there are no oracle cases here.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/image_translation.rs
+    - crates/betterlite-server/src/guardrails/image_translation/**
+    - crates/betterlite-server/src/guardrails/speech_translation.rs
+    - crates/betterlite-server/src/guardrails/speech_translation/**
+    - crates/betterlite-server/src/guardrails/transcription_translation.rs
+    - crates/betterlite-server/src/guardrails/transcription_translation/**
+    - crates/betterlite-server/src/guardrails/video_translation.rs
+    - crates/betterlite-server/src/guardrails/video_translation/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_generation/guardrail_translation/handler.py#L32-L107
+    why: Image generation prompt handler and the unchanged output, with debug-level logging for a wrong prompt type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/speech/guardrail_translation/handler.py#L31-L106
+    why: Text to speech input handler and the unchanged audio output.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/guardrail_translation/handler.py#L31-L120
+    why: Transcription input no-op and the transcribed text handler with the response and litellm_metadata insertion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/guardrail_translation/handler.py#L12-L48
+    why: Video prompt handler that builds a new dict and sets model only for text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/guardrail_translation/__init__.py#L1-L23
+    why: The ten video call types that share the handler.
+dod:
+  - text: An image generation `prompt` that is text reaches the guardrail as one text with input type `Request`, `model` is set only when it is a non-empty text, and the first returned text replaces the prompt. An absent or empty reply keeps the prompt.
+    proof: [image-translation-tests]
+  - text: An image generation body with a missing, null or non-text `prompt` makes no guardrail call and stays unchanged, and image output processing changes nothing.
+    proof: [image-translation-tests]
+  - text: A text to speech `input` that is text is scanned and rewritten the same way, and a missing, null or non-text `input` makes no call. Speech output processing changes nothing.
+    proof: [speech-translation-tests]
+  - text: Transcription input processing makes no call and changes nothing.
+    proof: [transcription-translation-tests]
+  - text: A transcription response with text sends that text with input type `Response`, takes `model` from the response only when it is a non-empty text, and sets `response.text` to the first returned text. An absent or empty reply keeps the original text, and an empty transcript is still sent.
+    proof: [transcription-translation-tests]
+  - text: A transcription response with a missing, null or non-text `text` makes no call, and then the request data gets no `response` key.
+    proof: [transcription-translation-tests]
+  - text: Transcription output adds `response` and a non-empty `litellm_metadata` to the request data, builds a fresh map when none was given, and does not replace an existing `response` or `litellm_metadata` key. It uses B5820's `add_response_context`.
+    proof: [transcription-translation-tests]
+  - text: A video `prompt` that is text, an empty one included, is scanned, and the first returned text replaces it. `model` is set for any text value, an empty string included, and a model that is not text is left out. A non-text or missing prompt makes no call. Video output processing changes nothing.
+    proof: [video-translation-tests]
+  - text: A request-data change made by the guardrail during the video call is still present on the body after the prompt is replaced.
+    proof: [video-translation-tests]
+  - text: A guardrail failure from each of the four handlers is returned as the module's error with the failure intact and the body or response is not rewritten.
+    proof: [image-translation-tests, speech-translation-tests, transcription-translation-tests, video-translation-tests]
+checks:
+  optional: []
+  commands:
+    - id: image-translation-tests
+      why: the image generation handler tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::image_translation::tests::/)'
+    - id: speech-translation-tests
+      why: the text to speech handler tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::speech_translation::tests::/)'
+    - id: transcription-translation-tests
+      why: the transcription handler tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::transcription_translation::tests::/)'
+    - id: video-translation-tests
+      why: the video handler tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::video_translation::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B5820 owns the text completion and embeddings handlers and response_context::add_response_context. This task calls the last one."
+  - "B3661 owns BaseTranslation and transform_user_api_key_dict_to_metadata. B5471 owns GenericGuardrailAPIInputs as GuardrailApiInputs, GuardrailContract, GuardrailFailure and GuardrailLogTarget."
+  - "The guardrail_translation_mappings tables in the __init__.py files (call type to handler class) belong to the dispatcher, B3679 and B3680. The call types are image_generation, aimage_generation, speech, aspeech, transcription, atranscription, video_generation, avideo_generation, create_video, acreate_video, video_remix, avideo_remix, video_edit, avideo_edit, video_extension and avideo_extension."
+  - "B3668 owns the chat handler and B3671 to B3676 own the Responses and Anthropic handlers. B3678 owns the Bedrock passthrough handler."
+  - "Turning a GuardrailFailure into an HTTP error body, and the routes that call these handlers, belong to the dispatcher and route tasks."
+pitfalls:
+  - The image, speech and transcription handlers log a wrong type at debug level, and video logs nothing, so none of them may warn. The text completion and embeddings handlers in B5820 warn.
+  - "The video handler sets `model` for any text, so `\"model\": \"\"` is sent, while image, speech and transcription drop an empty model."
+  - "A video prompt that is an empty string is still scanned, because the check is for text and not for a non-empty value. The same holds for an empty speech `input` and an empty transcript."
+  - A transcription request has no text to scan, so the whole request-side guardrail work for that endpoint is the no-op. The scan runs on the response.
+  - The transcription handler inserts `response` into the request data only after it finds text, so a response with no text leaves `request_data` as the caller gave it.
+  - "Transcription's `litellm_metadata` insert is skipped when the key exists, even with a null value, and skipped when the user metadata is empty."
+  - A returned `texts` list that is empty keeps the original, but a list holding one empty text sets the field to an empty string.
+review_level: standard
+budget:
+  max_changed_lines: 1200
+  max_new_expects: 0

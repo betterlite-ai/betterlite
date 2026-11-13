@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-content-document-only-seed
+call:
+  bedrock_content:
+    function: with_text_when_document_only
+    message:
+      role: user
+      content:
+        - {document: {name: doc, format: pdf, source: {bytes: QUFB}}}
+        - {cachePoint: {type: default}}
+env: {}
+compare: {ignore: []}

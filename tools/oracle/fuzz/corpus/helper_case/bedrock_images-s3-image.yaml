@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-images-s3-image
+call:
+  bedrock_images:
+    call: process
+    image_url: "s3://bucket/image.png"
+env: {}
+compare:
+  ignore: []

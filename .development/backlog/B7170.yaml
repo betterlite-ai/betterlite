@@ -1,0 +1,14 @@
+id: B7170
+milestone: M5 api families
+title: RAG OpenAI, Gemini and Vertex store ports
+status: todo
+depends_on: [B3453, B3454, B3455, B1064, B1072, B1028, B1331, B1601, B3457]
+file: tasks/B7170-rag-store-ports.yaml
+covers:
+  - "litellm/rag/ingestion/base_ingestion.py"
+parent: B097
+split_from: B3460
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

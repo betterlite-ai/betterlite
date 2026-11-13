@@ -1,0 +1,17 @@
+kind: helper
+name: guardrail-clear-vs-truthy-request
+call:
+  management_guards:
+    calls:
+      - {function: check_guardrail_opt_out, user_role: internal_user, disable_global_guardrails: false}
+      - {function: check_guardrail_opt_out, user_role: internal_user, disable_global_guardrails: null}
+      - {function: check_guardrail_opt_out, user_role: internal_user, metadata: {disable_global_guardrails: false}}
+      - {function: check_guardrail_opt_out, user_role: internal_user, metadata: {disable_global_guardrails: "yes"}}
+      - {function: check_guardrail_opt_out, user_role: internal_user, disable_global_guardrails: true, existing_metadata: {disable_global_guardrails: false}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/3/detail
+      why: betterlite writes its own message
+    - pointer: /value/4/detail
+      why: betterlite writes its own message

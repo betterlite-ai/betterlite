@@ -1,0 +1,26 @@
+{
+  "kind": "helper",
+  "name": "websearch-configured-search-kwargs",
+  "call": {
+    "b4115": {
+      "operation": "execute_search",
+      "model": "gpt-5",
+      "query": "rust",
+      "search_tools": [
+        {
+          "search_tool_name": "main",
+          "litellm_params": {"search_provider": "tavily", "max_results": 3, "country": null}
+        }
+      ],
+      "search_response": {
+        "results": [
+          {"title": "Rust", "url": "https://www.rust-lang.org/", "snippet": "A language empowering everyone."}
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

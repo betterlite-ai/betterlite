@@ -1,0 +1,19 @@
+kind: helper
+name: anthropic-files-file-upload-multipart
+call:
+  anthropic_files:
+    file_upload_multipart:
+      now: 1700000000
+      uploads:
+        - {filename: a.txt, content_type: text/plain, data: "hello\n", purpose: messages}
+        - {filename: a.unknownext, data: x}
+        - {filename: '', content_type: text/csv, data: "y", purpose: batch}
+        - {missing: true, data: z}
+        - {filename: null, content_type: '', data: z}
+        - {filename: x.json, content_type: '', data: z}
+      failure:
+        status: 413
+        headers: [[content-type, application/json], [x-request-id, req-upload]]
+        body: '{"type":"error","error":{"type":"request_too_large","message":"too large"}}'
+env: {}
+compare: {ignore: []}

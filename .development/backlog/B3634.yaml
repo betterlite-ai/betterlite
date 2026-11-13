@@ -2,8 +2,8 @@ id: B3634
 milestone: M5 api families
 title: Anthropic passthrough response logging
 status: todo
-depends_on: [B3630, B3632, B3633, B580, B587]
-file: null
+depends_on: [B3630, B3632, B3633, B580, B587, B247, B3605, B3608]
+file: tasks/B3634-anthropic-passthrough-logging.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py"
 parent: B103

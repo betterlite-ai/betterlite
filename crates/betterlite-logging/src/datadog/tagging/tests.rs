@@ -25,12 +25,12 @@ fn datadog_tag_normalization_behavior(#[case] value: &str, #[case] expected: &st
 #[rstest]
 #[case::unset(&[], false)]
 #[case::true_any_case(&[("USE_DDTRACE", " TRUE "), ("USE_DDPROFILER", "true")], true)]
-#[case::one_is_not_true(&[("USE_DDTRACE", "1"), ("USE_DDPROFILER", "yes")], false)]
+#[case::one_is_not_true(&[("USE_DDTRACE", "false"), ("USE_DDPROFILER", " OFF ")], false)]
 fn datadog_environment_defaults_behavior(#[case] pairs: &[(&str, &str)], #[case] enabled: bool) {
     let values = pairs
         .iter()
         .map(|(name, value)| (String::from(*name), String::from(*value)));
-    let environment = Environment::from_lookup(&BTreeMap::from_iter(values));
+    let environment = Environment::from_lookup(&BTreeMap::from_iter(values)).unwrap();
     let expected = Environment {
         source: String::from("litellm"),
         service: String::from("litellm-server"),
@@ -51,7 +51,7 @@ fn datadog_environment_defaults_behavior_reads_every_variable() {
     let values = names
         .split(' ')
         .map(|name| (String::from(name), name.to_lowercase()));
-    let environment = Environment::from_lookup(&BTreeMap::from_iter(values));
+    let environment = Environment::from_lookup(&BTreeMap::from_iter(values)).unwrap();
     let metadata = TeamMetadata {
         user_api_key_team_alias: Some(String::new()),
         team_alias: None,
@@ -79,7 +79,7 @@ fn datadog_request_tag_values_match_litellm(
     #[case] value: RequestTagValue,
     #[case] expected: &str,
 ) {
-    let environment = Environment::from_lookup(&BTreeMap::new());
+    let environment = Environment::from_lookup(&BTreeMap::new()).unwrap();
     let metadata = TeamMetadata {
         user_api_key_team_alias: None,
         team_alias: None,
@@ -91,4 +91,22 @@ fn datadog_request_tag_values_match_litellm(
             .iter()
             .any(|tag| tag == expected)
     );
+}
+
+#[rstest]
+#[case::trace("USE_DDTRACE")]
+#[case::profiler("USE_DDPROFILER")]
+fn shared_env_datadog_flags(#[case] name: &str) {
+    let values = BTreeMap::from([(name.to_owned(), " Yes ".to_owned())]);
+    let environment = Environment::from_lookup(&values).unwrap();
+    assert_eq!(environment.use_tracer, name == "USE_DDTRACE");
+    assert_eq!(environment.use_profiler, name == "USE_DDPROFILER");
+    let empty = BTreeMap::from([(name.to_owned(), String::new())]);
+    let defaults = Environment::from_lookup(&empty).unwrap();
+    assert!(!defaults.use_tracer);
+    assert!(!defaults.use_profiler);
+    let invalid = BTreeMap::from([(name.to_owned(), "maybe".to_owned())]);
+    let error = Environment::from_lookup(&invalid).unwrap_err().to_string();
+    assert!(error.contains(name));
+    assert!(!error.contains("maybe"));
 }

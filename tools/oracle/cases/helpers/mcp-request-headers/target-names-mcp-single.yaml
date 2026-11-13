@@ -1,0 +1,5 @@
+kind: helper
+name: "target-names-mcp-single"
+call: {"b4654":{"function":"target_names","paths":["/mcp/a","/mcp/a/b","/mcp/a/b/c","/mcp/mcp/foo","/mcp//x"]}}
+env: {}
+compare: {"ignore":[]}

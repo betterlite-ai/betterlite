@@ -1,0 +1,14 @@
+id: B7876
+milestone: M12 python
+title: Python vector_stores retrieve, list, update, delete and the package
+status: todo
+depends_on: [B7875, B6040, B158, B167, B1065, B1066]
+file: tasks/B7876-python-vector-manage.yaml
+covers:
+  - "litellm/vector_stores/{main,__init__}.py"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

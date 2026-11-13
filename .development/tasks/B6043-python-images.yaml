@@ -1,0 +1,106 @@
+id: B6043
+title: Python image_generation, image_variation and image_edit
+description: >-
+  Add `betterlite.image_generation`, `aimage_generation`, `image_variation`, `aimage_variation`, `image_edit` and
+  `aimage_edit` so they work where LiteLLM's do (images/main.py). They use B6040's call path and the image types from
+  B5658 (`ImageObject`, `ImageResponse`).
+
+
+  Native side, `src/images.rs` with `pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()>`. It adds
+  `NativeImageSession` and `NativeImageError`. The architect writes the `mod` line, the call line and the `.pyi` import. Do
+  not edit `lib.rs`. Methods: `generate`, `agenerate`, `variation`, `avariation`, `edit` and `aedit`, each `(payload_text,
+  blobs)` returning JSON text. Files in the payload are `$file` objects, and Rust rebuilds them with B6040's `files_from_payload`
+  before it calls the SDK image entries. Conversion code is in `src/images/convert.rs`, tests start with `request_` and
+  `error_`.
+
+
+  Python side, the package `python/betterlite/_images/` with an explicit `__all__`, one star line by the architect, and
+  `main.py` re-exports. Signatures keep LiteLLM's (images/main.py L79-L183, L183-L564, L564-L615, L615-L711, L711-L963,
+  L963-L1046). The images module also exposes `__getattr__` (L1046) for lazy names. Keep the same names so that
+  `betterlite.images.main.image_generation` resolves.
+
+
+  Rules. `image_generation` takes `prompt`, `model`, `n`, `quality`, `response_format`, `size`, `style`, `user`, `timeout`,
+  `api_key`, `api_base`, `api_version`, `custom_llm_provider` and `**kwargs`, and returns `ImageResponse`. A `dall-e-3`
+  or `gpt-image-1` default for `model` follows the source. `image_variation` takes an `image` that is a file value, plus `n`,
+  `response_format`, `size` and `user`. `image_edit` takes `image` (one file or a list of files), `mask`, `prompt`, `background`,
+  `input_fidelity`, `n`, `quality`, `response_format`, `size`, `user`, `output_compression`, `moderation`,
+  `output_format` and `partial_images`. The request is built from `ImageEditRequestUtils` (images/utils.py): its `get_requested_image_edit_optional_param`
+  and `get_optional_params_image_edit` rules for which keys pass and which are dropped, and the `drop_params` and
+  `additional_drop_params` behavior. Port its rules to Rust in the image convert module, since provider logic is Rust, and keep
+  the Python layer to files and settings. A file with no name gets "image.png" for edits and variations. An `image` list
+  keeps its order. A file's content type is guessed from the name's extension, with `application/octet-stream` as the default.
+  `ImageResponse` carries `created`, `data` (`ImageObject` with `b64_json`, `url`, `revised_prompt`), `usage` when the provider
+  gives it, and `_hidden_params`. The async functions read the model from `args[0]` or `kwargs["model"]` first.
+scope:
+  paths:
+  - crates/betterlite-python/src/images.rs
+  - crates/betterlite-python/src/images/**
+  - crates/betterlite-python/python/betterlite/_native_images.pyi
+  - crates/betterlite-python/python/betterlite/_images/**
+  - crates/betterlite-python/python/betterlite/main.py
+  - crates/betterlite-python/tests/test_images.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L79-L564
+  why: image_generation and its async wrapper.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L564-L711
+  why: image_variation and its async wrapper.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/main.py#L711-L1060
+  why: image_edit, aimage_edit and the lazy __getattr__.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/images/utils.py
+  why: ImageEditRequestUtils, the rules for edit parameters.
+dod:
+- text: The six functions keep LiteLLM's signatures.
+  proof: [images-signature]
+- text: Generation returns an ImageResponse with the data fields, sync and async.
+  proof: [images-generate]
+- text: Edit and variation send files as multipart with the right names, order and content types, and the mask goes too.
+  proof: [images-files]
+- text: Unsupported edit parameters drop or fail as `drop_params` says.
+  proof: [images-params]
+- text: A provider error raises the matching class.
+  proof: [images-error]
+- text: The native register function adds the session and error class, and conversion has tests without an interpreter.
+  proof: [images-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: images-signature
+    why: A changed order breaks positional callers.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_images.py -k signature
+  - id: images-generate
+    why: The response loses b64_json or revised_prompt.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_images.py -k generate
+  - id: images-files
+    why: A file arrives under the wrong name, in the wrong order, or as base64 text.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_images.py -k "files or edit or variation"
+  - id: images-params
+    why: A dropped parameter is sent anyway, or an unsupported one passes silently.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_images.py -k params
+  - id: images-error
+    why: A provider error shows up as a generic exception.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_images.py -k error
+  - id: images-native
+    why: The native conversion loses a request field or a file.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^images::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Untyped dicts creep in at the native boundary.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Image bytes cross as blobs and are not base64 inside the JSON.
+  why: Large files would be copied twice.
+out_of_scope:
+- The shared helpers and image edit parameter types are B6040.
+- The per-provider image request code is in the provider tasks and the SDK image entries.
+pitfalls:
+- A list of images in `image_edit` must keep its order, since providers read the first as the main image.
+- A file object read once must be rewound, as B6040 does, because callers reuse it.
+- Do not guess a content type from bytes. Use the file name.
+review_level: standard
+budget:
+  max_changed_lines: 1400
+  max_new_expects: 0

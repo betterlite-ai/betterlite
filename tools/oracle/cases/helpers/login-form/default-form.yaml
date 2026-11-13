@@ -1,0 +1,18 @@
+kind: helper
+name: login-form-default-form
+call:
+  login_form:
+    environment: {}
+    general_settings: {}
+    show_deprecation_banner: false
+env: {}
+compare:
+  ignore:
+    - pointer: /value/texts/title
+      why: visible product text is rebranded to betterlite
+    - pointer: /value/texts/logo
+      why: visible product text is rebranded to betterlite
+    - pointer: /value/texts/subtitle
+      why: visible product text is rebranded to betterlite
+    - pointer: /value/texts/default_credentials
+      why: visible product text is rebranded to betterlite

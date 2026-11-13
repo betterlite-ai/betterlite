@@ -78,7 +78,7 @@ checks:
   commands:
   - id: behavior-tests
     why: agent creation/listing tests are absent, incomplete or fail
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^agent_collection_calls(::|$)/) - test(/replays_the_.*_corpus/)'
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::agents::collection::(.*::)?agent_collection_calls(::|$)/) - test(/replays_the_.*_corpus/)'
 oracle_cases:
 - tools/oracle/cases/agents/collection/create-basic.yaml
 - tools/oracle/cases/agents/collection/create-with-base-agent.yaml

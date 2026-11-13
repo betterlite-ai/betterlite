@@ -1,0 +1,10 @@
+kind: helper
+name: provider-chunk-decode-creator-seed
+call:
+  b5653:
+    state: {model: seed-model, provider: openai, response_id: chatcmpl-seed, created: 1700000000}
+    steps:
+      - op: creator
+        chunk: {kind: json, value: {id: chatcmpl-seed, choices: [{index: 0, delta: {content: seeded}}]}}
+env: {}
+compare: {ignore: []}

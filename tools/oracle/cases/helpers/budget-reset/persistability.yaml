@@ -1,0 +1,46 @@
+kind: helper
+name: budget_reset_persistability
+call:
+  budget_reset:
+    reset_now: "2024-06-15T12:00:00Z"
+    calendar_now: "2024-01-31T20:00:00Z"
+    calendar_timezone: "Asia/Kolkata"
+    calls:
+      - {function: budget_duration_error, duration: null}
+      - {function: budget_duration_error, settings: {timezone: 1, budget_reset_time: false}, duration: null}
+      - {function: is_persistable, duration: "1h"}
+      - {function: is_persistable, duration: "24h"}
+      - {function: is_persistable, duration: "7d"}
+      - {function: is_persistable, duration: "30d"}
+      - {function: is_persistable, duration: "1w"}
+      - {function: is_persistable, duration: "1m"}
+      - {function: is_persistable, duration: "monthly"}
+      - {function: is_persistable, duration: "1mo"}
+      - {function: is_persistable, duration: "1hour"}
+      - {function: is_persistable, duration: "0h"}
+      - {function: is_persistable, duration: "0s"}
+      - {function: is_persistable, duration: "0d"}
+      - {function: is_persistable, duration: "0w"}
+      - {function: is_persistable, duration: "0m"}
+      - {function: is_persistable, duration: "0mo"}
+      - {function: is_persistable, duration: "-5m"}
+      - {function: is_persistable, duration: "abc"}
+      - {function: is_persistable, duration: "5x"}
+      - {function: is_persistable, duration: "2mo"}
+      - {function: is_persistable, duration: "12mo"}
+      - {function: is_persistable, duration: "400000mo"}
+      - {function: is_persistable, duration: "100000000d"}
+      - {function: is_persistable, duration: "99999999999999999999d"}
+      - {function: is_persistable, settings: {timezone: 1}, duration: "0h"}
+      - {function: is_persistable, settings: {budget_reset_time: 0}, duration: "0mo"}
+      - {function: is_persistable, settings: {timezone: 1}, duration: "1h"}
+      - {function: is_persistable, settings: {budget_reset_time: 0}, duration: "24h"}
+      - {function: is_persistable, settings: {timezone: ["UTC"]}, duration: "7d"}
+      - {function: budget_duration_error, duration: "1h"}
+      - {function: budget_duration_error, duration: "2mo"}
+      - {function: budget_duration_error, duration: "0h"}
+      - {function: budget_duration_error, settings: {timezone: 1, budget_reset_time: false}, duration: "0h"}
+      - {function: budget_duration_error, settings: {timezone: 1}, duration: "1h"}
+      - {function: budget_duration_error, settings: {budget_reset_time: 0}, duration: "24h"}
+env: {}
+compare: {ignore: []}

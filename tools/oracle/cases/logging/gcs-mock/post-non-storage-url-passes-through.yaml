@@ -1,0 +1,18 @@
+kind: helper
+name: gcs-mock-post-non-storage-url-passes-through
+call:
+  b3996:
+    environment: {GCS_MOCK: "true"}
+    original: {status: 418, body: "original-response"}
+    requests:
+      - method: post
+        url: https://example.com/upload
+        data: payload
+        json: {answer: 42}
+        params: {uploadType: media}
+        headers: {content-type: application/json}
+        timeout_ms: 5000
+        stream: true
+        content: chunk
+env: {}
+compare: {ignore: []}

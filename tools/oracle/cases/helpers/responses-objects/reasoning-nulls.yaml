@@ -1,0 +1,9 @@
+kind: helper
+name: responses-objects-reasoning-nulls
+call:
+  responses_objects:
+    operation: reasoning_nulls
+    response: {id: resp_a, created_at: 1, output: [{type: reasoning, id: rs_a, status: null, content: null, encrypted_content: null, summary: null}], usage: {input_tokens: 3, output_tokens: 2, total_tokens: 5, cost: {total_cost: 0.125, provider: ignored}}}
+env: {}
+compare:
+  ignore: []

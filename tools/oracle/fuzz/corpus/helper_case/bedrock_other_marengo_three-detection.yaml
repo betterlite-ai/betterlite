@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-other-marengo-three-detection
+call:
+  bedrock_other_marengo_three:
+    marengo3_model_detection:
+      model: amazon.marengo-embed-3-0-v1:0
+      input: clip
+      inference_params:
+        inputType: audio
+        input_type: video
+        ignored: 1
+env: {}
+compare:
+  ignore: []

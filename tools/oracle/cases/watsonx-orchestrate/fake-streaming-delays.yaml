@@ -1,0 +1,11 @@
+kind: helper
+name: watsonx-fake-streaming-delays
+call:
+  b4807:
+    operation: stream
+    request_id: req-1
+    text: abcdefgh
+    chunk_size: 3
+    delay_ms: 25
+env: {}
+compare: {ignore: []}

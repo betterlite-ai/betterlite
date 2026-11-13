@@ -1,0 +1,9 @@
+kind: helper
+name: search-all-fields
+call:
+  b5240:
+    function: "output_choices"
+    response: {"results": [{"title": "Title", "url": "https://example.com", "snippet": "Snippet"}]}
+env: {}
+compare:
+  ignore: []

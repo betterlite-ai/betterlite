@@ -59,7 +59,7 @@ checks:
   commands:
     - id: behavior-tests
       why: initialization, credential validation, export operation defaults, dry-run isolation, lock handling, interval scheduling or export window calculation differs from source
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cloudzero_schedule($|::)/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::cloudzero::schedule::(.*::)?cloudzero_schedule($|::)/) - test(/replays_the_/)'
 oracle_cases: []
 deviations:
   - what: Credential validation happens at export time, not during initialization. If credentials are missing, export_usage_data raises an error immediately.

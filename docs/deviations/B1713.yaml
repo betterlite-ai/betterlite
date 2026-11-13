@@ -1,0 +1,5 @@
+task: B1713
+deviations:
+  - what: The 35/65 string split uses exact rational arithmetic, so a limit of 180 keeps 63 head and 117 tail characters where LiteLLM's binary-float multiplication keeps 62 and 117, and the skipped count differs by one.
+    why: The workspace forbids floating-point arithmetic; deterministic checked integer ratios are used instead, and the differing 180-character limit is covered by a native test.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L1160-L1186

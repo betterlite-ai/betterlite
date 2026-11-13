@@ -5,7 +5,6 @@ use std::thread;
 use std::time::Duration;
 
 use betterlite_config::proxy::{ProxyPolicy, ProxyRoute, ProxyServer};
-use betterlite_config::sections::billing_metrics::Metering;
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -52,12 +51,7 @@ pub struct OtlpClient {
 }
 
 impl OtlpClient {
-    pub fn build(metering: &Metering, policy: &Arc<ProxyPolicy>) -> Result<Self, OtlpClientError> {
-        let tls = tls::tls_config(metering).map_err(|source| OtlpClientError::Tls { source })?;
-        Self::with_tls(tls, policy)
-    }
-
-    fn with_tls(tls: ClientConfig, policy: &Arc<ProxyPolicy>) -> Result<Self, OtlpClientError> {
+    pub fn with_tls(tls: ClientConfig, policy: &Arc<ProxyPolicy>) -> Result<Self, OtlpClientError> {
         for warning in &policy.warnings {
             tracing::warn!(?warning, "proxy setting ignored");
         }

@@ -252,7 +252,7 @@ out_of_scope:
   L1010-L1013; AnthropicCacheControlHook.should_run_prompt_management L1015-L1022; AnthropicCacheControlHook._compile_prompt_helper
   L1024-L1040; AnthropicCacheControlHook.async_compile_prompt_helper L1042-L1059; AnthropicCacheControlHook.async_get_chat_completion_prompt
   L1061-L1090; AnthropicCacheControlHook.should_use_anthropic_cache_control_hook L1092-L1096; AnthropicCacheControlHook.get_custom_logger_for_anthropic_cache_control_hook
-  L1098-L1112 belong to B119.'
+  L1098-L1112 belong to B4123 to B4126 (B4126 ports L1098-L1112).'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: max_retries_per_request_hit L313-L320
   belong to B017.'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: is_codex_user_agent L29-L30 belong to
@@ -264,7 +264,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: redact_nested_match_and_regex_keys L715-L751
   belong to B104.'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: _get_parent_otel_span_from_kwargs L429-L450
-  belong to B110.'
+  belong to B3847.'
 - 'Function ownership inventory litellm/litellm_core_utils/core_helpers.py: safe_divide_seconds L33-L48; normalize_drop_params
   L54-L60; drop_params_flag L63-L67; drop_params_env_flag L73-L83; safe_divide L86-L104; _is_litellm_limit_rejection
   L107-L113; _is_proxy_rejection L116-L123; _is_provider_originated L126-L133; is_expected_client_error L136-L165;

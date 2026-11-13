@@ -1,0 +1,17 @@
+task: B4813
+deviations:
+  - what: 'map_a2a_exception returns an A2AException value (LocalhostUrl, AgentCard, Connection or Other) instead of raising LiteLLM''s exception classes. It lives in betterlite-core and is separate from betterlite-a2a''s A2AError.'
+    why: 'betterlite-a2a depends on betterlite-core, and this task''s only scope is a core module, so it cannot name A2AError. Rust returns errors as values. A caller in betterlite-a2a maps each variant to the matching A2AError.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exception_mapping_utils.py#L97-L157
+  - what: 'map_a2a_exception and handle_a2a_localhost_retry reach is_localhost_or_internal_url, set_agent_card_url and the A2A SDK through the CardUrls and A2aSdk traits. LiteLLM imports them directly. A2AExceptionCheckers has no is_localhost_url; map_a2a_exception calls CardUrls::is_localhost_or_internal_url itself.'
+    why: 'betterlite-core cannot depend on betterlite-a2a without a cycle. The A2A client types do not exist yet (B4801) and the SDK is external, so recovery takes them as trait parameters. A separate is_localhost_url would only rename that call, which the one-line-function rule forbids. The tests use a fake SDK, and betterlite-a2a supplies the real one.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exception_mapping_utils.py#L8-L34
+  - what: 'The A2A_SDK_AVAILABLE flag is an associated constant of the A2aSdk trait, and a false value returns RecoveryError::SdkUnavailable ("A2A SDK is required for localhost retry handling"). The pip install hint is dropped.'
+    why: 'Rust has no import-time flag, and the message does not tell users to run pip.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exception_mapping_utils.py#L26-L34
+  - what: 'The localhost error keeps the original error as its text (original_error: String), not as the exception object. Its message reads "the agent card points at the internal URL ''{localhost_url}''; retry with ''{base_url}''" like B4800''s error, without the "litellm.A2AError: " prefix.'
+    why: 'Typed errors end to end, and the same wording rule as B4800: errors name betterlite''s own components. Both URLs are still in the message and the warning log carries the original text.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L154
+  - what: 'The two RuntimeError cases of handle_a2a_localhost_retry read "cannot retry the A2A localhost URL fix: no agent card is available to rewrite, so the upstream URL cannot be corrected" and "...: the client was not created by create_a2a_client, so no httpx client is attached". LiteLLM''s second message says "no LiteLLM httpx client is attached".'
+    why: 'Same wording rule: no message credits LiteLLM.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exception_mapping_utils.py#L187-L213

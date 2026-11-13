@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-results-corpus-seed
+call: {anthropic_results: {function: tool_result, id: seed, data_urls: {}, message: {role: tool, tool_call_id: call.seed, content: [{type: text, text: seed}]}}}
+env: {}
+compare: {ignore: []}

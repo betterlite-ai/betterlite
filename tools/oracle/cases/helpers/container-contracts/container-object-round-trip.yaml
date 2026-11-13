@@ -1,0 +1,10 @@
+kind: helper
+name: container-object-round-trip
+call:
+  b3360:
+    operation: record_decode
+    records:
+      - {kind: container_object, value: {id: container_abc, object: container, created_at: 1735689600, status: running, expires_after: {anchor: last_active_at, minutes: 30}, last_active_at: 1735689700, name: my-container, unknown_key: {nested: true}}}
+      - {kind: container_object, value: {id: container_abc, object: container, created_at: 0, status: queued}}
+env: {}
+compare: {ignore: []}

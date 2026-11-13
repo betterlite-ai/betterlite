@@ -57,7 +57,10 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input.operation {
-            Operation::SearchErrorCode => search_error_code_value(input),
+            Operation::SearchErrorCode => serde_json::to_value(native::search_error_code(
+                required_field(input.error.as_ref(), "error")?,
+            ))
+            .map_err(failure),
             Operation::SearchOutcome => search_outcome_value(input),
             Operation::FormatSearchResponse => format_search_response_value(input),
             Operation::TransformResponse => transform_response_value(input),
@@ -80,11 +83,6 @@ where
         return Err(failure(format!("missing required field {field}")));
     };
     Ok(found)
-}
-
-fn search_error_code_value(input: &Input) -> crate::helpers::HelperResult {
-    let error = required_field(input.error.as_ref(), "error")?;
-    serde_json::to_value(native::search_error_code(error)).map_err(failure)
 }
 
 fn format_search_response_value(input: &Input) -> crate::helpers::HelperResult {

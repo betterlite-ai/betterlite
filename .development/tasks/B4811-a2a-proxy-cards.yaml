@@ -7,7 +7,7 @@ description: >-
 
   The `merge_agent_card` function accepts optional `name` and `description` keyword parameters that override the upstream card's values. When supplied, these user-provided overrides take precedence over the upstream card's own name and description fields.
 
-  No HTTP calls, no async, no external dependencies: this is pure record transformation using standard-library copy and version matching. The proxy's runtime invocation path reads the stored upstream URL; the public `/.well-known/agent-card.json` route (owned by B141) rewrites that field before serving to clients.
+  No HTTP calls, no async, no external dependencies: this is pure record transformation using standard-library copy and version matching. The proxy's runtime invocation path reads the stored upstream URL; the public `/.well-known/agent-card.json` route (owned by B8589) rewrites that field before serving to clients.
 scope:
   paths:
     - crates/betterlite-a2a/**
@@ -37,7 +37,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - Serving the card over HTTP or rewriting its URL field for clients; that belongs to B141's public-card route.
+  - Serving the card over HTTP or rewriting its URL field for clients; that belongs to B8589's public-card route.
   - Discovering upstream agent cards; that belongs to B4800.
   - Validating that the upstream card conforms to any schema; invalid upstream input is passed through after filtering.
 pitfalls:

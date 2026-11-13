@@ -1,5 +1,6 @@
 use super::super::{FileContentError, FileContentRequest, RawResponse, transform_file_response};
-use crate::bedrock_settings::error_response_text;
+use crate::bedrock_settings::{ErrorHeaders, error_response_text};
+use betterlite_openai::error::{ErrorRequest, ErrorResponse, ProviderError};
 use rstest::rstest;
 use std::error::Error as _;
 
@@ -53,11 +54,13 @@ fn empty_binary_reply() {
 }
 
 #[rstest]
-#[case::text(b"bad request".to_vec(), "bad request")]
-#[case::empty(Vec::new(), "")]
-#[case::invalid_utf8(vec![0, 255, 10], "\u{0}\u{fffd}\n")]
-fn failed_binary_reply(#[case] body: Vec<u8>, #[case] message: &str) {
-    let expected = response_with_headers(500, body.clone(), default_headers());
+#[case::text(500, b"bad request".to_vec(), "bad request")]
+#[case::empty(500, Vec::new(), "")]
+#[case::invalid_utf8(500, vec![0, 255, 10], "\u{0}\u{fffd}\n")]
+#[case::bad_request(400, b"bad request".to_vec(), "bad request")]
+#[case::not_found(404, b"<Error><Code>NoSuchKey</Code></Error>".to_vec(), "<Error><Code>NoSuchKey</Code></Error>")]
+fn failed_binary_reply(#[case] status_code: u16, #[case] body: Vec<u8>, #[case] message: &str) {
+    let expected = response_with_headers(status_code, body.clone(), default_headers());
     let outcome = transform_file_response(expected.clone()).expect_err("failure");
     assert!(outcome.source().is_some());
     let FileContentError::Bedrock {
@@ -68,12 +71,51 @@ fn failed_binary_reply(#[case] body: Vec<u8>, #[case] message: &str) {
     else {
         panic!("expected BedrockError");
     };
-    assert_eq!(status, 500);
+    assert_eq!(status, status_code);
     assert_eq!(raw_body, body);
-    assert_eq!(error.cause.error.status_code, 500);
+    assert_eq!(error.cause.error.status_code, status_code);
     assert_eq!(error.cause.error.message, message);
     assert_eq!(error.cause.response_headers, expected.headers);
     assert_eq!(error_response_text(&error.cause.response_body), message);
+}
+
+#[rstest]
+#[case::server_error(500)]
+#[case::bad_request(400)]
+#[case::not_found(404)]
+fn failed_binary_reply_keeps_exception_fields(#[case] status_code: u16) {
+    let headers = vec![
+        ("x-amz-request-id".to_owned(), "first".to_owned()),
+        ("x-amz-request-id".to_owned(), "second".to_owned()),
+        ("content-length".to_owned(), "2".to_owned()),
+    ];
+    let expected = response_with_headers(status_code, b"ok".to_vec(), headers.clone());
+    let outcome = transform_file_response(expected).expect_err("failure");
+    let FileContentError::Bedrock { error, .. } = outcome else {
+        panic!("expected BedrockError");
+    };
+    assert_eq!(
+        error.cause.error,
+        ProviderError {
+            status_code,
+            message: "ok".to_owned(),
+            headers: Some(headers.clone()),
+            request: ErrorRequest {
+                method: "POST".to_owned(),
+                url: "https://docs.litellm.ai/docs".to_owned(),
+            },
+            response: ErrorResponse {
+                status_code,
+                request: ErrorRequest {
+                    method: "GET".to_owned(),
+                    url: "https://bedrock.example/files/id/content".to_owned(),
+                },
+            },
+            status_code_is_synthesized: false,
+            body: None,
+        }
+    );
+    assert_eq!(error.cause.headers, Some(ErrorHeaders::Http(headers)));
 }
 
 #[rstest]
@@ -127,6 +169,7 @@ fn raw_binary_reply_preserves_repeated_headers() {
 #[case::informational(101)]
 #[case::redirect(302)]
 #[case::no_content(204)]
+#[case::highest_non_error(399)]
 fn non_error_statuses(#[case] status_code: u16) {
     let expected = response_with_headers(status_code, Vec::new(), default_headers());
     let actual = transform_file_response(expected.clone()).expect("non-error response");
@@ -145,7 +188,7 @@ fn case_1_empty_binary_reply() {
 
 #[test]
 fn case_1_failed_binary_reply() {
-    failed_binary_reply(b"bad request".to_vec(), "bad request");
+    failed_binary_reply(500, b"bad request".to_vec(), "bad request");
 }
 
 #[test]

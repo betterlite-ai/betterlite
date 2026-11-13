@@ -1,0 +1,49 @@
+kind: helper
+name: short_marker_after_long_entry_keeps_the_long_expiry
+call:
+  baseline_history:
+    history:
+      first_at: 0.0
+      last_at: 0.0
+      equivalent: true
+      uncertain_before: 0.0
+      entries:
+      - fingerprint: old
+        content_fingerprint: c1
+        tokens: 50
+        ttl_seconds: 3600
+        available_at: 0.0
+        expires_at: 9000.0
+        uncertain: false
+      blocked_until: 0.0
+    groups:
+    - - request_id: short
+        started_at: 5000.0
+        available_at: 5000.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 5
+          total_tokens: 105
+          prompt_tokens_details:
+            text_tokens: 100
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 0
+              ephemeral_1h_input_tokens: 0
+        plan:
+          total_tokens: 100
+          breakpoints:
+          - fingerprint: new
+            ttl_seconds: 300
+            prefix_tokens: 80
+            lookback_fingerprints:
+            - new
+            content_fingerprint: c1
+            lookback_content_fingerprints:
+            - c1
+compare:
+  ignore: []
+env: {}

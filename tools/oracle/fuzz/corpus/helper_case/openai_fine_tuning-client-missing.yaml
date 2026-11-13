@@ -1,0 +1,5 @@
+kind: helper
+name: openai-fine-tuning-seed-client-missing
+call: {openai_fine_tuning: {steps: [{action: retrieve, builder: none, job_id: ft_1}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: arn-runtime
+call: {aws_partition: {region: us-east-1, value: 'arn:aws:bedrock-runtime:x'}}
+env: {}
+compare: {ignore: []}

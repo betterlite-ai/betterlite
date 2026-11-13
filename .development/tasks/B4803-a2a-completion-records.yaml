@@ -7,7 +7,8 @@ description: >-
   message formats, extract text from A2A parts, apply forward metadata to completion parameters, convert
   OpenAI responses to A2A format, and create streaming events (task, status update, artifact update).
   Implement BaseA2AProviderConfig as a trait defining the non-streaming and streaming handler contracts
-  for A2A providers. Create crates/betterlite-a2a to hold the a2a protocol module structure.
+  for A2A providers. crates/betterlite-a2a already exists on main with other tasks' stub modules; build
+  this task's code in its completion_bridge module.
 
   The transformation methods are synchronous and never call external services. A2AStreamingContext
   holds request_id, task_id, context_id, input_message and accumulation state (accumulated_text,
@@ -27,7 +28,8 @@ description: >-
   input pattern the bridge encounters.
 scope:
   paths:
-    - crates/betterlite-a2a/**
+    - crates/betterlite-a2a/src/completion_bridge.rs
+    - crates/betterlite-a2a/src/completion_bridge/**
     - tools/oracle/helpers/b4803.py
     - tools/oracle/helpers/b4803/**
     - tools/oracle/src/helpers/oracle/b4803.rs
@@ -69,7 +71,7 @@ checks:
   commands:
     - id: a2a-tests
       why: the A2A completion transformation tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^a2a_completion_bridge::/) | test(/^a2a_provider_base::/)'
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^completion_bridge::/)'
     - id: a2a-oracle-cases
       why: the oracle cases fail or do not exist
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/a2a/*.yaml)" && cargo nextest run --locked --no-tests=fail --package betterlite-oracle -E 'test(a2a_completion_bridge)'
@@ -96,6 +98,7 @@ pitfalls:
   - UUIDs for messageId, artifactId are fresh per event, not reused from the context.
   - A2A role mapping defaults to the input role if it is not "user", "assistant" or "system"; do not invent new roles.
   - BaseA2AProviderConfig is an abstract interface; the trait's async methods have no default implementation.
+  - crates/betterlite-a2a already holds empty stub modules owned by other tasks (agent_card, client, provider_selector and more); this task writes only completion_bridge.rs and completion_bridge/**.
 review_level: standard
 budget:
   max_changed_lines: 1500

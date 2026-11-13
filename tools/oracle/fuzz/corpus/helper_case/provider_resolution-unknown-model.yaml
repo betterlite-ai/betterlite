@@ -1,0 +1,7 @@
+kind: helper
+name: provider-resolution-unknown-model
+call:
+  provider_resolution:
+    model: definitely-unregistered-model
+env: {}
+compare: {ignore: []}

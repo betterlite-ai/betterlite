@@ -1,0 +1,14 @@
+id: B8219
+milestone: M6 guardrails
+title: Content filter initializer arguments
+status: todo
+depends_on: [B3662]
+file: tasks/B8219-content-filter-init.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/__init__.py"
+parent: B105
+split_from: B105
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

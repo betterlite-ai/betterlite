@@ -1,0 +1,1 @@
+{"message":{"tool_calls":[{"id":"call_a","type":"function","function":{"name":"lookup","parameters":{"query":"x"}}},{"id":"call_b","type":"function","function":{"name":"noop"}}],"citations":[{"start":0,"end":1,"sources":[{"type":"document","document":{"title":"T"},"url":"https://example.test"}]}]},"usage":{"tokens":{}}}

@@ -1,0 +1,17 @@
+kind: helper
+name: reservation-tokens-size-seed
+call:
+  reservation_tokens:
+    calls:
+      - function: size
+        request:
+          messages:
+            - role: user
+              content: hello world
+          tools:
+            - type: function
+              function:
+                name: get_weather
+                parameters: {}
+env: {}
+compare: {ignore: []}

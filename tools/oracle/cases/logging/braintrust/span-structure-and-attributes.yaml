@@ -1,0 +1,38 @@
+kind: helper
+name: braintrust span attributes and top level span ids
+call:
+  b3962:
+    function: log
+    scenarios:
+      - path: sync
+        start_time: "2023-11-14T22:13:20+00:00"
+        end_time: "2023-11-14T22:13:21.500000+00:00"
+        environment: {BRAINTRUST_API_KEY: braintrust-key}
+        api_base: "http://braintrust.test/v1"
+        call_id: call-span
+        metadata:
+          project_id: project-one
+          span_name: custom span
+          span_id: span-1
+          root_span_id: root-1
+          span_parents: "parent-a, parent-b"
+        answers:
+          - {status: 200, body: {}}
+      - path: sync
+        start_time: "2023-11-14T22:13:20+00:00"
+        end_time: "2023-11-14T22:13:21.500000+00:00"
+        environment: {BRAINTRUST_API_KEY: braintrust-key}
+        api_base: "http://braintrust.test/v1"
+        metadata: {project_id: project-one, span_parents: " a, ,b ,"}
+        answers:
+          - {status: 200, body: {}}
+      - path: sync
+        start_time: "2023-11-14T22:13:20+00:00"
+        end_time: "2023-11-14T22:13:21.500000+00:00"
+        environment: {BRAINTRUST_API_KEY: braintrust-key}
+        api_base: "http://braintrust.test/v1"
+        metadata: {project_id: project-one, span_id: "", root_span_id: "", span_parents: " , "}
+        answers:
+          - {status: 200, body: {}}
+env: {}
+compare: {ignore: []}

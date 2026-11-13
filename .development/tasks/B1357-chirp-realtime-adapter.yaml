@@ -27,8 +27,6 @@ scope:
   paths:
     - crates/betterlite-core/Cargo.toml
     - Cargo.lock
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/vertex_chirp.rs
     - crates/betterlite-core/src/api/vertex_chirp/**
     - crates/betterlite-core/fuzz/Cargo.toml
@@ -64,7 +62,7 @@ checks:
       run: test -f crates/betterlite-core/fuzz/fuzz_targets/chirp_backend_event.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/chirp_backend_event)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_chirp_backend_event_corpus)'
       why: Sparse and malformed streaming event records must traverse decode_chirp_backend_event.
     - id: chirp-adapter-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/chirp_adapter*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::chirp_adapter::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/chirp_adapter*')" && cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^chirp_adapter::/)'
       why: Shared fixture parsing dispatches the new command-transform traces.
 oracle_cases:
   - tools/oracle/cases/helpers/chirp-adapter/repeat-update-ignored.yaml

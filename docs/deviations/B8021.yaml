@@ -1,0 +1,5 @@
+task: B8021
+deviations:
+  - what: "You.com chooses the keyed host from the provider's configured YOUCOM_API_KEY in complete_url; an api_key passed for the call does not select it there, because B3270's SearchProvider::complete_url takes no api_key argument while LiteLLM passes its api_key keyword to get_complete_url."
+    why: "B3276 widens complete_url with the api_key argument; the provider keeps no per-call state, so until that lands a caller key shapes the headers from validate_environment but not the URL, and the caller-key-only keyed URL waits for B3276."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/you_com/search/transformation.py#L98-L107"

@@ -22,8 +22,6 @@ description: >-
   implementation,145 tests,115 transcripts,95 service adapters and 30 wiring =540 lines.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_sender.rs
   - crates/betterlite-core/src/api/realtime_sender/**
   - tools/oracle/src/websocket_driver.rs

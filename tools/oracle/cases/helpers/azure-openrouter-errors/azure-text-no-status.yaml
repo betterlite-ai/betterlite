@@ -1,0 +1,11 @@
+kind: helper
+name: azure-openrouter-errors-azure-text-no-status
+call:
+  azure_openrouter_errors:
+    provider: azure
+    model: gpt-4
+    custom_llm_provider: azure_text
+    error_str: "upstream request failed"
+    exception_provider: Azure
+env: {}
+compare: {ignore: []}

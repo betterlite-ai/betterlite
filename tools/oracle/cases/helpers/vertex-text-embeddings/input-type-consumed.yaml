@@ -1,0 +1,16 @@
+kind: helper
+name: vertex-text-embeddings-input-type-consumed
+call:
+  vertex_text_embeddings:
+    mappings:
+      - options: {dimensions: 8, project: p, region_name: r, user: u}
+        optional: {auto_truncate: true}
+        kwargs: {input_type: RETRIEVAL_DOCUMENT, extra: 1}
+      - options: {}
+        optional: {}
+        kwargs: {input_type: null}
+      - options: {dimensions: 2}
+        optional: {}
+        kwargs: {}
+compare: {ignore: []}
+env: {}

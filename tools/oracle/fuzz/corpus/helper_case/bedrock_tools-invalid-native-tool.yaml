@@ -1,0 +1,21 @@
+kind: helper
+name: bedrock-tools-invalid-native-tool
+call:
+  bedrock_tools:
+    call: is_native
+    tools:
+      - systemTool:
+          name: nova_grounding
+      - toolSpec: null
+      - cachePoint: not-a-block
+      - systemToolish: {}
+      - type: function
+        function:
+          name: f
+        cachePoint: {}
+      - junk
+      - []
+      - null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-bad-request-error
+call: {"error_normalization": {"message": "ordinary", "class": "BadRequestError", "status_code": 418}}
+env: {}
+compare: {ignore: []}

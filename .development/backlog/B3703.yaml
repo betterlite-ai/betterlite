@@ -1,15 +1,15 @@
 id: B3703
 milestone: M6 guardrails
 title: Prompt injection heuristics and model moderation
-status: todo
+status: done
 depends_on: [B1688, B002]
-file: null
+file: tasks/B3703-prompt-injection-detection.yaml
 covers:
   - "litellm/proxy/hooks/prompt_injection_detection.py"
   - "litellm/litellm_core_utils/prompt_templates/factory.py"
 parent: B105
 split_from: B105
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1360

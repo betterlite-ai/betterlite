@@ -1,0 +1,24 @@
+kind: helper
+name: get-policies-with-matching-conditions
+call:
+  b3241:
+    policy_memory_matching_matcher:
+      action: matching_conditions
+      policies:
+        always:
+          guardrails:
+            add: [g-always]
+        claude-only:
+          guardrails:
+            add: [g-claude]
+          condition:
+            model: claude.*
+        child:
+          inherit: always
+          condition:
+            model: claude.*
+      context:
+        model: gpt-5.5
+      policy_names: [child, claude-only, missing, always]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,92 @@
+id: B092
+title: OCR API
+description: >-
+  Mount POST /v1/ocr and POST /ocr once in crates/betterlite-server, in the module
+  `api::ocr_routes`, ported from the route function in litellm/proxy/ocr_endpoints/endpoints.py.
+  Both paths use the proxy API key check (B756) and answer JSON. The handler decodes the request with
+  B3300's `ocr_request` parser (JSON or multipart, req_format from body then the x-req-format header),
+  prepares authenticated request data with B1103, runs the pre-call hook with call_type aocr (B8399's hook service),
+  and calls B6809's `aocr` through the shared route pipeline with route_type aocr. If B3300 selected
+  the native format and a provider payload was captured, return that payload with the captured
+  LiteLLM response headers except content-length and content-type. Otherwise return the normalized
+  OCRResponse and the usual custom headers (B004). Failures go through B003's error conversion and the
+  failure hook, as in the other routes. B1100 registers routes/ocr.rs as a stub, so fill only
+  crates/betterlite-server/src/routes/ocr.rs.
+  Also add the server wiring `api::ocr_wiring`. It builds B6800's `OcrClient` from the proxy HTTP
+  clients, settings and secret source, and implements the three injected traits over the credential
+  services other tasks own: `AzureTokenSource` over B529's Azure credential selection,
+  `AwsRequestSigner` over B594 and B595's signing, and `VertexTokenSource` over B1301's credential
+  sources. Each adapter only calls the existing service and adds no credential logic.
+  Where this entry's coverage ends: B3300 owns the response types and request parsing, B6800 to B6809
+  own the SDK side of OCR (providers, provider choice, request preparation and the aocr function).
+  B092 owns the HTTP route and the wiring.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/api.rs
+    - crates/betterlite-server/src/api/ocr_routes.rs
+    - crates/betterlite-server/src/api/ocr_routes/**
+    - crates/betterlite-server/src/api/ocr_wiring.rs
+    - crates/betterlite-server/src/api/ocr_wiring/**
+    - crates/betterlite-server/src/routes/ocr.rs
+    - crates/betterlite-server/src/routes/ocr/**
+    - tools/oracle/cases/ocr-routes/**
+    - tools/oracle/helpers/b092.py
+    - tools/oracle/helpers/b092/**
+    - tools/oracle/src/helpers/server/b092.rs
+    - tools/oracle/src/helpers/server/b092/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ocr_endpoints/endpoints.py#L250-L348
+    why: Both decorators, the body parse, the aocr pipeline call, native response choice and failure handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/ocr/dispatch.py#L1-L84
+    why: The public aocr call the route reaches.
+
+dod:
+  - text: An authenticated JSON POST to /v1/ocr and to /ocr with a Mistral document_url returns 200 and the same OCRResponse JSON as LiteLLM from the mock provider, with one provider request.
+    proof: [route-tests, oracle]
+  - text: A multipart upload with model and file returns the OCRResponse, and the provider receives the file as inline data.
+    proof: [route-tests, oracle]
+  - text: req_format native (body or x-req-format) returns the provider payload with its response headers except content-length and content-type, and the default format returns the normalized response.
+    proof: [route-tests, oracle]
+  - text: A missing or invalid bearer key returns 401 with no provider request, and a rejecting pre-call hook prevents dispatch and runs the failure hook once.
+    proof: [route-tests, oracle]
+  - text: A provider error, a parse error and a reducto:// id in JSON each return LiteLLM's status, type, param and code with betterlite's own message.
+    proof: [route-tests, oracle]
+  - text: The wiring adapters call the Azure, AWS and Vertex services once per OCR call and add no credential logic.
+    proof: [wiring-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: route-tests
+      why: OCR route admission, hooks, native response choice or error shape is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::ocr_routes::tests::/)'
+    - id: wiring-tests
+      why: the OcrClient wiring or one of the three adapters is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::ocr_wiring::tests::/)'
+
+oracle_cases:
+  - tools/oracle/cases/ocr-routes/json-and-alias.yaml
+  - tools/oracle/cases/ocr-routes/multipart-upload.yaml
+  - tools/oracle/cases/ocr-routes/native-format.yaml
+  - tools/oracle/cases/ocr-routes/auth-hooks-and-errors.yaml
+
+deviations: []
+
+out_of_scope:
+  - Request parsing and OCRResponse types are B3300. Providers, provider choice, request preparation and aocr are B6800 to B6809.
+  - Guardrail translation for Mistral OCR is B036 and Foundry passthrough conversion is B566.
+  - Health probes for OCR call B6809's aocr through B4449's OcrProbeCall. This entry adds nothing for them.
+
+pitfalls:
+  - The route reads the body first, so a multipart request with an empty body must fall back to form data from the auth layer, as B3300 does.
+  - The native payload is chosen after the pipeline returns. Do not choose the format before the call.
+  - Wire the route into the existing pipeline, and do not call the provider code directly from the handler.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,10 @@
+kind: helper
+name: stream-chunk-shaping-creator-seed
+call:
+  b5652:
+    state: {model: gpt-4, provider: openai, response_id: chatcmpl-fixed, created: 1700000000}
+    repeated_chunk_limit: 100
+    steps:
+      - {op: creator, chunk: {id: chatcmpl-a, created: 100}}
+env: {}
+compare: {ignore: []}

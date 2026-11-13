@@ -1,0 +1,40 @@
+kind: helper
+name: stream-terminal-event
+call:
+  bedrock_services_agentcore_stream:
+    model: agentcore-model
+    ids:
+      - 00000000-0000-4000-8000-000000000031
+      - 00000000-0000-4000-8000-000000000032
+      - 00000000-0000-4000-8000-000000000033
+      - 00000000-0000-4000-8000-000000000034
+    scenarios:
+      - reads:
+          - |
+            data: {"message":{}}
+      - reads:
+          - |
+            data: {"message":{"role":"assistant","content":[{"text":"ignored"}]}}
+      - reads:
+          - |
+            data: {"message":{}}
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"after"}}}}
+      - reads:
+          - |
+            data: [DONE]
+      - reads:
+          - |
+            data: {"message":5}
+      - reads:
+          - |
+            data: {"message":{}}
+            data: {"message":{}}
+            data: {"event":{"metadata":{"usage":{}}}}
+            data: {"event":{"metadata":{"usage":{}}}}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"only"}}}}
+      - reads:
+          - ""
+env: {}
+compare: {ignore: []}

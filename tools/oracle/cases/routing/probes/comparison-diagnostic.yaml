@@ -1,0 +1,21 @@
+kind: probe
+name: comparison-diagnostic
+probes:
+  - clock:
+      unix_millis: 1700000000125
+      monotonic_millis: 44000
+    samples:
+      - 0
+    operation:
+      single_candidate:
+        deployments:
+          - id: diagnostic
+            weight: 3
+compare:
+  expected_difference:
+    - pointer: /output/single_candidate/selected
+      reference: diagnostic
+      rust: diagnostic
+      why: the selected deployment is asserted on each side instead of left to the structural comparison
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/llm_v2.py#L200-L224
+  ignore: []

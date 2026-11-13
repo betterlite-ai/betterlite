@@ -1,0 +1,15 @@
+kind: helper
+name: reject-27-only-options
+call:
+  bedrock_other_marengo_three:
+    reject_27_only_options:
+      model: marengo-embed-3-0-v1:0
+      input: hi
+      inference_params:
+        minClipSec: ""
+        textTruncate: false
+        lengthSec: 0
+        startSec: 1.5
+env: {}
+compare:
+  ignore: []

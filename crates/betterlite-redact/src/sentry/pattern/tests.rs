@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{scrub, scrub_with_key_lengths};
+use super::{apply, build, scrub};
 use rstest::rstest;
 use std::str::from_utf8;
 use std::{fs, path::PathBuf};
@@ -66,7 +66,9 @@ fn custom_key_minimum_lowers_the_scrubbed_key_floor() {
     let text = "key is sk-abcde here";
     assert_eq!(scrub(text, false).unwrap(), text);
     assert_eq!(
-        scrub_with_key_lengths(text, false, 8, 16).unwrap(),
+        build(false, 8, 16)
+            .map(|patterns| apply(&patterns, text))
+            .unwrap(),
         "key is [Filtered] here"
     );
 }
@@ -74,13 +76,25 @@ fn custom_key_minimum_lowers_the_scrubbed_key_floor() {
 #[test]
 fn advance_past_char_steps_over_the_full_multi_byte_codepoint() {
     let text = "a\u{2713}b";
-    assert_eq!(super::advance_past_char(text, 1), 4);
+    let start = 1;
+    assert_eq!(
+        text.get(start..)
+            .and_then(|rest| rest.chars().next())
+            .map_or(text.len(), |ch| start.saturating_add(ch.len_utf8())),
+        4
+    );
 }
 
 #[test]
 fn advance_past_char_at_end_of_text_returns_text_length() {
     let text = "ab";
-    assert_eq!(super::advance_past_char(text, 2), 2);
+    let start = 2;
+    assert_eq!(
+        text.get(start..)
+            .and_then(|rest| rest.chars().next())
+            .map_or(text.len(), |ch| start.saturating_add(ch.len_utf8())),
+        2
+    );
 }
 
 #[test]

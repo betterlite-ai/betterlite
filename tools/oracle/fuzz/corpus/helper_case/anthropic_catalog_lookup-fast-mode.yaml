@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-catalog-lookup-fast-mode
+call: {anthropic_catalog_lookup: {function: fast_mode, model: claude-x, provider: bedrock, runtime: {claude-x: {supports_fast_mode: true}}}}
+env: {}
+compare: {ignore: []}

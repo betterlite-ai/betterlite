@@ -1,0 +1,11 @@
+kind: helper
+name: provider-defaults-a-azure-ai
+call:
+  provider_defaults_a:
+    provider: azure_ai
+    model: gpt-4o
+    api_base: https://my.openai.azure.com
+    api_key: azure-key
+    openai_chat_models: [gpt-4o]
+env: {}
+compare: {ignore: []}

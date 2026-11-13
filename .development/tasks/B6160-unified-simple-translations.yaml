@@ -1,0 +1,108 @@
+id: B6160
+title: Registry adapters for completion, embeddings, image, speech, transcription and video guardrails
+description: >-
+  Wrap the plain-function guardrail handlers of B5820 and B3677 in six adapter types that implement B3661's
+  `BaseTranslation`, and own the six call-type tables that LiteLLM keeps in the `guardrail_translation_mappings`
+  dicts of the `__init__.py` files for these endpoints. B3679's `TranslationRegistry<T: BaseTranslation>` needs one
+  value per call type, and `BaseTranslation` is not implemented by the handlers themselves, so this task is the glue.
+  B3680 builds the registry from what this task exports.
+
+  Put the code in crates/betterlite-server/src/guardrails/unified_simple.rs and unified_simple/. One file per
+  adapter: completion.rs, embeddings.rs, image.rs, speech.rs, transcription.rs, video.rs, and tables.rs for the
+  tables. Each adapter is a unit struct (`CompletionTranslation`, `EmbeddingsTranslation`, `ImageTranslation`,
+  `SpeechTranslation`, `TranscriptionTranslation`, `VideoTranslation`) with `impl BaseTranslation`. Implement every
+  method of the trait with the exact signatures B3661 fixes; do not change the trait. Each method is generic over the
+  guardrail type only where B3661's trait is.
+
+  Method behavior. `process_input_messages` calls the handler's input function from B5820 (completion and
+  embeddings) or B3677 (image, speech, video). Transcription's request side does nothing, as in B3677. The adapter
+  passes the request map and the guardrail through and returns the map. `process_output_response` calls the handler's
+  output function. Embeddings, image, speech, transcription and video output functions take only the response, so the
+  adapter drops the guardrail arguments it does not need after B3677 and B5820 define them; call the function with
+  exactly what its signature takes. `process_output_streaming_response`, `get_streaming_scan_key`,
+  `build_block_sse_chunks` and `build_stream_error_items` are not defined by these handlers in LiteLLM (they inherit
+  the base class defaults), so return what B3661's defaults return and write nothing else. `get_structured_messages`
+  and `extract_request_tool_names` also keep the defaults. The two class flags `delivers_ended_stream_rewrites` and
+  `assembles_streamed_response` stay false for all six.
+
+  Tables. `tables.rs` exports one public constant per LiteLLM table, each an array of B207's `CallType` values
+  taken from the pinned `__init__.py` file, in the order that file lists them:
+  `COMPLETION_CALL_TYPES` = text_completion, atext_completion; `EMBEDDINGS_CALL_TYPES` = embedding, aembedding;
+  `IMAGE_CALL_TYPES` = image_generation, aimage_generation; `SPEECH_CALL_TYPES` = speech, aspeech;
+  `TRANSCRIPTION_CALL_TYPES` = transcription, atranscription; `VIDEO_CALL_TYPES` = video_generation,
+  avideo_generation, create_video, acreate_video, video_remix, avideo_remix, video_edit, avideo_edit,
+  video_extension, avideo_extension. Read each `__init__.py` to confirm the list before you write it; if the pinned
+  file differs from this text, the pinned file wins and the difference goes in the test names. Use B207's CallType
+  variants and do not add new ones. A test per table asserts the exact array.
+
+  These tables are plain data. B3680 reads them and builds `TranslationEntry { call_type, translation, chat_completions }`
+  values, so the `chat_completions` flag is false for all six here. This task does not build the registry, the
+  translation enum or any hook.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/unified_simple.rs
+    - crates/betterlite-server/src/guardrails/unified_simple/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/guardrail_translation/__init__.py
+    why: The text completion call-type table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/embeddings/guardrail_translation/__init__.py
+    why: The embeddings call-type table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_generation/guardrail_translation/__init__.py
+    why: The image generation call-type table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/speech/guardrail_translation/__init__.py
+    why: The speech call-type table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/guardrail_translation/__init__.py
+    why: The transcription call-type table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/guardrail_translation/__init__.py
+    why: The video call-type table with its ten names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L49-L101
+    why: The protocol a registered translation must satisfy and how the dispatcher resolves it by call type.
+
+dod:
+  - text: Six adapter types implement every method of B3661's `BaseTranslation`, and each input and output method calls the matching B5820 or B3677 function with the arguments that function takes.
+    proof: [adapter-tests]
+  - text: The transcription adapter leaves the request map unchanged and still calls the response function.
+    proof: [adapter-tests]
+  - text: The streaming, scan-key, block-chunk, error-item, structured-message and tool-name methods return B3661's defaults, and both class flags are false.
+    proof: [default-method-tests]
+  - text: Each of the six table constants lists exactly the call types of its pinned `__init__.py`, in order, with no call type in two tables.
+    proof: [table-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: adapter-tests
+      why: an adapter skips its handler, passes the wrong arguments or changes a request that must stay unchanged
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_simple::.*::tests::adapter_/)'
+    - id: default-method-tests
+      why: an adapter implements a stream or block method LiteLLM leaves to the base class, or sets a flag to true
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_simple::.*::tests::defaults_/)'
+    - id: table-tests
+      why: a call type is missing from a table, listed twice or listed in the wrong table
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_simple::tables::tests::table_/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - The handler functions themselves (completion, embeddings, image, speech, transcription, video); B5820 and B3677 own them.
+  - The translation enum, the registry fill, `infer_call_type` wiring and the hooks; B3680 owns them.
+  - HTTP oracle cases for these endpoints; B3680 adds them through the booted proxy.
+  - The chat, Responses and Anthropic adapters; B6161 owns them.
+  - Rerank, OCR, Google GenAI and MCP adapters; B1419, B036, B1391 and B3818 own those handlers and B3680 registers them.
+
+pitfalls:
+  - The transcription handler only inspects the response, so its `process_input_messages` must not call the guardrail.
+  - Embeddings and the media output functions take no guardrail, so do not invent a guardrail argument for them.
+  - The video table has ten names including `create_video` and `video_extension`; a copy from the image table drops them.
+  - Do not edit B3661's trait to make an adapter compile; if a signature does not fit, stop and report it.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

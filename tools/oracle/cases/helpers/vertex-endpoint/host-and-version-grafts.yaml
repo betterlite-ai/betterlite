@@ -1,0 +1,39 @@
+kind: helper
+name: host-and-version-grafts
+call:
+  vertex_endpoint:
+    host_and_version_grafts:
+      proxies:
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: null, stream: false, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: "", stream: false, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://proxy.example.com, stream: false, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://proxy.example.com/, stream: false, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://proxy.example.com/v1, stream: false, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://proxy.example.com/v1beta1, stream: false, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1beta1}
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://proxy.example.com/v1/, stream: false, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://proxy.example.com/foo, stream: false, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://proxy.example.com/foo/, stream: false, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://proxy.example.com/v1, stream: true, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://proxy.example.com/foo, stream: true, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://proxy.example.com, stream: true, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://proxy.example.com/v1, stream: null, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://proxy.example.com, stream: false, auth: tok, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+        - {url: "https://h.example.com/v1/foo:generateContent", endpoint: generateContent, api_base: https://proxy.example.com/v1, stream: false, auth: null, model: gemini-2.5-flash, project: proj, location: us-central1, version: v1}
+      tokens:
+        - {provider: vertex_ai, model: gemini-2.5-flash, project: proj, location: us-central1, auth: tok, stream: false, api_base: null, use_v1beta1_features: false, mode: chat}
+        - {provider: vertex_ai_beta, model: gemini-2.5-flash, project: proj, location: us-central1, auth: tok, stream: false, api_base: null, use_v1beta1_features: false, mode: chat}
+        - {provider: vertex_ai, model: gemini-2.5-flash, project: proj, location: us-central1, auth: tok, stream: false, api_base: null, use_v1beta1_features: true, mode: chat}
+        - {provider: vertex_ai, model: gemini-2.5-flash, project: proj, location: us-central1, auth: tok, stream: true, api_base: null, use_v1beta1_features: false, mode: chat}
+        - {provider: vertex_ai, model: gemini-2.5-flash, project: proj, location: us-central1, auth: tok, stream: true, api_base: https://proxy.example.com, use_v1beta1_features: false, mode: chat}
+        - {provider: vertex_ai, model: gemini-2.5-flash, project: proj, location: us-central1, auth: tok, stream: false, api_base: https://proxy.example.com/v1, use_v1beta1_features: false, mode: chat}
+        - {provider: vertex_ai, model: gemini-2.5-flash, project: proj, location: us-central1, auth: tok, stream: false, api_base: https://proxy.example.com/foo, use_v1beta1_features: false, mode: chat}
+        - {provider: vertex_ai, model: gemini-2.5-flash, project: proj, location: null, auth: null, stream: false, api_base: null, use_v1beta1_features: false, mode: chat}
+        - {provider: vertex_ai, model: gemini-2.5-flash, project: proj, location: global, auth: tok, stream: true, api_base: null, use_v1beta1_features: false, mode: chat}
+        - {provider: vertex_ai, model: text-embedding-005, project: proj, location: global, auth: tok, stream: false, api_base: null, use_v1beta1_features: false, mode: embedding}
+        - {provider: vertex_ai, model: gemini-2.5-flash, project: proj, location: us-central1, auth: tok, stream: false, api_base: null, use_v1beta1_features: true, mode: count_tokens}
+        - {provider: vertex_ai, model: deepseek-ai/deepseek-v3.1-maas, project: proj, location: europe-west1, auth: tok, stream: false, api_base: null, use_v1beta1_features: false, mode: chat}
+        - {provider: vertex_ai, model: gemini-2.5-flash, project: proj, location: us-central1, auth: tok, stream: false, api_base: https://psc.example.com, use_v1beta1_features: false, mode: chat, use_psc_endpoint_format: true}
+        - {provider: vertex_ai, model: gemini-2.5-flash, project: proj, location: us-central1, auth: tok, stream: false, api_base: null, use_v1beta1_features: false, mode: batch_embedding}
+        - {provider: vertex_ai, model: gemini-2.5-flash, project: proj, location: us-central1, auth: tok, stream: false, api_base: "https://proxy.example.com/v1?x=1", use_v1beta1_features: false, mode: chat}
+env: {}
+compare: {ignore: []}

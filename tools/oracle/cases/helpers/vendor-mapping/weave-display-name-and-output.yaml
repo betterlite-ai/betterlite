@@ -1,0 +1,39 @@
+{
+  "kind": "helper",
+  "name": "vendor-mapping-weave-display-name-and-output",
+  "call": {
+    "b3846": {
+      "function": "weave_llm_call",
+      "payload": {
+        "id": "call-7",
+        "model": "gpt-4o",
+        "custom_llm_provider": "openai",
+        "call_type": "completion",
+        "messages": [
+          {
+            "role": "user",
+            "content": "hello"
+          }
+        ],
+        "response": {
+          "id": "resp-7",
+          "model": "gpt-4o-2024",
+          "choices": [
+            {
+              "message": {
+                "role": "assistant",
+                "content": "done"
+              },
+              "finish_reason": "stop"
+            }
+          ]
+        }
+      },
+      "capture_content": true
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -1,0 +1,165 @@
+id: B9230
+title: Regional chat policies through the booted proxy
+description: >-
+  Add HTTP oracle coverage for the regional chat configurations that B8170, B8172,
+  B8173, B8175 and B8177 currently prove through helpers. B8312 builds their executable
+  bindings and already tests ordinary MiniMax and NLP Cloud chat. This task verifies
+  the remaining transformations through that binding and B024's compatible-chat arm.
+  Write only fixtures; an implementation failure belongs to the component named below.
+  No provider, selector, configuration section or route is registered here. The source
+  functions are already assigned, so this task owns zero additional LiteLLM logic
+  lines; allow about 650 lines for the HTTP fixtures.
+
+  Configure public model aliases in model_list, general_settings.master_key=sk-test,
+  explicit model_info.id values and router_settings.num_retries=0. Send a fixed
+  x-litellm-call-id. Put mock addresses in env values containing {{upstream}}, then
+  reference them from deployment api_base with os.environ/NAME. Use the existing HTTP
+  case format, including steps when useful, rather than a helper invoking a handler.
+  The current oracle identifies an ordinary HTTP case by the absence of kind; do not
+  put kind: http into a decoder that only accepts helper/websocket tags. The parity
+  proof boots betterlite and LiteLLM, without --self-check. Compare upstream method,
+  path, body and authorization/content-type/accept, response status and body, content-type,
+  and stable x-litellm-* headers. Only generated ids, times and duration headers may
+  receive narrow ignores; supplied usage remains significant. Error cases ignore
+  /error/message because betterlite supplies its own text, retaining type, param and code.
+
+  Distribute the successful calls across POST /v1/chat/completions, /chat/completions,
+  /engines/{model:path}/chat/completions and
+  /openai/deployments/{model:path}/chat/completions. Path models name configured aliases.
+  dashscope-cache-control uses dashscope/qwen-plus with message and tool cache_control
+  and reasoning_effort; qwencloud-brand-key uses qwencloud/qwen-plus with distinct
+  QWENCLOUD_API_KEY and DASHSCOPE_API_KEY values; qwen-platform-fallback uses
+  qwen_ai_platform/qwen-plus with only DASHSCOPE_API_KEY. Their bases come from
+  DASHSCOPE_API_BASE, QWENCLOUD_API_BASE and QWEN_AI_PLATFORM_API_BASE respectively.
+  These absent optional settings have no value; the policies' defaults remain
+  https://dashscope.aliyuncs.com/compatible-mode/v1 for DashScope/Qianwen and
+  https://dashscope-intl.aliyuncs.com/compatible-mode/v1 for QwenCloud. All fixture
+  destinations are overridden to the local server.
+
+  ai21-options uses ai21_chat/jamba-1.5-large, tools and max_completion_tokens, with
+  an explicit base ending /studio/v1 and a configured key. modelscope-text uses
+  modelscope/Qwen/Qwen3.5-35B-A3B, a text-only content list and an explicit /v1 base;
+  the upstream text is concatenated without separators. tencent-adaptive uses
+  tencent/minimax-m3, thinking={type: enabled, budget_tokens: 128} together with
+  reasoning_effort=none, and an explicit base ending /v1/. The native body contains
+  adaptive thinking with the integer budget, with no nested extra_body or separate
+  reasoning_effort. volcengine-thinking uses volcengine/deepseek-v3-2-251201,
+  max_completion_tokens and thinking={type: auto}, proving max_tokens and thinking
+  reach the final JSON. minimax-cache-control uses minimax/MiniMax-M2.1 with
+  reasoning_split and cache_control to extend B8312's simple chat checks.
+
+  GigaChat fixtures use gigachat/GigaChat-2 and the configured GIGACHAT_API_BASE,
+  whose production default remains https://gigachat.devices.sberbank.ru/api/v1.
+  gigachat-tools-token sets GIGACHAT_ACCESS_TOKEN, supplies temperature=0, stop,
+  tools and tool_choice=required, and receives a native function_call plus nonzero
+  precached_prompt_tokens. The recorded request has top_p=0, no stop, functions and
+  function_call=auto; the reply has tool_calls and adds cached tokens to prompt and
+  total usage. Only the generated call id is ignored. gigachat-structured-output
+  sends json_schema and checks that returned function arguments become content with
+  finish_reason=stop. gigachat-stream supplies native SSE text and terminal function
+  chunks, followed by [DONE], and compares the resulting OpenAI stream and usage.
+
+  gigachat-oauth has no access token and sets GIGACHAT_AUTH_URL={{upstream}}/oauth,
+  GIGACHAT_API_KEY and GIGACHAT_CREDENTIALS to distinguishable dummy credentials.
+  Queue an OAuth response with access_token and a far-future expires_at, then the
+  chat response: the harness supports multiple upstream answers. The first request
+  is form-encoded scope=GIGACHAT_API_PERS with Basic authentication; the second uses
+  Bearer authentication. Do not compare the random RqUID value. A companion
+  gigachat-oauth-denied returns 401 from OAuth and queues no model answer.
+  gigachat-image-failure supplies image URL data:image/png;base64,a and a valid
+  text part; the one-character base64 payload fails decoding and must leave a successful
+  text-only chat, with no files request. This checks the failure boundary without weakening the multipart
+  comparator's treatment of generated filenames. A no-key case and an invalid-key
+  case send no upstream traffic and exercise existing proxy authentication.
+scope:
+  paths:
+    - tools/oracle/cases/providers/regional-chat/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11958
+    why: All four existing chat decorators; this task tests their regional calls without mounting them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2282-L2341
+    why: B8312's GigaChat dispatch key order and handler call exercised by OAuth fixtures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2500-L2543
+    why: MiniMax dispatch context passed to its existing policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5911-L5970
+    why: Regional versus compatible dispatch arms, already implemented by B8312 and B024.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/chat/transformation.py#L14-L81
+    why: Regression expectations for reasoning_effort, preserved cache_control and URL construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/qwencloud.py#L11-L39
+    why: International brand key precedence and chat base.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/qwen_ai_platform.py#L11-L39
+    why: Qianwen fallback credentials and domestic chat base.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ai21/chat/transformation.py#L53-L70
+    why: AI21's supported option list used by the compatible chat fixture.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/tencent/chat/transformation.py#L37-L143
+    why: Thinking precedence, adaptive coercion and trailing-slash handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/modelscope/chat/transformation.py#L16-L88
+    why: Text-only content flattening before the shared transform.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/volcengine/chat/transformation.py#L46-L106
+    why: Volcengine option mapping tested on the actual outgoing request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/minimax/chat/transformation.py#L27-L98
+    why: Existing MiniMax cache-control and reasoning policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/chat/transformation.py#L99-L519
+    why: GigaChat header, message, tool and structured-output behavior reached over HTTP.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/chat/streaming.py#L21-L154
+    why: Native stream iteration and function-call conversion, owned by B8177.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L64-L253
+    why: Token override and sequential OAuth/API flow, implemented by B7325.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L34-L50
+    why: Invalid base64 enters the uploader's swallowed-failure path before any multipart upload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L88-L151
+    why: B8178's upload error handling leaves the surrounding chat usable.
+dod:
+  - text: Each regional chat policy is reached through a real proxy request, with all four aliases represented and provider-specific request rewrites compared.
+    proof: [regional-chat-fixtures, oracle]
+  - text: GigaChat token override, OAuth success and denial, structured output, native streaming and image failure agree with the pinned proxy.
+    proof: [regional-chat-fixtures, oracle]
+  - text: Missing and invalid proxy credentials are refused before provider I/O, with the source status and error fields.
+    proof: [regional-chat-fixtures, oracle]
+checks:
+  optional: []
+  commands:
+    - id: regional-chat-fixtures
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/providers/regional-chat)"
+        && for case in dashscope-cache-control qwencloud-brand-key qwen-platform-fallback ai21-options
+        tencent-adaptive modelscope-text volcengine-thinking minimax-cache-control gigachat-tools-token
+        gigachat-structured-output gigachat-stream gigachat-oauth gigachat-oauth-denied gigachat-image-failure
+        proxy-no-key proxy-invalid-key; do test -f "tools/oracle/cases/providers/regional-chat/$case.yaml" || exit 1; done
+      why: New files for every policy and failure path are required before the oracle can prove the integration.
+oracle_cases:
+  - tools/oracle/cases/providers/regional-chat/dashscope-cache-control.yaml
+  - tools/oracle/cases/providers/regional-chat/qwencloud-brand-key.yaml
+  - tools/oracle/cases/providers/regional-chat/qwen-platform-fallback.yaml
+  - tools/oracle/cases/providers/regional-chat/ai21-options.yaml
+  - tools/oracle/cases/providers/regional-chat/tencent-adaptive.yaml
+  - tools/oracle/cases/providers/regional-chat/modelscope-text.yaml
+  - tools/oracle/cases/providers/regional-chat/volcengine-thinking.yaml
+  - tools/oracle/cases/providers/regional-chat/minimax-cache-control.yaml
+  - tools/oracle/cases/providers/regional-chat/gigachat-tools-token.yaml
+  - tools/oracle/cases/providers/regional-chat/gigachat-structured-output.yaml
+  - tools/oracle/cases/providers/regional-chat/gigachat-stream.yaml
+  - tools/oracle/cases/providers/regional-chat/gigachat-oauth.yaml
+  - tools/oracle/cases/providers/regional-chat/gigachat-oauth-denied.yaml
+  - tools/oracle/cases/providers/regional-chat/gigachat-image-failure.yaml
+  - tools/oracle/cases/providers/regional-chat/proxy-no-key.yaml
+  - tools/oracle/cases/providers/regional-chat/proxy-invalid-key.yaml
+deviations: []
+out_of_scope:
+  - All functions in the cited chat configs remain B8170 for DashScope, B8172 for the two Qwen brands, B8173 for AI21/MiniMax/ModelScope/Tencent, B8175 for Volcengine and B8177 for GigaChat; all stream methods and gigachat/utils.py are B8177 too.
+  - B7325 owns every authenticator function and B8178 owns every file_handler.py function; no OAuth client, token cache or uploader is duplicated here.
+  - B8312 owns regional_host_dispatch and regional_host_keys, including _complete_gigachat, _complete_minimax and _complete_nlp_cloud; B024 owns _complete_custom_openai. Other main.py functions retain their existing task owners.
+  - B004/B005 own chat routes and streaming, B8610 owns the composition root, and B8633 owns the production chat generator. None of those mounts or ports changes in this fixture task.
+  - Native Messages are already covered by B8580 with B8634's selector chain; GigaChat passthrough belongs to B3627, B8609 and B8690/B8694. B8312 retains its ordinary MiniMax/NLP Cloud cases.
+  - B9232 supplies the generated-filename comparison and successful GigaChat upload, cache-hit and upload-rejection HTTP cases; this task's malformed image fails before that boundary.
+pitfalls:
+  - Tencent extra_body is an SDK transport argument; the upstream JSON contains thinking at the top level.
+  - GigaChat chat checks GIGACHAT_API_KEY before GIGACHAT_CREDENTIALS, while its embedding dispatch checks them in the opposite order.
+  - An OAuth cache can hide the first upstream request; isolate its config/env from token-override cases and use distinct dummy credentials.
+  - Fixed upstream usage must stay visible, especially precached_prompt_tokens; a broad usage ignore would erase the GigaChat regression.
+  - Malformed image data must fail before any /files request; successful uploads use B9232's separately tested filename selector.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

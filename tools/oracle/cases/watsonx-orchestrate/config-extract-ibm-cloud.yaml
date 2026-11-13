@@ -1,0 +1,8 @@
+kind: helper
+name: watsonx-config-extract-ibm-cloud
+call:
+  b4807:
+    operation: config
+    litellm_params: {cp4d_host: "https://orchestrate.example.com", instance_id: inst-1, wxo_agent_id: agent-1, api_key: key-1, auth_mode: ibm_cloud, username: "", thread_id: ""}
+env: {}
+compare: {ignore: []}

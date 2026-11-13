@@ -1,0 +1,9 @@
+kind: helper
+name: image-revised-prompt
+call:
+  b5240:
+    function: "output_choices"
+    response: {"data": [{"url": "https://example.com/a.png", "revised_prompt": "better"}]}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,29 @@
+kind: helper
+name: params-and-headers
+call:
+  b8179:
+    steps:
+      - {kind: supported_params}
+      - kind: map_params
+        params:
+          max_tokens: 5
+          stream: true
+          temperature: 0.4
+          top_p: 0.9
+          presence_penalty: 0.1
+          frequency_penalty: 0.2
+          n: 2
+          stop: ["END"]
+          unknown: 1
+        optional_params: {temperature: 0.1, max_length: 99}
+      - kind: headers
+        api_key: "nlp-key"
+        headers: {x-call: "dropped", accept: "text/plain"}
+      - {kind: headers}
+      - kind: error_class
+        message: "rate limited"
+        status: 429
+        headers: {retry-after: "2"}
+      - {kind: error_class, message: "boom", status: 500}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: delete-file-both-literals
+call:
+  b3360:
+    operation: record_decode
+    records:
+      - {kind: delete_file_response, value: {id: file_abc, object: container.file.deleted, deleted: true}}
+      - {kind: delete_file_response, value: {id: file_abc, object: container_file.deleted, deleted: false, unknown_key: ignored}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: cron-weekday-name-step
+call:
+  b8370:
+    cron: "0 3 * * mon/2"
+    start: "2026-01-01T00:00:00Z"
+env: {}
+compare:
+  ignore: []

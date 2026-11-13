@@ -1,0 +1,136 @@
+id: B9740
+title: Provision independent current-schema databases and request logs for dashboard cases
+description: >-
+  The dashboard cases need populated request logs and the final pinned schema, while B860's
+  baseline deliberately stays at 2025 for migration tests. Add optional DashboardSeed support
+  in tools/postgres-fixture/src/dashboard.rs and dashboard/**. Reuse the independently copied
+  SQL already on main in crates/betterlite-db/src/schema_contract/fixtures/sql and sql.sha256;
+  do not invoke betterlite-db, its migration catalogs, repositories or product startup migrations.
+  The existing schema_contract/tests/harness.rs reads these independent files in manifest order
+  and verifies each digest. Use that same artifact format, with the manifest SHA256 pinned to
+  c2a1e005f73eda0bb5f5496f90299688872f1e56e71f749b52d81009eae0d5ee. Resolve it from the fixture
+  crate's CARGO_MANIFEST_DIR and the repository-relative path, not the process working directory.
+  Verify the manifest, filenames confined to its sql directory, UTF-8 and every file digest
+  before applying any statement. A missing or changed file is a setup error, not a download.
+
+  Before dispatch the architect attaches a serde-defaulted dashboard: Option<DashboardSeed> to
+  FixtureSeed, adds DashboardFixtureError to FixtureError, invokes validate from FixtureSeed's
+  existing validation, and changes seed_database's schema selection: Some(dashboard) runs
+  dashboard::initialize(&Client), None runs the existing BASELINE and optional supplements.
+  The Some branch must not reapply B9030's Lens SQL or B9270's daily schema, since the independent
+  history already contains those tables. Both branches then run the existing identity/key seeds,
+  B9270/B9260 row insertion when requested, and finally dashboard::seed(&Client,&DashboardSeed,&FixtureSeed).
+  Set dashboard: None in existing struct literals. These shared call sites are outside scope;
+  this module owns validate, initialize, seed and its error enum. Optional absence leaves every
+  existing fixture and migration test unchanged, and Some with an empty logs list installs the
+  full schema without inventing data. All initialization uses B860's deadlines, isolated
+  databases and cleanup; it never starts another PostgreSQL server.
+
+  DashboardSeed contains only logs: Vec<SpendLogSeed>, default empty, with unknown fields denied.
+  SpendLogSeed requires request_id, call_type, start_time, end_time and key_index into seed.keys.
+  Add optional completion_start_time, request_duration_ms, model, model_id, model_group,
+  custom_llm_provider, user, team_id, end_user, session_id, status, cache_hit, litellm_call_id;
+  optional strings preserve null instead of guessing an identity. Money spend is Decimal default
+  zero; total_tokens,prompt_tokens,completion_tokens are i32 default zero. Optional metadata,
+  request_tags,messages,response,proxy_server_request are serde_json::Value using the pinned
+  column defaults when omitted. This is typed fixture data, never arbitrary SQL. api_key is
+  always the existing FixtureSeed::key_hash of the selected raw fixture token. Bind each field
+  in a fixed INSERT into LiteLLM_SpendLogs, mapping snake_case timestamp fields to startTime,
+  endTime and completionStartTime; let the pinned schema supply columns the fixture does not
+  expose. Bind Decimal through numeric text cast to double precision without a Rust float.
+  Timestamp strings are bound through PostgreSQL TIMESTAMP(3) casts; SQL rejection fails fixture
+  setup before either gateway starts. No production timestamp parser or new permissive parser
+  is introduced. A duplicate request_id is an insert failure, not an upsert.
+
+  validate rejects more than 256 logs, duplicate ids, invalid key indices, a scalar string over
+  4096 bytes, a JSON field over 65536 serialized bytes and negative counters or durations; it
+  does not prohibit negative spend. Validate before provisioning and again in seed for direct
+  callers. Diagnostics identify only row/field and never print tokens, metadata or payloads.
+  The current-schema switch is fixture-only, not a gateway option or environment variable.
+  Daily user/team/tag records stay B9270's daily_usage seed; richer DailyUserSpend cache/savings
+  rows and key/organization metadata stay B9260's finops seed. Do not create a rival daily-row
+  decoder. Other entity tables can be empty while still proving their real HTTP contracts.
+
+  In dashboard/tests.rs use the normal PostgresFixture API for dashboard_schema_is_independent,
+  dashboard_spend_rows_round_trip, dashboard_seed_rejects_bad_rows and dashboard_daily_seed_interop.
+  Prove the absent-field fixture still lacks final tables, an empty dashboard seed contains
+  Lens, ROI, all daily entities and current SpendLogs columns, and two fixtures have identical
+  schema but independent data. Insert two users' logs with distinct hashes, a shared session,
+  a null metadata field, explicit JSON payloads and Decimal spend; inspect them with independent
+  SQL, not betterlite-db. Exercise daily_usage and finops together with dashboard to prove
+  schema creation is not repeated and records are not dropped. A bad timestamp or constraint
+  failure must clean resources through the existing owner. Missing PostgreSQL is a failure.
+
+  The existing outside-byte decoder is betterlite_oracle::case::decode_case(Path, &[u8]); its
+  http_case fuzz target already reaches fixture validation. Add dashboard-fixture-* top-level
+  negative corpus files for unknown fields, bad index, duplicate id, oversized JSON and excess
+  rows; the existing replay treats new names as rejected, so no shared filename registry changes
+  are required. Add a test-only dashboard_fixture module in tools/oracle/src with the test
+  decodes_dashboard_fixture exercising absent, empty and populated positive forms plus the
+  invalid corpus, and proving decoded fields survive into both provisioning inputs. Reuse serde,
+  sha2, secrecy, rust_decimal and tokio-postgres already present. This support task ports zero
+  LiteLLM functions; about 450 source/fixture-decoder lines plus tests fits one worker.
+scope:
+  paths:
+    - tools/postgres-fixture/src/dashboard.rs
+    - tools/postgres-fixture/src/dashboard/**
+    - tools/oracle/src/dashboard_fixture.rs
+    - tools/oracle/src/dashboard_fixture/**
+    - tools/oracle/fuzz/corpus/http_case/dashboard-fixture-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L703-L748
+    why: Current SpendLogs fields used by independent typed fixture inserts; product schema remains B701 and its schema parts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L848-L1104
+    why: The already copied pinned SQL supplies all daily tables, while B9270/B9260 retain their row contracts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1898-L1917
+    why: Lens tables must not be created twice when the full independent history replaces BASELINE.
+dod:
+  - text: Selecting dashboard provisions the independently hash-checked final schema, while absence preserves the historical fixture and databases remain isolated.
+    proof: [dashboard-schema, fixture-regression]
+  - text: Populated logs preserve hashed key references, Decimal and JSON fields, and coexist with the two existing daily seed extensions.
+    proof: [dashboard-rows, dashboard-daily]
+  - text: Invalid rows fail before proxy startup with redacted diagnostics, and the real HTTP case decoder accepts valid dashboard seeds and rejects its new fuzz corpus.
+    proof: [dashboard-validation, dashboard-decoder, dashboard-corpus]
+checks:
+  optional: []
+  commands:
+    - id: dashboard-schema
+      why: The fixture does not select the independent final history or changes baseline-only provisioning.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(dashboard_schema_is_independent)'
+    - id: dashboard-rows
+      why: Real provisioned databases contain incorrect logs, hashes, nulls or amounts.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(dashboard_spend_rows_round_trip)'
+    - id: dashboard-daily
+      why: The dashboard schema collides with existing daily schema setup or loses either seed's records.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(dashboard_daily_seed_interop)'
+    - id: dashboard-validation
+      why: Invalid fixtures reach a proxy, expose secrets in errors or leave a database after failed insertion.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(dashboard_seed_rejects_bad_rows)'
+    - id: dashboard-decoder
+      why: The HTTP parser accepts a bad dashboard field or drops a valid fixture before provisioning.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(decodes_dashboard_fixture)'
+    - id: dashboard-corpus
+      why: New malformed dashboard fixture bytes are missing or accepted by the existing HTTP decoder.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/dashboard-fixture-*')" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+    - id: fixture-regression
+      why: The optional schema selection breaks existing identity fixtures or database cleanup.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/postgres-fixture/src/dashboard.rs)" &&
+        cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B860 owns resource provisioning and baseline identity rows; B701 and schema tasks own product migrations, and this module uses only independent files already on main.
+  - B9270 owns daily user/team/tag rows and B9260 owns FinOps rows; shared FixtureSeed, FixtureError and seed_sql attachments are an architect prerequisite.
+  - B9741-B9744 own page HTTP cases; this module never calls a proxy handler or fills a server response.
+pitfalls:
+  - Running BASELINE plus the full history would create conflicting tables and invalidate the independence proof.
+  - A correctly typed dashboard seed that is silently ignored by one provisioning path is not a passing fixture.
+  - FinOps and daily_usage still need their row insertion when their schema installation is bypassed.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

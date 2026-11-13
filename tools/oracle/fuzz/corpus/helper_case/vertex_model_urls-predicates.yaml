@@ -1,0 +1,8 @@
+kind: helper
+name: vertex-model-urls-predicates-seed
+call:
+  vertex_model_urls:
+    model_predicates:
+      models: ['vertex_ai/gemini/456', gemini-flash-latest, 'bge/bge/x']
+env: {}
+compare: {ignore: []}

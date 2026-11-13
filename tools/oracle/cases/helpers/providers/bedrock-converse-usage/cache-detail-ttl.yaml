@@ -1,0 +1,7 @@
+kind: helper
+name: bedrock-converse-usage-cache-detail-ttl
+call:
+  bedrock_converse_usage:
+    transform_usage: {usage: {inputTokens: 10, outputTokens: 5, cacheWriteInputTokenCount: 3, cacheDetails: [{inputTokens: 1, ttl: 5m}, {inputTokens: 2, ttl: 1h}]}, reasoning_content: null, thinking_ran: false, provider_reasoning_tokens: null}
+env: {}
+compare: {ignore: []}

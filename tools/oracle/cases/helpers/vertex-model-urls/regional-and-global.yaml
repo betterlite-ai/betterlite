@@ -1,0 +1,16 @@
+kind: helper
+name: regional-and-global
+call:
+  vertex_model_urls:
+    urls:
+      cases:
+        - {kind: vertex, mode: chat, model: gemini-2.5-flash, project: proj, location: global, api_version: v1}
+        - {kind: vertex, mode: chat, model: gemini-2.5-flash, stream: true, project: proj, location: us-central1, api_version: v1beta1}
+        - {kind: vertex, mode: chat, model: gemini-3-pro-preview, stream: true, project: proj, location: us, api_version: v1}
+        - {kind: vertex, mode: chat, model: gemini-2.5-flash, stream: false, project: proj, location: europe-west1, api_version: v1beta1}
+        - {kind: vertex, mode: count_tokens, model: gemini-2.5-flash, project: proj, location: us, api_version: v1beta1}
+        - {kind: vertex, mode: count_tokens, model: 'gemini/1234', project: proj, location: us, api_version: v1}
+        - {kind: vertex, mode: image_generation, model: '1234567890', project: proj, location: us-central1, api_version: v1beta1}
+        - {kind: vertex, mode: image_generation, model: imagen-3.0-generate-001, project: proj, location: us, api_version: v1beta1}
+env: {}
+compare: {ignore: []}

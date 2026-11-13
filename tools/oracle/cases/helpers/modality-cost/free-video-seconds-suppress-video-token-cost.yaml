@@ -1,0 +1,18 @@
+kind: helper
+name: free-video-seconds-suppress-video-token-cost
+call:
+  modality_cost:
+    operation: prompt
+    prompt_tokens: 10
+    text_tokens: 10
+    video_tokens: 4
+    video_length_seconds: "3"
+    model_info:
+      input_cost_per_video_token: "0.5"
+      input_cost_per_video_per_second: "0"
+    prompt_base_cost: "0.5"
+    cache_read_cost: "0"
+    cache_creation_cost: "0"
+    cache_creation_cost_above_1hr: "0"
+compare: {ignore: []}
+env: {}

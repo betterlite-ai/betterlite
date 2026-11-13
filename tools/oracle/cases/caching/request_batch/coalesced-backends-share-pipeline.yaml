@@ -1,0 +1,34 @@
+kind: helper
+name: caching-request-batch-coalesced-backends-share-pipeline
+call:
+  b4331:
+    caches:
+      - {setting: one, namespace: ns}
+      - {setting: one, namespace: ns}
+      - {setting: one, namespace: other}
+      - {setting: two, namespace: ns}
+    deadline_millis: 1000
+    in_scope: true
+    replies:
+      one:
+        MGET:
+          - {array: [{bulk: "1"}]}
+          - {array: [{bulk: "2"}]}
+          - {array: [{bulk: "3"}]}
+      two:
+        MGET:
+          - {array: [{bulk: "4"}]}
+    steps:
+      - {kind: batch, cache: 0, keys: [a]}
+      - {kind: batch, cache: 1, keys: [b]}
+      - {kind: batch, cache: 2, keys: [c]}
+      - {kind: batch, cache: 3, keys: [d]}
+      - {kind: snapshot}
+      - {kind: await, handle: 0}
+      - {kind: await, handle: 1}
+      - {kind: snapshot}
+      - {kind: await, handle: 2}
+      - {kind: await, handle: 3}
+      - {kind: snapshot}
+env: {}
+compare: {ignore: []}

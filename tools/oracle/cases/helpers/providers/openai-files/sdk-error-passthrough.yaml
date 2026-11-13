@@ -1,0 +1,17 @@
+kind: helper
+name: openai-files-sdk-error-passthrough
+call:
+  openai_files:
+    action: retrieve_file
+    client: {api_key: sk-files, api_base: 'https://files.test/v1', supplied: null, is_async: true}
+    request:
+      file_id: file-x
+    reply:
+      status: 404
+      headers: [[content-type, application/json]]
+      json: {error: {message: 'No such File object: file-x', type: invalid_request_error, param: id, code: file_not_found}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/raised/message
+      why: the SDK formats the error body as a Python dict repr while betterlite prints compact JSON

@@ -1,0 +1,18 @@
+kind: helper
+name: logging-metadata-metadata-merge
+call:
+  logging_metadata:
+    function: merge_litellm_metadata
+    litellm_params:
+      metadata:
+        team_id: team-a
+        user_api_key_auth: {token: secret}
+        user_api_key_budget_reservation: {reserved: 2}
+        extra_user_key: user-value
+        langfuse_masking_function: not-callable
+      litellm_metadata:
+        team_id: model-team
+        model_group: gpt-4o
+        extra_model_key: model-value
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+kind: helper
+name: vault-secret-operations-rotate-new-write-fails
+env: {}
+compare: {ignore: []}
+call:
+  b4417:
+    env:
+      HCP_VAULT_TOKEN: token
+    routes:
+      - route: "GET http://127.0.0.1:8200/v1/secret/data/OLD_KEY"
+        replies:
+          - {status: 200, body: '{"data":{"data":{"key":"old-secret"}}}'}
+      - route: "POST http://127.0.0.1:8200/v1/secret/data/NEW_KEY"
+        replies:
+          - {status: 400, body: '{"errors":["invalid request"]}'}
+    steps:
+      - {op: rotate, current: OLD_KEY, new: NEW_KEY, value: new-secret}

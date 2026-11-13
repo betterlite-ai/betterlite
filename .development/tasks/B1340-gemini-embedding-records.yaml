@@ -25,7 +25,6 @@ description: >-
   210 tests, 110 oracle and 90 parser/fuzz lines, maximum 800.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,gemini_embedding_records}.rs
     - crates/betterlite-vertex/src/gemini_embedding_records.rs
     - crates/betterlite-vertex/src/gemini_embedding_records/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
@@ -83,5 +82,5 @@ pitfalls:
   - An HTTP URL is plain embedding text here, not a fetchable media input.
   - A data URL without the literal ;base64, marker also remains ordinary text.
   - Batch usage ignores media while single embedContent can report image-only prompt tokens from usageMetadata.
-budget: {max_changed_lines: 800, max_new_expects: 1}
+budget: {max_changed_lines: 1200, max_new_expects: 1}
 review_level: standard

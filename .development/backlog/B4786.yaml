@@ -2,7 +2,7 @@ id: B4786
 milestone: M9 agents and mcp
 title: Trigger agent kill switches and manage public discovery
 status: todo
-depends_on: [B4770, B4774, B4775, B4776, B732, B864]
+depends_on: [B4770, B4774, B4775, B4776, B732, B864, B4781]
 file: tasks/B4786-agent-admin-actions.yaml
 covers:
   - "litellm/proxy/agent_endpoints/endpoints.py"

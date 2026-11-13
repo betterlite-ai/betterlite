@@ -1,0 +1,113 @@
+id: B8062
+title: Python get_llm_provider and the provider lookup helpers
+description: >-
+  Give `betterlite` the provider lookup functions of litellm_core_utils/get_llm_provider_logic.py:
+  `get_llm_provider`, `inferred_provider`, `declared_authenticating_provider`, `is_registered_custom_provider`, the two
+  `handle_*_model_custom_llm_provider` helpers and `_get_openai_compatible_provider_info`. The rules are Rust: B209 identity
+  and prefix, B174 resolution, B210 and B211 the OpenAI-compatible defaults. This task adds the native family `provider`
+  and the Python layer. Python reads settings and environment-free arguments, calls Rust, and returns LiteLLM's tuples.
+
+
+  Native family `provider`, as B5659 describes it: `src/provider.rs` with one `register` function, code in `src/provider/**`,
+  types in `python/betterlite/_native_provider.pyi`, B5369 declares the `provider` family in `lib.rs` and `_native.pyi` with a stub `register` that this task fills. A
+  `#[pyclass] NativeProviders` is built from a JSON settings text and has `get_llm_provider(request_json)`,
+  `openai_compatible_info(request_json)` and `declared_authenticating(request_json)`. The settings snapshot holds
+  `custom_provider_map`, `provider_list`, `openai_compatible_providers`, `openai_compatible_endpoints`, `model_list`-style sets
+  that B174 reads (the same names `betterlite._settings` has), and the environment lookups B210 and B211 make are done by
+  Rust through B174's injected config, not by Python. The snapshot is rebuilt at call time from `betterlite._settings` so a
+  later `betterlite.custom_provider_map = [...]` takes effect. Pure conversions sit in `src/provider/convert.rs` with tests
+  named `provider_request_` and `provider_result_`.
+
+
+  Python lives in `python/betterlite/_provider/` with an explicit `__all__`.
+  `get_llm_provider(model, custom_llm_provider=None, api_base=None, api_key=None, litellm_params=None)` returns
+  `(model, custom_llm_provider, dynamic_api_key, api_base)`. A `litellm_params` object (the `GenericLiteLLMParams` of B5658)
+  contributes `custom_llm_provider`, `api_base` and `api_key` only when all three arguments are `None`. `model=None` raises
+  `ValueError("model parameter is required but was None. Please provide a valid model name.")` at the top. A native error
+  becomes the exception class named in its `type` through B158's mapping in `betterlite._completion.errors`, so an unknown
+  provider raises `BadRequestError` with LiteLLM's text. `inferred_provider(model)` returns `None` for an empty model and for
+  any name that fails to resolve, and returns the declared provider first for `github_copilot` and `chatgpt`.
+  `is_registered_custom_provider(name)` is the one-line scan of `custom_provider_map`, which Python keeps since the map is
+  a Python list of objects.
+
+
+  `_endpoint_matches_api_base`, `_is_non_openai_azure_model` and `_is_azure_claude_model` stay in Rust (B209). They are
+  security relevant: a caller's `api_base` such as `https://attacker.com/api.groq.com/openai/v1` must not select the
+  Groq key. The Python tests send exactly that shape and expect the same answer as LiteLLM.
+
+
+  The tests compare tuples and error classes with the same inputs against LiteLLM: `gpt-4`, `azure/gpt-4o`, `azure/command-r-plus`,
+  `claude-3-5-sonnet-20240620`, `groq/llama3-8b-8192`, `openrouter/x/y`, a bare unknown name, an `api_base` pointing at each
+  OpenAI-compatible endpoint, and the hostile `api_base` above.
+scope:
+  paths:
+  - crates/betterlite-python/src/provider.rs
+  - crates/betterlite-python/src/provider/**
+  - crates/betterlite-python/python/betterlite/_native_provider.pyi
+  - crates/betterlite-python/Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-python/python/betterlite/_provider/**
+  - crates/betterlite-python/tests/test_provider.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L19-L132
+  why: Endpoint match by parsed URL, the Azure checks and the Cohere and Anthropic text handlers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L134-L157
+  why: declared_authenticating_provider and inferred_provider.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L158-L240
+  why: get_llm_provider signature, the early checks and litellm_params use.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L565-L600
+  why: is_registered_custom_provider and the OpenAI-compatible info function.
+dod:
+- text: "`get_llm_provider` returns LiteLLM's four-tuple for the fixed model list, with and without `custom_llm_provider`, `api_base` and `litellm_params`."
+  proof: [provider-lookup]
+- text: "`model=None` and an unknown name raise LiteLLM's exception class and message."
+  proof: [provider-errors]
+- text: "A hostile `api_base` that contains a registered endpoint inside its path does not select that provider, as in LiteLLM."
+  proof: [provider-errors]
+- text: "`inferred_provider`, `declared_authenticating_provider` and `is_registered_custom_provider` match LiteLLM, including a later assignment to `custom_provider_map`."
+  proof: [provider-lookup]
+- text: "`_get_openai_compatible_provider_info` and the two `handle_*` helpers return LiteLLM's tuples."
+  proof: [provider-lookup]
+- text: JSON conversions for every native method parse without an interpreter, and malformed text gives an error, not a panic.
+  proof: [provider-native]
+- text: The `_provider` package passes ruff and strict basedpyright.
+  proof: [python-lint]
+- text: >-
+    This task adds every Cargo.toml dependency it uses and no unused ones.
+  proof: [provider-lookup]
+checks:
+  optional: []
+  commands:
+  - id: provider-lookup
+    why: A resolved tuple differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_provider.py -k "lookup or inferred or openai_compatible"
+  - id: provider-errors
+    why: An error class, text or the hostile api_base case differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_provider.py -k "errors or hostile"
+  - id: provider-native
+    why: A conversion breaks or panics.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^provider::/)'
+  - id: python-lint
+    why: A strict type error in the provider package.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`get_llm_provider` for `github_copilot` and `chatgpt` does not start the OAuth device flow."
+  why: Those flows are owned by their provider tasks. Until they register a hook, the call returns the declared provider and the stored key lookup result, with no prompt.
+- what: This task has no helper oracle cases.
+  why: The pytest file compares both packages, and B174, B209, B210 and B211 own the resolver cases.
+out_of_scope:
+- "Resolution rules, the OpenAI-compatible default tables and endpoint matching are Rust (B209, B174, B210, B211)."
+- "`_dashscope_family_chat_config` (L569-L574) returns config classes, which arrive with the DashScope provider tasks."
+- "`LiteLLMProxyChatConfig.should_use_litellm_proxy_by_default` and the proxy branch of get_llm_provider belong to the litellm_proxy provider task."
+pitfalls:
+- "The `litellm_params` values only replace the arguments when all three of `custom_llm_provider`, `api_base` and `api_key` are `None`, not one by one."
+- "`inferred_provider` swallows every error and returns `None`, so a test that expects a raise there is wrong."
+- "`custom_provider_map` is a list of dicts with a `provider` key, and the same name may appear twice."
+- "A model such as `azure/command-r-plus` returns the `openai` provider with the model unchanged, not `azure`."
+- "The returned `dynamic_api_key` is a secret, so a test must not print it and a log line must not carry it."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

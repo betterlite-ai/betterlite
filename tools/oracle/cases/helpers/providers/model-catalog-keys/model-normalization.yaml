@@ -1,0 +1,23 @@
+kind: helper
+name: model-catalog-keys-model-normalization
+call:
+  model_catalog_keys:
+    model_cost: [gpt-4o]
+    steps:
+      - {op: strip_model_name, model: "gpt-4o-2024-08-06", custom_llm_provider: null}
+      - {op: strip_model_name, model: "gpt-4o-2024-08-06", custom_llm_provider: openai}
+      - {op: strip_model_name, model: "gpt-4o-2024-08-06\n", custom_llm_provider: openai}
+      - {op: strip_model_name, model: "ft:gpt-3.5-turbo:my-org:custom_suffix:id", custom_llm_provider: openai}
+      - {op: strip_model_name, model: "ft:gpt-4o-2024-08-06:my-org::id", custom_llm_provider: null}
+      - {op: strip_model_name, model: "ft:gpt-4o:a:b", custom_llm_provider: null}
+      - {op: strip_model_name, model: "gemini-1.5-pro-002", custom_llm_provider: vertex_ai}
+      - {op: strip_model_name, model: "gemini-1.5-pro-002", custom_llm_provider: gemini}
+      - {op: strip_model_name, model: "llama-3-1", custom_llm_provider: databricks}
+      - {op: strip_model_name, model: "ft:x-1", custom_llm_provider: vertex_ai}
+      - {op: strip_model_name, model: "m-2024-01-02", custom_llm_provider: vertex_ai}
+      - {op: strip_model_name, model: "us.meta.llama3-2-11b-instruct-v1:0", custom_llm_provider: bedrock}
+      - {op: strip_model_name, model: "meta.llama3-2-11b-instruct-v1:0", custom_llm_provider: bedrock_converse}
+      - {op: strip_model_name, model: "ft:us.meta.llama3-v1:0", custom_llm_provider: bedrock}
+      - {op: strip_model_name, model: "Claude-3-2024-01-02", custom_llm_provider: null}
+env: {}
+compare: {ignore: []}

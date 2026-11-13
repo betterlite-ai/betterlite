@@ -1,0 +1,22 @@
+kind: helper
+name: cyberark-read-404-not-found
+env: {}
+compare: {ignore: []}
+call:
+  b4418:
+    env: {CYBERARK_API_KEY: key-1}
+    routes:
+      - route: "POST http://127.0.0.1:8080/authn/default/admin/authenticate"
+        replies: [{status: 200, body: '{"protected":"abc"}'}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/missing"
+        replies: [{status: 404, body: ""}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/broken"
+        replies: [{status: 500, body: boom}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/offline"
+        replies: [{failure: true}]
+    steps:
+      - {op: read, name: missing}
+      - {op: sync_read, name: missing}
+      - {op: read, name: broken}
+      - {op: read, name: offline}
+      - {op: read, name: unscripted}

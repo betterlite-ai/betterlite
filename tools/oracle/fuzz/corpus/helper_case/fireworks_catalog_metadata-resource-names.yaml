@@ -1,0 +1,13 @@
+kind: helper
+name: fireworks-catalog-metadata-seed-resource-names
+call:
+  fireworks_catalog_metadata:
+    steps:
+      - {op: resolve_resource, model: "fireworks_ai/glm-4p6"}
+      - {op: resolve_resource, model: "kimi-k2p6-fast"}
+      - {op: resolve_resource, model: "firerouter/kimi-k3/deepseek-v4"}
+      - {op: resolve_resource, model: "FW-Kimi-K3"}
+      - {op: resolve_resource, model: "glm-4p6#accounts/gitlab/deployments/2fb7764c"}
+      - {op: cost_key, model: "auto"}
+env: {}
+compare: {ignore: []}

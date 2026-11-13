@@ -1,0 +1,50 @@
+kind: helper
+name: bedrock-signing-bearer-skips-sts
+call:
+  bedrock_signing:
+    calls:
+      - request_headers:
+          credentials: null
+          region: us-west-2
+          extra_headers:
+            Authorization: ignored-in-bearer
+          endpoint: https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude/invoke
+          data:
+            text: '{"inputText":"hello"}'
+          headers:
+            content-type: application/json
+            x-custom: keep
+          api_key: bedrock-api-key
+          now: 1767225600
+      - service_request:
+          service_name: bedrock-agentcore
+          headers:
+            content-type: text/plain
+          optional_params:
+            aws_access_key_id:
+              bad: 1
+          request_data:
+            b: 1
+            a: héllo
+            n: 1.0
+          api_base: https://bedrock-agentcore.us-west-2.amazonaws.com/runtimes/x/invocations
+          api_key: bedrock-api-key
+          credentials:
+            access_key_id: UNUSED
+            secret_access_key: unused-secret
+          now: 1767225600
+      - request_headers:
+          credentials: null
+          region: us-west-2
+          extra_headers: {}
+          endpoint: https://bedrock-runtime.us-west-2.amazonaws.com/model/anthropic.claude/invoke
+          data:
+            text: '{"inputText":"hello"}'
+          headers:
+            content-type: application/json
+          api_key: bedrock-api-key
+          configured_bearer_token: env-token
+          supports_bearer_token: false
+          now: 1767225600
+env: {}
+compare: {ignore: []}

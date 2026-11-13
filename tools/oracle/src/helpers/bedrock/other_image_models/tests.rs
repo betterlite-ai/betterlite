@@ -3,7 +3,7 @@ use std::fs;
 use std::path::Path;
 
 use super::{Input, Op};
-use crate::case::{HelperCase, parse_helper_case};
+use crate::case::{HelperCase, helper::validate_helper};
 use crate::helpers::Helper as _;
 
 #[test]
@@ -32,7 +32,12 @@ fn helper_seeds_select_bedrock_other_image_models() {
         .collect();
     assert!(!seeds.is_empty());
     assert!(seeds.iter().all(|source| {
-        parse_helper_case(source).is_ok()
+        serde_saphyr::from_str(source)
+            .map_err(|error| error.to_string())
+            .and_then(|parsed| {
+                validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
+            })
+            .is_ok()
             && serde_saphyr::from_str::<HelperCase>(source)
                 .is_ok_and(|case| case.call.operation == "bedrock_other_image_models")
     }));

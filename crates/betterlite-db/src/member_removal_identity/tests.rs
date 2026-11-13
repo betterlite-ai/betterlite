@@ -59,6 +59,13 @@ fn member_fixture(user_id: Option<&str>, user_email: Option<&str>) -> Member {
     }
 }
 
+fn identity_fixture(user_id: Option<&str>, user_email: Option<&str>) -> MemberIdentity {
+    MemberIdentity {
+        user_id: user_id.map(str::to_owned),
+        user_email: user_email.map(str::to_owned),
+    }
+}
+
 #[rstest]
 #[case::identity_defaults_and_both_absent_error(None, None, false)]
 #[case::empty_identifier_is_present(Some(String::new()), None, true)]
@@ -82,12 +89,10 @@ fn both_absent_rejected_with_message() {
 }
 
 #[rstest]
-#[case::email_exact_case_and_whitespace(
-    Some("Alice@Example.com "),
-    Some("alice@example.com"),
-    false
-)]
+#[case::email_case_only_differs(Some("Alice@example.com"), Some("alice@example.com"), false)]
+#[case::email_trailing_space_differs(Some("a@example.com "), Some("a@example.com"), false)]
 #[case::null_email_never_matches(Some("a@example.com"), None, false)]
+#[case::both_emails_null(None, None, false)]
 #[case::exact_email_matches(Some("a@example.com"), Some("a@example.com"), true)]
 fn same_email_matching(
     #[case] candidate: Option<&str>,
@@ -117,6 +122,20 @@ fn same_email_matching(
     Some("a@example.com"),
     false
 )]
+#[case::email_only_matches_roster_email(
+    None,
+    Some("a@example.com"),
+    Some("u9"),
+    Some("a@example.com"),
+    true
+)]
+#[case::email_only_rejects_other_email(
+    None,
+    Some("a@example.com"),
+    Some("u9"),
+    Some("b@example.com"),
+    false
+)]
 fn addresses_member_matching(
     #[case] request_id: Option<&str>,
     #[case] request_email: Option<&str>,
@@ -124,22 +143,43 @@ fn addresses_member_matching(
     #[case] member_email: Option<&str>,
     #[case] expected: bool,
 ) {
-    let request = MemberIdentity {
-        user_id: request_id.map(str::to_owned),
-        user_email: request_email.map(str::to_owned),
-    };
+    let request = identity_fixture(request_id, request_email);
     let member = member_fixture(member_id, member_email);
     assert_eq!(addresses_member(&member, &request), expected);
 }
 
-#[test]
-fn user_row_id_overrides_email() {
-    let request = MemberIdentity {
-        user_id: Some("u1".to_owned()),
-        user_email: Some("different@example.com".to_owned()),
-    };
-    let user = user_fixture("u1", Some("other@example.com"));
-    assert!(addresses_user(&user, &request));
+#[rstest]
+#[case::user_row_id_overrides_email(
+    (Some("u1"), Some("different@example.com")),
+    "u1",
+    Some("other@example.com"),
+    true
+)]
+#[case::id_request_ignores_row_email(
+    (Some("u1"), Some("a@example.com")),
+    "u2",
+    Some("a@example.com"),
+    false
+)]
+#[case::email_only_matches_row_email(
+    (None, Some("a@example.com")),
+    "u2",
+    Some("a@example.com"),
+    true
+)]
+fn addresses_user_matching(
+    #[case] request_identity: (Option<&str>, Option<&str>),
+    #[case] row_id: &str,
+    #[case] row_email: Option<&str>,
+    #[case] expected: bool,
+) {
+    assert_eq!(
+        expected,
+        addresses_user(
+            &user_fixture(row_id, row_email),
+            &identity_fixture(request_identity.0, request_identity.1),
+        )
+    );
 }
 
 #[rstest]
@@ -170,6 +210,7 @@ fn with_row_email_filling(
     &[2, 3]
 )]
 #[case::duplicate_empty_identifier(&[(Some(""), None), (Some(""), None)], &[1])]
+#[case::email_only_requests_differ(&[(None, Some("e1")), (None, Some("e2"))], &[])]
 #[case::earlier_duplicate_still_counts(
     &[
         (Some("u1"), Some("e1")),

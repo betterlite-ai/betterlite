@@ -1,0 +1,12 @@
+kind: helper
+name: per-item-tokens-single-item-response
+call:
+  b4298:
+    get_per_item_prompt_tokens:
+      usage:
+        prompt_tokens: 7
+      data_count: 1
+      idx: 0
+env: {}
+compare:
+  ignore: []

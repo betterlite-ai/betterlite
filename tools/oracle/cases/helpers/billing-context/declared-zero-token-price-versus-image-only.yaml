@@ -1,0 +1,49 @@
+kind: helper
+name: billing-context-declared-zero-token-price-versus-image-only
+call:
+  billing_context:
+    calls:
+      - function: identity
+        catalog:
+          - key: router-token
+            entry: {input_cost_per_token: 0}
+        identity:
+          model: request-model
+          custom_llm_provider: openai
+          custom_pricing: true
+          router_model_id: router-token
+      - function: identity
+        catalog:
+          - key: router-image
+            entry: {input_cost_per_image: 0.04}
+        identity:
+          model: request-model
+          custom_llm_provider: openai
+          custom_pricing: true
+          router_model_id: router-image
+      - function: identity
+        catalog:
+          - key: router-seconds
+            entry: {cost_per_second: null}
+        identity:
+          model: request-model
+          custom_llm_provider: openai
+          custom_pricing: true
+          router_model_id: router-seconds
+      - function: identity
+        catalog:
+          - key: router-tiered
+            entry: {tiered_pricing: []}
+        identity:
+          model: request-model
+          custom_llm_provider: openai
+          custom_pricing: true
+          router_model_id: router-tiered
+      - function: identity
+        identity:
+          model: request-model
+          custom_llm_provider: openai
+          custom_pricing: true
+          router_model_id: missing-router
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,44 @@
+task: B684
+deviations:
+  - what: >-
+      An api_version year or month written with non-ASCII Unicode decimal digits is rejected
+      with an error that names the field, where Python's int() reads those digits as their
+      numeric value.
+    why: >-
+      Rust's char::to_digit reads only ASCII decimal digits, and an Azure api_version is an
+      ASCII date; refusing the value names the field instead of guessing a comparison.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/chat/gpt_transformation.py#L174-L176
+  - what: >-
+      An api_version year or month with more digits than an i64 holds is rejected with an
+      error that names the field, where Python's int() has no bound and compares it.
+    why: >-
+      The comparison only orders the value against 2024 and 8; a year past i64::MAX cannot be
+      a real Azure api_version and is refused instead of silently wrapping.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/chat/gpt_transformation.py#L174-L176
+  - what: >-
+      A response_format json_schema without a schema key is a 400 BadRequest error that names
+      the field, where _add_response_format_to_tools raises KeyError on value["json_schema"]["schema"]
+      and LiteLLM turns it into a 500.
+    why: >-
+      The value comes from the client request, so a 4xx belongs where LiteLLM produces an
+      unhandled KeyError; no working setup can rely on the 500, and the deviation is recorded
+      rather than copied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L212
+  - what: >-
+      A response_format json_schema that is not an object (a string, null, number, boolean or
+      list) is a 400 BadRequest error that names the field, where _add_response_format_to_tools
+      subscripts it and LiteLLM turns the TypeError into a 500.
+    why: >-
+      The value comes from the client request, so a 4xx belongs where LiteLLM produces an
+      unhandled TypeError; no working setup can rely on the 500, and the deviation is recorded
+      rather than copied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L212
+  - what: >-
+      A tools value that is not a list, while a list-valued tools is being extended, is a
+      400 BadRequest error that names the field, where optional_params["tools"].extend raises
+      AttributeError and LiteLLM turns it into a 500.
+    why: >-
+      The value comes from the client request, so a 4xx belongs where LiteLLM produces an
+      unhandled AttributeError; no working setup can rely on the 500, and the deviation is
+      recorded rather than copied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L226

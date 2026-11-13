@@ -1,0 +1,104 @@
+id: B3337
+title: Video status transport
+description: >-
+  Build the two video status handlers from BaseLLMHTTPHandler in betterlite-core::api::video_status_transport: video_status_handler (sync, with the _is_async switch) and async_video_status_handler.
+  They send one status request for a video id through a provider that implements the B3331 video operation trait, and hand the raw HTTP response back to the provider to convert.
+  B3339 calls this task for the video status call, never the reverse.
+
+  Sync flow. When the caller passes _is_async=true, return the async handler's future right away, before any client is chosen, with every argument forwarded (the sync-only _is_async flag is the one thing dropped).
+  Otherwise pick the client: use the supplied one only when it is a sync HTTPHandler, else take the B173 sync client built with ssl_verify read from litellm_params (default none).
+  Call validate_environment(api_key, headers = extra_headers or empty map, model = "", litellm_params), then copy extra_headers over the returned map when extra_headers is non-empty.
+  Call get_complete_url(model = "", api_base = litellm_params api_base or none, litellm_params).
+  Call transform_video_status_retrieve_request(video_id, api_base, litellm_params, headers) and keep the returned (url, data) pair.
+  Then call logging_obj.pre_call(input = "", api_key = "") with additional_args holding api_base = url, headers, video_id and data.
+  Inside one try block: if data is a non-empty map, POST the url with the headers and the JSON body data (Vertex AI fetchPredictOperation works this way); otherwise (none or an empty map) send a GET with the url and headers.
+  Then call transform_video_status_retrieve_response(raw_response, logging_obj, custom_llm_provider, client = the chosen sync client) and return its result.
+  Any error raised inside the try block, from the send or from the response transform, goes through the shared _handle_error with the status provider config, and the converted error is what the caller sees. The error conversion itself belongs to B2402.
+
+  Async flow. Pick the client the same way but mirrored: use the supplied one only when it is an async handler, else take the B173 pooled async client for the LlmProviders value of custom_llm_provider with ssl_verify from litellm_params.
+  Steps up to and including pre_call are identical to the sync flow. In the try block the POST or GET is awaited, and the result comes from async_transform_video_status_retrieve_response (not the sync transform), passing the async client as client.
+  The trait's default async transform just calls the sync one without the client; that default lives in B3331.
+
+  Two parameters are accepted but not used in either variant, and the Rust signatures keep them so call sites stay one to one with LiteLLM: extra_body (never merged into the request) and timeout (never passed to the POST or the GET, so the chosen client's own timeout applies). There is no raise_for_status step: a 4xx or 5xx response reaches the provider's transform, which decides what to do with it.
+  Model the handler as a plain struct holding the injected B173 client factories, the B249 logging handle and the B2402 error converter, with the provider config as a trait object argument. Errors are one enum in this module that wraps the converted error.
+  Parts of the same LiteLLM file are owned elsewhere: see out_of_scope.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/video_status_transport.rs
+    - crates/betterlite-core/src/api/video_status_transport/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8604-L8708
+    why: video_status_handler, the _is_async switch, sync client choice, header build, URL and request transform, pre_call, POST-or-GET choice, response transform and error conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8710-L8798
+    why: async_video_status_handler, async client choice and the async response transform with the async client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L253-L289
+    why: The provider methods this handler calls, with the default async transform that falls back to the sync one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L459-L490
+    why: Vertex returns a body from its status request transform, which is the only reason the POST branch exists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1062-L1074
+    why: The one caller, to see which arguments it passes (timeout, extra_body, client, no api_key).
+dod:
+  - text: The sync handler returns the async handler's future when _is_async is true, forwards every other argument, and picks no client first.
+    proof: [status-dispatch]
+  - text: The sync handler uses a supplied client only when it is a sync handler, otherwise the pooled sync client with ssl_verify from litellm_params; the async handler does the mirror with the async pool for the provider.
+    proof: [status-client-choice]
+  - text: Headers come from validate_environment called with extra_headers (or an empty map) and model "", then extra_headers are copied over the result; the base URL comes from get_complete_url with model "".
+    proof: [status-request-build]
+  - text: pre_call is called once, before the send and outside the try block, with input "", api_key "" and additional_args api_base (the transformed URL), headers, video_id and data.
+    proof: [status-pre-call]
+  - text: A non-empty data map from the request transform gives a POST with a JSON body; none or an empty map gives a GET with no body.
+    proof: [status-method-choice]
+  - text: The sync handler passes the sync client to transform_video_status_retrieve_response and the async handler calls async_transform_video_status_retrieve_response with the async client.
+    proof: [status-response-transform]
+  - text: Neither handler passes timeout to the send or merges extra_body into the request, and neither calls raise_for_status.
+    proof: [status-ignored-params]
+  - text: An error from the send or from the response transform is converted by the shared _handle_error with the status provider config, while errors from validate_environment, get_complete_url and the request transform are not converted.
+    proof: [status-error-scope]
+checks:
+  optional: []
+  commands:
+    - id: status-dispatch
+      why: the _is_async switch is missing, returns after a client was picked, or drops arguments
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_status_transport::(.*::)?async_flag_returns_future/)'
+    - id: status-client-choice
+      why: client selection ignores the supplied client type or drops ssl_verify
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_status_transport::(.*::)?client_choice_/)'
+    - id: status-request-build
+      why: header merge order, model "" or the URL inputs are wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_status_transport::(.*::)?request_build_/)'
+    - id: status-pre-call
+      why: the pre_call payload, its position before the try block or its data key is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_status_transport::(.*::)?pre_call_/)'
+    - id: status-method-choice
+      why: the POST or GET choice does not follow whether data is non-empty
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_status_transport::(.*::)?method_choice_/)'
+    - id: status-response-transform
+      why: the sync or async response transform is not called with the matching client
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_status_transport::(.*::)?response_transform_/)'
+    - id: status-ignored-params
+      why: timeout or extra_body reaches the request, or a status check was added
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_status_transport::(.*::)?ignored_params_/)'
+    - id: status-error-scope
+      why: the _handle_error boundary is wider or narrower than LiteLLM's try block
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_status_transport::(.*::)?error_scope_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "async_video_delete_handler (llm_http_handler.py 8528-8602): no caller at the pin, there is no video delete function or route in litellm/videos or the proxy; B3331 already lists the delete transforms the same way."
+  - "Video generation and content handlers (B3333), remix and list handlers (B3334), character handlers (B3335), edit and extension handlers (B3336)."
+  - "The status call that decodes the video id, builds litellm_params and sets the call type (B3339)."
+  - "The status request and response transforms of each provider (B525 OpenAI, B547 Azure, B1361 and B1362 Vertex, B1363 and B1364 Gemini, plus the Fal and Runway tasks); this task calls them only through the B3331 trait."
+  - "The pooled sync and async clients and ssl_verify handling (B173); the shared _handle_error and its error conversion (B2402); pre_call dispatch and masking (B249)."
+pitfalls:
+  - "The POST branch is chosen by whether data is non-empty, not by provider name, so an empty map from a provider must still produce a GET."
+  - "pre_call here carries a data key in additional_args, which the video delete handler does not; the key is present even when data is none."
+  - "The _is_async branch comes first, so the sync handler builds no client, headers or URL when it returns the future."
+  - "The timeout argument is accepted by both handlers and by the caller (which passes timeout or DEFAULT_REQUEST_TIMEOUT) but is never sent; do not add it to the POST or the GET."
+  - "The sync handler calls transform_video_status_retrieve_response and the async handler calls async_transform_video_status_retrieve_response; fal_ai overrides only the async one, so using the sync one in the async path changes its result."
+  - "validate_environment gets headers = extra_headers or empty map and then extra_headers are applied again to its result, so extra_headers win over provider defaults such as Authorization."
+  - "The async client comes from get_async_httpx_client with LlmProviders(custom_llm_provider); an unknown provider name fails there, outside the try block, and is not converted by _handle_error."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

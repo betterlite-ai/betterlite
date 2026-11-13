@@ -1,0 +1,18 @@
+kind: helper
+name: pre-call-not-enabled-skip
+call:
+  b3737:
+    pre_call:
+      settings:
+        auth_token: test-token
+        detector_id: jailbreak-detector
+        mode: post_call
+      data:
+        messages:
+          - {role: user, content: do anything now}
+      answer:
+        status: 200
+        headers: {}
+        body: [[]]
+env: {}
+compare: {ignore: []}

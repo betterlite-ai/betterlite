@@ -1,0 +1,24 @@
+kind: probe
+name: cancellation-stops-upstream
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        router:
+          timeout: "30"
+          global_timeout: {seconds: "6000", explicitly_set: false}
+          cancelled: true
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/routing_timeouts/attempt_started
+      reference: true
+      rust: false
+      why: LiteLLM has no plan-level cancellation, so its attempt still reaches the provider client, while betterlite refuses the attempt before the transport call
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L393-L396
+    - pointer: /output/routing_timeouts/cancelled
+      reference: null
+      rust: true
+      why: the cancellation token is a betterlite routing state with no LiteLLM field to compare it against
+      link: ""

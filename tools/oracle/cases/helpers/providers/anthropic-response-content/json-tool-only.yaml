@@ -1,0 +1,8 @@
+kind: helper
+name: anthropic-response-content-json-tool-only
+call:
+  anthropic_response_content:
+    response: {content: [{type: tool_use, id: j, name: json_tool_call, input: {values: false}}], context_management: {edits: []}, container: {id: container_1}}
+    json_mode: true
+env: {}
+compare: {ignore: []}

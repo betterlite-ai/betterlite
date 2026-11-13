@@ -1,0 +1,5 @@
+kind: helper
+name: init-token
+call: {"b3152": {"operation": "init", "token": "ghp_secret", "api_url": "https://github.example/api"}}
+env: {}
+compare: {ignore: []}

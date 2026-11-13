@@ -1,0 +1,13 @@
+kind: helper
+name: proxy-exception-model-access-sanitized
+call:
+  b8410:
+    kind: access_denied
+    message: model access denied
+    internal_message: "line one\r\nline two\nline three"
+    type: key_model_access_denied
+    param: model
+    code: 403
+env: {}
+compare:
+  ignore: []

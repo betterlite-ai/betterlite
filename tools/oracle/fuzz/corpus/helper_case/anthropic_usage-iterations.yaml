@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic_usage-iterations
+call:
+  anthropic_usage:
+    usage:
+      input_tokens: 1
+      output_tokens: 1
+      iterations:
+        - {input_tokens: 2, output_tokens: 3, cache_creation_input_tokens: 4, cache_creation: {ephemeral_5m_input_tokens: 1}}
+    reasoning_content: null
+    completion_response: null
+    speed: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,33 @@
+kind: helper
+name: responses-parameters-mcp-headers
+call:
+  responses_parameters:
+    action: mcp_headers
+    steps:
+      - secret_fields: {raw_headers: {x-mcp-auth: legacy, x-mcp-github-authorization: old, Authorization: oauth}}
+        tools: null
+      - secret_fields: {raw_headers: {x-mcp-auth: legacy, x-mcp-github-authorization: old, Authorization: oauth}}
+        tools:
+          - {type: mcp, headers: {x-mcp-github-authorization: new, x-custom: v}}
+      - secret_fields: null
+        tools:
+          - {type: mcp, headers: {x-mcp-github-authorization: token}}
+      - secret_fields: null
+        tools: null
+      - secret_fields: {raw_headers: {}}
+        tools: null
+      - secret_fields: {raw_headers: {Authorization: oauth}}
+        tools: null
+      - secret_fields: {other: 1}
+        tools: []
+      - secret_fields: null
+        tools:
+          - {type: mcp, headers: {}}
+          - {type: function, headers: {x-mcp-github-authorization: token}}
+          - {type: mcp, headers: token}
+          - 3
+      - secret_fields: null
+        tools:
+          - {type: mcp, headers: {X-MCP-GitHub-Authorization: token}}
+env: {}
+compare: {ignore: []}

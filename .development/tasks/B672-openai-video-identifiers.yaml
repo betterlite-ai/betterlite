@@ -217,7 +217,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_multipart_input_file$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_video_identifiers.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_video_identifiers.py tools/oracle/helpers/openai_video_identifiers)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -230,7 +230,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_video_identifiers)"
       && grep -q 'decode_provider_video_id' crates/betterlite-openai/fuzz/fuzz_targets/openai_video_identifiers.rs
-      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_video_identifiers_corpus$/)'
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_video_identifiers_corpus(::|$)/)'
   - id: case-encode-identity-guards
     why: An empty provider or empty ID returns the original unchanged; any successfully decoded non-None provider,
       including an empty string, prevents double encoding even when the requested provider/model differ.

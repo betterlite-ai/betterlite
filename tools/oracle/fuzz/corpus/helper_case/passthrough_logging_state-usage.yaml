@@ -1,0 +1,10 @@
+kind: helper
+name: passthrough-logging-state-usage
+call:
+  b3605:
+    operation: parse_usage
+    headers:
+      - [x-litellm-response-cost, "0.5"]
+      - [x-litellm-total-tokens, "7"]
+env: {}
+compare: {ignore: []}

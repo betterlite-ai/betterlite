@@ -1,0 +1,68 @@
+task: B3942
+deviations:
+  - what: >-
+      A traceparent header sent by the client does not become the New Relic trace id
+      through the logging callback path: betterlite's LoggerEvent carries no inbound
+      request headers, so process_event has no headers to pass to the trace-context
+      resolution and uses StandardLoggingPayload.trace_id, or a generated id when that
+      is empty. LiteLLM reads litellm_params.metadata.headers.traceparent first.
+    why: >-
+      B1104 (Request headers and tracing, todo) owns
+      add_litellm_metadata_from_request_headers, which extracts the W3C traceparent
+      into litellm_trace_id (litellm_pre_call_utils.py L1588-L1598); B253's
+      logging_payload_trace_id already sources the standard payload trace id from
+      litellm_trace_id, so once B1104 lands the trace id this logger reports for a
+      traceparent-carrying request is the client's. When another trace source also sets
+      litellm_trace_id, LiteLLM's header-first precedence still differs: the raw header
+      would have to ride on LoggerEvent (B8740), which it does not today. B3941's
+      resolution already prefers a supplied case-insensitive traceparent, and the direct
+      process_success test covers that path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L280-L292
+  - what: >-
+      The newrelic.agent module is an injected boundary rather than an import. With no
+      agent installed the New Relic logger disables itself with the "New Relic Python
+      agent not installed" error and records no events or metrics, which is the same
+      fallback LiteLLM takes when its ImportError handler sets _newrelic_agent = None.
+    why: >-
+      betterlite is a Rust binary and cannot import the Python agent package. The
+      boundary keeps LiteLLM's optional-import behavior: a missing agent never crashes
+      the gateway and every request skips New Relic emission.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L62-L65
+  - what: >-
+      The supportability metric name is Supportability/Python/ML/LiteLLM/{version}, but
+      the version is betterlite's own package version and "unknown" when the version is
+      unavailable, where LiteLLM reads version("litellm") from importlib.metadata.
+    why: >-
+      The metric reports the version of the package that emits it, and betterlite is its
+      own package with its own version. A version lookup cannot fail at compile time, so
+      an absent version stands in for LiteLLM's "unknown" fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L183-L196
+  - what: >-
+      When proxy-level message redaction is on (litellm_settings.turn_off_message_logging
+      or the litellm-enable-message-redaction request header), the New Relic logger
+      records the "redacted-by-litellm" placeholder as content instead of omitting the
+      content attribute. The request-level turn_off_message_logging dynamic parameter and
+      the New Relic switches still omit the attribute, as LiteLLM does.
+    why: >-
+      A callback receives the already-redacted StandardLoggingPayload and no inbound
+      request headers, so the placeholder cannot be told apart from real message content.
+      The value carries no message text, so nothing leaks; LiteLLM sees the original
+      kwargs in the logging object and omits the attribute instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L539
+  - what: >-
+      A duration that is not a finite float (a response_time whose seconds overflow
+      f64) is left out of the LlmChatCompletionSummary event instead of being sent.
+    why: >-
+      New Relic event attributes are JSON numbers, and JSON cannot carry NaN or
+      infinity. LiteLLM passes the Python float through to the agent, but no working
+      setup produces an infinite response time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L435-L465
+  - what: >-
+      A failure to fetch the New Relic application cannot be observed through the
+      injected agent boundary, so the logger treats it like an application that is not
+      enabled: it skips the event with a warning instead of counting a callback failure.
+    why: >-
+      The boundary models newrelic.agent.application() as an Option because a missing
+      application is the normal state before the agent registers; Python's agent can
+      also raise from application(), which LiteLLM counts as a callback failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L636-L645

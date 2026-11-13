@@ -35,8 +35,6 @@ description: >-
   budget 240 state machine/codec, 215 tests, 115 adapters, 75 fuzz and 45 wiring lines (690 total).
 scope:
   paths:
-    - crates/betterlite-openai/src/chatgpt.rs
-    - crates/betterlite-openai/src/chatgpt/**
     - crates/betterlite-openai/src/chatgpt/login.rs
     - crates/betterlite-openai/src/chatgpt/login/**
     - crates/betterlite-openai/fuzz/Cargo.toml

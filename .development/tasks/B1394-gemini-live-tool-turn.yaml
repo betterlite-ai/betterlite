@@ -30,7 +30,6 @@ description: >-
   140 adapters/seed wiring within 600; JSON byte decoding belongs to B1382.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,gemini_live_tool_turn}.rs
     - crates/betterlite-vertex/src/gemini_live_tool_turn.rs
     - crates/betterlite-vertex/src/gemini_live_tool_turn/**
     - tools/oracle/src/helpers/vertex/gemini_live_tool_turn.rs

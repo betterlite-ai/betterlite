@@ -2,8 +2,8 @@ id: B121
 milestone: M8 platform
 title: Proxy CLI flags, startup, workers and bug reports
 status: todo
-depends_on: [B003, B051, B710, B711, B712, B717, B857, B4170, B4171, B4172, B4173, B4174, B4175, B4176, B4177]
-file: null
+depends_on: [B9550, B8374, B8375, B4177]
+file: tasks/B121-listener-flags.yaml
 covers:
   - "litellm/proxy/proxy_cli.py"
   - "litellm/proxy/start.sh"

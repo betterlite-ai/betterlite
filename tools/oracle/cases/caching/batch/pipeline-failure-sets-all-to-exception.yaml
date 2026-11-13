@@ -1,0 +1,13 @@
+kind: helper
+name: caching-batch-pipeline-failure-sets-all-to-exception
+call:
+  b4330:
+    namespace: ns
+    default_ttl: 60
+    refused: true
+    steps:
+      - declare: {kind: mget, keys: [a]}
+      - declare: {kind: increment, key: b, value: 1.5}
+      - await_all
+env: {}
+compare: {ignore: []}

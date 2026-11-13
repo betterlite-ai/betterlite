@@ -5,9 +5,7 @@ description: 'Add the typed shadow-evaluation request model and pure validation 
   Enforce direction-specific model scope and reject judge/candidate overlap before any work is queued.
   Keep Decimal budgets and explicit target kinds throughout, and fuzz the management request parser. This
   part creates no jobs and runs no judge calls. Implement the owned native service in crates/betterlite-server/src/shadow_eval_validation.rs.
-  Add ProbeOperation::ShadowEvalValidation in tools/oracle/src/router_probes/mod.rs and the corresponding B345 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::ShadowEvalValidation and its Python entry as stubs, so fill only tools/oracle/src/router_probes/shadow_eval_validation.rs and tools/oracle/litellm/probes/shadow_eval_validation.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/proxy/management_endpoints/auto_router_endpoints.py:
@@ -24,23 +22,15 @@ description: 'Add the typed shadow-evaluation request model and pure validation 
   (L499-L513). Implement these behaviors through the typed Rust services above; synchronous facades and
   structural accessors reuse the same primitive instead of separate ports. Bound the shadow_req outside-byte
   parser to 1048576 bytes before decoding; on excess use its typed invalid-input outcome (classifier/observation
-  consumers keep their pinned warning/fallback path).'
+  consumers keep their pinned warning/fallback path). This task adds no route or server state, so leave routes.rs and state.rs to B1100.'
 scope:
   paths:
   - crates/betterlite-server/src/shadow_eval_validation.rs
   - crates/betterlite-server/src/shadow_eval_validation/**
-  - crates/betterlite-server/src/error.rs
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/shadow_eval_validation.rs
   - crates/betterlite-server/src/routing/shadow_eval_validation/**
   - tools/oracle/src/router_probes/shadow_eval_validation.rs
   - tools/oracle/src/router_probes/shadow_eval_validation/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/shadow_eval_validation.py
   - tools/oracle/cases/routing/shadow-eval-validation/**
   - crates/betterlite-server/fuzz/Cargo.toml
@@ -124,7 +114,7 @@ deviations:
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L329-L513
 out_of_scope:
 - Starting, listing or stopping jobs (B356).
-- Shadow traffic duplication and judging (B118).
+- Shadow traffic duplication and judging (B4084 runs the shadow calls and blind judgments, B4085 the detached evaluation pipeline and its budget gate).
 - 'litellm/proxy/management_endpoints/auto_router_endpoints.py: B051 owns: _TeamTable.find_unique (L97-L97),
   _VerificationTokenRow.token (L102-L102), _VerificationTokenRow.key_alias (L105-L105), _VerificationTokenRow.key_name
   (L108-L108), _VerificationTokenRow.team_id (L111-L111), _VerificationTokenTable.find_unique (L115-L115),
@@ -163,7 +153,7 @@ out_of_scope:
 pitfalls:
 - Equal strings in key, team and user target namespaces are different targets.
 - A judge cannot also be a candidate in any sampled team's resolved pool.
-- B118 owns the evaluation runtime; do not duplicate it in route validation.
+- B4084 and B4085 own the evaluation runtime (shadow calls, judging and the spend gate); do not duplicate it in route validation.
 - Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
   a hard request error.
 - The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules

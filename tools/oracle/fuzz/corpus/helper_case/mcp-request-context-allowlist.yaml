@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8191_allowlist_check_seed","call":{"b8191":{"operation":"allowlist_check","scenarios":[{"allowlist":{"aliases_by_value":{"client-1":"app one"},"jwt_field":"azp","header":"x-client-id"},"jwt_claims":{"azp":"client-1"}}]}},"env":{},"compare":{"ignore":[]}}

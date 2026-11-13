@@ -1,0 +1,25 @@
+kind: helper
+name: langfuse-trace-attributes-metadata
+call:
+  b3901:
+    steps:
+      - function: trace_attributes
+        fields:
+          name: trace-name
+          metadata:
+            count: 1
+            flag: true
+            ratio: 1.5
+            big: 9007199254740992
+            nil: null
+            list: [x]
+            text: note
+      - function: trace_attributes
+        fields:
+          metadata: note
+      - function: trace_attributes
+        fields:
+          metadata: {}
+env: {}
+compare:
+  ignore: []

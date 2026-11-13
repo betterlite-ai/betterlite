@@ -1,0 +1,11 @@
+kind: helper
+name: phoenix-config-port-4317
+call:
+  b3850:
+    function: phoenix_config
+    environment:
+      PHOENIX_COLLECTOR_ENDPOINT: http://phoenix-collector:4317
+env:
+  PHOENIX_COLLECTOR_ENDPOINT: http://phoenix-collector:4317
+compare:
+  ignore: []

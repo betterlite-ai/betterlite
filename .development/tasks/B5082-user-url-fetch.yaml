@@ -130,7 +130,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B009 owns the destination allowlist helpers in url_utils.py (L159-239), assert_same_origin (L367-405) and the general_settings.provider_url_destination_allowed_hosts override in _apply_ssrf_general_settings; B171 owned encode_url_path_segment and encode_url_path_segments (L96-127).
-  - Re-applying these settings from the database overlay (ProxyConfig._apply_ssrf_settings, proxy_server.py L7997-7998) and from /config/field/update (update_config_general_settings, L18264-18368) belongs to the tasks that build those paths under B124.
+  - Re-applying these settings from the database overlay (ProxyConfig._apply_ssrf_settings, proxy_server.py L7997-7998) and from /config/field/update (update_config_general_settings, L18264-18368) belongs to B8379 (the overlay) and B8595 (/config/field/update).
   - The query string of the outgoing GET is B173's transport contract (HTTPHandler.extract_query_params plus the httpx query rebuild) and its recorded deviation; pass the URL to the client unchanged.
   - Callers (B5083 media download, B227 Bedrock images, B3451 RAG upload, B3801 guardrail http_request, B3073 PointFive delivery) choose their own client, timeout and size limits.
 pitfalls:

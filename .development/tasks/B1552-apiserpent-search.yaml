@@ -2,7 +2,7 @@ id: B1552
 title: Map APISerpent quick and deep GET searches
 description: >-
   Add api::search_providers::apiserpent implementing the search configuration, parameter dataclass
-  behavior and exports under apiserpent/search. Use B091 SearchResponse/SearchResult and its shared
+  behavior and exports under apiserpent/search. Use B3270 SearchResponse/SearchResult and its shared
   server-credential resolver. Load APISERPENT_API_BASE default https://apiserpent.com and unset
   APISERPENT_API_KEY through apiserpent_search_settings in betterlite-config. A truthy explicit key
   bypasses environment fallback; server keys require the shared trusted-netloc check against the
@@ -34,14 +34,8 @@ description: >-
   170 oracle/fuzz lines, capped at 700. B048 will bind the provider to the search executor.
 scope:
   paths:
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
-    - crates/betterlite-core/src/api/search_providers.rs
-    - crates/betterlite-core/src/api/search_providers/**
     - crates/betterlite-core/src/api/search_providers/apiserpent.rs
     - crates/betterlite-core/src/api/search_providers/apiserpent/**
-    - crates/betterlite-config/src/providers.rs
-    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/apiserpent.rs
     - crates/betterlite-config/src/providers/apiserpent/**
     - crates/betterlite-core/fuzz/Cargo.toml
@@ -60,7 +54,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/apiserpent/search/defaults.py#L11-L66
     why: Actual dataclass defaults and the only numeric validation performed.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L137-L189
-    why: B091's shared host restriction for server-managed search credentials.
+    why: B3270's shared host restriction for server-managed search credentials.
 dod:
   - text: APISerpent settings, quick/deep parameter precedence and query URL construction agree with the source.
     proof: [apiserpent-tests, oracle, apiserpent-python]
@@ -89,7 +83,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/apiserpent-search/flat-and-organic-results.yaml
 deviations: []
 out_of_scope:
-  - The root apiserpent package initializer stays with B048; shared search contracts, credential policy and HTTP routes remain B091.
+  - The root apiserpent package initializer stays with B048; shared search contracts and credential policy remain B3270, HTTP execution is B3276 and the HTTP routes are B8275.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as apiserpent_search in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/apiserpent_search.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/apiserpent_search.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - deep=true with num=2 is accepted unless max_results is also supplied.

@@ -1,0 +1,14 @@
+id: B7871
+milestone: M12 python
+title: Python create_file, file_retrieve, file_delete, file_list and the files package
+status: todo
+depends_on: [B7870, B6040, B158, B167, B1028, B1029]
+file: tasks/B7871-python-file-calls.yaml
+covers:
+  - "litellm/files/main.py"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

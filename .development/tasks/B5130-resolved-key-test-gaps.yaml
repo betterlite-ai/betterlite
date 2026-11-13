@@ -1,0 +1,299 @@
+id: B5130
+title: Resolved key edge inputs in tests and oracle cases
+description: >-
+  B2314 built the resolved key types in crates/betterlite-auth/src/resolved_key/. An Opus review
+  after merge found eight tests that can't fail on the behavior they name. The code on main already
+  matches LiteLLM in all eight places, so this task changes only three test files
+  (credential/tests.rs, view/tests.rs and auth/tests.rs under resolved_key/) and adds 17 oracle
+  cases under tools/oracle/cases/helpers/resolved-key/. Every new case is kind helper and calls the
+  existing resolved_key operation with a function and a value, like the 34 cases already there.
+
+
+  Gap one, JWT shape. LiteLLM's JWTHandler.is_jwt is true only when the token splits into exactly
+  three dot segments
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L275-L280).
+  jwt_empty_segments_count, jwt-named-segments.yaml and hash-and-jwt-shape.yaml all send three
+  segments, so a count check loosened to >= 2 or >= 3 still passes, and the stored token of
+  "a.b.c.d" would turn into hashed-jwt-... Add an rstest non_jwt_segment_counts_pass_through in
+  credential/tests.rs with cases two_segments ("a.b") and four_segments ("a.b.c.d"). Each asserts
+  that is_jwt(Some(value)) is false and that safe_hash_api_key(value) returns value unchanged. Add
+  is_jwt cases jwt-two-segments-false.yaml and jwt-four-segments-false.yaml with the same values.
+
+
+  Gap two, Bearer prefix. _safe_hash_litellm_api_key strips the seven-character "bearer " prefix
+  once, without regard to case, before the sk- and JWT checks
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3475-L3492),
+  and check_api_key writes that result to both token and api_key
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3469-L3472).
+  bearer_prefix_casefold_once_without_trim never sends two prefixes, so code that strips the prefix
+  in a loop still passes, and no oracle case sends a Bearer value at all. Add a test
+  double_bearer_prefix_stripped_once in credential/tests.rs that asserts
+  safe_hash_api_key("Bearer bearer sk-x") == "bearer sk-x". Add auth cases
+  auth-bearer-prefix-stripped.yaml with api_key "Bearer sk-abc", so the stripped hash is compared
+  with LiteLLM's, and auth-double-bearer-stripped-once.yaml with api_key "Bearer bearer sk-abc",
+  where LiteLLM answers "bearer sk-abc" for both api_key and token.
+
+
+  Gap three, model_max_budget as a JSON string. LiteLLM_VerificationTokenView.__init__ fills a
+  litellm_budget_table_ value over an empty dict only when the target is model_max_budget
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3342-L3345),
+  and LiteLLM_VerificationToken declares model_max_budget: dict = {} with no validator that decodes
+  JSON text
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L43).
+  So the string "{}" is not an empty dict, no fill happens, and pydantic raises ValidationError.
+  json_string_not_empty_dict in view/tests.rs sends "{}" to team_model_aliases, where the fill never
+  applies and Payload decoding fails anyway, so code that reads "{}" as an empty model_max_budget
+  still passes. Replace it with model_max_budget_json_string_rejected. It sends
+  {"litellm_budget_table_model_max_budget": {"gpt-4": 1.0}, "model_max_budget": "{}"} and asserts
+  that VerificationTokenView::construct returns an error. Add view case
+  view-budget-json-string-not-empty-dict.yaml with the same input.
+
+
+  Gap four, empty organization_id. __init__ moves organization_id into org_id whenever it is not
+  None
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3350-L3351),
+  so an empty string wins over org_id. organization_id_overrides_org_id in view/tests.rs only sends
+  "override", so code that skips an empty organization_id still passes. Turn it into an rstest with
+  cases override_value (today's input and answer) and empty_organization_id, where
+  {"org_id": "explicit", "organization_id": ""} gives org_id "". Add view case
+  view-organization-id-empty-overrides.yaml with the second input.
+
+
+  Gap five, fields that are excluded but not stripped. UserAPIKeyAuth declares budget_reservation,
+  team_budget_snapshot, user_budget_snapshot, org_budget_snapshot, matched_model_access_groups and
+  budget_throttle_pct as typed fields with exclude=True
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3427-L3432),
+  and check_api_key does not pop any of them
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3445-L3473).
+  Pydantic validates each one, keeps it on the object and leaves it out of model_dump.
+  excluded_but_not_stripped_fields_accepted in auth/tests.rs checks only budget_reservation, and
+  auth-excluded-but-not-stripped.yaml sends valid values that both sides leave out of the output.
+  So adding any of the other five names to STRIPPED_FIELDS in auth.rs passes every test and case.
+  Turn the test into an rstest with one case per field, named after the field. Each case
+  constructs a valid value, asserts the typed field on extra is Some, and asserts the name is absent
+  from the serialized output. The presence check comes from a const table of (name, fn) pairs in
+  the style of MARKER_CHECKS. The valid values are budget_reservation {"k": "v"},
+  team_budget_snapshot {"user_api_key_team_budget_reset_at": null,
+  "user_api_key_team_table_max_budget": 1.5}, user_budget_snapshot
+  {"user_api_key_user_budget_reset_at": null, "user_api_key_user_table_max_budget": null,
+  "user_api_key_user_alias": "u"}, org_budget_snapshot {"user_api_key_org_spend": 1.0,
+  "user_api_key_org_max_budget": null}, matched_model_access_groups ["a"] and budget_throttle_pct
+  0.5. The snapshot keys are the aliases LiteLLM declares
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/carried_budget_state.py#L39-L64).
+  Add six auth cases with a wrong-typed value, where LiteLLM raises ValidationError and a stripped
+  field would answer success: auth-budget-reservation-validated.yaml (budget_reservation 5),
+  auth-team-budget-snapshot-validated.yaml (team_budget_snapshot 5),
+  auth-user-budget-snapshot-validated.yaml (user_budget_snapshot 5),
+  auth-org-budget-snapshot-validated.yaml (org_budget_snapshot 5),
+  auth-matched-model-access-groups-validated.yaml (matched_model_access_groups 5) and
+  auth-budget-throttle-pct-validated.yaml (budget_throttle_pct "x").
+  auth-excluded-but-not-stripped.yaml stays as it is, since it still catches a valid value being
+  rejected.
+
+
+  Gap six, per-model limits. rpm_limit_per_model and tpm_limit_per_model are both
+  dict[str, int] | None
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3365-L3366).
+  per_model_limits_integer_values in auth/tests.rs rejects 1.5 only in rpm_limit_per_model, so a
+  tpm map that takes floats still passes. Turn it into an rstest with cases rpm_limit_per_model and
+  tpm_limit_per_model. Each case accepts {"gpt-4": 5}, keeps it in the serialized output, and
+  rejects {"gpt-4": 1.5} with AuthError::Json. Add auth case
+  auth-tpm-limit-per-model-float-error.yaml next to auth-per-model-limits-float-error.yaml.
+
+
+  Gap seven, service accounts. is_team_service_account checks user_id is None, team_id is not None,
+  a non-empty metadata and service_account_id is not None
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3544-L3551).
+  An empty team_id or an empty service_account_id still counts. service_account_none_vs_empty_fields
+  in auth/tests.rs has neither input and no oracle case calls service_account, so a truthiness check
+  still passes. Add cases empty_team_id
+  ({"user_id": null, "team_id": "", "metadata": {"service_account_id": "svc"}}) and
+  empty_service_account_id
+  ({"user_id": null, "team_id": "t1", "metadata": {"service_account_id": ""}}), both expecting true.
+  Add service_account cases service-account-empty-team-id.yaml and
+  service-account-empty-service-account-id.yaml with the same inputs.
+
+
+  Gap eight, admin view. user_api_key_has_admin_view is true only for proxy_admin and
+  proxy_admin_viewer
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3554-L3564),
+  so internal_user_viewer answers false
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L176-L183).
+  admin_view_admin_and_viewer_only in auth/tests.rs leaves out internal_user_viewer, the role
+  easiest to mix up with proxy_admin_viewer, and no oracle case calls admin_view, though B2314's DoD
+  named oracle proof for it. Add #[case::internal_user_viewer("internal_user_viewer", false)]. Add
+  admin_view cases admin-view-internal-user-viewer-false.yaml ({user_role: internal_user_viewer})
+  and admin-view-proxy-admin-viewer-true.yaml ({user_role: proxy_admin_viewer}), so the oracle sees
+  one false and one true answer.
+scope:
+  paths:
+    - crates/betterlite-auth/src/resolved_key/credential/tests.rs
+    - crates/betterlite-auth/src/resolved_key/view/tests.rs
+    - crates/betterlite-auth/src/resolved_key/auth/tests.rs
+    - tools/oracle/cases/helpers/resolved-key/jwt-two-segments-false.yaml
+    - tools/oracle/cases/helpers/resolved-key/jwt-four-segments-false.yaml
+    - tools/oracle/cases/helpers/resolved-key/auth-bearer-prefix-stripped.yaml
+    - tools/oracle/cases/helpers/resolved-key/auth-double-bearer-stripped-once.yaml
+    - tools/oracle/cases/helpers/resolved-key/view-budget-json-string-not-empty-dict.yaml
+    - tools/oracle/cases/helpers/resolved-key/view-organization-id-empty-overrides.yaml
+    - tools/oracle/cases/helpers/resolved-key/auth-budget-reservation-validated.yaml
+    - tools/oracle/cases/helpers/resolved-key/auth-team-budget-snapshot-validated.yaml
+    - tools/oracle/cases/helpers/resolved-key/auth-user-budget-snapshot-validated.yaml
+    - tools/oracle/cases/helpers/resolved-key/auth-org-budget-snapshot-validated.yaml
+    - tools/oracle/cases/helpers/resolved-key/auth-matched-model-access-groups-validated.yaml
+    - tools/oracle/cases/helpers/resolved-key/auth-budget-throttle-pct-validated.yaml
+    - tools/oracle/cases/helpers/resolved-key/auth-tpm-limit-per-model-float-error.yaml
+    - tools/oracle/cases/helpers/resolved-key/service-account-empty-team-id.yaml
+    - tools/oracle/cases/helpers/resolved-key/service-account-empty-service-account-id.yaml
+    - tools/oracle/cases/helpers/resolved-key/admin-view-internal-user-viewer-false.yaml
+    - tools/oracle/cases/helpers/resolved-key/admin-view-proxy-admin-viewer-true.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L275-L280
+    why: is_jwt is true only for exactly three dot segments, so two or four segments pass through unhashed as JWTs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3445-L3492
+    why: check_api_key pops only the fifteen server markers and writes the hashed key to token and api_key. _safe_hash_litellm_api_key strips one bearer prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3331-L3353
+    why: The view's __init__, with the empty-dict fill only for model_max_budget and the organization_id override whenever it is not None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L43
+    why: model_max_budget is a plain dict field, so a JSON string fails validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3365-L3366
+    why: Both per-model limit maps take integer values only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3427-L3432
+    why: The six typed fields that are excluded from model_dump but still validated.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/carried_budget_state.py#L39-L64
+    why: The snapshot models and the alias keys a valid test value uses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3544-L3564
+    why: is_team_service_account tests None only, and user_api_key_has_admin_view allows proxy_admin and proxy_admin_viewer only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L153-L233
+    why: The role values, including proxy_admin_viewer and internal_user_viewer.
+dod:
+  - text: >-
+      non_jwt_segment_counts_pass_through in credential/tests.rs has cases two_segments and
+      four_segments that assert is_jwt is false and safe_hash_api_key returns the input unchanged,
+      and is_jwt cases jwt-two-segments-false.yaml and jwt-four-segments-false.yaml exist.
+    proof:
+      - jwt-segment-count
+      - resolved-key-tests
+      - oracle
+  - text: >-
+      double_bearer_prefix_stripped_once in credential/tests.rs asserts that "Bearer bearer sk-x"
+      becomes "bearer sk-x", and auth cases auth-bearer-prefix-stripped.yaml and
+      auth-double-bearer-stripped-once.yaml exist.
+    proof:
+      - bearer-prefix-once
+      - resolved-key-tests
+      - oracle
+  - text: >-
+      model_max_budget_json_string_rejected in view/tests.rs replaces json_string_not_empty_dict and
+      asserts that a "{}" string in model_max_budget with a budget table value fails construct, and
+      view case view-budget-json-string-not-empty-dict.yaml exists.
+    proof:
+      - model-max-budget-json-string
+      - resolved-key-tests
+      - oracle
+  - text: >-
+      organization_id_overrides_org_id in view/tests.rs is an rstest whose empty_organization_id
+      case gives org_id "", and view case view-organization-id-empty-overrides.yaml exists.
+    proof:
+      - empty-organization-id
+      - resolved-key-tests
+      - oracle
+  - text: >-
+      excluded_but_not_stripped_fields_accepted in auth/tests.rs is an rstest with one case for each
+      of budget_reservation, team_budget_snapshot, user_budget_snapshot, org_budget_snapshot,
+      matched_model_access_groups and budget_throttle_pct, each asserting the field is kept on extra
+      and left out of the output. The six wrong-typed auth cases named in the description exist.
+    proof:
+      - excluded-fields-validated
+      - resolved-key-tests
+      - oracle
+  - text: >-
+      per_model_limits_integer_values in auth/tests.rs is an rstest with cases rpm_limit_per_model
+      and tpm_limit_per_model, each accepting an integer map and rejecting 1.5, and auth case
+      auth-tpm-limit-per-model-float-error.yaml exists.
+    proof:
+      - per-model-limit-floats
+      - resolved-key-tests
+      - oracle
+  - text: >-
+      service_account_none_vs_empty_fields in auth/tests.rs has cases empty_team_id and
+      empty_service_account_id expecting true, and service_account cases
+      service-account-empty-team-id.yaml and service-account-empty-service-account-id.yaml exist.
+    proof:
+      - service-account-empty-values
+      - resolved-key-tests
+      - oracle
+  - text: >-
+      admin_view_admin_and_viewer_only in auth/tests.rs has an internal_user_viewer case expecting
+      false, and admin_view cases admin-view-internal-user-viewer-false.yaml and
+      admin-view-proxy-admin-viewer-true.yaml exist.
+    proof:
+      - admin-view-internal-viewer
+      - resolved-key-tests
+      - oracle
+checks:
+  optional: []
+  commands:
+    - id: jwt-segment-count
+      why: no test or case sends two or four dot segments, so a loosened JWT segment count still passes
+      run: test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/resolved-key/jwt-two-segments-false.yaml tools/oracle/cases/helpers/resolved-key/jwt-four-segments-false.yaml | wc -l)" -eq 2 && list=$(cargo nextest list --locked -p betterlite-auth -E 'test(/^resolved_key::credential::tests::non_jwt_segment_counts_pass_through::/)' --message-format oneline) && for name in two_segments four_segments; do grep -qE "::case_[0-9]+_${name}$" <<< "$list" || { echo "missing case $name"; exit 1; }; done && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^resolved_key::credential::tests::non_jwt_segment_counts_pass_through::/)'
+    - id: bearer-prefix-once
+      why: no test sends two Bearer prefixes and no oracle case sends a Bearer value
+      run: test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/resolved-key/auth-bearer-prefix-stripped.yaml tools/oracle/cases/helpers/resolved-key/auth-double-bearer-stripped-once.yaml | wc -l)" -eq 2 && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^resolved_key::credential::tests::double_bearer_prefix_stripped_once$/)'
+    - id: model-max-budget-json-string
+      why: the JSON string test targets team_model_aliases, so a "{}" string read as an empty model_max_budget still passes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/resolved-key/view-budget-json-string-not-empty-dict.yaml)" && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^resolved_key::view::tests::model_max_budget_json_string_rejected$/)'
+    - id: empty-organization-id
+      why: no test or case sends an empty organization_id, so skipping it still passes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/resolved-key/view-organization-id-empty-overrides.yaml)" && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^resolved_key::view::tests::organization_id_overrides_org_id::case_[0-9]+_empty_organization_id$/)'
+    - id: excluded-fields-validated
+      why: only budget_reservation is checked, so stripping any of the other five excluded fields still passes
+      run: test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/resolved-key/auth-budget-reservation-validated.yaml tools/oracle/cases/helpers/resolved-key/auth-team-budget-snapshot-validated.yaml tools/oracle/cases/helpers/resolved-key/auth-user-budget-snapshot-validated.yaml tools/oracle/cases/helpers/resolved-key/auth-org-budget-snapshot-validated.yaml tools/oracle/cases/helpers/resolved-key/auth-matched-model-access-groups-validated.yaml tools/oracle/cases/helpers/resolved-key/auth-budget-throttle-pct-validated.yaml | wc -l)" -eq 6 && list=$(cargo nextest list --locked -p betterlite-auth -E 'test(/^resolved_key::auth::tests::excluded_but_not_stripped_fields_accepted::/)' --message-format oneline) && for name in budget_reservation team_budget_snapshot user_budget_snapshot org_budget_snapshot matched_model_access_groups budget_throttle_pct; do grep -qE "::case_[0-9]+_${name}$" <<< "$list" || { echo "missing case $name"; exit 1; }; done && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^resolved_key::auth::tests::excluded_but_not_stripped_fields_accepted::/)'
+    - id: per-model-limit-floats
+      why: the float rejection runs only for rpm_limit_per_model, so a tpm map that takes floats still passes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/resolved-key/auth-tpm-limit-per-model-float-error.yaml)" && list=$(cargo nextest list --locked -p betterlite-auth -E 'test(/^resolved_key::auth::tests::per_model_limits_integer_values::/)' --message-format oneline) && for name in rpm_limit_per_model tpm_limit_per_model; do grep -qE "::case_[0-9]+_${name}$" <<< "$list" || { echo "missing case $name"; exit 1; }; done && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^resolved_key::auth::tests::per_model_limits_integer_values::/)'
+    - id: service-account-empty-values
+      why: no test or case sends an empty team_id or service_account_id, so a truthiness check still passes
+      run: test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/resolved-key/service-account-empty-team-id.yaml tools/oracle/cases/helpers/resolved-key/service-account-empty-service-account-id.yaml | wc -l)" -eq 2 && list=$(cargo nextest list --locked -p betterlite-auth -E 'test(/^resolved_key::auth::tests::service_account_none_vs_empty_fields::/)' --message-format oneline) && for name in empty_team_id empty_service_account_id; do grep -qE "::case_[0-9]+_${name}$" <<< "$list" || { echo "missing case $name"; exit 1; }; done && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^resolved_key::auth::tests::service_account_none_vs_empty_fields::/)'
+    - id: admin-view-internal-viewer
+      why: internal_user_viewer is missing from the admin view cases and no oracle case calls admin_view
+      run: test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/resolved-key/admin-view-internal-user-viewer-false.yaml tools/oracle/cases/helpers/resolved-key/admin-view-proxy-admin-viewer-true.yaml | wc -l)" -eq 2 && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^resolved_key::auth::tests::admin_view_admin_and_viewer_only::case_[0-9]+_internal_user_viewer$/)'
+    - id: resolved-key-tests
+      why: a rewritten test file breaks another resolved_key test the gate would not run otherwise
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/resolved-key)" && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^resolved_key::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/resolved-key/jwt-two-segments-false.yaml
+  - tools/oracle/cases/helpers/resolved-key/jwt-four-segments-false.yaml
+  - tools/oracle/cases/helpers/resolved-key/auth-bearer-prefix-stripped.yaml
+  - tools/oracle/cases/helpers/resolved-key/auth-double-bearer-stripped-once.yaml
+  - tools/oracle/cases/helpers/resolved-key/view-budget-json-string-not-empty-dict.yaml
+  - tools/oracle/cases/helpers/resolved-key/view-organization-id-empty-overrides.yaml
+  - tools/oracle/cases/helpers/resolved-key/auth-budget-reservation-validated.yaml
+  - tools/oracle/cases/helpers/resolved-key/auth-team-budget-snapshot-validated.yaml
+  - tools/oracle/cases/helpers/resolved-key/auth-user-budget-snapshot-validated.yaml
+  - tools/oracle/cases/helpers/resolved-key/auth-org-budget-snapshot-validated.yaml
+  - tools/oracle/cases/helpers/resolved-key/auth-matched-model-access-groups-validated.yaml
+  - tools/oracle/cases/helpers/resolved-key/auth-budget-throttle-pct-validated.yaml
+  - tools/oracle/cases/helpers/resolved-key/auth-tpm-limit-per-model-float-error.yaml
+  - tools/oracle/cases/helpers/resolved-key/service-account-empty-team-id.yaml
+  - tools/oracle/cases/helpers/resolved-key/service-account-empty-service-account-id.yaml
+  - tools/oracle/cases/helpers/resolved-key/admin-view-internal-user-viewer-false.yaml
+  - tools/oracle/cases/helpers/resolved-key/admin-view-proxy-admin-viewer-true.yaml
+deviations: []
+out_of_scope:
+  - Padded one-line functions in the resolved_key modules. They belong to B5094, and B5094 clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task does not touch .ast-grep/rules/.
+  - The fixed status per error class. B5102 owns it and has merged.
+  - credential.rs, view.rs, auth.rs and the resolved_key helper adapters in tools/oracle (resolved_key.rs and resolved_key.py). Main already matches LiteLLM for all eight gaps, so only tests and cases change. If a new test fails, report blocked with the failing input rather than widening scope.
+  - The existing cases auth-excluded-but-not-stripped.yaml, jwt-named-segments.yaml and hash-and-jwt-shape.yaml. They stay as they are, since each still catches a valid input being handled wrongly.
+pitfalls:
+  - The model_max_budget value in view-budget-json-string-not-empty-dict.yaml must be the quoted string '{}', because an unquoted {} is an empty mapping and turns the case into the existing fill case.
+  - The excluded-field cases must send wrong-typed values, because both sides leave a valid value out of model_dump and the case would match even with the field stripped.
+  - budget_throttle_pct gets "x" and not a numeric string such as "0.5", since pydantic's lax float mode accepts "0.5".
+  - The per-model float cases use 1.5 and not 1.0, since pydantic's lax int mode turns 1.0 into 1.
+  - The checks find rstest cases by name, so the case names must be exactly two_segments, four_segments, empty_organization_id, the six field names, rpm_limit_per_model, tpm_limit_per_model, empty_team_id, empty_service_account_id and internal_user_viewer.
+  - New cases call the existing resolved_key operation, so no helper registry or operation file changes.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

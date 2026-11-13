@@ -1,0 +1,21 @@
+kind: helper
+name: anthropic-user-blocks-tool-user-run
+call:
+  anthropic_user_blocks:
+    function: user_blocks
+    model: claude-sonnet-4-5
+    llm_provider: anthropic
+    modify_params: false
+    messages:
+      - role: tool
+        tool_call_id: call.123
+        content: result
+      - role: function
+        name: weather
+        tool_call_id: call.9
+        content: ok
+      - role: user
+        content: follow-up
+env: {}
+compare:
+  ignore: []

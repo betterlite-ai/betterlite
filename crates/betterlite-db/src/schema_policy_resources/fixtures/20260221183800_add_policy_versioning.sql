@@ -14,3 +14,4 @@ CREATE INDEX IF NOT EXISTS "LiteLLM_PolicyTable_policy_name_version_status_idx" 
 
 -- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "LiteLLM_PolicyTable_policy_name_version_number_key" ON "LiteLLM_PolicyTable"("policy_name", "version_number");
+

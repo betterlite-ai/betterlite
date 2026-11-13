@@ -1,0 +1,16 @@
+kind: helper
+name: codestral-records-seed-choice-message-to-text
+call:
+  codestral_records:
+    steps:
+      - kind: reply
+        status: 200
+        body: '{"id":"cmpl-1","created":1700000000,"model":"codestral-latest","object":"text_completion","usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5},"choices":[{"index":0,"message":{"role":"assistant","content":"first"},"finish_reason":"length","logprobs":null},{"index":4,"message":{"content":"second"},"finish_reason":"stop_sequence"}]}'
+        messages: [{role: user, content: write}]
+        api_key: key
+        request_data: {prompt: write}
+      - kind: reply
+        status: 200
+        body: '{"id":"cmpl-2","created":1700000001,"choices":[],"usage":{}}'
+env: {}
+compare: {ignore: []}

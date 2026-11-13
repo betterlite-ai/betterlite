@@ -93,7 +93,7 @@ deviations:
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L710-L718
 out_of_scope:
 - B1075 owns all seven resolution helpers; B1081 owns create/update/delete handlers in endpoints.py.
-- B097 retains upload_security.py types, scanner classes and _starts_with_any,_is_archive,_is_utf8_text,_is_executable_binary,_looks_like_shebang,inspect_content,generate_safe_filename,_reject_disallowed,_scan_rejection,validate_upload; only its two download-header functions move here.
+- B3452 owns upload_security.py types, scanner classes and _starts_with_any,_is_archive,_is_utf8_text,_is_executable_binary,_looks_like_shebang,inspect_content,generate_safe_filename,_reject_disallowed,_scan_rejection,validate_upload; only its two download-header functions move here.
 - B1021 owns managed-id flag loading behind B1075 and B004 owns processor/error/header policy.
 pitfalls:
 - List imports arbitrary query strings before credential fallback, including an empty api_key.

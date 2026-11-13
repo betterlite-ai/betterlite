@@ -1,0 +1,55 @@
+kind: helper
+name: azure-message-content
+call:
+  azure_chat_base_policy:
+    action: azure_message_content
+    settings: {}
+    steps:
+      - messages:
+          - {role: user, content: hello}
+          - {role: system, content: policy}
+      - messages:
+          - {role: user, content: hello}
+          - {role: system, content: policy}
+        openai_system_messages_first: true
+      - messages:
+          - role: tool
+            tool_call_id: call_1
+            content:
+              - {type: tool_reference, tool_reference: get_weather}
+      - messages:
+          - role: tool
+            tool_call_id: call_2
+            content:
+              - {type: text, text: look}
+              - {type: image_url, image_url: {url: 'data:image/png;base64,AA'}}
+      - messages:
+          - role: user
+            content:
+              - {type: image_url, image_url: 'data:image/png;base64,BB'}
+              - type: file
+                file:
+                  file_data: 'data:application/pdf;base64,CC'
+                  format: pdf
+                  filename: doc.pdf
+          - {role: assistant, content: calling, function_call: {name: lookup}}
+      - messages:
+          - {role: user, content: hi}
+        optional:
+          temperature: 0.2
+          model: replaced
+          messages:
+            - {role: user, content: raw}
+      - messages: []
+        optional:
+          temperature: 0.1
+          tools:
+            - type: function
+              function:
+                name: f
+                parameters:
+                  type: object
+                  properties:
+                    p: {type: string, pattern: '\p{L}'}
+env: {}
+compare: {ignore: []}

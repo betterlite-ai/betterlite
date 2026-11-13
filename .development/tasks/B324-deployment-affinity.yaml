@@ -7,35 +7,25 @@ description: 'Compose B372 affinity identities/claims with B080 previous-respons
   here: optional_pre_call_checks, model_group_affinity_config, deployment_affinity_ttl_seconds. Pinned
   declaration defaults: optional_pre_call_checks=None; model_group_affinity_config=None. Resolve env values
   once in betterlite-config, never in router code. Implement the owned native service in crates/betterlite-router/src/deployment_affinity.rs.
-  Add ProbeOperation::DeploymentAffinity in tools/oracle/src/router_probes/mod.rs and the corresponding B324 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::DeploymentAffinity and its Python entry as stubs, so fill only tools/oracle/src/router_probes/deployment_affinity.rs and tools/oracle/litellm/probes/deployment_affinity.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router_utils/pre_call_checks/deployment_affinity_check.py:
   warn_on_unknown_model_group_affinity_flags (L45-L60), DeploymentAffinityCheck.__init__ (L74-L91), DeploymentAffinityCheck.async_filter_deployments
   (L348-L476), DeploymentAffinityCheck.async_pre_call_deployment_hook (L478-L617). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  B016 registers RouteStage::DeploymentAffinity as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/deployment_affinity.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/deployment_affinity.rs
   - crates/betterlite-router/src/deployment_affinity/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/deployment_affinity.rs
+  - crates/betterlite-router/src/context/deployment_affinity/**
   - crates/betterlite-server/src/routing/deployment_affinity.rs
   - crates/betterlite-server/src/routing/deployment_affinity/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/deployment_affinity.rs
   - tools/oracle/src/router_probes/deployment_affinity/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/deployment_affinity.py
   - tools/oracle/cases/routing/deployment-affinity/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/deployment-affinity-*

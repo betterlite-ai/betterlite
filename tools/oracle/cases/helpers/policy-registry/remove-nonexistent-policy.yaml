@@ -1,0 +1,13 @@
+kind: helper
+name: remove-nonexistent-policy
+call:
+  b3241:
+    policy_memory_matching_registry:
+      action: scenario
+      policies:
+        baseline:
+          guardrails:
+            add: [pii-blocker]
+      remove: [ghost]
+env: {}
+compare: {ignore: []}

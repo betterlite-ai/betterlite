@@ -1,0 +1,5 @@
+kind: helper
+name: repositories-search-query
+call: {"b3152": {"operation": "repositories", "query": "Api", "page": 1, "replies": [{"status": 200, "headers": [["link", '<https://api.github.com/user/repos?page=2>; rel="next"']], "body": [{"full_name": "alpha/API"}, {"full_name": "beta/other"}]}, {"status": 200, "body": [{"full_name": "gamma/api-client"}]}]}}
+env: {}
+compare: {ignore: []}

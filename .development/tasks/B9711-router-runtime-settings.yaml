@@ -1,0 +1,119 @@
+id: B9711
+title: Router runtime settings and guardrail selection
+description: >-
+  Two things on LiteLLM's `Router` change or answer while the proxy runs, and no task builds either. First, router settings saved in the database (through `/config/update`, B8594) reach the live router on the next reconcile: B8381's `_apply_router_settings` calls `Router.update_settings(**router_settings)`, and the `/get/config/callbacks` route (B8596) shows `Router.get_settings()`. Second, when several guardrails share one name, B8392's load balancing asks the router to pick one with `Router.get_available_guardrail`. The out_of_scope lines of the router tasks credited the settings pair to B066 and the guardrail methods to B086; neither builds them. Build both here.
+
+
+  Settings go in `crates/betterlite-router/src/router_runtime_settings.rs` and `router_runtime_settings/**`. `RUNTIME_UPDATABLE_ROUTER_SETTINGS` is a public array of LiteLLM's 18 names from constants.py L13-L34: `routing_strategy_args`, `routing_strategy`, `routing_groups`, `allowed_fails`, `cooldown_time`, `num_retries`, `timeout`, `max_retries`, `retry_after`, `fallbacks`, `context_window_fallbacks`, `retry_policy`, `model_group_retry_policy`, `model_group_alias`, `enable_weighted_failover`, `enable_tag_filtering`, `tag_routing_prefix` and `optional_pre_call_checks`. `RouterRuntimeSettings` holds the current values as a `serde_json::Map` plus `routing_groups_input: Option<Value>`. Whoever builds the router fills it with the values `Router.__init__` stores, which is every name of the `get_settings` list below except `max_retries`, since `__init__` never sets that attribute.
+
+
+  `get_settings(&self, view: &SettingsView) -> Map` is router.py L12185-L12225. It answers, in this order, each of `routing_strategy_args`, `routing_strategy`, `allowed_fails`, `cooldown_time`, `num_retries`, `timeout`, `max_retries`, `retry_after`, `fallbacks`, `context_window_fallbacks`, `model_group_retry_policy`, `retry_policy`, `model_group_alias`, `enable_weighted_failover`, `enable_tag_filtering` and `tag_routing_prefix` that the map holds, then `routing_groups`. `SettingsView` carries what lives in other tasks' state: `routing_groups` (the router's groups already dumped by B323, each without `model_priorities` when that is null) and `latency_routing_args: Option<String>`. When `routing_strategy` is `latency-based-routing` and the caller passes latency args, `routing_strategy_args` is that text, the `.json()` string of the latency handler's routing args, not an object.
+
+
+  `update_settings(&mut self, target: &mut dyn RouterSettingsTarget, kwargs: &[(String, Value)]) -> Result<(), RouterSettingsError>` is L12227-L12291, with `kwargs` in the caller's order. It snapshots `get_settings` first, then goes through the pairs. A name outside the 18 is skipped with the debug log "Setting %s is not allowed". `timeout`, `num_retries`, `retry_after`, `allowed_fails` and `cooldown_time` are stored as Python's `int()` gives them: an integer as is, a float truncated toward zero, a string parsed as a base-10 integer after trimming whitespace; any other value or a failed parse is `RouterSettingsError::NotAnInteger` naming the key. `routing_groups` only marks the groups for rebuilding. `optional_pre_call_checks` calls `target.set_optional_pre_call_checks(value)` at once and stores nothing. `retry_policy`: an object is checked against B306's retry policy type (the nine `*Retries` fields, unknown keys ignored, a wrong field type is `RouterSettingsError::RetryPolicy`) and stored as the full policy with null for unset fields; null is stored as null; any other value is ignored and the old policy stays. Every other name is stored as given. For `routing_strategy`, when the value differs from the snapshot, call `target.apply_lar1(args)` for `lar1` with `args` the `routing_strategy_args` pair or None, else `target.init_routing_strategy(value, args)` with `args` that pair or an empty object, and mark the groups for rebuilding. For `routing_strategy_args`, remember whether the value differs from the current one. After the loop, call `target.apply_updated_strategy_args()` when the args changed, and when the groups are marked, call `target.init_routing_groups(input)` with the `routing_groups` pair or else `routing_groups_input`, and store `input` as the new `routing_groups_input` only when that call succeeded. Finish with the debug log "Updated Router settings: %s".
+
+
+  `RouterSettingsTarget` is the trait the router owner implements over its live state: `set_optional_pre_call_checks` (B364), `init_routing_strategy` and `apply_updated_strategy_args` (B395), `apply_lar1` (B350) and `init_routing_groups` (B323). Each returns `Result<(), RouterSettingsError>`, and `RouterSettingsError::Target { name, message }` carries the error of the step that failed, so B8381 can tell an invalid `routing_groups` (LiteLLM's `TypeError` or `ValueError`, which it logs and skips) from the rest.
+
+
+  Guardrail selection goes in `crates/betterlite-guardrails/src/router_guardrail_selection.rs` and `router_guardrail_selection/**`, next to B3683's `RouterGuardrail`. `select_router_guardrail<'list, R: rand::Rng>(guardrails: &'list [RouterGuardrail], guardrail_name: &str, rng: &mut R) -> Result<&'list RouterGuardrail, GuardrailSelectionError>` is L5241-L5270: keep the entries whose `guardrail_name` equals the name; none is `GuardrailSelectionError::NotFound` with the text "No guardrail found with name: {guardrail_name}"; one is returned as is; several are picked uniformly. LiteLLM hands several to `simple_shuffle`, but a router guardrail entry carries only `guardrail`, `mode`, `api_key` and `api_base` in its params, so no `weight`, `rpm` or `tpm` is ever there and `simple_shuffle` falls through to `random.choice`. Add `rand` to crates/betterlite-guardrails/Cargo.toml with the version betterlite-router uses.
+
+
+  Tests: `router_runtime_settings/tests.rs` with names that start with `get_settings_`, `update_int_`, `update_policy_`, `update_strategy_` and `update_groups_`, using a recording target; `router_guardrail_selection/tests.rs` with names that start with `select_`, using a seeded `rand::rngs::StdRng` to show that every entry of a shared name can be picked. The helper operation for this task takes `function`. `settings` takes `initial` (constructor arguments, only `routing_strategy`, `routing_strategy_args` and `routing_groups`) and `kwargs` (a list of name and value pairs). The Python side builds `Router(model_list=[], **initial)`, replaces `routing_strategy_init`, `set_optional_pre_call_checks`, `_apply_updated_routing_strategy_args` and `_init_routing_groups` on the instance and `apply_lar1_routing_strategy` in `litellm.router_strategy.lar1_routing` with recorders, calls `update_settings`, and answers `{"settings": {name: value}, "calls": [[step, argument]], "error": null or {"type", "message"}}`, where `settings` holds, for each name in `kwargs` that `get_settings` lists, its value after `fastapi.encoders.jsonable_encoder`, the way the route prints it. The Rust side seeds `RouterRuntimeSettings` with `initial`, runs the same pairs against a recording target and answers the same shape. `guardrail` takes `guardrails` (entries with `guardrail_name`, `id` and `litellm_params`) and `guardrail_name`, and both sides answer the picked entry's `guardrail_name` and `id`, or the error type and message; cases never hold two entries with the asked name, since the pick is random.
+scope:
+  paths:
+  - crates/betterlite-router/src/router_runtime_settings.rs
+  - crates/betterlite-router/src/router_runtime_settings/**
+  - crates/betterlite-guardrails/src/router_guardrail_selection.rs
+  - crates/betterlite-guardrails/src/router_guardrail_selection/**
+  - crates/betterlite-guardrails/Cargo.toml
+  - Cargo.lock
+  - tools/oracle/cases/helpers/router-runtime-settings/**
+  - tools/oracle/fuzz/corpus/helper_case/router-runtime-settings-*
+  - tools/oracle/helpers/b9711.py
+  - tools/oracle/helpers/b9711/**
+  - tools/oracle/src/helpers/router/b9711.rs
+  - tools/oracle/src/helpers/router/b9711/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12185-L12291
+    why: get_settings and update_settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L13-L34
+    why: The names update_settings accepts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1055-L1116
+    why: What __init__ stores for the settings get_settings reads, and that max_retries is not one of them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1184-L1206
+    why: routing_strategy_args and retry_policy as __init__ stores them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L114-L130
+    why: RetryPolicy and its nine fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5241-L5270
+    why: get_available_guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/simple_shuffle.py#L43-L67
+    why: Why several guardrails with one name are picked uniformly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L70-L96
+    why: The four params a router guardrail entry carries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7727-L7759
+    why: How the proxy applies saved router settings, and that only routing_groups errors are logged and skipped.
+dod:
+  - text: "`get_settings` answers the stored names in LiteLLM's order, leaves `max_retries` out until an update sets it, adds the dumped routing groups, and gives the latency args as text for `latency-based-routing`."
+    proof: [settings-get]
+  - text: The five integer settings follow `int()`, and a value it refuses is an error naming the key.
+    proof: [settings-int, oracle]
+  - text: A retry policy object is stored with every field, null clears it, and any other value keeps the old policy.
+    proof: [settings-policy, oracle]
+  - text: A changed strategy runs lar1 or the strategy init with LiteLLM's args, changed args run the args step once after the loop, and pre-call checks run in place and are not stored.
+    proof: [settings-strategy, oracle, helper-python]
+  - text: Routing groups are rebuilt with the new input or the stored one, and the stored input changes only when the rebuild succeeded.
+    proof: [settings-groups, oracle]
+  - text: Guardrail selection keeps only the asked name, fails with LiteLLM's message when none matches, and can pick every entry of a shared name.
+    proof: [guardrail-select, oracle]
+  - text: New helper corpus seeds call `b9711` and replay through the shared parser.
+    proof: [helper-case-corpus]
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: settings-get
+    why: A name is missing, out of order, or `max_retries` shows before it is set.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^router_runtime_settings::tests::get_settings_/)'
+  - id: settings-int
+    why: A float, a numeric string or a bad value is handled unlike `int()`.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^router_runtime_settings::tests::update_int_/)'
+  - id: settings-policy
+    why: A retry policy is stored partly, or a non-object value replaces it.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^router_runtime_settings::tests::update_policy_/)'
+  - id: settings-strategy
+    why: A strategy change does not re-init, or the args step runs per pair instead of once.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^router_runtime_settings::tests::update_strategy_/)'
+  - id: settings-groups
+    why: A failed rebuild still replaces the stored groups input.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^router_runtime_settings::tests::update_groups_/)'
+  - id: guardrail-select
+    why: Another name is picked, the message differs, or an entry of a shared name is never picked.
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^router_guardrail_selection::tests::select_/)'
+  - id: helper-python
+    why: The b9711 adapter must exist and pass ruff and basedpyright.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b9711)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b9711 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b9711/pyrightconfig.json
+  - id: helper-case-corpus
+    why: b9711 needs fresh seeds that replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/router-runtime-settings-*")" && grep -lE '^[[:space:]]+b9711:' tools/oracle/fuzz/corpus/helper_case/router-runtime-settings-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/router-runtime-settings
+deviations: []
+out_of_scope:
+  - "Applying saved settings and logging invalid routing groups is B8381's; `/config/update` and its allowlist check are B8594's; the router settings in `/get/config/callbacks` are B8596's, and their HTTP acceptance is B9772's."
+  - "The steps behind the target: B364 (`set_optional_pre_call_checks`), B395 (`routing_strategy_init`, `_apply_updated_routing_strategy_args`), B350 (`apply_lar1_routing_strategy`), B323 (`_init_routing_groups` and the group dump). The target implementation over the live router belongs to the router's owner in each host: B8381 in the proxy, B162 in the Python wheel."
+  - "Building `RouterGuardrail` and the list is B3683's; running the picked guardrail's hook is B8392's, behind its `GuardrailBalancer` trait."
+  - "`Router.aguardrail` and `Router._aguardrail_helper` (L5183-L5239): no caller at the pin, so they are not built."
+pitfalls:
+  - "`update_settings` truncates `timeout: 30.5` to 30 with `int()`, while the constructor keeps a float timeout."
+  - "`routing_strategy` is compared with the snapshot taken before the loop, so sending the strategy the router already has re-inits nothing and leaves the routing groups alone."
+  - "The strategy init gets `routing_strategy_args` or `{}`, but lar1 gets that pair or None."
+  - "`optional_pre_call_checks` is applied inside the loop and never shows in `get_settings`."
+  - "A `retry_policy` that is a list or a string is dropped without an error, and the old policy stays."
+  - "There is no rollback: when the routing group rebuild fails, every pair before it stays applied."
+  - "With `latency-based-routing`, `routing_strategy_args` in `get_settings` is a JSON string, not an object."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,14 @@
+kind: helper
+name: available-models-cache
+call:
+  available_models:
+    cache:
+      steps:
+        - {op: config}
+        - {op: set, provider: openai, models: [one], now: 0.0}
+        - {op: get, provider: openai, environment: {OPENAI_API_KEY: one}}
+        - {op: get, provider: openai, parameters: {model: m}, clock_fails: true}
+        - {op: set, provider: anthropic, parameters: {model: m}, models: []}
+        - {op: get_mutate, provider: anthropic, parameters: {model: m}}
+env: {}
+compare: {ignore: []}

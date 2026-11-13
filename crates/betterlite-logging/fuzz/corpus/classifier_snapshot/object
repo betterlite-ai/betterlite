@@ -1,0 +1,1 @@
+{"model": "gpt-4o", "messages": [{"role": "user", "content": "hi"}], "nested": {"a": [1, null, true]}}

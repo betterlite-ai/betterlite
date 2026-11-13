@@ -1,0 +1,11 @@
+kind: helper
+name: cohere-embedding-billed-image-tokens-key-is-ignored
+call:
+  cohere_embedding:
+    function: response
+    model: embed-v4.0
+    requests:
+      - {input: [a, b], body: '{"embeddings":{"float":[[1.5]]},"meta":{"billed_units":{"input_tokens":0,"images":1,"image_tokens":1000}}}'}
+      - {input: [a, b], body: '{"embeddings":{"float":[[1.5]]},"meta":{"billed_units":{"image_tokens":1000}}}'}
+compare: {ignore: []}
+env: {}

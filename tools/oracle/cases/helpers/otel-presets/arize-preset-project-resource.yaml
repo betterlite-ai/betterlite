@@ -1,0 +1,21 @@
+kind: helper
+name: arize-preset-project-resource
+call:
+  b3850:
+    function: arize_preset
+    environment:
+      ARIZE_SPACE_ID: space-1
+      ARIZE_PROJECT_NAME: project-one
+    base:
+      exporters:
+        - kind: otlp_http
+          endpoint: https://collector.example/v1/traces
+          headers: x-collector=1
+      mapper_names: [genai]
+      resource_attributes:
+        deployment.environment: test
+env:
+  ARIZE_SPACE_ID: space-1
+  ARIZE_PROJECT_NAME: project-one
+compare:
+  ignore: []

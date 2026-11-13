@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-openai-to-a2a-response
+call: {b4803: {operation: response, request_id: req, response: {choices: [{message: {content: answer}}]}}}
+env: {}
+compare: {ignore: []}

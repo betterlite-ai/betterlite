@@ -31,5 +31,5 @@ fuzz_target!(|bytes: &[u8]| {
     let loader = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     };
-    let _ = load_file(&loader, root);
+    let _outcome = load_file(&loader, root);
 });

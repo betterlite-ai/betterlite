@@ -1,0 +1,13 @@
+kind: helper
+name: metadata-flattening-dotted-keys
+call:
+  b3841:
+    function: flatten
+    metadata:
+      requester_metadata:
+        user_id: user
+      nested:
+        level:
+          value: 3
+env: {}
+compare: {ignore: []}

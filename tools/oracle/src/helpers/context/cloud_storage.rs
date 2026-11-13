@@ -1,3 +1,4 @@
+use crate::helpers::OrHelperError as _;
 use betterlite_context::cloud_storage::{
     self, Encoding,
     policy::{self, LegacyCloudSetting, TrustedCloudCredentials},
@@ -69,12 +70,12 @@ impl crate::helpers::Helper for Op {
             Input::ConfiguredBucketSplit { value } => {
                 cloud_storage::split_bucket_name(text(Some(value)).unwrap_or(""))
                     .map(|(bucket, prefix)| json!({"bucket": bucket, "prefix": prefix}))
-                    .map_err(Box::from)
+                    .or_value_error()
             }
             Input::ObjectPathValidation { value } => {
                 cloud_storage::validate_cloud_object_path(value)
                     .map(|()| json!({"ok": true}))
-                    .map_err(Box::from)
+                    .or_value_error()
             }
             Input::CloudObjectEncoding { value } => Ok(
                 json!({"gcs": cloud_storage::encode_object_name(value, Encoding::Gcs), "s3": cloud_storage::encode_object_name(value, Encoding::S3)}),
@@ -92,7 +93,7 @@ impl crate::helpers::Helper for Op {
                     file_id, scheme, bucket, &allowed, *legacy,
                 )
                 .map(|(found, object)| json!({"bucket": found, "object": object}))
-                .map_err(Box::from)
+                .or_value_error()
             }
         }
     }
@@ -115,18 +116,6 @@ fn text(value: Option<&Scalar>) -> Option<&str> {
     match value {
         Some(Scalar::Text(text)) => Some(text),
         Some(Scalar::Boolean(_) | Scalar::Other(_)) | None => None,
-    }
-}
-impl From<cloud_storage::CloudStorageError> for Box<crate::helpers::HelperError> {
-    fn from(value: cloud_storage::CloudStorageError) -> Self {
-        Self::new(crate::helpers::HelperError {
-            class: "ValueError".to_owned(),
-            status: None,
-            error_type: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: value.to_string(),
-        })
     }
 }
 mod tests;

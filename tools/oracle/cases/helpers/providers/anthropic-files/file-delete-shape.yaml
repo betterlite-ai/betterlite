@@ -1,0 +1,16 @@
+kind: helper
+name: anthropic-files-file-delete-shape
+call:
+  anthropic_files:
+    file_delete_shape:
+      environment: {ANTHROPIC_BASE_URL: "https://delete-base.example/"}
+      file_ids: ["file-1", "a/b c?d#e%f", "", ".", ".."]
+      bodies:
+        - {id: file-1, type: file, deleted: false, object: banana}
+        - {}
+      failure:
+        status: 404
+        headers: [[content-type, application/json], [x-request-id, req-delete]]
+        body: '{"type":"error","error":{"type":"not_found_error","message":"missing"}}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,1 @@
+0{"id":"c","object":"chat.completion","created":1,"model":null,"choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":null}

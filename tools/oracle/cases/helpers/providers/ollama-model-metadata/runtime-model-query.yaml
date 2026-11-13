@@ -1,0 +1,21 @@
+kind: helper
+name: ollama-model-metadata-runtime-model-query
+call:
+  ollama_model_metadata:
+    runtime_model_query:
+      fixture:
+        env: {OLLAMA_API_BASE: "http://env-host:11434/api/chat", OLLAMA_API_KEY: env-key}
+        catalog: []
+      model: "ollama/llama3:8b"
+      scenarios:
+        - {kind: success, body: '{"template":"tools","model_info":{"llama.context_length":4096}}'}
+        - {kind: failure}
+        - {kind: status, status: 299, body: '{"template":"tools","model_info":{"llama.context_length":2048}}'}
+        - {kind: status, status: 300, body: '{"model_info":{"llama.context_length":2048}}'}
+        - {kind: status, status: 304, body: '{"model_info":{"llama.context_length":2048}}'}
+        - {kind: status, status: 399, body: '{"model_info":{"llama.context_length":2048}}'}
+        - {kind: status, status: 400, body: '{}'}
+        - {kind: status, status: 404, body: '{}'}
+        - {kind: status, status: 500, body: '{}'}
+env: {}
+compare: {ignore: []}

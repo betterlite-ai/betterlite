@@ -1,0 +1,1 @@
+{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"primary_model":"gpt-4","fallback_model":"claude"},"values":[[1724000000,"3"],[1724000015,"4"]]}]}}

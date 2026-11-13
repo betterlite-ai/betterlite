@@ -1,0 +1,6 @@
+kind: helper
+name: dynamic-callbacks-global-merge
+call:
+  dynamic_callbacks: {"action": "combined", "dynamic": ["langfuse", {"logger": "otel"}, "langfuse"], "global": ["langfuse", "datadog", "datadog"]}
+env: {}
+compare: {ignore: []}

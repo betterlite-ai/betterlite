@@ -10,7 +10,7 @@ description: >-
   threshold=0.9, lookback_days=7, openai_project_ids=[]. Require nonempty providers,
   0<threshold<=1 and 1<=lookback_days<=180; retain duplicate configured providers.
   loads_capture_rate_settings must load these through B002, not merely instantiate records.
-  Resolve OPENAI_ADMIN_KEY through B129. Missing key returns a typed missing-credential
+  Resolve OPENAI_ADMIN_KEY through B8500. Missing key returns a typed missing-credential
   result before any billing or captured-spend query. Request the fixed organization costs
   URL with Bearer admin key, UTC start midnight, exclusive midnight after end_date,
   bucket_width=1d, limit=180 and optional project_ids[] values. Each request has a 30-second
@@ -48,8 +48,6 @@ scope:
     - crates/betterlite-config/src/capture_rate.rs
     - crates/betterlite-config/src/capture_rate/**
     - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/capture_rate_settings.rs,corpus/capture_rate_settings/**}
-    - crates/betterlite-server/src/spend.rs
-    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/capture_rate.rs
     - crates/betterlite-server/src/spend/capture_rate/**
     - tools/oracle/src/helpers/provider/capture_rate.rs
@@ -99,7 +97,7 @@ deviations:
     why: External pagination must have bounded control state; the caller maps this failure to the normal billing failure response.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/organization_costs.py#L107-L123
 out_of_scope:
-  - B069 owns GET /spend/capture_rate and startup's 01:15 UTC schedule; B073 must consume this extracted billing client rather than duplicate organization_costs.py.
+  - B069 owns GET /spend/capture_rate and startup's 01:15 UTC schedule; B073 does not call organization_costs.py.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as capture_rate in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/capture_rate.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/capture_rate.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Filtering OpenAI project IDs never filters the captured database spend.

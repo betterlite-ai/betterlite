@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::thread;
 
 use crate::answer::parse_answer;
 use crate::dispatch::progress::{Panel, ReviewerPin};
@@ -29,6 +30,11 @@ pub(crate) struct Bench<'pin> {
     pub(crate) panel: Panel,
     pub(crate) pinned: Option<&'pin ReviewerPin>,
 }
+
+const PARITY_BENCH: Bench<'static> = Bench {
+    panel: Panel::Parity,
+    pinned: None,
+};
 
 struct Reading<'run> {
     rules: &'run Rules,
@@ -98,9 +104,12 @@ fn review_text(
             reason,
         });
     }
-    Err(GateError::UsageLimit {
+    Err(GateError::Unavailable {
         task: brief.task.id.clone(),
-        reason: "every runner on the reviewer ladder is at its usage limit".to_owned(),
+        reason: format!(
+            "every runner on the reviewer ladder is unavailable ({})",
+            vendor::causes(attempt.places.git_common_dir, attempt.agents)?
+        ),
     })
 }
 
@@ -203,6 +212,37 @@ fn panel_review(
     }
 }
 
+// the first round reads both ways at once, so the worker gets every finding in one turn
+fn first_round(
+    attempt: &Attempt<'_>,
+    worker_runner: &Runner,
+    reading: &Reading<'_>,
+    bench: Bench<'_>,
+    commit: String,
+) -> Result<Step, GateError> {
+    let task_id = &attempt.brief.task.id;
+    let (general, ported) = thread::scope(|scope| {
+        let parity_run =
+            scope.spawn(|| panel_review(attempt, worker_runner, reading, PARITY_BENCH, None));
+        let answer = panel_review(attempt, worker_runner, reading, bench, attempt.earlier);
+        (answer, parity_run.join())
+    });
+    let Ok(parity) = ported else {
+        return Err(GateError::Dispatch {
+            task: task_id.clone(),
+            reason: "the parity review panicked".to_owned(),
+        });
+    };
+    let (answer, reviewer) = general?;
+    let (second, pin) = parity?;
+    // the general reviewer checks the fixes first, and its approval still brings the parity pass back
+    let (verdict, next) = match answer.verdict {
+        ReviewVerdict::Changes => (ReviewVerdict::Changes, reviewer),
+        ReviewVerdict::Approve => (second.verdict, pin),
+    };
+    Ok(round(task_id, &[&answer, &second], verdict, next, commit))
+}
+
 pub(crate) fn review(
     attempt: &Attempt<'_>,
     worker_runner: &Runner,
@@ -220,14 +260,16 @@ pub(crate) fn review(
         panel: attempt.reviewer.map_or(Panel::Standard, |pin| pin.panel),
         pinned: attempt.reviewer,
     };
-    let (answer, reviewer) =
-        panel_review(attempt, worker_runner, &reading, bench, attempt.earlier)?;
-    // the first approval of a standard task that ports referenced code gets one parity pass, and later rounds stay with it
-    let parity_due = bench.panel == Panel::Standard
-        && answer.verdict == ReviewVerdict::Approve
+    // a standard task that ports referenced code also gets the parity pass, and later rounds stay with it
+    let parity_applies = bench.panel == Panel::Standard
         && task.review_level == ReviewLevel::Standard
         && !task.references.is_empty();
-    if !parity_due {
+    if parity_applies && attempt.reviewer.is_none() {
+        return first_round(attempt, worker_runner, &reading, bench, commit);
+    }
+    let (answer, reviewer) =
+        panel_review(attempt, worker_runner, &reading, bench, attempt.earlier)?;
+    if !parity_applies || answer.verdict == ReviewVerdict::Changes {
         return Ok(round(
             &task.id,
             &[&answer],
@@ -236,11 +278,7 @@ pub(crate) fn review(
             commit,
         ));
     }
-    let parity = Bench {
-        panel: Panel::Parity,
-        pinned: None,
-    };
-    let (second, pin) = panel_review(attempt, worker_runner, &reading, parity, None)?;
+    let (second, pin) = panel_review(attempt, worker_runner, &reading, PARITY_BENCH, None)?;
     Ok(round(
         &task.id,
         &[&answer, &second],

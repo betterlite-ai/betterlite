@@ -1,0 +1,15 @@
+kind: helper
+name: cached_whitespace
+call:
+  copilot_device:
+    access_token_file: " \n\t "
+    device_replies:
+      - status: 200
+        body: {"device_code": "dev-1", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
+    access_replies:
+      - status: 200
+        body: {"access_token": "fresh-token"}
+    fail_write: false
+env: {}
+compare:
+  ignore: []

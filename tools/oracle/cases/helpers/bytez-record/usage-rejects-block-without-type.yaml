@@ -1,0 +1,13 @@
+kind: helper
+name: bytez-record-usage-rejects-block-without-type
+call:
+  bytez_record:
+    function: usage
+    messages:
+      - role: user
+        content: "ok"
+      - role: user
+        content:
+          - text: plain
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,11 @@
+kind: helper
+name: native-errors-a-cohere-connection-error-on-403
+call:
+  native_errors_a:
+    provider: cohere
+    model: command-r
+    error_str: "connection reset"
+    exception_type: CohereConnectionError
+    status_code: 403
+env: {}
+compare: {ignore: []}

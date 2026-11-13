@@ -1,0 +1,104 @@
+id: B8145
+title: "GCP Terraform module: secrets, service accounts and buckets"
+description: >-
+  Add secrets, the runtime service account, IAM bindings and Cloud Storage buckets to packaging/terraform/gcp/. It uses the names B8144 defined: local.name, local.labels, var.project_id, var.region and google_secret_manager_secret.db_password.
+
+  variables_identity.tf: litellm_master_key (string, sensitive, no default), litellm_license (string, sensitive, ""), ui_password (string, sensitive, ""), extra_secrets (map(string), {}; env name to a Secret Manager secret id the caller made),
+  proxy_config (type any, default {}, the same declaration as B8141 so both modules take the same YAML-shaped map), bucket_force_destroy (bool, false),
+  bucket_location ("" means var.region) and data_retention_days (number, 0 meaning no lifecycle rule).
+
+  secrets.tf: google_secret_manager_secret plus version for master_key (always), license and ui_password (count when the value is not empty), replication auto. google_secret_manager_secret_iam_member (role roles/secretmanager.secretAccessor) giving the runtime
+  account access to master_key, license, ui_password, db_password and every secret in extra_secrets.
+  iam.tf: google_service_account.runtime (account_id cut to 30 characters), google_project_iam_member roles/cloudsql.client for it, and roles/logging.logWriter. There is no second service account for a ui service.
+  gcs.tf: google_storage_bucket.data (uniform_bucket_level_access true, versioning on, public_access_prevention "enforced", force_destroy from the variable, lifecycle delete rule when data_retention_days > 0), google_storage_bucket_iam_member objectAdmin for the runtime account on it,
+  google_storage_bucket.config (same access settings; created only when proxy_config has keys), google_storage_bucket_object.config (name "config.yaml", content yamlencode(var.proxy_config)) and an objectViewer binding on the config bucket. locals for the
+  config: local.proxy_config_enabled, local.proxy_config_hash = md5(yamlencode(var.proxy_config)).
+
+  Tests (mocked google provider) in tests/identity.tftest.hcl: the master key secret always exists, license and ui_password only when set, the runtime account holds secretAccessor on each, the config bucket and object exist only with a proxy_config, both buckets enforce public access prevention.
+
+scope:
+  paths:
+    - packaging/terraform/gcp/variables_identity.tf
+    - packaging/terraform/gcp/secrets.tf
+    - packaging/terraform/gcp/iam.tf
+    - packaging/terraform/gcp/gcs.tf
+    - packaging/terraform/gcp/tests/identity.tftest.hcl
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/secrets.tf
+    why: Secret and accessor binding layout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/iam.tf
+    why: Service account and project roles.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/gcs.tf
+    why: Bucket settings and the proxy config object.
+
+dod:
+  - text: The master key secret always exists and license and ui_password secrets exist only when set.
+    proof: [gcp-secret-literals, gcp-identity-tests]
+  - text: One runtime service account has secretAccessor on every secret, cloudsql.client on the project and the bucket roles.
+    proof: [gcp-iam-literals, gcp-identity-tests]
+  - text: Both buckets enforce uniform access and public access prevention, and the config bucket exists only with a proxy_config.
+    proof: [gcp-bucket-literals, gcp-identity-tests]
+  - text: The module still validates and formats.
+    proof: [gcp-fmt-identity, gcp-validate-identity]
+
+checks:
+  optional: []
+  commands:
+    - id: gcp-fmt-identity
+      why: A Terraform file is not formatted the way terraform fmt writes it.
+      run: >-
+        test -f packaging/terraform/gcp/gcs.tf && terraform -chdir=packaging/terraform/gcp fmt -check -recursive -diff
+    - id: gcp-validate-identity
+      why: The module does not validate with this part added.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/gcp" TF_IN_AUTOMATION=1 && test -f packaging/terraform/gcp/gcs.tf &&
+        terraform -chdir=packaging/terraform/gcp init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/gcp validate
+    - id: gcp-secret-literals
+      why: A secret resource or variable is missing.
+      run: >-
+        f=packaging/terraform/gcp/secrets.tf; grep -q 'secretAccessor' $f && grep -q '"master_key"' $f && grep -q '"license"' $f && grep -q '"ui_password"' $f &&
+        grep -q 'variable "litellm_master_key"' packaging/terraform/gcp/variables_identity.tf && grep -q 'sensitive *= *true' packaging/terraform/gcp/variables_identity.tf
+    - id: gcp-iam-literals
+      why: The service account or a role differs from the description.
+      run: >-
+        f=packaging/terraform/gcp/iam.tf; grep -q 'resource "google_service_account" "runtime"' $f && grep -q 'roles/cloudsql.client' $f && grep -q 'roles/logging.logWriter' $f && ! grep -q 'ui_runtime' packaging/terraform/gcp/*.tf
+    - id: gcp-bucket-literals
+      why: A bucket setting differs from the description.
+      run: >-
+        f=packaging/terraform/gcp/gcs.tf; grep -q 'uniform_bucket_level_access *= *true' $f && grep -q 'public_access_prevention *= *"enforced"' $f && grep -q 'config.yaml' $f && grep -q 'objectViewer' $f && grep -q 'objectAdmin' $f
+    - id: gcp-identity-tests
+      why: The identity plan tests fail or are missing.
+      run: >-
+        export TF_DATA_DIR="$PWD/target/terraform/gcp" TF_IN_AUTOMATION=1 && test -f packaging/terraform/gcp/tests/identity.tftest.hcl &&
+        terraform -chdir=packaging/terraform/gcp init -backend=false -input=false -lockfile=readonly > /dev/null &&
+        terraform -chdir=packaging/terraform/gcp test -filter=tests/identity.tftest.hcl
+
+oracle_cases: []
+
+deviations:
+  - what: One runtime service account, no ui_runtime account and no billing or metrics secrets.
+    why: betterlite is one service, and the billing metrics and metrics sidecar are not built in this module.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/iam.tf
+  - what: The proxy config object is named config.yaml in its own bucket and is read by betterlite through LITELLM_CONFIG_BUCKET_* variables set in B8146.
+    why: LiteLLM mounts or downloads the file with Python; betterlite reads the bucket itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/gcs.tf
+
+out_of_scope:
+  - "Network, Cloud SQL and Redis. Owned by B8144."
+  - "Cloud Run, the load balancer and outputs. Owned by B8146."
+  - "Wiring the bucket config into betterlite startup. B4143 reads the bucket but no listed task connects it to startup; see the report notes."
+
+pitfalls:
+  - "Do not write a secret value into any output or local that is not marked sensitive."
+  - "service account account_id must be 6 to 30 characters, so cut the name with substr."
+  - "Declare proxy_config exactly as B8141 does (type any, default {}) so the two modules read the same."
+  - "google_secret_manager_secret_iam_member needs one resource per secret; use for_each over a map keyed by the secret name, not count."
+  - "Counts that depend on a sensitive value fail in Terraform; test the count on `var.x != \"\"` through nonsensitive() only if the plan complains, and say so in a comment."
+
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

@@ -2,8 +2,8 @@ id: B137
 milestone: M9 agents and mcp
 title: MCP auth, OAuth flows, BYOK and outbound credentials
 status: todo
-depends_on: [B4650, B4651, B4652, B4653, B4654, B4655, B4656, B4657, B4658, B4659, B4660, B4661, B4662, B4663, B4664, B4665, B4666, B4667, B4668, B4669, B4670, B4671, B4672, B4673, B4674, B4675, B4676, B4677, B4678, B4679, B732, B741, B743, B756]
-file: null
+depends_on: [B001, B1139, B5076, B8610, B8624, B8626, B8702, B8728, B055, B056, B804, B826]
+file: tasks/B137-mcp-auth-parity.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/outbound_credentials/{__init__,resolver}.py"
   - "litellm/proxy/_experimental/mcp_server/auth/{litellm_auth_handler,user_api_key_auth_mcp}.py"

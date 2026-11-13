@@ -1,0 +1,5 @@
+kind: helper
+name: "proxy-base-url-valid"
+call: {"b4654":{"function":"proxy_base_url","raw":"https://Proxy.Example.com/base/path/?q=1#f"}}
+env: {"PROXY_BASE_URL":"https://Proxy.Example.com/base/path/?q=1#f"}
+compare: {"ignore":[]}

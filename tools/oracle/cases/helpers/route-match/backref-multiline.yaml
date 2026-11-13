@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-multiline",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/a\na",
+      "pattern": "/(?im:(a)$\\n^\\1)"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

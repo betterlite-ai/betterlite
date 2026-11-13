@@ -1,0 +1,10 @@
+kind: helper
+name: router-and-env
+call:
+  b5990:
+    steps:
+      - {kind: complete_url, model: "novita/org/model"}
+      - {kind: complete_url, model: "org/model", env: {HF_API_BASE: "https://hf.example/v1"}}
+      - {kind: complete_url, model: "org/model", env: {HUGGINGFACE_API_BASE: "https://other.example"}}
+env: {}
+compare: {ignore: []}

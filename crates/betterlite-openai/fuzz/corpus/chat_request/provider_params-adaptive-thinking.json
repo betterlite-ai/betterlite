@@ -1,0 +1,1 @@
+{"model":"openai/o3","messages":[{"role":"developer","content":"be brief"},{"role":"user","content":"hi"}],"thinking":{"type":"adaptive","display":"summarized"},"service_tier":"flex","drop_params":false,"additional_drop_params":[],"allowed_openai_params":["reasoning_effort"]}

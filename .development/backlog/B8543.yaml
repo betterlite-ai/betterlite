@@ -1,0 +1,16 @@
+id: B8543
+milestone: M11 distribution
+title: Docker guide and non-root image structure test
+status: todo
+depends_on: [B5070, B5071, B5072, B5073]
+file: tasks/B8543-docker-guide.yaml
+covers:
+  - "docker/README.md"
+  - "docker/tests/nonroot.yaml"
+  - "docker/install_auto_router.sh"
+parent: B151
+split_from: B151
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

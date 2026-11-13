@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "class-mixed-word-literal",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/models/ͅ",
+      "allowed_routes": [
+        "/models/(?i:[\\wι])"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

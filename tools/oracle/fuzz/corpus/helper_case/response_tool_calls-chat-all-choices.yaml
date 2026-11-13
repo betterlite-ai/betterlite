@@ -1,0 +1,30 @@
+kind: helper
+name: chat-all-choices
+call:
+  response_tool_calls:
+    function: get_tool_calls
+    include_all_choices: true
+    response:
+      choices:
+        - message:
+            role: assistant
+            tool_calls:
+              - id: call_a
+                type: function
+                function:
+                  name: get_weather
+                  arguments: '{"city":"Paris"}'
+        - message:
+            role: assistant
+            tool_calls:
+              - id: ''
+                function:
+                  name: get_time
+                  arguments: '{"tz":"UTC"}'
+              - id: call_b
+                function:
+                  name: unnamed_arguments
+        - index: 2
+env: {}
+compare:
+  ignore: []

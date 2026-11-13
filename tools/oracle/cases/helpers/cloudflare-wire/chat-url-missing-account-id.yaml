@@ -1,0 +1,10 @@
+kind: helper
+name: cloudflare-wire-chat-url-missing-account-id
+call:
+  b5836:
+    chat_urls:
+      - {api_base: null}
+      - {api_base: ""}
+      - {api_base: null, env: {CLOUDFLARE_ACCOUNT_ID: "   "}}
+env: {}
+compare: {ignore: []}

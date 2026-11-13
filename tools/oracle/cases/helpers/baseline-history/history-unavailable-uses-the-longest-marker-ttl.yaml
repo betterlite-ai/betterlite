@@ -1,0 +1,50 @@
+kind: helper
+name: history_unavailable_uses_the_longest_marker_ttl
+call:
+  baseline_history:
+    history:
+      first_at: 0.0
+      last_at: 0.0
+      equivalent: true
+      uncertain_before: 0.0
+      entries: []
+      blocked_until: 0.0
+    groups:
+    - - request_id: long-ttl
+        started_at: 1000.0
+        available_at: 1000.0
+        outcome: complete
+        baseline_equivalent: false
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 5
+          total_tokens: 105
+          prompt_tokens_details:
+            text_tokens: 100
+            cached_tokens: 0
+            cache_creation_tokens: 0
+            cache_creation_token_details:
+              ephemeral_5m_input_tokens: 0
+              ephemeral_1h_input_tokens: 0
+        plan:
+          total_tokens: 100
+          breakpoints:
+          - fingerprint: long
+            ttl_seconds: 3600
+            prefix_tokens: 40
+            lookback_fingerprints:
+            - long
+            content_fingerprint: c1
+            lookback_content_fingerprints:
+            - c1
+          - fingerprint: short
+            ttl_seconds: 300
+            prefix_tokens: 80
+            lookback_fingerprints:
+            - short
+            content_fingerprint: c2
+            lookback_content_fingerprints:
+            - c2
+compare:
+  ignore: []
+env: {}

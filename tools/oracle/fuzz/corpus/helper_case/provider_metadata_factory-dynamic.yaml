@@ -1,0 +1,12 @@
+kind: helper
+name: provider-metadata-factory-seed-dynamic
+call:
+  provider_metadata_factory:
+    dynamic_metadata_separation:
+      queries:
+        - {provider: "ollama", model: "qwen2.5"}
+        - {provider: "lemonade", model: "qwen2.5"}
+        - {provider: "vllm", model: "m"}
+        - {provider: "openai_like", model: "m"}
+env: {}
+compare: {ignore: []}

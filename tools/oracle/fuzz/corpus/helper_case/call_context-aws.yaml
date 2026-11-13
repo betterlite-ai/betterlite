@@ -1,0 +1,6 @@
+kind: helper
+name: call-context-aws-seed
+call:
+  aws_partition: {region: cn-north-1, value: 'arn:aws-cn:bedrock:cn-north-1:1:model/x'}
+compare: {ignore: []}
+env: {}

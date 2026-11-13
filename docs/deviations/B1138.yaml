@@ -1,0 +1,5 @@
+task: B1138
+deviations:
+  - what: Discard caller-supplied _hidden_params instead of serializing it as a provider extra.
+    why: The task requires this private attribute to remain absent from response JSON. LiteLLM initializes its private dictionary separately but echoes a same-named input key as public extra data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1424

@@ -1,0 +1,20 @@
+kind: helper
+name: model-arn-region
+call:
+  bedrock_aws_endpoints:
+    model_arn_region:
+      models:
+        - 'arn:aws:bedrock:us-east-1:123456789012:model/anthropic.claude'
+        - 'arn:aws-cn:bedrock:cn-north-1:1:model/x'
+        - 'arn:aws-us-gov:bedrock:us-gov-west-1:1:model/x'
+        - 'arn:aws:bedrock:us-east-1'
+        - 'xarn:aws:bedrock:eu-west-1:1:y'
+        - 'arn:aws:bedrock:us-east-1x:1:y'
+        - 'arn:aws:bedrock:INVALID-Region:1:x'
+        - 'arn:aws:bedrock::1:x'
+        - 'arn:aws:bedrock:eu_west_1:1:x'
+        - 'arn:aws:s3:us-east-1:1:model/x'
+        - 'model/anthropic.claude'
+        - null
+env: {}
+compare: {ignore: []}

@@ -21,13 +21,22 @@ pub fn count_masked_entities(
     for detection in detections {
         match detection {
             ContentFilterDetection::Pattern(pattern) if pattern.action == "MASK" => {
-                increment(masked_entity_count, &pattern.pattern_name);
+                let count = masked_entity_count
+                    .entry(pattern.pattern_name.clone())
+                    .or_default();
+                *count = count.saturating_add(1);
             }
             ContentFilterDetection::BlockedWord(word) if word.action == "MASK" => {
-                increment(masked_entity_count, "blocked_word");
+                let count = masked_entity_count
+                    .entry("blocked_word".to_owned())
+                    .or_default();
+                *count = count.saturating_add(1);
             }
             ContentFilterDetection::CategoryKeyword(category) if category.action == "MASK" => {
-                increment(masked_entity_count, &category.category);
+                let count = masked_entity_count
+                    .entry(category.category.clone())
+                    .or_default();
+                *count = count.saturating_add(1);
             }
             ContentFilterDetection::Pattern(_)
             | ContentFilterDetection::BlockedWord(_)
@@ -90,11 +99,6 @@ pub fn get_policy_templates(loaded_categories: &[(Option<String>, String)]) -> O
         })
         .collect::<Vec<_>>();
     Some(names.join(", "))
-}
-
-fn increment(counts: &mut BTreeMap<String, usize>, name: &str) {
-    let count = counts.entry(name.to_owned()).or_default();
-    *count = count.saturating_add(1);
 }
 
 fn match_detail(detection: &ContentFilterDetection) -> MatchDetail {

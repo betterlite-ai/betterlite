@@ -3,15 +3,31 @@ name = "betterlite-prompts-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
 
 [dependencies]
+async-trait = "0.1.92"
+betterlite-config = { path = "../../betterlite-config" }
+betterlite-http = { path = "../../betterlite-http" }
 betterlite-prompts = { path = ".." }
 chrono = "0.4.45"
+indexmap = "2.14.2"
 libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.145", features = ["arbitrary_precision"] }
+tokio = { workspace = true }
+
+[[bin]]
+name = "gitlab_templates"
+path = "fuzz_targets/gitlab_templates.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "dotprompt_templates"
@@ -35,10 +51,106 @@ doc = false
 bench = false
 
 [[bin]]
+name = "semantic_cache_response"
+path = "fuzz_targets/semantic_cache_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "schema_definitions"
 path = "fuzz_targets/schema_definitions.rs"
 test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "tool_schema"
+path = "fuzz_targets/tool_schema.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "media_metadata"
+path = "fuzz_targets/media_metadata.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bitbucket_file_bytes"
+path = "fuzz_targets/bitbucket_file_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bitbucket_prompt_file"
+path = "fuzz_targets/bitbucket_prompt_file.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "model_file_ids"
+path = "fuzz_targets/model_file_ids.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "media_data"
+path = "fuzz_targets/media_data.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "response_tool_calls"
+path = "fuzz_targets/response_tool_calls.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gemini_tool_invokes"
+path = "fuzz_targets/gemini_tool_invokes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gemini_tool_results"
+path = "fuzz_targets/gemini_tool_results.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "provider_messages"
+path = "fuzz_targets/provider_messages.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prompt_anthropic"
+path = "fuzz_targets/prompt_anthropic.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_native_tool"
+path = "fuzz_targets/bedrock_native_tool.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prompt_bedrock"
+path = "fuzz_targets/prompt_bedrock.rs"
+test = false
+doc = false
+bench = false

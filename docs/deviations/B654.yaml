@@ -1,0 +1,11 @@
+task: B654
+deviations:
+  - what: Response bodies, SSE event data and the first 100 characters of a malformed data line are not written to debug records; the warning and error categories and the fallback results stay the same.
+    why: LiteLLM logs the response JSON, the first 500 response characters and each event payload; repository redaction rules keep provider content out of diagnostics.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L455-L529
+  - what: A response body that is not valid UTF-8 fails with a typed error and a charset parameter is ignored, where LiteLLM decodes with the declared charset and replaces undecodable bytes.
+    why: LiteLLM reads raw_response.text, whose codec falls back to replacement; betterlite refuses bytes that are not UTF-8 instead of mangling them, as clippy.toml requires.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L455-L480
+  - what: A negative inputTokens, outputTokens or totalTokens value fails the whole response with a typed error instead of reaching usage.
+    why: LiteLLM stores any Python int in Usage, while betterlite's ChatUsage carries u64 token counts, so a negative provider count has no representation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L1029-L1035

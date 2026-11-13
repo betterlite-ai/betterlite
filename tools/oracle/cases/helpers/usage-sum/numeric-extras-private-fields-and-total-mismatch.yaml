@@ -6,11 +6,11 @@ call:
       - prompt_tokens: 2
         completion_tokens: 3
         total_tokens: 99
-        numeric_extras: {duration: 1.5, flag: true}
+        numeric_extras: {duration: 1.5, flag: true, _private: 1}
       - prompt_tokens: 5
         completion_tokens: 7
         total_tokens: 1
-        numeric_extras: {duration: 2.5, flag: false}
+        numeric_extras: {duration: 2.5, flag: false, _private: 1}
 compare:
   ignore:
     - pointer: /value/numeric_extras/duration

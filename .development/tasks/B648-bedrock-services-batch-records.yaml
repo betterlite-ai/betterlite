@@ -303,7 +303,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_records_cases::case_[0-9]+_malformed_jsonl_line$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_records.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_records.py tools/oracle/helpers/bedrock_services_batch_records)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -316,7 +316,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_records)"
       && grep -q 'decode_batch_input_line' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_batch_records.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_batch_records_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_batch_records_corpus(::|$)/)'
   - id: case-nova-batch-record
     why: Only provider nova uses B600 constructor/map_openai_params with drop_params=False, then B604 transform_request
       with empty litellm_params/headers. Reuse its image blocks, inferenceConfig, defaults and strict unsupported-parameter

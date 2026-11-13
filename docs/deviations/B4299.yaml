@@ -1,0 +1,102 @@
+task: B4299
+deviations:
+  - what: >-
+      A redis-semantic cache raises CacheTypeNotSupportedError("cache type 'redis-semantic' is owned by
+      B4382") instead of constructing RedisSemanticCache.
+    why: >-
+      RedisSemanticCache is a separate backend (B4382). The error names the task that builds it, so a
+      deployment selecting the type learns why it is refused instead of getting a half-built cache.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L220-L231
+  - what: >-
+      A valkey-semantic cache raises CacheTypeNotSupportedError("cache type 'valkey-semantic' is owned by
+      B8296") instead of constructing ValkeySemanticCache.
+    why: >-
+      ValkeySemanticCache is built by B8296, which imports the optional valkey backend. B4299 refuses the
+      type by name rather than constructing a backend it does not own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L232-L247
+  - what: >-
+      A qdrant-semantic cache raises CacheTypeNotSupportedError("cache type 'qdrant-semantic' is owned by
+      B4383") instead of constructing QdrantSemanticCache.
+    why: >-
+      QdrantSemanticCache is owned by B4383. The error names that task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L249-L260
+  - what: >-
+      An s3 cache raises CacheTypeNotSupportedError("cache type 's3' is owned by B4350") instead of
+      constructing S3Cache from the cache parameters.
+    why: >-
+      The S3 backend is built by B4350. Its configuration belongs with that task, so the dispatcher here
+      refuses the type and names the owner.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L263-L277
+  - what: >-
+      A gcs cache raises CacheTypeNotSupportedError("cache type 'gcs' is not yet implemented") instead of
+      constructing GCSCache.
+    why: >-
+      B127 builds the GCS backend and B4299 does not wire it. No task currently owns the cache type, so
+      the error says the backend is not implemented yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L278-L283
+  - what: >-
+      An azure-blob cache raises CacheTypeNotSupportedError("cache type 'azure-blob' is owned by B4351")
+      instead of constructing AzureBlobCache.
+    why: >-
+      The Azure Blob backend is built by B4351, and its account settings live with that task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L284-L288
+  - what: >-
+      A redis cache with a truthy redis_startup_nodes, or with a non-empty REDIS_CLUSTER_NODES in the
+      environment, raises CacheTypeNotSupportedError("cache type 'redis' with cluster mode is owned by
+      B5640") instead of constructing RedisClusterCache. The environment value is never parsed, so a
+      malformed non-empty value raises the same error rather than a JSON decode error, and an explicit
+      empty startup node list still reads the environment. An empty environment value counts as unset,
+      as docs/compatibility.md says, so it selects the single-node cache. The startup node list never
+      reaches the single-node RedisCache.
+    why: >-
+      Redis cluster mode is B5640's connect path over B4325 and B5220, which B4299 does not wire. Parsing
+      the value would only decide between an unsupported cluster and a single node, and the error names
+      the owner without risking a decode failure on a value the user cannot act on here. docs/compatibility.md
+      makes an empty env var unset, so only a value with content selects cluster mode.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L190-L219
+  - what: >-
+      A namespace is passed to RedisCache through RedisCacheOptions at construction instead of being
+      assigned to RedisCache.namespace after construction.
+    why: >-
+      betterlite's RedisCache values, counters and admin slices capture the namespace when the cache is
+      built, so assigning the field afterwards would leave key operations unnamespaced. The observable
+      namespace on the cache and on its keys is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L317-L318
+  - what: >-
+      ping returns Ok(None) and delete_cache_keys returns Ok(()) for a backend that does not declare the
+      operation, where LiteLLM's getattr without a default raises AttributeError for a cache without the
+      method.
+    why: >-
+      The task asks both methods to delegate to the backend where the operation is available, which is
+      the getattr-with-default behaviour LiteLLM's code was written for. A caller of a memory, disk or
+      injected backend gets no error for an operation the contract does not declare.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L989-L999
+  - what: >-
+      disable_cache removes "cache" from each of the three callback lists independently and ignores a
+      list without the entry. LiteLLM's single suppress(ValueError) block stops at the first list that
+      lacks the entry, so the later lists keep "cache".
+    why: >-
+      A cache that registered all three entries is disabled in full, and an inconsistent set of callback
+      lists cannot strand a registration that would keep calling a disabled cache.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1114-L1117
+  - what: >-
+      The cache callback is appended to three plain callback lists with no capacity limit, where LiteLLM's
+      logging callback manager skips a callback once a list holds MAX_CALLBACKS (30) entries.
+    why: >-
+      The callback manager is B5368's and is not part of this module. The lists here are the three names
+      the cache registers, and an injected callback manager replaces them when the server wires one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L149-L160
+  - what: >-
+      The native cache runtime is not integrated: Cache has no _native_cache and backend construction
+      never routes through ResponseCacheRuntime.
+    why: >-
+      The rust_bridge response-cache runtime is outside the repository inventory. The Python backends
+      cover the same cache types, and native dispatch has no runtime path to exercise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L78
+  - what: >-
+      update_cache returns the Cache it replaced, where LiteLLM's module-level update_cache returns
+      None.
+    why: >-
+      The replaced cache still owns a Redis client and a breaker, so a Rust caller needs the old value to
+      disconnect it. The module state before and after the call is the same as LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L1086-L1096

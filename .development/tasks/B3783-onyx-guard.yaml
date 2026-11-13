@@ -38,11 +38,11 @@ dod:
   - text: ONYX_TIMEOUT is truncated to integer; non-integer strings like "7.5" raise ValueError during initialization.
     proof: [onyx-timeout-int-cast]
   - text: For each request type (request or response), the guardrail extracts the payload, calls the Onyx server, and raises 400 with violated_rules on rejection.
-    proof: [oracle-request-block, oracle-response-block]
+    proof: [oracle]
   - text: On backend errors, the guardrail logs and returns inputs unchanged.
-    proof: [oracle-backend-error]
+    proof: [oracle]
   - text: The guardrail supports pre_call, during_call and post_call event hooks.
-    proof: [oracle-event-hooks]
+    proof: [oracle]
   - text: The conversation_id is taken from logging_obj.litellm_call_id if available, else a random UUID.
     proof: [onyx-unit-tests]
   - text: The configuration model has api_base, api_key and timeout fields with the documented defaults and description.
@@ -62,18 +62,6 @@ checks:
     - id: onyx-unit-tests
       why: unit tests for payload construction or conversation_id handling fail
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^onyx::/)'
-    - id: oracle-request-block
-      why: the oracle comparison fails for a blocked request
-      run: cargo gate run B3783 --only oracle
-    - id: oracle-response-block
-      why: the oracle comparison fails for a blocked response
-      run: cargo gate run B3783 --only oracle
-    - id: oracle-backend-error
-      why: the oracle comparison fails for backend error handling
-      run: cargo gate run B3783 --only oracle
-    - id: oracle-event-hooks
-      why: the oracle comparison fails for any event hook type
-      run: cargo gate run B3783 --only oracle
 oracle_cases:
   - tools/oracle/cases/guardrails/onyx-request-allowed.yaml
   - tools/oracle/cases/guardrails/onyx-request-blocked.yaml

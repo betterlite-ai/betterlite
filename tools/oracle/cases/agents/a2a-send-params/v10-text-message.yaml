@@ -1,0 +1,17 @@
+kind: helper
+name: a2a-send-params-v10-text-message
+call:
+  b6950:
+    params:
+      message:
+        role: ROLE_USER
+        message_id: m1
+        context_id: c1
+        task_id: t1
+        reference_task_ids: [r1]
+        extensions: [e1]
+        metadata: {k: 1}
+        parts:
+          - text: hi
+env: {}
+compare: {ignore: []}

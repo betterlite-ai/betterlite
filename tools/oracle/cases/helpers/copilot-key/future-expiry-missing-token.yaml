@@ -1,0 +1,13 @@
+kind: helper
+name: future_expiry_missing_token
+call:
+  copilot_key:
+    action: get_api_key
+    now: 1700000000
+    api_key_file: '{"expires_at": 1800000000}'
+    access_token_file: null
+    api_replies: []
+    fail_write: false
+env: {}
+compare:
+  ignore: []

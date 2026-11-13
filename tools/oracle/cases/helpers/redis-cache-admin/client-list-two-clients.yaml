@@ -1,0 +1,10 @@
+kind: helper
+name: redis-cache-admin-client-list-two-clients
+call:
+  b4326:
+    function: parse_client_list
+    text: |-
+      id=3 addr=127.0.0.1:56789 laddr=127.0.0.1:6379 fd=8 name= age=5 idle=0 flags=N db=0 cmd=client|list user=default
+      id=4 addr=127.0.0.1:56790 laddr=127.0.0.1:6379 fd=9 name= age=2 idle=0 flags=N db=0 cmd=ping user=default
+env: {}
+compare: {ignore: []}

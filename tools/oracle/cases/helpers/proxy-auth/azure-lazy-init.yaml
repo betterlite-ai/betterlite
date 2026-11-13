@@ -1,0 +1,11 @@
+kind: helper
+name: proxy-auth-azure-lazy-init
+call:
+  proxy_auth:
+    operation: azure
+    params:
+      installed: true
+      injected: false
+      scopes: ['api://one/.default', 'api://two/.default']
+env: {}
+compare: {ignore: []}

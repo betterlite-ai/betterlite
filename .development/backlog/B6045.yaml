@@ -1,0 +1,14 @@
+id: B6045
+milestone: M12 python
+title: Python transcription and speech
+status: todo
+depends_on: [B6040]
+file: tasks/B6045-python-audio.yaml
+covers:
+  - "litellm/main.py"
+parent: B159
+split_from: B159
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,108 @@
+id: B7871
+title: Python create_file, file_retrieve, file_delete, file_list and the files package
+description: >-
+  This is the last part of the files entry. It adds the four file calls that move a file object or an id: `create_file` and
+  `acreate_file` upload one, `file_retrieve` reads its record, `file_delete` removes it and `file_list` lists files. Rust
+  already does the provider work (B1028 for upload and delete, B1029 for retrieve and list). Python turns arguments into
+  JSON, calls a native session and builds the response objects.
+
+
+  Native side, the family `file_calls`. `src/file_calls.rs` has `register` that adds `NativeFileCallSession` and
+  `NativeFileCallError`. The session has methods `create`, `retrieve`, `delete` and `list`, each with an `a`-prefixed twin that
+  returns an awaitable. Each takes `(payload_text, blobs)` and gives JSON text. The upload bytes travel as a blob. The
+  architect writes the `lib.rs` lines, so don't edit it. Conversion lives in `src/file_calls/convert.rs`, and its test names
+  start with `request_` and `error_`.
+
+
+  Python side, in `python/betterlite/files/_calls.py`, plus `python/betterlite/files/main.py` and `__init__.py`. They
+  re-export the names of this task and of B7870 (`file_content`, `afile_content`, `FileContentStreamingResponse`). The
+  signatures are in files/main.py: `create_file(file, purpose, expires_after=None, custom_llm_provider=None,
+  extra_headers=None, extra_body=None, **kwargs)`, `file_retrieve(file_id, custom_llm_provider="openai", ...)`,
+  `file_delete(file_id, model=None, custom_llm_provider="openai", ...)` and `file_list(custom_llm_provider="openai",
+  purpose=None, ...)`. A test compares each `inspect.signature`. The `a`-prefixed versions are coroutine functions, and the
+  sync ones accept `acreate_file=True`, `afile_retrieve=True`, `afile_delete=True` and `afile_list=True` and then return a
+  coroutine. The `file` argument can be bytes, a binary file object, a path or a tuple, and B6040's `to_call_payload`
+  turns it into a blob.
+
+
+  Results: `OpenAIFileObject` for create and retrieve, `FileDeleted` for delete, and for list a `SyncCursorPage` style object
+  whose `data` holds `OpenAIFileObject` entries (use the class B167 provides, and keep `.data`, iteration and `has_more`).
+  `create_file` with `custom_llm_provider=None` resolves the provider in Rust. Rust reads `model` from kwargs when no
+  provider is given (files/main.py L161-L296).
+scope:
+  paths:
+  - crates/betterlite-python/src/file_calls.rs
+  - crates/betterlite-python/src/file_calls/**
+  - crates/betterlite-python/python/betterlite/_native_file_calls.pyi
+  - crates/betterlite-python/python/betterlite/files/_calls.py
+  - crates/betterlite-python/python/betterlite/files/main.py
+  - crates/betterlite-python/python/betterlite/files/__init__.py
+  - crates/betterlite-python/tests/test_file_calls.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L115-L297
+  why: acreate_file and create_file
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L298-L466
+  why: afile_retrieve and file_retrieve
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L467-L642
+  why: afile_delete and file_delete
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/files/main.py#L643-L804
+  why: afile_list and file_list
+dod:
+- text: All eight calls keep LiteLLM's signatures, and the `a` names are coroutine functions.
+  proof: [calls-signature]
+- text: Upload from bytes, a file object, a path and a tuple reaches the local server with the right filename, purpose and bytes, and the result equals LiteLLM's.
+  proof: [calls-create]
+- text: Retrieve, delete and list give the same objects as LiteLLM against one server, and the sync functions return a coroutine under their `a` flag.
+  proof: [calls-read]
+- text: A provider error raises the matching class with the native error as cause.
+  proof: [calls-error]
+- text: "`betterlite.files` exports both parts' names and nothing else."
+  proof: [calls-package]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [calls-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: calls-signature
+    why: A caller's keyword is refused.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_file_calls.py -k signature
+  - id: calls-create
+    why: A filename or purpose is lost.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_file_calls.py -k create
+  - id: calls-read
+    why: A record differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_file_calls.py -k 'retrieve or delete or list'
+  - id: calls-error
+    why: A provider error turns generic.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_file_calls.py -k error
+  - id: calls-package
+    why: A name is missing or leaks.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_file_calls.py -k package
+  - id: calls-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^file_calls::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for the file calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`create_file` and `file_delete` refuse a `client` argument with `UnsupportedCallArgument`."
+  why: A Python HTTP client can't drive the Rust one (see B158).
+- what: This task has no helper oracle cases.
+  why: Both packages run against one local server in pytest. That covers the Python objects too.
+out_of_scope:
+- "`file_content`, `afile_content` and the streaming response are B7870."
+- "The provider calls inside each function (B1028, B1029) and file routing ids (B1019) are Rust."
+- "`FileTypes` and `FileExpiresAfter` live in litellm/types and are B167's."
+pitfalls:
+- "`file_delete` takes a `model` argument that `file_retrieve` lacks, and `file_list` has `purpose` instead of an id."
+- "`create_file` defaults `custom_llm_provider` to None, while `acreate_file` defaults it to \"openai\"."
+- "A file object read by `to_call_payload` must be put back at its start position, since the caller may read it again."
+- "`afile_list` and `file_list` have no return annotation at the pin, so the result type must come from the data and not the signature."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

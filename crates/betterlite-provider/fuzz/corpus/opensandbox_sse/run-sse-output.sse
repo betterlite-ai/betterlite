@@ -1,0 +1,5 @@
+data: {"type":"stdout","text":"hello\n"}
+data: {"type":"stderr","text":"warning\n"}
+data: {"type":"execution_count","execution_count":1}
+data: {"type":"result","text":"'hello'","results":{"text/plain":"hello"}}
+data: {"type":"error","error":{"ename":"ValueError","evalue":"bad input","traceback":["line 1"]}}

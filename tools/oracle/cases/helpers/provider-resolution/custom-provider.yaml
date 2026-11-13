@@ -1,0 +1,10 @@
+kind: helper
+name: provider-resolution-custom-provider
+call:
+  provider_resolution:
+    model: my-provider/some-model
+    api_base: https://custom.example/v1
+    api_key: sk-config
+    custom_providers: [my-provider]
+env: {}
+compare: {ignore: []}

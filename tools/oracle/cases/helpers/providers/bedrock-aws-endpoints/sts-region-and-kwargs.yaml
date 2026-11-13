@@ -1,0 +1,36 @@
+kind: helper
+name: sts-region-and-kwargs
+call:
+  bedrock_aws_endpoints:
+    sts_kwargs:
+      cases:
+        - endpoint: 'https://sts.eu-west-1.amazonaws.com'
+          verify: null
+          configured_region: ap-south-1
+          environment: {AWS_REGION: us-east-1, AWS_DEFAULT_REGION: us-west-2}
+        - endpoint: 'https://example.com'
+          verify: false
+          configured_region: null
+          environment: {AWS_REGION: us-east-1}
+        - endpoint: null
+          verify: true
+          configured_region: null
+          environment: {AWS_REGION: '', AWS_DEFAULT_REGION: us-west-2}
+        - endpoint: null
+          verify: null
+          configured_region: ap-south-1
+          environment: {AWS_REGION: '', AWS_DEFAULT_REGION: ''}
+        - endpoint: null
+          verify: null
+          configured_region: ''
+          environment: {}
+        - endpoint: null
+          verify: null
+          configured_region: null
+          environment: {}
+        - endpoint: ''
+          verify: null
+          configured_region: null
+          environment: {}
+env: {}
+compare: {ignore: []}

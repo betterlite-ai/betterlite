@@ -1,0 +1,19 @@
+kind: helper
+name: attributes-tools-in-optional-params
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      optional_params:
+        tools:
+          - type: function
+            function:
+              name: get_weather
+              description: Get the weather
+              parameters: {}
+          - not_a_tool: true
+      standard_logging_object:
+        call_type: acompletion
+    response: null
+env: {}
+compare: {ignore: []}

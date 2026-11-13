@@ -1,0 +1,10 @@
+kind: helper
+name: chain-missing-parent
+call:
+  b3240:
+    function: inheritance_chain
+    policy_name: child
+    policies:
+      child: {inherit: missing}
+env: {}
+compare: {ignore: []}

@@ -194,7 +194,7 @@ checks:
   commands:
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/agentcore_search_reply.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/agentcore_search_reply.py tools/oracle/helpers/agentcore_search_reply)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -207,7 +207,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/agentcore_search_reply)"
       && grep -q 'decode_agentcore_search_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/agentcore_search_reply.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_agentcore_search_reply_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_agentcore_search_reply_corpus(::|$)/)'
   - id: case-agentcore-response-error
     why: 'Mutate supplied response to one assistant choice,index0,finish_reason stop; model always supplied model.
       Keep unrelated response fields. Any outer error logs Error processing Bedrock AgentCore response: {error},
@@ -268,7 +268,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - All other functions in search/transformation.py, including credential transport/host checks, constructor, environment,
-  URL, request, signing and error factory are B659. Base SearchResult/SearchResponse types belong to B091.
+  URL, request, signing and error factory are B659. Base SearchResult/SearchResponse types belong to B3270.
 - 'Function ownership inventory litellm/llms/bedrock/search/transformation.py: _gateway_host_match L85-L86; _credential_safe_transport
   L92-L94; AgentCoreSearchConfig.__init__ L158-L160; AgentCoreSearchConfig.ui_friendly_name L162-L164; AgentCoreSearchConfig.validate_environment
   L166-L187; AgentCoreSearchConfig.get_complete_url L189-L203; AgentCoreSearchConfig.transform_search_request L205-L248;

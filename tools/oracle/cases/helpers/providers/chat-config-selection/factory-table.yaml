@@ -1,0 +1,121 @@
+kind: helper
+name: chat-config-selection-factory-table
+call:
+  chat_config_selection:
+    function: factory_table
+    catalog:
+      chat_models: [o1, o3-mini, o4-mini, gpt-4o, gpt-5, gpt-5-chat-latest, gpt-6]
+      text_models: [gpt-3.5-turbo-instruct]
+    vertex:
+      mistral_models: []
+      ai21_models: []
+    calls:
+      - {provider: openai, model: gpt-4o}
+      - {provider: chatgpt, model: test-model}
+      - {provider: openai_like, model: test-model}
+      - {provider: xai, model: test-model}
+      - {provider: zai, model: test-model}
+      - {provider: custom_openai, model: test-model}
+      - {provider: text-completion-openai, model: test-model}
+      - {provider: cohere, model: v1/command}
+      - {provider: cohere_chat, model: command}
+      - {provider: clarifai, model: test-model}
+      - {provider: anthropic, model: test-model}
+      - {provider: anthropic_text, model: test-model}
+      - {provider: bytez, model: test-model}
+      - {provider: replicate, model: test-model}
+      - {provider: huggingface, model: test-model}
+      - {provider: together_ai, model: test-model}
+      - {provider: openrouter, model: test-model}
+      - {provider: datarobot, model: test-model}
+      - {provider: vertex_ai, model: gemini-pro}
+      - {provider: vertex_ai_beta, model: test-model}
+      - {provider: gemini, model: test-model}
+      - {provider: ai21, model: test-model}
+      - {provider: baseten, model: test-model}
+      - {provider: azure_text, model: test-model}
+      - {provider: azure_ai, model: claude-sonnet}
+      - {provider: sagemaker, model: test-model}
+      - {provider: sagemaker_chat, model: test-model}
+      - {provider: sagemaker_nova, model: test-model}
+      - {provider: bedrock, model: anthropic.claude-v2}
+      - {provider: vllm, model: test-model}
+      - {provider: nlp_cloud, model: test-model}
+      - {provider: petals, model: test-model}
+      - {provider: oobabooga, model: test-model}
+      - {provider: ollama, model: test-model}
+      - {provider: ollama_chat, model: test-model}
+      - {provider: deepinfra, model: test-model}
+      - {provider: perplexity, model: test-model}
+      - {provider: mistral, model: test-model}
+      - {provider: groq, model: test-model}
+      - {provider: a2a, model: test-model}
+      - {provider: gigachat, model: test-model}
+      - {provider: nvidia_nim, model: test-model}
+      - {provider: cerebras, model: test-model}
+      - {provider: nadir, model: test-model}
+      - {provider: ai21_chat, model: test-model}
+      - {provider: volcengine, model: test-model}
+      - {provider: codestral, model: test-model}
+      - {provider: text-completion-codestral, model: test-model}
+      - {provider: dashscope, model: test-model}
+      - {provider: qwencloud, model: test-model}
+      - {provider: qwen_ai_platform, model: test-model}
+      - {provider: modelscope, model: test-model}
+      - {provider: moonshot, model: test-model}
+      - {provider: v0, model: test-model}
+      - {provider: morph, model: test-model}
+      - {provider: lambda_ai, model: test-model}
+      - {provider: inception, model: test-model}
+      - {provider: text-completion-inception, model: test-model}
+      - {provider: deepseek, model: test-model}
+      - {provider: sambanova, model: test-model}
+      - {provider: maritalk, model: test-model}
+      - {provider: cloudflare, model: test-model}
+      - {provider: fireworks_ai, model: test-model}
+      - {provider: friendliai, model: test-model}
+      - {provider: featherless_ai, model: test-model}
+      - {provider: watsonx, model: test-model}
+      - {provider: watsonx_text, model: test-model}
+      - {provider: triton, model: test-model}
+      - {provider: predibase, model: test-model}
+      - {provider: databricks, model: test-model}
+      - {provider: empower, model: test-model}
+      - {provider: github, model: test-model}
+      - {provider: ragflow, model: test-model}
+      - {provider: compactifai, model: test-model}
+      - {provider: docker_model_runner, model: test-model}
+      - {provider: custom, model: test-model}
+      - {provider: litellm_proxy, model: test-model}
+      - {provider: hosted_vllm, model: test-model}
+      - {provider: tencent, model: test-model}
+      - {provider: llamafile, model: test-model}
+      - {provider: lm_studio, model: test-model}
+      - {provider: galadriel, model: test-model}
+      - {provider: nebius, model: test-model}
+      - {provider: novita, model: test-model}
+      - {provider: aiohttp_openai, model: test-model}
+      - {provider: sap, model: test-model}
+      - {provider: github_copilot, model: test-model}
+      - {provider: snowflake, model: test-model}
+      - {provider: gradient_ai, model: test-model}
+      - {provider: meta_llama, model: test-model}
+      - {provider: nscale, model: test-model}
+      - {provider: hyperbolic, model: test-model}
+      - {provider: fal_ai, model: test-model}
+      - {provider: heroku, model: test-model}
+      - {provider: cometapi, model: test-model}
+      - {provider: oci, model: test-model}
+      - {provider: vercel_ai_gateway, model: test-model}
+      - {provider: edenai, model: test-model}
+      - {provider: wandb, model: test-model}
+      - {provider: ovhcloud, model: test-model}
+      - {provider: amazon_nova, model: test-model}
+      - {provider: langgraph, model: test-model}
+      - {provider: langflow, model: test-model}
+      - {provider: minimax, model: test-model}
+      - {provider: sail, model: test-model}
+      - {provider: bedrock_mantle, model: test-model}
+      - {provider: gdc, model: test-model}
+env: {}
+compare: {ignore: []}

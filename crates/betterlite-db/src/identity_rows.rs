@@ -124,14 +124,6 @@ pub fn decode_identity_rows(bytes: &[u8]) -> Result<IdentityRow, IdentityRowsDec
     check_depth(text)?;
     serde_json::from_str(text).map_err(IdentityRowsDecodeError::Json)
 }
-pub(crate) fn empty_vec_or_null<'de, T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
-where
-    T: Deserialize<'de>,
-    D: serde::Deserializer<'de>,
-{
-    let value = Option::<Vec<T>>::deserialize(deserializer)?;
-    Ok(value.unwrap_or_default())
-}
 pub(crate) fn null_decimal<'de, D>(deserializer: D) -> Result<rust_decimal::Decimal, D::Error>
 where
     D: serde::Deserializer<'de>,

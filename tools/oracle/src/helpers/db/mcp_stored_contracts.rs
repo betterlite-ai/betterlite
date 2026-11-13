@@ -4,7 +4,7 @@ use betterlite_db::mcp_stored_contracts::{
     JsonValue, MCPAuthType, MCPCredentials, MCPTokenEndpointAuthMethod, MCPTransport, decode,
     pinned,
 };
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 pub(crate) struct Op;
@@ -25,6 +25,35 @@ enum Call {
     ProtocolMetadata(Value),
 }
 
+impl Call {
+    fn evaluate(&self) -> Result<Value, &'static str> {
+        match self {
+            Self::CredentialContract(value) => {
+                let record = serde_json::from_value::<MCPCredentials>(value.clone())
+                    .map_err(|_| "ValidationError")?;
+                serde_json::to_value(record).map_err(|_| "SerializationError")
+            }
+            Self::Transport(value) => {
+                let record = serde_json::from_value::<MCPTransport>(value.clone())
+                    .map_err(|_| "ValidationError")?;
+                serde_json::to_value(record).map_err(|_| "SerializationError")
+            }
+            Self::Auth(value) => {
+                let record = serde_json::from_value::<MCPAuthType>(value.clone())
+                    .map_err(|_| "ValidationError")?;
+                serde_json::to_value(record).map_err(|_| "SerializationError")
+            }
+            Self::TokenEndpointMethod(value) => {
+                let record = serde_json::from_value::<MCPTokenEndpointAuthMethod>(value.clone())
+                    .map_err(|_| "ValidationError")?;
+                serde_json::to_value(record).map_err(|_| "SerializationError")
+            }
+            Self::PinnedToolContract(value) => parse_tools(value),
+            Self::ProtocolMetadata(value) => parse_metadata(value),
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct Outcome {
     value: Option<Value>,
@@ -39,16 +68,7 @@ impl crate::helpers::Helper for Op {
             .steps
             .iter()
             .map(|(name, call)| {
-                let result = match call {
-                    Call::CredentialContract(value) => validate::<MCPCredentials>(value),
-                    Call::Transport(value) => validate::<MCPTransport>(value),
-                    Call::Auth(value) => validate::<MCPAuthType>(value),
-                    Call::TokenEndpointMethod(value) => {
-                        validate::<MCPTokenEndpointAuthMethod>(value)
-                    }
-                    Call::PinnedToolContract(value) => parse_tools(value),
-                    Call::ProtocolMetadata(value) => parse_metadata(value),
-                };
+                let result = call.evaluate();
                 let outcome = match result {
                     Ok(value) => Outcome {
                         value: Some(value),
@@ -73,14 +93,6 @@ impl crate::helpers::Helper for Op {
             })
         })
     }
-}
-
-fn validate<Record>(value: &Value) -> Result<Value, &'static str>
-where
-    Record: DeserializeOwned + Serialize,
-{
-    let record: Record = serde_json::from_value(value.clone()).map_err(|_| "ValidationError")?;
-    serde_json::to_value(record).map_err(|_| "SerializationError")
 }
 
 fn parse_tools(value: &Value) -> Result<Value, &'static str> {

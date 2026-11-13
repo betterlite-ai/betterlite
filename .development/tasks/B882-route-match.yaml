@@ -89,6 +89,7 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/route-match/**
     - tools/oracle/fuzz/corpus/helper_case/route-match-*
+    - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state.rs

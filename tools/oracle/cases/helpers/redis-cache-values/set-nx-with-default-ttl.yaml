@@ -1,0 +1,14 @@
+kind: helper
+name: redis-cache-values-set-nx-with-default-ttl
+call:
+  b4327:
+    function: write_commands
+    operation: async_set_cache
+    namespace: ns
+    default_ttl: 60
+    flush_size: null
+    entries:
+      - {key: alpha, value: cached, ttl: null}
+    nx: true
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: proxy-auth-seed
+call:
+  proxy_auth:
+    operation: handler
+    params:
+      scope: 'api://proxy/.default'
+      replies:
+        - {token: seeded, expires_on: 5000}
+      calls:
+        - {at: 1000}
+env: {}
+compare: {ignore: []}

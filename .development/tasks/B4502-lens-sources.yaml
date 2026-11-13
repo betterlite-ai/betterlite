@@ -173,7 +173,7 @@ out_of_scope:
   - Concrete Storage trait implementations (lens_availability, lens_agents, lens_sample, lens_content, lens_evidence methods) are assigned to G1 (outstanding architectural decision).
   - B4503/B4505 own HTTP routes that wrap SourceReader methods and deserialize request parameters.
   - B4507, B4508, B4509 own extraction/investigation/analysis stages that consume ExecutionContent and Evidence records.
-  - B132 owns worker executable that calls SourceReader through injected dependencies.
+  - B4505's worker routes call SourceReader for the sample and content the worker fetches; B8232's worker executable reads them over HTTP and never calls SourceReader.
 pitfalls:
   - "Dependency: crates/betterlite-lens/src/lib.rs must declare `pub mod sources;` before this module compiles; B4500 owns this parent module declaration."
   - "Dependency: tools/oracle/src/helpers/lens.rs must register `\"lens_sources\" => sources,` and tools/oracle/src/helpers/lens/b4502.rs must exist as a stub before the oracle helper can compile; this registration is outside this task's scope."

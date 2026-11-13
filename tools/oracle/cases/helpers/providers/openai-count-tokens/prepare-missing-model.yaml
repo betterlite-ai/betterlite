@@ -1,0 +1,5 @@
+kind: helper
+name: prepare-missing-model
+call: {openai_count_tokens: {"prepare": {"model": "", "input": "hi", "api_key": "sk-other", "api_base": null, "timeout": null, "tools": null, "instructions": null}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: catalog-fetch-policy-classify-response
+call:
+  catalog_fetch_policy:
+    operation: classify_response
+    status: 200
+    headers: {ETag: abc}
+    body: '{"model": {}}'
+    url: https://catalog.test/model.json
+compare: {ignore: []}
+env: {}

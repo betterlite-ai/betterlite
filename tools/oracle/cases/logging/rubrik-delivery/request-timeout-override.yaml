@@ -1,0 +1,13 @@
+kind: helper
+name: rubrik-delivery-request-timeout-override
+call:
+  b3976:
+    environment: {}
+    init:
+      api_base: "https://rubrik.test"
+      api_key: test-key
+      request_timeout_seconds: 30
+    replies: []
+    actions: []
+env: {}
+compare: {ignore: []}

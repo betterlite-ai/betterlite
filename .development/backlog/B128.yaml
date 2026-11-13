@@ -2,8 +2,8 @@ id: B128
 milestone: M8 platform
 title: Semantic caches
 status: todo
-depends_on: [B002, B198, B4380, B4381, B4382, B4383]
-file: null
+depends_on: [B8650, B8651, B9560]
+file: tasks/B128-semantic-cache-http.yaml
 covers:
   - "litellm/caching/valkey_semantic_cache.py"
 parent: null

@@ -1,0 +1,5 @@
+kind: helper
+name: sse-record-and-json
+call: {"bedrock_event_frames": {"operation": "sse", "params": {"event": "message", "data": "{\"a\": [1, 2], \"b\": null}", "id": "7", "retry": 0}}}
+env: {}
+compare: {ignore: []}

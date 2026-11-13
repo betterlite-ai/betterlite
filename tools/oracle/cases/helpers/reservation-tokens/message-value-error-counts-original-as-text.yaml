@@ -1,0 +1,23 @@
+kind: helper
+name: reservation-tokens-message-value-error-counts-original-as-text
+call:
+  reservation_tokens:
+    calls:
+      - function: count_for_model
+        model: gpt-3.5-turbo
+        request:
+          messages:
+            - role: user
+              content:
+                - type: input_audio
+                  input_audio:
+                    data: AAA
+                    format: wav
+      - function: count_for_model
+        model: gpt-3.5-turbo
+        request:
+          messages:
+            - role: user
+              tool_calls: bad-shape
+env: {}
+compare: {ignore: []}

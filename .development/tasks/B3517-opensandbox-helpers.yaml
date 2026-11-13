@@ -169,7 +169,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opensandbox/sandbox/transformation.py#L356-L357
 out_of_scope:
   - OpenSandbox metadata beyond conditional pass-through to the API.
-  - Environment variable expansion or secret-manager full dispatch (get_secret_str beyond os.environ/); needs the unresolved B129 leaf.
+  - Environment variable expansion or secret-manager full dispatch (get_secret_str beyond os.environ/); needs the unresolved B8500 leaf.
   - Retries, timeouts and connection pooling for HTTP operations; those come from AsyncHTTPHandler in betterlite-http (B173).
   - The lifecycle methods acreate_sandbox, arun_code, adelete_sandbox and _ensure_handle; those belong to B3518.
 pitfalls:

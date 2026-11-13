@@ -1,0 +1,8 @@
+task: B3964
+deviations:
+  - what: After a 401 or 403 answer to a flush under username and password auth, betterlite drops the cached bearer headers so the next flush logs in again. LiteLLM's own HTTP client never reaches that branch.
+    why: LiteLLM's async POST handler calls raise_for_status and re-raises, so a 401 or 403 lands in the HTTPStatusError handler of flush_in_memory_records, which keeps the stale token forever. The 401 and 403 branch that clears self.headers is dead code there. Betterlite's Transport returns every answer, so the branch the LiteLLM author wrote works as the comment above it says. The oracle cases for it use a scripted client that returns the status instead of raising.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L828-L829
+  - what: A non-2xx answer to a flush is one debug line pair ("failed to flush in memory records" and the status and body). The extra HTTP error lines LiteLLM writes for a raised HTTPStatusError are not written.
+    why: Betterlite's Transport reports a non-2xx answer as a normal response, so there is no exception to log. The records stay buffered in both cases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/galileo.py#L439-L457

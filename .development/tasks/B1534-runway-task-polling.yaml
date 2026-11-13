@@ -29,17 +29,11 @@ description: >-
   duplicated sync/async loops; allow 250 implementation/config, 210 tests and 180 oracle/fuzz lines.
 scope:
   paths:
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
-    - crates/betterlite-core/src/api/runway.rs
-    - crates/betterlite-core/src/api/runway/**
     - crates/betterlite-core/src/api/runway/tasks.rs
     - crates/betterlite-core/src/api/runway/tasks/**
     - crates/betterlite-core/fuzz/Cargo.toml
     - crates/betterlite-core/fuzz/fuzz_targets/runway_task.rs
     - crates/betterlite-core/fuzz/corpus/runway_task/**
-    - crates/betterlite-config/src/providers.rs
-    - crates/betterlite-config/src/providers/**
     - crates/betterlite-config/src/providers/runway.rs
     - crates/betterlite-config/src/providers/runway/**
     - tools/oracle/src/helpers/core_ops/runway_tasks.rs

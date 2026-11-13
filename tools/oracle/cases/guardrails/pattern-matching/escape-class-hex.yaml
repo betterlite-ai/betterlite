@@ -1,0 +1,1 @@
+{"kind":"helper","name":"escape-class-hex","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"[\\x69]","action":"MASK"}],"text":"\u0130"}},"env":{},"compare":{"ignore":[]}}

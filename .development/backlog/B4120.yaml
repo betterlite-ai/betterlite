@@ -6,6 +6,7 @@ depends_on: [B004]
 file: tasks/B4120-code-execution-records.yaml
 covers:
   - "litellm/integrations/code_interpreter_interception/handler.py"
+  - "litellm/integrations/code_interpreter_interception/__init__.py"
 parent: B119
 split_from: B119
 resolution: merged

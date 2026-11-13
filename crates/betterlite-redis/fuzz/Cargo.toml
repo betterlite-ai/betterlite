@@ -4,6 +4,10 @@ version = "0.0.0"
 publish = false
 edition = "2024"
 metadata.cargo-fuzz = true
+license.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 betterlite-redis = { path = ".." }
@@ -11,10 +15,15 @@ libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
 
 [[bin]]
+name = "redis_info"
+path = "fuzz_targets/redis_info.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "redis_settings"
 path = "fuzz_targets/redis_settings.rs"
 test = false
 doc = false
 bench = false
-
-[workspace]

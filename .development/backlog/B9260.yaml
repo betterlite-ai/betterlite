@@ -1,0 +1,13 @@
+id: B9260
+milestone: M4 keys, spend and management
+title: Seed FinOps rows for booted HTTP oracle cases
+status: done
+depends_on: [B860, B9270]
+file: tasks/B9260-finops-http-fixtures.yaml
+covers: []
+parent: B073
+split_from: B073
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 1269

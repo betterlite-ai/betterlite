@@ -1,0 +1,122 @@
+id: B8065
+title: Python cache key, lookup and write operations
+description: >-
+  Give the Python `Cache` object the methods that read and write responses: `get_cache_key`, `get_cache`, `async_get_cache`,
+  `add_cache`, `async_add_cache`, `add_embedding_response_to_cache`, `async_add_cache_pipeline`, `batch_cache_write`,
+  `should_use_cache` and `generate_streaming_content`, with their private helpers. The rules are Rust in betterlite-cache
+  and the cache parts: B4296 keys, B4297 envelopes, B4298 embedding writes, B4300 request retrieval, B4302 replay, B4303
+  embedding merge and B4304 write completion. This task adds the native family `cache` and puts the methods in a mixin class
+  that B8066's `Cache` inherits. It does not write `Cache.__init__`.
+
+
+  Native family `cache`, as B5659 describes it: `src/cache.rs` with one `register` function, code in `src/cache/**`, types
+  in `python/betterlite/_native_cache.pyi`, B5369 declares the `cache` family in `lib.rs` and `_native.pyi` with a stub `register` that this task fills. A `#[pyclass] NativeCache`
+  is built from a JSON settings text (cache type, namespace, ttl, mode, supported call types, backend settings, semantic
+  scope) using B4299's configuration and owns the backend. Methods: `cache_key(request_json)`, `lookup(request_json)`,
+  `lookup_semantic(request_json)`, `write(request_json)`, `write_embedding(request_json)`, `write_pipeline(request_json)`,
+  `batch_write(request_json)` and `close()`, with async twins that return awaitables through `future_into_py`. Each
+  takes request JSON built from the call kwargs and gives JSON text. Conversions sit in `src/cache/convert.rs` with tests
+  named `cache_request_` and `cache_result_`.
+
+
+  Python lives in `python/betterlite/_cache_ops/` with an explicit `__all__` holding `CacheOperations`, and the
+  `betterlite.caching` package is B8066's. `CacheOperations` expects the instance to have the attributes `Cache.__init__` sets
+  in LiteLLM (L125-L335): `cache` (the backend object), `_native_cache` (the `NativeCache` or `None`), `type`, `namespace`,
+  `mode` (`CacheMode`), `ttl`, `supported_call_types`, `redis_flush_size` and `semantic_cache_scope`. Method signatures and
+  return values follow caching.py: `get_cache(dynamic_cache_object=None, **kwargs)` returns the cached response or `None` and
+  never raises (it logs the traceback at debug and returns `None`, L604-L646), `get_cache_key(**kwargs)` returns the
+  hashed key text, and `should_use_cache(**kwargs)` is true under `CacheMode.default_on`, and under `default_off` only when
+  `kwargs["cache"]["use-cache"] is True`. The cache-control values `s-maxage`, `s-max-age`, `ttl`, `no-cache`, `no-store`
+  and `namespace` go to Rust inside the request JSON, and `max_age` freshness is a Rust rule (L539-L571). A
+  `dynamic_cache_object` is a Python backend, so when one is given Python calls its `get_cache` or `set_cache` and applies
+  Rust's envelope functions (`cache_decode` and `cache_envelope` in the native family) to the value. Results that are
+  pydantic response objects go through `model_dump()`, and cached dicts come back as the response classes of B5657 and B5658
+  by the `call_type` in the kwargs.
+
+
+  `add_cache` and `async_add_cache` never raise either: a failure goes to `_log_add_cache_failure` (L738-L743), which logs
+  and returns. `async_add_cache_pipeline` and `batch_cache_write` batch writes with the `redis_flush_size` buffer.
+  `generate_streaming_content(content)` yields the cached text in chunks of five characters as L524-L537 does.
+
+
+  Tests build `litellm.Cache` and `betterlite.Cache` in memory with the same kwargs and compare `get_cache_key` outputs (equal text
+  for chat, embedding, files, a namespace, and `caching_groups`), a miss, a hit, a hit past `s-maxage`, a `default_off`
+  cache with and without `use-cache`, an embedding write followed by a partial read, and a write that fails.
+scope:
+  paths:
+  - crates/betterlite-python/src/cache.rs
+  - crates/betterlite-python/src/cache/**
+  - crates/betterlite-python/python/betterlite/_native_cache.pyi
+  - crates/betterlite-python/Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-python/python/betterlite/_cache_ops/**
+  - crates/betterlite-python/tests/test_cache_ops.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L335-L538
+  why: Semantic scope, get_cache_key and its parameter helpers, hashing, namespace and streaming content.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L539-L683
+  why: Freshness check, safe lookup kwargs, get_cache and async_get_cache.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L684-L901
+  why: Write logic, embedding conversion and per-item usage.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L902-L1004
+  why: Pipeline write, should_use_cache, batch write, ping, delete and disconnect.
+dod:
+- text: "`get_cache_key` returns LiteLLM's text for chat, embedding, file, namespace, `caching_groups` and preset-key kwargs."
+  proof: [cache-ops-keys]
+- text: "`get_cache` and `async_get_cache` return LiteLLM's value for a miss, a hit, a hit older than `s-maxage`, a `dynamic_cache_object` and a failing backend (`None`, no raise)."
+  proof: [cache-ops-lookup]
+- text: "`should_use_cache` follows `CacheMode` and the `use-cache` flag."
+  proof: [cache-ops-lookup]
+- text: "`add_cache`, `async_add_cache`, `add_embedding_response_to_cache` and `async_add_cache_pipeline` store what LiteLLM stores, and a write failure is logged and not raised."
+  proof: [cache-ops-writes]
+- text: "`generate_streaming_content` yields LiteLLM's chunks."
+  proof: [cache-ops-writes]
+- text: "`ping`, `delete_cache_keys` and `disconnect` reach the backend."
+  proof: [cache-ops-writes]
+- text: JSON conversions for every native method parse without an interpreter, and malformed text gives an error, not a panic.
+  proof: [cache-ops-native]
+- text: The `_cache_ops` package passes ruff and strict basedpyright.
+  proof: [python-lint]
+- text: >-
+    This task adds every Cargo.toml dependency it uses and no unused ones.
+  proof: [cache-ops-keys]
+checks:
+  optional: []
+  commands:
+  - id: cache-ops-keys
+    why: A cache key differs, so two packages would not share entries.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cache_ops.py -k "key"
+  - id: cache-ops-lookup
+    why: A lookup result or the eligibility rule differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cache_ops.py -k "lookup or should_use"
+  - id: cache-ops-writes
+    why: A stored value, a swallowed failure or streaming text differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cache_ops.py -k "write or streaming or backend_calls"
+  - id: cache-ops-native
+    why: A conversion breaks or panics.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^cache::/)'
+  - id: python-lint
+    why: A strict type error in the cache operations package.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Cached values are JSON, and `ast.literal_eval` of a Python repr string (the fallback in `_get_cache_logic`, L564-L568) is not run.
+  why: B4297 stores JSON envelopes, and evaluating Python text from a shared store is unsafe.
+- what: This task has no helper oracle cases.
+  why: The pytest file compares both packages, and the key and envelope cases belong to B4296 and B4297.
+out_of_scope:
+- "`Cache.__init__`, the backend choice, callback registration, `enable_cache`, `update_cache`, `disable_cache` and the backend classes are B8066."
+- "Key derivation, envelopes, freshness, replay and merge rules are Rust (B4296 to B4305)."
+- "Semantic backends (Redis, Valkey, Qdrant) arrive with B4320 and later. A semantic `Cache` reaches them only through B8066's constructor."
+- "`print_verbose` (L62) is a debug log line and stays with B8066."
+pitfalls:
+- "A lookup must never raise into the caller: LiteLLM wraps `get_cache` in a bare `except Exception` and returns `None`, and betterlite keeps that outer wrapper only."
+- "`get_cache_key` reads `preset_cache_key` from `litellm_params` first and returns it unchanged, so Rust must not rehash it."
+- "A `dynamic_cache_object` replaces `self.cache` for that call only, so it must not stay on the instance."
+- "`s-maxage` and `s-max-age` are both accepted, and `s-maxage` wins."
+- "A cached embedding hit may cover only some inputs, and the merge is Rust (B4303), so Python passes the result through unchanged."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

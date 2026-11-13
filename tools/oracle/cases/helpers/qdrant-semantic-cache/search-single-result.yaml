@@ -1,0 +1,36 @@
+kind: helper
+name: qdrant-semantic-cache-search-single-result
+call:
+  b4383:
+    key: scope-1
+    collection: semantic-cache
+    threshold: 0.8
+    vector: [0.25, 0.5, 0.75]
+    messages:
+      - role: user
+        content: what is cached
+    metadata:
+      request-id: abc
+    responses:
+      - status: 200
+        body:
+          result:
+            exists: true
+      - status: 200
+        body:
+          result:
+            status: green
+      - status: 200
+        body:
+          result: true
+      - status: 200
+        body:
+          result:
+            - score: 0.93
+              payload:
+                litellm_cache_key: scope-1
+                text: what is cached
+                response: '{"choices":[{"message":{"content":"hi"}}]}'
+env: {}
+compare:
+  ignore: []

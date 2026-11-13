@@ -1,7 +1,7 @@
 id: B011
 milestone: M1 openai data plane
 title: Exception types and provider error mapping
-status: todo
+status: done
 depends_on: [B004, B184, B185, B187]
 file: tasks/B011-error-normalization.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/common_utils/error_body_call_id.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 684

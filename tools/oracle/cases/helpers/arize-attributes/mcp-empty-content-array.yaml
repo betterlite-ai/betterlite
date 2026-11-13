@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-empty-content-array
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: call_mcp_tool
+        metadata:
+          mcp_tool_call_metadata:
+            name: empty_result
+    response:
+      content: []
+env: {}
+compare: {ignore: []}

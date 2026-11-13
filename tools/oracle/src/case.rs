@@ -1,30 +1,41 @@
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::str;
 
 use crate::OracleError;
+use crate::config_include_fixtures;
+use crate::websocket_oracle::{
+    OracleLimits,
+    decode::{FilesystemFixtures, decode_ws_case},
+};
 use betterlite_postgres_fixture::seed::DatabaseFixture;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::multipart_oracle::error::MultipartError;
 use crate::multipart_oracle::request::request_body;
+use crate::oracle_comparison_contracts::{self, Contracts, ExpectedDifference, NumericRule};
 use serde::de::IgnoredAny;
 
 pub mod browser_flow;
 mod config_inspection;
 mod group;
-mod helper;
+pub mod helper;
+mod load;
 
 pub(crate) use group::{LoadedCase, ScenarioCase};
 pub(crate) use helper::HelperCase;
+pub(crate) use load::{
+    load_cases, load_http_scenario_cases, load_probe_cases, load_sdk_http_cases,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Case {
     pub(crate) name: String,
     pub(crate) config: String,
+    #[serde(default)]
+    pub(crate) config_files: BTreeMap<String, String>,
     pub(crate) env: BTreeMap<String, String>,
     #[serde(default)]
     pub(crate) native_feature_eligibility: bool,
@@ -43,6 +54,17 @@ pub struct Case {
 pub type HttpCase = Case;
 
 impl Case {
+    pub(crate) fn with_self_check(&self, self_check: bool) -> Self {
+        let mut owned = self.clone();
+        mark_compare_self_check(&mut owned.compare, self_check);
+        if let Some(steps) = &mut owned.steps {
+            for step in steps {
+                mark_compare_self_check(&mut step.compare, self_check);
+            }
+        }
+        owned
+    }
+
     fn common(&self) -> group::CommonFields<'_> {
         group::CommonFields {
             name: &self.name,
@@ -57,7 +79,7 @@ impl Case {
 
 #[derive(Deserialize)]
 struct CaseKind {
-    kind: Option<helper::HelperKind>,
+    kind: Option<String>,
     scenario: Option<IgnoredAny>,
 }
 
@@ -101,13 +123,54 @@ pub(crate) struct UpstreamAnswer {
     pub(crate) events: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[serde(from = "CompareWire")]
 pub(crate) struct Compare {
     pub(crate) headers: Vec<String>,
     pub(crate) headers_present: Vec<String>,
     pub(crate) upstream_headers: Vec<String>,
     pub(crate) ignore: Vec<Ignore>,
+    // one pointer keeps a scenario step under the enum variant size lint
+    pub(crate) contracts: Option<Box<Contracts>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CompareWire {
+    headers: Vec<String>,
+    headers_present: Vec<String>,
+    upstream_headers: Vec<String>,
+    ignore: Vec<Ignore>,
+    #[serde(default)]
+    numeric: Vec<NumericRule>,
+    #[serde(default)]
+    expected_difference: Vec<ExpectedDifference>,
+}
+
+impl From<CompareWire> for Compare {
+    fn from(wire: CompareWire) -> Self {
+        let declared = !wire.numeric.is_empty() || !wire.expected_difference.is_empty();
+        let contracts = declared.then(|| {
+            Box::new(Contracts {
+                numeric: wire.numeric,
+                expected_difference: wire.expected_difference,
+                self_check: false,
+            })
+        });
+        Self {
+            headers: wire.headers,
+            headers_present: wire.headers_present,
+            upstream_headers: wire.upstream_headers,
+            ignore: wire.ignore,
+            contracts,
+        }
+    }
+}
+
+pub(crate) fn mark_compare_self_check(compare: &mut Compare, self_check: bool) {
+    if let Some(contracts) = compare.contracts.as_mut() {
+        contracts.self_check = self_check;
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -117,29 +180,6 @@ pub(crate) struct Ignore {
     pub(crate) why: String,
 }
 
-pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<LoadedCase>, OracleError> {
-    let mut files = Vec::new();
-    for path in paths {
-        collect_yaml(path, &mut files)?;
-    }
-    files.sort();
-    let mut cases = Vec::with_capacity(files.len());
-    for path in files {
-        let text = fs::read_to_string(&path).map_err(|source| OracleError::CaseRead {
-            path: path.clone(),
-            source,
-        })?;
-        cases.push(parse_case(&path, &text)?);
-    }
-    if cases.is_empty() {
-        return Err(OracleError::CaseInvalid {
-            path: PathBuf::from("<arguments>"),
-            message: "no YAML cases found".to_owned(),
-        });
-    }
-    Ok(cases)
-}
-
 pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleError> {
     let parse_error = |source: serde_saphyr::Error| OracleError::CaseParse {
         path: path.to_owned(),
@@ -147,6 +187,17 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
     };
     // the case says what it is, so its folder never decides
     let probe: CaseKind = serde_saphyr::from_str(text).map_err(parse_error)?;
+    if probe.kind.as_deref() == Some("websocket") {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/websocket-oracle");
+        let fixtures = FilesystemFixtures { root };
+        let case = decode_ws_case(text.as_bytes(), &OracleLimits::default(), &fixtures).map_err(
+            |source| OracleError::WebSocketCase {
+                path: path.to_owned(),
+                source,
+            },
+        )?;
+        return Ok(LoadedCase::WebSocket(Box::new(case)));
+    }
     if probe.kind.is_some() {
         let case: HelperCase = serde_saphyr::from_str(text).map_err(parse_error)?;
         helper::validate_helper(path, &case)?;
@@ -161,16 +212,6 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
     Ok(LoadedCase::Http(case))
 }
 
-pub fn parse_helper_case(source: &str) -> Result<(), String> {
-    let case: HelperCase = serde_saphyr::from_str(source).map_err(|error| error.to_string())?;
-    helper::validate_helper(Path::new("<helper>"), &case).map_err(|error| error.to_string())
-}
-
-pub fn decode_http_case(bytes: &[u8]) -> Result<HttpCase, OracleError> {
-    let path = Path::new("<bytes>");
-    decode_case(path, bytes)
-}
-
 pub fn decode_http_body(bytes: &[u8]) -> Result<RequestBody, MultipartError> {
     let text = str::from_utf8(bytes).map_err(MultipartError::RequestUtf8)?;
     let request: Request = serde_saphyr::from_str(text)
@@ -178,48 +219,29 @@ pub fn decode_http_body(bytes: &[u8]) -> Result<RequestBody, MultipartError> {
     request_body(&request.body, request.body_kind)
 }
 
-pub fn decode_html_form_capture(
-    bytes: &[u8],
-) -> Result<browser_flow::form::FormProjection, browser_flow::form::FormCaptureError> {
-    let text = str::from_utf8(bytes).map_err(browser_flow::form::FormCaptureError::Utf8)?;
-    browser_flow::form::parse_form_projection(text)
-}
-
-fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
+pub fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
     let text = str::from_utf8(bytes).map_err(|source| OracleError::CaseUtf8 { source })?;
-    let case: Case = serde_saphyr::from_str(text).map_err(|source| OracleError::CaseParse {
-        path: path.to_owned(),
-        source: Box::new(source),
-    })?;
+    let case: Case = load::parse_case_text(path, text)?;
     validate(path, &case)?;
     Ok(case)
 }
 
-fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), OracleError> {
-    let read_error = |source| OracleError::CaseRead {
-        path: path.to_owned(),
-        source,
-    };
-    let metadata = fs::metadata(path).map_err(&read_error)?;
-    if metadata.is_file() {
-        if path
-            .extension()
-            .is_some_and(|extension| extension == "yaml" || extension == "yml")
-        {
-            files.push(path.to_owned());
-        }
-        return Ok(());
-    }
-    let entries = fs::read_dir(path).map_err(&read_error)?;
-    for result in entries {
-        let entry = result.map_err(&read_error)?;
-        collect_yaml(&entry.path(), files)?;
-    }
-    Ok(())
-}
-
 pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {
+    let invalid = |message: String| OracleError::CaseInvalid {
+        path: path.to_owned(),
+        message,
+    };
     group::validate_common(path, &case.common())?;
+    config_include_fixtures::validate(&case.config_files)
+        .map_err(|source| invalid(source.to_string()))?;
+    for (destination, document) in &case.config_files {
+        if config_inspection::requests_license(path, document)? {
+            let license = config_include_fixtures::ConfigFixtureError::License {
+                destination: destination.clone(),
+            };
+            return Err(invalid(license.to_string()));
+        }
+    }
     validate_request_or_steps(path, case)
 }
 
@@ -241,7 +263,20 @@ fn validate_request_or_steps(path: &Path, case: &Case) -> Result<(), OracleError
         return Err(invalid("request.path cannot be empty"));
     }
     request_body(&case.request.body, case.request.body_kind).map_err(OracleError::Multipart)?;
-    validate_ignores(path, &case.compare.ignore)
+    validate_ignores(path, &case.compare.ignore)?;
+    validate_contracts(path, &case.compare)
+}
+
+pub(crate) fn validate_contracts(path: &Path, compare: &Compare) -> Result<(), OracleError> {
+    let Some(contracts) = compare.contracts.as_deref() else {
+        return Ok(());
+    };
+    let outcome =
+        oracle_comparison_contracts::validate(&contracts.numeric, &contracts.expected_difference);
+    outcome.map_err(|error| OracleError::CaseInvalid {
+        path: path.to_owned(),
+        message: error.to_string(),
+    })
 }
 
 pub(crate) fn validate_ignores(path: &Path, ignores: &[Ignore]) -> Result<(), OracleError> {

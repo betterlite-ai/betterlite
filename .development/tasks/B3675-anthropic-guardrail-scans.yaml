@@ -1,0 +1,201 @@
+id: B3675
+title: Anthropic guardrail input and completed-output scans
+description: >-
+  Build the Anthropic Messages handler that scans a request before the model call and a completed (non-streaming) response after it, calls the guardrail, and puts the answer back.
+  Everything is a plain async or sync function in crates/betterlite-server/src/guardrails/anthropic_translation/, generic over `G: GuardrailContract` (from B5471's `guardrail_base`; the trait's `apply_guardrail` returns `impl Future`, so it cannot be a trait object).
+  Request bodies are `BTreeMap<String, GuardrailValue>` and Anthropic responses are `GuardrailValue`, both from `betterlite_config::sections::guardrail_identity::item`. `GuardrailApiInputs`, `GuardrailFailure`, `GuardrailLogTarget` and `GuardrailInputType` come from B5471. Rows and blocks stay JSON, so `serde_json::Value` is allowed at those boundaries only, with one `#[expect]` per module and its reason.
+  Other tasks own the pieces this one calls, so read their modules for exact signatures and never copy them. B3670: `ScannedText`, `ScannedToolCall`, `ExtractedInput` (with `ExtractedInput::empty()`), the target enums, `is_client_tool_use` and `tool_call_shapes`. B3674: `write_back_structured_messages`, `apply_guardrail_tool_calls_to_input`, `apply_guardrail_responses_to_input`, `translate_to_openai` and `hoisted_top_level_system_message`. B3663: the three `effective_*` flag readers, `scoped_structured_message_indices`, `merge_guardrailed_scoped_messages`, `merge_returned_tools_into_request_tools`, `anthropic_tool_name` and `unappliable_request_rewrite`. B578: the Rust `convert_tool_use_to_openai_format`. B575: the Rust `_map_tool_helper`. B1117: `is_provider_native_tool_dict`. B5820: `response_context::add_response_context`. B966: the Rust `translate_openai_response_to_anthropic`.
+
+  Module `input_scan` (input_scan.rs) holds the extractors, which only read the request. `extract_input_text_and_images(message: &Value, msg_idx: usize, skip_system_message: bool, skip_tool_message: bool, scan_only_tool_results: bool) -> ExtractedInput` follows LiteLLM in this order. `role` is the message's `role` text, empty when missing. Role exactly "system" gives `ExtractedInput::empty()` when `scan_only_tool_results`, else `extract_midturn_system_text`; `skip_system_message` is ignored here because it covers only the top-level prompt. Role "tool" in any case with `skip_tool_message` gives empty. A string `content` gives one `MessageContent` text, or empty when `scan_only_tool_results`; an empty string is still scanned. A `content` that is neither string nor array gives empty. For an array, every object item goes through `extract_content_block` (non-object items are skipped) and the results are joined in order. Tool calls come from items that pass B3670's `is_client_tool_use`, and only when not `scan_only_tool_results`; each is converted with B578's `convert_tool_use_to_openai_format(block, tool_call_idx)` where `tool_call_idx` counts the client tool_use blocks only (0, 1, 2), and gets `ToolUseInputTarget { msg_idx, content_idx }` with the real position.
+  `extract_content_block` returns empty for a `tool_result` block when `skip_tool_message`, else `extract_tool_result`; for any other block it returns empty when `scan_only_tool_results`. Otherwise it scans the block's `text` whenever that key holds a string, whatever the block `type` is (target `ContentBlockText`), and for `type` "image" it adds `image_sources(block)`. `extract_tool_result` scans a string `content` as `ToolResultString`, and for an array scans each object item that has a string `text` as `ToolResultBlockText { msg_idx, content_idx, block_idx }` and collects `image_sources` of every item with `type` "image". Other `content` gives empty. `image_sources(block) -> Vec<String>`: no object `source` gives none; `source.type` "url" gives the `url` only when it is a non-empty string; any other `source.type` reads `data` (a non-empty string, else none) and gives `data:{media_type};base64,{data}` when `media_type` is a non-empty string, else the bare `data`. A `file` source has no `data`, so it yields nothing.
+  `extract_midturn_system_text(message, msg_idx) -> ExtractedInput`: a non-empty string `content` gives one `MessageContent`; an array gives each object item with `type` "text" and a non-empty string `text` as `ContentBlockText`; everything else gives empty. `extract_top_level_system_text(hoisted: &Value) -> Vec<ScannedText>`: a string `content` gives one `SystemString` even when empty; an array gives `SystemBlockText { block_idx }` for each object item with a string `text`, where `block_idx` is the position among ALL items, not among text items. `get_structured_messages(data) -> Result<Option<Vec<Value>>, _>`: no `messages` key or null gives None; otherwise it calls B3674's `translate_to_openai` on the whole body (system included) and gives None when the translated `messages` list is empty.
+
+  Module `process_input` (process_input.rs) has `process_input_messages(data: &mut BTreeMap<String, GuardrailValue>, guardrail: &G, logging_obj: Option<&mut GuardrailLogTarget>) -> Result<(), ProcessInputError>`. A missing or null `messages` returns at once. Steps, in order:
+  (1) Read `skip_system`, `skip_tool` and `scan_only_tool_results` with B3663's flag readers.
+  (2) Call `translate_to_openai` on a copy of `data` without the `system` key. Its `messages` are `full_structured_messages`; its `tools` are the chat-format tools.
+  (3) `has_midturn_system_message` is true when any of those messages has a `role` whose lowercase is "system". Compute it before step 4.
+  (4) Unless `skip_system`, `hoisted_top_level_system_message(data)`; when it is Some, insert it at index 0 of `full_structured_messages`.
+  (5) `scoped_message_indices = scoped_structured_message_indices(full, scan_only_tool_results, skip_system=false, skip_tool)`; `structured_messages` are those rows. System rows are always in scope here because `skip_system` already left the trusted prompt out.
+  (6) `tools_to_check` is empty when `scan_only_tool_results`, else the chat-format tools that are not `is_provider_native_tool_dict`.
+  (7) Scan. The top-level system texts come from `extract_top_level_system_text(hoisted)`, but only when there is a hoisted message and not `scan_only_tool_results`. Then `extract_input_text_and_images` runs for every message of the ORIGINAL Anthropic `messages` with its index. `scanned` is the system texts followed by every message's texts; `images`, `scanned_tool_calls` and their `tool_call` values are collected the same way. `pre_guardrail_tool_calls = tool_call_shapes(tool_calls)`.
+  (8) When there are no texts and no tool calls, stop (no guardrail call, no change). Otherwise build `GuardrailApiInputs { texts }`, adding `images`, `tool_calls`, `tools` (`tools_to_check`) and `structured_messages` only when non-empty, and `model` only when `data.model` is a non-empty string. Call `guardrail.apply_guardrail(inputs, data, GuardrailInputType::Request, logging_obj)`; its `GuardrailFailure` goes straight to the caller.
+  (9) Returned `tools`, when Some, are converted one by one with B575's `_map_tool_helper` port (a None result is dropped; the MCP server half is ignored) into Anthropic tools. Then `data.tools` becomes `merge_returned_tools_into_request_tools(request tools, converted, anthropic_tool_name)` when `scan_only_tool_results`, else the request's native tools (`is_provider_native_tool_dict`) followed by the converted ones. A missing request `tools` counts as empty. This runs before the next step and also on the structured path.
+  (10) Structured path: when the guardrail returned `structured_messages` and they differ from the ones sent (compared by value), call `write_back_structured_messages(data, rows, hoisted, has_midturn_system_message)`. `rows` are the returned list when `guardrail.messages_cover_full_request()` is true, else `merge_guardrailed_scoped_messages(full, scoped_message_indices, returned)`.
+  (11) Otherwise the text path: when the returned `texts` is non-empty and its length differs from `scanned.len()`, return B3663's unappliable-rewrite error; then `apply_guardrail_tool_calls_to_input` with the returned `tool_calls`; then `apply_guardrail_responses_to_input` with the returned texts. An empty or absent returned `texts` rewrites no text.
+  Keep the debug line `Anthropic Messages: Processed input messages: {messages}` at the end.
+
+  Module `output_scan` (output_scan.rs) has `process_output_response(response: &mut GuardrailValue, guardrail: &G, logging_obj: Option<&mut GuardrailLogTarget>, user_api_key_dict: Option<&BTreeMap<String, GuardrailValue>>, request_data: Option<&mut BTreeMap<String, GuardrailValue>>) -> Result<(), ProcessOutputError>`. A response with a missing, null or empty `content` array returns unchanged and makes no call. `extract_from_content_blocks` visits each block by position `content_idx`. Only object blocks whose `type` is "text" or "tool_use" count; the rest are skipped. A "text" block with a non-empty string `text` adds the text and the mapping `content_idx`. A "tool_use" block is converted with `convert_tool_use_to_openai_format(block, content_idx)`: unlike the input side there is no `is_client_tool_use` check, and the index is the block's position in `content`, not a running count. A tool_use block missing `id`, `name` or `input` returns `ProcessOutputError::MalformedToolUse { content_idx }` (LiteLLM raises KeyError and the request fails). No texts and no tool calls means no call and `request_data` is not touched. Otherwise `add_response_context` (B5820) prepares `request_data` (an absent `request_data` starts as an empty map, and the key `response` is added only when missing), the inputs get `texts`, `tool_calls` when non-empty, and `model` from `response.model` when non-empty; images are never set on this side. The call uses `GuardrailInputType::Response`. Write-back is by position: returned text `i` replaces `text` of the block in mapping `i`, for every `i` below the returned length, only when that block is an object with `type` "text". A shorter reply rewrites only the first texts. A reply longer than the number of texts sent returns `ProcessOutputError::TooManyTexts { sent, returned }` (LiteLLM hits IndexError). Returned `tool_calls` on the output side are ignored: a rewritten tool_use block is never written back. Keep the debug line `Anthropic Messages: Processed output response: {response}`.
+
+  Module `post_call_hook` (post_call_hook.rs) has `post_call_hook_response(response: &GuardrailValue) -> Result<GuardrailValue, PostCallHookError>`, LiteLLM's method of the same name. It returns the response unchanged unless it is an OpenAI chat `ModelResponse`; then it runs B966's `translate_openai_response_to_anthropic` with no tool name mapping and no polyfill result and returns the Anthropic message. Python tells the two apart by class. A JSON value has no class, so this port treats an object whose `choices` is an array as a ModelResponse (an Anthropic message has no `choices`). A value that has `choices` but does not parse as a ModelResponse returns `PostCallHookError::Response` with `#[source]`. The policy pipeline calls this to show the legacy post-call hook the shape it expects.
+
+  Each module that can fail owns its error enum in its own files with `thiserror`: `ProcessInputError` (wrapping `GuardrailFailure` boxed if `clippy::result_large_err` fires, B3663's unappliable error, `WriteBackError`, `ApplyError`, `StructuredWriteBackError` and a tool conversion error, each with `#[source]`), `ProcessOutputError`, `PostCallHookError`, and one for `get_structured_messages`. Tests use a fake guardrail defined in each tests.rs that records the `GuardrailApiInputs`, `input_type` and a copy of `request_data`, and returns a scripted result. Cargo: add the betterlite-guardrails and betterlite-anthropic dependencies to crates/betterlite-server/Cargo.toml if no earlier task did; neither depends on betterlite-server, so no cycle forms.
+
+  Name tests so the filters match: `extract_*`, `image_sources_*`, `midturn_*`, `top_level_*`, `structured_messages_*` in input_scan; `flags_*`, `scope_*`, `inputs_*`, `tools_*`, `structured_path_*`, `text_path_*`, `mismatch_*` in process_input; `output_extract_*`, `output_call_*`, `output_apply_*` in output_scan; `hook_*` in post_call_hook. Helper oracle cases (pure functions only) go in tools/oracle/cases/helpers/anthropic-guardrail-scan/ with `call: b3675: {function: ..., ...}`. The handlers are not reachable from a route yet, so HTTP cases come with the umbrella that wires the dispatcher.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/guardrails/anthropic_translation/input_scan.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/input_scan/**
+    - crates/betterlite-server/src/guardrails/anthropic_translation/process_input.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/process_input/**
+    - crates/betterlite-server/src/guardrails/anthropic_translation/output_scan.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/output_scan/**
+    - crates/betterlite-server/src/guardrails/anthropic_translation/post_call_hook.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/post_call_hook/**
+    - tools/oracle/cases/helpers/anthropic-guardrail-scan/**
+    - tools/oracle/helpers/b3675.py
+    - tools/oracle/helpers/b3675/**
+    - tools/oracle/src/helpers/server/b3675.rs
+    - tools/oracle/src/helpers/server/b3675/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L523-L684
+    why: process_input_messages, the whole flow from flag reading to the structured and text write-back branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L507-L521
+    why: get_structured_messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L701-L712
+    why: Top-level system text targets, numbered over all blocks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L893-L1064
+    why: Mid-turn system text, the message extractor, content blocks, tool results and image sources.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1120-L1199
+    why: process_output_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1322-L1411
+    why: Request data preparation, content block extraction, block field reading and output inputs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1763-L1840
+    why: Output text and tool_use extraction and positional write-back.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L302-L309
+    why: The constructor and post_call_hook_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L218-L226
+    why: The only caller of post_call_hook_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L357-L384
+    why: convert_tool_use_to_openai_format, whose KeyError on a missing field is the output-side failure.
+dod:
+  - text: >-
+      extract_input_text_and_images scans string content, text blocks (any block with a string text), tool_result strings and tool_result item texts into the right targets, skips system and tool roles by the flags, and returns nothing for string and text content when scan_only_tool_results is set.
+    proof: [input-extract-tests, oracle]
+  - text: >-
+      Client tool_use blocks become scanned tool calls numbered by a running count of tool_use blocks, with the real content position in the target; a tool_use block without an object input is not scanned.
+    proof: [input-extract-tests, oracle]
+  - text: >-
+      image_sources turns url sources into the url, base64 sources into data URIs (bare data without media_type), and file sources into nothing.
+    proof: [image-sources-tests, oracle]
+  - text: >-
+      extract_midturn_system_text and extract_top_level_system_text produce the right targets; system block targets are numbered over all blocks and empty top-level strings are still scanned.
+    proof: [system-extract-tests, oracle]
+  - text: get_structured_messages returns None for no messages and for an empty translation, and the translated rows otherwise.
+    proof: [structured-messages-tests, oracle]
+  - text: >-
+      process_input_messages makes no guardrail call when nothing is scannable, and otherwise builds the inputs with images, tool_calls, tools and structured_messages only when non-empty and model only when non-empty.
+    proof: [process-input-inputs-tests]
+  - text: >-
+      The skip flags and scan_only_tool_results decide which rows are in the scoped structured_messages, whether the top-level system is hoisted and scanned, and whether tools are sent.
+    proof: [process-input-scope-tests]
+  - text: >-
+      Returned tools are converted back to Anthropic tools and replace data.tools (native tools kept first), or are merged into the request tools by name when scan_only_tool_results is set, on both write-back paths.
+    proof: [process-input-tools-tests]
+  - text: >-
+      A changed structured_messages answer goes through structured write-back with the full or merged rows and the mid-turn system flag; an unchanged one falls through to the text path.
+    proof: [process-input-structured-tests]
+  - text: >-
+      On the text path a non-empty returned texts list of the wrong length returns the unappliable-rewrite error, and equal-length answers rewrite texts and tool calls in place.
+    proof: [process-input-text-tests]
+  - text: >-
+      process_output_response collects text blocks and tool_use blocks with their content positions, sends them with input type Response, and makes no call and leaves request_data alone when there is nothing to send.
+    proof: [output-scan-tests]
+  - text: >-
+      Returned output texts replace text blocks by position (a shorter reply rewrites a prefix), a longer reply returns TooManyTexts, and returned tool calls are never written back.
+    proof: [output-apply-tests, oracle]
+  - text: A tool_use output block without id, name or input returns the malformed tool use error with its content position.
+    proof: [output-scan-tests]
+  - text: >-
+      post_call_hook_response translates an object with a choices array into an Anthropic message and returns any other value unchanged.
+    proof: [hook-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: input-extract-tests
+      why: the message extractor tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::input_scan::tests::extract_/)'
+    - id: image-sources-tests
+      why: the image source tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::input_scan::tests::image_sources_/)'
+    - id: system-extract-tests
+      why: the system text extractor tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::input_scan::tests::(midturn_|top_level_)/)'
+    - id: structured-messages-tests
+      why: the get_structured_messages tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::input_scan::tests::structured_messages_/)'
+    - id: process-input-inputs-tests
+      why: the guardrail inputs built by process_input_messages are not tested
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::process_input::tests::inputs_/)'
+    - id: process-input-scope-tests
+      why: the skip flag and scan-only scoping tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::process_input::tests::(flags_|scope_)/)'
+    - id: process-input-tools-tests
+      why: the returned tools write-back tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::process_input::tests::tools_/)'
+    - id: process-input-structured-tests
+      why: the structured write-back branch tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::process_input::tests::structured_path_/)'
+    - id: process-input-text-tests
+      why: the text path and count mismatch tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::process_input::tests::(text_path_|mismatch_)/)'
+    - id: output-scan-tests
+      why: the output extraction and guardrail call tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::output_scan::tests::(output_extract_|output_call_)/)'
+    - id: output-apply-tests
+      why: the positional output write-back tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::output_scan::tests::output_apply_/)'
+    - id: hook-tests
+      why: the post_call_hook_response tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::post_call_hook::tests::hook_/)'
+    - id: helper-cases-added
+      why: the helper cases for this task were not added on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/anthropic-guardrail-scan)"
+oracle_cases:
+  - tools/oracle/cases/helpers/anthropic-guardrail-scan/input-extract-string-and-text-blocks.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-scan/input-extract-tool-result-forms.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-scan/input-extract-scan-only-tool-results.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-scan/input-extract-tool-use-running-index.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-scan/input-image-sources.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-scan/input-midturn-system-text.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-scan/input-top-level-system-targets.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-scan/input-structured-messages-empty-is-none.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-scan/output-apply-shorter-reply-rewrites-prefix.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-scan/post-call-hook-model-response-translated.yaml
+deviations:
+  - what: An output reply with more texts than were sent returns a typed `TooManyTexts` error and the response fails. A tool_use output block without id, name or input returns `MalformedToolUse`.
+    why: LiteLLM raises IndexError and KeyError there and the request fails with a 500. A named error keeps that outcome.
+  - what: The structured_messages answer counts as changed when it differs by value from the list that was sent. LiteLLM compares object identity.
+    why: A guardrail returns owned values in Rust, so identity is gone. A guardrail that returns an equal copy would take the structured path in LiteLLM and the text path here, which leaves the request body as the client sent it.
+  - what: post_call_hook_response treats a JSON object whose `choices` is an array as a ModelResponse.
+    why: Python checks the class. A JSON value has none, and an Anthropic message never has `choices`.
+  - what: Only plain JSON object blocks are read on the output side. LiteLLM also reads pydantic blocks through model_dump and `.text`.
+    why: docs/compatibility.md leaves out Python object duck typing beyond the declared JSON shapes.
+out_of_scope:
+  - "B3674 owns _translate_to_openai, _hoisted_top_level_system_message, the write-back helpers, _apply_guardrail_responses_to_input and _apply_guardrail_tool_calls_to_input. This task calls them."
+  - "B3673 owns the stream observation (get_streaming_scan_key, _streamed_tool_use_fingerprints, get_streaming_string_so_far, _extract_text_from_sse, _check_streaming_has_ended). B3676 owns process_output_streaming_response, the ended-stream rewrite helpers, _SSEFieldRewrite, its rewriters and _build_streaming_usage_response. B3673 owns build_block_sse_chunks, build_stream_error_items and the block continuation helpers."
+  - "B3670 owns the scan target types, ScannedText, ScannedToolCall, ExtractedInput, _is_client_tool_use and the tool call shape helpers (_ToolCallShape, _tool_call_shapes)."
+  - "B888 owns extract_request_tool_names (it moves into betterlite-auth). It is not planned here."
+  - "B3663 owns the skip flag readers, scoped_structured_message_indices, merge_guardrailed_scoped_messages, merge_returned_tools_into_request_tools, anthropic_tool_name and unappliable_request_rewrite. B3661 owns BaseTranslation and its class variables, and B5820 owns the response context preparation that replaces _prepare_request_data's metadata step."
+  - "B578 owns AnthropicConfig.convert_tool_use_to_openai_format, B575 owns AnthropicConfig._map_tool_helper, B1117 owns is_provider_native_tool_dict, B966 owns translate_openai_response_to_anthropic and B967 owns translate_anthropic_to_openai."
+  - "The constructor's LiteLLMAnthropicMessagesAdapter() has no Rust counterpart: the functions here call the adapter functions directly."
+  - "_has_text_content has no caller in the Anthropic handler at the pin (the calls at chat/guardrail_translation/handler.py L409 and L575 belong to the OpenAI chat handler), so it is not built."
+  - "_openai_system_message_to_anthropic, _fold_leading_systems_into_top_level, _is_hoisted_top_level_system, _is_system, _defer_systems_inside_tool_exchanges and _write_back_structured_messages are B3674's."
+  - "The Anthropic typing helpers _as_str_mapping, _content_block_at, _ModelDumpBlock, _TextAttrBlock, _WritableMessage and _as_writable only narrow Python types and have no Rust counterpart."
+pitfalls:
+  - "Input tool calls are numbered by a running count of client tool_use blocks (index 0, 1, 2 among tool_use blocks only), but output tool calls use the block's position in `content`. Mixing them changes the `index` the guardrail sees."
+  - "The texts are scanned from the original Anthropic `messages`, while `structured_messages` come from the translated chat rows plus the hoisted system row, so the two lists are different views and the text path must pair texts with `scanned`, never with the structured rows."
+  - "`has_midturn_system_message` must be computed from the translated rows before the hoisted system row is inserted, or every request with a top-level `system` looks like it has a mid-turn one and the write-back keeps system rows in `messages`."
+  - "`skip_system` removes only the hoisted top-level prompt. In-sequence system rows stay in scope, so `scoped_structured_message_indices` is called with `skip_system` false."
+  - "Returned tools are converted and written to `data.tools` before the structured-versus-text branch, so a guardrail that returns both tools and structured_messages gets both applied."
+  - "An empty returned `texts` list is not a mismatch: the length check runs only when the list is non-empty, so a guardrail that returns tools or tool_calls but no texts is accepted."
+  - "A text block with an empty `text` is not scanned on the output side, but an empty string `content` is still scanned on the input side, and an empty top-level system string is scanned too. Do not unify the rules."
+  - "`system` as a message role is checked with exact \"system\" in the extractor but lowercased in `has_midturn_system_message`; `tool` is checked lowercased. Keep each as it is."
+  - "On the output side an image list is never filled, so `images` is never in the inputs of a response scan."
+  - "The model for the response scan is `response.model`, not `request_data.model`, and for the request scan it is `data.model`; each is sent only when it is a non-empty string."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 3

@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b4744_stdio_npm_cache","call":{"b4744":{"operation":"stdio_env","provided":null,"environment":{"NPM_CONFIG_CACHE":"/existing","PATH":"/usr/bin"},"npm_cache_dir":"/cache"}},"env":{},"compare":{"ignore":[]}}

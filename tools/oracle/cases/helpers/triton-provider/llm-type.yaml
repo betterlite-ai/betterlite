@@ -1,0 +1,23 @@
+kind: helper
+name: triton-provider-llm-type
+env: {}
+compare: {ignore: []}
+call:
+  b8154:
+    op: llm_type
+    bases:
+      - https://host/generate
+      - https://host/infer
+      - https://host/v1/models/triton/infer
+      - https://host/generate_stream
+      - https://host/v2/models/triton
+      - ""
+    urls:
+      - {api_base: null, stream: false}
+      - {api_base: https://host/generate, stream: true}
+      - {api_base: https://host/generate, stream: false}
+      - {api_base: https://host/infer, stream: true}
+      - {api_base: https://host/other, stream: true}
+    map:
+      - {non_default: {max_tokens: 5, max_completion_tokens: 7, temperature: 1}, optional: {}}
+      - {non_default: {stream: true, temperature: 1}, optional: {max_tokens: 9}}

@@ -1,0 +1,10 @@
+kind: helper
+name: gcs-mock-get-without-original-raises-runtime-error
+call:
+  b3996:
+    environment: {GCS_MOCK: "true"}
+    requests:
+      - method: get
+        url: https://example.com/storage/v1/b/mock-bucket/o/mock-object
+env: {}
+compare: {ignore: []}

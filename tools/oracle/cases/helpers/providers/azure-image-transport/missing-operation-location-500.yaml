@@ -1,0 +1,16 @@
+kind: helper
+name: missing-operation-location-500
+call:
+  azure_image_transport:
+    steps:
+      - api_base: 'https://example.test/openai/deployments/dall-e-2/images/generations?api-version=2023-06-01-preview'
+        api_version: '2023-06-01-preview'
+        deployment_name: dall-e-2
+        headers: {api-key: fixture-secret-key, content-type: application/json}
+        data: {model: dall-e-2, prompt: a cat, n: 1}
+        is_async: true
+        environment: {}
+        replies:
+          - {status: 500, body: upstream exploded}
+env: {}
+compare: {ignore: []}

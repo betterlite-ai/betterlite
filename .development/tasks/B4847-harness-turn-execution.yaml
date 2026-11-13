@@ -1,0 +1,199 @@
+id: B4847
+title: Execute bounded harness turns with approvals and final results
+description: >-
+  Port LiteLLM's turn engine (litellm/harness/runtime.py L259-L541 and `AsyncSession.turn_events` L732-L741) into a new module `turn_runtime` of the crate
+  betterlite-harness. One turn is: snapshot the sandbox, ask the handler for an event stream, pass its events on while enforcing `max_turns`, `timeout`
+  and cancellation, route every `Event::Approval` to the approval callback, then snapshot again, add the file changes, build a `RunResult` and end with
+  `Event::Done`. The session itself (start, interrupt, close, state) is B4846's and the public entry points (`astream`, `arun`, sessions from state)
+  are B4848's. Read these on main first and use their exact Rust names: crates/betterlite-harness/src/session_runtime.rs (B4846: `AsyncSession<S, H, E>`
+  and its `pub(crate)` fields `config`, `ctx`, `handler`, `results`, the methods `ensure_ready`, `begin_turn`, `end_turn`, `interrupt`, `record`,
+  `usage_counters`, and `SessionRuntimeError`, `UsageCounters`, `TurnPermit`), context.rs (`SessionContext`, `SessionSettings`, `TurnOutcome`, `ApprovalHandler`),
+  events.rs (`Event`, `Approval`, `Decision`, `FileChange`, `RunResult`), handlers.rs (`BaseHarnessHandler::turn`), snapshots.rs
+  (`capture_text_contents`, `build_file_changes`, B4831), session/output.rs (`parse_output`, `OutputError`, B4844), errors.rs (`HarnessError`) and types.rs
+  (`StopReason`, `Usage`, `FileChangeKind`).
+
+
+  Entry point (`turn_events` L732-L741). In `turn_runtime.rs`, add an inherent `impl<S, H, E> AsyncSession<S, H, E>` block with
+  `turn_events(&mut self, prompt: String, control: TurnControl, interactive: bool) -> impl Stream<Item = Result<Event, SessionRuntimeError>> + Send + '_`,
+  built with `async_stream::try_stream!` (already a dependency). The bounds are those of B4846's struct plus `S: Sandbox + Clone`. The stream runs in this
+  order: `let permit = self.begin_turn()?` (fails with `TurnRunning` when a turn is marked running; `TurnPermit` clears the busy flag when dropped), `self.ensure_ready().await?`, then the turn described below, and
+  `self.end_turn(permit)` on every exit the stream reaches, success or error. If the consumer drops the stream first, the permit drops with it and the session is not busy. Items are `Event`s; a failure ends the stream after yielding one `Err`.
+
+
+  Cancel handle (`TurnControl` L266-L276, `turn_runtime/control.rs`). `TurnControl` is `Clone` and holds an `Arc<AtomicBool>` and an `Arc<tokio::sync::Notify>`.
+  `cancel(&self)` sets the flag with `Ordering::SeqCst` and calls `notify_one`, so a cancel that arrives before the turn first waits is not lost
+  (Python's `if self.control.cancelled: producer.cancel()` at L394). `is_cancelled(&self) -> bool` reads the flag. `TurnControl::default()` is not cancelled.
+  There is no producer task to hold, so Python's `producer` field is not built.
+
+
+  Begin (`_begin` L380-L388). With `sandbox = self.ctx.sandbox.clone()`: `before = sandbox.snapshot().await`, `before_contents =
+  capture_text_contents(&sandbox, &before).await`, `usage_before = self.usage_counters()`, then `ctx.outcome.final_text` is cleared and
+  `ctx.outcome.output_json` is set to `None`. Do not reset `ctx.outcome.usage` or `ctx.outcome.cost`: in-process harnesses add to them across turns and
+  `usage_counters` reads them. When `ctx.settings.timeout` is `Some(d)`, `deadline = tokio::time::Instant::now() + d`. Read `max_turns`, `on_approval` (clone
+  of the `Arc`), `output_schema` and the session id from `ctx.settings` now, since the handler stream will hold `&mut self.ctx`. A sandbox error is returned
+  as `SessionRuntimeError::Harness`.
+
+
+  Event loop (`pump_events` L289-L314, `_next_item` L405-L415, `_finish` L417-L428, `_drain` L446-L458). Start the stream with
+  `self.handler.turn(&mut self.ctx, &prompt)` and pin it. Loop with `tokio::select!` over, in this order and with `biased;`: the control's
+  `Notify::notified()` future, the next item of the stream (`StreamExt::next`, wrapped in `tokio::time::timeout_at(deadline, ..)` when there is a
+  deadline) and, when the approval set is not empty, `JoinSet::join_next_with_id`. Before each wait, if a deadline exists and `Instant::now() >= deadline`,
+  end with reason `Timeout` (Python raises at once when `remaining <= 0`). Each branch gives one of these:
+
+  - The stream ends: the turn is over with no reason and no error.
+
+  - `Err(error)` from the stream: if it is `HarnessError::InstallFailed` or `HarnessError::CapabilityUnsupported`, the turn function returns it as
+  `SessionRuntimeError::Harness` at once, with no `Done`, no result recorded and no `interrupt` (PROPAGATED_ERRORS L63). Any other error ends the turn with
+  stop reason `RuntimeError` and error text `HarnessError: <error display>`, and a `tracing::warn!` line saying "harness <name> runtime error".
+
+  - `Event::Done` from the stream is dropped without being recorded or yielded (L450).
+
+  - A `ToolCall` event increments a counter. When `max_turns` is `Some(n)` and the counter is above `n`, the event is neither recorded nor yielded and the
+  turn ends with reason `MaxTurns`. The check counts every tool call, built-in or not.
+
+  - Anything else is recorded (below) and yielded to the consumer.
+
+  - Cancel fired: the turn ends with reason `Cancelled`. Timeout: reason `Timeout`.
+
+
+  When the loop ends, drop the stream (this is Python's `_aclose` and `_stop_producer`) and abort every approval task still running (`JoinSet::abort_all`,
+  then drain it with `join_next`). The final stop reason is decided in this order: a stream error wins (`RuntimeError`), then `control.is_cancelled()`
+  (`Cancelled`, even when the reason was `Timeout` or `MaxTurns`), then the end reason, else `Done`.
+
+
+  Recording (`_record` L437-L444). `Text { delta }` is pushed on `text_parts`. `FileChange` adds `(path, kind)` to an `emitted_files` set (use a `BTreeSet`; it
+  needs `FileChangeKind: Ord`, which the type does not derive, so key the set on `(String, &'static str)` with the kind's lowercase name, or on a `Vec` and use
+  `contains`). `Approval` goes to the approval step. Every recorded event is also pushed on the `events` vector, in order.
+
+
+  Approvals (`_on_approval` L430-L435, `call_approval_handler` L334-L350, `turn_runtime/approval.rs`). `ApprovalTasks` wraps a `tokio::task::JoinSet<bool>` and a
+  `HashMap<tokio::task::Id, Approval>`. `on_approval(approval)`: with a callback, spawn `callback(approval.clone())` into the set (the rules ban a bare
+  `tokio::spawn`) and remember its task id; with no callback and `interactive == false`, answer `Decision::Deny { reason: "no approval handler" }` at once;
+  with no callback and `interactive == true`, do nothing, because the consumer answers through the `Approval`. When `join_next_with_id` gives
+  `Ok((id, true))` answer Allow; `Ok((id, false))` answer `Deny { reason: "denied by on_approval" }`; `Err(error)` (the callback panicked) answers
+  `Deny { reason: "on_approval raised: <error>" }` with a `tracing::warn!` naming the tool. An answer is `approval.decision.set(..)`. `SetOnce::set` returns
+  an error when the approval is already answered, and that is expected (Python's `_resolve` returns early), so the error is dropped with `.is_err()` in an
+  `if`, not with `let _ =`. After the consumer asks for the next event past a yielded `Approval` and there is no callback, answer `Deny { reason: "approval not
+  answered" }` unless `decision.initialized()` (L455-L457). With a callback this step does nothing.
+
+
+  Finish (`run` L517-L541). If the stop reason is not `Done`, call `self.interrupt().await` (it keeps the handler's native id for resume). Then compute
+  file changes (`_file_changes` L460-L471, `turn_runtime/files.rs`): `after = sandbox.snapshot()`, `files = build_file_changes(&sandbox, &before, &after,
+  &before_contents)`, then every recorded `Event::FileChange` whose path is not yet in `files` (compare by path only) is appended, so a streamed change the
+  snapshots missed is kept. Then every file change in `files` whose `(path, kind)` is not in `emitted_files` is pushed on `events` and yielded.
+
+
+  Result (`_text` L473-L477, `_usage` L479-L487, `_result` L489-L506, `_output` L508-L515, `turn_runtime/result.rs`).
+
+  - `text` is `ctx.outcome.final_text` when it is not empty, else the `text_parts` joined. With an error text it becomes `"<text>\n\n<error>"`, or just the error
+  when the text is empty.
+
+  - `usage` and `cost` are `usage_counters()` now minus `usage_before`. Token and call counts use `saturating_sub`; `cost` is `max(delta, 0)`.
+
+  - `output` is computed only when the session has an output schema and the stop reason is `Done`: `parse_output::<JsonObject>(ctx.outcome.output_json.as_deref(),
+  &text)`. `Ok` gives `Some(output)`, `Err` keeps `output: None` and holds the error.
+
+  - `RunResult { text, output, files, events: <clone of events>, usage, cost, stop_reason, session_id }`.
+
+  Then `self.record(result.clone())`, yield `Event::Done { result }`, and last, if parsing failed, yield one `Err(SessionRuntimeError::Harness(
+  HarnessError::OutputInvalid { message: <error display>, raw: <output_json or text>, result: Some(Box::new(result)) }))`. So the consumer sees `Done` first and the
+  error right after, as in LiteLLM.
+
+
+  Deviations in structure. Rust has no event queue and no producer task: the stream is polled on the consumer's task, so a slow consumer pauses the
+  handler (that is the backpressure of Python's bounded queue), and `HARNESS_EVENT_QUEUE_MAX_SIZE` (1024) is not used. Callbacks are async only, as
+  B4830's `ApprovalHandler` type already says.
+scope:
+  paths:
+  - crates/betterlite-harness/src/turn_runtime.rs
+  - crates/betterlite-harness/src/turn_runtime/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L259-L332
+    why: The end marker, TurnControl, closing the handler stream and the producer that counts tool calls for max_turns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L334-L350
+    why: call_approval_handler, the allow, deny and callback-failure outcomes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L353-L428
+    why: Turn state, begin, producer start and stop, the deadline and how an end marker becomes a stop reason.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L430-L471
+    why: Approval routing, event recording, the drain loop and file change merging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L473-L541
+    why: Final text, usage delta, result, structured output check and the run order that ends in Done.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L732-L741
+    why: turn_events, the busy guard and ensure_ready before a turn.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/types.py#L98-L130
+    why: Approval allow, deny and the first-answer-wins rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/handlers/base.py#L15-L43
+    why: The turn contract the handler stream follows (no Done, sets final_text and output_json).
+dod:
+  - text: begin_turn failure (TurnRunning) and ensure_ready run before any sandbox snapshot, and end_turn runs after a finished turn and after an error, so the next turn can start. A stream dropped before Done also leaves the session not busy.
+    proof: [events-tests]
+  - text: A turn yields the handler's events in order, then any file change the snapshots found that was not streamed, then Done whose result holds text, events, files, usage, cost, stop reason Done and the session id; the result is also recorded on the session.
+    proof: [events-tests]
+  - text: Streamed Text deltas become the result text unless the handler set final_text; a runtime error appends its text to it.
+    proof: [result-tests]
+  - text: The result usage and cost are the counters after the turn minus the counters before it, never below zero for cost.
+    proof: [result-tests]
+  - text: The tool call above max_turns is dropped, the turn ends with stop reason MaxTurns, and interrupt is called.
+    proof: [limits-tests]
+  - text: A turn past its timeout ends with stop reason Timeout and the handler stream is dropped; cancel, also one fired before the turn starts, ends with Cancelled and wins over Timeout and MaxTurns.
+    proof: [limits-tests]
+  - text: A handler error becomes stop reason RuntimeError with its text in the result, except InstallFailed and CapabilityUnsupported, which are returned with no Done and no recorded result.
+    proof: [limits-tests]
+  - text: An Approval event goes to the callback; allow, deny and a panicking callback give Allow, "denied by on_approval" and "on_approval raised"; with no callback a non-interactive turn denies "no approval handler" and an interactive one denies "approval not answered" when the consumer moves on without an answer.
+    proof: [approval-tests]
+  - text: Callbacks still running when the turn ends are aborted, and a second answer to the same approval is ignored.
+    proof: [approval-tests]
+  - text: With an output schema and stop reason Done, the output is parsed from output_json or from the last JSON object in the text; a bad one yields Done and then OutputInvalid with the raw text and the result.
+    proof: [result-tests]
+  - text: Files created, modified and deleted in the sandbox during the turn appear as FileChange events once, even when the handler also streamed them.
+    proof: [files-tests]
+checks:
+  optional: []
+  commands:
+    - id: events-tests
+      why: the turn entry point and event order tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^turn_runtime::(.*::)?events::/)'
+    - id: limits-tests
+      why: max_turns, timeout, cancel and runtime error tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^turn_runtime::(.*::)?limits::/)'
+    - id: approval-tests
+      why: approval routing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^turn_runtime::(.*::)?approval::/)'
+    - id: result-tests
+      why: result text, usage and structured output tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^turn_runtime::(.*::)?result::/)'
+    - id: files-tests
+      why: file change tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^turn_runtime::(.*::)?files::/)'
+oracle_cases: []
+deviations:
+  - what: There is no event queue or producer task. The handler stream is polled by the turn itself, so a slow consumer pauses the handler.
+    why: A Rust stream is pull based, so the pause is the backpressure Python gets from its 1024-slot queue. HARNESS_EVENT_QUEUE_MAX_SIZE is not used.
+  - what: A runtime error's text starts with "HarnessError:" where LiteLLM writes the Python exception class name.
+    why: Rust errors have one type here, and the class name is not part of any wire format.
+  - what: Approval callbacks must be async; sync callbacks run in a worker thread in LiteLLM.
+    why: B4830's ApprovalHandler type is already an async closure, and a panic in it takes the place of a raised exception.
+  - what: Dropping a turn stream before Done does not call interrupt or record a result, but the session is not left busy.
+    why: Rust runs no code when a stream is dropped, so the handler stays as it was; the TurnPermit held by the stream clears the busy flag on drop. The supported clean stop is still TurnControl::cancel followed by reading the stream to its Done.
+out_of_scope:
+  - "SessionConfig, build_config, validate, context_for, parse_output and resolve_model_route (runtime.py L72-L255) belong to B4844; parse_output is called here."
+  - "The AsyncSession lifecycle (L584-L730, L750-L776: start, interrupt, ensure_ready, close, state, usage_counters, record, history, cost, usage) belongs to B4846 and is called here; begin_turn and end_turn are its busy-flag methods."
+  - "AsyncEventStream, _one_shot, astream, arun, _collect, aagent_session, arun_agent, astream_agent, _coerce_state, aagent_resume, agent_capabilities and aagent (L544-L582, L743-L748, L779-L1028) belong to B4848."
+  - "`_aclose` (L279-L286) has no Rust counterpart: dropping the stream closes it."
+  - "build_file_changes and capture_text_contents are B4831's and the snapshot comparison is not rebuilt here."
+pitfalls:
+  - The max_turns check is a strict greater-than on the running count of ToolCall events, and the call that crosses the limit is dropped before it is recorded or yielded.
+  - Cancel wins over every other reason, including a reason set by the timeout or by max_turns, and a stream error wins over cancel.
+  - A timeout checks the clock before waiting, so a deadline already passed ends the turn even when the next item is ready.
+  - InstallFailed and CapabilityUnsupported stop the whole turn with an error and skip interrupt, file changes, record and Done; every other handler error still produces a Done with RuntimeError.
+  - interrupt is called for every stop reason other than Done, runtime errors included, before the file changes are computed.
+  - Reset only final_text and output_json at the start of a turn; usage and cost on ctx.outcome belong to in-process harnesses and are summed across turns.
+  - Done is yielded before OutputInvalid, and the result recorded on the session is the one carried by the error.
+  - File changes streamed by the handler are deduplicated against the snapshot result by path, but a yielded change is skipped only when both path and kind were already emitted.
+  - An Approval with no callback in interactive mode is denied only after the consumer asks for the next event; denying it on arrival would stop the consumer from answering.
+  - Hold no borrow of self across the handler stream except the two fields it needs, so take every ctx.settings value and a clone of the sandbox before calling handler.turn.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

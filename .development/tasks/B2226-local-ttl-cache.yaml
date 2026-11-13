@@ -2,7 +2,7 @@ id: B2226
 title: Shared local TTL cache primitives
 description: >-
   Move shared bounded local-cache primitives below Azure token/AWS credential consumers and router storage. Inject
-  clocks and typed values; B390 owns routing value types and batch/increment adapters, while B125 owns Redis composition.
+  clocks and typed values; B390 owns routing value types and batch/increment adapters, while B4293 owns Redis composition.
   Provider caches use the memory-only DualCache branch, never router storage or the HTTP client pool.
 
 
@@ -313,12 +313,12 @@ deviations:
 out_of_scope:
 - InMemoryCache async wrappers, pipelines, sets, batch reads, increments, flush/disconnect and remaining TTL/oldest-key
   helpers stay B390/B391. DualCache Redis construction, LimitedSizeOrderedDict and Redis read/write/backfill branches
-  remain B125; only its no-Redis provider-cache path is owned here. Cache logging is an injected redacted event
+  remain B4293 to B4295; only its no-Redis provider-cache path is owned here. Cache logging is an injected redacted event
   sink; no Redis transport is called by this task.
 - 'Function ownership inventory litellm/caching/in_memory_cache.py: InMemoryCache.async_get_cache L238-L239; InMemoryCache.async_batch_get_cache
   L241-L246; InMemoryCache.async_increment L248-L249; InMemoryCache.async_increment_pipeline L251-L258; InMemoryCache.flush_cache
   L260-L263; InMemoryCache.disconnect L265-L266; InMemoryCache.async_get_ttl L271-L275; InMemoryCache.async_get_oldest_n_keys
-  L277-L283 belong to B125.'
+  L277-L283 belong to B4290.'
 - 'Function ownership inventory litellm/caching/in_memory_cache.py: InMemoryCache.async_set_cache L179-L180; InMemoryCache.async_set_cache_pipeline
   L182-L187; InMemoryCache.async_set_cache_sadd L189-L198; InMemoryCache.batch_get_cache L223-L228; InMemoryCache.increment_cache
   L230-L236 belong to B390.'

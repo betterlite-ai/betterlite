@@ -3,7 +3,6 @@ use std::cmp::Reverse;
 use rust_decimal::Decimal;
 
 use super::rates::parse_text_rate;
-use super::threshold::prompt_exceeds;
 use super::{BatchCostRates, ModelInfo, TokenRateError, Usage};
 use crate::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use crate::tiered_pricing::Scalar;
@@ -78,9 +77,10 @@ fn crossed_batch_tier(
         thresholds.push((limit, text.to_owned()));
     }
     thresholds.sort_by_key(|(limit, _)| Reverse(*limit));
+    let tokens = Decimal::from(usage.prompt_tokens);
     Ok(thresholds
         .into_iter()
-        .find(|(limit, _)| prompt_exceeds(usage.prompt_tokens, *limit, inclusive))
+        .find(|(limit, _)| tokens > *limit || (inclusive && tokens == *limit))
         .map(|(_, text)| text))
 }
 

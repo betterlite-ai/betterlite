@@ -1,0 +1,17 @@
+task: B4591
+deviations:
+  - what: CliTokenRecord declares client_id, token_endpoint, revocation_endpoint, resource and team_id as explicit optional fields instead of accepting them through dynamic extra fields.
+    why: LiteLLM's extra="allow" passes any key through, which Rust cannot express without an untyped map; every one of these five keys is written to and read from token.json by the real logins, so they become typed fields rather than being dropped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L86-L105
+  - what: A key in token.json outside the declared record fields is ignored on read and not written back.
+    why: LiteLLM keeps it in the pydantic extra dict and re-serializes it; betterlite has no passthrough field and no task owns one. A key no LiteLLM release writes today is affected, while a file carrying one still loads instead of failing to a missing login.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L93
+  - what: is_token_fresh accepts only a CliTokenRecord, not a record or a plain mapping, and takes the wall clock and expiration hours as parameters with no default.
+    why: The mapping branch exists for a caller that already dumped the record to a dict, and the not-isinstance timestamp branch only guards a mapping missing its timestamp key; every betterlite caller holds the typed record, whose timestamp cannot be absent, and no caller may read a clock or a config section here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L350-L369
+  - what: A staging, commit, write or overwrite failure returns TokenRecordError with the private-JSON error and its I/O source, instead of CredentialNotSaved, a false return or a raised exception.
+    why: A typed error belongs to the module that defines the operation; B4592 converts this task's error into CredentialNotSaved at the call site when it needs that outcome.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L511-L526
+  - what: A token path with no parent directory, such as the filesystem root or a bare relative file name, fails with TokenRecordError::Directory instead of treating the current directory as the parent.
+    why: B192's ensure_private_dir refuses a path with no final name, and this task stages through it before writing; token_file_path always yields home/.litellm/token.json, so the difference only reaches a caller that bypasses it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L511-L517

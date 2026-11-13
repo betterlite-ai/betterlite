@@ -13,13 +13,15 @@ description: >-
 scope:
   paths:
   - Cargo.toml
+  - deny.toml
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/rules.rs
   - crates/betterlite-core/src/rules/**
   - crates/betterlite-core/src/schema.rs
   - crates/betterlite-core/src/schema/**
-  - crates/betterlite-core/fuzz/**
-  - crates/betterlite-openai/**
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/response_schema.rs
+  - crates/betterlite-core/fuzz/corpus/response_schema/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/rule_decision.rs
   - tools/oracle/src/helpers/core_ops/rule_decision/**
@@ -108,6 +110,8 @@ pitfalls:
 - >-
   A JSON Schema validator may fetch remote references by default; disable both HTTP and file retrieval explicitly.
 - Never let a mock response silently override a configured real provider without an explicit core invocation.
+- >-
+  jsonschema pulls in borrow-or-share, licensed MIT-0. Add `{ allow = ["MIT-0"], crate = "borrow-or-share" }` to the exceptions list in deny.toml, next to the NCSA, MPL-2.0 and BSL-1.0 entries; do not add MIT-0 to the global allow list.
 review_level: standard
 budget:
   max_changed_lines: 1500

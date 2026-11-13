@@ -1,0 +1,19 @@
+kind: helper
+name: prometheus-multiproc-auto-create
+call:
+  b4177:
+    function: prometheus_directory
+    workers: 2
+    settings:
+      callbacks: prometheus
+    metrics_port: null
+    environment:
+      TMPDIR: .
+      TEMP: /tmp/secondary-temp-root
+      TMP: /tmp/tertiary-temp-root
+env:
+  TMPDIR: .
+  TEMP: /tmp/secondary-temp-root
+  TMP: /tmp/tertiary-temp-root
+compare:
+  ignore: []

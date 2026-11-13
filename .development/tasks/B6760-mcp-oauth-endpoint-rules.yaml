@@ -1,0 +1,126 @@
+id: B6760
+title: MCP upstream OAuth endpoint rules and flow resolution
+description: >-
+  Build the pure rules that decide which OAuth endpoints an MCP server uses and when they still need discovery. In LiteLLM they are module-level helpers of mcp_server_manager.py plus a few static methods of MCPServerManager. They do no network calls and hold no state. B6761 fetches the metadata, B6762 schedules the discovery, and B6763 and B6764 call these rules when they build a server record.
+
+
+  Code goes in the new betterlite-mcp module server_oauth: crates/betterlite-mcp/src/server_oauth.rs, server_oauth/** and a tests.rs beside each file. The record type is MCPServer from B6590 (server_record) with its MCPOAuthMetadata and OAuth2Flow. MCPAuth is B2305's enum in betterlite-db. URL identity and origin redaction come from B4654's oauth_resource module (canonicalize_url_identity and redact_mcp_resource_url, read B4654 for the exact Rust names). Logging goes through tracing at the level named below.
+
+
+  Functions to build, free functions in server_oauth unless said otherwise (LiteLLM name in backticks).
+
+  1. `blank_to_none` (`_blank_to_none`): trims the text and gives None when nothing is left. `uses_issuer_anchor` (`_uses_issuer_anchor`): true when blank_to_none(issuer) is Some and the auth type is a discovery type. `has_discovery_source` (`_has_oauth_discovery_source`): true when the server url is non-empty or the server is issuer anchored. A const UPSTREAM_OAUTH_DISCOVERY_AUTH_TYPES lists oauth2, true_passthrough and oauth_delegate (`_UPSTREAM_OAUTH_DISCOVERY_AUTH_TYPES`).
+
+  2. `obo_needs_discovery` (`_obo_needs_endpoint_discovery`), inputs: auth type, token_exchange_endpoint, token_url. True for oauth2_token_exchange when both endpoints are empty or None.
+
+  3. `endpoints_yield_to_issuer` (`_endpoints_yield_to_issuer`), inputs: issuer, is_discovery_auth_type, the three urls (authorization, token, registration) and a server_ref for the log. With no issuer or a non-discovery type, return the three inputs unchanged. Otherwise return three Nones, and when any input was non-empty log one warning that names the discarded fields in sorted order (authorization_url, registration_url, token_url) with "is" for one and "are" for several, and tells the operator how to use manual endpoints instead.
+
+  4. `normalized_authorize_endpoint` (`_normalized_authorize_endpoint`) calls B4654's canonicalize_url_identity. `issuer_matches` (`_issuer_matches`), inputs: claimed issuer as Option<&serde_json::Value> and the configured issuer. A missing, non-string or empty claim is false, else both sides go through normalized_authorize_endpoint and must be equal.
+
+  5. `flow_endpoints_missing` (`_flow_endpoints_missing`), inputs: auth type, oauth2_flow text, authorization_url, token_url, token_exchange_endpoint. For oauth2_token_exchange the answer is token_exchange_endpoint is None and token_url is None. For an auth type outside the discovery types it is false. For a client_credentials flow it is token_url is None. Otherwise it is authorization_url is None or token_url is None. `endpoints_unresolved` (`_oauth_endpoints_unresolved`), input: &MCPServer. True first when the auth type is oauth2_token_exchange, the profile is entra_obo and scopes is empty or None. True next when is_dcr_bridge, client_id is empty or None and effective_registration_url is None. Otherwise flow_endpoints_missing with effective_oauth2_flow(server) (item 8), effective_authorization_url, effective_token_url and token_exchange_endpoint. `requires_discovery` (`_requires_oauth_discovery`): has_discovery_source(url, anchored) and endpoints_unresolved(server).
+
+  6. `endpoints_corroborate` (`_endpoints_corroborate_authorization_url`), inputs: the source authorization url and the trusted one. A trusted value that is None or blank returns true. Otherwise the source must be Some and equal to the trusted one after normalized_authorize_endpoint. `restrict_to_corroborated` (`_restrict_discovery_to_corroborated_authorization_server`), inputs: Option<MCPOAuthMetadata>, the manual authorization url, a server identifier and is_dcr_bridge. Return the metadata unchanged when it is None, when the manual url is None or blank, when the document corroborates the pin, or when it has neither token_url nor registration_url. Otherwise log one warning (the text names the server, the advertised authorization endpoint or "<absent>", the pinned one, and adds the dcr_bridge sentence only when is_dcr_bridge and a registration_url was dropped) and return a copy with token_url and registration_url set to None. Scopes are never touched.
+
+  7. `carry_forward_endpoints` (`_carry_forward_resolved_oauth_endpoints`), inputs: new: &mut MCPServer and previous: Option<&MCPServer>. Do nothing with no previous, or when url or auth_type differ. When the new server is issuer anchored, copy only the previous scopes, and only when the new scopes are empty or None, then stop. Otherwise may_carry = endpoints_corroborate(previous.authorization_url, new.authorization_url). Copy the previous authorization_url when the new one is None and the previous is non-empty. Copy token_url, registration_url and scopes (scopes when empty or None) from the previous only when may_carry and the previous value is non-empty and the new one is None.
+
+  8. Flow resolution, as free functions. `explicit_oauth2_flow` (`_explicit_oauth2_flow`): the text "client_credentials" or "authorization_code" gives the matching OAuth2Flow, anything else None. `resolve_oauth2_flow` (`_resolve_oauth2_flow`), inputs: auth type, flow text, token_url, authorization_url, client_id, client_secret. A valid flow text returns it. Any other non-empty text returns None. A non-oauth2 auth type returns None. A non-empty authorization_url returns None. All of token_url, client_id and client_secret non-empty gives client_credentials. Otherwise None. `effective_oauth2_flow` (`effective_oauth2_flow`), signature `pub fn effective_oauth2_flow(server: &MCPServer) -> Option<OAuth2Flow>`, runs resolve_oauth2_flow on a server's own fields. `flow_for_request` (`resolve_oauth2_flow_for_request`): when the effective flow is None or equals the stored oauth2_flow, return the server as it is, else log one warning (server id and inferred flow, and that the operator should set oauth2_flow explicitly) and return a clone with oauth2_flow set. Return Cow<MCPServer> so the unchanged case does not copy.
+
+  9. `merge_discovered` (`_merge_discovered_oauth_metadata`), inputs: &MCPServer and Option<&MCPOAuthMetadata>. None metadata returns a clone. Otherwise the clone takes scopes, authorization_url, token_url and registration_url from the server when set (non-empty), else from the metadata, and issuer from the server, else the metadata's discovered_issuer unless from_origin_fallback is true (then None). `extract_scopes` (`_extract_scopes`), input: ScopesInput, an enum with Text(&str), List(&[serde_json::Value]) and Missing. Text splits on whitespace and drops blanks. List keeps the string entries that are not blank (kept as they are, not trimmed). Both give None when nothing is left. Missing gives None.
+
+  10. `discovery_leaves_unresolved` (`_discovery_failure_leaves_needs_unresolved`): (needs_authorization_url and no manual authorization url) or (needs_token_url and no manual token url). `warn_unresolved` (`_warn_oauth_endpoints_unresolved`), input: an UnresolvedCheck struct with server_ref, server_url, discovery_attempted, discovery_deferred, issuer_anchored, metadata, needs_authorization_url, needs_token_url, manual_authorization_url, manual_token_url. Nothing happens when discovery is deferred or the server is issuer anchored. Collect the needed fields that have neither a manual value nor a metadata value, in the order authorization_url, token_url. With none, stop. When discovery was attempted log one warning naming the fields and the redacted origin of server_url (or "<no url>"). Otherwise log one warning that the server has no discovery source, naming the fields with "is" or "are".
+
+
+  Tests use synthetic servers (names with the test- prefix, https://idp.test/ style urls) and a tracing subscriber that captures warnings for the log cases.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/src/server_oauth.rs
+    - crates/betterlite-mcp/src/server_oauth/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L438-L451
+    why: _blank_to_none.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L636-L720
+    why: issuer anchoring, discovery source, endpoints_yield_to_issuer, normalized endpoint and issuer equality.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L722-L782
+    why: _flow_endpoints_missing and _oauth_endpoints_unresolved.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L784-L904
+    why: the corroboration rule, carry forward of last known endpoints and the mix-up gate on discovered endpoints.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L996-L1069
+    why: the unresolved-endpoint warning and its decision helper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1817-L1922
+    why: oauth2_flow resolution, the request-time backstop and the token exchange discovery rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2085-L2095
+    why: merge of discovered metadata into a server.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5367-L5374
+    why: _extract_scopes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L308-L312
+    why: _requires_oauth_discovery.
+  - url: https://www.rfc-editor.org/rfc/rfc8414#section-3.3
+    why: issuer equality rule behind the anchored issuer.
+
+dod:
+  - text: blank_to_none, uses_issuer_anchor, has_discovery_source and obo_needs_discovery follow the rules above, including blank text and an issuer on a non-discovery auth type.
+    proof: [oauth-basics-tests]
+  - text: endpoints_yield_to_issuer returns three Nones for an anchored issuer and logs the discarded fields in sorted order, and returns the inputs unchanged otherwise.
+    proof: [oauth-basics-tests]
+  - text: flow_endpoints_missing, endpoints_unresolved and requires_discovery cover the token exchange, entra_obo scope, dcr_bridge registration and client_credentials cases.
+    proof: [oauth-unresolved-tests]
+  - text: endpoints_corroborate and restrict_to_corroborated drop only the token and registration urls on a mismatch and never touch scopes.
+    proof: [oauth-trust-tests]
+  - text: carry_forward_endpoints copies the previous endpoints only under the corroboration rule, and an anchored server carries scopes only.
+    proof: [oauth-trust-tests]
+  - text: explicit_oauth2_flow, resolve_oauth2_flow, effective_oauth2_flow and flow_for_request infer client_credentials only from the M2M field shape and warn on an inferred change.
+    proof: [oauth-flow-tests]
+  - text: merge_discovered, extract_scopes, discovery_leaves_unresolved and warn_unresolved match the item text, including the origin fallback issuer and the two warning variants.
+    proof: [oauth-merge-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: oauth-basics-tests
+      why: the blank, anchor, discovery source, token exchange or issuer yield rules are missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_oauth::tests::basics_/)'
+    - id: oauth-unresolved-tests
+      why: the unresolved endpoint decision is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_oauth::tests::unresolved_/)'
+    - id: oauth-trust-tests
+      why: the corroboration gate or the carry forward rule is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_oauth::tests::trust_/)'
+    - id: oauth-flow-tests
+      why: oauth2_flow resolution or the request-time backstop is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_oauth::tests::flow_/)'
+    - id: oauth-merge-tests
+      why: the metadata merge, the scope extraction or the unresolved warning is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_oauth::tests::merge_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: flow_for_request returns a Cow of the server and extract_scopes takes a typed ScopesInput, not a Python value.
+    why: Rust has no model_copy or duck typing, and docs/compatibility.md leaves Python runtime typing out of scope.
+
+out_of_scope:
+  - "Fetching and parsing authorization server and protected resource metadata: B6761."
+  - "Discovery slots, background tasks and ensure_oauth_metadata_discovered: B6762."
+  - "Building a record from a table row or config entry with these rules: B6763 and B6764."
+  - "The MCPServer record, its effective url getters and is_dcr_bridge: B6590."
+  - "canonicalize_url_identity and redact_mcp_resource_url: B4654."
+
+pitfalls:
+  - "resolve_oauth2_flow returns None for any non-empty unknown flow text and does not fall through to the shape inference; only an empty or missing value is inferred."
+  - "carry_forward_endpoints copies authorization_url without the corroboration check, but only when the new one is None; the check guards token_url, registration_url and scopes."
+  - "An issuer anchored server never gets its endpoints carried forward, so a failed issuer fetch keeps them None (fail closed)."
+  - "extract_scopes keeps list entries untrimmed, while a whitespace separated text is split and trimmed."
+  - "merge_discovered uses an empty string as unset, like Python's or, so a blank stored url is replaced by the discovered one."
+  - "endpoints_unresolved reads the flow from effective_oauth2_flow, not the stored column, so an unstamped M2M row does not trigger discovery on every reload."
+  - "The entra_obo rule needs scopes, and scopes only come from resource discovery, so a server with both endpoints but no scopes stays unresolved."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

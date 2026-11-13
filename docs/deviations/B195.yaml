@@ -1,0 +1,20 @@
+task: B195
+deviations:
+  - what: A fetched r50k_base or gpt2 vocabulary is converted on the blocking facility and the converted bytes stay in memory for the life of the process, where tiktoken writes the file into the tokenizers folder inside LiteLLM's installed package and rereads it.
+    why: betterlite's assets are compiled into the binary, so there is no package folder to write into; with CUSTOM_TIKTOKEN_CACHE_DIR set the raw file is also on disk under the sha1 of its URL. The fetch, the URL and the hash check are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/default_encoding.py#L20-L30
+  - what: HF_HUB_DISABLE_XET, HF_HUB_DISABLE_SYMLINKS and HF_HUB_DISABLE_SYMLINKS_WARNING are not read. Files the Hub serves through Xet download through hf-xet even when the first is set, and the cache always links snapshot files to blobs.
+    why: hf-hub always uses hf-xet when the HEAD answer carries X-Xet-Hash and has no switch for either; the bytes and the cache path are the same, and betterlite ships for Linux and macOS where symlinks work.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/constants.py#L277-L343
+  - what: hf-hub's client and transport differ from huggingface_hub, which sends its own user agent, follows redirects to a Hub host, raises ProxyError and tries a metadata request once; hf-hub sends its own user agent, runs its own token lookup when none is given, follows only relative redirects, reports a proxy failure as a connection error, and retries 408, 429, 500, 502, 503, 504 and connection errors up to 5 times.
+    why: The user agent must not claim to be Python, the lookup has no off switch in HFClientBuilder, and the retry list is the one huggingface_hub uses on its second try; the URLs, the headers that carry meaning, the etag_timeout bound and the token are the same.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_http.py#L451-L456
+  - what: hf-hub turns every 404 on the tokenizer HEAD into entry-not-found without the response context, so betterlite probes the repository and then its revision instead of reading the X-Error-Code huggingface_hub relies on, and a failed download reaches the caller with hf-hub's error text.
+    why: The probes only run when the Hub answered the file HEAD, never for a local-only cache check, which returns CacheMiss like LocalEntryNotFoundError, and each keeps the etag_timeout bound; a missing repository, revision or file still surface as the three typed errors huggingface_hub raises and the fallback and retry splits still match. The error text comes from a different library.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1925-L1960
+  - what: The gpt2 encoder map is parsed but not compared against the merge file, where tiktoken asserts the two agree before building the ranks, and the custom tokenizer cache holds 64 entries where LiteLLM sizes it from DEFAULT_MAX_LRU_CACHE_SIZE.
+    why: Both gpt2 files are pinned by sha256, so a corrupted pair cannot pass the fetch and a working setup cannot reach the assertion; the cache variable is read in LiteLLM's constants at import and the default matches.
+    link: https://github.com/openai/tiktoken/blob/0.12.0/tiktoken/load.py#L137-L144
+  - what: Counting rejects text over EncodeLimits.input_bytes with InputTooLarge and encoded id lists over EncodeLimits.output_ids with OutputTooLarge, where LiteLLM has no hard cap and extrapolates long counts above TOKEN_COUNTER_MAX_EXACT_CHARS.
+    why: The input bound is checked before the permit and the copy so a huge text cannot queue; B196 samples above its own threshold and passes the limit in, so counts LiteLLM can make still succeed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L584-L605

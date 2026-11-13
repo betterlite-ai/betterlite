@@ -43,14 +43,14 @@ description: >-
   production, 210 tests, 135 adapters and 90 configuration/export lines, maximum 750.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,hosted_chat_options}.rs
     - crates/betterlite-openai/src/hosted_chat_options.rs
     - crates/betterlite-openai/src/hosted_chat_options/**
-    - crates/betterlite-models/src/{lib,baseten_endpoint}.rs
     - crates/betterlite-models/src/baseten_endpoint.rs
     - crates/betterlite-models/src/baseten_endpoint/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,hosted_chat}.rs
+    - crates/betterlite-config/src/sections/hosted_chat_settings.rs
+    - crates/betterlite-config/src/sections/hosted_chat_settings/**
+    - crates/betterlite-config/src/providers/hosted_chat.rs
+    - crates/betterlite-config/src/providers/hosted_chat/**
     - crates/betterlite-config/tests/hosted_chat_settings.rs
     - tools/oracle/src/helpers/models/hosted_chat_options.rs
     - tools/oracle/src/helpers/models/hosted_chat_options/**

@@ -15,8 +15,6 @@ description: >-
   25 wiring lines, totaling 655.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/response_chat_history.rs
   - crates/betterlite-core/src/api/response_chat_history/**
   - tools/oracle/src/helpers/core_ops/response_chat_history.rs

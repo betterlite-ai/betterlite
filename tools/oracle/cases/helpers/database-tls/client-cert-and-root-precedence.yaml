@@ -1,0 +1,34 @@
+kind: helper
+name: database-tls-client-cert-and-root-precedence
+call:
+  database_tls:
+    function: batch
+    calls:
+      - function: strip_prisma_query_params
+        url: "postgresql://u@h/db?sslcert=client.pem&sslkey=client.key&sslmode=verify-full&sslaccept=strict"
+      - function: libpq_tls_params
+        pairs: [["sslcert", "client.pem"], ["sslkey", "client.key"]]
+        sslaccept: strict
+      - function: libpq_tls_params
+        pairs: [["sslcert", "ca.pem"]]
+        sslaccept: null
+      - function: libpq_tls_params
+        pairs: [["sslcert", "ca.pem"]]
+        sslaccept: strict
+      - function: libpq_tls_params
+        pairs: [["sslcert", "ca.pem"], ["sslmode", "prefer"]]
+        sslaccept: strict
+      - function: libpq_tls_params
+        pairs: [["sslcert", "a"], ["sslcert", "b"], ["sslmode", "disable"]]
+        sslaccept: strict
+      - function: libpq_tls_params
+        pairs: [["sslcert", "ca"], ["sslrootcert", "r"]]
+        sslaccept: strict
+      - function: libpq_tls_params
+        pairs: [["sslmode", "require"], ["sslmode", "disable"], ["sslcert", "ca"]]
+        sslaccept: strict
+      - function: libpq_tls_params
+        pairs: [["sslcert", "ca"], ["sslaccept", "x"]]
+        sslaccept: accept_invalid_certs
+env: {}
+compare: {ignore: []}

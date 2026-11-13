@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-results-invalid-id-bedrock
+call:
+  anthropic_results:
+    function: replace_invalid_id_chars
+    alphabet: bedrock
+    values:
+      - "a.b:c/d"
+      - "abc_DEF-9"
+      - ""
+      - "a b"
+env: {}
+compare:
+  ignore: []

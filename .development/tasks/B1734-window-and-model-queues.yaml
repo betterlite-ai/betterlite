@@ -17,7 +17,7 @@ description: >-
   creator, key hash, team, alias and user-agent from that first item. Bound unique pending
   names by the existing spend-queue capacity and await drain when full; never silently
   discard a newly discovered tool. Native tests prove the same name counts again next cycle.
-  Extract load_model_insight_tasks and the pinned twenty-entry JSON catalog below B075,
+  Extract load_model_insight_tasks and the pinned twenty-entry JSON catalog below B8272,
   storing its immutable ModelInsightTask records (task_type, label, category) with the
   model-usage module. This four-line record moves here from the insights API types.
   Select the first
@@ -67,7 +67,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/model_insights_tasks.json#L1-L22
     why: Exact recognized task names, labels and categories.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/model_insights.py#L32-L35
-    why: Catalog record shared with B075 without importing its API response types.
+    why: Catalog record shared with B8272 without importing its API response types.
 dod:
   - text: Window aggregation preserves cross-reset identities and tool discovery deduplicates only within one bounded flush cycle.
     proof: [rollup-queue-tests, oracle, rollup-python, rollup-helper-corpus]
@@ -97,9 +97,9 @@ deviations:
     why: The repository requires bounded queues; existing spend-queue capacity supplies the bound without another setting.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/tool_discovery_queue.py#L27-L52
 out_of_scope:
-  - B1735 writes window rows; B075 consumes the extracted task catalog for insights APIs; B1690 supplies queue lifecycle/settings.
+  - B1735 writes window rows; B8272 consumes the extracted task catalog for insights APIs; B1690 supplies queue lifecycle/settings.
   - B1733 owns entity/daily queues, B1706 tool usage writes, and earlier _types.py owners retain unrelated records.
-  - ModelInsightTask is the only extracted insights type; B075 keeps the metrics, totals, summaries and HTTP response records in model_insights.py.
+  - ModelInsightTask is the only extracted insights type; B8272 keeps the metrics, totals, summaries and HTTP response records in model_insights.py.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as queue_rollup in the db group. Replace the stub Op in tools/oracle/src/helpers/db/queue_rollup.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/queue_rollup.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Window transaction identity includes the original window_start string, so two different windows never collapse by entity alone.

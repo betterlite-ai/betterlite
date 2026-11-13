@@ -1,0 +1,11 @@
+kind: helper
+name: different_email_only_requests_are_not_duplicates
+call:
+  member_removal_identity:
+    operation: duplicate_indexes
+    requests:
+      - {user_id: null, user_email: "e1"}
+      - {user_id: null, user_email: "e2"}
+env: {}
+compare:
+  ignore: []

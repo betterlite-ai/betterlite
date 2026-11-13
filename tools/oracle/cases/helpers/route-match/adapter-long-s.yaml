@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-long-s",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/ſ",
+      "allowed_routes": [
+        "/(?i:s)"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

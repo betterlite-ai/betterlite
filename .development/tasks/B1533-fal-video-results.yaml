@@ -36,8 +36,6 @@ description: >-
   stub lines; plan 250 production, 240 tests and 130 adapters/wiring, maximum 700.
 scope:
   paths:
-    - crates/betterlite-core/src/api/fal.rs
-    - crates/betterlite-core/src/api/fal/**
     - crates/betterlite-core/src/api/fal/video_results.rs
     - crates/betterlite-core/src/api/fal/video_results/**
     - tools/oracle/src/helpers/core_ops/fal_video_results.rs

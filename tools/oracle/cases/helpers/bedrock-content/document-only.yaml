@@ -1,0 +1,26 @@
+kind: helper
+name: bedrock-content-document-only
+call:
+  bedrock_content:
+    function: ensure_document_messages_have_text
+    contents:
+      - role: user
+        content:
+          - {document: {name: doc, format: pdf, source: {bytes: QUFB}}}
+      - role: assistant
+        content:
+          - {document: {name: doc, format: pdf, source: {bytes: QUFB}}}
+      - role: user
+        content:
+          - {document: {name: doc, format: pdf, source: {bytes: QUFB}}}
+          - {cachePoint: {type: default}}
+      - role: user
+        content:
+          - {document: {name: doc, format: pdf, source: {bytes: QUFB}}}
+          - {text: explanation}
+      - role: user
+        content:
+          - {text: hello}
+env: {}
+compare:
+  ignore: []

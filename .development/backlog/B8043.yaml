@@ -1,0 +1,14 @@
+id: B8043
+milestone: M12 python
+title: Hook objects, loaded-object kinds and optional Python libraries
+status: done
+depends_on: [B8042]
+file: tasks/B8043-pyhost-hook-objects.yaml
+covers:
+  - "litellm/proxy/common_utils/callback_utils.py"
+parent: B165
+split_from: B165
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 1513

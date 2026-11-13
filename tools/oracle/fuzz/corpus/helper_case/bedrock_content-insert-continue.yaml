@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-content-insert-continue-seed
+call:
+  bedrock_content:
+    function: insert_assistant_continue
+    messages:
+      - {role: user, content: hi}
+    assistant_continue_message: {role: assistant, content: [{type: text, text: Carry on.}]}
+    modify_params: true
+env: {}
+compare: {ignore: []}

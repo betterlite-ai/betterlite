@@ -3,14 +3,13 @@ title: Cooldown expiry and deployment health snapshots
 description: 'Add typed cooldown records and health snapshots to B304''s store, with injected wall/monotonic
   time and bounded storage reads. Preserve the distinction between a missing health observation and an
   explicit unhealthy state. Connect snapshot reads to the eligibility phase but expose snapshot writes
-  as a reusable interface for later B130 probes. Implement remaining cooldown duration, minimum retry
+  as a reusable interface for B4443''s health cycle. Implement remaining cooldown duration, minimum retry
   delay and local/shared snapshot selection without implementing the error policy in this part. Configuration
   boundary keys introduced or consumed here: enable_health_check_routing, health_check_staleness_threshold,
   health_check_ignore_transient_errors, DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS. DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS
   defaults to 1 second from the environment; corrected local cooldown TTL is capped at 60 seconds by the
-  source. Implement the owned native service in crates/betterlite-router/src/cooldown_state.rs. Add ProbeOperation::CooldownState
-  in tools/oracle/src/router_probes/mod.rs and the corresponding B307 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  source. Implement the owned native service in crates/betterlite-router/src/cooldown_state.rs. B301 registers ProbeOperation::CooldownState and its Python entry as stubs, so fill only tools/oracle/src/router_probes/cooldown_state.rs and tools/oracle/litellm/probes/cooldown_state.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_utils/cooldown_cache.py:
@@ -25,26 +24,18 @@ description: 'Add typed cooldown records and health snapshots to B304''s store, 
   (L56-L88), DeploymentHealthCache._extract_unhealthy_ids (L90-L101), DeploymentHealthCache.async_get_unhealthy_deployment_ids
   (L103-L113), DeploymentHealthCache.get_unhealthy_deployment_ids (L115-L125). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  B016 registers RouteStage::CooldownState as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/cooldown_state.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/cooldown_state.rs
   - crates/betterlite-router/src/cooldown_state/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/cooldown_state.rs
+  - crates/betterlite-router/src/context/cooldown_state/**
   - crates/betterlite-server/src/routing/cooldown_state.rs
   - crates/betterlite-server/src/routing/cooldown_state/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/cooldown_state.rs
   - tools/oracle/src/router_probes/cooldown_state/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/cooldown_state.py
   - tools/oracle/cases/routing/cooldown-state/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/cooldown-state-*
@@ -134,12 +125,12 @@ oracle_cases:
 - tools/oracle/cases/routing/cooldown-state/health-probe-bypass.yaml
 deviations: []
 out_of_scope:
-- Active health routes and probes (B130).
+- Active health probes (B4443) and the health routes (B4444 to B4448, mounted by B8540).
 - Which failures trigger cooldown (B308).
 pitfalls:
 - Health probes must not be filtered out by the state they are meant to repair.
 - A stale local TTL must not extend a shared cooldown.
-- B130 owns active HTTP probes, so do not create a second health scheduler.
+- B4443 runs the active probes and the proxy_server.py background loop (L4265-L4678) schedules them through B4443, B4444 and B7640, so do not create a second health scheduler.
 - Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
   a hard request error.
 - The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules

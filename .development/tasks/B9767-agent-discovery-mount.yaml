@@ -1,0 +1,106 @@
+id: B9767
+title: Mount the existing agent-card discovery route for the dashboard form
+description: >-
+  B8202 is complete, but api::a2a_discover::routes has no production caller and neither
+  B8647's agent-admin mount nor B8648's A2A invocation mount claims it. Add only the
+  composition that exposes POST /v1/a2a/discover, with no aliases. LiteLLM's separate
+  a2a_registration lazy feature mounts exactly that path. Keep B8202's discovery
+  algorithm, typed request decoder, role check and error conversion unchanged.
+
+  Implement routes::agent_discovery::routes(&Arc<ServerState>) in this task's module,
+  returning the existing router with A2aDiscoverState. Construct source::LiveDiscovery
+  once from the shared ProxiedClient, UserUrlFetcher<SystemResolver> and a ten-second
+  per-attempt timeout. Read config.sections.user_url_policy.user_url_validation
+  (default true) and user_url_allowed_hosts (default []). B5082 already loads these
+  from litellm_settings and general_settings, with general settings taking precedence;
+  add no section or environment reader. For UrlValidator::new, map the already-loaded
+  config.litellm_settings.ssl_verify to Verification::Disabled only for Bool(false),
+  and Enabled otherwise. The URL validator reads the module flag, not the HTTP client's
+  SSL_VERIFY environment override; a CA-file setting still keeps HTTPS hostnames.
+  B172 owns this existing config field and the shared transport's actual TLS settings.
+  If the composition needs an error, keep its typed enum in agent_discovery.rs.
+  Reuse the transport that startup already resolves;
+  do not create a separate reqwest pool or read process environment during a request.
+
+  Architect hookup before dispatch: declare this module and merge its router exactly
+  once in crates/betterlite-server/src/routes.rs inside the existing key-auth and
+  AuthContext layers. The shared root is deliberately not worker scope. The architect
+  adds .merge(agent_discovery::routes(&state)) alongside the other keyed routes and
+  the skeleton's pub mod agent_discovery declaration. B8647/B8648 must not mount the
+  same path again. This is a missing mount,
+  not permission to replace the completed B8202 implementation.
+
+  HTTP cases send AddAgentForm's exact JSON {url} and its explicit
+  {url,discovery_mode:langgraph_platform,params:{assistant_id}} variant. Successful
+  responses contain url and agent_card, whose skills/capabilities/name/version fields
+  populate the form. Configure general_settings.user_url_allowed_hosts with the local
+  mock host for successful cases, leaving validation true. First try
+  /.well-known/agent-card.json, then /.well-known/agent.json, then /agent.json; return a
+  404 then a valid object to prove fallback and assert no third request. The LangGraph
+  request adds URL-encoded assistant_id on every attempt. Check a forbidden private
+  destination with default empty allowlist performs no network request and yields the
+  dependency's 400 detail, a nonadmin receives 403 detail, and no key receives the
+  existing authentication error. Use B860's ordinary user seed for the role case.
+  Compare status/content-type and all stable response/error fields, allowing only
+  endpoint-port/error-prose normalization. B8202's helper cases are not HTTP coverage.
+
+  Tests under routes::agent_discovery::tests prove the router is reached through the
+  application, takes the shared transport and user URL settings, and does not become
+  public when other A2A paths mount. Run api::a2a_discover:: regression tests as well.
+  The wrapper parses no bytes: parse_request and safe fetched-card decoding remain
+  B8202/B5082, so no new decoder or fuzz target is created. Roughly 80 wiring lines,
+  150 focused test lines and 220 HTTP fixture lines fit one task. Registration is the
+  missing behavior; zero LiteLLM function bodies are reimplemented. The excluded Python
+  lazy loader is evidence for that registration, not a request to port lazy loading.
+scope:
+  paths:
+    - crates/betterlite-server/src/routes/agent_discovery.rs
+    - crates/betterlite-server/src/routes/agent_discovery/**
+    - tools/oracle/cases/ui/agent-discovery/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L109-L113
+    why: Separate discovery feature registration, the missing composition owned here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/endpoints.py#L66-L112
+    why: Existing decorated handler, sole path, admin check and response fields owned by B8202.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/a2a/discovery.py#L41-L154
+    why: Dependency-owned URL order, ten-second timeout, safe fetch and LangGraph query.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L4620-L4650
+    why: The registration form's two real discovery request bodies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L283-L364
+    why: The reused URL validator reads litellm.ssl_verify when deciding whether to retain an HTTPS hostname.
+dod:
+  - text: POST /v1/a2a/discover is mounted once behind normal key authentication and invokes the existing live safe-fetch implementation with loaded settings.
+    proof: [discovery-composition, discovery-regression, discovery-http-cases, oracle]
+  - text: Both dashboard discovery modes return usable cards, retain fallback/query order and refuse private destinations and unauthorized callers.
+    proof: [discovery-composition, discovery-http-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: discovery-composition
+      why: A handler-only test can pass while the dashboard still receives 404 or a different transport/policy instance.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::agent_discovery::/)'
+    - id: discovery-regression
+      why: The production wrapper must preserve the completed discovery service's fallback and error behavior.
+      run: rg -q 'LiveDiscovery' crates/betterlite-server/src/routes/agent_discovery.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::a2a_discover::/)'
+    - id: discovery-http-cases
+      why: B8202's helper oracle does not send a request through authentication and the application router.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/agent-discovery)"
+oracle_cases:
+  - tools/oracle/cases/ui/agent-discovery/well-known-form.yaml
+  - tools/oracle/cases/ui/agent-discovery/langgraph-assistant-form.yaml
+  - tools/oracle/cases/ui/agent-discovery/default-private-url-denied.yaml
+  - tools/oracle/cases/ui/agent-discovery/admin-and-key-boundaries.yaml
+deviations: []
+out_of_scope:
+  - B8202 owns every function in a2a/endpoints.py and discovery.py; this task only supplies their missing production construction and mount.
+  - .development/litellm.yaml excludes _lazy_features.py's Python loader, matchers, slot/order helpers, middleware and schema stubs; B8647/B8648 keep their existing agent/invocation mounts.
+  - B5082 owns user URL config and safe-fetch policy; B172 owns TLS config and the architect owns the shared routes.rs hookup.
+pitfalls:
+  - A2A invocation mounting does not expose the separate /v1/a2a/discover feature.
+  - Allowlisting the fixture host is required for a successful local case with user_url_validation still enabled.
+  - The page needs an agent_card object rather than a response containing the fetched JSON as an escaped string.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

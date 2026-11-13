@@ -1,0 +1,124 @@
+id: B8772
+title: Serve and mount the guardrail and policy usage dashboard routes
+description: >-
+  LiteLLM's guardrail dashboard reads four GET routes from litellm/proxy/guardrails/usage_endpoints.py:
+  /guardrails/usage/overview, /guardrails/usage/detail/{guardrail_id}, /guardrails/usage/logs and
+  /policies/usage/overview, tagged Guardrails or Policies, each behind user_api_key_auth with no role check. B3689
+  built the date window, the row projections and the aggregation helpers in crates/betterlite-server/src/guardrails/usage_projections,
+  and its out_of_scope left the handlers to B104, an umbrella with no task file. Nobody builds or mounts them, so all
+  four answer 404. This task builds the handlers and the log helpers and mounts them.
+
+
+  Where. Module `app::guardrails::usage` (crates/betterlite-server/src/app/guardrails/usage.rs and usage/: handlers.rs,
+  logs.rs, models.rs, tests.rs). Add one call, `usage::mount(router, state, &route_state)`, at the end of `mount` in
+  crates/betterlite-server/src/app/guardrails.rs, after the four calls B8667 wrote, and a `mod usage;` line next to
+  theirs. Read the guardrail runtime from B8667's GuardrailRouteState and the database from `state.shared.db`.
+
+
+  Response models (models.rs) keep LiteLLM's field names, camelCase included: UsageUnitsDailyPoint {date, units,
+  cost}; UsageDetailResponse with the 23 fields at L300-L323; UsageLogEntry {id, timestamp, action, score,
+  latency_ms, model, input_snippet, output_snippet, reason}; UsageLogsResponse {logs, total, page, page_size}. The
+  overview types are B3689's. EMPTY_OVERVIEW is rows [], chart [], totals 0, passRate 100.0, empty unit maps and
+  totalCost null.
+
+
+  Overview. No database answers EMPTY_OVERVIEW before the window is checked. Otherwise resolve the window (B3689's 400s).
+  Guardrails are the database rows plus the config guardrails (B3682's list_config_guardrails) whose guardrail_id
+  no database row has. Read the daily guardrail metrics for start..=end and for start minus 7 days up to but not
+  including start, and the usage unit rows for start..=end; a missing usage units table logs the warning at L152-L155
+  and counts as no rows. Aggregate with B3689 (by guardrail_id), totals from the aggregate, passRate =
+  100*(requests-blocked)/requests rounded to one decimal, or 100.0 when requests is 0. Policies overview is the same
+  over the policy table and daily policy metrics (by policy_id), with no unit rows: empty unit maps and totalCost null.
+  Any error inside the try (not the window 400) goes through LiteLLM's handle_exception_on_proxy: an HTTP error keeps
+  its status and detail, anything else is a 500 ProxyException with type `internal_server_error`, param `None`, code
+  `500` and the error text as message. No such helper exists on main yet, so write it in usage/ as a private function.
+
+
+  Detail. No database is 500 "Prisma client not initialized" (HTTPException detail). The window is checked next. The
+  guardrail is the database row by guardrail_id, else the config guardrail by id (B3682's get_config_guardrail_by_id),
+  else 404 "Guardrail not found". The metric ids are [guardrail_name, guardrail_id] without empty values. Current and
+  previous metrics and unit rows filter on those ids. failRate is blocked/requests in percent (0.0 with no requests),
+  rounded to one decimal; trend compares it with the previous week's rate (B3689); time_series groups by date, sorted,
+  with score null; type is guardrail_info.type or "Guardrail", provider litellm_params.guardrail or "Unknown",
+  guardrail_name falls back to the path id, description is guardrail_info.description, avgScore and avgLatency null.
+  The by-team, by-key, by-unit and daily maps use B3689's grouping helpers. No try wrapper here: errors surface as is.
+
+
+  Logs. Query page (default 1, at least 1), page_size (default 50, 1 to 100), guardrail_id, policy_id, action,
+  start_date, end_date; out-of-range values are 422. No database, or neither guardrail_id nor policy_id, answers an
+  empty page with total 0 and the page values echoed. With a guardrail_id, look the guardrail up as detail does and,
+  when found, add its guardrail_name to the ids. build_usage_logs_where: one id is an equality, several an `in`;
+  policy_id is an equality; a date without `T` gets `T00:00:00+00:00` (start) or `T23:59:59+00:00` (end), `Z` becomes
+  `+00:00`. Read the spend log guardrail index (B3688's table) ordered by start_time descending with skip
+  (page-1)*page_size and take page_size+1, count with the same filter, then the spend logs for the first page_size
+  request ids. For each index row in order with a spend log, usage_log_entry_from_row: metadata (a JSON string is
+  parsed, a bad one counts as empty) guardrail_information entries whose guardrail_id, or guardrail_name when the id
+  is empty, equals the row's id; pick the most severe by B3688's guardrail_status_to_action with not_run 0, passed 1,
+  flagged 2, blocked 3, the first on a tie. No entry means action passed. latency_ms is duration*1000 rounded to
+  0 decimals, score is confidence_score or else risk_score rounded to 2, reason is a string response cut to 500
+  chars or a map's text cut to 500. An action filter that differs drops the row. timestamp is startTime in ISO form.
+  snippet: null stays null, a list joins each item's content (or the item) with spaces, more than 200 chars is cut
+  to 200 plus "...", and "{}" is null. The input snippet is the messages snippet, else proxy_server_request's
+  messages, else its body.messages, else the whole request's snippet. The try wrapper is the same as overview's.
+
+
+  Tests in app::guardrails::usage::tests with an in-memory fake for no-database and ordering, and PostgreSQL tests (name
+  them with postgres) through the real repositories for overview totals with a config-only guardrail, detail by name
+  and id, logs paging with the extra row, severity choice and the action filter. HTTP oracle cases through the booted
+  proxy with the master key, in tools/oracle/cases/guardrails/usage/: overview-empty-window, overview-bad-date-400,
+  detail-unknown-404, detail-config-guardrail, logs-without-filters-empty, logs-page-size-101-422,
+  policies-overview-empty and overview-no-key-401.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/guardrails.rs
+    - crates/betterlite-server/src/app/guardrails/usage.rs
+    - crates/betterlite-server/src/app/guardrails/usage/**
+    - tools/oracle/cases/guardrails/usage/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L85-L156
+    why: The table lookups and the missing usage units table warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L282-L343
+    why: EMPTY_OVERVIEW and the detail and log response models.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L553-L741
+    why: The overview and detail routes with their decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L742-L992
+    why: The log filter, row projection, snippets, the logs route and the policies overview route.
+dod:
+  - text: The four routes answer behind the key with LiteLLM's no-database answers, window errors and 404.
+    proof: [usage-route-tests, oracle]
+  - text: Overview and detail aggregate current and previous metrics and unit rows as LiteLLM does, config guardrails included.
+    proof: [usage-route-tests, usage-postgres-tests]
+  - text: Logs page with the extra row, pick the most severe guardrail entry and build snippets as LiteLLM does.
+    proof: [usage-route-tests, usage-postgres-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: usage-route-tests
+      why: a handler, a no-database answer, the error wrapper or a log helper is missing or differs
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::guardrails::usage::/) - test(/postgres/)'
+    - id: usage-postgres-tests
+      why: the database-backed aggregation, lookup or log paging is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::guardrails::usage::/) & test(/postgres/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/usage/overview-empty-window.yaml
+  - tools/oracle/cases/guardrails/usage/overview-bad-date-400.yaml
+  - tools/oracle/cases/guardrails/usage/detail-unknown-404.yaml
+  - tools/oracle/cases/guardrails/usage/detail-config-guardrail.yaml
+  - tools/oracle/cases/guardrails/usage/logs-without-filters-empty.yaml
+  - tools/oracle/cases/guardrails/usage/logs-page-size-101-422.yaml
+  - tools/oracle/cases/guardrails/usage/policies-overview-empty.yaml
+  - tools/oracle/cases/guardrails/usage/overview-no-key-401.yaml
+deviations: []
+out_of_scope:
+  - "The date window, projections, overview rows and aggregation helpers: B3689. guardrail_status_to_action and the guardrail index rows: B3688. The table repositories: B726. Config guardrail lookups: B3682."
+  - "The other guardrail and policy routes and the shared route state: B8667, B8668, B8669 and B8790."
+pitfalls:
+  - "Overview without a database answers the empty overview before the date window is checked, but detail answers 500 first and logs answer an empty page."
+  - "Logs take page_size+1 rows and then use only page_size of them, while total is a separate count."
+  - "A metrics row is keyed by guardrail_name or guardrail_id, so detail and logs must query both ids, not only the path id."
+  - "The policies overview never reads unit rows: its unit maps are always empty and totalCost is null."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

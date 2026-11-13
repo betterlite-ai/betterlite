@@ -1,0 +1,29 @@
+kind: helper
+name: braintrust string metadata extends only absent keys
+call:
+  b3962:
+    function: log
+    scenarios:
+      - path: sync
+        start_time: "2023-11-14T22:13:20+00:00"
+        end_time: "2023-11-14T22:13:21.500000+00:00"
+        environment: {BRAINTRUST_API_KEY: braintrust-key}
+        api_base: "http://braintrust.test/v1"
+        standard_logging_object: {model: gpt-4o, user_id: original}
+        metadata:
+          project_id: project-one
+          user_id: override
+          session_id: session-1
+          count: 5
+        answers:
+          - {status: 200, body: {}}
+      - path: sync
+        start_time: "2023-11-14T22:13:20+00:00"
+        end_time: "2023-11-14T22:13:21.500000+00:00"
+        environment: {BRAINTRUST_API_KEY: braintrust-key}
+        api_base: "http://braintrust.test/v1"
+        metadata: {project_id: project-one, request_id: request-1}
+        answers:
+          - {status: 200, body: {}}
+env: {}
+compare: {ignore: []}

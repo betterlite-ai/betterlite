@@ -114,7 +114,9 @@ fn finalize_inspection_stashes_the_verdict_on_request_metadata() {
         &finalize,
     );
     assert!(matches!(outcome, FinalizeOutcome::Monitored));
-    let Json::Object(metadata) = Json::field(&request_data, "metadata") else {
+    let Json::Object(metadata) =
+        Json::parse(request_data.get("metadata").map_or("null", |raw| raw.get()))
+    else {
         panic!("metadata missing");
     };
     assert_eq!(
@@ -270,7 +272,12 @@ fn apply_redaction_output_rewrites_the_mcp_response() {
         &verdict,
     );
     assert!(outcome.applied);
-    assert!(outcome.mcp_output_update.is_some());
+    let update = outcome.mcp_output_update.expect("rewritten MCP response");
+    assert!(update.replaced);
+    assert_eq!(
+        serde_json::to_value(update.response).unwrap(),
+        serde_json::to_value(obj(r#"{"content":[{"type":"text","text":"redacted"}],"structuredContent":{"result":"redacted"}}"#)).unwrap()
+    );
 }
 
 #[test]

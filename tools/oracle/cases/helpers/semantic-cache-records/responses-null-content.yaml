@@ -1,0 +1,14 @@
+kind: helper
+name: semantic-cache-records-responses-message-tool-output
+call:
+  b4380:
+    operation: extract_semantic_prompt
+    input:
+      - role: user
+        content: "Declared user content"
+      - type: function_call_output
+        call_id: call_search
+        output: "Declared tool output"
+env: {}
+compare:
+  ignore: []

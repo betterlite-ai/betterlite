@@ -1,0 +1,22 @@
+kind: helper
+name: resolve-guardrails-union-across-policies
+call:
+  b3241:
+    policy_memory_matching_resolver:
+      action: resolve_guardrails
+      policies:
+        first:
+          guardrails:
+            add: [zeta, alpha]
+        second:
+          guardrails:
+            add: [beta]
+      attachments:
+        - policy: first
+          scope: "*"
+        - policy: second
+          models: [gpt-4]
+      context:
+        model: gpt-4
+env: {}
+compare: {ignore: []}

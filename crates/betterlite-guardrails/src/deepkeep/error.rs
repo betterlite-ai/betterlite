@@ -1,7 +1,7 @@
 use std::fmt;
 use std::str::Utf8Error;
 
-use reqwest::header::{InvalidHeaderName, InvalidHeaderValue};
+use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
 
 #[derive(Error)]
@@ -32,11 +32,6 @@ pub enum DeepKeepError {
     InvalidHeader {
         name: &'static str,
         source: InvalidHeaderValue,
-    },
-    #[error("DeepKeep header name {name} is invalid: {source}")]
-    InvalidHeaderName {
-        name: String,
-        source: InvalidHeaderName,
     },
 }
 

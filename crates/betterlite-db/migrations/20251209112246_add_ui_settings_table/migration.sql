@@ -7,3 +7,4 @@ CREATE TABLE IF NOT EXISTS "LiteLLM_UISettings" (
 
     CONSTRAINT "LiteLLM_UISettings_pkey" PRIMARY KEY ("id")
 );
+

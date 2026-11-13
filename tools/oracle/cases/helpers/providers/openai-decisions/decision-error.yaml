@@ -1,0 +1,26 @@
+kind: helper
+name: openai-decisions-decision-error
+call:
+  openai_decisions:
+    parse_response:
+      - request:
+          input: the input
+          questions:
+            - type: predicate
+              instructions: is it true?
+        payload:
+          model: gpt-4o
+          answers: not a list
+          usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
+      - request:
+          input: the input
+          questions:
+            - type: predicate
+              instructions: is it true?
+        payload:
+          model: gpt-4o
+          answers:
+            - {type: predicate, name: null, probability: 0.5}
+          usage: {input_tokens: 3, output_tokens: 2, total_tokens: 5}
+env: {}
+compare: {ignore: []}

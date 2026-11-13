@@ -6,6 +6,7 @@ call:
     model: command-r
     error_str: "invalid type: parameter 'model'"
     exception_type: ""
+    status_code: 403
 env: {}
 compare:
   ignore:

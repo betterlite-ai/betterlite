@@ -1,0 +1,78 @@
+id: B7890
+title: Python passthrough routes, helpers and timeouts
+description: >-
+  This task adds the passthrough functions: `llm_passthrough_route` and `allm_passthrough_route` (litellm/passthrough/main.py), `BasePassthroughUtils.get_merged_query_parameters`, `forward_headers_from_request` and `CommonUtils.encode_bedrock_runtime_modelid_arn` (passthrough/utils.py), and `resolve_pass_through_request_timeout` and `resolve_llm_passthrough_timeout` (passthrough/timeout_utils.py). Rust runs them (B3571 header, query and timeout policies, B3572 the stream relay).
+
+
+  Native side, the family `passthrough_calls`: `src/passthrough_calls.rs` with `register` that adds `NativePassthroughSession`, `NativePassthroughStream` and `NativePassthroughError`, and `src/passthrough_calls/convert.rs` with tests `request_*` and `error_*`. The architect writes the `lib.rs` line.
+
+
+  Python side, `python/betterlite/passthrough/main.py`, `utils.py`, `timeout_utils.py` and `__init__.py`. `llm_passthrough_route(*, method, endpoint, model, custom_llm_provider, api_base, api_key, request_query_params, request_headers, content, data, files, json, params, cookies, client, **kwargs)` returns a `PassthroughResponse` with `status_code`, `headers` and `content`/`text`/`json()`, or a stream of bytes when the upstream answers with a stream. The async function gives an async iterator of bytes and the sync function a plain iterator. `content`, `data`, `files`, `json`, `params` and `cookies` are converted to plain JSON or bytes before the native call. Python objects that cannot cross to Rust (`client`, `shared_session`) raise `UnsupportedCallArgument` from B158.
+scope:
+  paths:
+  - crates/betterlite-python/src/passthrough_calls.rs
+  - crates/betterlite-python/src/passthrough_calls/**
+  - crates/betterlite-python/python/betterlite/_native_passthrough_calls.pyi
+  - crates/betterlite-python/python/betterlite/passthrough/main.py
+  - crates/betterlite-python/python/betterlite/passthrough/utils.py
+  - crates/betterlite-python/python/betterlite/passthrough/timeout_utils.py
+  - crates/betterlite-python/python/betterlite/passthrough/__init__.py
+  - crates/betterlite-python/tests/test_passthrough.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L1-L267
+  why: stream wrappers and the sync route helpers
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L268-L633
+  why: allm_passthrough_route, llm_passthrough_route and the async request
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/utils.py#L1-L156
+  why: BasePassthroughUtils and CommonUtils
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/timeout_utils.py#L1-L81
+  why: the two timeout resolvers
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/__init__.py#L1-L8
+  why: the exported names
+dod:
+- text: Every function keeps LiteLLM's name and parameters, and a keyword LiteLLM refuses is refused here.
+  proof: [passthrough-signature]
+- text: "A passthrough call returns the same status, headers and body as LiteLLM against one local server, a stream gives the same bytes, and the helpers give the same output for the same input."
+  proof: [passthrough-calls]
+- text: A provider error keeps its class and cause, and an unsupported Python object raises `UnsupportedCallArgument`.
+  proof: [passthrough-errors]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [passthrough-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: passthrough-signature
+    why: A caller's keyword is accepted or refused wrongly.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_passthrough.py -k signature
+  - id: passthrough-calls
+    why: A result differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_passthrough.py -k calls
+  - id: passthrough-errors
+    why: An error class or message changes.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_passthrough.py -k 'error or unsupported'
+  - id: passthrough-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^passthrough_calls::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for these calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The return value is a betterlite `PassthroughResponse` and not an `httpx.Response`.
+  why: The wheel does not depend on httpx. The attributes callers use (`status_code`, `headers`, `content`, `text`, `json()`, `raise_for_status()`) are the same.
+- what: This task has no helper oracle cases.
+  why: The functions call a native session, so pytest compares both packages against one local server.
+out_of_scope:
+- "Provider execution, policies and the stream relay belong to B3571 and B3572."
+- "The proxy-side pass-through routes are not part of this entry."
+pitfalls:
+- "`json` is a keyword and shadows the module name inside the function, so do not import `json` at that scope."
+- "`forward_headers_from_request` drops hop-by-hop headers, and the list is owned by Rust (B3571)."
+- "The async route sets `kwargs[\"allm_passthrough_route\"]` before it resolves the provider, and Rust does the same."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

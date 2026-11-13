@@ -1,0 +1,16 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-kind-inference",
+  "call": {
+    "b3844": {
+      "function": "payload_kind",
+      "payload": {
+        "call_type": "completion"
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

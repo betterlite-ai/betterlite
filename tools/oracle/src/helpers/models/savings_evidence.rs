@@ -13,7 +13,6 @@ use betterlite_models::savings_evidence::snapshot::{
 use betterlite_models::savings_evidence::usage::baseline::baseline_usage;
 use betterlite_models::savings_evidence::usage::{RawUsageObject, usage_from_spend_log};
 use betterlite_models::token_rates::ModelInfo;
-use rust_decimal::Decimal;
 
 pub(crate) struct Op;
 
@@ -80,11 +79,6 @@ fn helper_error(class: &str, message: &str) -> Box<crate::helpers::HelperError> 
     Box::new(error)
 }
 
-fn decimal_value(value: Decimal) -> serde_json::Value {
-    let normalized = value.normalize();
-    serde_json::Value::String(normalized.to_string())
-}
-
 fn saved_tokens_value(result: Result<i64, SavingsEvidenceError>) -> crate::helpers::HelperResult {
     match result {
         Ok(count) => Ok(serde_json::json!({ "tokens_saved": count })),
@@ -121,6 +115,7 @@ fn baseline_usage_value(
         "cache_creation_input_tokens": normalized.cache_creation_input_tokens,
         "cached_tokens": details.as_ref().map(|value| value.cached_tokens),
         "cache_write_tokens": details.as_ref().map(|value| value.cache_write_tokens),
+        "cache_creation_tokens": details.as_ref().map(|value| value.cache_creation_tokens),
         "text_tokens": details.as_ref().map(|value| value.text_tokens),
         "has_cache_creation_token_details": details
             .as_ref()
@@ -139,9 +134,9 @@ fn snapshot_value(snapshot: &Validated<BaselineCostSnapshot>) -> crate::helpers:
             &valid.basis.data_residency,
             &valid.basis.vertex_location,
         ],
-        "actual_spend": decimal_value(valid.actual_spend),
-        "actual_token_cost": valid.actual_token_cost.map(decimal_value),
-        "classifier_cost": decimal_value(valid.classifier_cost),
+        "actual_spend": serde_json::Value::String(valid.actual_spend.normalize().to_string()),
+        "actual_token_cost": valid.actual_token_cost.map(|value| serde_json::Value::String(value.normalize().to_string())),
+        "classifier_cost": serde_json::Value::String(valid.classifier_cost.normalize().to_string()),
         "has_prices": valid.prices.is_some(),
     }))
 }
@@ -152,14 +147,14 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
             Input::Autorouter { metadata } => Ok(serde_json::json!({
-                "autorouter_savings": recorded_autorouter_savings(metadata).map(decimal_value),
+                "autorouter_savings": recorded_autorouter_savings(metadata).map(|value| serde_json::Value::String(value.normalize().to_string())),
             })),
             Input::RecordedTokenCost { cost_breakdown } => {
                 let basis = pricing_basis_from_breakdown(cost_breakdown.as_ref());
                 Ok(serde_json::json!({
                     "basis": [basis.service_tier, basis.data_residency, basis.vertex_location],
                     "recorded_token_cost": recorded_token_cost(cost_breakdown.as_ref())
-                        .map(decimal_value),
+                        .map(|value| serde_json::Value::String(value.normalize().to_string())),
                 }))
             }
             Input::CacheExtraction { usage_object } => {

@@ -1,0 +1,138 @@
+id: B098
+title: Connect the Responses bridge and prove the GenAI fallbacks over HTTP
+description: >-
+  B098 is the Google GenAI and Interactions umbrella. Its 28 parts build the GenAI call, the chat adapter, the native
+  interaction calls, the Responses bridge, the managed-agent calls and the three route modules, and B8774 mounts those
+  routes. B9840 builds the streamed interaction logging as part of the production StreamAssembler. Two things are left,
+  and this task does them.
+
+
+  1. The Responses bridge does not call the Responses API yet. B3498 built LiteLLMResponsesInteractionsHandler in
+  crates/betterlite-core/src/api/responses_handler/ but left the call to litellm.responses and litellm.aresponses
+  unresolved (its first deviation), and B3499's create reaches the bridge for every provider without an interactions
+  config (openai, anthropic and the rest). Read both modules first. The bridge's async path calls B932's aresponses in
+  api::responses_create_call and its sync path calls B1078's responses_create in api::responses_create, each with the
+  request B3497's transform builds. Remove whatever stand-in B3498 left (a trait object, a function parameter or an error
+  return) and the place B3499's create passes it along, so nothing above create has to supply a Responses call. If
+  B3498 already calls both functions directly, this part needs no code beyond its tests. Add tests named `wired_*` in
+  api::responses_handler's tests that run the bridge with a mock_response kwarg (B1078's mock path, no HTTP) and check the
+  interaction response carries the mock text, one through the async path and one through the sync path. If the stand-in
+  also reaches B3507's route state or B8774's mount, stop and report it as a blocker with the call chain.
+
+
+  2. Some behavior a route reaches has no HTTP case. B8774 took the cases its three route parts wrote, all on native Gemini
+  models. The GenAI chat adapter (B3484, B3485, B3486), the Responses bridge (B3497, B3498) and the native interaction
+  stream (B3491) were planned with no route and have no booted-proxy case. Write these cases through the booted proxy,
+  each with a model_list entry whose api_base is "{{upstream}}" and api_key is oracle-key, the master key oracle-master,
+  and a scripted upstream:
+
+  - tools/oracle/cases/genai-adapter/: an openai/oracle-model deployment answers POST
+  /v1beta/models/oracle-model:generateContent and /models/oracle-model:generateContent from a chat completion upstream
+  (plain text, a systemInstruction, functionDeclarations answered with a tool call, a history turn with a
+  functionResponse, an upstream 400), and POST /v1beta/models/oracle-model:streamGenerateContent from a chat completion
+  SSE upstream (text, and a streamed tool call).
+
+  - tools/oracle/cases/interactions-bridge/: an openai/oracle-model deployment answers POST /v1beta/interactions and POST
+  /interactions from an OpenAI Responses upstream (plain input, system_instruction, generation_config with temperature
+  and max_output_tokens, an upstream 400), and a stream=true create from a Responses SSE upstream with and without a
+  response.completed event.
+
+  - tools/oracle/cases/interactions-native-stream/: a gemini/oracle-model deployment answers a stream=true POST
+  /v1beta/interactions from a Gemini SSE upstream that ends with an interaction.completed event, and one that ends with a
+  legacy chunk whose status is completed.
+
+  When a case shows a product bug in another task's module, fix it in that module's follow-up, not here. Ignore only
+  fields LiteLLM generates per process (ids, created timestamps), each with its reason.
+
+
+  Size: about 30 lines of rewiring, the wired_ tests and the cases on top.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/responses_handler.rs
+    - crates/betterlite-core/src/api/responses_handler/**
+    - crates/betterlite-core/src/api/interactions/create.rs
+    - crates/betterlite-core/src/api/interactions/create/**
+    - tools/oracle/cases/genai-adapter/**
+    - tools/oracle/cases/interactions-bridge/**
+    - tools/oracle/cases/interactions-native-stream/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L69-L117
+    why: Where the native interaction stream decides a chunk is terminal, which the native-stream cases end on.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/litellm_responses_transformation/handler.py#L28-L144
+    why: The bridge; L81-L85 and L119-L124 are the litellm.responses and litellm.aresponses calls part 1 connects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/main.py#L274-L317
+    why: Provider resolution and the bridge choice for providers without an interactions config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L17-L140
+    why: The generateContent and streamGenerateContent routes, both path forms, that the adapter cases call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L220-L303
+    why: The interaction create route, both path forms, and its gemini default for custom_llm_provider.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/main.py#L139-L164
+    why: A provider with no GenAI config falls back to the chat adapter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7128-L7155
+    why: The router defaults interactions to gemini, then routes a model through its deployment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/common_utils.py#L291-L311
+    why: provider_for_generic_call, which replaces that default with the deployment's provider prefix.
+dod:
+  - text: The Responses bridge calls B932's aresponses and B1078's responses_create directly, and B3498's and B3499's own tests still pass.
+    proof: [bridge-wiring]
+  - text: Over HTTP, generateContent and streamGenerateContent on a provider without a GenAI config answer through the chat adapter as LiteLLM does.
+    proof: [adapter-cases, oracle]
+  - text: Over HTTP, interaction creates on a provider without an interactions config answer through the Responses bridge as LiteLLM does, streamed and not.
+    proof: [bridge-cases, oracle]
+  - text: Over HTTP, a streamed native Gemini interaction create answers as LiteLLM does.
+    proof: [native-stream-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: bridge-wiring
+      why: the bridge does not reach the real Responses call, or the rewiring broke the bridge or create tests
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_handler::.*wired_/)' &&
+        cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_handler::/) | test(/^api::interactions::create::/)'
+    - id: adapter-cases
+      why: the GenAI chat adapter has no booted-proxy case on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/genai-adapter)"
+    - id: bridge-cases
+      why: the Responses bridge has no booted-proxy case on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/interactions-bridge)"
+    - id: native-stream-cases
+      why: the native interaction stream has no booted-proxy case on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/interactions-native-stream)"
+oracle_cases:
+  - tools/oracle/cases/genai-adapter/generate-content-openai-text.yaml
+  - tools/oracle/cases/genai-adapter/generate-content-openai-unversioned-path.yaml
+  - tools/oracle/cases/genai-adapter/generate-content-openai-system-instruction.yaml
+  - tools/oracle/cases/genai-adapter/generate-content-openai-function-call.yaml
+  - tools/oracle/cases/genai-adapter/generate-content-openai-function-response-turn.yaml
+  - tools/oracle/cases/genai-adapter/generate-content-openai-upstream-400.yaml
+  - tools/oracle/cases/genai-adapter/stream-generate-content-openai-text.yaml
+  - tools/oracle/cases/genai-adapter/stream-generate-content-openai-function-call.yaml
+  - tools/oracle/cases/interactions-bridge/create-openai-text.yaml
+  - tools/oracle/cases/interactions-bridge/create-openai-unversioned-path.yaml
+  - tools/oracle/cases/interactions-bridge/create-openai-system-instruction.yaml
+  - tools/oracle/cases/interactions-bridge/create-openai-generation-config.yaml
+  - tools/oracle/cases/interactions-bridge/create-openai-upstream-400.yaml
+  - tools/oracle/cases/interactions-bridge/create-openai-stream.yaml
+  - tools/oracle/cases/interactions-bridge/create-openai-stream-without-completed.yaml
+  - tools/oracle/cases/interactions-native-stream/create-gemini-stream-completed-event.yaml
+  - tools/oracle/cases/interactions-native-stream/create-gemini-stream-legacy-status.yaml
+deviations: []
+out_of_scope:
+  - "litellm/google_genai/Readme.md is documentation; nothing is built from it."
+  - "The re-exports in litellm/google_genai/__init__.py, google_genai/adapters/__init__.py, interactions/__init__.py, interactions/agents/__init__.py and interactions/litellm_responses_transformation/__init__.py hold no logic. The Rust modules are declared by the skeleton; the Python package re-exports are B7844 (google_genai) and B7845 (interactions)."
+  - "Every function in litellm/proxy/google_endpoints/agents_endpoints.py is B3508's, and B8774 mounts its routes."
+  - "Streamed interaction logging (_get_assembled_streaming_response's interaction branch and _assemble_completed_interaction_response, litellm_logging.py L4141-L4171) is B9840's, inside the production StreamAssembler that the server composition root builds once; this task adds no assembler and no wrapper."
+  - "The streamed interaction cases check the client's answer only; the usage the success callbacks log for them comes from B9840 and shows once the server's success handlers hold its LoggedStreamAssembler."
+  - "The response a generateContent or agenerate_content call logs (_handle_non_streaming_google_genai_generate_content_response_logging, litellm_logging.py L2521-L2525 and L4300-L4320) is B9840's logged-result conversion, and the adapter cases check the client's answer only."
+  - "The bridge's request and response transforms are B3497's, its event synthesis B3498's, the create entry B3499's, and the routes B3506, B3507 and B3508 with B8774's mount."
+  - "Background interaction creates (background=true) get no case here: the cost poll fetches the upstream again after the response, outside one scripted exchange. B3481 and B3496 test the poll and settlement."
+pitfalls:
+  - "The interaction create route sets custom_llm_provider to gemini when the body has none, and only the deployment's own provider prefix (openai/oracle-model) replaces it, so a bridge case on a model without a prefix goes to native Gemini instead."
+  - "The bridge forwards every extra kwarg (api_base, api_key, litellm_metadata) into the Responses request, so the deployment's credentials reach the Responses call; dropping them sends the case to the real OpenAI host."
+  - "A bridge stream ends with a synthesized step.stop and interaction.completed when the upstream never sends response.completed; the case without that event checks them."
+  - "Gemini's interactions URL is {api_base}/v1beta/interactions, with ?alt=sse added on a stream, and it raises before any request when no api_key is set."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

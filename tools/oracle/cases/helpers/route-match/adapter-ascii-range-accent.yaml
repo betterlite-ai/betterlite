@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-ascii-range-accent",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/É",
+      "allowed_routes": [
+        "/(?ai:[é])"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

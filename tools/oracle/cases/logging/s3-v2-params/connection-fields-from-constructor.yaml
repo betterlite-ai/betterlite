@@ -1,0 +1,5 @@
+kind: helper
+name: connection-fields-from-constructor
+call: {"b3992": {"operation": "params", "constructor": {"s3_bucket_name":"constructor","s3_region_name":"constructor-region","s3_api_version":"constructor-api-version","s3_endpoint_url":"constructor-endpoint-url","s3_verify":true,"s3_aws_access_key_id":"constructor-access-key-id","s3_aws_secret_access_key":"constructor-secret-access-key","s3_aws_session_token":"constructor-session-token","s3_aws_session_name":"constructor-session-name","s3_aws_profile_name":"constructor-profile-name","s3_aws_role_name":"constructor-role-name","s3_aws_web_identity_token":"constructor-web-identity-token","s3_aws_sts_endpoint":"constructor-sts-endpoint"}, "global": {"s3_bucket_name":"global","s3_verify":null}}}
+env: {}
+compare: {ignore: []}

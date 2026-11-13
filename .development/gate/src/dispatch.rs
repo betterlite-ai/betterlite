@@ -1,7 +1,9 @@
 mod attempt;
+mod chain;
 mod checkpoint;
+mod ci_failures;
 mod maintenance;
-mod overlap;
+pub(crate) mod overlap;
 mod preparation;
 mod progress;
 mod prompt;
@@ -22,15 +24,15 @@ use crate::development::Development;
 use crate::error::GateError;
 use crate::facts::resolve_base;
 use crate::git::coordinator;
-use crate::spec::agents::{Agents, Role, Rung, Runner};
+use crate::spec::agents::{Agents, Role, Runner};
 use crate::spec::backlog::Status;
 use crate::spec::review::ReviewVerdict;
 use crate::spec::task::{ReviewLevel, Task};
 use crate::yaml::read_yaml;
 
-use progress::{NextRun, Panel, Progress, ReviewerPin, WorkerSession};
+use chain::{Chain, Link};
+use progress::{NextRun, Panel, Progress, Red, ReviewerPin, WorkerSession};
 use prompt::Brief;
-use seat::Seat;
 use serde::{Deserialize, Serialize};
 
 pub(crate) struct Round {
@@ -40,12 +42,17 @@ pub(crate) struct Round {
     pub(crate) litellm: Vec<String>,
 }
 
-// Fix goes on with the same work in a fix turn, Retry starts fresh on the same rung, Climb moves up a rung
+pub(crate) struct Failure {
+    pub(crate) feedback: Vec<String>,
+    pub(crate) red: Vec<Red>,
+}
+
+// Fix goes on with the same work in a fix turn, Retry starts fresh, Blocked goes back to the same session once
 pub(crate) enum Step {
     Reviewed(Round),
-    Fix(Vec<String>),
-    Retry(Vec<String>),
-    Climb(Vec<String>),
+    Fix(Failure),
+    Retry(Failure),
+    Blocked(Vec<String>),
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
@@ -71,6 +78,7 @@ pub(crate) struct Attempt<'run> {
     pub(crate) earlier: Option<&'run EarlierReview>,
     pub(crate) reviewer: Option<&'run ReviewerPin>,
     pub(crate) resume: Option<&'run str>,
+    pub(crate) fix_model: Option<&'run str>,
 }
 
 pub(crate) fn find_runner<'agents>(
@@ -87,7 +95,8 @@ pub(crate) fn find_runner<'agents>(
 pub(crate) fn availability(development: &Development) -> Result<(), GateError> {
     let git = coordinator(&development.root)?;
     maintenance::check(&git, "")?;
-    let agents: Agents = read_yaml(&development.root.join(".development/agents.yaml"))?;
+    let mut agents: Agents = read_yaml(&development.root.join(".development/agents.yaml"))?;
+    agents.roles.worker.keep_rungs_for("");
     vendor::available(&git, &agents, "")
 }
 
@@ -137,6 +146,8 @@ fn ready_file<'backlog>(
         .ok_or_else(|| GateError::NoTaskFile(task_id.to_owned()))
 }
 
+const BLOCKED_NOTE: &str = "Unfinished work is not a blocker, so go on until the task's checks pass. A gate command that prints a 'gate: waiting for' line is queued behind other builds, so poll it until it ends and never answer while one runs. Answer blocked again only for a scope, budget or outside blocker, with its evidence: the command, output, file and line.";
+
 fn note_blocked(
     agents: &Agents,
     brief: &Brief<'_>,
@@ -152,7 +163,7 @@ fn note_blocked(
     progress.feedback = next;
     if progress.blocked_reports >= agents.policy.max_blocked_reports {
         let reason = format!(
-            "{} workers in a row reported blocked; last feedback: {}",
+            "{} blocked reports in a row; last feedback: {}",
             progress.blocked_reports,
             progress.feedback.join("; ")
         );
@@ -170,7 +181,7 @@ fn apply_round(
     places: &Places<'_>,
     progress: &mut Progress,
     mut round: Round,
-) -> Result<ControlFlow<Option<Vec<String>>>, GateError> {
+) -> Result<ControlFlow<Vec<String>>, GateError> {
     progress.litellm.append(&mut round.litellm);
     // the parity pass gets max_review_rounds of its own, so a long standard review still leaves it rounds
     if progress
@@ -183,8 +194,10 @@ fn apply_round(
     progress.reviewer = Some(round.reviewer);
     progress.next = NextRun::Fix;
     progress.fix_turns = 0;
+    // a failed CI run on the reviewed head turns an approval into a fix turn too
+    let ci = ci_failures::take(places.journal, places.worktree)?;
     match round.verdict {
-        ReviewVerdict::Approve => {
+        ReviewVerdict::Approve if ci.is_empty() => {
             progress.feedback.clear();
             progress.earlier = Some(round.review);
             let mut lines = vec![format!(
@@ -194,10 +207,11 @@ fn apply_round(
                 places.worktree.display()
             )];
             lines.append(&mut progress.litellm);
-            Ok(ControlFlow::Break(Some(lines)))
+            Ok(ControlFlow::Break(lines))
         }
-        ReviewVerdict::Changes => {
+        ReviewVerdict::Approve | ReviewVerdict::Changes => {
             progress.feedback.clone_from(&round.review.findings);
+            progress.feedback.extend(ci);
             progress.earlier = Some(round.review);
             if progress.review_rounds >= agents.policy.max_review_rounds {
                 let reason = format!("review rounds ran out: {}", progress.feedback.join("; "));
@@ -213,118 +227,54 @@ fn apply_round(
 }
 
 fn apply_step(
-    agents: &Agents,
+    chain: &Chain<'_>,
     brief: &Brief<'_>,
     places: &Places<'_>,
     progress: &mut Progress,
     step: Step,
-) -> Result<ControlFlow<Option<Vec<String>>>, GateError> {
+) -> Result<ControlFlow<Vec<String>>, GateError> {
+    let agents = chain.agents;
+    progress.reported_done = match &step {
+        Step::Reviewed(_) => true,
+        Step::Fix(failure) => !failure
+            .red
+            .iter()
+            .any(|red| matches!(red, Red::Report | Red::Unfinished)),
+        Step::Retry(_) | Step::Blocked(_) => false,
+    };
     match step {
         Step::Reviewed(round) => return apply_round(agents, brief, places, progress, round),
-        Step::Fix(next) => {
-            progress.feedback = next;
-            if progress.fix_turns < agents.policy.max_fix_turns {
-                progress.fix_turns = progress.fix_turns.saturating_add(1);
-                progress.next = NextRun::Fix;
-            } else {
-                progress.fix_turns = 0;
-                progress.next = NextRun::Fresh;
-            }
+        Step::Fix(failure) if progress.fix_turns < agents.policy.max_fix_turns => {
+            progress.feedback = failure.feedback;
+            progress.fix_turns = progress.fix_turns.saturating_add(1);
+            progress.next = NextRun::Fix;
         }
-        Step::Retry(next) => {
-            progress.feedback = next;
+        Step::Fix(failure) | Step::Retry(failure) => {
             progress.fix_turns = 0;
             progress.next = NextRun::Fresh;
+            // the same red at the end of two starts in a row moves the task to the next rung
+            let stuck = failure.red.iter().any(|red| progress.red.contains(red));
+            progress.feedback = failure.feedback;
+            progress.red = failure.red;
+            progress.rung = chain.next_rung(progress, stuck);
         }
-        Step::Climb(next) => {
+        Step::Blocked(next) => {
+            // set before the count, so the architect's dispatch after a second report starts fresh
             progress.fix_turns = 0;
             progress.next = NextRun::Fresh;
             note_blocked(agents, brief, progress, next)?;
-            return Ok(ControlFlow::Break(None));
+            progress.feedback.push(BLOCKED_NOTE.to_owned());
+            progress.next = NextRun::Fix;
         }
     }
     Ok(ControlFlow::Continue(()))
-}
-
-struct Pick<'agents> {
-    runner: &'agents Runner,
-    rung: &'agents Rung,
-    counted: bool,
-}
-
-fn other_vendor_rungs<'agents>(
-    agents: &'agents Agents,
-    places: &Places<'_>,
-    current: usize,
-    runner: &Runner,
-) -> Result<Vec<(&'agents Runner, &'agents Rung)>, GateError> {
-    let mut found = Vec::new();
-    for rung in agents
-        .roles
-        .worker
-        .ladder
-        .iter()
-        .skip(current.saturating_add(1))
-    {
-        let other = find_runner(agents, &rung.runner)?;
-        if other.vendor != runner.vendor
-            && !vendor::limited(places.git_common_dir, agents, &other.vendor)?
-        {
-            found.push((other, rung));
-        }
-    }
-    Ok(found)
-}
-
-fn overflow_rung<'agents>(
-    agents: &'agents Agents,
-    places: &Places<'_>,
-    current: usize,
-    runner: &Runner,
-) -> Result<Option<(&'agents Runner, &'agents Rung)>, GateError> {
-    let git = places.git_common_dir;
-    let own = vendor::find_vendor(agents, &runner.vendor)?;
-    if !agents.policy.overflow || vendor::seat_free(git, agents, own, Seat::Worker)? {
-        return Ok(None);
-    }
-    for (other, rung) in other_vendor_rungs(agents, places, current, runner)? {
-        let account = vendor::find_vendor(agents, &other.vendor)?;
-        if vendor::seat_free(git, agents, account, Seat::Worker)? {
-            return Ok(Some((other, rung)));
-        }
-    }
-    Ok(None)
-}
-
-fn pick_rung<'agents>(
-    agents: &'agents Agents,
-    places: &Places<'_>,
-    current: usize,
-    rung: &'agents Rung,
-) -> Result<Option<Pick<'agents>>, GateError> {
-    let own = find_runner(agents, &rung.runner)?;
-    if vendor::limited(places.git_common_dir, agents, &own.vendor)? {
-        // the try goes to a later rung of another vendor, so this rung keeps its attempts for when its vendor is back
-        let later = other_vendor_rungs(agents, places, current, own)?;
-        return Ok(later.first().map(|&(runner, lent)| Pick {
-            runner,
-            rung: lent,
-            counted: false,
-        }));
-    }
-    let (runner, chosen) = overflow_rung(agents, places, current, own)?.unwrap_or((own, rung));
-    Ok(Some(Pick {
-        runner,
-        rung: chosen,
-        counted: true,
-    }))
 }
 
 fn run_once(
     agents: &Agents,
     brief: &Brief<'_>,
     places: &Places<'_>,
-    pick: &Pick<'_>,
+    pick: &Link<'_>,
     progress: &mut Progress,
 ) -> Result<Option<Step>, GateError> {
     maintenance::check(places.git_common_dir, &brief.task.id)?;
@@ -343,6 +293,11 @@ fn run_once(
                 && session.model == pick.rung.model
         })
         .map(|session| session.id.as_str());
+    let fix_model = pick
+        .rung
+        .fix_model
+        .as_deref()
+        .filter(|_| fix && progress.reported_done && resume.is_some());
     let current = Attempt {
         agents,
         brief,
@@ -351,6 +306,7 @@ fn run_once(
         earlier: progress.earlier.as_ref(),
         reviewer: progress.reviewer.as_ref(),
         resume,
+        fix_model,
     };
     let turn = attempt::attempt_once(&current, pick.runner, pick.rung, &progress.feedback)?;
     // a run stopped by a usage limit keeps the session of the run before it
@@ -364,48 +320,48 @@ fn run_once(
     Ok(turn.step)
 }
 
-fn climb_rung<'agents>(
-    agents: &'agents Agents,
+fn next_run<'chain, 'agents>(
+    chain: &'chain Chain<'agents>,
     brief: &Brief<'_>,
     places: &Places<'_>,
-    rung: &'agents Rung,
     progress: &mut Progress,
-) -> Result<Option<Vec<String>>, GateError> {
-    let last = progress.rung.saturating_add(1) == agents.roles.worker.ladder.len();
-    // granted starts raise both caps, on the last rung only
-    let extra = if last { progress.granted } else { 0 };
-    let attempts = rung.attempts.saturating_add(extra);
-    let most = agents.policy.max_worker_attempts.saturating_add(extra);
-    loop {
-        let fresh = progress.next == NextRun::Fresh;
-        if fresh && (progress.rung_used >= attempts || progress.used >= most) {
-            return Ok(None);
-        }
-        let Some(pick) = pick_rung(agents, places, progress.rung, rung)? else {
-            progress.limited = true;
-            return Ok(None);
-        };
-        let outcome = run_once(agents, brief, places, &pick, progress)?;
-        let removed = attempt::remove_extra_targets(places.worktree)?;
-        // a run that hit a usage limit marked its vendor, so the next pick goes around it
-        let Some(step) = outcome else {
-            continue;
-        };
-        // only a fresh start counts on the ladder, never a fix turn or a review fix
-        if fresh {
-            if pick.counted {
-                progress.rung_used = progress.rung_used.saturating_add(1);
-            }
-            progress.used = progress.used.saturating_add(1);
-        }
-        let interrupted = matches!(step, Step::Retry(_)) && progress.session.is_some();
-        let flow = apply_step(agents, brief, places, progress, step)?;
-        progress.feedback.extend(removed);
-        checkpoint::save_turn(places.journal, progress, interrupted)?;
-        if let ControlFlow::Break(lines) = flow {
-            return Ok(lines);
-        }
+) -> Result<&'chain Link<'agents>, GateError> {
+    let agents = chain.agents;
+    let fresh = progress.next == NextRun::Fresh;
+    // a rung used up before this dispatch, or by a smaller ladder, hands over as if its last start had failed
+    if fresh && !progress.open(&agents.roles.worker.ladder, progress.rung) {
+        progress.rung = chain.next_rung(progress, false);
     }
+    // granted starts raise the cap too
+    let most = agents
+        .policy
+        .max_worker_attempts
+        .saturating_add(progress.granted);
+    let current = chain.links.get(progress.rung);
+    let Some(own) = current.filter(|_| !fresh || progress.used < most) else {
+        let reason = format!(
+            "the worker ladder ran out of attempts; last feedback: {}",
+            progress.feedback.join("; ")
+        );
+        return Err(GateError::Dispatch {
+            task: brief.task.id.clone(),
+            reason,
+        });
+    };
+    progress.limited = false;
+    if let Some(pick) = chain.pick(places, progress, own)? {
+        return Ok(pick);
+    }
+    progress.limited = true;
+    let reason = format!(
+        "every runner left on the worker ladder is unavailable ({}); last feedback: {}",
+        vendor::causes(places.git_common_dir, agents)?,
+        progress.feedback.join("; ")
+    );
+    Err(GateError::Unavailable {
+        task: brief.task.id.clone(),
+        reason,
+    })
 }
 
 fn run_ladder(
@@ -415,33 +371,34 @@ fn run_ladder(
     progress: &mut Progress,
     grant: u32,
 ) -> Result<Vec<String>, GateError> {
+    let chain = Chain::new(agents)?;
+    progress.fit(&agents.roles.worker.ladder);
     progress.grant(&agents.roles.worker.ladder, grant);
-    while let Some(rung) = agents.roles.worker.ladder.get(progress.rung) {
-        progress.limited = false;
-        if let Some(lines) = climb_rung(agents, brief, places, rung, progress)? {
+    loop {
+        let fresh = progress.next == NextRun::Fresh;
+        let pick = next_run(&chain, brief, places, progress)?;
+        let outcome = run_once(agents, brief, places, pick, progress)?;
+        let removed = attempt::remove_extra_targets(places.worktree)?;
+        // a run that hit a usage limit marked its vendor, so the next pick goes around it
+        let Some(step) = outcome else {
+            continue;
+        };
+        // only a fresh start counts, never a fix turn or a review fix, and it moves the task to the rung it ran on
+        if fresh {
+            progress.rung = pick.index;
+            if let Some(started) = progress.starts.get_mut(pick.index) {
+                *started = started.saturating_add(1);
+            }
+            progress.used = progress.used.saturating_add(1);
+        }
+        let interrupted = matches!(step, Step::Retry(_)) && progress.session.is_some();
+        let flow = apply_step(&chain, brief, places, progress, step)?;
+        progress.feedback.extend(removed);
+        checkpoint::save_turn(places.journal, progress, interrupted)?;
+        if let ControlFlow::Break(lines) = flow {
             return Ok(lines);
         }
-        if progress.limited {
-            let reason = format!(
-                "every runner left on the worker ladder is at its usage limit; last feedback: {}",
-                progress.feedback.join("; ")
-            );
-            return Err(GateError::UsageLimit {
-                task: brief.task.id.clone(),
-                reason,
-            });
-        }
-        progress.rung = progress.rung.saturating_add(1);
-        progress.rung_used = 0;
     }
-    let reason = format!(
-        "the worker ladder ran out of attempts; last feedback: {}",
-        progress.feedback.join("; ")
-    );
-    Err(GateError::Dispatch {
-        task: brief.task.id.clone(),
-        reason,
-    })
 }
 
 pub(crate) fn dispatch(
@@ -451,7 +408,8 @@ pub(crate) fn dispatch(
     grant: u32,
 ) -> Result<Vec<String>, GateError> {
     maintenance::check(&coordinator(&development.root)?, task_id)?;
-    let agents: Agents = read_yaml(&development.root.join(".development/agents.yaml"))?;
+    let mut agents: Agents = read_yaml(&development.root.join(".development/agents.yaml"))?;
+    agents.roles.worker.keep_rungs_for(task_id);
     vendor::available(&coordinator(&development.root)?, &agents, task_id)?;
     let file = ready_file(development, task_id)?;
     let task: Task = development.task(task_id)?;

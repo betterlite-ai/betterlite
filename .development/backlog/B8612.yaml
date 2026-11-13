@@ -1,0 +1,13 @@
+id: B8612
+milestone: M8 platform
+title: Production implementations of the shared settings, cache, secret, audit and agent read-through ports
+status: todo
+depends_on: [B8611, B8651, B8520, B8595, B8594, B8502, B4299, B5630, B8377, B8500, B4411, B677, B1656, B173, B8231, B4776, B4777, B8380, B700]
+file: tasks/B8612-shared-port-impls.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -2,7 +2,7 @@ id: B1087
 title: Api boundaries
 description: >-
   Define ApiLimits and checked JSON/event/item guards below API modules. ApiLimits is max_json_bytes=16777216, max_event_bytes=1048576
-  and max_items=65536. Reuse B198 deadlines/B206 metadata and B014 dispatch; file/audio and batch JSONL remain streamed.
+  and max_items=65536. Reuse B198 deadlines and B206 metadata; file/audio and batch JSONL remain streamed.
 
 
   This task introduces no byte decoder and no fuzz target. Arithmetic/length guards take already known sizes. Test
@@ -52,16 +52,10 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/api_boundaries.rs
   - crates/betterlite-core/src/api/api_boundaries/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-core/src/api/limits.rs
   - crates/betterlite-core/src/api/limits/**
-  - crates/betterlite-core/src/operation.rs
-  - crates/betterlite-core/src/operation/**
-  - crates/betterlite-core/src/dispatch.rs
-  - crates/betterlite-core/src/dispatch/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L300-L361

@@ -1,14 +1,14 @@
 id: B906
 milestone: M5 api families
 title: Responses usage
-status: todo
+status: done
 depends_on: [B171, B004, B1138]
 file: tasks/B906-responses-usage.yaml
 covers:
   - "litellm/responses/utils.py"
 parent: B080
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 643

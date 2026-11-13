@@ -1,0 +1,100 @@
+id: B8022
+title: Map fastCRW and Firecrawl search requests and replies
+description: >-
+  Add api::search_providers::fastcrw and api::search_providers::firecrawl to betterlite-core, on the B3270 base
+  hooks. betterlite-config gets fastcrw_search_settings (CRW_API_KEY unset, CRW_API_BASE default
+  https://fastcrw.com/api/v1) and firecrawl_search_settings (FIRECRAWL_API_KEY unset, FIRECRAWL_API_BASE
+  default https://api.firecrawl.dev/v2). Both use POST, send Authorization Bearer plus Content-Type
+  application/json, and use the shared key policy with their default base as the trusted host. Missing keys
+  fail with "CRW_API_KEY is not set. Set `CRW_API_KEY` environment variable." and the FIRECRAWL_API_KEY
+  version. Display names are "fastCRW" and "Firecrawl". The URL is caller base, else env base, else default,
+  plus /search unless already present, with no slash trimming.
+
+  fastCRW request: join a list with a space, then query and limit (from max_results). Firecrawl request: query,
+  limit (from max_results) and country (as given). search_domain_filter and max_tokens_per_page are unified
+  names, so neither provider forwards them and domain filtering is silently lost. Other options are copied
+  unless unified or already set. When scrapeOptions is absent both add {"formats": ["markdown"],
+  "onlyMainContent": true}; a caller value, even an empty object, replaces it.
+
+  fastCRW reply: data is read as a list only; a missing or non-list data gives no results. Each item gives
+  title, url, and snippet from markdown when truthy, else description (default ""). Both dates are null.
+  Firecrawl reply: data defaults to an empty object. A list is read like fastCRW (the v1 self-hosted shape).
+  An object (the v2 cloud shape) is read as web first, then news. A web item uses markdown when truthy, else
+  description. A news item uses markdown when truthy, else snippet, and also keeps its date. Any other data
+  type gives an empty result list. A truthy test on markdown means an empty markdown string falls back.
+
+  Add fuzz targets fastcrw_reply and firecrawl_reply with replays_the_fastcrw_corpus and
+  replays_the_firecrawl_corpus, including the list, object and wrong-type data shapes. The source holds 328
+  nonblank lines in total with the package initializers; plan 280 production and config lines, 240 test lines
+  and 170 oracle and fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/search_providers/fastcrw.rs
+    - crates/betterlite-core/src/api/search_providers/fastcrw/**
+    - crates/betterlite-core/src/api/search_providers/firecrawl.rs
+    - crates/betterlite-core/src/api/search_providers/firecrawl/**
+    - crates/betterlite-config/src/providers/fastcrw.rs
+    - crates/betterlite-config/src/providers/fastcrw/**
+    - crates/betterlite-config/src/providers/firecrawl.rs
+    - crates/betterlite-config/src/providers/firecrawl/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/fastcrw_reply.rs
+    - crates/betterlite-core/fuzz/fuzz_targets/firecrawl_reply.rs
+    - crates/betterlite-core/fuzz/corpus/fastcrw_reply/**
+    - crates/betterlite-core/fuzz/corpus/firecrawl_reply/**
+    - tools/oracle/cases/helpers/crawl-search-providers/**
+    - tools/oracle/helpers/b8022.py
+    - tools/oracle/helpers/b8022/**
+    - tools/oracle/src/helpers/core_ops/b8022.rs
+    - tools/oracle/src/helpers/core_ops/b8022/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fastcrw/search/transformation.py#L41-L181
+    why: fastCRW limit mapping, default scrapeOptions and the flat data list reply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/firecrawl/search/transformation.py#L43-L226
+    why: Firecrawl limit and country mapping, default scrapeOptions and both the v1 list and v2 web/news replies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L137-L189
+    why: The shared server-key host check.
+  - url: https://docs.firecrawl.dev/api-reference/endpoint/search
+    why: Firecrawl request fields the passthrough can reach.
+dod:
+  - text: fastCRW settings, auth, URL and body mapping match the source, including the default scrapeOptions.
+    proof: [crawl-tests, oracle]
+  - text: Firecrawl settings, auth, URL and body mapping match the source, including the default scrapeOptions and dropped domain filter.
+    proof: [crawl-tests, oracle]
+  - text: fastCRW and Firecrawl replies project list, web and news data exactly as the source does.
+    proof: [crawl-tests, crawl-corpus, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: crawl-tests
+      why: fastCRW or Firecrawl mapping, reply projection or settings loading is missing
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::search_providers::(fastcrw|firecrawl)::/) - test(replays_the_fastcrw_corpus) - test(replays_the_firecrawl_corpus) | test(fastcrw_search_settings) | test(firecrawl_search_settings)'
+    - id: crawl-corpus
+      why: The fastCRW or Firecrawl reply decoder has no new corpus inputs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/fastcrw_reply)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/firecrawl_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_fastcrw_corpus) | test(replays_the_firecrawl_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/crawl-search-providers/fastcrw-default-scrape-options.yaml
+  - tools/oracle/cases/helpers/crawl-search-providers/fastcrw-flat-data-only.yaml
+  - tools/oracle/cases/helpers/crawl-search-providers/firecrawl-domain-filter-dropped.yaml
+  - tools/oracle/cases/helpers/crawl-search-providers/firecrawl-caller-scrape-options.yaml
+  - tools/oracle/cases/helpers/crawl-search-providers/firecrawl-v1-list-reply.yaml
+  - tools/oracle/cases/helpers/crawl-search-providers/firecrawl-v2-web-then-news.yaml
+  - tools/oracle/cases/helpers/crawl-search-providers/firecrawl-news-snippet-fallback.yaml
+  - tools/oracle/cases/helpers/crawl-search-providers/firecrawl-unexpected-data-type.yaml
+deviations: []
+out_of_scope:
+  - B3270 owns the shared records and key host check.
+  - Both package initializers only re-export the config class.
+  - B048 registers both configs, and B3272 runs them. The scrape and crawl endpoints of these services are not in LiteLLM at the pin, so only search is built.
+pitfalls:
+  - Firecrawl's country keeps its case, and fastCRW has no country mapping at all.
+  - Domain filters never reach either upstream because search_domain_filter is a unified name and neither class maps it.
+  - A Firecrawl news item falls back to snippet where a web item falls back to description.
+  - Only news items carry a date, and web and list items always get null.
+  - A data value that is neither a list nor an object (null, a string) yields an empty result list for Firecrawl and no failure.
+  - A caller scrapeOptions of {} is kept and the default markdown request is not added.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

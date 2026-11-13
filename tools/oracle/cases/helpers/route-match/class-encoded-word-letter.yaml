@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "class-encoded-word-letter",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/models/ιAA",
+      "allowed_routes": [
+        "/models/(?i:[\\w-](a)\\1)"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

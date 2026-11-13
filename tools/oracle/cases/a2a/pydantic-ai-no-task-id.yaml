@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-ai-no-task-id
+call: {b4806: {mode: non_streaming, request_id: req-4, api_base: "http://agent.test", params: {message: {role: user, parts: []}}, kwargs: {}, responses: [{body: {result: {status: {state: submitted}, history: [{role: agent, messageId: a1, parts: [{kind: text, text: no task id}]}]}}}]}}
+env: {}
+compare: {ignore: []}

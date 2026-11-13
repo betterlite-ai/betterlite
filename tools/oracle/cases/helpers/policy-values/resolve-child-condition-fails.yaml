@@ -1,0 +1,15 @@
+kind: helper
+name: resolve-child-condition-fails
+call:
+  b3240:
+    function: resolve_policy_guardrails
+    policy_name: child
+    policies:
+      base: {guardrails: {add: [pii]}}
+      child:
+        inherit: base
+        guardrails: {add: [hipaa]}
+        condition: {model: gpt-4}
+    context: {model: claude-3}
+env: {}
+compare: {ignore: []}

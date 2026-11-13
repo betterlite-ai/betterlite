@@ -1,0 +1,1 @@
+{"kind":"helper","name":"flags-ascii-restored","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"(?a:a)\\w","action":"MASK"}],"text":"a\u00e9"}},"env":{},"compare":{"ignore":[]}}

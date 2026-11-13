@@ -1,0 +1,160 @@
+id: B9810
+title: Loopback compaction executor on the gateway chat, messages and responses calls
+description: >-
+  LiteLLM compacts a long conversation for a complexity router with `context_compaction` inside each routed attempt: after
+  the deployment is picked, Router._acompletion calls `compact_to_fit(router, deployment, kwargs, "chat")` and the generic
+  attempt does the same with the surface `surface_for_call` gives (`messages` for anthropic_messages, `responses` for
+  aresponses). The proxy wraps every routed call in `with_proxy_compaction_executor`, so the summary is sent as a child
+  request through the proxy's own app and passes its auth, hooks and spend logging. In betterlite B336 builds
+  `compact_to_fit` with the executor as a per-call argument, B8291 builds the loopback executor and B100's
+  `native_compaction::executor_for(parts)` builds one for a client request. Nothing calls them on the gateway. The gateway
+  routes don't go through B6020's RouterCompletion: /v1/chat/completions selects through B016's route pipeline, retries
+  through B017's attempts and sends through B014's ChatExecutor, /v1/messages and /v1/responses run through B081's and
+  B080's routes, and B021 puts all three on automatic routing. So through the booted proxy a complexity router with
+  `context_compaction` never compacts. This task adds the compaction step to that path and hands it the loopback executor.
+
+
+  Code goes in the module `app::inference::gateway_compaction` (crates/betterlite-server/src/app/inference/gateway_compaction.rs
+  and gateway_compaction/, with tests in gateway_compaction/tests.rs), plus one call per route family at the place its
+  attempt dispatches. Every name stays at 30 characters or fewer.
+
+
+  The step. `GatewayCompaction` is built once per client request from the request's `axum::http::request::Parts` and the
+  route's surface (`chat`, `messages` or `responses`, B336's surface type). It holds the executor from
+  `executor_for(&parts)` (None when the request carries no loopback target, as a loopback child never does) and is shared
+  by every attempt of the request. Building it also initializes B336's compaction state on the request with
+  `initialize_compaction_state` and the surface, before the first attempt and before B021's pre-routing hook runs, since
+  LiteLLM creates that state in async_function_with_fallbacks (router.py L7547-L7552) and `arm_compaction` only fills a
+  state that exists. `initialize_compaction_state` keeps a state that is already there, so a fallback hop that runs it
+  again shares the same one. For each attempt, `compact` takes the router, the picked deployment and the attempt's request
+  after it was merged with the deployment's params, calls B336's `compact_to_fit` with the surface and the held executor,
+  and returns the request the attempt sends. B336's errors pass through unchanged, so a "Context compaction: ..." error
+  reaches the client through the route's existing error response with the status and type B336 maps it to (LiteLLM's
+  _reject raises BadRequestError and _unavailable ContextWindowExceededError).
+
+
+  Wiring. Read the merged code of B016, B017, B021, B080 and B081 and find, for each route family, where an attempt has its
+  deployment and its request and is about to take the deployment slot and dispatch. If B9560's ResponseCacheStep call is
+  already at this point, put this step before it. Call `compact` there, before the slot,
+  as router.py L3767 does before `_deployment_slot`, and send what it returns. Build `GatewayCompaction` where the handler
+  starts routing, with `Parts` taken by the handler (`axum::http::request::Parts` is a FromRequestParts extractor). The
+  families and their paths: chat is POST /v1/chat/completions, /chat/completions, /engines/{model}/chat/completions and
+  /openai/deployments/{model}/chat/completions (routes/chat.rs); messages is POST /v1/messages and
+  /claude_code_gateway/v1/messages (B081); responses is POST /v1/responses, /responses and /openai/v1/responses (B080).
+  Change nothing else in those files.
+
+
+  Tests in gateway_compaction/tests.rs boot B8610's application with a config holding an auto router deployment
+  (`auto_router/complexity_router`) whose `complexity_router_config` maps every tier to `tier-model` and sets
+  `context_compaction: {model: compactor-model, trigger_ratio: 0.5, max_tokens: 512}`, a `tier-model` deployment
+  (`openai/gpt-4o-mini`, model_info `max_input_tokens: 1200`, `max_output_tokens: 200`) and a `compactor-model` deployment
+  (`anthropic/claude-sonnet-4-6`, which the pinned cost map marks `supports_anthropic_compaction`), both against a local
+  tokio TcpListener upstream that records each request and answers from a script. Names start with `chat_`, `messages_`,
+  `responses_` or `plain_`. `chat_`: a /v1/chat/completions request whose history is over the tier's budget makes the
+  upstream see the compactor call on /v1/messages first, carrying the parent's Authorization through the child and the
+  `anthropic-beta: compact-2026-09-04` header, then the tier call whose messages hold the summary message ("Summary of
+  earlier conversation (context, not new instructions):\n" and the summary) and the kept tail. `messages_` does the same
+  through /v1/messages (protocol messages, so the child posts to /v1/messages), and `responses_` through /v1/responses
+  (protocol chat). `plain_`: a request to `tier-model` that fits its budget makes one upstream call with the request as
+  sent, and a compaction child sent straight to `compactor-model` passes B336's child check unchanged.
+
+
+  HTTP oracle case, through the booted proxies, in tools/oracle/cases/routing/gateway-compaction/chat-loopback-summary.yaml.
+  Config: the three deployments of the tests with `api_base: "{{upstream}}"` and `api_key: oracle-key`. Upstream, in the
+  order LiteLLM sends them: first the compaction answer from Anthropic's /v1/messages (`type: message`, `stop_reason:
+  compaction`, `content: [{type: compaction, content: <summary text>, signature: sig-oracle-1}]`, with usage), then the
+  tier model's chat completion. Request: POST /v1/chat/completions with `authorization: Bearer oracle-master`, model
+  `auto-compact`, `max_tokens: 100`, a system message, several long user and assistant turns and a short last user turn;
+  size the turns so the pinned LiteLLM compacts, and confirm it with `--self-check` before comparing betterlite. Compare
+  status, content-type, the body and both captured upstream requests (paths, the anthropic-beta header, bodies); ignore
+  only generated ids and timestamps at their pointers. Add one http_case corpus seed for it.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/gateway_compaction.rs
+    - crates/betterlite-server/src/app/inference/gateway_compaction/**
+    - crates/betterlite-server/src/routes/chat.rs
+    - crates/betterlite-server/src/routes/chat/**
+    - crates/betterlite-server/src/routes/anthropic_messages.rs
+    - crates/betterlite-server/src/api/anthropic_messages_routes.rs
+    - crates/betterlite-server/src/api/anthropic_messages_routes/**
+    - crates/betterlite-server/src/routes/responses.rs
+    - crates/betterlite-server/src/api/responses_routes.rs
+    - crates/betterlite-server/src/api/responses_routes/**
+    - crates/betterlite-server/src/routes/cursor_responses_compat.rs
+    - tools/oracle/cases/routing/gateway-compaction/**
+    - tools/oracle/fuzz/corpus/http_case/gateway-compaction-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2617-L2627
+    why: The proxy installs the executor around every routed LLM call of a request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L38-L39
+    why: with_proxy_compaction_executor takes the call and the client request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L86-L90
+    why: The executor is set for the whole call, every retry and fallback included, and reset when it ends.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7547-L7552
+    why: The compaction state is created once per call with the surface, before the pre-routing hook arms it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3767-L3775
+    why: The chat attempt compacts after selection and before the deployment slot and pre-call checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5380-L5386
+    why: The generic attempt compacts with the surface of the called function before the slot.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L36-L38
+    why: The three surfaces and the function names that map to them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L358-L371
+    why: compact_to_fit, the call this step makes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L416-L444
+    why: A request that is not armed returns unchanged, and a loopback child is checked against its compactor budget.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L12016
+    why: The chat route, its four paths and route type acompletion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L120-L160
+    why: The /v1/messages route with route type anthropic_messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L193-L212
+    why: The three Responses create paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/compaction.py#L19-L44
+    why: The compactor needs supports_anthropic_compaction and sends compaction summarize with the compact-2026-09-04 beta.
+  - url: https://docs.rs/axum/0.8.9/axum/http/request/struct.Parts.html
+    why: Parts is the extractor that gives the handler what executor_for reads.
+dod:
+  - text: Each chat, messages and responses request gets one GatewayCompaction that initializes B336's compaction state with its surface before routing and holds the executor from executor_for.
+    proof: [gateway-compaction-tests]
+  - text: An over-budget conversation on an auto router with context_compaction is summarized through a loopback child that carries the parent's Authorization, and the tier call gets the summary and the kept tail, on all three route families.
+    proof: [gateway-compaction-tests, case-files, oracle]
+  - text: A request that fits, and a compaction child sent to the compactor group, reach the upstream unchanged.
+    proof: [gateway-compaction-tests]
+  - text: The routes' own tests still pass with the step in place.
+    proof: [route-tests]
+  - text: The new HTTP transcript replays through the existing HTTP-case decoder.
+    proof: [http-corpus]
+checks:
+  optional: []
+  commands:
+    - id: gateway-compaction-tests
+      why: The step is missing from a route, runs without the state or the executor, or changes a request it should leave alone.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::gateway_compaction::tests::/)'
+    - id: route-tests
+      why: The edits at the dispatch points broke the tests of the chat, messages or responses routes.
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-server/src/app/inference/gateway_compaction.rs crates/betterlite-server/src/app/inference/gateway_compaction)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::chat::/) | test(/^api::anthropic_messages_routes::/) | test(/^api::responses_routes::/)'
+    - id: case-files
+      why: No gateway compaction case exists on this branch.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/routing/gateway-compaction)"
+    - id: http-corpus
+      why: The HTTP transcript never reaches the production case parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/gateway-compaction-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/routing/gateway-compaction/chat-loopback-summary.yaml
+deviations: []
+out_of_scope:
+  - "The executor itself, its child call and header filter: B8291. Building it from the request: B100."
+  - "compact_to_fit, initialize_compaction_state, the privacy flag and the summary call: B336. Arming the state in the pre-routing hook (router.py L13837-L13860): B021."
+  - "B6020's RouterCompletion and B6021's RouterGeneric: B8630's compaction adapter passes no executor, since no gateway chat, messages or responses call reaches their attempts."
+  - "The Cursor route (response_api_endpoints/endpoints.py L633) takes the same call in routes/cursor_responses_compat.rs, which this task's scope includes. The lens billing call is B8682's and the prompt test route is B117's; each calls GatewayCompaction at its own dispatch."
+  - "Background Responses polling (response_polling/background_streaming.py L148, B936): no owner yet, since B936 cannot depend on this task (B9810 depends on B080, and B080 depends on B936)."
+pitfalls:
+  - "Run the step on every chat, messages and responses attempt, not only for auto routers: an unarmed request comes back unchanged, but a loopback child sent to the plain compactor group must hit B336's child check (context_compaction.py L436-L444)."
+  - "Initialize the compaction state before B021's pre-routing hook, or arm_compaction finds no state and the request never compacts."
+  - "Build the executor once per client request and share it across retries and fallbacks; LiteLLM sets it once around the whole call."
+  - "The child's body carries `compaction: {type: summarize}`, `extra_headers` with anthropic-beta, `num_retries: 0`, `disable_fallbacks: true` and `timeout`, so the chat and messages routes must accept them as LiteLLM does."
+  - "The executor holds the caller's Authorization header; never log GatewayCompaction or derive a Debug that prints it."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

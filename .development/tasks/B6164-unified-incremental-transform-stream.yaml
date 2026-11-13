@@ -1,0 +1,133 @@
+id: B6164
+title: Incremental guardrail transform stream loop
+description: >-
+  Port the incremental transform loop of `UnifiedLLMGuardrails` that rewrites a streamed response while it is still
+  streaming: `_run_incremental_transform_stream`, `_emit_transform_round`, `_inspect_full_response_for_block`,
+  `_emit_stream_tail` and `_StreamTerminated`. B3679 ships the pure pieces this loop calls (`build_transform_chunk`,
+  the stream-item predicates, `tool_call_passthrough_chunk`, `held_choices`, `handle_streaming_block`,
+  `emit_streaming_http_error`, `resolve_transform_call_type`). B3681 owns the iterator hook that chooses this loop
+  and the buffering and sampling settings; B3680 owns the registry that gives the loop its translation. This task
+  is only the loop.
+
+  Code goes in crates/betterlite-server/src/guardrails/unified_stream.rs and unified_stream/. Files: run.rs,
+  round.rs, inspect.rs, tail.rs and error.rs. The loop is generic over a translation `T: BaseTranslation` and a
+  guardrail `G: GuardrailContract`, takes both by reference, and takes the translation as an argument (the registry
+  lookup stays with the caller). Its public entry is `run_incremental_transform_stream(params, source) -> impl
+  Stream<Item = Result<StreamOutput, StreamLoopError>>`, where `params` is a struct with `translation`, `guardrail`,
+  `request_data`, `user_api_key_dict`, `call_type`, `sampling_rate: usize` and `end_of_stream_only: bool`, and
+  `source` is the upstream stream of items of B3661's stream item type. Use the stream helper crate the workspace
+  already uses for server-sent streams (look at betterlite-server's Cargo.toml and its existing stream code) and add
+  no new crate. `StreamOutput` holds the item to send, or a list of block chunks as bytes from B3679's
+  `handle_streaming_block`. `error.rs` holds `StreamLoopError` with the failures that leave the loop instead of
+  becoming a stream message (a source error).
+
+  State per run: `responses_so_far` and `responses_yielded` (vectors of items), `emitted_text_per_choice`,
+  `finish_reason_per_choice` and `held_chars_per_choice` (maps keyed by choice index), `chunk_counter`,
+  `last_chunk`, `saw_tool_calls` and `saw_text_content`.
+
+  Per upstream item, in this order:
+  1. If B3679's predicate says the item has tool calls: set `saw_tool_calls`, push the item to `responses_so_far`, set
+     `last_chunk`. If `saw_text_content`, run a non-final round with this item as the reference chunk first. Then
+     build the pass-through item with B3679's `tool_call_passthrough_chunk(item, finish_reason_per_choice,
+     held_choices(held_chars_per_choice))`, push it to `responses_yielded`, send it, and go to the next item.
+  2. Else if the item is a trailing metadata chunk, push it to `responses_so_far` and go on.
+  3. Else: add one to `chunk_counter`, push the item, set `last_chunk`, record its finish reasons, and set
+     `saw_text_content` when it carries text. Run a non-final round with the item as reference when
+     `!end_of_stream_only`, the item has no finish reason, and `chunk_counter % sampling_rate == 0`.
+
+  After the source ends: if `saw_tool_calls`, run the block inspection (below) on a deep clone of
+  `responses_so_far` and `responses_yielded` as the yielded list. Then the tail: if `last_chunk` is set, run a final
+  round with it (holdback forced to 0 by `is_final = true`), then push each of B3679's trailing metadata chunks of
+  `responses_so_far` to `responses_yielded` and send them. A `StreamTerminated` marker (a private unit error in
+  error.rs, not a public failure) ends the stream quietly after the messages already sent.
+
+  One round (`round.rs`): make a fresh `StreamTransformSink`, call the translation's
+  `process_output_streaming_response` with `responses_so_far`, the guardrail, the logging target taken from
+  `request_data["litellm_logging_obj"]` when present, the user key dict, `request_data` and the sink, then build the
+  synthetic chunk with B3679's `build_transform_chunk(reference_chunk, sink.mutated_text_per_choice,
+  emitted_text_per_choice, sink.holdback_per_choice, finish_reason_per_choice, held_chars_per_choice, is_final)`.
+  Both calls sit inside one error scope. On `GuardrailFailure::ModifyResponse`: if `original_response` is None set it
+  to `responses_so_far`, then send B3679's `handle_streaming_block` output with `stream_started = !responses_yielded.is_empty()`
+  and `responses_so_far = responses_yielded`, and terminate. On `GuardrailFailure::Http`: send B3679's
+  `emit_streaming_http_error` output with the same two values and terminate. Any other failure leaves the loop as an
+  error. If a synthetic chunk comes back, push it to `responses_yielded` and send it.
+
+  Block inspection (`inspect.rs`): call `process_output_streaming_response` with the same arguments except the
+  sink is absent (`None`). Only `ModifyResponse` is caught, with the same `original_response` and
+  `handle_streaming_block` handling as a round and then terminate. Every other failure, including `Http`, leaves the
+  loop as an error, as in LiteLLM. Its transforms are discarded.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/unified_stream.rs
+    - crates/betterlite-server/src/guardrails/unified_stream/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L589-L662
+    why: One transform round and its two failure paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L662-L803
+    why: The loop, the tool-call pass-through, the sampling rule and the order of the end-of-stream steps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L805-L862
+    why: The tail and the block-only inspection of the full response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L118-L121
+    why: The `_StreamTerminated` marker.
+
+dod:
+  - text: Text chunks run a non-final round only every `sampling_rate` chunks, never on a chunk with a finish reason, and never when `end_of_stream_only` is set.
+    proof: [sampling-tests]
+  - text: A tool-call chunk flushes accumulated text first when text was seen, then sends the pass-through item, and later triggers the block-only inspection on a deep clone with no sink.
+    proof: [tool-call-tests]
+  - text: The tail runs one final round on the last chunk with holdback 0 and then replays the trailing metadata chunks after the text.
+    proof: [tail-tests]
+  - text: A `ModifyResponse` failure in a round or the inspection sets `original_response` when missing, sends the block output with the yielded items, and ends the stream.
+    proof: [block-tests]
+  - text: An `Http` failure in a round sends the stream error output and ends the stream, and the same failure in the inspection leaves the loop as an error.
+    proof: [http-error-tests]
+  - text: Each round starts with a fresh sink, and the synthetic chunks are pushed to the yielded list in the order they are sent.
+    proof: [round-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: sampling-tests
+      why: the sampling rule, the finish-reason skip or the end-of-stream-only switch is wrong or missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream::run::tests::sampling_/)'
+    - id: tool-call-tests
+      why: the tool-call flush, pass-through or deferred inspection is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream::run::tests::tool_call_/)'
+    - id: tail-tests
+      why: the final round or the trailing metadata replay is missing or out of order
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream::tail::tests::/)'
+    - id: block-tests
+      why: a block failure is not turned into the block output, or original_response is not set
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream::.*::tests::block_/)'
+    - id: http-error-tests
+      why: an HTTP failure is swallowed in the inspection or not turned into stream output in a round
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream::.*::tests::http_error_/)'
+    - id: round-tests
+      why: the sink is reused between rounds or the yielded list is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_stream::round::tests::/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - The pure helpers (`build_transform_chunk`, predicates, `tool_call_passthrough_chunk`, `held_choices`, `handle_streaming_block`, `emit_streaming_http_error`, `resolve_transform_call_type`); B3679 owns them.
+  - "`async_post_call_streaming_iterator_hook`, the choice between block-only, buffered and incremental modes, sampling settings and `resolve_streaming_flag`; B3681 owns them."
+  - The registry lookup and the translation values; B3680 and its parts own them.
+  - HTTP oracle cases for streamed transforms; B3681 adds them with the iterator hook, since no route reaches this loop before it.
+
+pitfalls:
+  - "The inspection gets a deep clone: the block-only path edits delta content in place, and a shared accumulator would be changed before the final round."
+  - Trailing metadata chunks (usage) are pushed to `responses_so_far` but never counted by `chunk_counter` and never a reference chunk.
+  - "The tool-call chunk itself is not sent raw: only the B3679 pass-through item goes out, so text in the same chunk cannot skip the transform."
+  - In the inspection only `ModifyResponse` is caught; do not add a catch for `Http` there.
+  - "`stream_started` is true when anything was yielded so far, and the block output must use `responses_yielded`, not `responses_so_far`."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

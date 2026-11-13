@@ -1,0 +1,146 @@
+id: B4780
+title: Enforce agent invocation grants and delegated human access
+description: >-
+  Build module agent_access in crates/betterlite-auth: the last layer of agent permission checks. It answers three questions. Which agents may this key reach (resolve_agent_access). May this key invoke this one agent (is_agent_allowed). Which agents does this caller see in a list (accessible_agents). It also decides which team a delegated human acts through (resolve_delegated_agent_team). In LiteLLM this is AgentRequestHandler.resolve_agent_access and is_agent_allowed plus every function from _granted_ids to the end of agent_permission_handler.py (L86-L111, L156-L222, L592-L721). The module goes in betterlite-auth because UserApiKeyAuth keeps its fields pub(crate) there and this code reads and copies them. It must not import betterlite-core, betterlite-mcp or betterlite-server (core and mcp depend on auth, server is the top crate). Everything that lives above auth is reached through ports.
+
+  Reuse, do not rebuild. From B4778 (module agent_access_groups): `AgentAccess` (Unrestricted, or Restricted(BTreeSet<String>) where an empty set denies every agent), `to_stable_ids` and `intersect_agent_access(registry, key_access, team_access)`; it maps both sides to stable ids first. From B4776: `AgentRegistry` (methods get_agent_by_id, ids_for_agent, stable_agent_id, get_agent_list; read the file for exact signatures). From B2314: `UserApiKeyAuth` with the fields api_key, token, user_role, team_id, object_permission, requires_fresh_policy, agent_id, agent_caller, managed_agent_context, is_session_token and authenticated_by_custom_auth, and the user role enum. From B4770: `AgentResponse` (fields agent_id, enabled, identity_managed, identity, object_permission), `AgentIdentityFailure` and `ManagedAgentContext` (mode, user_id). From B4772: `managed_agent_policy(auth)` (the agent when the key is admitted as a managed agent) and its identity failure conversion (raise_identity_failure: code policy_unavailable gives 503, any other code 403, with the failure message). Do not write any of these again. The key and team grant methods (get_allowed_agents_for_key, agent_caller_access, resolve_key_team_agent_access, _agent_access_group_ceiling) are B4779's; this module asks for them through a port.
+
+  Ports (agent_access/reads.rs, native async fn, no trait objects, no statics). The resolver `AgentAccessResolver<G: GrantSources, T: TargetAgents, H: HumanSources>` is built once with a struct literal holding `registry: Arc<AgentRegistry>`, `grants: G`, `targets: T`, `humans: H`. All port methods return Result<_, AgentAccessError>. The server builds the production implementations (wiring is not in this task, see the notes). Tests use in-memory fakes.
+  - `GrantSources` (B4779 and B4778 behind it): `key_team_access(&self, auth: Option<&UserApiKeyAuth>, strict: bool) -> AgentAccess` is resolve_key_team_agent_access; `caller_access(&self, auth: Option<&UserApiKeyAuth>, strict: bool) -> AgentAccess` is agent_caller_access; `key_access_strict(&self, auth: &UserApiKeyAuth) -> AgentAccess` is get_allowed_agents_for_key with strict=true; `access_group_ceiling(&self, auth: Option<&UserApiKeyAuth>, strict: bool) -> Option<BTreeSet<String>>` is _agent_access_group_ceiling (already mapped to stable ids; the non-strict resolver is inside the implementation); `managed_ceilings(&self, agent_id: &str, access_group_ids: &[String]) -> Vec<BTreeSet<String>>` is B4778's resolve_managed_agent_ceilings reduced to each ceiling's agent_ids.
+  - `TargetAgents` (B4773's AgentIdentityStore.agent): `has_database(&self) -> bool` (sync; LiteLLM's `prisma_client is not None`) and `agent(&self, agent_id: &str) -> Result<Option<AgentResponse>, AgentIdentityFailure>`; a failed read is the failure with code policy_unavailable, a missing row is Ok(None).
+  - `HumanSources` (B4679, B4671, B4672 behind it): `reload_admitted_key(&self, key_hash: &str, check_db_only: bool) -> UserApiKeyAuth`, `reload_admitted_user(&self, user_id: &str, requires_fresh_policy: bool) -> UserApiKeyAuth`, `admitted_subject_sources(&self, human: &UserApiKeyAuth, allowed_team_ids: Option<&BTreeSet<String>>) -> Vec<UserApiKeyAuth>` (one auth per grant source; `team_id` None is the user's own source), and `effective_contexts(&self, auth: &UserApiKeyAuth) -> Vec<UserApiKeyAuth>` (build_effective_auth_contexts). Some(empty set) and None for allowed_team_ids are different inputs, keep them apart.
+
+  `AgentAccessError` (agent_access/error.rs): `Identity(AgentIdentityFailure)` (status through the B4772 conversion), `PolicyUnavailable` (503, "Agent invocation policy is unavailable"), `Rejected { status: u16, detail: String }` (an HTTPException from a reload, passed through), `ObjectPermission(String)` (the managed agent's object_permission does not parse) and `TeamNotGranted` (403, "Select a team that grants access to this agent using x-litellm-team-id"). It has `status(&self) -> u16`.
+
+  Functions (module files: resolver.rs, allowed.rs, listing.rs, managed.rs, humans.rs, reads.rs, error.rs; each LiteLLM name in backticks, a method on AgentAccessResolver unless said otherwise).
+
+  1. `resolve_agent_access(auth: Option<&UserApiKeyAuth>, strict: bool) -> AgentAccess` (resolver.rs). a. If managed_agent_policy(auth) is present, return managed_actor_agent_access(auth) at once. b. key_team = grants.key_team_access(auth, strict). c. In strict mode, an Unrestricted key_team returns Restricted(empty): a strict caller with no grant at all gets nothing. d. caller = grants.caller_access(auth, strict). e. own = intersect_agent_access(registry, key_team, caller). f. ceiling = grants.access_group_ceiling(auth, strict). None returns own. g. Unrestricted own returns Restricted(ceiling); Restricted own returns Restricted(own ∩ ceiling). Errors from the ports propagate.
+  2. `strict_agent_access(auth)` (resolver.rs) is `resolve_agent_access(Some(auth), true)`. LiteLLM's resolve_ceiling parameter is dropped (see deviations).
+  3. `is_agent_allowed(agent_id: &str, auth: Option<&UserApiKeyAuth>) -> bool` (allowed.rs). a. registered = registry.get_agent_by_id(agent_id); registry_managed = registered exists and its identity_managed is true. b. When registry_managed or targets.has_database(): target = targets.agent(agent_id); Err(failure) becomes AgentAccessError::Identity. Then in this order: target None and registry_managed returns false; target Some with identity_managed true runs step c; any other target (None without registry_managed, or a row that is not identity_managed) skips to step d. c. Managed target: return false when the target is not enabled, has no identity, has an inactive identity, or auth is None. key_hash = auth.api_key, else auth.token. authority = humans.reload_admitted_key(key_hash, true) when key_hash is set and managed_agent_policy(auth) is None and auth.is_session_token is false and auth.authenticated_by_custom_auth is false; otherwise authority = auth itself. fresh_auth = a copy of authority with requires_fresh_policy true and agent_caller copied from auth (not from authority). explicit = granted_agent_ids(fresh_auth, strict resolution). Return whether target.agent_id is in explicit. d. Otherwise match resolve_agent_access(auth, false): Unrestricted is true; Restricted(ids) maps agent_id through registry.stable_agent_id and returns true when registry.ids_for_agent(stable) shares at least one id with ids.
+  4. `granted_ids(access: &AgentAccess) -> BTreeSet<String>` (listing.rs, plain function): Unrestricted gives the empty set, Restricted gives its ids.
+  5. `granted_agent_ids(auth: &UserApiKeyAuth, strict: bool) -> BTreeSet<String>` (listing.rs): contexts = humans.effective_contexts(auth); for each context resolve_agent_access(Some(context), strict); union of granted_ids. LiteLLM runs the contexts concurrently with asyncio.gather and passes the access function in; here they run one after another with the one resolver, and the first error in list order is returned. Unlike resolve_agent_access, no grant anywhere yields the empty set, not "everything".
+  6. `accessible_agents(auth: &UserApiKeyAuth, all_agents: Option<Vec<AgentResponse>>) -> Vec<AgentResponse>` (listing.rs). agents = all_agents, or registry.get_agent_list(None). A user_role of proxy_admin returns all agents unchanged. Otherwise allowed = granted_agent_ids(auth, false) (non-strict). Each agent with identity_managed true goes through is_agent_allowed(agent_id, Some(auth)); the permitted ones form managed_ids. The result keeps the order of agents: a managed agent stays only when its id is in managed_ids, any other agent only when its agent_id is in allowed (raw id, no stable mapping).
+  7. `managed_actor_agent_access(auth: &UserApiKeyAuth) -> AgentAccess` (managed.rs, LiteLLM's _managed_actor_agent_access). agent = managed_agent_policy(auth). No agent, or an agent whose object_permission is absent or an empty map, returns Restricted(empty). Parse the agent's object_permission into B2310's object permission record (failure is AgentAccessError::ObjectPermission) and put it on an otherwise default UserApiKeyAuth; own = granted_ids(grants.key_access_strict(that auth)). ceilings = grants.managed_ceilings(agent.agent_id, agent's access_group_ids). grouped = every id of own that is in all ceilings (no ceilings keeps all of own). caller = grants.caller_access(Some(auth), true); capped = grouped when caller is Unrestricted, else grouped ∩ caller ids. These raw ids are never mapped to stable ids. context = auth.managed_agent_context. No context, or mode "autonomous", returns Restricted(capped). A context with no user_id returns Restricted(empty). Otherwise human_ids = verified_human_agent_grants(context.user_id, auth.team_id) and the result is Restricted(capped ∩ human_ids).
+  8. `verified_human_sources(user_id: Option<&str>, allowed_team_ids: Option<&BTreeSet<String>>) -> Vec<(Option<String>, BTreeSet<String>)>` (humans.rs, LiteLLM's _verified_human_agent_sources). No user_id gives an empty list. Otherwise human = humans.reload_admitted_user(user_id, true); sources = humans.admitted_subject_sources(human, allowed_team_ids); for each source (team_id, granted_ids(strict_agent_access(source))), in the order of sources.
+  9. `verified_human_agent_grants(user_id: Option<&str>, team_id: Option<&str>) -> BTreeSet<String>` (humans.rs). It asks verified_human_sources with allowed_team_ids = Some({team_id}) when team_id is set, else Some(empty set) (not None). It unions the grants of the sources whose team is None (the user's own grants) or equal to team_id.
+  10. `resolve_delegated_agent_team(user_id: Option<&str>, agent_id: &str, team_id: Option<&str>, explicit_team: bool, allowed_team_ids: Option<&BTreeSet<String>>) -> Option<String>` (humans.rs). sources = verified_human_sources(user_id, None); allowed_team_ids is not passed down, it only filters below. If any source with no team holds agent_id in its grants, return team_id unchanged (it may be None). granting_teams = the teams of the sources that hold agent_id and are Some, and are in allowed_team_ids when that is Some. If team_id is in granting_teams, return it. If explicit_team is false and granting_teams is not empty, return the smallest team id by string order. Otherwise return AgentAccessError::TeamNotGranted. JWT admission (handle_jwt.py L2739-L2760) and managed_authorization.py (L183, L243) are the callers; they wire this in later.
+
+  Oracle helper b4780 (the skeleton creates it; the worker fills it, Rust and Python sides) has three operations, all for non-managed agents because LiteLLM needs a database for the rest. `accessible`: input agents (agent_id, identity_managed false), user_role, contexts (a list of auths with user_id) and access (map from context user_id to "unrestricted" or a list of ids); Python calls accessible_agents with resolve_access and effective_contexts replaced by lookups on that map and prints the agent ids in order; the Rust side answers the same through fakes (key_team_access returns the mapped access, the other ports answer Unrestricted, None or empty). `human_grants`: input user_id, team_id, sources (team_id plus restricted ids each); Python replaces MCPRequestHandler.reload_admitted_user and admitted_subject_sources and the module's _strict_agent_access with fakes and prints the sorted ids of verified_human_agent_grants. `delegated_team`: same input plus agent_id, explicit_team and allowed_team_ids; it prints the team id, null, or {"status": 403, "detail": ...}. Fake accesses are always Restricted so strict resolution cannot turn an Unrestricted answer into an empty set.
+scope:
+  paths:
+    - crates/betterlite-auth/src/agent_access.rs
+    - crates/betterlite-auth/src/agent_access/**
+    - tools/oracle/cases/agent-access/**
+    - tools/oracle/helpers/b4780.py
+    - tools/oracle/helpers/b4780/**
+    - tools/oracle/src/helpers/auth/b4780.rs
+    - tools/oracle/src/helpers/auth/b4780/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L86-L111
+    why: resolve_agent_access, the managed shortcut, the strict empty rule and the ceiling intersection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L156-L222
+    why: is_agent_allowed, with the managed-target branch, the key reload and the stable id match.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L592-L651
+    why: _granted_ids, _granted_agent_ids and accessible_agents.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L654-L678
+    why: _strict_agent_access and _managed_actor_agent_access.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_permission_handler.py#L681-L721
+    why: _verified_human_agent_sources, verified_human_agent_grants and resolve_delegated_agent_team.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2739-L2760
+    why: The caller of resolve_delegated_agent_team (claimed teams, header team, allowed_team_ids).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py#L175-L250
+    why: The callers of verified_human_agent_grants and is_agent_allowed.
+dod:
+  - text: resolve_agent_access returns the managed result for a managed key, and otherwise intersects key and team access with the caller's access and then with the agent ceiling (Unrestricted own access becomes the ceiling, Restricted own access is intersected, no ceiling keeps own access).
+    proof: [resolver-tests, oracle-cases]
+  - text: In strict mode an Unrestricted key and team access returns Restricted(empty) and every port error propagates; in non-strict mode the same input stays Unrestricted.
+    proof: [strict-tests]
+  - text: is_agent_allowed uses the Restricted ids through the stable id and legacy ids of the agent, and returns true for Unrestricted access.
+    proof: [allowed-tests]
+  - text: is_agent_allowed for a managed target returns false when the target is disabled, has no or an inactive identity, is missing from the store while the registry says managed, or the caller auth is absent; a store failure is returned as AgentAccessError::Identity.
+    proof: [managed-target-tests]
+  - text: is_agent_allowed for a managed target reloads the key with check_db_only true only for a plain key (not a managed key, session token or custom auth), builds the fresh auth with requires_fresh_policy true and the original agent_caller, and answers from the strict granted ids.
+    proof: [managed-target-tests]
+  - text: granted_agent_ids unions the granted ids over the effective contexts and treats Unrestricted as no ids.
+    proof: [listing-tests, oracle-cases]
+  - text: accessible_agents returns every agent for proxy_admin, keeps non-managed agents whose raw agent_id is granted, and keeps managed agents only when is_agent_allowed says so, in the original order.
+    proof: [listing-tests, oracle-cases]
+  - text: managed_actor_agent_access denies when the policy or object_permission is missing, narrows the agent's own grants by every ceiling and by the caller grants, and applies the autonomous, no-user and human-grant rules.
+    proof: [managed-access-tests]
+  - text: verified_human_agent_grants asks for the allowed team set (Some of the team, or Some of an empty set) and unions the user's own source with the source of the given team.
+    proof: [humans-tests, oracle-cases]
+  - text: resolve_delegated_agent_team returns team_id for a user-level grant, team_id when it grants, the smallest granting team when no team was chosen, and TeamNotGranted (403) otherwise; allowed_team_ids only filters the granting teams.
+    proof: [humans-tests, oracle-cases]
+checks:
+  optional: []
+  commands:
+    - id: resolver-tests
+      why: resolve_agent_access does not combine key, team, caller and ceiling access as LiteLLM does
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_access::resolver::/) - test(/^agent_access::resolver::strict_/)'
+    - id: strict-tests
+      why: strict mode does not deny an Unrestricted key and team access, or swallows a port error
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_access::resolver::strict_/)'
+    - id: allowed-tests
+      why: is_agent_allowed does not match restricted ids through stable and legacy ids
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_access::allowed::registry_/)'
+    - id: managed-target-tests
+      why: is_agent_allowed for a managed target skips an admission check, reloads the key wrongly or builds the fresh auth wrongly
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_access::allowed::managed_/)'
+    - id: listing-tests
+      why: granted_agent_ids or accessible_agents differ from LiteLLM in union, admin or managed handling
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_access::listing::/)'
+    - id: managed-access-tests
+      why: managed_actor_agent_access does not narrow by ceilings, caller grants or the human rules
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_access::managed::/)'
+    - id: humans-tests
+      why: verified human grants or the delegated team choice differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_access::humans::/)'
+    - id: oracle-cases
+      why: the oracle cases are missing or the Rust answers differ from LiteLLM's on the same input
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agent-access)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::auth::b4780::/)'
+oracle_cases:
+  - tools/oracle/cases/agent-access/accessible-admin-sees-all.yaml
+  - tools/oracle/cases/agent-access/accessible-unrestricted-sees-none.yaml
+  - tools/oracle/cases/agent-access/accessible-union-of-contexts.yaml
+  - tools/oracle/cases/agent-access/human-grants-own-and-team.yaml
+  - tools/oracle/cases/agent-access/human-grants-no-team-excludes-teams.yaml
+  - tools/oracle/cases/agent-access/delegated-team-user-grant.yaml
+  - tools/oracle/cases/agent-access/delegated-team-explicit-team.yaml
+  - tools/oracle/cases/agent-access/delegated-team-smallest-team.yaml
+  - tools/oracle/cases/agent-access/delegated-team-not-granted.yaml
+  - tools/oracle/cases/agent-access/delegated-team-allowed-filter.yaml
+deviations:
+  - what: The injected resolve_ceiling, resolve_access and effective_contexts callables are replaced by the three port traits GrantSources, TargetAgents and HumanSources, passed to the resolver's constructor.
+    why: betterlite wires dependencies through constructors and has no function-valued defaults that reach module globals. The same calls happen in the same order.
+  - what: granted_agent_ids resolves the contexts one after another, not with asyncio.gather. When several contexts fail, the first failing context in list order is reported.
+    why: The result is a union and does not depend on order. Only which error wins can differ, and gather's choice is timing-dependent anyway.
+  - what: accessible_agents resolves the managed agents one after another, not concurrently.
+    why: The permitted set does not depend on order.
+  - what: The identity failure raised through raise_identity_failure, the 503 "Agent invocation policy is unavailable" and the 403 team error are variants of AgentAccessError with a status() method, not HTTPException values.
+    why: betterlite errors are typed. The HTTP layer turns status() and the message into the same response LiteLLM sends.
+  - what: Only the proxy_admin role enum value is compared in accessible_agents; LiteLLM also accepts the plain string "proxy_admin".
+    why: UserApiKeyAuth.user_role is already the role enum in betterlite, so a stray string cannot reach this code.
+out_of_scope:
+  - "B4778 owns AgentAccess, to_stable_ids and intersect_agent_access (agent_permission_handler.py L35-L69), the access group ceiling and resolve_managed_agent_ceilings."
+  - "B4779 owns the key and team grant methods and _agent_access_group_ceiling (L113-L154, L273-L487). It also owns _get_key_object_permission. The production GrantSources implementation wraps them."
+  - "_get_team_object_permission, get_agent_access_groups, _get_agent_access_groups_for_key and _get_agent_access_groups_for_team: no caller at the pin."
+  - "B4772 owns managed_agent_policy and the identity failure conversion. B4773 owns AgentIdentityStore, which the production TargetAgents wraps."
+  - "B4679 owns reload_admitted_key, B4673 reload_admitted_user, B4671 admitted_subject_sources and B4672 build_effective_auth_contexts. The production HumanSources forwards to them."
+  - "B4781 owns managed_authorization.py and the route handlers that call is_agent_allowed and accessible_agents; B855 or the JWT admission owner calls resolve_delegated_agent_team."
+pitfalls:
+  - accessible_agents and granted_agent_ids call resolve_agent_access without strict, and an Unrestricted answer counts as no ids. A key with no agent grant therefore lists no non-managed agents, while is_agent_allowed for the same key says true.
+  - In strict resolve_agent_access, Unrestricted key and team access becomes Restricted(empty) before the caller and ceiling are looked at. Moving that check after the intersection would let a ceiling turn "everything" into a grant.
+  - is_agent_allowed enters the store branch when the registry copy is managed or a database exists. A row that exists but is not identity_managed falls through to the ordinary grant check, it does not return false.
+  - fresh_auth takes agent_caller from the original auth, not from the reloaded key, and sets requires_fresh_policy true. Copying from authority would drop the forwarded caller cap.
+  - The key is reloaded only for a plain key. A managed key (managed_agent_policy present), a session token and a custom-auth key all use the auth as given.
+  - key_hash is api_key first, then token. A key with neither skips the reload.
+  - managed_actor_agent_access compares raw ids. The ceilings, the caller grants and the human grants are not mapped to stable ids, unlike resolve_agent_access.
+  - A managed agent whose object_permission is an empty map is denied, the same as a missing one. Granted ids of an own-grant that is Unrestricted are empty, so a managed agent with no declared agents reaches none.
+  - verified_human_agent_grants passes Some(empty set) for allowed_team_ids when there is no team_id, so no team source is admitted. Passing None would admit all of them.
+  - resolve_delegated_agent_team passes None to the source reload and applies allowed_team_ids only to granting_teams. A user-level grant returns team_id even when team_id is None.
+  - The smallest team is chosen only when explicit_team is false. With an explicit team that does not grant, the answer is TeamNotGranted even if other teams grant.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

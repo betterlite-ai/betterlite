@@ -1,0 +1,20 @@
+kind: helper
+name: callback-registry-capacity-boundary
+call:
+  callback_registry:
+    max_callbacks: 2
+    steps:
+      - {op: register, list: success_callback, callback: {class_name: First}}
+      - {op: register, list: success_callback, callback: {class_name: Second}}
+      - {op: register, list: success_callback, callback: {class_name: Third}}
+      - {op: register, list: success_callback, callback: {class_name: First}}
+      - {op: register, list: callbacks, callback: {class_name: Fourth}}
+      - {op: register, list: failure_callback, callback: {class_name: Fifth}}
+      - {op: register, list: callbacks, callback: {class_name: Sixth}}
+      - {op: register, list: callbacks, callback: {class_name: Seventh}}
+      - {op: remove_from_list, list: success_callback, callback: {class_name: Second}}
+      - {op: register, list: success_callback, callback: {class_name: Third}}
+env:
+  LITELLM_MAX_CALLBACKS: "2"
+compare:
+  ignore: []

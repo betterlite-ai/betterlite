@@ -1,0 +1,32 @@
+task: B5940
+deviations:
+  - what: An oci_signer object in optional_params is not supported; only the manual user, fingerprint, tenancy and key signing path exists, so a caller that sets oci_signer gets that path.
+    why: There is no Rust OCI SDK signer object, and a Python object cannot arrive through the config or the proxy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L380-L382
+  - what: A private key that fails to parse, or is not an RSA key, becomes OciError status 500 with the failure as its message.
+    why: LiteLLM lets the cryptography ValueError or the not-RSA TypeError escape unconverted; betterlite surfaces every failure as a typed provider error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L117-L125
+  - what: A key shorter than 2048 bits is rejected with OciError status 500 when the key is parsed.
+    why: aws-lc-rs refuses RSA keys below 2048 bits and OCI itself requires 2048 bits or more, so a shorter key could never authenticate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L331-L336
+  - what: An oci_region with a trailing newline is rejected with OciError status 400.
+    why: Python's re.match with an end-of-string anchor accepts one trailing newline before $; the Rust check is anchored at both ends, so "us-ashburn-1\n" is not a region.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L177-L199
+  - what: A missing, unreadable or empty key file becomes OciError status 500 that carries the source message.
+    why: LiteLLM raises FileNotFoundError, OSError or ValueError out of the signer and its exception mapping turns those into an internal error; betterlite returns the same status as a typed error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L128-L141
+  - what: An api_base that is not an absolute URL becomes OciError status 500.
+    why: Python's urlparse never raises and would sign a request with an empty host and path; betterlite refuses input it cannot sign meaningfully.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L273-L277
+  - what: Headers are a case-insensitive map, so an existing Content-Type or User-Agent header is kept whatever its spelling.
+    why: LiteLLM keeps headers in a case-sensitive dict, so "Content-Type" is invisible to it and it adds a second lowercase content-type; HTTP header names are case-insensitive and a duplicate is malformed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L280
+  - what: "A schema whose walk would pass 256 levels, counting every structural nesting level and every $ref expansion, ends the over-limit subtree as {\"type\": \"object\"}."
+    why: LiteLLM recurses until Python raises RecursionError, which fails only that request, while an unbounded walk in Rust overflows the stack and aborts every request on the task; counting every level rather than only refs also bounds the nesting each definition brings, and the cap returns the same object the cycle break already returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L431-L448
+  - what: "A $ref expansion that would inline more than 10,000,000 estimated bytes stops with OciError status 400 instead of growing without bound, and the $defs table is removed before the walk, so only definitions a reference reaches are expanded and charged."
+    why: LiteLLM expands every reference in place and walks the $defs table too even though it is dropped from the result, so a small schema whose definitions each reference the next one twice grows exponentially and ends in RecursionError or MemoryError; betterlite charges each reachable expansion against the 10 MB budget betterlite-prompts uses for the same reason and refuses the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L425-L453
+  - what: "Every key of a properties map is a parameter name, so parameters named title, default or required survive sanitizing with their schemas and required entries; those metadata keys are dropped only in schema objects."
+    why: LiteLLM walks a properties map as if it were a schema, so a parameter called title disappears, one called default with a null value disappears, and one called required becomes [] when its value is not a list, after which the required names pointing at them are filtered out; betterlite keeps property names, which are data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oci/common_utils.py#L491-L516

@@ -1,0 +1,11 @@
+kind: helper
+name: a2a-discover-assistant-id-number
+call:
+  b8202:
+    operation: urls
+    base_url: https://agent.example
+    mode: langgraph_platform
+    params:
+      assistant_id: 123
+env: {}
+compare: {ignore: []}

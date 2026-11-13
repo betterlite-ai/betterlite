@@ -1,0 +1,10 @@
+kind: helper
+name: logging-metadata-merge-seed
+call:
+  logging_metadata:
+    function: merge_litellm_metadata
+    litellm_params:
+      metadata: {user_key: user-value, user_api_key_auth: {token: seed}}
+      litellm_metadata: {model_key: model-value}
+env: {}
+compare: {ignore: []}

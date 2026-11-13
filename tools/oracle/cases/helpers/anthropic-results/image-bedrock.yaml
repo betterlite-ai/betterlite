@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-results-image-bedrock
+call:
+  anthropic_results:
+    function: image_param
+    image_url_input: "https://example.test/a.png"
+    is_bedrock_invoke: true
+    data_urls:
+      "https://example.test/a.png": "data:image/png;base64,QUJD"
+env: {}
+compare:
+  ignore: []

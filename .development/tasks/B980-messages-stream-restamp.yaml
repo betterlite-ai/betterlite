@@ -2,7 +2,7 @@ id: B980
 title: Messages stream restamp
 description: >-
   Restamp native message_start models across chunk boundaries and persist/replay cached Anthropic event streams
-  using B125. Keep ping filtering and closed-block flushing source-compatible, and preserve served model metadata
+  using B4302 and B4304. Keep ping filtering and closed-block flushing source-compatible, and preserve served model metadata
   without buffering the whole live stream.
 
 
@@ -64,7 +64,7 @@ description: >-
   30 wiring; 542 total within the 550-line cap. The estimate includes tests and adapters, not just production code.
 
 
-  Direct inputs come from B125 (Response caching core, in-memory and disk caches, cache API), B171 (Direct helper
+  Direct inputs come from B4302 and B4304 (the cache write and replay API), B171 (Direct helper
   oracle and URL path encoding), B978 (Messages sse events), B1087 (Api boundaries), B002 (Load LiteLLM config.yaml
   into typed config). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
   ids retain ownership on the provider and keys/data branches.
@@ -73,8 +73,6 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/messages_stream_restamp.rs
   - crates/betterlite-core/src/api/messages_stream_restamp/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
@@ -177,6 +175,7 @@ pitfalls:
   preserve return None and its nested guards.
 - Within _restamped_event\'s message.get('model') == requested_model branch, preserve return None and its nested
   guards.
+- "Use CacheWriteTracker::spawn."
 review_level: standard
 budget:
   max_changed_lines: 1500

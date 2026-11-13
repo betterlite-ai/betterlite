@@ -1,0 +1,22 @@
+kind: helper
+name: gdc-request-policy-audience-removes-path-and-query
+call:
+  gdc_request_policy:
+    scenarios:
+      - config:
+          model_list:
+            - litellm_params: {vertex_project: project}
+        audiences:
+          - {base: "https://gateway.example/v1/projects/p/locations/eu", deployment: 0}
+          - {base: "https://gateway.example/some/path?q=1#frag", deployment: 0}
+          - {base: "gateway.example/path", deployment: 0}
+          - {base: "HTTP://API.Example.COM:443/x", deployment: 0}
+          - {base: "https://user:pw@host:8080/p?q=1#f", deployment: 0}
+          - {base: "https://[fd00::1/x", deployment: 0}
+          - {base: "https://[fe80::1%25eth0]:443/x", deployment: 0}
+          - {base: "https://u[]@v1.x", deployment: 0}
+          - {base: "https://u[@v1.a]b", deployment: 0}
+          - {base: "https://gdc.example℀", deployment: 0}
+          - {base: "https://u[]@v1.", deployment: 0}
+env: {}
+compare: {ignore: []}

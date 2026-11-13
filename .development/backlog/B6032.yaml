@@ -1,0 +1,14 @@
+id: B6032
+milestone: M12 python
+title: Python CustomGuardrail class
+status: todo
+depends_on: [B6030, B6031, B163]
+file: tasks/B6032-python-custom-guardrail.yaml
+covers:
+  - "litellm/integrations/custom_guardrail.py"
+parent: B164
+split_from: B164
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

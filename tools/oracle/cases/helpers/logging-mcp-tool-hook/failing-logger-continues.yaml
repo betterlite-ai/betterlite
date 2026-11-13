@@ -1,0 +1,16 @@
+kind: helper
+name: logging-mcp-tool-hook-failing-logger-continues
+call:
+  b9650:
+    result:
+      content: [{type: text, text: hello}]
+      structured_content: {answer: 42}
+    dynamic_success: []
+    global_success:
+      - {name: broken, behavior: fail}
+      - name: replacer
+        behavior: replace
+        content: [{type: text, text: replaced}]
+        response_cost: 0.5
+env: {}
+compare: {ignore: []}

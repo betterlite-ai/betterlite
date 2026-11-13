@@ -1,6 +1,6 @@
 #![no_main]
 
-use betterlite_lens::analysis::{Decision, Examined, FinalDecision, Record};
+use betterlite_lens::analysis::{Decision, Examined, FinalDecision, Record as _};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {

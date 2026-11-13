@@ -1,0 +1,8 @@
+task: B013
+deviations:
+  - what: A huggingface model gets no max_position_embeddings. max_output_tokens answers None for it, and model info answers a chat-mode entry keyed by the model with max_tokens, max_input_tokens, max_output_tokens and every capability unset.
+    why: 'LiteLLM fetches https://huggingface.co/{model}/raw/main/config.json for these models and reads max_position_embeddings from it. betterlite builds no outbound URL from request-derived text (rule bounded-inputs), so it makes no such request. Proven by crates/betterlite-models/src/lookup/tests.rs huggingface_model_never_fetches_its_config, which asserts the key, the chat mode, empty limits and a None answer for max_output_tokens.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5484-L5486
+  - what: With no provider given, the provider is inferred from the explicit provider prefix, then from the litellm_provider of the catalog entry with that exact name, then from the catalog's routing rules. The hardcoded provider lists and api_base endpoint inference of get_llm_provider are not ported.
+    why: 'get_llm_provider belongs to task B174, which is not built yet, so this stands in for it on the catalog data this task owns. It agrees with LiteLLM wherever the provider comes from a prefix, a catalog entry or a routing rule. Proven by crates/betterlite-models/src/lookup/tests.rs split_model_stands_in_for_get_llm_provider and prefixed_model_resolves_without_a_provider.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L158

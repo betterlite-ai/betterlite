@@ -1,0 +1,43 @@
+kind: helper
+name: provider-metadata-factory-provider-info-projection
+call:
+  provider_metadata_factory:
+    provider_info_projection:
+      catalog:
+        - key: "fireworks_ai/glm-4p6"
+          model_info:
+            supports_function_calling: false
+            supports_vision: true
+        - key: "fireworks_ai/accounts/fireworks/models/reasoning-on"
+          model_info:
+            supports_reasoning: true
+        - key: "fireworks_ai/accounts/fireworks/models/pdf-in"
+          model_info:
+            supports_pdf_input: true
+      steps:
+        - {op: free, model: "grok-4", provider: "xai"}
+        - {op: free, model: "grok-4", provider: "XAI"}
+        - {op: free, model: "glm-4p6", provider: "fireworks_ai"}
+        - {op: free, model: "gpt-4o", provider: "openai"}
+        - {op: free, model: "m"}
+        - {op: free, model: "m", provider: ""}
+        - {op: free, model: "m", provider: "not-a-provider"}
+        - {op: free, model: "m", provider: "OpenAI"}
+        - {op: free, model: "m", provider: "xai/"}
+        - {op: free, model: "m", provider: "gmi"}
+        - {op: free, model: "m", provider: "openai_like"}
+        - {op: adapter_provider_info, model: "grok-4", provider: "xai"}
+        - {op: adapter_provider_info, model: "glm-4p6", provider: "fireworks_ai"}
+        - {op: adapter_provider_info, model: "custom-reasoning-on", provider: "fireworks_ai"}
+        - {op: adapter_provider_info, model: "pdf-in", provider: "fireworks_ai"}
+        - {op: adapter_provider_info, model: "unknown", provider: "fireworks_ai"}
+        - {op: adapter_provider_info, model: "m", provider: "openai"}
+        - {op: adapter_provider_info, model: "m", provider: "azure_ai"}
+        - {op: adapter_provider_info, model: "m", provider: "openai_like"}
+        - {op: adapter_cost_key, model: "glm-4p6", provider: "fireworks_ai"}
+        - {op: adapter_cost_key, model: "deepseek-r1", provider: "fireworks_ai"}
+        - {op: adapter_cost_key, model: "grok-4", provider: "xai"}
+        - {op: adapter_cost_key, model: "m", provider: "openai"}
+        - {op: adapter_cost_key, model: "m", provider: "openai_like"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,23 @@
+kind: helper
+name: model-catalog-keys-seed-casefold
+call:
+  model_catalog_keys:
+    model_cost: [gpt-4o, Foo, foo, Bar, BAR, baz]
+    steps:
+      - {op: get_key, key: Foo}
+      - {op: index}
+      - {op: get_key, key: fOO}
+      - {op: index}
+      - {op: get_key, key: bar}
+      - {op: remove, key: BAR}
+      - {op: get_key, key: bar}
+      - {op: remove, key: Bar}
+      - {op: get_key, key: BAR}
+      - {op: get_key, key: bar}
+      - {op: add, key: QUX}
+      - {op: get_key, key: qux}
+      - {op: get_key, key: QUX}
+      - {op: index}
+      - {op: get_key, key: missing}
+env: {}
+compare: {ignore: []}

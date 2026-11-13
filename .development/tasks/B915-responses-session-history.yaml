@@ -4,7 +4,7 @@ description: >-
   Build api::responses_session_history around injected spend-log queries, cold-storage reads
   and an async sleeper. Own every function in session_handler.py and the complete
   async_responses_api_session_handler in transformation.py. B726 executes the parameterized
-  query using B858 rows; B069 supplies the cold-storage reader. B903 unwraps the response ID,
+  query using B858 rows; B1729 supplies the cold-storage reader. B903 unwraps the response ID,
   B909 rebuilds input messages and B911 repairs tool correlations. There is no recursive
   previous_response_id traversal in this source: fetch all rows in the matching session,
   ordered by endTime ascending. The caller must authorize the ID before invoking this service.
@@ -24,15 +24,11 @@ description: >-
   175 tests, 95 cases, 80 adapters, 55 fuzz/replay, 45 config/seeds and 25 wiring: 755 lines.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_session_history.rs
   - crates/betterlite-core/src/api/responses_session_history/**
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/session_log_json.rs
   - crates/betterlite-core/fuzz/corpus/session_log_json/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/responses_session_history.rs
   - crates/betterlite-config/src/api/responses_session_history/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-session-history-*
@@ -121,7 +117,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/responses-session-history/session-merge.yaml
 deviations: []
 out_of_scope:
-- B069 owns cold-storage credentials and downloads; B726 owns database execution and B858 the row representation.
+- B1729 owns cold-storage credentials and downloads; B726 owns database execution and B858 the row representation.
 - Other transformation.py functions stay with B907-B914, B1115 and B2411; unreachable helpers are excluded in those owners.
 - B929 and route callers authorize IDs; this service receives authorized identifiers and adds no authorization shortcut.
 pitfalls:

@@ -1,0 +1,19 @@
+kind: helper
+name: aws-secrets-put-value-with-unique-token
+env: {}
+compare: {ignore: []}
+call:
+  b4415:
+    env:
+      AWS_ACCESS_KEY_ID: AKIAORACLEEXAMPLE
+      AWS_SECRET_ACCESS_KEY: oracle-secret-key
+      AWS_REGION_NAME: us-east-1
+    manager: {replica_regions: [], kms_key_id: null}
+    routes:
+      - route: "POST https://secretsmanager.us-east-1.amazonaws.com"
+        replies:
+          - {status: 200, body: '{"VersionId":"v2"}'}
+          - {status: 200, body: '{"VersionId":"v3"}'}
+    steps:
+      - {op: async_put_secret_value, name: prod/db, value: first}
+      - {op: async_put_secret_value, name: prod/db, value: second}

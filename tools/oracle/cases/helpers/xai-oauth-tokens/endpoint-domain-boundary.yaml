@@ -1,0 +1,7 @@
+kind: helper
+name: endpoint_domain_boundary
+call:
+  xai_oauth_tokens: {"endpoint": "https://evilx.ai/oauth2/token"}
+env: {}
+compare:
+  ignore: []

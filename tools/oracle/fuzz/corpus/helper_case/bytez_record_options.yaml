@@ -1,0 +1,11 @@
+kind: helper
+name: bytez-record-options
+call:
+  bytez_record:
+    function: options
+    supported_model: org/model
+    mappings:
+      - non_default_params: {max_tokens: 10}
+        optional_params: {temperature: 0.5}
+compare: {ignore: []}
+env: {}

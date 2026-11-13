@@ -1,0 +1,9 @@
+kind: helper
+name: vertex-endpoint-psc-required-fields-seed
+call:
+  vertex_endpoint:
+    psc_required_fields:
+      targets:
+        - {url: "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent", endpoint: generateContent, api_base: https://psc.example.com, project: proj, location: us-central1, model: bge/1234, version: v1beta1, stream: true, use_psc_endpoint_format: true}
+env: {}
+compare: {ignore: []}

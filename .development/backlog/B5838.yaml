@@ -1,0 +1,17 @@
+id: B5838
+milestone: M3 providers
+title: Eden AI provider
+status: todo
+depends_on: [B6100, B515, B1001, B1122, B525, B672, B514, B1135, B1035, B511, B997, B2202, B184]
+file: tasks/B5838-edenai-media-endpoints.yaml
+covers:
+  - "litellm/llms/edenai/audio_transcription/**"
+  - "litellm/llms/edenai/videos/**"
+  - "litellm/llms/edenai/text_to_speech/**"
+  - "litellm/llms/edenai/image_generation/**"
+parent: B041
+split_from: B041
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

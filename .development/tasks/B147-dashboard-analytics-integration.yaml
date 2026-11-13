@@ -1,0 +1,145 @@
+id: B147
+title: Run retained log, usage, cost, Lens and ROI pages against the real gateway
+description: >-
+  Complete the browser integration after B9740-B9744, not a hand-port of dashboard sources.
+  B9090 retains the pinned application, B9091 builds npm's locked bundle, B9092 brands it,
+  B9093 serves it and B144 supplies the locked Playwright package and actual-process browser
+  harness. B147-route-audit.md is the reviewed method/path/query/body/response-field inventory,
+  with route owners and existing versus missing HTTP evidence. The four page children add
+  the missing exact requests; this final task has no additional oracle cases and implements
+  no proxy route. B074's newly planned HTTP usage-chat transcript is reused, so the original
+  B074 dependency remains for that concrete browser flow; B132 is removed because the page
+  consumes B8682/B9030 through B9744, not the worker-processing umbrella's artifacts.
+
+  Run it through B144's harness: bash tools/dashboard/browser-check.sh --test
+  dashboard_analytics_pages does the clean build, branded bundle install, locked Playwright
+  setup and nextest --no-tests=fail selection for that test binary. Reuse the database, process
+  and browser lifecycle in tools/dashboard-browser/tests/support through mod support, without
+  editing the shared script, support module, package manifest or lock. A missing browser,
+  database, helper or installed bundle is a failing prerequisite, never a skipped acceptance.
+
+  Add tools/dashboard-browser/tests/dashboard_analytics_pages.rs with orchestration helpers
+  beneath dashboard_analytics_pages/, and Playwright interactions under
+  tools/dashboard/browser/analytics-pages/. Reuse B144's bounded process groups, cleanup,
+  fixture ownership and strict TypeScript/lint path. Every page, discovery, login, API, CSS,
+  JS and RSC response must come from the real installed binary. No page.route fulfillment,
+  MSW, canned API success or seeded post-mutation state is permitted in these browser tests.
+  Local provider mock responses are allowed for the configured usage-chat completion, as in
+  B074; the browser's /usage/ai/chat request must still traverse the real server/engine.
+
+  analytics_pages_round_trip starts with B9740's current-schema fixture, fixed request logs,
+  daily rows using the B9742 scenarios and a distinct second user's records. Reuse B9741-B9744
+  case fixture values rather than silently inventing another wire contract. Configure the
+  ui-model/ui-review aliases and prices used by those cases, no external credentials, tracing
+  absent and CloudZero's daily export table empty when exercising export. Do not preload
+  settings that the browser is supposed to save. Sign in through the real /v2/login page with
+  B144's UI_USERNAME/UI_PASSWORD setup; use the returned cookie and normal decoded session key.
+
+  Visit Logs, select its fixed date range, filter the seeded request, open the payload and
+  session drawer and assert actual messages, model, token/spend values and another request
+  from the same session. Follow a log deep link after refresh. The audit tab must show B9741's
+  unavailable state without a paid advertisement; tracing must show its real 501/setup state,
+  not a successful sample. Traverse Usage's six entity tabs, choose a filter, follow a top-key
+  or model drilldown, and download one populated CSV and one JSON export. Check the downloaded
+  content against the actual seeded values, not only the presence of a file. Visit old-usage
+  and verify populated chart/summary data and its filtered request. Trigger B074's usage AI
+  panel with an explicit model and prompt; assert a streamed answer and tool/status UI when
+  its mock transcript uses a tool. A permanent loading indicator or swallowed SSE error fails.
+
+  Visit Cost tracking, edit a discount/margin and the unpriced-model switch, reload and use
+  the calculator's model picker and positive/null count form. Open the CloudZero modal from
+  Usage, see unconfigured settings, initialize with dummy credentials and reload the masked
+  values; export only with an empty export table so no external delivery occurs. Navigate
+  Cost optimization tabs to verify aggregate savings, the prompt-caching table and its filters,
+  the config-field switch/reset and the shadow-job empty/list state. The detailed shadow
+  lifecycle/compression form proof stays with B9743's HTTP and production component tests;
+  do not expand this browser unit into new inference or billing systems.
+
+  Visit Lens and verify its actual saved administrative rows or empty state, model labels and
+  unavailable recorded-activity controls. Do not inject a fake connected worker, fake findings
+  or a mock ClickHouse response to enable New investigation. B8682 explicitly has no native
+  storage binding, and B9744 corrects the worker image instructions; the browser must not claim
+  a functioning investigation engine. Visit ROI, open settings, save a changed nonsecret
+  field with repos empty, refresh, display demo results and download the locally generated
+  people CSV. Exercise idle cancel and reset, observing the real API responses. No GitHub
+  account, paid token or estimator call is needed for this flow.
+
+  analytics_pages_prefixed_viewer runs at SERVER_ROOT_PATH=/gateway and a discovered custom
+  auth_header_name. The default root is empty and default auth header is Authorization.
+  Prepare an admin-viewer and an internal user using the existing identity fixture plus real
+  B1203 invitations and B8387/B8671 onboarding token/claim routes; reuse B144's normal sign-in.
+  Do not fabricate JWTs or add a password field to /user/new. In this local setup set
+  general_settings.password_policy_check_breached_passwords=false through B786 to avoid an
+  external breach lookup; its product default remains true. Verify read-only controls for
+  viewer, user-scoped log/usage values for the internal user, and one same-session forbidden
+  mutation whose server status proves the permission boundary. In the prefixed administrator
+  pass open CloudZero and a log/ROI link to catch hardcoded root URLs and missing assets.
+  Listen for management requests and assert the discovered base/header on all of them; no
+  unexpected management cross-origin request, hydration error or missing first-party resource
+  is allowed. Keep B144's exhaustive session/login/logout permutations with B144.
+
+  The direct shared-page dependencies are intentional: B9730 supplies the deleted-key tab patch,
+  B9731 supplies team and deleted-team
+  selector behavior, B9732 current-user/list contracts, B9733 the organization hook patch
+  removing its subscription guard, and B9735 model/resource selectors used by filters and
+  fetch_models. B059 supplies the customer selector not covered by B9735. Every unchanged
+  llm_calls function remains archive intake. fetch_models is reached by the calculator and
+  Lens pickers and is covered by these real reads; chat_completion/responses_api/gateway_client
+  and their MCP/code-interpreter/header utilities have playground callers in B146, so this
+  task does not generate duplicate data-plane cases for them.
+
+  Write ui/dashboard/ANALYTICS-PAGES.md mapping each browser assertion to its HTTP child case,
+  calling out the OSS /audit absence, no native ClickHouse storage and local worker build.
+  Document the HTTP inventory's owner handoffs instead of promising disabled functionality.
+  A backend mismatch goes to the named owner; scope expansion into that owner's implementation
+  is not authorized. Budget about 170 fixture/orchestration lines, 450 browser assertions and
+  70 documentation lines. B9740-B9744 supply the required artifacts directly, and retained
+  TypeScript sources are neither copied into git nor rewritten.
+scope:
+  paths:
+    - tools/dashboard-browser/tests/dashboard_analytics_pages.rs
+    - tools/dashboard-browser/tests/dashboard_analytics_pages/**
+    - tools/dashboard/browser/analytics-pages/**
+    - ui/dashboard/ANALYTICS-PAGES.md
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/view_logs/RequestLogsPanel.tsx#L111-L158
+    why: Browser detail and deep-link navigation must consume the real selected record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L1298-L1401
+    why: The six entity families and binary exports already retained in the real compiled dashboard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/llm_calls/fetch_models.tsx#L1-L69
+    why: This remaining covered helper is called by model pickers; it is not a reason to port playground data-plane clients.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/lens/_components/LensView.tsx#L145-L243
+    why: Genuine activity/worker readiness gates and retained administration forms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/roi-calculator/_components/ROICalculatorView.tsx#L63-L202
+    why: Real settings/report/sync composition, demo navigation and local state changes.
+dod:
+  - text: Built log, usage and cost pages load real values, navigate details, persist edits and download actual exports after normal sign-in.
+    proof: [analytics-browser]
+  - text: Usage chat renders its server stream, ROI settings/demo/local CSV work, and audit/Lens/trace limitations appear honestly without paid advertising or fabricated success.
+    proof: [analytics-browser]
+  - text: Prefixed deployments and custom auth headers work for page requests, while viewer/internal sessions preserve real server-side authorization.
+    proof: [analytics-browser]
+checks:
+  optional: []
+  commands:
+    - id: analytics-browser
+      why: The compiled retained pages cannot complete their supported workflows against the real binary, despite isolated API/component tests.
+      run: bash tools/dashboard/browser-check.sh --test dashboard_analytics_pages
+oracle_cases: []
+deviations:
+  - what: Audit listing is unavailable with HTTP 404, and Lens recorded activity/trace views remain unavailable while the existing production storage binding is absent.
+    why: The first is enterprise-only at the pin; the second consumes B110/B8682's recorded temporary gap rather than hiding it with browser data.
+out_of_scope:
+  - B9090 owns source retention for every llm_calls function; unchanged data-plane functions are exercised by their B146 playground callers, not reimplemented here.
+  - B9741-B9744 own all missing page-shaped HTTP cases and reviewed page patches; this final task deliberately has no duplicate oracle cases.
+  - B144 owns browser infrastructure, authentication and discovery; its shared runner/helper extension is an architect prerequisite outside this scope.
+  - B074 owns usage-chat HTTP requests and engine proof; B110/B8682 own tracing/Lens availability, and every other proxy route keeps the owner named in B147-route-audit.md.
+pitfalls:
+  - Browser route fulfillment can make a page look correct while its actual betterlite request still fails.
+  - A generated sidecar left in another task's target directory is not an artifact that CI may assume exists.
+  - Preserving litellm protocol fields and environment variable names is required even after product branding changes.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

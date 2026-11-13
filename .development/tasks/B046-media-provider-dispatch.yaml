@@ -5,7 +5,7 @@ description: >-
   api::media_providers in betterlite-core, composing B1517-B1539. Extend B010's closed provider
   identities/contracts and B174 selection at the upper layer; lower provider crates must not import
   core services. Feed prepared image calls into B998/B999, Topaz native variations into B1000,
-  Runway speech into B1084 and queued video operations into B093's existing executor. Register the
+  Runway speech into B1084 and queued video operations into the existing video calls B3338 to B3342 through B3332's video selection. Register the
   provider pricing functions once. B1534's settings are shared by Runway operations; this composer
   adds no settings or parsers.
 
@@ -22,8 +22,8 @@ description: >-
   Existing route factories alone mount POST /v1/images/generations, /images/generations,
   /openai/deployments/{model:path}/images/generations and their edits counterparts; POST /v1/audio/speech
   and /audio/speech; and the four chat paths /v1/chat/completions, /chat/completions,
-  /engines/{model}/chat/completions, /openai/deployments/{model}/chat/completions. Compose B093's paired
-  /v1/videos and /videos prefixes for POST create and GET list, GET /{video_id}, GET /{video_id}/content,
+  /engines/{model}/chat/completions, /openai/deployments/{model}/chat/completions. Compose the paired
+  /v1/videos and /videos routes of B3343, B3344, B3345 and B6360 for POST create and GET list, GET /{video_id}, GET /{video_id}/content,
   POST /{video_id}/remix, POST /characters, GET /characters/{character_id}, POST /edits and POST
   /extensions. Unsupported provider operations reach their existing error paths. No variations or
   video-delete HTTP route exists at this pin; exercise those native operations through Rust tests.
@@ -37,14 +37,15 @@ description: >-
   expectations and existing endpoint fixtures. Tests under media_providers run in core and server.
   The selector/module surface is 102 nonblank/non-comment lines and main dispatch adds 55; budget
   220 composition, 270 tests and 210 fixtures, capped at 800 changed lines.
+
+  B010 registers Provider::MediaProviders as a stub in crates/betterlite-provider/src/provider/media_providers.rs.
+  Fill it there and leave provider.rs as it is.
 scope:
   paths:
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/media_providers.rs
     - crates/betterlite-core/src/api/media_providers/**
-    - crates/betterlite-provider/src/provider.rs
-    - crates/betterlite-provider/src/provider/**
+    - crates/betterlite-provider/src/provider/media_providers.rs
+    - crates/betterlite-provider/src/provider/media_providers/**
     - crates/betterlite-provider/src/dispatch.rs
     - crates/betterlite-provider/src/dispatch/**
     - crates/betterlite-server/src/media_providers.rs
@@ -100,7 +101,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B1517-B1539 implement the provider leaves removed from this entry; root __init__.py files only expose those implementations.
-  - main.py completion ownership outside Fal follows the provider families B024-B043, with custom/Aleph/proxy branches B044, subscription stanzas B045, Ragflow B049 and A2A/Langgraph/Langflow B050; the concrete _complete_ suffix determines that family's adapter rather than a new generic implementation here.
+  - main.py completion ownership outside Fal follows the provider families B024-B042, with regional completion dispatch in B8312, custom/Aleph/proxy branches B044, subscription stanzas B045, Ragflow B049 and A2A/Langgraph/Langflow B050; the concrete _complete_ suffix determines that family's adapter rather than a new generic implementation here.
   - In main.py, OpenAI-base resolution stays B500, default/module encoding B195/B196, dispatch context and client helpers B198, print_verbose B2239, and stream_chunk_builder through _simple_text_part B2227; B158 owns remaining facades/mocks/retry/registration scaffolding, while the audio facade outside the Runway branch remains B083/B1083/B1084.
   - URL download behavior for BFL edits is specified solely by B1518; this composer does not add a fetcher or broaden its allowed file inputs.
 pitfalls:

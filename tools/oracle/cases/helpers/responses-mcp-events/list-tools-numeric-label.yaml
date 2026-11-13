@@ -1,0 +1,13 @@
+kind: helper
+name: list-tools-numeric-label
+call:
+  responses_mcp_events:
+    operation: list_tools
+    base_item_id: mcp_list_4
+    servers:
+      - {server_label: 123}
+      - {server_label: later}
+    tools:
+      - {name: weather}
+env: {}
+compare: {ignore: []}

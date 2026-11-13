@@ -1,0 +1,9 @@
+kind: helper
+name: provider-resolution-cohere-chat
+call:
+  provider_resolution:
+    model: cohere/command-r
+    catalog:
+      command-r: {litellm_provider: cohere_chat}
+env: {}
+compare: {ignore: []}

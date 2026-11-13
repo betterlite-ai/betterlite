@@ -1,0 +1,14 @@
+id: B6765
+milestone: M9 agents and mcp
+title: MCP registry reload from the database, add, update, remove
+status: todo
+depends_on: [B6590, B6762, B6763, B6764, B4711, B4731, B4680, B4682]
+file: tasks/B6765-mcp-registry-reload.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
+parent: B139
+split_from: B6592
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

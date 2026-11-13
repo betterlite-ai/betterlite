@@ -1,0 +1,6 @@
+kind: helper
+name: xai-usage-raw-reasoning-larger-total
+call:
+  xai_usage: {action: reconcile, usage: {prompt_tokens: 10, completion_tokens: 20, total_tokens: 50, reasoning_tokens: 5}}
+env: {}
+compare: {ignore: []}

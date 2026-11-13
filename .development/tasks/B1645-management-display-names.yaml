@@ -8,11 +8,11 @@ description: >-
   Deduplicate requested ids before repository queries. MCP config entries choose alias,
   then server_name, then their registry name; a database row overrides that fallback only
   when alias or server_name is truthy. Thus a nameless stored MCP row does not erase a
-  configured label. Agent config labels cover every alias/legacy id returned by B141's
+  configured label. Agent config labels cover every alias/legacy id returned by B4776's
   ids_for_agent, restricted to requested ids; stored agent_name wins even when empty,
   unlike the MCP rule. Key labels come only from truthy key_alias values, with no fallback
   to the key hash. Use B726's MCP/agent table handles, B722's verification-token repository,
-  B136's configured MCP record type and B141's real registry. Repository errors propagate;
+  B6590's configured MCP record type (read through B4731) and B4776's real registry. Repository errors propagate;
   these functions do not catch them or query a second source after failure.
   PostgreSQL tests seed overlapping DB/config labels, missing resources, duplicate requests,
   a blank database name, legacy agent ids and keys lacking aliases. Record query effects
@@ -46,7 +46,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - B821's access-group routes consume these labels; the lookup services register no endpoint.
-  - B136 owns MCP records and B141 owns AgentRegistry.get_agent_list/ids_for_agent, including their configuration and legacy-id rules.
+  - B6590 owns MCP server records and B4731 the registry lookups; B4776 owns AgentRegistry.get_agent_list/ids_for_agent, including their configuration and legacy-id rules.
 pitfalls:
   - An empty stored agent_name overrides a registry label, but an empty stored MCP alias/server_name does not.
   - A key without key_alias stays absent from the result instead of exposing its token hash as a display label.

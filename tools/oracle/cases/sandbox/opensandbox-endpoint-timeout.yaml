@@ -1,0 +1,18 @@
+kind: helper
+name: opensandbox-endpoint-timeout
+call:
+  b3517:
+    operation: wait_for_execd_endpoint
+    sandbox_id: sbx_1
+    api_base: http://sandbox.example
+    headers:
+      Content-Type: application/json
+    use_server_proxy: false
+    ready_timeout: 0.01
+    poll_interval: 0.001
+    responses:
+      - status: 404
+        body: '{}'
+env: {}
+compare:
+  ignore: []

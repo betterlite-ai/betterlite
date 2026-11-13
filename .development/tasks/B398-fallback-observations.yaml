@@ -3,10 +3,9 @@ title: Fallback events and response metadata
 description: 'Implement redacted fallback error details, success/failure callback events and typed retry/fallback
   headers. Keep errors and hidden stream metadata separate from already-sent HTTP headers, with caller-sensitive
   fields redacted. B310 calls this service; it makes no provider call or authorization decision. ROUTER_FALLBACK_ERROR_DETAIL_MAX_CHARS
-  is 2000, with no environment override; retain credential masking before truncation. Implement the owned
-  native service in crates/betterlite-router/src/fallback_observations.rs. Add ProbeOperation::FallbackObservations in
-  tools/oracle/src/router_probes/mod.rs and the corresponding B398 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  is 2000, with no environment override; retain credential masking before truncation. Expose a fallback observer, a trait in fallback_observations.rs that carries the original model group, the request values and the exception, with a no-op default; B111 implements it for Prometheus. Implement the owned
+  native service in crates/betterlite-router/src/fallback_observations.rs. B301 registers ProbeOperation::FallbackObservations and its Python entry as stubs, so fill only tools/oracle/src/router_probes/fallback_observations.rs and tools/oracle/litellm/probes/fallback_observations.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_utils/add_retry_fallback_headers.py:
@@ -19,26 +18,16 @@ description: 'Implement redacted fallback error details, success/failure callbac
   structural accessors reuse the same primitive instead of separate ports. Function coverage in litellm/router_utils/fallback_event_handlers.py:
   log_success_fallback_event (L722-L747), log_failure_fallback_event (L750-L775). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B310 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/fallback_observations.rs
   - crates/betterlite-router/src/fallback_observations/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/fallback_observations.rs
   - crates/betterlite-server/src/routing/fallback_observations/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/fallback_observations.rs
   - tools/oracle/src/router_probes/fallback_observations/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/fallback_observations.py
   - tools/oracle/cases/routing/fallback-observations/**
   - tools/oracle/helpers/b398.py

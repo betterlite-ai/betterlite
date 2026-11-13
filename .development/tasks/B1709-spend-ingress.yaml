@@ -2,8 +2,8 @@ id: B1709
 title: Receive collector lines and replay trusted callback payloads
 description: >-
   Implement the two external spend ingestion surfaces in betterlite-server::collector and
-  ::callback_replay. The collector runs the ordinary B051/B124 startup/shutdown lifecycle
-  without an HTTP listener, with an injected owned event handler installed by B069. Expose
+  ::callback_replay. The collector runs the ordinary B051 and proxy startup/shutdown lifecycle
+  without an HTTP listener, with an injected owned event handler installed by B069. It reaches proxy startup and shutdown only through a CollectorLifecycle trait (startup, shutdown) that this task defines in crates/betterlite/src/collector.rs. B8613 backs that port with B8374's startup and shutdown steps and hands it to the collector subcommand in main.rs. Tests use a recording fake. Expose
   a collector binary subcommand accepting only an optional --address value; retain
   LITELLM_JOB_ROLE's configured value or default it to collector in the settings snapshot.
   Apply recognized LITELLM_LOG levels, resolve database URLs through B710/B712 and use
@@ -38,6 +38,7 @@ description: >-
   realtime replay. Fuzz decode_callback_logs in server using its production body decoder.
   Consumer source is 186 lines, replay 171 and records 32; cap implementation at 390 and
   tests/fuzz/CLI/HTTP fixtures at 410, within 800 total.
+  B1100 registers routes/callback_replay.rs as a stub, so fill only crates/betterlite-server/src/routes/callback_replay.rs and leave routes.rs as it is.
 scope:
   paths:
     - crates/betterlite/src/main.rs
@@ -45,8 +46,8 @@ scope:
     - crates/betterlite/src/collector/**
     - crates/betterlite-server/src/{collector,callback_replay}.rs
     - crates/betterlite-server/src/{collector,callback_replay}/**
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
+    - crates/betterlite-server/src/routes/callback_replay.rs
+    - crates/betterlite-server/src/routes/callback_replay/**
     - crates/betterlite-server/fuzz/{Cargo.toml,fuzz_targets/spend_ingress.rs,corpus/spend_ingress/**}
     - tools/oracle/cases/http/callback-replay/**
     - tools/oracle/helpers/b1709.py
@@ -64,6 +65,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/callback_logs_endpoints.py#L15-L44
     why: Batch/status/payload records; the module docstring's older path is not registered.
 dod:
+  - text: The collector calls proxy startup before it listens and proxy shutdown after the drain, only through its CollectorLifecycle port.
+    proof: [ingress-tests]
   - text: Collector connections process complete lines in order and stop through half-close/drain with all tasks and sockets owned by the runtime.
     proof: [ingress-tests, ingress-corpus]
   - text: Trusted callback ingestion enforces proxy-admin access and replays terminal records with exact attribution, defaults and per-index failures.

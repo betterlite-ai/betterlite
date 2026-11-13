@@ -1,0 +1,59 @@
+id: B8273
+title: Build the ROI demo sample report
+description: >-
+  Add one function, `sample_report(now: DateTime<Utc>) -> ROIReport`, in `crates/betterlite-roi/src/sample.rs`. LiteLLM's ROI demo mode summarizes this fixed report instead of calling GitHub (roi_calculator_endpoints.py L492-L494 does `summarize(sample_report(now), {})`). The records come from B3150 and `summarize` from B3151; this task only fills a report with the values below. The function is pure: no I/O, no clock read (the caller passes `now`).
+
+  Dates. `start` is `now.date() - 29 days`; the report's `start` is its ISO date (`YYYY-MM-DD`), `end` is `now.date()` in ISO, and `synced_at` is `now` in ISO format as LiteLLM's `datetime.isoformat()` prints it (with microseconds when they are not zero, and `+00:00` for the zone).
+
+  Three examples, in this order, each as (login, email, title, hours, cost):
+  (1) `alex`, `alex@example.com`, "Add usage breakdown by model", 6.5, 18.2.
+  (2) `jordan`, `jordan@example.com`, "Fix streaming response cancellation", 4.0, 12.8.
+  (3) `casey`, empty email, "Add integration tests for billing", 5.5, 0.0.
+
+  Pull record for example `index` (0, 1, 2): repo `example/gateway`, number `142 + index`, the title, url empty, login, `emails` is a one-item list with the email (empty list when the email is empty), `profile_email` is the email (empty string for casey), `merged_at` is `(start + (2 + index * 2) days)` in ISO date plus `T14:20:00Z`, `head_sha` is `sample-<index>`, `additions` is `47 + index * 23`, `deletions` is `12 + index * 4`, `changed_files` 3, `commit_count` 1, `incomplete_metadata` false, `cache_key` null. Its estimate is: status `estimated`, the hours, reasoning "Sample estimate of engineering effort without AI assistance. Live estimates use PR descriptions, file change counts, and commit metadata.", model `your-estimator-model`, effort_basis `without_ai`, evidence_source `pr_metadata`, cached false.
+
+  Spend records. One per example that has an email (so casey gets none): date is the first 10 characters of that example's `merged_at`, `user_id` is the login, `email`, `spend` is the cost, `requests` 150. Spend is a Decimal in B3150's records; build it from the decimal text of the cost (`18.2`), not from a float.
+
+  Report. `mode` `demo`, `repos` a one-item list `example/gateway`, `estimator_model` `your-estimator-model`, `estimator_prompt` is B3150's `DEFAULT_PROMPT`, `effort_basis` `without_ai`, `spend` and `pulls` as above (a list, in example order), `settings_fingerprint` `sample`.
+
+  Use the field names and types B3150 defines. If a record there differs in shape from the LiteLLM record named here, follow B3150 and say so in the PR.
+scope:
+  paths:
+    - crates/betterlite-roi/src/sample.rs
+    - crates/betterlite-roi/src/sample/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sample.py#L1-L64
+    why: The whole file, the only source for this task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L485-L500
+    why: The call site, which shows the report goes through `summarize` with an empty identity map.
+dod:
+  - text: sample_report returns three pull records and two spend records with the exact titles, logins, emails, hours, costs and repo.
+    proof: [sample-tests]
+  - text: "The date fields follow `now`: start is 29 days before, end is today, merged_at is start plus 2, 4 and 6 days with the T14:20:00Z suffix, and each spend date is the merged_at date."
+    proof: [sample-tests]
+  - text: casey has an empty emails list, an empty profile_email and no spend record.
+    proof: [sample-tests]
+  - text: The numeric fields follow the index formulas (number, additions, deletions), and the spend values are exact decimals.
+    proof: [sample-tests]
+  - text: The report uses mode demo, settings_fingerprint sample, effort_basis without_ai and B3150's DEFAULT_PROMPT, and summarizes without error through B3151's summarize.
+    proof: [sample-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: sample-tests
+      why: sample_report is missing or one of its values is wrong
+      run: cargo nextest run --locked -p betterlite-roi --no-tests=fail -E 'test(/^sample::tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The demo route that calls this function and the other ROI routes (sync, report, identity map, setup reset): B8588."
+  - "The ROI records, DEFAULT_PROMPT and settings validation: B3150. summarize: B3151."
+pitfalls:
+  - "The cost 0.0 for casey is never used, because casey has no email and so no spend record."
+  - "synced_at keeps the full time of `now`, not just the date; the other two dates are date-only."
+  - "Spend values built from f64 print as 18.199999 once summed; build them from the decimal text."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,5 +1,4 @@
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize as _, Deserializer as WireDecoder};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -33,21 +32,8 @@ pub(crate) struct HelperEffect {
 pub(crate) struct ManagementEffectFields {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) name: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        skip_serializing,
-        deserialize_with = "parse_secret"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none", skip_serializing)]
     pub(crate) credential: Option<SecretString>,
-}
-
-fn parse_secret<'de, D>(decoder: D) -> Result<Option<SecretString>, D::Error>
-where
-    D: WireDecoder<'de>,
-{
-    let value = Option::<String>::deserialize(decoder)?;
-    Ok(value.map(SecretString::from))
 }
 
 impl ManagementEffectFields {
@@ -66,38 +52,11 @@ impl PartialEq for ManagementEffectFields {
     }
 }
 
-type OptionalString = Option<Option<String>>;
-type OptionalCode = Option<Option<ErrorCode>>;
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-pub(crate) struct HelperError {
-    pub(crate) class: String,
-    pub(crate) status: Option<u16>,
-    #[serde(
-        rename = "type",
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub(crate) error_type: OptionalString,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub(crate) param: OptionalString,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "serde_with::rust::double_option"
-    )]
-    pub(crate) code: OptionalCode,
-    pub(crate) message: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
-#[serde(untagged)]
-pub(crate) enum ErrorCode {
-    Text(String),
-    Number(serde_json::Number),
-}
+#[cfg_attr(
+    not(test),
+    expect(
+        unused_imports,
+        reason = "Only the crate's test module names ErrorCode, so the non-test build has no use for the re-export."
+    )
+)]
+pub(crate) use betterlite_oracle_helper_api::error::{ErrorCode, HelperError};

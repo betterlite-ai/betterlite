@@ -1,0 +1,19 @@
+kind: helper
+name: gemini-tool-invokes-invalid-signature
+call:
+  gemini_tool_invokes:
+    operation: convert_to_gemini_tool_call_invoke
+    model: gemini-3-pro-preview
+    forward_function_call_id: false
+    message:
+      role: assistant
+      tool_calls:
+        - id: call_bad
+          function:
+            name: broken
+            arguments: '{"city":'
+            provider_specific_fields:
+              thought_signature: sig
+env: {}
+compare:
+  ignore: []

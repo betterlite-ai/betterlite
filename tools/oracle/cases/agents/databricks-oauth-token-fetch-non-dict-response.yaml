@@ -1,0 +1,5 @@
+kind: helper
+name: databricks-oauth-token-fetch-non-dict-response
+call: {"b4782": {"operation": "header", "upstream": {"status": 200, "body": "[\"tok\"]"}, "rounds": [{"params": {"databricks_oauth": {"client_id": "id", "client_secret": "s3cret", "workspace_url": "UPSTREAM"}}}]}}
+env: {}
+compare: {ignore: []}

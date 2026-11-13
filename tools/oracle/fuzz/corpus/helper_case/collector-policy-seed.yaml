@@ -1,0 +1,9 @@
+kind: helper
+name: traceback-opt-in-with-debug-override
+call:
+  collector_policy:
+    addresses: []
+    policies: [{value: null, debug: false}, {value: 'true', debug: false}, {value: ' TRUE ', debug: false}, {value: 'true', debug: true}, {value: 'false', debug: false}, {value: '', debug: false}]
+env: {}
+compare:
+  ignore: []

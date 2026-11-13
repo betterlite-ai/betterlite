@@ -3,6 +3,10 @@ name = "betterlite-http-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
@@ -28,10 +32,43 @@ doc = false
 bench = false
 
 [[bin]]
+name = "http_policy"
+path = "fuzz_targets/http_policy.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "skill_archive_zip"
 path = "fuzz_targets/skill_archive_zip.rs"
 test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "stored_tokens"
+path = "fuzz_targets/stored_tokens.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "user_url"
+path = "fuzz_targets/user_url.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "url_policy"
+path = "fuzz_targets/url_policy.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gigachat_token_reply"
+path = "fuzz_targets/gigachat_token_reply.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,14 @@
+id: B8393
+milestone: M8 platform
+title: ProxyLogging pre-call hook and guardrail pipelines
+status: todo
+depends_on: [B8390, B8391, B8392, B3247, B3680]
+file: tasks/B8393-pre-call-hook.yaml
+covers:
+  - "litellm/proxy/utils.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

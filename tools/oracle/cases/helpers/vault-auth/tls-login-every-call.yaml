@@ -1,0 +1,21 @@
+kind: helper
+name: vault-auth-tls-login-every-call
+env: {}
+compare: {ignore: []}
+call:
+  b4416:
+    env:
+      HCP_VAULT_CLIENT_CERT: /certs/client.crt
+      HCP_VAULT_CLIENT_KEY: /certs/client.key
+      HCP_VAULT_CERT_ROLE: vault-role
+      HCP_VAULT_NAMESPACE: admin
+    routes:
+      - route: "POST http://127.0.0.1:8200/v1/auth/cert/login"
+        replies:
+          - {status: 200, body: '{"auth":{"client_token":"hvs.tls-one","lease_duration":3600}}'}
+          - {status: 200, body: '{"auth":{"client_token":"hvs.tls-two","lease_duration":3600}}'}
+    steps:
+      - {op: token}
+      - {op: token}
+      - {op: token_blocking}
+      - {op: namespaces}

@@ -1,0 +1,1 @@
+{"numeric":[{"pointer":"/output/score","absolute_tolerance":0.000000000001,"why":"complexity scores are float diagnostics"}],"expected_difference":[{"pointer":"/output/score","reference":1,"rust":1,"why":"the same pointer cannot carry two rules","link":""}]}

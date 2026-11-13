@@ -1,0 +1,45 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-guardrail-complete",
+  "call": {
+    "b3843": {
+      "function": "guardrail",
+      "entry": {
+        "guardrail_name": "pii",
+        "guardrail_mode": [
+          "pre_call",
+          "post_call"
+        ],
+        "guardrail_status": "guardrail_intervened",
+        "guardrail_action": "mask",
+        "guardrail_provider": "provider",
+        "masked_entity_count": {
+          "email": 2
+        },
+        "guardrail_response": {
+          "blocked": true
+        },
+        "violation_categories": [
+          "pii"
+        ],
+        "confidence_score": 0.5,
+        "risk_score": 0.25,
+        "duration": 2,
+        "start_time": 100,
+        "end_time": 102,
+        "guardrail_id": "id",
+        "policy_template": "policy",
+        "detection_method": "regex",
+        "guardrail_usage": {
+          "units": 3
+        },
+        "guardrail_cost": 0.01,
+        "guardrail_cost_in_spend": false
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

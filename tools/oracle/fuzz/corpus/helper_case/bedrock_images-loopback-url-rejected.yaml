@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-images-loopback-url-rejected
+call:
+  bedrock_images:
+    call: process
+    image_url: "http://127.0.0.1:9/image.png"
+env: {}
+compare:
+  ignore: []

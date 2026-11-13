@@ -1,0 +1,13 @@
+id: B5110
+milestone: M6 guardrails
+title: Cisco configuration rule names and helper test gaps
+status: done
+depends_on: [B3759]
+file: tasks/B5110-cisco-configuration-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 576

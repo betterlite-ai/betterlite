@@ -1,0 +1,7 @@
+kind: helper
+name: bedrock-converse-usage-cache-read-write-tokens
+call:
+  bedrock_converse_usage:
+    transform_usage: {usage: {inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 2, cacheReadInputTokenCount: 99, cacheWriteInputTokens: 3, cacheWriteInputTokenCount: 88}, reasoning_content: null, thinking_ran: false, provider_reasoning_tokens: null}
+env: {}
+compare: {ignore: []}

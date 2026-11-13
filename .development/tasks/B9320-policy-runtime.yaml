@@ -1,0 +1,133 @@
+id: B9320
+title: Supply one policy runtime to startup, refresh and request consumers
+description: >-
+  B3241 builds policy and attachment registries, B3243 builds their persistence and B3250 builds PolicyStartup,
+  but no composition task supplies one pair of registries to all their callers. B8590's config boot port calls
+  init_policies without a concrete implementation, B8610's Shared has no policy state, and neither policies nor
+  policy_attachments has a typed config section. Build the missing state and configuration boundary here. Do not
+  port the registry, validator, startup algorithm or database refresh again. The architect attaches this module
+  to B8613's startup, B8610's handoff and the existing consumers before dispatch; those shared files are not in scope.
+
+  Add public betterlite-server::policy_runtime, with PolicyRuntime, PolicyRuntimeError and submodules for config
+  conversion and validator inputs. PolicyRuntime holds the exact policy and attachment handles accepted by the
+  merged B3250 and B3243 APIs, and an optional persistence service over the supplied database. Use Arc clones of
+  those handles in every view, never cloned registries. Absence of a database leaves persistence None without
+  disabling config policies. Construction also receives the existing B3683 GuardrailRuntime, so validation reads
+  the live in-memory guardrail names; it must not use an always-empty test implementation. Reuse B3245's optional
+  database lookup adapters. Startup and the inspection route both give the validator no router: despite its
+  llm_router argument, ProxyConfig._init_policy_engine does not pass a router to init_policies. Consumers that
+  already supply their own validator, such as attachment CRUD, retain their own lookup requirements.
+
+  The runtime exposes a PolicyStartup built over those handles and a conversion from the config section to its
+  typed inputs. Its initialization entry delegates validation, printing and loading to B3250 exactly once when
+  called by B8590; it passes validate_db from database presence and fail_on_error true. B8590 retains the missing
+  or empty policies skip, and B8374/B8613 retain the order after init_guardrails_v2 and before prompts. B8384 retains
+  the policy-then-attachment refresh order and its error logging. Do not add a timer, another startup invocation,
+  rollback, or a transaction. A registry snapshot for B1108 and B3269 must be taken from these live handles, so a
+  later production promotion is visible to the next request. Expose fields or the existing collaborators rather
+  than forwarding accessors with one-line bodies.
+
+  Add betterlite-config::sections::policy_engine. Its Settings reads the whole file and owns the top-level keys
+  policies and policy_attachments. Missing or null means an empty map and an empty list respectively. Retain file
+  order for policy definitions and attachment order. The typed config records represent inherit, description,
+  guardrails as add/remove or a legacy list, condition.model as a string or list, and pipeline with mode and steps;
+  attachments represent policy, scope, teams, keys, models, tags, priority and default. Use B3241's raw-input shape,
+  B3240's declared field defaults and validation, including pre_call, on_fail block, on_pass allow, absent on_error,
+  pass_data false, absent modify_response_message and default false. The section owns boundary records and the
+  server converts them into policy types: do not add betterlite-policy to betterlite-config, since policy already
+  reaches config through auth. No untyped JSON substitute or second matching/resolution implementation is needed.
+
+  The same section reads MAX_COMPETITOR_NAMES (integer, default 100) and COMPETITOR_LLM_TEMPERATURE (decimal,
+  default 0.3) from the injected environment for B3252's CompetitorSettings. The default discovery model remains
+  gpt-4o-mini in B3252 and is not an environment variable. Use the existing environment numeric parsers, keep
+  malformed-variable errors named, and do not clamp explicit values or add invented settings. Settings reaches
+  consumers as config.sections.policy_engine. Parsing a config must not initialize a registry or perform I/O.
+
+  Name the section's bounded byte entry decode_policy_settings(bytes, environment), using the existing config
+  YAML decoder and size/depth limits, and call that entry from the section loader. Add a policy_settings fuzz target
+  in betterlite-config and a replay test. Corpus seeds include truncated YAML, a wrong policy-map type, a malformed
+  nested pipeline, an attachment with an out-of-range priority and a valid legacy guardrail list. All new errors
+  keep their source in this module's error enum. There is no new HTTP decoder.
+
+  Tests in sections::policy_engine::tests load full config files through the normal loader: loads_policy_defaults,
+  loads_policy_attachments, loads_policy_pipeline, loads_legacy_guardrails and loads_competitor_environment prove
+  these keys are supported, and malformed_policy_settings proves named errors. Runtime tests in
+  policy_runtime::tests use the real registries, startup and persistence collaborators with recording storage:
+  startup_and_reader_share_state, guardrail_reads_live_names, refresh_reuses_handles,
+  no_database_keeps_config and attachment_failure_keeps_state. They must observe a change through a
+  separately constructed reader, not assert Arc counts alone. The pure helper operation b9320 accepts a decoded
+  config object and projects normalized policy/attachment records; its Python side calls PolicyRegistry._parse_policy
+  and AttachmentRegistry._parse_attachment on local instances without proxy_server globals. Compare default,
+  legacy-list and pipeline records. B9322 proves loaded-config behavior over HTTP; B9323 and B079 exercise request consumers.
+scope:
+  paths:
+    - crates/betterlite-server/src/policy_runtime.rs
+    - crates/betterlite-server/src/policy_runtime/**
+    - crates/betterlite-config/src/sections/policy_engine.rs
+    - crates/betterlite-config/src/sections/policy_engine/**
+    - crates/betterlite-config/fuzz/fuzz_targets/policy_settings.rs
+    - crates/betterlite-config/fuzz/corpus/policy_settings/**
+    - tools/oracle/cases/helpers/policy-runtime-config/**
+    - tools/oracle/helpers/b9320.py
+    - tools/oracle/helpers/b9320/**
+    - tools/oracle/src/helpers/server/b9320.rs
+    - tools/oracle/src/helpers/server/b9320/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/__init__.py#L1-L58
+    why: Package configuration contract and collaborator exports; native sharing is this task, algorithms stay with their owners.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/init_policies.py#L28-L183
+    why: B3250's startup service reused with live validator and registry inputs, including partial loading on attachment failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7011-L7034
+    why: Existing startup owner calls policy initialization between guardrail and prompt loading.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7100-L7138
+    why: Config keys, empty-policy skip and actual init_policies arguments; the router argument is unused.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L176-L274
+    why: Reused policy parser, legacy guardrail list and pipeline input defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L78-L130
+    why: Attachment configuration fields and default false, parsed by B3241.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2053-L2055
+    why: The two enrichment environment variables and the fixed discovery model.
+dod:
+  - text: Full config loads support policies, policy_attachments and both enrichment environment values with the pinned defaults and typed failures.
+    proof: [config-tests, oracle, helper-python]
+  - text: Startup, database refresh and readers share live policy and attachment handles; missing storage preserves config behavior and validation sees the live guardrail registry.
+    proof: [runtime-tests]
+  - text: The bounded config decoder is used by the loader and the fuzz target and replays newly committed malformed and valid inputs.
+    proof: [config-tests, config-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-tests
+      why: a key is still unsupported, a default or environment value differs, or malformed policy data is accepted
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::policy_engine::/) - test(replays_policy_settings_corpus)'
+    - id: runtime-tests
+      why: initialization or refresh writes a different registry, ignores guardrail names or loses the no-database path
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::(startup_and_reader_share_state|guardrail_reads_live_names|refresh_reuses_handles|no_database_keeps_config|attachment_failure_keeps_state)$/)'
+    - id: config-corpus
+      why: the config decoder has no new corpus or its production replay fails
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/policy_settings)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_policy_settings_corpus)'
+    - id: helper-python
+      why: the pure config projection adapter fails the oracle Python checks
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/policy-runtime-config)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/policy-runtime-config/defaults.yaml
+  - tools/oracle/cases/helpers/policy-runtime-config/legacy-list.yaml
+  - tools/oracle/cases/helpers/policy-runtime-config/pipeline-and-attachments.yaml
+deviations: []
+out_of_scope:
+  - "init_policies.py _print_policies_on_startup, init_policies and get_policies_summary are B3250; init_policies_sync has no caller at the pin."
+  - "policy_engine/__init__.py only re-exports AttachmentRegistry, ConditionEvaluator, PolicyMatcher, PolicyRegistry, PolicyResolver, PolicyValidator and the two registry accessors; their implementations belong to B3240, B3241 and B3245."
+  - "Startup invocation and skip logic are B8590/B8374/B8613; shared handoff is B8610; policy and attachment refresh scheduling and ordering are B8384."
+  - "Registry algorithms are B3241, validation B3245, persistence B3243 and route state consumers B8667/B8669/B8790/B9321; this task supplies collaborators without changing their functions."
+  - "Request selection is B1108, hook assembly B8399/B8802/B8805, and retrieval reconstruction B3269; B9323 supplies their missing inference/retrieval evidence and B079 their database-composition cases."
+  - "The Python type-package exports are B167/B7948, not a second Rust facade."
+pitfalls:
+  - "A runtime created inside routes() cannot preserve the policies already loaded before the listener starts."
+  - "Passing the startup llm_router to PolicyValidator would enable checks the actual init_policies call does not request."
+  - "An empty guardrail lookup silently disables membership validation, so the production adapter must read the existing handler."
+  - "Adding betterlite-policy as a config dependency closes a cycle through betterlite-auth."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

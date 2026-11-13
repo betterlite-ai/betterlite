@@ -1,0 +1,3 @@
+litellm_settings:
+  timezone: 5
+  budget_reset_time: 0

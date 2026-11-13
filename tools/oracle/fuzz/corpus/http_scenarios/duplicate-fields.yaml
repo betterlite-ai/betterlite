@@ -1,0 +1,8 @@
+kind: http_scenario
+name: corpus-duplicate
+name: corpus-duplicate-again
+config: |-
+  model_list: []
+steps:
+  - name: one
+    request: {method: GET, path: /one}

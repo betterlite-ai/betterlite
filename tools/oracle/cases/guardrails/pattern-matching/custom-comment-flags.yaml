@@ -1,0 +1,1 @@
+{"kind":"helper","name":"custom-comment-flags","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"(?x)# (?-i: \ni$","action":"MASK"}],"text":"\u0130\n"}},"env":{},"compare":{"ignore":[]}}

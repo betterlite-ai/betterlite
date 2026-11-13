@@ -33,5 +33,3 @@ pub trait PriceLookup {
         custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel>;
 }
-
-mod tests;

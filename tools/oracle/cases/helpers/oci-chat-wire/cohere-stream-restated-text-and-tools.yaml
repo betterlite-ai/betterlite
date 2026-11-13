@@ -1,0 +1,50 @@
+kind: helper
+name: oci-chat-wire-cohere-stream-restated-text-and-tools
+call:
+  b5942:
+    function: cohere_stream
+    calls:
+      - chunk:
+          apiFormat: COHERE
+          text: "hi"
+        prior_tool_calls_emitted: false
+        prior_text_emitted: false
+      - chunk:
+          apiFormat: COHERE
+          text: "hi"
+          chatHistory:
+            - role: USER
+              message: "q"
+        prior_tool_calls_emitted: false
+        prior_text_emitted: true
+      - chunk:
+          apiFormat: COHERE
+          text: ""
+          chatHistory:
+            - role: USER
+              message: "q"
+          toolCalls:
+            - name: lookup
+              parameters:
+                q: x
+          finishReason: COMPLETE
+        prior_tool_calls_emitted: false
+        prior_text_emitted: true
+      - chunk:
+          apiFormat: COHERE
+          chatHistory:
+            - role: USER
+              message: "q"
+          toolCalls:
+            - name: lookup
+              parameters:
+                q: x
+        prior_tool_calls_emitted: true
+        prior_text_emitted: true
+compare:
+  ignore:
+    - pointer: /value/2/delta/tool_calls/0/id
+      why: "LiteLLM hashes Python's spaced json.dumps text and betterlite hashes compact JSON; oci-wire-tests proves the id"
+    - pointer: /value/2/delta/tool_calls/0/function/arguments
+      why: "LiteLLM emits Python's spaced json.dumps text and betterlite emits compact JSON; docs/compatibility.md excludes json.dumps formatting"
+env: {}

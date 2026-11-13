@@ -1,10 +1,14 @@
 mod execute;
-mod history;
+pub(crate) mod history;
 pub(crate) mod selection;
 mod tests;
 
+use std::collections::BTreeMap;
 use std::fs;
+use std::io;
+use std::panic;
 use std::path::Path;
+use std::thread;
 use std::time::Instant;
 
 use crate::builtins::{Context, run_builtin};
@@ -19,16 +23,19 @@ use crate::spec::task::Task;
 pub(crate) struct Verdict {
     pub(crate) lines: Vec<String>,
     pub(crate) passed: bool,
+    pub(crate) failed: Vec<String>,
 }
 
 #[derive(Default)]
 pub(crate) struct Selection {
     pub(crate) only: Vec<String>,
     pub(crate) skip: Vec<String>,
+    pub(crate) beside: Vec<String>,
 }
 
 pub(crate) enum Outcome {
     Pass,
+    Reused(String),
     Skip(String),
     Fail { why: String, hints: Vec<String> },
 }
@@ -55,19 +62,9 @@ pub(crate) fn commands<'spec>(
     Ok(selected)
 }
 
-fn builtin_outcomes(
-    development: &Development,
-    task: &Task,
-    facts: &Facts,
-    selection: &Selection,
-) -> Vec<(String, u64, Outcome)> {
-    let context = Context {
-        development,
-        task,
-        facts,
-    };
+fn builtin_outcomes(context: &Context<'_>, selection: &Selection) -> Vec<(String, u64, Outcome)> {
     let mut outcomes = Vec::new();
-    for builtin in &development.catalog.base.builtin {
+    for builtin in &context.development.catalog.base.builtin {
         let id = <&str>::from(builtin.id);
         if (!selection.only.is_empty() && !selection.only.iter().any(|selected| selected == id))
             || selection.skip.iter().any(|skipped| skipped == id)
@@ -75,7 +72,7 @@ fn builtin_outcomes(
             continue;
         }
         let started = Instant::now();
-        let outcome = match run_builtin(builtin.id, &context) {
+        let outcome = match run_builtin(builtin.id, context) {
             Ok(problems) if problems.is_empty() => Outcome::Pass,
             Ok(problems) => Outcome::Fail {
                 why: builtin.why.clone(),
@@ -98,55 +95,117 @@ pub(crate) fn run(
 ) -> Result<Verdict, GateError> {
     selection::validate(development, task, selection)?;
     let root = &development.root;
-    let facts = Facts::collect(root)?;
     let log_dir = journal_dir(root, &task.id)?.join("gate");
     fs::create_dir_all(&log_dir).map_err(|source| GateError::Write {
         path: log_dir.clone(),
         source,
     })?;
     // a dispatch reads the holder's process group from it to stop a check run whose worker died
-    let _held = gate_lock::hold(&log_dir)?;
+    let _held = gate_lock::hold(&log_dir, &mut io::stderr())?;
+    let facts = Facts::collect(root)?;
+    let passed = history::passed(&log_dir, &facts)?;
     let run_dir = history::start(&log_dir)?;
-    run_checks(development, task, selection, &facts, &run_dir)
+    let context = Context {
+        development,
+        task,
+        facts: &facts,
+    };
+    let verdict = run_checks(&context, selection, &passed, &run_dir);
+    if let Err(error) = &verdict {
+        // a dispatch takes a run with neither result.json nor error.txt for one cut off mid-way
+        let path = run_dir.join("error.txt");
+        fs::write(&path, error.to_string()).map_err(|source| GateError::Write { path, source })?;
+    }
+    verdict
+}
+
+struct Lane<'run> {
+    root: &'run Path,
+    log_dir: &'run Path,
+    environment: &'run [(&'run str, String)],
+    passed: &'run BTreeMap<String, String>,
+}
+
+impl Lane<'_> {
+    fn run(
+        &self,
+        group: &[&Command],
+        blocked: Option<&str>,
+    ) -> Result<Vec<(String, u64, Outcome)>, GateError> {
+        let mut outcomes = Vec::new();
+        for command in group {
+            let started = Instant::now();
+            let outcome = match (blocked, self.passed.get(&command.id)) {
+                (Some(message), _) => Outcome::Skip(message.to_owned()),
+                (None, Some(run)) => Outcome::Reused(run.clone()),
+                (None, None) => run_command(self.root, self.log_dir, command, self.environment)?,
+            };
+            outcomes.push((command.id.clone(), started.elapsed().as_secs(), outcome));
+        }
+        Ok(outcomes)
+    }
+
+    fn run_in_order(
+        &self,
+        prerequisites: &[&Command],
+        expensive: &[&Command],
+        builtin_failed: bool,
+    ) -> Result<Vec<(String, u64, Outcome)>, GateError> {
+        let mut outcomes = self.run(prerequisites, None)?;
+        let failed = builtin_failed
+            || outcomes
+                .iter()
+                .any(|(_, _, outcome)| matches!(outcome, Outcome::Fail { .. }));
+        let blocked = failed.then_some("fix the failed prerequisites before expensive checks");
+        outcomes.extend(self.run(expensive, blocked)?);
+        Ok(outcomes)
+    }
 }
 
 fn run_checks(
-    development: &Development,
-    task: &Task,
+    context: &Context<'_>,
     selection: &Selection,
-    facts: &Facts,
+    passed: &BTreeMap<String, String>,
     log_dir: &Path,
 ) -> Result<Verdict, GateError> {
+    let Context {
+        development,
+        task,
+        facts,
+    } = *context;
     let root = &development.root;
-    let mut outcomes = builtin_outcomes(development, task, facts, selection);
+    let mut outcomes = builtin_outcomes(context, selection);
     let environment = [
         ("GATE_TASK", task.id.clone()),
         ("GATE_BASE", facts.base.clone()),
         ("GATE_LOG_DIR", log_dir.display().to_string()),
         ("GATE_ORACLE_CASES", task.oracle_cases.join(" ")),
     ];
-    let scheduled = selection::schedule(development, task, selection)?;
-    let reasons = [
-        None,
-        Some("fix the failed prerequisites before expensive checks"),
-        Some("runs once every other check passes"),
-    ];
-    for (group, reason) in scheduled.into_iter().zip(reasons) {
-        let blocked = reason.filter(|_| {
-            outcomes
-                .iter()
-                .any(|(_, _, outcome)| matches!(outcome, Outcome::Fail { .. }))
-        });
-        for command in group {
-            let started = Instant::now();
-            let outcome = match blocked {
-                Some(message) => Outcome::Skip(message.to_owned()),
-                None => run_command(root, log_dir, command, &environment)?,
-            };
-            outcomes.push((command.id.clone(), started.elapsed().as_secs(), outcome));
-        }
-    }
-    history::save(root, log_dir, &facts.base, selection, &outcomes)?;
+    let lane = Lane {
+        root,
+        log_dir,
+        environment: &environment,
+        passed,
+    };
+    let [prerequisites, expensive, later, beside] =
+        selection::schedule(development, task, selection)?;
+    let builtin_failed = outcomes
+        .iter()
+        .any(|(_, _, outcome)| matches!(outcome, Outcome::Fail { .. }));
+    // the beside checks start at once on their own thread, so a failed one never holds back the checks in order
+    let (in_order, joined) = thread::scope(|scope| {
+        let side = scope.spawn(|| lane.run(&beside, None));
+        let main = lane.run_in_order(&prerequisites, &expensive, builtin_failed);
+        (main, side.join())
+    });
+    outcomes.extend(joined.unwrap_or_else(|payload| panic::resume_unwind(payload))?);
+    outcomes.extend(in_order?);
+    let failed = outcomes
+        .iter()
+        .any(|(_, _, outcome)| matches!(outcome, Outcome::Fail { .. }));
+    let blocked = failed.then_some("runs once every other check passes");
+    outcomes.extend(lane.run(&later, blocked)?);
+    history::save(root, log_dir, facts, selection, &outcomes)?;
     Ok(render(task, &facts.base, log_dir, outcomes))
 }
 
@@ -178,16 +237,24 @@ fn render(
         log_dir.display()
     )];
     let mut passed = !outcomes.is_empty();
+    let mut failed = Vec::new();
     if outcomes.is_empty() {
         lines.push("FAIL selection: no checks selected".to_owned());
+        failed.push("selection".to_owned());
     }
     for (id, seconds, outcome) in outcomes {
         match outcome {
             Outcome::Pass => lines.push(format!("PASS {id} ({seconds}s)")),
+            Outcome::Reused(run) => {
+                lines.push(format!(
+                    "PASS {id}: passed on this commit and base in {run}"
+                ));
+            }
             Outcome::Skip(reason) => lines.push(format!("SKIP {id}: {reason}")),
             Outcome::Fail { why, hints } => {
                 passed = false;
                 lines.push(format!("FAIL {id} ({seconds}s): {why}"));
+                failed.push(id);
                 lines.extend(
                     hints
                         .iter()
@@ -197,5 +264,9 @@ fn render(
         }
     }
     lines.push(if passed { "gate passed" } else { "gate failed" }.to_owned());
-    Verdict { lines, passed }
+    Verdict {
+        lines,
+        passed,
+        failed,
+    }
 }

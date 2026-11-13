@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-a-ollama
+call:
+  provider_defaults_a:
+    provider: ollama
+    model: llama3
+env: {}
+compare: {ignore: []}

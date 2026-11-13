@@ -1,0 +1,10 @@
+kind: helper
+name: judge-target-nothing
+call:
+  b4080:
+    check: target
+    queries:
+      - model: not-a-real-model
+      - model: ""
+env: {}
+compare: {ignore: []}

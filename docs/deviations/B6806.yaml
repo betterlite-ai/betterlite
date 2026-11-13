@@ -1,0 +1,5 @@
+task: B6806
+deviations:
+  - what: "An upload header whose name or value is invalid is refused with a 400 OcrError::Headers naming the header. LiteLLM stores the bad header on the reqwest builder, fails the send and reports transport Network, which the gateway answers with 500 internal_server_error."
+    why: "betterlite validates every header while it builds the request and its transport error type has no value for an invalid header name, so the malformed request never reaches the transport. A caller that sends its own malformed header cannot rely on the 500."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/reducto/ocr/transformation.rs#L527-L534"

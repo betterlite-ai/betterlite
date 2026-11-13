@@ -1,0 +1,69 @@
+kind: probe
+name: invalid-pattern-warning-skip
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tag_matchers:
+        deployments:
+          - id: invalid
+            tag_regex: ["(", "^User-Agent: ok"]
+          - id: named
+            tag_regex: ["\\N{LATIN SMALL LETTER A}"]
+          - id: word-start
+            tag_regex: ["\\<tag"]
+          - id: word-end
+            tag_regex: ["tag\\>"]
+          - id: posix
+            tag_regex: ["[[:digit:]]+"]
+          - id: intersection
+            tag_regex: ["[a&&b]"]
+          - id: symmetric
+            tag_regex: ["[a~~b]"]
+          - id: difference
+            tag_regex: ["[a--b]"]
+          - id: nested
+            tag_regex: ["[a[bc]]"]
+          - id: octal
+            tag_regex: ["(a)\\012"]
+          - id: octal-three
+            tag_regex: ["()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()\\101"]
+          - id: conditional
+            tag_regex: ["(?P<a>x)(?(a)y|z)"]
+          - id: class-escape
+            tag_regex: ["[\\d]\\<tag"]
+          - id: nested-start
+            tag_regex: ["[[ab]]"]
+          - id: absolute-end
+            tag_regex: ["a\\Z"]
+          - id: host
+            tag_regex: ["^Host: [\\w\\-]+\\.[\\w\\-]+$"]
+          - id: verbose
+            tag_regex: ["(?x)a # note [x\n\\<tag"]
+          - id: caret
+            tag_regex: ["[^^]\\<tag"]
+          - id: comment
+            tag_regex: ["(?#[)\\<tag"]
+          - id: range-start
+            tag_regex: ["[]-x]"]
+        tags: []
+        header_strings: ["User-Agent: ok", "a", "<tag", "tag>", ":]", "&", "~", "c]", "a\n", "xy", "A", "-", "5<tag", "Host: api.example", "a<tag"]
+        match_any: true
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /warnings
+      reference: ["Possible nested set at position 1", "Possible set intersection at position 2", "Possible set symmetric difference at position 2", "Possible set difference at position 2", "Possible nested set at position 1", "Possible set difference at position 2"]
+      rust: []
+      why: Python's re raises FutureWarnings for some class constructs and the reference protocol collects them, while betterlite emits none and skips the patterns
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L100-L105
+    - pointer: /output/tag_matchers/warnings
+      reference: [{"kind": "invalid_pattern", "pattern": "("}, {"kind": "invalid_pattern", "pattern": "[a--b]"}]
+      rust: [{"kind": "invalid_pattern", "pattern": "("}, {"kind": "unsupported_pattern", "pattern": "\\N{LATIN SMALL LETTER A}"}, {"kind": "unsupported_pattern", "pattern": "\\<tag"}, {"kind": "unsupported_pattern", "pattern": "tag\\>"}, {"kind": "unsupported_pattern", "pattern": "[[:digit:]]+"}, {"kind": "unsupported_pattern", "pattern": "[a&&b]"}, {"kind": "unsupported_pattern", "pattern": "[a~~b]"}, {"kind": "unsupported_pattern", "pattern": "[a--b]"}, {"kind": "unsupported_pattern", "pattern": "[a[bc]]"}, {"kind": "unsupported_pattern", "pattern": "(a)\\012"}, {"kind": "unsupported_pattern", "pattern": "()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()\\101"}, {"kind": "unsupported_pattern", "pattern": "(?P<a>x)(?(a)y|z)"}, {"kind": "unsupported_pattern", "pattern": "[\\d]\\<tag"}, {"kind": "unsupported_pattern", "pattern": "[[ab]]"}, {"kind": "unsupported_pattern", "pattern": "a\\Z"}, {"kind": "unsupported_pattern", "pattern": "(?x)a # note [x\n\\<tag"}, {"kind": "unsupported_pattern", "pattern": "[^^]\\<tag"}, {"kind": "unsupported_pattern", "pattern": "(?#[)\\<tag"}, {"kind": "unsupported_pattern", "pattern": "[]-x]"}]
+      why: Python warns about the invalid patterns and runs the rest, while betterlite also skips every construct that Python and the Rust engine read differently
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L100-L105
+    - pointer: /output/tag_matchers/matches
+      reference: [{"id": "invalid", "matched_via": "tag_regex", "matched_value": "^User-Agent: ok"}, {"id": "named", "matched_via": "tag_regex", "matched_value": "\\N{LATIN SMALL LETTER A}"}, {"id": "word-start", "matched_via": "tag_regex", "matched_value": "\\<tag"}, {"id": "word-end", "matched_via": "tag_regex", "matched_value": "tag\\>"}, {"id": "posix", "matched_via": "tag_regex", "matched_value": "[[:digit:]]+"}, {"id": "intersection", "matched_via": "tag_regex", "matched_value": "[a&&b]"}, {"id": "symmetric", "matched_via": "tag_regex", "matched_value": "[a~~b]"}, {"id": "nested", "matched_via": "tag_regex", "matched_value": "[a[bc]]"}, {"id": "octal", "matched_via": "tag_regex", "matched_value": "(a)\\012"}, {"id": "octal-three", "matched_via": "tag_regex", "matched_value": "()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()()\\101"}, {"id": "conditional", "matched_via": "tag_regex", "matched_value": "(?P<a>x)(?(a)y|z)"}, {"id": "class-escape", "matched_via": "tag_regex", "matched_value": "[\\d]\\<tag"}, {"id": "absolute-end", "matched_via": "tag_regex", "matched_value": "a\\Z"}, {"id": "host", "matched_via": "tag_regex", "matched_value": "^Host: [\\w\\-]+\\.[\\w\\-]+$"}, {"id": "verbose", "matched_via": "tag_regex", "matched_value": "(?x)a # note [x\n\\<tag"}, {"id": "caret", "matched_via": "tag_regex", "matched_value": "[^^]\\<tag"}, {"id": "comment", "matched_via": "tag_regex", "matched_value": "(?#[)\\<tag"}, {"id": "range-start", "matched_via": "tag_regex", "matched_value": "[]-x]"}]
+      rust: [{"id": "invalid", "matched_via": "tag_regex", "matched_value": "^User-Agent: ok"}, {"id": "host", "matched_via": "tag_regex", "matched_value": "^Host: [\\w\\-]+\\.[\\w\\-]+$"}]
+      why: Python selects traffic through all of these constructs, while betterlite matches only the patterns it still compiles
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L100-L105

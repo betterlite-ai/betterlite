@@ -1,0 +1,12 @@
+kind: helper
+name: image-transport-defaults
+call:
+  image_contracts:
+    operation: transport_defaults
+    api_bases: [null, "", "https://mock/v1"]
+    headers: {Authorization: secret}
+    edit_bases: [null, "", "https://mock/v1"]
+    finalize_data: {prompt: p}
+    finalize_url: https://mock/edit
+env: {}
+compare: {ignore: []}

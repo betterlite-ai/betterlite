@@ -1,0 +1,10 @@
+kind: helper
+name: guardrail-params-mode-uppercase-text
+call:
+  b3662:
+    function: litellm_params
+    body:
+      guardrail: custom
+      mode: PRE_Call
+env: {}
+compare: {ignore: []}

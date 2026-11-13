@@ -1,0 +1,29 @@
+task: B3638
+deviations:
+  - what: >-
+      A URL without a /models/{name} match yields the model name "unknown" instead of an error.
+    why: >-
+      LiteLLM uses the same fallback, and a pass-through response is priced and logged under that name
+      instead of dropping the row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L663-L669
+  - what: >-
+      The shared Vertex response logging payload never writes response_cost into model_call_details, while
+      the Gemini payload does.
+    why: >-
+      The source's generateContent helper omits it, and downstream dispatch reads model_call_details.response_cost
+      only where the source writes it, so adding it would change spend accounting on the Vertex path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L754-L788
+  - what: >-
+      A failing completion_cost call records zero cost with a warning and keeps the logging row, where
+      LiteLLM lets the exception rise and the logging worker drops the dispatch.
+    why: >-
+      Rust has no exceptions, and dropping the row would lose billing and usage for a request the upstream
+      already served. B3640 documents this as B3638's own rule for the Vertex path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L770-L775
+  - what: >-
+      A url_route written as a network-path reference ("//host/path") is treated as a path with no
+      hostname by route detection and provider selection.
+    why: >-
+      The url crate rejects a scheme-less reference without a base, and no caller builds such a route;
+      Python's urlparse would read the host.
+    link: ""

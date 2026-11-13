@@ -1,0 +1,17 @@
+kind: helper
+name: nonfinite-spend
+call:
+  management_guards:
+    calls:
+      - {function: validate_finite_spend, spend: "nan"}
+      - {function: validate_finite_spend, spend: "inf"}
+      - {function: validate_finite_spend, spend: "-inf"}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/0/detail
+      why: betterlite writes its own message
+    - pointer: /value/1/detail
+      why: betterlite writes its own message
+    - pointer: /value/2/detail
+      why: betterlite writes its own message

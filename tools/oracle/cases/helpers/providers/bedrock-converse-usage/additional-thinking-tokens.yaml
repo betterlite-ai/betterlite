@@ -1,0 +1,7 @@
+kind: helper
+name: bedrock-converse-usage-additional-thinking-tokens
+call:
+  bedrock_converse_usage:
+    transform_usage: {usage: {inputTokens: 1, outputTokens: 10}, additional_fields: {usage: {output_tokens_details: {thinking_tokens: 4}}}, reasoning_content: hello world, thinking_ran: false, provider_reasoning_tokens: null}
+env: {}
+compare: {ignore: []}

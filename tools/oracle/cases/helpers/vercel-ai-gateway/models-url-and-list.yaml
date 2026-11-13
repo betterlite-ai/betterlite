@@ -1,0 +1,21 @@
+kind: helper
+name: vercel-ai-gateway-models-url-and-list
+call:
+  b5835:
+    steps:
+      - kind: models_url_and_list
+        api_base: https://explicit.example/v1/
+        environment: {}
+        status: 200
+        body: '{"data":[{"id":"b"},{"id":"a"},{"id":"b"}]}'
+      - kind: models_url_and_list
+        environment:
+          VERCEL_AI_GATEWAY_API_BASE: https://env.example/v1
+        status: 500
+        body: upstream down
+      - kind: models_url_and_list
+        environment: {}
+        status: 200
+        body: '{"data":[]}'
+env: {}
+compare: {ignore: []}

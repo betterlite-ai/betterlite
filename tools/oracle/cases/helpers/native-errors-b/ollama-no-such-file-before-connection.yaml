@@ -1,0 +1,14 @@
+kind: helper
+name: native-errors-b-ollama-no-such-file-before-connection
+call:
+  native_errors_b:
+    provider: ollama
+    model: ollama/llama2
+    original_exception:
+      kind: text
+      text: "no such file or directory; Failed to establish a new connection"
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

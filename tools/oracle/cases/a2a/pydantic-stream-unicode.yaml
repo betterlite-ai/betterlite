@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-stream-unicode
+call: {b4805: {operation: stream, chunk_size: 3, response: {result: {history: [{role: user, messageId: q1, parts: [{kind: text, text: "héllo"}]}, {role: agent, messageId: a1, parts: [{kind: text, text: "héllo 😀 wörld 😀😀 ok"}]}]}}}}
+env: {}
+compare: {ignore: []}

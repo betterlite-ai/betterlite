@@ -62,10 +62,14 @@ description: >-
   and re-raise as generic Exception with context. Preserve source partial-write behavior and config state
   after database overrides.
 
+  The module uses the registry, resolver and record types of betterlite-policy (B3240 to B3242), so this task adds `betterlite-policy = { path = "../betterlite-policy" }` to crates/betterlite-db/Cargo.toml (betterlite-policy does not depend on betterlite-db, so there is no cycle) and lets Cargo.lock follow.
+
 scope:
   paths:
     - crates/betterlite-db/src/policy_persistence.rs
     - crates/betterlite-db/src/policy_persistence/**
+    - crates/betterlite-db/Cargo.toml
+    - Cargo.lock
   lint_tables: false
 
 references:

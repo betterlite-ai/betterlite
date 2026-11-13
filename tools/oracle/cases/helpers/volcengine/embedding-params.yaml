@@ -1,0 +1,43 @@
+kind: helper
+name: embedding-params
+call:
+  b8175:
+    steps:
+      - kind: embedding_supported_params
+      - kind: embedding_map
+        params: {encoding_format: float}
+      - kind: embedding_map
+        params: {encoding_format: base64}
+      - kind: embedding_map
+        params: {encoding_format: null}
+      - kind: embedding_map
+        params: {encoding_format: ""}
+      - kind: embedding_map
+        params: {encoding_format: ""}
+        drop_params: true
+      - kind: embedding_map
+        params: {encoding_format: Float}
+      - kind: embedding_map
+        params: {encoding_format: 1}
+      - kind: embedding_map
+        params: {encoding_format: true}
+      - kind: embedding_map
+        params: {encoding_format: ["float"]}
+        drop_params: true
+      - kind: embedding_map
+        params: {user: u, extra_headers: {x-call: "1"}}
+      - kind: embedding_map
+        params: {user: null}
+      - kind: embedding_map
+        params: {dimensions: 3}
+      - kind: embedding_map
+        params: {dimensions: 3}
+        drop_params: true
+      - kind: embedding_map
+        params: {encoding_format: float, dimensions: 3}
+        optional_params: {dimensions: 9, other: 1}
+      - kind: embedding_map
+        params: {encoding_format: float, user: u}
+        optional_params: {dimensions: 9, other: 1}
+env: {}
+compare: {ignore: []}

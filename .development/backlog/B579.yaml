@@ -1,7 +1,7 @@
 id: B579
 milestone: M3 providers
 title: Anthropic usage and cache-token normalization
-status: todo
+status: done
 depends_on: [B196, B171]
 file: tasks/B579-anthropic-usage.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/anthropic.py"
 parent: B027
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 985

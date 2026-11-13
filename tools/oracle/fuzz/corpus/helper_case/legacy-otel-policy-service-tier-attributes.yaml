@@ -1,0 +1,14 @@
+kind: helper
+name: service-tier-attributes
+call:
+  b3854:
+    function: service_tier
+    payloads:
+      - model_parameters: {service_tier: flex}
+        response: {service_tier: default}
+      - metadata: {usage_object: {service_tier: priority}}
+      - response: {service_tier: ""}
+        metadata: {usage_object: {service_tier: batch}}
+      - model_parameters: {service_tier: turbo}
+env: {}
+compare: {ignore: []}

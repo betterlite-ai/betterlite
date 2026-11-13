@@ -1,9 +1,44 @@
 #![cfg(test)]
 
+use std::cell::Cell;
 use std::fs;
 use std::path::Path;
 
-use crate::case::{HelperCase, parse_helper_case};
+use betterlite_logging::verbose_hooks::LoggerSink as _;
+use betterlite_redact::structured::Payload;
+
+use super::FixtureLogger;
+
+#[test]
+fn fixture_logger_records_the_level_of_the_method_called() {
+    let logger = FixtureLogger {
+        fails: false,
+        debug_enabled: false,
+        records: Cell::new(Vec::new()),
+    };
+    let payload = Payload::String("message".to_owned());
+    assert!(logger.info(&payload));
+    assert!(logger.error(&payload));
+    assert!(logger.debug(&payload));
+    assert_eq!(
+        logger
+            .records
+            .take()
+            .iter()
+            .map(|record| record.level.as_str())
+            .collect::<Vec<_>>(),
+        ["INFO", "ERROR", "DEBUG"]
+    );
+    let failing = FixtureLogger {
+        fails: true,
+        debug_enabled: false,
+        records: Cell::new(Vec::new()),
+    };
+    assert!(!failing.error(&payload));
+    assert!(failing.records.take().is_empty());
+}
+
+use crate::case::{HelperCase, helper::validate_helper};
 
 #[test]
 fn helper_seeds_select_verbose_hooks() {
@@ -22,7 +57,12 @@ fn helper_seeds_select_verbose_hooks() {
     assert!(!seeds.is_empty());
     assert!(seeds.iter().all(|source| {
         let case = serde_saphyr::from_str::<HelperCase>(source).expect("seed should parse");
-        parse_helper_case(source).is_ok()
+        serde_saphyr::from_str(source)
+            .map_err(|error| error.to_string())
+            .and_then(|parsed| {
+                validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
+            })
+            .is_ok()
             && case.call.operation == "verbose_hooks"
             && case.call.input.get("function").is_some()
     }));

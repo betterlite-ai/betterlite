@@ -1,0 +1,43 @@
+kind: helper
+name: unsupported-param
+call:
+  azure_chat_base_policy:
+    action: unsupported_param
+    settings: {}
+    models:
+      - gpt-4o
+    steps:
+      - model: gpt-4o
+        non_default:
+          temperature: 0.5
+          n: 2
+          stream: true
+          stream_options: {include_usage: true}
+          stop: ''
+          max_completion_tokens: 4
+          presence_penalty: 0
+          frequency_penalty: 0
+          logit_bias: {}
+          user: u
+          function_call: auto
+          functions: []
+          top_p: 0.9
+          logprobs: true
+          top_logprobs: 2
+          response_format: json_object
+          seed: 1
+          extra_headers: {x: 'y'}
+          parallel_tool_calls: false
+          prediction: {}
+          modalities: [text]
+          audio: {}
+          web_search_options: {}
+          prompt_cache_key: p
+          store: true
+          unknown_param: 1
+      - model: gpt-4o
+        non_default: {unknown_param: 1}
+      - model: gpt-4o
+        non_default: {temperature: null}
+env: {}
+compare: {ignore: []}

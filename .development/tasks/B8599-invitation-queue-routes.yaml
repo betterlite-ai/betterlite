@@ -1,0 +1,67 @@
+id: B8599
+title: Invitation link routes, queued chat route and fallback login page
+description: >-
+  Three leftover route groups of proxy_server.py, built in crates/betterlite-server/src/invitation_routes.rs (declared
+  by the skeleton) with `pub fn routes()` for the invitation and queue routes and `pub fn public_routes()` for /fallback/login (B8670 merges the first inside the auth layers and the second outside them), error enum InvitationRouteError.
+
+
+  Invitations on the LiteLLM_InvitationLink table. POST /invitation/new: no database is 400 db_not_connected_error;
+  the caller must be PROXY_ADMIN or pass the org-admin check, else 400 not_allowed_access with ", your role=<role>"; a
+  non-proxy-admin must also pass B863's admin_can_invite_user for the target user, else 400 "You can only create
+  invitations for users in your organization or team."; then create_invitation_for_user makes the row. GET
+  /invitation/info?invitation_id=: same access rules, a missing row is 400 "Invitation id does not exist in the
+  database.". POST /invitation/update: needs the caller's user_id (500 "Unable to identify user id. Received=<id>") and
+  sets is_accepted, accepted_at and updated_by. POST /invitation/delete: a proxy admin deletes any row, an org admin
+  only rows they created (403 "Organization admins can only delete invitations they created."). Each route's other
+  failures go through handle_exception_on_proxy.
+
+
+  POST /queue/chat/completions?model=: builds the request like /chat/completions (proxy_server_request, model from
+  completion_model, the CLI model, the query or the body, user from the key, key metadata with the authorization header
+  removed, the CLI temperature, timeout, max_tokens and api_base overrides), refuses without a router (500
+  no_llm_router), sends it to the router's priority scheduler, and answers the response with header x-litellm-priority
+  set to the request's priority; a streaming request answers SSE through B7324's data generator selector with the
+  first-byte keepalive. Failures run the post-call failure hook and map to ProxyException like /chat/completions.
+
+
+  GET /fallback/login answers 200 HTML from B799's login form without the deprecation banner, honoring
+  should_hide_default_credentials_hint.
+scope:
+  paths:
+    - crates/betterlite-server/src/invitation_routes.rs
+    - crates/betterlite-server/src/invitation_routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16758-L16884
+    why: /queue/chat/completions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16887-L16911
+    why: /fallback/login.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17707-L17953
+    why: The four invitation routes and their access checks.
+dod:
+  - text: The invitation routes refuse, read, update and delete like LiteLLM, including the org-admin limits.
+    proof: [invitation-route-tests]
+  - text: /queue/chat/completions builds the request, schedules it and sets x-litellm-priority like LiteLLM.
+    proof: [invitation-route-tests]
+  - text: /fallback/login answers LiteLLM's login form page.
+    proof: [invitation-route-tests]
+checks:
+  optional: []
+  commands:
+    - id: invitation-route-tests
+      why: an invitation, queue or fallback login route differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^invitation_routes::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Mounting the routes and their HTTP oracle cases: B8670."
+  - "create_invitation_for_user: B797. admin_can_invite_user: B863. Login form: B799. The data generator selector: B7324. The router's priority scheduler is the router's own."
+pitfalls:
+  - Invitation refusals for access are 400, not 403, except the org-admin delete limit.
+  - /queue/chat/completions sets x-litellm-priority from data["priority"] and fails when the request has none, as LiteLLM does.
+  - /fallback/login is not behind key auth.
+  - "This task builds the _types.py record InvitationModel (L3955); no other task builds it."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

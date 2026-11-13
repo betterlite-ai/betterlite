@@ -1,0 +1,8 @@
+kind: helper
+name: partial-identity-endpoint
+call: {azure_managed_identity: {steps: [
+  {action: token, environment: {IDENTITY_ENDPOINT: "http://sf.test/token"}, scope: "https://cognitiveservices.azure.com/.default", now: 1700000000, replies: []},
+  {action: select, environment: {IDENTITY_ENDPOINT: "http://sf.test/token"}}
+]}}
+env: {}
+compare: {ignore: []}

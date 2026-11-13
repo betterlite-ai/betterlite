@@ -1,8 +1,10 @@
 use std::collections::BTreeSet;
 
-use serde_json::Value;
+use serde_json::{Number, Value};
 
-pub(super) fn remove_pointer(value: &mut Value, pointer: &str) {
+mod tests;
+
+pub(crate) fn remove_pointer(value: &mut Value, pointer: &str) {
     if pointer.is_empty() {
         *value = Value::Null;
         return;
@@ -19,7 +21,7 @@ pub(super) fn remove_pointer(value: &mut Value, pointer: &str) {
     }
 }
 
-pub(super) fn first_difference(left: &Value, right: &Value, pointer: &str) -> Option<String> {
+pub(crate) fn first_difference(left: &Value, right: &Value, pointer: &str) -> Option<String> {
     if left == right {
         return None;
     }
@@ -41,6 +43,12 @@ pub(super) fn first_difference(left: &Value, right: &Value, pointer: &str) -> Op
                 first_difference_optional(left_array.get(index), right_array.get(index), &child)
             })
         }
+        // arbitrary_precision keeps the text, and Python writes 6.25e-05 where Rust writes 6.25e-5
+        (Value::Number(left_number), Value::Number(right_number))
+            if same_float(left_number, right_number) =>
+        {
+            None
+        }
         (Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_), _)
         | (_, Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_))
         | (Value::Array(_), Value::Object(_))
@@ -50,6 +58,16 @@ pub(super) fn first_difference(left: &Value, right: &Value, pointer: &str) -> Op
             pointer.to_owned()
         }),
     }
+}
+
+fn same_float(left: &Number, right: &Number) -> bool {
+    [left.to_string(), right.to_string()]
+        .iter()
+        .all(|text| text.contains(['.', 'e', 'E']))
+        && left
+            .as_f64()
+            .zip(right.as_f64())
+            .is_some_and(|(left_value, right_value)| left_value.to_bits() == right_value.to_bits())
 }
 
 fn first_difference_optional(

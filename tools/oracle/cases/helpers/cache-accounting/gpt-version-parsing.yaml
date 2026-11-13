@@ -1,0 +1,24 @@
+kind: helper
+name: cache-accounting-gpt-version-parsing
+call:
+  b4123:
+    operation: gpt_version
+    models:
+      - gpt-5
+      - gpt-4.5
+      - gpt-5.6
+      - gpt-5.10
+      - gpt-5.6.1
+      - gpt-5-beta
+      - gpt-5.
+      - gpt-5.6beta
+      - openai/gpt-5.6
+      - GPT-5.6
+      - xgpt-5.6
+      - gpt
+      - claude-3-5-sonnet
+      - openai/
+      - gpt-6
+      - gpt-5.5
+env: {}
+compare: {ignore: []}

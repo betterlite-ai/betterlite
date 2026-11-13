@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-other-count-tokens-response
+call:
+  bedrock_other_count_tokens:
+    count_to_anthropic_result:
+      cases:
+        - inputTokens: 42
+        - {}
+        - inputTokens: null
+env: {}
+compare: {ignore: []}

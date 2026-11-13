@@ -247,7 +247,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_cancel_response$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_responses.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_responses.py tools/oracle/helpers/azure_responses)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -260,7 +260,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_responses)"
       && grep -q 'decode_azure_response_resource' crates/betterlite-azure/fuzz/fuzz_targets/azure_responses.rs &&
-      cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_responses_corpus$/)'
+      cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_responses_corpus(::|$)/)'
   - id: case-azure-responses-capabilities
     why: Remove context_management from B506 supported params; none-effort support/default delegates to B532 Azure
       catalog policy. O-series also removes temperature from its advertised list, but its mapper copies all values

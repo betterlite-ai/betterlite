@@ -1,0 +1,9 @@
+kind: helper
+name: double-bearer-prefix-stripped-once
+call:
+  resolved_key:
+    function: auth
+    value:       {api_key: "Bearer bearer sk-abc"}
+env: {}
+compare:
+  ignore: []

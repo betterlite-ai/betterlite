@@ -1,0 +1,5 @@
+task: B2223
+deviations:
+  - what: OLLAMA_API_BASE is read only from the betterlite-config environment lookup; a value held only by a configured secret manager is not used for the base.
+    why: The task routes the base through betterlite-config's injected environment lookup, and this task models the secret-manager step only for the API key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/common_utils.py#L71-L76

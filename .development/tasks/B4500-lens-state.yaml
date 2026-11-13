@@ -121,7 +121,7 @@ out_of_scope:
   - B4501 owns job persistence, repository queries and optimistic updates; these state functions are pure and own no database access.
   - B4502 owns source storage integration and sample/evidence fetching; record construction here is separated from retrieval.
   - B4503/B4505/B4504 own HTTP routes, authorization and billing; they call these state functions as pure operations.
-  - B132 owns worker implementation and the server's route factories; these records are shared by both.
+  - B8232 owns the worker executable and B4503 and B4505 own the server's route factories; these records are shared by both.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as lens_state in the lens group. Replace the stub Op in tools/oracle/src/helpers/lens/state.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/lens_state.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - Claim job only succeeds if the worker has access to the lens scope; denial does not error, it returns the original lens unchanged.

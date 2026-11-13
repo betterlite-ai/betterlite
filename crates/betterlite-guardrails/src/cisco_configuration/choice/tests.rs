@@ -26,6 +26,36 @@ fn resolve_choice_accepts_an_explicit_valid_value() {
 }
 
 #[test]
+fn resolve_choice_prefers_the_value_over_the_environment_variable() {
+    let var = "BETTERLITE_CISCO_CHOICE_TEST_VALUE_PRECEDENCE";
+    let resolved = temp_env::with_var(var, Some("chat"), || {
+        resolve_choice::<InspectionType>(
+            Some("mcp"),
+            var,
+            &["chat", "mcp"],
+            InspectionType::Chat,
+            "inspection_type",
+        )
+    });
+    assert_eq!(resolved, InspectionType::Mcp);
+}
+
+#[test]
+fn resolve_choice_ignores_the_environment_variable_for_an_invalid_value() {
+    let var = "BETTERLITE_CISCO_CHOICE_TEST_INVALID_PRECEDENCE";
+    let resolved = temp_env::with_var(var, Some("mcp"), || {
+        resolve_choice::<InspectionType>(
+            Some("bogus"),
+            var,
+            &["chat", "mcp"],
+            InspectionType::Chat,
+            "inspection_type",
+        )
+    });
+    assert_eq!(resolved, InspectionType::Chat);
+}
+
+#[test]
 fn resolve_choice_falls_back_to_the_environment_variable_when_value_is_absent() {
     let var = "BETTERLITE_CISCO_CHOICE_TEST_ENV_FALLBACK";
     let resolved = temp_env::with_var(var, Some("monitor"), || {
@@ -93,6 +123,7 @@ fn resolve_choice_warns_once_falling_back_from_an_invalid_value() {
 #[rstest]
 #[case::whole_number(TimeoutValue::Number(30.0_f64), Some(30.0_f64))]
 #[case::text_number(TimeoutValue::Text("45"), Some(45.0_f64))]
+#[case::text_with_spaces(TimeoutValue::Text(" 45 "), Some(45.0_f64))]
 #[case::below_minimum_clamps_up(TimeoutValue::Number(0.1_f64), Some(1.0_f64))]
 #[case::above_maximum_clamps_down(TimeoutValue::Number(600.0_f64), Some(60.0_f64))]
 #[case::unparsable_text(TimeoutValue::Text("not-a-number"), None)]

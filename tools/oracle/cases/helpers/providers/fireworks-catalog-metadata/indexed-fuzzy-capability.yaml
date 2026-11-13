@@ -1,0 +1,56 @@
+kind: helper
+name: fireworks-catalog-metadata-indexed-fuzzy-capability
+call:
+  fireworks_catalog_metadata:
+    catalog:
+      - {key: "fireworks_ai/accounts/fireworks/models/glm-5p2", model_info: {supports_vision: false}}
+      - {key: "fireworks_ai/accounts/fireworks/models/qwen3-8b", model_info: {supports_vision: false}}
+      - {key: "fireworks_ai/accounts/fireworks/models/qwen3-8b-instruct", model_info: {supports_vision: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/some-model", model_info: {supports_vision: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/quiet-model", model_info: {}}
+      - {key: "fireworks_ai/accounts/fireworks/models/quiet-model-turbo", model_info: {supports_vision: true}}
+      - {key: "openai/gpt-4o", model_info: {supports_vision: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/tie-b", model_info: {supports_vision: false}}
+      - {key: "fireworks_ai/accounts/fireworks/models/tie-a", model_info: {supports_vision: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/stable-model", model_info: {supports_vision: false}}
+      - {key: "fireworks_ai/accounts/fireworks/models/retiring-model", model_info: {supports_vision: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/start-model", model_info: {supports_vision: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/", model_info: {supports_vision: true}}
+    steps:
+      - {op: capability, model: "custom-qwen3-8b-instruct", capability: supports_vision}
+      - {op: capability, model: "custom-glm-5p2", capability: supports_vision}
+      - {op: capability, model: "custom-quiet-model", capability: supports_vision}
+      - {op: capability, model: "awesome-model", capability: supports_vision}
+      - {op: capability, model: "tie-a-tie-b", capability: supports_vision}
+      - {op: capability, model: "custom-stable-model", capability: supports_vision}
+      - {op: capability, model: "start-model-lite", capability: supports_vision}
+      - {op: capability, model: "custom--model", capability: supports_vision}
+      - {op: capability, model: "gpt-4o", capability: supports_vision}
+      - {op: add, key: "fireworks_ai/accounts/fireworks/models/extra-model", model_info: {supports_vision: true}}
+      - {op: capability, model: "custom-extra-model", capability: supports_vision}
+      - {op: remove, key: "fireworks_ai/accounts/fireworks/models/extra-model"}
+      - {op: add, key: "fireworks_ai/accounts/fireworks/models/fresh-model", model_info: {supports_vision: true}}
+      - {op: remove, key: "fireworks_ai/accounts/fireworks/models/retiring-model"}
+      - {op: capability, model: "custom-fresh-model", capability: supports_vision}
+      - {op: generation}
+      - {op: invalidate}
+      - {op: capability, model: "custom-fresh-model", capability: supports_vision}
+      - op: replace_catalog
+        catalog:
+          - {key: "fireworks_ai/accounts/fireworks/models/glm-5p2", model_info: {supports_vision: false}}
+          - {key: "fireworks_ai/accounts/fireworks/models/qwen3-8b", model_info: {supports_vision: false}}
+          - {key: "fireworks_ai/accounts/fireworks/models/qwen3-8b-instruct", model_info: {supports_vision: true}}
+          - {key: "fireworks_ai/accounts/fireworks/models/some-model", model_info: {supports_vision: true}}
+          - {key: "fireworks_ai/accounts/fireworks/models/quiet-model", model_info: {}}
+          - {key: "fireworks_ai/accounts/fireworks/models/quiet-model-turbo", model_info: {supports_vision: true}}
+          - {key: "openai/gpt-4o", model_info: {supports_vision: true}}
+          - {key: "fireworks_ai/accounts/fireworks/models/tie-b", model_info: {supports_vision: false}}
+          - {key: "fireworks_ai/accounts/fireworks/models/tie-a", model_info: {supports_vision: true}}
+          - {key: "fireworks_ai/accounts/fireworks/models/stable-model", model_info: {supports_vision: false}}
+          - {key: "fireworks_ai/accounts/fireworks/models/alternate-model", model_info: {supports_vision: true}}
+          - {key: "fireworks_ai/accounts/fireworks/models/start-model", model_info: {supports_vision: true}}
+          - {key: "fireworks_ai/accounts/fireworks/models/", model_info: {supports_vision: true}}
+      - {op: capability, model: "custom-fresh-model", capability: supports_vision}
+      - {op: capability, model: "custom-alternate-model", capability: supports_vision}
+env: {}
+compare: {ignore: []}

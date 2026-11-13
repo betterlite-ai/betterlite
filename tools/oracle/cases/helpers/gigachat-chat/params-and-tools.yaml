@@ -1,0 +1,82 @@
+kind: helper
+name: gigachat-params-and-tools
+call:
+  b8177:
+    steps:
+      - kind: map_params
+        params:
+          stream: true
+          temperature: 0.4
+          top_p: 0.9
+          max_tokens: 12
+          stop: [END]
+      - kind: map_params
+        params: {max_completion_tokens: 7}
+      - kind: map_params
+        params: {temperature: 0}
+      - kind: map_params
+        params: {temperature: 0.0}
+      - kind: map_params
+        params: {top_p: 0.2}
+        optional_params: {repetition_penalty: 1.1}
+      - kind: map_params
+        params: {seed: 4}
+      - kind: map_params
+        params: {tool_choice: "none"}
+      - kind: map_params
+        params: {tool_choice: auto}
+      - kind: map_params
+        params: {tool_choice: required}
+      - kind: map_params
+        params:
+          tool_choice:
+            type: function
+            function: {name: lookup}
+      - kind: map_params
+        params:
+          tool_choice:
+            type: function
+            function: {name: ""}
+      - kind: map_params
+        params: {tool_choice: sometimes}
+      - kind: map_params
+        params:
+          tools:
+            - type: function
+              function:
+                name: lookup
+                description: find a city
+                parameters:
+                  type: object
+                  properties:
+                    city: {type: string}
+            - type: custom
+              function: {name: dropped}
+            - plain
+      - kind: map_params
+        params:
+          tools:
+            - type: function
+              function: {name: minimal}
+      - kind: map_params
+        params: {tools: []}
+      - kind: map_params
+        params:
+          functions:
+            - {name: lookup, description: find a city}
+          function_call: {name: lookup}
+      - kind: request
+        model: gigachat/GigaChat
+        messages:
+          - {role: user, content: hi}
+        token: token-1
+      - kind: request
+        model: gigachat/GigaChat-Pro
+        messages:
+          - {role: user, content: hi}
+        api_base: https://api.example/v2
+        token: token-1
+        headers: {X-Trace: abc}
+        params: {temperature: 0.4, max_tokens: 8}
+env: {}
+compare: {ignore: []}

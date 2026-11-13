@@ -1,0 +1,75 @@
+id: B7921
+title: Python types for OpenAI chat requests, fine-tuning, image options and the Responses API (types/llms/openai L1008-L1931)
+description: >-
+  Callers of the Python SDK build chat requests as `ChatCompletionRequest` dicts and read Responses API objects such as
+  `ResponsesAPIStreamingResponse` and `ResponseCompletedEvent`. `ResponsesAPIResponse`, `ResponseAPIUsage`, `WebSearchToolUsage` and `ResponsesToolUsage` (L1339-L1507) are built by B7840 and imported here from `betterlite.types.responses`. This task ports lines 1008 to 1931 of litellm/types/llms/openai.py
+  into `crates/betterlite-python/python/betterlite/types/llms/openai/chat/`. It is Python only. B7920 owns everything above L1008 and B7922 everything below L1931; the
+  umbrella B167 writes the package `__init__.py`.
+
+
+  Chat side, L1008-L1316: tool choice and tool param TypedDicts (`ChatCompletionToolParam` extends the OpenAI one with extra
+  keys), `ChatCompletionRequest`, `ChatCompletionDeltaChunk`, `ChatCompletionResponseMessage`, `ChatCompletionUsageBlock`,
+  `OpenAIChatCompletionChunk`, `Hyperparameters`, `FineTuningJobCreate`, `LiteLLMFineTuningJobCreate`, the `OpenAI*OptionalParams`
+  Literal lists for audio transcription and image variation, generation and edit, and `ComputerToolParam`, `ShellToolParam`.
+
+
+  Responses side, L1218-L1931: `PromptObject`, `ContextManagementEntry`, `ResponsesAPIOptionalRequestParams` and its request
+  twin, the token detail classes (`OutputTokensDetails`, `InputTokensDetails`),
+  `ResponsesAPIStreamEvents` (a `str` Enum) and every `...Event` class from `ResponseCreatedEvent` to `GenericEvent`, the
+  `ResponsesTerminalEvent` alias, and `ResponsesAPIStreamingResponse`, a discriminated union on the `type` field. All
+  of them extend `BaseLiteLLMOpenAIResponseObject` from B7929 and keep extra fields. Do not rebuild L1339-L1507; B7840 owns them (skip those classes, and import them where an event class needs one).
+
+
+  Five names (`CustomToolCallOutputItem`, `GenericResponseOutputItem`, `OutputCodeInterpreterCall`, `OutputFunctionToolCall`, `OutputImageGenerationCall`) come from types/responses/main.py, which B7840 builds under `betterlite.types.responses`. Import them from there.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/llms/openai/chat/**
+  - crates/betterlite-python/tests/test_types_openai_chat_responses.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1008-L1316
+  why: Tool choice, request, delta, fine-tuning and option lists.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1318-L1508
+  why: Usage and ResponsesAPIResponse with their validators.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1509-L1931
+  why: Stream event enum, the event classes and the streaming union.
+dod:
+- text: Every name listed exists with the same TypedDict keys, Literal values and Enum members as LiteLLM.
+  proof: [names]
+- text: The usage and response classes apply `parse_cost`, the reasoning dict conversion and the usage check as LiteLLM does, and keep extra fields.
+  proof: [models]
+- text: Each streaming event class is chosen by its `type` value, as in `ResponsesAPIStreamingResponse`.
+  proof: [events]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A request key, option literal or event name is missing.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_openai_chat_responses.py -k names
+  - id: models
+    why: Cost parsing or reasoning conversion differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_openai_chat_responses.py -k models
+  - id: events
+    why: A stream event of one type is built as another.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_openai_chat_responses.py -k events
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai package (`Response`, `ToolParam`, `ResponseInputParam` and the like) are not exported.
+  why: The wheel has no openai dependency.
+out_of_scope:
+- >-
+  L1932 on (realtime events, moderation, video, finish reasons) belongs to B7922. L1-L1007 belongs to B7920.
+pitfalls:
+- >-
+  `ResponsesAPIStreamEvents` has 41 members but there are 37 event classes, so some members have no class of their own. Port the whole enum.
+- >-
+  `ResponsesAPIStreamingResponse` ends with `BaseLiteLLMOpenAIResponseObject` as a fallback member, so an event with an unknown `type` still parses as the base object.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

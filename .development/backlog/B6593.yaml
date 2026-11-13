@@ -1,0 +1,14 @@
+id: B6593
+milestone: M9 agents and mcp
+title: MCP toolset scope filter
+status: todo
+depends_on: [B2314, B4671, B4679, B4726]
+file: tasks/B6593-mcp-toolset-scope.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/server.py"
+parent: null
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,7 +1,27 @@
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::baseline_history::error::BaselineHistoryError;
-use crate::decisions::Extra;
+use crate::decisions::{Extra, Json};
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum UsageError {
+    #[error("invalid accounting data: {field} is outside the signed 64-bit integer range")]
+    CounterOutOfRange { field: &'static str },
+}
+
+fn extra_counter(extra: &Extra, field: &'static str) -> Result<Option<i64>, UsageError> {
+    let Some(Json::Number(number)) = extra.get(field) else {
+        return Ok(None);
+    };
+    if number.as_str().contains(['.', 'e', 'E']) {
+        return Ok(None);
+    }
+    number
+        .as_i64()
+        .map(Some)
+        .ok_or(UsageError::CounterOutOfRange { field })
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct CacheCreationTokenDetails {
@@ -26,7 +46,7 @@ struct RawPromptTokensDetails {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "RawPromptTokensDetails")]
+#[serde(try_from = "RawPromptTokensDetails")]
 pub struct PromptTokensDetails {
     pub text_tokens: Option<i64>,
     pub cached_tokens: Option<i64>,
@@ -38,21 +58,43 @@ pub struct PromptTokensDetails {
     pub extra: Extra,
 }
 
-impl From<RawPromptTokensDetails> for PromptTokensDetails {
-    fn from(raw: RawPromptTokensDetails) -> Self {
-        let mirrored = raw.cache_write_tokens.or(raw.cache_creation_tokens);
-        Self {
+impl TryFrom<RawPromptTokensDetails> for PromptTokensDetails {
+    type Error = UsageError;
+
+    fn try_from(raw: RawPromptTokensDetails) -> Result<Self, Self::Error> {
+        let nested_creation = extra_counter(&raw.extra, "cache_creation_input_tokens")?;
+        let mirrored = raw
+            .cache_write_tokens
+            .or(raw.cache_creation_tokens)
+            .or(nested_creation);
+        Ok(Self {
             text_tokens: raw.text_tokens,
             cached_tokens: raw.cached_tokens,
             cache_creation_tokens: mirrored,
             cache_creation_token_details: raw.cache_creation_token_details,
             cache_write_tokens: mirrored,
             extra: raw.extra,
-        }
+        })
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize)]
+struct RawUsage {
+    prompt_tokens: i64,
+    completion_tokens: i64,
+    total_tokens: i64,
+    #[serde(default)]
+    prompt_tokens_details: Option<RawPromptTokensDetails>,
+    #[serde(default)]
+    cache_read_input_tokens: Option<i64>,
+    #[serde(default)]
+    cache_creation_input_tokens: Option<i64>,
+    #[serde(flatten)]
+    extra: Extra,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "RawUsage")]
 pub struct Usage {
     pub prompt_tokens: i64,
     pub completion_tokens: i64,
@@ -65,6 +107,38 @@ pub struct Usage {
     pub cache_creation_input_tokens: Option<i64>,
     #[serde(flatten)]
     pub extra: Extra,
+}
+
+impl TryFrom<RawUsage> for Usage {
+    type Error = UsageError;
+
+    fn try_from(raw: RawUsage) -> Result<Self, Self::Error> {
+        let mut usage = Self {
+            prompt_tokens: raw.prompt_tokens,
+            completion_tokens: raw.completion_tokens,
+            total_tokens: raw.total_tokens,
+            prompt_tokens_details: raw
+                .prompt_tokens_details
+                .map(PromptTokensDetails::try_from)
+                .transpose()?,
+            cache_read_input_tokens: raw.cache_read_input_tokens,
+            cache_creation_input_tokens: raw.cache_creation_input_tokens,
+            extra: raw.extra,
+        };
+        let cache_hit = extra_counter(&usage.extra, "prompt_cache_hit_tokens")?;
+        if let Some(cached) = usage.cache_read_input_tokens.or(cache_hit) {
+            usage
+                .prompt_tokens_details
+                .get_or_insert_default()
+                .cached_tokens = Some(cached);
+        }
+        if let Some(creation) = usage.cache_creation_input_tokens {
+            let details = usage.prompt_tokens_details.get_or_insert_default();
+            details.cache_creation_tokens = Some(creation);
+            details.cache_write_tokens = Some(creation);
+        }
+        Ok(usage)
+    }
 }
 
 pub(crate) fn is_usage_complete(maybe_usage: Option<&Usage>) -> bool {

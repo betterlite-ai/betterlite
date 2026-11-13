@@ -60,7 +60,7 @@ checks:
   commands:
     - id: search-cost-tests
       why: search cost calculation tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-cost --no-tests=fail -E 'test(/^search_pricing::/) | test(/^search_cost_calculation::/)' || cargo nextest run --locked -p betterlite-cost --no-tests=fail
+      run: cargo nextest run --locked -p betterlite-cost --no-tests=fail -E 'test(/^search::(.*::)?search_pricing::/) | test(/^search::(.*::)?search_cost_calculation::/)' || cargo nextest run --locked -p betterlite-cost --no-tests=fail
     - id: search-pricing-oracle
       why: oracle cases are missing or fail against the booted gateways
       run: test -d tools/oracle/cases/search && test "$(find tools/oracle/cases/search -name '*pricing*' -o -name '*cost*' | wc -l)" -gt 0

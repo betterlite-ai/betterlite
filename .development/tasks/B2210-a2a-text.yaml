@@ -154,7 +154,7 @@ deviations: []
 out_of_scope:
 - A2AError.__init__ L21-L31, convert_messages_to_prompt L34-L63, a2a_hop_uses_entra L151-L152 and resolve_a2a_hop_auth_header
   L155-L163 remain B050; B050 depends on this shared projection.
-- litellm/a2a_protocol/utils.py contains separate compatibility wrappers and A2ARequestUtils behavior owned B142;
+- litellm/a2a_protocol/utils.py contains separate compatibility wrappers and A2ARequestUtils behavior owned by B4802;
   do not substitute those differently shaped functions for these helpers.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as a2a_text in the context group. Replace the stub Op in tools/oracle/src/helpers/context/a2a_text.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/a2a_text.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

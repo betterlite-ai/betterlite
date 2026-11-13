@@ -1,0 +1,14 @@
+kind: helper
+name: caching-list-operations-rpush-and-trim-keep-newest
+call:
+  b4329:
+    operation: rpush_and_trim
+    namespace: ns
+    redis_version: "7.0.0"
+    lists:
+      "ns:buf": ["a", "b"]
+    key: buf
+    values: ["c", "d"]
+    max_len: 3
+env: {}
+compare: {ignore: []}

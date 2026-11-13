@@ -1,0 +1,1 @@
+{"kind":"helper","name":"pattern-first-order","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","action":"MASK","pattern":"last"},{"pattern_type":"regex","action":"MASK","pattern":"first"}],"text":"first last"}},"env":{},"compare":{"ignore":[]}}

@@ -1,0 +1,19 @@
+kind: helper
+name: gemini-metadata-nested-safety
+call:
+  gemini_metadata:
+    call: nested_safety
+    candidates:
+      - safetyRatings:
+          - {category: HARM_CATEGORY_HATE_SPEECH, probability: NEGLIGIBLE, severity: HARM_SEVERITY_NEGLIGIBLE}
+          - {category: HARM_CATEGORY_DANGEROUS_CONTENT, probability: LOW, severity: HARM_SEVERITY_LOW}
+        citationMetadata:
+          citations:
+            - {startIndex: 0, endIndex: 3, uri: 'https://a', title: A}
+      - safetyRatings: []
+      - urlContextMetadata:
+          urlMetadata:
+            - {retrievedUrl: 'https://b', urlRetrievalStatus: URL_RETRIEVAL_STATUS_SUCCESS}
+      - content: {role: model}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,145 @@
+id: B3676
+title: Anthropic guardrail streaming and ended-stream rewrites
+description: >-
+  Build the Anthropic Messages guardrail scan of a response that is still streaming (or fully buffered), and the code that writes a guardrail's rewrite back into the buffered SSE chunks. Everything is a plain function in crates/betterlite-server/src/guardrails/anthropic_translation/, generic over `G: GuardrailContract` (B5471's `guardrail_base`; `apply_guardrail` returns `impl Future`, so no trait object). Request bodies are `BTreeMap<String, GuardrailValue>` (B3660's type, from `betterlite_config::sections::guardrail_identity::item`). `GuardrailApiInputs`, `GuardrailInputType`, `GuardrailLogTarget` and `GuardrailFailure` are B5471's. Raw JSON from the wire is untyped, so `serde_json::Value` is allowed at these boundaries only, one `#[expect]` per module with its reason. Other tasks own what this one calls, so read their modules for exact signatures and do not copy them. B3673: `SseChunk` (`Bytes`, `Event`, `Other`), `iter_sse_events`, `streaming_has_ended` and `streaming_string_so_far`. B3670: `ToolCallShape` and `tool_call_shapes`. B3631: the Rust `_build_complete_streaming_response` and `_build_usage_only_response_from_chunks`. B3246 (betterlite-core, `guardrails/streaming_rewrite.rs`): `UndeliverableStreamRewrite { guardrail_name, reason }`. B3661: `transform_user_api_key_dict_to_metadata`.
+
+  Module `stream_rewrite` (stream_rewrite.rs) is the in-place writer. `SseFieldRewrite { section: &'static str, field: &'static str, value: String }` is LiteLLM's `_SSEFieldRewrite`: set `event[section][field]` to `value`. LiteLLM passes a closure; the project forbids closures, so the rewriters are one enum, `EventRewriter`, with a method `rewrite(&mut self, event: &Map<String, Value>) -> Option<SseFieldRewrite>`. Variant `TextDelta { replacements }` handles the text rewrite: for an event that is a text delta (`type` "content_block_delta" and `delta.type` "text_delta") the first call returns `SseFieldRewrite { "delta", "text", rewritten_text }` and every later call returns the empty string, so the full text sits in the first delta and the rest are blanked. Variant `ToolUse { rewrites_by_block: BTreeMap<i64, ToolCallShape>, arguments_sent: BTreeSet<i64> }` handles tool calls: for an event whose integer `index` is a key of `rewrites_by_block`, a `content_block_start` returns `("content_block", "name", name)` when the rewritten name is Some (else None), and a `content_block_delta` whose `delta.type` is "input_json_delta" returns `("delta", "partial_json", ...)` where the first delta of that index gets the full rewritten arguments and every later one gets the empty string. Any other event returns None.
+
+  `rewritten_event(event, rewriter) -> Option<Map<String, Value>>` returns the event with `event[section]` replaced by a copy that has `field` set, but only when the rewriter returned a rewrite and `event[section]` is an object; otherwise None, which means unchanged. `rewrite_sse_line(line: &str, rewriter) -> String` leaves a line that does not start with `data:` (no trimming first) as it is, leaves a line whose payload is not valid JSON or not a JSON object as it is, and for a rewritten event returns `"data: "` plus the event serialized the way Python's `json.dumps` default does: `, ` and `: ` separators and `ensure_ascii` (every non-ASCII char as `\uXXXX`, surrogate pairs above U+FFFF). Write that serializer once here with serde_json's `Formatter` trait and a small formatter struct, since serde_json's own output is compact and keeps non-ASCII. `rewrite_sse_events(bytes: &[u8], rewriter) -> Vec<u8>` returns the input unchanged when it is not valid UTF-8, otherwise splits on "\n\n", each block on "\n", maps every line through `rewrite_sse_line` and joins back with the same separators, so the framing is byte for byte. This is the decoder of upstream bytes, so it gets the cargo-fuzz target (see checks).
+
+  `rewrite_ended_stream_events(responses_so_far: &mut [SseChunk], rewriter)` rewrites every chunk in place: an `Event` becomes the rewritten event when there is one, a `Bytes` chunk goes through `rewrite_sse_events`, `Other` stays. Chunks are visited in order, and inside a bytes chunk blocks and lines in order, because the rewriter counts which text delta or tool_use block it is on.
+
+  `write_ended_stream_text_rewrite(responses_so_far: &mut [SseChunk], rewritten_text: &str, guardrail_name: &str) -> Result<(), UndeliverableStreamRewrite>` first checks that some event from `iter_sse_events` over all chunks is a text delta. When none is, it returns the B3246 error with the reason "the buffered stream carries no text_delta event to land the text rewrite on". Otherwise it runs `rewrite_ended_stream_events` with `EventRewriter::TextDelta`.
+
+  `write_ended_stream_tool_call_rewrites(responses_so_far, pre: &[ToolCallShape], post: &[ToolCallShape], guardrail_name) -> Result<(), UndeliverableStreamRewrite>` returns Ok at once when `post == pre`. Otherwise it collects, from `iter_sse_events` over all chunks, the integer `index` of every `content_block_start` event whose `content_block.type` is "tool_use", in stream order. When their count differs from `post.len()` it returns the B3246 error with the reason "the guardrail returned {post.len()} tool calls for a stream that carried {count} tool_use blocks". Otherwise the nth block index is paired with the nth pre and post shape, only pairs where post differs from pre go into `rewrites_by_block`, and `rewrite_ended_stream_events` runs with `EventRewriter::ToolUse`.
+
+  Module `usage_response` (usage_response.rs) has `build_streaming_usage_response(responses_so_far: &[SseChunk], request_data: Option<&BTreeMap<String, GuardrailValue>>) -> Option<GuardrailValue>`. It keeps only the `Bytes` chunks (LiteLLM keeps str and bytes; B3673's `SseChunk` has no str variant), returns None when there are none, and otherwise calls B3631's usage-only builder with those chunks and `model` set to `request_data.model` when that is a string, else the empty string. A builder error or a None result gives None. The ModelResponse becomes a `GuardrailValue` with `serde_json::to_value` and `from_value`, never through bytes (the workspace turns on `arbitrary_precision`, and `from_slice` into the untagged `GuardrailValue` turns a float into a one-key object).
+
+  Module `process_stream` (process_stream.rs) has `process_output_streaming_response(responses_so_far: &mut Vec<SseChunk>, guardrail: &G, logging_obj: Option<&mut GuardrailLogTarget>, user_api_key_dict: Option<&BTreeMap<String, GuardrailValue>>, request_data: Option<&mut BTreeMap<String, GuardrailValue>>, deliver_ended_stream_rewrites: bool) -> Result<(), ProcessStreamError>`. LiteLLM's `stream_transform_sink` argument is never read by this handler, so it is left out. The guardrail name used below is B5471's `guardrail_name` of the guardrail, or "unknown" when it has none. A private `prepare_request_data(request_data, value, user_api_key_dict, key)` starts from an empty map when `request_data` is None, inserts `value` under `key` only when the key is missing (an existing value stays, even null), and when `litellm_metadata` is missing inserts B3661's `transform_user_api_key_dict_to_metadata(user_api_key_dict)` as an object under `litellm_metadata`, only when the result is not empty. It is not B5820's `add_response_context`, because that one hard-codes the key `response` and this task also needs the key `responses`.
+
+  Ended stream, when B3673's `streaming_has_ended(responses_so_far)` is true. Assemble the response with B3631's `_build_complete_streaming_response` over the chunks (model empty). When it returns None, or a response with no `choices`, log at debug "Skipping output guardrail - model response has no choices", make no guardrail call, and return Ok. Otherwise take `choices[0].message`: `content` (a string or null) and `tool_calls` (a list or null). Take `pre_guardrail_tool_calls = tool_call_shapes(tool_calls)` before the call, because a guardrail may edit the calls it was handed. Inputs are `GuardrailApiInputs` with `texts: [content]` only when `content` is a non-empty string and `tool_calls` only when the list is non-empty. No `model` and no `images`. Prepare the request data with the response as `GuardrailValue` under key `response`, then call `guardrail.apply_guardrail(inputs, request_data, GuardrailInputType::Response, logging_obj)`. A `GuardrailFailure::ModifyResponse` whose `original_response` is None gets the assembled response as `original_response` before it is returned (LiteLLM's fallback to the usage-only response can never run here because the assembled response exists). Every other failure is returned as it is. On success, when `deliver_ended_stream_rewrites` is true: the text rewrite runs only when the original `content` was a non-empty string, the returned `texts` is non-empty and its first entry differs from `content`; it calls `write_ended_stream_text_rewrite` with that first entry. Then, whatever the text did, `write_ended_stream_tool_call_rewrites` runs with `pre` and `post`, where `post` is `tool_call_shapes(returned tool_calls)` when the guardrail returned a list with exactly `pre.len()` entries, else `tool_call_shapes` of the original calls (so no rewrite). When `deliver_ended_stream_rewrites` is false nothing is written, and the chunks go on unchanged. The function returns Ok and the caller keeps the same `responses_so_far`.
+
+  Not-yet-ended stream. The text is B3673's `streaming_string_so_far(responses_so_far)`. Prepare the request data with the chunks list as a `GuardrailValue` array under key `responses` (an `Event` as its object, `Bytes` as a string decoded with replacement characters, `Other` as null). Call the guardrail with `texts: [string_so_far]`, which is sent even when the string is empty, and `GuardrailInputType::Response`. A `ModifyResponse` with no `original_response` gets `build_streaming_usage_response(responses_so_far, request_data)`. When `deliver_ended_stream_rewrites` is true and the returned `texts` is non-empty and not equal to `[string_so_far]`, call `write_ended_stream_text_rewrite` with the first returned text. A returned list with several texts uses only the first.
+
+  `ProcessStreamError` is this module's thiserror enum: `Guardrail(GuardrailFailure)` (boxed if `clippy::result_large_err` fires), `Undeliverable(UndeliverableStreamRewrite)` with `#[source]`, and a variant for the `to_value` and `from_value` conversions. The caller (the policy pipeline) catches `Undeliverable` and releases the original chunks, which is not this task's code.
+
+  Tests live in the `tests.rs` of each module with these name prefixes: `text_rewrite_*`, `tool_rewrite_*`, `bytes_rewrite_*` and `json_dumps_*` in stream_rewrite; `usage_response_*` in usage_response; `ended_*` and `unended_*` in process_stream. process_stream tests use a fake guardrail defined in its tests.rs that records the `GuardrailApiInputs`, the input type and a copy of the request data, and returns a scripted result. Helper oracle cases (pure functions only) go in tools/oracle/cases/helpers/anthropic-guardrail-streaming/ with `call: b3676: {function: ...}`. A chunk in a case is `{bytes: "<utf-8 text>"}` or `{event: {...}}`. process_output_streaming_response needs a live guardrail and is not reachable from a route yet, so its HTTP cases come from the dispatcher task B3680.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/anthropic_translation/stream_rewrite.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/stream_rewrite/**
+    - crates/betterlite-server/src/guardrails/anthropic_translation/usage_response.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/usage_response/**
+    - crates/betterlite-server/src/guardrails/anthropic_translation/process_stream.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/process_stream/**
+    - crates/betterlite-server/fuzz/fuzz_targets/anthropic_stream_rewrite.rs
+    - crates/betterlite-server/fuzz/corpus/anthropic_stream_rewrite/**
+    - tools/oracle/cases/helpers/anthropic-guardrail-streaming/**
+    - tools/oracle/helpers/b3676.py
+    - tools/oracle/helpers/b3676/**
+    - tools/oracle/src/helpers/server/b3676.rs
+    - tools/oracle/src/helpers/server/b3676/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L249-L266
+    why: _SSEFieldRewrite, the rewriter protocol and _rewritten_event, which copies the event and one nested section.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L311-L325
+    why: _build_streaming_usage_response, the usage-only fallback for a blocked stream.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1201-L1320
+    why: process_output_streaming_response, the ended and not-yet-ended paths and the rewrite conditions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1322-L1341
+    why: _prepare_request_data, the key and litellm_metadata step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1414-L1449
+    why: "The text rewrite. The first text_delta carries the text, later ones are blanked, and no text_delta is undeliverable."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1451-L1516
+    why: The tool call rewrite by tool_use block order, with the count check and the name and partial_json fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1518-L1564
+    why: In-place rewrite over dict and bytes chunks and the SSE line rewriter with its json.dumps output.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/base_translation.py#L59-L73
+    why: delivers_ended_stream_rewrites and assembles_streamed_response, the two flags this handler sets to true.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L52-L63
+    why: UndeliverableStreamRewrite, the error the rewrite helpers raise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L445-L475
+    why: The only caller, which passes deliver_ended_stream_rewrites only to translations that set the flag.
+dod:
+  - text: >-
+      The text rewrite puts the full rewritten text in the first text_delta and blanks every later one, in both dict chunks and SSE bytes, leaves all other events and the framing byte for byte, and returns the undeliverable error when the buffer has no text_delta.
+    proof: [stream-rewrite-tests, oracle]
+  - text: >-
+      The tool call rewrite lands the nth rewritten call on the nth tool_use block (new name in content_block_start, full arguments in the first input_json_delta, later ones blanked), skips unchanged calls, does nothing when the shapes are equal, and returns the undeliverable error when the block count differs from the returned count.
+    proof: [stream-rewrite-tests, oracle]
+  - text: >-
+      A rewritten SSE data line is written as `data: ` plus json.dumps output (`, ` and `: ` separators, non-ASCII escaped as \uXXXX), a line that is not rewritten is kept exactly, and invalid UTF-8 bytes are returned unchanged.
+    proof: [stream-rewrite-tests, oracle, stream-rewrite-corpus-replay]
+  - text: >-
+      build_streaming_usage_response returns None without bytes chunks or when the builder fails, and otherwise the usage-only response built with the request's model text.
+    proof: [usage-response-tests, oracle]
+  - text: >-
+      On an ended stream the guardrail gets the assembled response's content and tool calls (texts and tool_calls only when non-empty), a ModifyResponse failure without original_response carries the assembled response, and no call is made when the assembled response has no choices.
+    proof: [process-stream-ended-tests]
+  - text: >-
+      With deliver_ended_stream_rewrites on, an ended stream gets the text rewrite only when the content was non-empty and the first returned text differs, and always gets the tool call rewrite check, where a returned list of a different length is ignored; with it off nothing is written.
+    proof: [process-stream-ended-tests]
+  - text: >-
+      On a stream that has not ended the guardrail gets the single text from streaming_string_so_far even when it is empty, the request data holds the chunks under `responses`, a ModifyResponse failure without original_response carries the usage-only response, and a changed returned text is written with the text rewrite.
+    proof: [process-stream-unended-tests]
+checks:
+  optional: []
+  commands:
+    - id: stream-rewrite-tests
+      why: the ended-stream text and tool call rewrite tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::stream_rewrite::tests::/) - test(replays_the_anthropic_stream_rewrite_corpus)'
+    - id: usage-response-tests
+      why: the streaming usage response tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::usage_response::tests::/)'
+    - id: process-stream-ended-tests
+      why: the ended-stream guardrail call and rewrite tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::process_stream::tests::ended_/)'
+    - id: process-stream-unended-tests
+      why: the not-yet-ended stream guardrail call tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::process_stream::tests::unended_/)'
+    - id: stream-rewrite-corpus-replay
+      why: the corpus files for the SSE rewriter were not added or are not replayed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/anthropic_stream_rewrite)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_anthropic_stream_rewrite_corpus)'
+    - id: helper-cases-added
+      why: the helper cases for this task were not added on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/anthropic-guardrail-streaming)"
+oracle_cases:
+  - tools/oracle/cases/helpers/anthropic-guardrail-streaming/text-rewrite-bytes-and-events.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-streaming/text-rewrite-no-text-delta.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-streaming/text-rewrite-non-ascii-json-dumps.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-streaming/tool-rewrite-two-blocks.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-streaming/tool-rewrite-block-count-mismatch.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-streaming/tool-rewrite-name-none-keeps-name.yaml
+  - tools/oracle/cases/helpers/anthropic-guardrail-streaming/usage-response-from-chunks.yaml
+deviations:
+  - what: The rewriters are the enum EventRewriter, not closures.
+    why: The project forbids closures and nested functions; behavior is the same.
+  - what: process_output_streaming_response has no stream_transform_sink argument.
+    why: This handler never reads it, and its only caller in the Anthropic path does not pass one.
+  - what: A stream chunk is B3673's SseChunk (bytes, parsed event, other). A Python str chunk is not read, and build_streaming_usage_response keeps only bytes chunks.
+    why: SseChunk is the one Anthropic stream item type; LiteLLM's other readers also ignore str items.
+  - what: The undeliverable rewrite is returned as `ProcessStreamError::Undeliverable` instead of raised.
+    why: Rust has no exceptions; the policy pipeline matches on it and releases the original chunks.
+out_of_scope:
+  - "B3673 owns get_streaming_scan_key, _streamed_tool_use_fingerprints, get_streaming_string_so_far, _extract_text_from_sse, _check_streaming_has_ended, build_block_sse_chunks, build_stream_error_items, the block continuation helpers, _content_block_state, _parse_sse_data_line and _iter_sse_events. This task calls its readers."
+  - "B3675 owns the Anthropic input and completed-output scans, _prepare_request_data's use on the non-streaming path, _get_response_content, _extract_from_content_blocks, _output_block_fields, _build_guardrail_inputs and the post_call_hook_response. B3674 owns _translate_to_openai and the request write-back."
+  - "B3670 owns ToolCallShape and _tool_call_shapes. B5820 owns add_response_context, which this task does not call because it fixes the key `response`."
+  - "B3631 owns _build_complete_streaming_response and _build_usage_only_response_from_chunks. B3246 owns UndeliverableStreamRewrite and the pipeline code that catches it."
+  - "HTTP oracle cases through the booted proxy belong to B3680, which wires the dispatcher to the routes."
+  - "The Anthropic typing helpers _as_str_mapping, _content_block_at, _ModelDumpBlock, _TextAttrBlock, _WritableMessage and _as_writable only narrow Python types and have no Rust counterpart. _AnthropicSSEDelta and _AnthropicSSEEvent are read through serde_json maps."
+pitfalls:
+  - "The text rewrite is judged by `iter_sse_events`, which trims each line, but the writer only touches lines that start with `data:` untrimmed, so an indented data line counts as a text_delta and is never rewritten. Keep both rules as they are."
+  - "A line is rewritten as `data: ` plus json.dumps, so a rewritten line loses a trailing `\\r` and its original spacing, and non-ASCII text becomes \\uXXXX. Only an event the rewriter actually changed is re-encoded; a line with no rewrite stays byte for byte."
+  - "The tool call check compares whole shapes and returns before looking at blocks when `post == pre`, so a count mismatch is silent if nothing changed. It also pairs the nth tool_use block with the nth returned call by position, not by id."
+  - "A rewritten tool name that is None leaves `content_block_start` alone but the arguments in `input_json_delta` are still replaced, so the name stays and the arguments change."
+  - "The tool call rewrite runs on every ended stream when delivery is on, even when the text rewrite did not, but the text rewrite also needs a non-empty original `content`; a tool-only stream never gets a text rewrite."
+  - "`pre_guardrail_tool_calls` must be taken before the guardrail call, since a guardrail can edit the calls it received in place."
+  - "The ended path sends `texts` only when `content` is a non-empty string, but the not-yet-ended path always sends `[string_so_far]`, even an empty string."
+  - "The not-yet-ended path compares `tuple(returned texts) != (string_so_far,)`, so a reply with two texts always counts as a change, and only the first is written."
+  - "Both paths set `original_response` only when the failure has none; a guardrail that already filled it keeps its value."
+  - "`responses_so_far` is stored under `responses` on the not-yet-ended path but the assembled response under `response` on the ended path, and an existing key is never overwritten, even with null."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 3

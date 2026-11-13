@@ -8,35 +8,23 @@ description: 'Implement the reusable additive-increase/multiplicative-decrease c
   and ceiling are required constructor arguments, not env defaults; enforce 1 <= floor <= ceiling and
   clamp initial. Cap waiters at 1024 with caller deadline; return typed Overloaded before enqueueing a
   1025th waiter. Implement the owned native service in crates/betterlite-router/src/adaptive_concurrency.rs.
-  Add ProbeOperation::AdaptiveConcurrency in tools/oracle/src/router_probes/mod.rs and the corresponding B347 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::AdaptiveConcurrency and its Python entry as stubs, so fill only tools/oracle/src/router_probes/adaptive_concurrency.rs and tools/oracle/litellm/probes/adaptive_concurrency.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/integrations/adaptive_concurrency.py: AdaptiveConcurrencyLimiter.__init__
   (L25-L33), AdaptiveConcurrencyLimiter.limit (L36-L37), AdaptiveConcurrencyLimiter.__aenter__ (L39-L55),
   AdaptiveConcurrencyLimiter._grant (L57-L63), AdaptiveConcurrencyLimiter.__aexit__ (L65-L67), AdaptiveConcurrencyLimiter.record
   (L69-L78). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B3993 and B3994 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/adaptive_concurrency.rs
   - crates/betterlite-router/src/adaptive_concurrency/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/adaptive_concurrency.rs
   - crates/betterlite-server/src/routing/adaptive_concurrency/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/adaptive_concurrency.rs
   - tools/oracle/src/router_probes/adaptive_concurrency/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/adaptive_concurrency.py
   - tools/oracle/cases/routing/adaptive-concurrency/**
   - tools/oracle/helpers/b347.py

@@ -1,0 +1,20 @@
+kind: helper
+name: login-form-url-concatenation
+call:
+  login_form:
+    environment:
+      PROXY_BASE_URL: "https://proxy.example.com/base/"
+      SERVER_ROOT_PATH: "/gateway"
+    general_settings: {}
+    show_deprecation_banner: true
+env: {}
+compare:
+  ignore:
+    - pointer: /value/texts/title
+      why: visible product text is rebranded to betterlite
+    - pointer: /value/texts/logo
+      why: visible product text is rebranded to betterlite
+    - pointer: /value/texts/subtitle
+      why: visible product text is rebranded to betterlite
+    - pointer: /value/texts/default_credentials
+      why: visible product text is rebranded to betterlite

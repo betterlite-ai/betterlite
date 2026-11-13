@@ -1,0 +1,8 @@
+kind: helper
+name: anthropic-response-content-text-and-citations
+call:
+  anthropic_response_content:
+    response: {content: [{type: text, text: a}, {type: vendor, text: b, citations: [{type: char_location, supported_text: old}]}, {type: tool_search_tool_result, citations: [{id: skip}]}], context_management: {edits: []}, container: {id: container_1}}
+    json_mode: null
+env: {}
+compare: {ignore: []}

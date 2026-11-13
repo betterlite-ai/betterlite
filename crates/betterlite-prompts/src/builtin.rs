@@ -131,7 +131,7 @@ pub struct OllamaPrompt {
 
 mod bounds;
 pub mod falcon;
-mod families;
+pub mod families;
 pub mod images;
 pub mod ollama;
 pub mod system;
@@ -174,19 +174,4 @@ templates! {
     mpt: labelled(&[("system","<|im_start|>system"),("user","<|im_start|>user"),("assistant","<|im_start|>assistant")], "<|im_end|>\n");
     wizardcoder: labelled(&[("system",""),("user","### Instruction:\n"),("assistant","### Response:\n")], "\n\n");
     phind: labelled(&[("system","### System Prompt\n"),("user","### User Message\n"),("assistant","### Assistant\n")], "\n\n");
-}
-
-pub fn claude(messages: &[Message]) -> Result<String, PromptError> {
-    let style = families::Style::Claude;
-    families::anthropic(messages, style)
-}
-
-pub fn claude_2_1(messages: &[Message]) -> Result<String, PromptError> {
-    let style = families::Style::Claude21;
-    families::anthropic(messages, style)
-}
-
-pub fn titan(messages: &[Message]) -> Result<String, PromptError> {
-    let style = families::Style::Titan;
-    families::anthropic(messages, style)
 }

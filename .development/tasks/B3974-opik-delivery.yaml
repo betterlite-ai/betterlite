@@ -104,7 +104,7 @@ checks:
     - id: opik-delivery-tests
       why: Opik delivery and native client selection tests fail or are missing
       run: >-
-        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^opik_delivery_tests::/)
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^opik::(.*::)?opik_delivery_tests::/)
         - test(/replays_the_/)'
 
 oracle_cases: []

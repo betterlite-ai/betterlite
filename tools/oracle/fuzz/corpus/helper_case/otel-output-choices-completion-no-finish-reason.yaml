@@ -1,0 +1,9 @@
+kind: helper
+name: completion-no-finish-reason
+call:
+  b5240:
+    function: "output_choices"
+    response: {"choices": [{"text": "hi"}]}
+env: {}
+compare:
+  ignore: []

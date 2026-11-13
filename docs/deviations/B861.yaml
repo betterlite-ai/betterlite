@@ -1,0 +1,18 @@
+task: B861
+deviations:
+  - what: >-
+      A team model_max_budget is validated without a license argument, so the paid-tier 403 that
+      LiteLLM raises before field validation never runs.
+    why: >-
+      README's no-paid-tier decision. Every key-name, finite-value, duration and per-model rate-limit
+      check still runs in the same order; native_no_license_team_budget proves the license gate is the
+      only check missing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L77-L123
+  - what: >-
+      A truthy premium metadata field is set and moved into metadata without calling the premium-user
+      check, so tags, guardrails, policies and the rest of the premium registry need no license.
+    why: >-
+      Same README decision. The assignment, the overwrite and the field order stay as they are;
+      native_no_license_metadata proves the premium field moves and every caller-permission guard still
+      runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L432-L456

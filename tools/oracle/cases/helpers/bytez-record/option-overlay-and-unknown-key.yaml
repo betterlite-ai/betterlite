@@ -1,0 +1,20 @@
+kind: helper
+name: bytez-record-option-overlay-and-unknown-key
+call:
+  bytez_record:
+    function: options
+    supported_model: org/model
+    mappings:
+      - non_default_params: {max_tokens: 10, max_completion_tokens: 20, n: 2}
+        optional_params: {temperature: 0.5, unknown_key: kept}
+      - non_default_params: {max_tokens: 10, max_completion_tokens: 20}
+        optional_params: {max_tokens: 99}
+      - non_default_params: {unknown_key: 1}
+      - non_default_params: {stop: [x]}
+        optional_params: {seed: 5}
+      - non_default_params: {stop: [x]}
+        optional_params: {seed: 5}
+        drop_params: true
+      - non_default_params: {tools: [], stream: true, top_p: 0.1, max_retries: 3}
+compare: {ignore: []}
+env: {}

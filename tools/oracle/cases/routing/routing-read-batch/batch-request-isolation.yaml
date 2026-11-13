@@ -1,0 +1,20 @@
+kind: probe
+name: batch-request-isolation
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_read_batch:
+        cooldown:
+          keys:
+            - deployment:a:cooldown
+            - deployment:b:cooldown
+          local:
+            deployment:a:cooldown: {counter: 1}
+        remote:
+          deployment:b:cooldown: {counter: 7}
+        steps:
+          - {kind: arm, now_millis: 0, request: 0}
+          - {kind: read, now_millis: 0, request: 1}
+          - {kind: read, now_millis: 0, request: 0}
+compare: {ignore: []}

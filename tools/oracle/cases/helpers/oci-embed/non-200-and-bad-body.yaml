@@ -1,0 +1,34 @@
+kind: helper
+name: oci-embed-non-200-and-bad-body
+call:
+  b5941:
+    steps:
+      - method: response
+        status: 503
+        body: upstream is down
+      - method: response
+        status: 400
+        body: '{"embeddings": []}'
+      - method: response
+        status: 200
+        body: not json
+      - method: response
+        status: 200
+        body: '{"embeddings":[],"modelId":"m"}'
+      - method: response
+        status: 200
+        body: '{"embeddings":"no","modelId":"m","modelVersion":"v"}'
+      - method: response
+        status: 200
+        body: '[]'
+      - method: response
+        status: 200
+        body: '[null,[[0.5]],"m","v"]'
+      - method: response
+        status: 200
+        body: '{"embeddings":[[0.5]],"modelId":"m","modelVersion":"v","usage":[4,7]}'
+      - method: response
+        status: 201
+        body: ''
+env: {}
+compare: {ignore: []}

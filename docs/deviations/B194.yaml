@@ -1,0 +1,24 @@
+task: B194
+deviations:
+  - what: >-
+      betterlite startup fetches the configured model map unless local mode is true, including its proxy CLI.
+    why: >-
+      Architect decision: use remote startup discovery. The pinned Python SDK does this, but LiteLLM CLI entrypoints
+      take the local-only _is_cli_process shortcut.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L618-L650
+  - what: >-
+      A fetched catalog whose known fields hold a type the model schema cannot take is not adopted: startup warns and
+      falls back to the bundled map, a reload or its retry keeps the current catalog.
+    why: >-
+      LiteLLM adopts any JSON object and reads its fields lazily per request, so one bad entry breaks only the calls
+      that touch it. betterlite parses the whole catalog typed at adoption, so a working setup's map is unaffected and
+      a malformed one is refused with a diagnostic instead of being served.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L536-L545
+  - what: >-
+      Unknown fields in a fetched catalog entry are ignored with a warning that names the full field path; LiteLLM
+      accepts them silently.
+    why: >-
+      Architect decision under B205: a remote refresh stays forward compatible while the field is still reported,
+      rather than being dropped without a trace.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L481-L545

@@ -1,0 +1,11 @@
+kind: helper
+name: jsonable-opaque-dict-list-empty
+call:
+  b3795:
+    opaque_dict_list:
+      items:
+        - plain: text
+        - plain: null
+        - plain: 5
+env: {}
+compare: {ignore: []}

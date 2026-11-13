@@ -1,0 +1,14 @@
+id: B5833
+milestone: M3 providers
+title: Groq provider
+status: todo
+depends_on: [B668, B503, B504, B1425, B2202, B2221, B204, B205]
+file: tasks/B5833-groq-chat-stt-cost.yaml
+covers:
+  - "litellm/llms/groq/**"
+parent: B041
+split_from: B041
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

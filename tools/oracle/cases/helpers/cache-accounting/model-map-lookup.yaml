@@ -1,0 +1,39 @@
+kind: helper
+name: cache-accounting-model-map-lookup
+call:
+  b4123:
+    operation: model_map
+    probes:
+      - model: my-model
+        model_cost:
+          my-model: {litellm_provider: openai, supports_prompt_cache_breakpoint: true}
+      - model: openai/my-model
+        model_cost:
+          my-model: {supports_prompt_cache_breakpoint: true}
+      - model: openai/my-model
+        model_cost:
+          openai/my-model: {supports_prompt_cache_breakpoint: false}
+          my-model: {supports_prompt_cache_breakpoint: true}
+      - model: openai/my-model
+        model_cost:
+          openai/my-model: {supports_prompt_cache_breakpoint: true}
+          my-model: {supports_prompt_cache_breakpoint: false}
+      - model: my-model
+        model_cost: {}
+      - model: gpt-5.6
+        model_cost:
+          gpt-5.6: {supports_prompt_cache_breakpoint: false}
+      - model: gpt-4
+        model_cost:
+          gpt-4: {supports_prompt_cache_breakpoint: true}
+      - model: gpt-5.6
+        model_cost:
+          gpt-5.6: 5
+      - model: gpt-5.6
+        model_cost:
+          gpt-5.6: {litellm_provider: openai}
+      - model: gpt-5.6
+        model_cost:
+          gpt-5.6: {supports_prompt_cache_breakpoint: null}
+env: {}
+compare: {ignore: []}

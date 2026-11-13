@@ -1,0 +1,8 @@
+kind: helper
+name: oci-chat-wire-finish-reason-map
+call:
+  b5942:
+    function: finish_reason
+    reasons: [null, COMPLETE, MAX_TOKENS, TOOL_CALL, TOOL_CALLS, CANCELLED]
+env: {}
+compare: {ignore: []}

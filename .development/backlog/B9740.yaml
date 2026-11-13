@@ -1,0 +1,13 @@
+id: B9740
+milestone: M10 admin ui
+title: Independent pinned-schema fixtures for dashboard HTTP requests
+status: done
+depends_on: [B001, B860, B9270, B9260]
+file: tasks/B9740-dashboard-http-fixtures.yaml
+covers: []
+parent: B147
+split_from: B147
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 1327

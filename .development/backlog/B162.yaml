@@ -1,9 +1,9 @@
 id: B162
 milestone: M12 python
-title: Python Router class
+title: Python Router catalog and settings methods
 status: todo
-depends_on: [B158, B016]
-file: null
+depends_on: [B8356, B6022, B9711, B844, B845, B846, B847, B368, B016, B8584, B5659, B364, B395, B350, B323]
+file: tasks/B162-python-router-catalog.yaml
 covers:
   - "litellm/router.py"
   - "litellm/types/router.py"

@@ -1,0 +1,12 @@
+kind: helper
+name: gemini-usage-implicit-text-cache
+call:
+  gemini_usage:
+    usage_metadata:
+      promptTokenCount: 10
+      candidatesTokenCount: 0
+      totalTokenCount: 10
+      cachedContentTokenCount: 4
+      promptTokensDetails: [{modality: text, tokenCount: 10}]
+env: {}
+compare: {ignore: []}

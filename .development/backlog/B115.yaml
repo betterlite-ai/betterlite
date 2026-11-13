@@ -2,10 +2,11 @@ id: B115
 milestone: M7 observability
 title: Storage, queue and SIEM loggers
 status: todo
-depends_on: [B3990, B3991, B3992, B3993, B3994, B3995, B3996, B3997, B3998, B3999, B4000, B4001, B4002, B4003, B4004, B002, B189, B256, B173, B244, B347, B590]
-file: null
+depends_on: [B3990, B3992, B3994, B8740, B8741, B1729, B9520]
+file: tasks/B115-s3-audit-cold-storage.yaml
 covers:
   - "litellm/integrations/s3_v2.py"
+  - "litellm/litellm_core_utils/litellm_logging.py"
 parent: null
 split_from: null
 resolution: null

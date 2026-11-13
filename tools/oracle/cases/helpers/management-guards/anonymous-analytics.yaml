@@ -1,0 +1,12 @@
+kind: helper
+name: anonymous-analytics
+call:
+  management_guards:
+    calls:
+      - {function: caller_user_id_for_non_admin, user_id: null, user_role: proxy_admin}
+      - {function: caller_user_id_for_non_admin, user_id: "u1", user_role: internal_user}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/0/detail
+      why: betterlite writes its own message

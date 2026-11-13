@@ -1,0 +1,17 @@
+kind: sdk_http
+name: vector-query-embedding-empty-first-vector
+env: {OPENAI_API_KEY: sk-env}
+call:
+  vector_query_embedding:
+    query_text: a b
+    litellm_params:
+      litellm_embedding_model: openai/text-embedding-3-small
+      litellm_embedding_config: {dimensions: 2}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{object: embedding, index: 0, embedding: []}], model: text-embedding-3-small, usage: {prompt_tokens: 1, total_tokens: 1}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{object: embedding, index: 0, embedding: []}], model: text-embedding-3-small, usage: {prompt_tokens: 1, total_tokens: 1}}
+compare: {headers: [], headers_present: [], upstream_headers: [authorization], ignore: []}

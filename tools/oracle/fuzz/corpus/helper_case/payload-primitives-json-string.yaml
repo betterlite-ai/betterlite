@@ -1,0 +1,14 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-json-string",
+  "call": {
+    "b3843": {
+      "function": "json_or_none",
+      "value": "plain text"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -1,0 +1,13 @@
+kind: helper
+name: unique-ids-reserved
+call:
+  b123:
+    op: ensure_unique_operation_ids
+    document:
+      paths:
+        /a: {get: {operationId: hello}}
+        /b: {post: {operationId: free}}
+    reserved: [hello, taken]
+env: {}
+compare:
+  ignore: []

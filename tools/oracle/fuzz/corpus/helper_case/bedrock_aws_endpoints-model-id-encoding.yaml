@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-aws-endpoints-model-id-encoding-seed
+call:
+  bedrock_aws_endpoints:
+    bedrock_model_id:
+      cases:
+        - optional_params: {model_id: 'arn:aws:bedrock:us-east-1:1:model/x'}
+          model: ignored
+        - optional_params: {}
+          model: 'arn:aws:bedrock:us-east-1:1:model/x'
+env: {}
+compare: {ignore: []}

@@ -33,7 +33,7 @@ description: >-
   `scenario seeds more than 256 rows`. Fixture bytes across all setup records are capped at 16,777,216; a total of
   16,777,217 returns exactly `scenario fixtures exceed 16777216 bytes`. B860 owns row shapes, `POSTGRES_TEST_URL`
   precedence, schema SQL and cleanup. For the Redis entry in `polling-setup.yaml`, write B935's value under key
-  `litellm:polling:response:litellm_poll_scenario` with TTL `3600`; B126 supplies only the injected Redis/Valkey
+  `litellm:polling:response:litellm_poll_scenario` with TTL `3600`; B5640 supplies only the injected Redis/Valkey
   transport. Give the two gateways equal logical rows but different physical Postgres schema/database names and Redis
   prefixes, and keep those physical names out of comparison output. The setup journal records the insertion order above.
 
@@ -80,7 +80,7 @@ description: >-
   B1139 owns only the declarative scenario boundary, bounded decoding, capture substitution, comparison orchestration,
   artifact redaction and lifecycle coordination. It owns no LiteLLM source range, so there is no MIT or enterprise
   source reference to port. B001 owns legacy HTTP case types and gateway/provider plumbing; B860 owns Postgres setup;
-  B126 owns Redis transport; B935 owns polling state/value semantics; B900 owns multipart and bytes decoding; route
+  B5220 and B5640 own Redis transport; B935 owns polling state/value semantics; B900 owns multipart and bytes decoding; route
   behavior, provider dispatch, authentication, authorization, product database writes and response error mapping stay
   with their owners.
 scope:
@@ -233,7 +233,7 @@ deviations: []
 out_of_scope:
 - 'B001 owns the existing `HttpCase` wire format, `decode_http_case`, gateway startup, mock provider protocol, artifact root and legacy comparator; B1139 invokes these contracts and adds only the scenario branch.'
 - 'B860 owns `POSTGRES_TEST_URL` selection, testcontainers fallback, schema SQL, Postgres TLS, cleanup and typed users, teams, memberships, budgets, JWT mappings, keys, managed files, managed objects and vector stores; B1139 submits rows in the stated order.'
-- 'B126 owns Redis, Redis Cluster and Valkey clients, connection errors and transport retries; B1139 passes an injected transport and does not implement a product cache.'
+- 'B4323 and B5220 own the Redis, Sentinel and Cluster clients (Valkey speaks the same protocol) and their connection errors, and B5640 the RedisCache over them; B1139 passes an injected transport and does not implement a product cache.'
 - 'B935 owns polling state transitions, TTL `3600`, the `litellm:polling:response:` and `litellm_poll_` prefixes, serialized values, public projections and authorization; B1139 creates only the fixture entry.'
 - 'B900 owns multipart and bytes body decoding, fixture bytes and their limits; B1139 forwards B900 typed request bodies and does not parse their bytes again.'
 - 'Route handlers, provider dispatch, authentication, authorization, product database writes and response error mapping belong to the consuming route/data/provider tasks; no FastAPI handler or betterlite route function is called directly.'

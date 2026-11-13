@@ -1,0 +1,17 @@
+kind: helper
+name: lemonade-model-metadata-seed-info
+call:
+  lemonade_model_metadata:
+    operation: model_info
+    queries:
+      - model: lemonade/org/model
+        environment:
+          LEMONADE_API_BASE: "http://env:8000/api/v1"
+          LEMONADE_API_KEY: env-key
+        reply:
+          status: 200
+          body: {max_input_tokens: 100, max_output_tokens: "64"}
+      - model: model
+        reply: {status: 500}
+env: {}
+compare: {ignore: []}

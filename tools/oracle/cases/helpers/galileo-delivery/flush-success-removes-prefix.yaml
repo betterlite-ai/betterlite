@@ -1,0 +1,5 @@
+kind: helper
+name: galileo-delivery-flush-success-removes-prefix
+call: {"b3964": {"environment": {"GALILEO_API_KEY": "key-0123456789abcdef", "GALILEO_PROJECT_ID": "project-1"}, "replies": [{"status": 200, "body": "{}"}, {"status": 500, "body": "{\"detail\": \"status 500\"}"}], "actions": [{"do": "push", "label": "a"}, {"do": "push", "label": "b"}, {"do": "flush"}, {"do": "push", "label": "c"}, {"do": "flush"}]}}
+env: {}
+compare: {ignore: []}

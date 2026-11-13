@@ -1,0 +1,130 @@
+id: B8082
+title: Python MCPClient, tool helpers and MCP result objects
+description: >-
+  A LiteLLM user writes `from litellm.experimental_mcp_client.client import MCPClient` and `from litellm.experimental_mcp_client
+  import load_mcp_tools, call_openai_tool`. This task builds those names in the betterlite wheel over B8080's native bridge. It
+  is a thin layer: Python collects arguments into JSON, calls `NativeMcpClient`, and builds result objects from the JSON that
+  comes back. Read B158's task file for the pattern (JSON in, JSON out, a table of native error types, explicit exports).
+
+
+  Files, all under `crates/betterlite-python/python/betterlite/experimental_mcp_client/`, each under the 300-line limit.
+  `types.py` has the result classes built on B5657's `ResponseObject`: `Tool`, `CallToolResult`,
+  `CallToolRequestParams` (`name`, `arguments`), `TextContent` and the other content blocks, `ListToolsResult`, `Prompt`,
+  `GetPromptRequestParams`, `GetPromptResult`, `Resource`, `ResourceTemplate` and `ReadResourceResult`. Their attributes are
+  the MCP SDK's snake_case names (`input_schema`, `is_error`, `structured_content`, `next_cursor`), and `model_dump(by_alias=True)`
+  gives the wire names (`inputSchema`, `isError`, `structuredContent`, `nextCursor`) with `exclude_none=True`. They are built
+  from the camelCase JSON that B8080 returns. `errors.py` has `McpError(code, message, data)` and
+  `UnsupportedMcpArgument(name)`, and one explicit `dict` from the `type` in `NativeMcpError` JSON to `McpError`, `TimeoutError`,
+  `RuntimeError`, `ValueError` and `asyncio.CancelledError`. Each is raised `from` the native error, and a `type` missing from
+  the table raises `UnknownNativeError` with the payload, never a generic error.
+  `MCPTransport`, `MCPAuth` and `MCPStdioConfig` are not defined in this task: B7943 owns litellm/types/mcp.py as `betterlite.types.mcp`, so `types.py` and `client.py` import them from there and keep no copy. B7943 has to merge before this task starts.
+
+
+  `client.py` has `MCPClient` with LiteLLM's constructor (L386-L428): same names, order and defaults. It builds the settings JSON
+  for `NativeMcpClient`. `sampling_callback`, `elicitation_callback`, `logging_callback`, `aws_auth` and `resolved_auth` raise
+  `UnsupportedMcpArgument` with the name when not None, and so does `host_progress_callback` in `call_tool`. `ssl_verify` is a
+  bool or a path string; any other value raises `UnsupportedMcpArgument`. `protocol_version` is checked against "auto" and the
+  legacy versions with a plain `ValueError` listing them. `list_tools`, `call_tool`, `list_prompts`, `get_prompt`,
+  `list_resources`, `list_resource_templates`, `read_resource` and `discovery_auth_fingerprint` are coroutines with LiteLLM's
+  names, keyword-only markers and defaults (L817-L1225), each calling the matching native method. `error_tool_result(exc)` is a
+  static method that builds the `CallToolResult` with `is_error` true and one `TextContent` holding `f"{type(exc).__name__}: {exc}"` (proxy/_experimental/mcp_server/result_conversion.py L60-L64), matching what
+  B4745 returns. `update_auth_value` forwards to the native client and keeps `_mcp_auth_value` readable as LiteLLM does.
+  `run_with_session(operation, *, quiet_on_error=False)` opens `NativeMcpClient.open_session()`, wraps it in `MCPSession`, awaits
+  `operation(session)` and always awaits `aclose()`. A cancellation of the caller still closes the session before it
+  propagates. `MCPSession` is the object a user's operation receives. It has `list_tools(params=None)`, `call_tool(name, arguments)`
+  and `initialize` is not exposed because the session is initialized already.
+
+
+  `tools.py` has `transform_mcp_tool_to_openai_tool`, `transform_mcp_tool_to_openai_responses_api_tool`,
+  `transform_mcp_tool_to_anthropic_tool` and `_normalize_mcp_input_schema` over the native pure functions,
+  `list_tools_with_pagination(session, listing_deadline=None)`, `load_mcp_tools(session, format="mcp")`, `call_mcp_tool`,
+  `_get_function_arguments`, `transform_openai_tool_call_request_to_mcp_tool_call_request` and `call_openai_tool`
+  (litellm/experimental_mcp_client/tools.py L27-L236). The `session` argument must be an `MCPSession`. Any other object (for
+  example an `mcp.ClientSession`) raises `UnsupportedMcpArgument("session")`, because the pagination and the call run in Rust.
+  `_get_function_arguments` keeps LiteLLM's rule: a JSON string parses, bad JSON gives `{}`, and a non-dict gives `{}`.
+
+
+  This task creates the package `__init__.py` as an empty file and B168 fills it in, so tests here import the submodules.
+  Tests call `litellm` and `betterlite` with the same arguments against `tests/mcp_server.py` (B8080) and compare results with
+  `model_dump(by_alias=True, exclude_none=True)`. LiteLLM's side uses the `mcp` and `httpx2` packages that the oracle project
+  already locks through `litellm[proxy]`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/experimental_mcp_client/__init__.py
+  - crates/betterlite-python/python/betterlite/experimental_mcp_client/types.py
+  - crates/betterlite-python/python/betterlite/experimental_mcp_client/errors.py
+  - crates/betterlite-python/python/betterlite/experimental_mcp_client/client.py
+  - crates/betterlite-python/python/betterlite/experimental_mcp_client/tools.py
+  - crates/betterlite-python/tests/test_mcp_client.py
+  - crates/betterlite-python/tests/test_mcp_tools.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/tools.py#L27-L236
+  why: Every function in tools.py.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L376-L430
+  why: The class docstring and constructor.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L677-L735
+  why: run_with_session, update_auth_value and the header slot.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L817-L1225
+  why: The public async methods.
+dod:
+- text: "`MCPClient` keeps LiteLLM's constructor and method signatures, and refuses the callback and auth-object arguments by name."
+  proof: [mcp-py-signature]
+- text: "`list_tools`, `call_tool`, `list_prompts`, `get_prompt`, `list_resources`, `list_resource_templates` and `read_resource` give the same `model_dump(by_alias=True, exclude_none=True)` as LiteLLM against one server."
+  proof: [mcp-py-methods]
+- text: "`raise_on_error`, an error result, a 401 and a protocol error behave as in LiteLLM, and an unknown native error type raises `UnknownNativeError`."
+  proof: [mcp-py-errors]
+- text: "`run_with_session` gives an `MCPSession`, closes it after a result, an exception and a cancellation, and `load_mcp_tools` and `call_openai_tool` give LiteLLM's tools and result through it."
+  proof: [mcp-py-session]
+- text: The four transform functions, `_normalize_mcp_input_schema` and the tool-call argument parsing give LiteLLM's output for the same input.
+  proof: [mcp-py-transforms]
+- text: A session that is not an `MCPSession` is refused by name.
+  proof: [mcp-py-session]
+- text: The package passes ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: mcp-py-signature
+    why: A caller's keyword is refused, or an unsupported callback is dropped silently.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_mcp_client.py -k signature
+  - id: mcp-py-methods
+    why: A method result differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_mcp_client.py -k methods
+  - id: mcp-py-errors
+    why: A failing server raises a different error than LiteLLM, or none.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_mcp_client.py -k errors
+  - id: mcp-py-session
+    why: A session stays open after the operation, or a foreign session is accepted.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_mcp_tools.py -k session
+  - id: mcp-py-transforms
+    why: A tool schema reaches the model in the wrong shape.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_mcp_tools.py -k transform
+  - id: python-lint
+    why: The public layer is where an untyped dict would creep back in.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`load_mcp_tools`, `call_openai_tool`, `call_mcp_tool` and `list_tools_with_pagination` accept only an `MCPSession` from `MCPClient.run_with_session`, and refuse an `mcp.ClientSession` with `UnsupportedMcpArgument`."
+  why: The wheel has no `mcp` package, and the pagination and the call run in Rust.
+- what: "`sampling_callback`, `elicitation_callback`, `logging_callback`, `aws_auth`, `resolved_auth` and `host_progress_callback` raise `UnsupportedMcpArgument`."
+  why: Rust cannot call back into Python in the middle of a session, and an `httpx2.Auth` object cannot drive the Rust transport. AWS signing is picked by `auth_type` "aws_sigv4".
+- what: "`MCPSigV4Auth` and the `_MCPHTTPClient` and `_MCPResponseStream` helpers (client.py L200-L375) are not exposed."
+  why: They exist to feed `httpx2` and are replaced by B4742 and B4743 in Rust.
+- what: Result objects are `ResponseObject` classes, not pydantic models.
+  why: The wheel depends only on python-dotenv.
+out_of_scope:
+- The native bridge, its error type and `tests/mcp_server.py` are B8080.
+- 'The package `__init__.py` files, with `__all__ = ["call_openai_tool", "load_mcp_tools"]`, are B168.'
+- '`to_basic_auth`, `strip_auth_scheme`, `to_basic_credentials`, `_strip_header_whitespace`, `_first_non_cancelled_cause`, `as_mcp_read_timeout`, `_run_bounded_cleanup`, `_create_transport_context`, `_get_safe_stdio_env`, `_initialize_session`, `_execute_session_operation`, `_create_httpx_client_factory`, `_get_auth_headers`, `_header_slot`, `_list_optional_pages` and `prepare_request_auth` run in Rust (B4741 to B4746) and have no Python face.'
+- '`error_text_result` lives in the proxy file result_conversion.py. Only its 5-line body is rebuilt inside `error_tool_result` here.'
+pitfalls:
+- '`MCPClient.timeout` is `timeout if timeout is not None else MCP_CLIENT_TIMEOUT`, so the default comes from `LITELLM_MCP_CLIENT_TIMEOUT` (60.0) read when the object is built, not a hard-coded value.'
+- '`list_tools` returns an empty list on error unless `raise_on_error=True`, and `call_tool` returns an `is_error` result the same way, so a test must call both ways.'
+- '`close` order matters: `run_with_session` awaits `aclose()` in a `finally`, and a cancellation raised there must still propagate after the close.'
+- '`model_dump` without `by_alias` gives snake_case, so a comparison against LiteLLM passes `by_alias=True` on both sides.'
+- A `Tool.input_schema` that is not an object schema is normalized in Rust only, so Python must not repair it first.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

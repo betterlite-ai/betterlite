@@ -1,0 +1,115 @@
+[package]
+name = "betterlite-provider-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-openai = { path = "../../betterlite-openai" }
+betterlite-provider = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "gdc_auth_payload"
+path = "fuzz_targets/gdc_auth_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sap_stream_line"
+path = "fuzz_targets/sap_stream_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "opensandbox_sse"
+path = "fuzz_targets/opensandbox_sse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "predibase_reply"
+path = "fuzz_targets/predibase_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sap_credentials"
+path = "fuzz_targets/sap_credentials.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sandbox_ndjson"
+path = "fuzz_targets/sandbox_ndjson.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "triton_reply"
+path = "fuzz_targets/triton_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "watsonx_text_reply"
+path = "fuzz_targets/watsonx_text_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "oci_embed_response"
+path = "fuzz_targets/oci_embed_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ollama_chat_reply"
+path = "fuzz_targets/ollama_chat_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ollama_generate_reply"
+path = "fuzz_targets/ollama_generate_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "langflow_chat_reply"
+path = "fuzz_targets/langflow_chat_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "langgraph_stream"
+path = "fuzz_targets/langgraph_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "manus_files_reply"
+path = "fuzz_targets/manus_files_reply.rs"
+test = false
+doc = false
+bench = false

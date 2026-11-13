@@ -1,0 +1,15 @@
+id: B6412
+milestone: M3 providers
+title: OVHCloud chat, embedding and transcription, and Scaleway transcription
+status: todo
+depends_on: [B668, B503, B504, B2202, B2214, B006, B1122, B1001, B184, B171]
+file: tasks/B6412-ovhcloud-scaleway.yaml
+covers:
+  - "litellm/llms/ovhcloud/**"
+  - "litellm/llms/scaleway/**"
+parent: B039
+split_from: B039
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

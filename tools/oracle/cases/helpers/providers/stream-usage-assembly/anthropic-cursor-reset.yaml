@@ -1,0 +1,125 @@
+kind: helper
+name: stream-usage-assembly-anthropic-cursor-reset
+call:
+  stream_usage_assembly:
+    function: batch
+    cases:
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage:
+          completion_tokens: 8
+          completion_tokens_details: {reasoning_tokens: 2}
+        choices: []
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 0}
+        choices: []
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+        choices: [{finish_reason: stop}]
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+        choices: [{finish_reason: ""}]
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+        choices: [{finish_reason: null}]
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: openai}
+        usage: {completion_tokens: 8}
+        choices: []
+      model: gpt-4o
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage: {completion_tokens: 8}
+        choices: []
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 0}
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+      - usage: {completion_tokens: 0}
+        choices: [{finish_reason: stop}]
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+        choices: [{}, {finish_reason: stop}]
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+      - usage: {completion_tokens: 0}
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage: {completion_tokens: 8}
+      - _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 0}
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - form: model_response
+        _hidden_params: {custom_llm_provider: anthropic}
+        usage: {completion_tokens: 8}
+        choices: []
+      model: claude-3
+      completion_output: hello world
+      counter: {text: 7, messages: 4}
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

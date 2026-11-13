@@ -307,7 +307,7 @@ checks:
     why: Outside bytes lack replay through the actual decoder.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/hf_model_config)"
       && grep -q 'decode_hf_model_config' crates/betterlite-models/fuzz/fuzz_targets/hf_model_config.rs && cargo
-      nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::replays_the_hf_model_config_corpus$/)'
+      nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::replays_the_hf_model_config_corpus(::|$)/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/model-metadata-resolution/potential-names.yaml
 - tools/oracle/cases/helpers/providers/model-metadata-resolution/provider-aliases.yaml

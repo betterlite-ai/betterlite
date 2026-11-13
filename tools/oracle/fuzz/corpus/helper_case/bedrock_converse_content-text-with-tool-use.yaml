@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-converse-content-text-with-tool-use-seed
+call:
+  bedrock_converse_content:
+    text_with_tool_use:
+      mappings: {x-tool: original_tool}
+      content_blocks:
+        - text: "<thinking>plan</thinking>Answer"
+        - toolUse: {toolUseId: tu-1, name: x-tool, input: {b: 2, a: [1, 3]}}
+          reasoningContent: {reasoningText: {text: explicit}}
+          citationsContent: {content: [{text: cited}], citations: []}
+        - reasoningContent: {}
+env: {}
+compare: {ignore: []}

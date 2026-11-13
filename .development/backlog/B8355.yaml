@@ -1,0 +1,14 @@
+id: B8355
+milestone: M12 python
+title: Router endpoint methods in the Python crate
+status: todo
+depends_on: [B014, B5369, B5659, B6022, B8352, B8353, B8354]
+file: tasks/B8355-router-endpoint-methods.yaml
+covers:
+  - "litellm/router.py"
+parent: B162
+split_from: B162
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

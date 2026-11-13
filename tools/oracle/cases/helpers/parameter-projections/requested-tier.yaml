@@ -1,0 +1,18 @@
+kind: helper
+name: parameter-projections-requested-tier
+call:
+  parameter_projections:
+    steps:
+      - {function: resolved_service_tier, requested_tier: auto}
+      - {function: resolved_service_tier, requested_tier: balanced}
+      - {function: resolved_service_tier, requested_tier: batch}
+      - {function: resolved_service_tier, requested_tier: default}
+      - {function: resolved_service_tier, requested_tier: fast}
+      - {function: resolved_service_tier, requested_tier: flex}
+      - {function: resolved_service_tier, requested_tier: priority}
+      - {function: resolved_service_tier, requested_tier: scale}
+      - {function: resolved_service_tier, requested_tier: standard}
+      - {function: resolved_service_tier, requested_tier: standard_only}
+      - {function: resolved_service_tier, requested_tier: ultrafast}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: e2b-delete-uses-stored-credentials
+call:
+  b3516:
+    operation: delete
+    container:
+      id: sbx_123
+      api_key: stored-key
+      api_base: https://stored.example
+env: {}
+compare:
+  ignore: []

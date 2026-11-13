@@ -1,0 +1,15 @@
+kind: helper
+name: batch-delivery-batch-413
+call:
+  batch_delivery:
+    send:
+      events: [e0, e1, e2, e3]
+      success_status_codes: [200]
+      policy: requeue
+      script:
+        - {outcome: status_error, status: 413}
+        - {outcome: response, status: 200}
+        - {outcome: response, status: 500}
+env: {}
+compare:
+  ignore: []

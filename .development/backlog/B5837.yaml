@@ -1,0 +1,14 @@
+id: B5837
+milestone: M3 providers
+title: NVIDIA NIM provider
+status: todo
+depends_on: [B668, B1013, B2202, B3570]
+file: tasks/B5837-nvidia-nim-provider.yaml
+covers:
+  - "litellm/llms/nvidia_nim/**"
+parent: B041
+split_from: B041
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

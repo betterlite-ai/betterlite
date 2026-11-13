@@ -1,0 +1,7 @@
+kind: helper
+name: bedrock-converse-usage-thinking-blocks-seed
+call:
+  bedrock_converse_usage:
+    reasoning_blocks: {blocks: [{reasoningText: {text: a, signature: s1}}, {reasoningText: {text: ""}}, {redactedContent: null}, {unknown: 1}]}
+env: {}
+compare: {ignore: []}

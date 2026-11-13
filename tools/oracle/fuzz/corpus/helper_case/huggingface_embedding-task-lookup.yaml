@@ -1,0 +1,15 @@
+kind: helper
+name: task-lookup
+call:
+  b5991:
+    steps:
+      - {kind: transform_input, model: "org/model", input: ["first", "second"], optional_params: {input_type: "embed"}}
+      - {kind: transform_input, model: "org/model", input: ["first", "second"], optional_params: {input_type: "bogus"}}
+      - {kind: transform_input, model: "org/model", input: ["first", "second"], pipeline_tag: "rerank"}
+      - kind: prepare
+        model: "org/model"
+        input: ["first", "second"]
+        pipeline_tag: "embed"
+      - {kind: url, model: "org/model", env: {HF_API_BASE: ""}, task: null}
+env: {}
+compare: {ignore: []}

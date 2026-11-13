@@ -1,0 +1,57 @@
+kind: helper
+name: reply
+call:
+  b8179:
+    steps:
+      - kind: reply
+        status: 200
+        model: "dolphin"
+        created: 1700000000
+        body: '{"generated_text": "hello", "nb_input_tokens": 3, "nb_generated_tokens": 4}'
+      - kind: reply
+        status: 200
+        model: "dolphin"
+        created: 1700000000
+        body: '{"generated_text": "", "nb_input_tokens": 1, "nb_generated_tokens": 2}'
+      - kind: reply
+        status: 200
+        model: "dolphin-2"
+        created: 1700000001
+        body: '{"generated_text": "hi", "nb_input_tokens": 1, "nb_generated_tokens": 2, "details": {"seed": 4}}'
+      - kind: reply
+        status: 400
+        model: "dolphin"
+        created: 1700000000
+        body: '{"error": "bad input"}'
+      - kind: reply
+        status: 200
+        model: "dolphin"
+        created: 1700000000
+        body: '{"error": "reported on a success reply"}'
+      - kind: reply
+        status: 400
+        model: "dolphin"
+        created: 1700000000
+        body: '{"error": {"code": "invalid"}}'
+      - kind: reply
+        status: 500
+        model: "dolphin"
+        created: 1700000000
+        body: 'not json at all'
+      - kind: reply
+        status: 200
+        model: "dolphin"
+        created: 1700000000
+        body: '{"nb_input_tokens": 3, "nb_generated_tokens": 4}'
+      - kind: reply
+        status: 200
+        model: "dolphin"
+        created: 1700000000
+        body: '{"generated_text": null, "nb_input_tokens": 3, "nb_generated_tokens": 4}'
+      - kind: reply
+        status: 200
+        model: "dolphin"
+        created: 1700000000
+        body: '{"generated_text": "hi", "nb_input_tokens": 3}'
+env: {}
+compare: {ignore: []}

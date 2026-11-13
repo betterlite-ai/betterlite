@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-aws-endpoints-provider-selection-seed
+call:
+  bedrock_aws_endpoints:
+    provider_selection:
+      models: ['us.amazon.nova-pro-v1:0', 'llama/arn:aws:bedrock:us-east-1:1:model/x']
+env: {}
+compare: {ignore: []}

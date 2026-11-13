@@ -1,0 +1,16 @@
+kind: helper
+name: azure-oidc-exchange-errors-seed
+call:
+  azure_oidc_exchange:
+    steps:
+      - environment: {AZURE_CLIENT_ID: seeded-client, AZURE_TENANT_ID: seeded-tenant, OIDC_ASSERTION: seeded-assertion}
+        calls:
+          - {azure_ad_token: os.environ/OIDC_ASSERTION}
+        replies:
+          - {status: 200, body: '{"access_token":null}'}
+      - environment: {}
+        calls:
+          - {azure_ad_token: os.environ/MISSING}
+        replies: []
+env: {}
+compare: {ignore: []}

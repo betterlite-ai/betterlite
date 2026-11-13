@@ -1,0 +1,5 @@
+kind: helper
+name: openai-assistants-delete-empty-id
+call: {openai_assistants: {delete_assistant: {options: {api_key: sk-test, api_base: 'https://example.test/v1'}, assistant_id: '', flag: false}}}
+env: {}
+compare: {ignore: []}

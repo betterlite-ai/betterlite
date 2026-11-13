@@ -1,0 +1,23 @@
+kind: helper
+name: agent-search-result-projection
+call:
+  b4783:
+    function: result
+    agent:
+      agent_id: a1
+      agent_name: planner
+      agent_card_params:
+        description: Plans trips
+        skills:
+          - id: s1
+            name: lookup
+            description: Finds places
+            tags: [travel]
+            examples: [find Paris]
+            inputModes: [text]
+            outputModes: [text]
+      litellm_params: {api_key: sk-secret}
+      static_headers: {authorization: Bearer secret}
+    score: 0.75
+env: {}
+compare: {ignore: []}

@@ -57,3 +57,4 @@ CREATE INDEX IF NOT EXISTS "LiteLLM_SpendLogGuardrailIndex_guardrail_id_start_ti
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "LiteLLM_SpendLogGuardrailIndex_policy_id_start_time_idx" ON "LiteLLM_SpendLogGuardrailIndex"("policy_id", "start_time");
+

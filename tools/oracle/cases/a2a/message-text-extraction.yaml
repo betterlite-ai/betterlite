@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-message-text-extraction
+call: {b4803: {operation: extract, parts: [{kind: text, text: first}, {kind: image, text: ignored}, {text: second}, malformed, {kind: text, text: ''}]}}
+env: {}
+compare: {ignore: []}

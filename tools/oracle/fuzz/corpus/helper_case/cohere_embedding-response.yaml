@@ -1,0 +1,6 @@
+kind: helper
+name: cohere-embedding-response-seed
+call:
+  cohere_embedding: {function: response, model: embed-english-v3.0, requests: [{input: [hello], body: '{"embeddings":{"float":[[0.5]]},"meta":{"billed_units":{"input_tokens":2}}}'}]}
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-results-tool-result-generated-id
+call:
+  anthropic_results:
+    function: tool_result
+    id: generated-id
+    data_urls: {}
+    message:
+      role: function
+      name: weather
+      content: hi
+env: {}
+compare:
+  ignore: []

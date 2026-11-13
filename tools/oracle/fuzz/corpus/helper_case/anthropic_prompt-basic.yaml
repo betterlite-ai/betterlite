@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-prompt-corpus-seed
+call: {anthropic_prompt: {messages: [{role: user, content: hi}], model: claude-sonnet-4-5, llm_provider: anthropic, modify_params: false, id: generated-id}}
+env: {}
+compare: {ignore: []}

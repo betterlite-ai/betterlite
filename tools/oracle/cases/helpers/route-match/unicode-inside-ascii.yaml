@@ -1,0 +1,11 @@
+kind: helper
+name: unicode-inside-ascii
+call:
+  route_match:
+    function: check_route_access
+    route: "/models/é"
+    allowed_routes:
+      - "/models/(?a:(?u:\\w+))"
+env: {}
+compare:
+  ignore: []

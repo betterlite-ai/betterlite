@@ -1,0 +1,192 @@
+id: B043
+title: Regional embeddings, rerank, image and speech HTTP parity
+description: >-
+  Finish the regional-host umbrella with the HTTP checks its native operation parts
+  leave behind. B8312 already constructs the configurations and covers plain
+  DashScope/Volcengine embeddings, MiniMax chat and NLP Cloud chat. Its HTTP list does
+  not cover the Qwen embedding brands, GigaChat embeddings, DashScope-family rerank
+  or images, ModelScope images or MiniMax speech. Add those cases and run B9230's chat
+  and B9231's Responses cases plus B9232's image-upload flows in the same final task gate. These dependencies supply
+  actual fixture inputs, not a wait for every child of the umbrella. Regional production
+  functions belong to existing tasks: this task owns zero new LiteLLM logic lines and about
+  750 lines of fixtures. Report failures to the existing implementation owner instead
+  of creating a parallel provider or mounting a route here.
+
+  Each deployment uses a public model_name, a fixed model_info.id, a mock-only
+  api_base and dummy provider credentials. general_settings.master_key is sk-test,
+  router_settings.num_retries is 0, and request x-litellm-call-id is fixed. Environment
+  destinations use {{upstream}} in the case env and os.environ/NAME where referenced
+  by config. The HTTP runner supports an ordered upstream list and steps in one case;
+  use its ordinary untagged HTTP representation. Compare method/path/body and chosen
+  upstream authorization/content-type/accept headers, downstream status/body,
+  content-type and stable x-litellm-* headers. Keep all provider usage, data and error
+  type/param/code fields significant. Ignore /error/message for betterlite's wording
+  and only narrowly identified generated ids/times elsewhere. The built-in oracle
+  check must compare the built gateway with the pin, not run --self-check.
+
+  qwencloud-embedding uses qwencloud/text-embedding-v4 with a brand key and a distinct
+  DASHSCOPE_API_KEY; qwen-platform-embedding uses qwen_ai_platform/text-embedding-v4
+  with only the DashScope fallback. Pass dimensions, encoding_format=float and user,
+  and retain the upstream usage in the comparison. Set QWENCLOUD_API_BASE or
+  QWEN_AI_PLATFORM_API_BASE to local /compatible-mode/v1 bases; absent values would
+  select the international or domestic DashScope host respectively. gigachat-embedding
+  uses gigachat/Embeddings, a string input, and separate GIGACHAT_CREDENTIALS and
+  GIGACHAT_API_KEY values with GIGACHAT_AUTH_URL pointing at the mock. Queue OAuth
+  then an embedding reply containing per-item usage. Credentials take the opposite
+  environment precedence to chat, input becomes a list, item usage disappears and
+  the total is rebuilt. Spread these cases and brand-missing-key over POST
+  /v1/embeddings, /embeddings, /engines/{model:path}/embeddings and
+  /openai/deployments/{model:path}/embeddings. The missing-key case has no upstream
+  answers and compares the source error envelope.
+
+  dashscope-rerank, qwencloud-rerank and qwen-platform-rerank use each provider prefix
+  with qwen3-rerank and cover POST /v2/rerank, /v1/rerank and /rerank once each. Send
+  query, string documents, top_n and return_documents, plus supported caller-level
+  rank_fields which the native mapper discards. Return one string document and one
+  object document, explicit id and usage.total_tokens; check normalized document.text
+  and both usage metadata fields. Use DASHSCOPE_API_BASE_RERANK,
+  QWENCLOUD_API_BASE_RERANK and QWEN_AI_PLATFORM_API_BASE_RERANK to redirect the default
+  /compatible-api/v1/reranks endpoints. A configured base on an aliyuncs.com host with
+  path /compatible-mode/v1 is remapped, but the rerank environment override wins;
+  make this case stay local rather than contacting that configured public host.
+  rerank-provider-error returns a non-2xx code/message envelope and compares the error.
+
+  The three family image cases use dashscope/qwen-image-2.0, qwencloud/qwen-image-2.0
+  and qwen_ai_platform/qwen-image-2.0 on POST /v1/images/generations,
+  /images/generations and /openai/deployments/{model:path}/images/generations. Configure
+  each deployment with a chat-shaped base and redirect through its *_API_BASE_IMAGE
+  setting. Plain DashScope and QwenCloud default to dashscope-intl.aliyuncs.com for
+  images; Qianwen defaults to dashscope.aliyuncs.com. The path is
+  /api/v1/services/aigc/multimodal-generation/generation, not /images/generations.
+  Send n and size=800x600, then compare parameters.size=800*600 and
+  input.messages[0].content[0].text. The reply contains image and non-image content
+  entries; only images become data[].url. modelscope-image uses
+  modelscope/Qwen/Qwen-Image-Edit, an explicit /v1/ base and n/size/user; the native
+  /images/generations reply preserves url, b64_json and revised_prompt. Default
+  MODELSCOPE_API_BASE is https://api-inference.modelscope.cn/v1; its key has no default.
+  A second step returns an error object with upstream status 400 to exercise that
+  provider's error class through the route.
+
+  minimax-speech-hex and minimax-speech-base64 cover POST /v1/audio/speech and
+  /audio/speech using minimax/speech-02-hd. The base here is a host without /v1;
+  MINIMAX_API_BASE defaults to https://api.minimax.io and /v1/t2a_v2 is appended.
+  A voice object chooses voice_id before id before name, then the OpenAI voice name
+  maps to the provider voice. Send speed=2.5 and verify it clamps to 2.0. The request
+  is text plus voice_setting/audio_setting, stream=false and output_format=hex.
+  Supply short UTF-8-compatible audio bytes as data.audio in hex, then the same bytes
+  as top-level audio_file in base64 in the other fixture. Compare the actual response
+  bytes and content-type retained by the source; do not assume the provider JSON
+  content-type becomes audio/mpeg. minimax-speech-errors has a status=2, ced error
+  reply and a separate data.audio_url reply; the latter produces the source's 500
+  without downloading the URL. base_resp.status_code is not the error discriminator
+  this pinned implementation reads.
+
+  All settings are consumed through B8312 and the already-owned config sections.
+  This task loads no new key and decodes no new byte format, so it adds neither a
+  config section nor a fuzz target. B9230 verifies authentication refusal and chat
+  alias composition, B9231 covers Responses aliases, and B9232 proves image uploads.
+  The oracle list below reruns all three directories alongside these native cases.
+scope:
+  paths:
+    - tools/oracle/cases/providers/regional-native/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7175-L7232
+    why: B8312's existing Volcengine and DashScope-family embedding dispatch; this task adds missing brand HTTP proof.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7313-L7334
+    why: GigaChat embedding credentials prefer GIGACHAT_CREDENTIALS to GIGACHAT_API_KEY.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8621-L8662
+    why: MiniMax speech's already-owned dispatch and voice extraction are tested over HTTP.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/common_utils.py#L24-L109
+    why: Family selectors, rerank remap and key rules, implemented by B8171/B8172.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/embed/transformation.py#L41-L191
+    why: Embedding options, headers, URL and reply usage exercised with brand subclasses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/qwencloud.py#L11-L65
+    why: QwenCloud's four policies and separate image/rerank environment destinations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/qwen_ai_platform.py#L11-L65
+    why: Qianwen's domestic bases and DashScope key fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/rerank/transformation.py#L62-L250
+    why: Existing rerank request filtering, string-document normalization, token metadata and provider errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/image_generation/transformation.py#L48-L213
+    why: Chat-base rejection, image size mapping, nested input and output extraction under test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/embedding/transformation.py#L58-L197
+    why: List normalization, per-item usage aggregation and bearer headers, owned by B8178.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L64-L115
+    why: OAuth-before-embedding uses the same B7325 token service already composed by B8312.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/minimax/text_to_speech/transformation.py#L74-L409
+    why: Voice mapping, request shape, status/ced errors, hex/base64 decoding and native endpoint.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/modelscope/image_generation/transformation.py#L76-L239
+    why: Image endpoint, returned image fields and status-dependent error conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12275-L12304
+    why: All four existing embedding decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12522-L12538
+    why: Both speech route decorators and their shared authenticated handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L67-L92
+    why: Three generation aliases reused without registering another route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rerank_endpoints/endpoints.py#L27-L49
+    why: Rerank's v2, v1 and bare decorators covered by the three brands.
+dod:
+  - text: The Qwen embedding brands and GigaChat embedding flow match LiteLLM through all embedding aliases, including missing keys, OAuth credential order and per-item usage conversion.
+    proof: [regional-native-fixtures, oracle]
+  - text: All DashScope brands reach native rerank and image APIs with the correct keys, overridden destinations, request shapes and converted replies.
+    proof: [regional-native-fixtures, oracle]
+  - text: ModelScope image output and errors, and MiniMax voice mapping, audio decoding and handled errors, agree with the source through existing HTTP routes.
+    proof: [regional-native-fixtures, oracle]
+  - text: The completed regional suite also runs chat, Volcengine Responses and GigaChat upload fixtures supplied by B9230, B9231 and B9232 against the built gateway.
+    proof: [regional-suite-inputs, oracle]
+checks:
+  optional: []
+  commands:
+    - id: regional-native-fixtures
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/providers/regional-native)"
+        && for case in qwencloud-embedding qwen-platform-embedding gigachat-embedding brand-missing-key
+        dashscope-rerank qwencloud-rerank qwen-platform-rerank rerank-provider-error dashscope-image
+        qwencloud-image qwen-platform-image modelscope-image minimax-speech-hex minimax-speech-base64
+        minimax-speech-errors; do test -f "tools/oracle/cases/providers/regional-native/$case.yaml" || exit 1; done
+      why: Every native operation fixture must be present, with newly added coverage on this branch.
+    - id: regional-suite-inputs
+      run: >-
+        test -f tools/oracle/cases/providers/regional-native/gigachat-embedding.yaml
+        && test -d tools/oracle/cases/providers/regional-chat
+        && test -d tools/oracle/cases/providers/volcengine-responses
+        && test -d tools/oracle/cases/providers/gigachat-upload
+      why: The final regression consumes all three new parts and fails on the base before its own native fixtures exist.
+oracle_cases:
+  - tools/oracle/cases/providers/regional-native/qwencloud-embedding.yaml
+  - tools/oracle/cases/providers/regional-native/qwen-platform-embedding.yaml
+  - tools/oracle/cases/providers/regional-native/gigachat-embedding.yaml
+  - tools/oracle/cases/providers/regional-native/brand-missing-key.yaml
+  - tools/oracle/cases/providers/regional-native/dashscope-rerank.yaml
+  - tools/oracle/cases/providers/regional-native/qwencloud-rerank.yaml
+  - tools/oracle/cases/providers/regional-native/qwen-platform-rerank.yaml
+  - tools/oracle/cases/providers/regional-native/rerank-provider-error.yaml
+  - tools/oracle/cases/providers/regional-native/dashscope-image.yaml
+  - tools/oracle/cases/providers/regional-native/qwencloud-image.yaml
+  - tools/oracle/cases/providers/regional-native/qwen-platform-image.yaml
+  - tools/oracle/cases/providers/regional-native/modelscope-image.yaml
+  - tools/oracle/cases/providers/regional-native/minimax-speech-hex.yaml
+  - tools/oracle/cases/providers/regional-native/minimax-speech-base64.yaml
+  - tools/oracle/cases/providers/regional-native/minimax-speech-errors.yaml
+  - tools/oracle/cases/providers/regional-chat
+  - tools/oracle/cases/providers/volcengine-responses
+  - tools/oracle/cases/providers/gigachat-upload
+deviations: []
+out_of_scope:
+  - B8171 implements all DashScope embedding/rerank methods, errors and rerank base helpers; B8172 implements the family selectors, key/message functions, image config and Qwen overrides. B8170 owns DashScope chat and cost functions.
+  - B8173 owns every AI21, MiniMax, Tencent and ModelScope chat function and Tencent cost; B1430 owns Tencent/MiniMax native Messages methods; B8580/B8634 own their binding and selector composition, with existing HTTP cases.
+  - B8174 owns all MiniMax speech and ModelScope image methods and the called ModelScope image factory. The unused get_dashscope_image_generation_config in dashscope/image_generation/__init__.py has no caller at the pin and needs no implementation or case.
+  - B8175 owns Volcengine chat, embedding and common helpers; B8176 owns every Responses override and helper. B9231 adds their Responses HTTP proof.
+  - B7325 owns all GigaChat authenticator functions; B8177 owns chat, stream and utility functions; B8178 owns embedding, file and passthrough functions, with inherited get_models supplied by B3570. upload_file_async and its private async download helper have no live caller at the pin.
+  - B8179 owns NLP Cloud config, completion handler, stream cleaner and error constructor. Its empty embedding stub has no caller at the pin. B8312 already owns ordinary NLP Cloud HTTP proof.
+  - B8312 owns the regional main.py dispatch functions, embedding branches, speech branch and config assembly; all other main.py functions remain with their facade/provider owners. B1686 owns price dispatch, so neither cost registry nor call accounting is wired here.
+  - B006, B082, B083, B085, B080 and B938 own the endpoint functions. B1100/B8610 own route composition, B8636 fills rerank/Responses production ports, and B8609 mounts GigaChat passthrough once. B8626/B8701/B8728 are MCP area mounts and do not leave a regional route to register.
+pitfalls:
+  - A chat-shaped base is discarded for DashScope images but remapped for rerank; use the operation-specific environment override so both cases reach the local mock.
+  - MiniMax speech reads top-level status and ced, and the fallback audio_file is top-level too; the older prose describing base_resp or data.audio_file is not the pinned behavior.
+  - GigaChat embedding rebuilds usage even if the reply supplies a different aggregate, and that difference must not be hidden by ignores.
+  - ModelScope image selection accepts any model; Qwen-Image-Edit here still calls generation, not an invented regional image-edit route.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

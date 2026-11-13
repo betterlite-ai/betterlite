@@ -1,0 +1,14 @@
+id: B8773
+milestone: M6 guardrails
+title: Build the content filter guardrail class and its apply_guardrail
+status: todo
+depends_on: [B8219, B3690, B3692, B3693, B3694, B3695, B3696, B3697, B3698, B3699, B5471]
+file: tasks/B8773-content-filter-class.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py"
+parent: B105
+split_from: B105
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

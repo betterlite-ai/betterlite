@@ -1,0 +1,17 @@
+kind: helper
+name: unicode-and-zero-kept-tail
+call:
+  spend_sanitize:
+    operation: sanitize_request_body
+    bodies:
+      - body: {$py: mapping, id: 1, entries: {text: ééé, short: ok}}
+        max_string_length: 1
+      - body:
+          $py: mapping
+          id: 2
+          entries:
+            text: abcdefghijé
+            nested: {value: 𝄞𝄞𝄞𝄞}
+        max_string_length: 5
+env: {}
+compare: {ignore: []}

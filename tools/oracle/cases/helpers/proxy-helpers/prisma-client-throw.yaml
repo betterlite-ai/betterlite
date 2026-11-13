@@ -1,0 +1,13 @@
+kind: helper
+name: prisma-client-throw
+call:
+  b8400:
+    calls:
+      - do: database
+        connected: true
+        message: Database not available. Connect a database to your proxy
+      - do: database
+        connected: false
+        message: Database not available. Connect a database to your proxy
+env: {}
+compare: {ignore: []}

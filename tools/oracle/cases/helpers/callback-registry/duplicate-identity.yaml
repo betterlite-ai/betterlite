@@ -1,0 +1,18 @@
+kind: helper
+name: callback-registry-duplicate-identity
+call:
+  callback_registry:
+    max_callbacks: 100
+    steps:
+      - {op: register, list: success_callback, callback: {class_name: Logger, attributes: {api_key: sk-1}}}
+      - {op: register, list: success_callback, callback: {class_name: Logger, attributes: {api_key: sk-1}}}
+      - {op: register, list: success_callback, callback: {class_name: Logger, attributes: {api_key: sk-1, _cache_id: 9}}}
+      - {op: register, list: callbacks, callback: {class_name: Logger, attributes: {api_key: sk-1}}}
+      - {op: register, list: success_callback, callback: {class_name: Logger, attributes: {api_key: sk-2}}}
+      - {op: register, list: success_callback, callback: {class_name: Logger, attributes: {api_key: sk-1, retries: 3}}}
+      - {op: register, list: success_callback, callback: {class_name: Logger, attributes: {api_key: sk-1, verbose: true}}}
+      - {op: register, list: success_callback, callback: {class_name: Other, attributes: {api_key: sk-1}}}
+      - {op: remove_from_list, list: success_callback, callback: {class_name: Logger, attributes: {api_key: sk-1}}}
+env: {}
+compare:
+  ignore: []

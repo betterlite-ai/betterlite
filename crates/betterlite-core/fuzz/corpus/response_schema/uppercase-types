@@ -1,0 +1,1 @@
+{"schema":{"type":"OBJECT","properties":{"name":{"type":"STRING"},"tags":{"type":"ARRAY","items":{"type":"INTEGER"}}}},"response":"{\"name\":\"Ada\"}"}

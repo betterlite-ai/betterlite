@@ -1,0 +1,11 @@
+task: B585
+deviations:
+  - what: An upstream error body that is not UTF-8 text becomes an error whose message says how many bytes were not UTF-8.
+    why: LiteLLM reads response.text, which replaces invalid bytes with U+FFFD. Rust keeps error messages as valid text without silently rewriting bytes, so the caller sees the status and a plain reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/count_tokens/handler.py#L81
+  - what: An input_tokens value that is null, a float, a numeric string or any non-integer gives a 500 error record with the message "input_tokens is not an integer".
+    why: LiteLLM passes the value to a pydantic int field, which coerces integral floats and numeric strings, and whose validation error text cannot be reproduced. Rust accepts only a JSON integer that fits i64.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/count_tokens/token_counter.py#L77
+  - what: The message of a 500 error record for a transport failure, an undecodable body or a body that is not a JSON object is betterlite's own text, not the text of httpx, pydantic or Python.
+    why: Those messages name Python classes and library internals that Rust does not have. The status 500 and the CountTokens processing error prefix are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/count_tokens/handler.py#L124-L127

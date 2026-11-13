@@ -1,0 +1,13 @@
+kind: helper
+name: sap-stream-stream-flag
+call:
+  b5952:
+    operation: flag
+    params:
+      body:
+        config:
+          stream: {chunk_size: 5, delimiters: ["\n"], enabled: false}
+          modules: [{prompt_templating: {}}]
+        placeholder_values: {a: b}
+env: {}
+compare: {ignore: []}

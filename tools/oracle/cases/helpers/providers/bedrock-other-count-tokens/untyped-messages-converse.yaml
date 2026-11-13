@@ -1,0 +1,29 @@
+kind: helper
+name: untyped-messages-converse
+call:
+  bedrock_other_count_tokens:
+    untyped_messages_converse:
+      requests:
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content:
+                - text: hi
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages: []
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages: [42]
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages: prompt
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages: {role: user, content: hi}
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: plain
+            - role: assistant
+              content:
+                - toolUse: {name: t}
+env: {}
+compare: {ignore: []}

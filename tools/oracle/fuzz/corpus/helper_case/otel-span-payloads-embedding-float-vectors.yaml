@@ -1,0 +1,30 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-embedding-float-vectors",
+  "call": {
+    "b3844": {
+      "function": "embedding_output",
+      "value": {
+        "data": [
+          {
+            "object": "embedding",
+            "embedding": [
+              0.1,
+              0.2
+            ]
+          },
+          {
+            "object": "embedding",
+            "embedding": [
+              0.3
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -1,0 +1,127 @@
+id: B9760
+title: Exercise MCP server forms, submissions and toolsets over HTTP
+description: >-
+  Add the missing booted-proxy HTTP transcripts for the retained MCP administration pages.
+  B9090 imports every component, payload builder and existing test in these covers unchanged;
+  this task writes cases only, about 650 lines, and reimplements zero LiteLLM functions.
+  Default requests use Authorization Bearer with the dashboard session key; a configured
+  auth_header_name replaces that header. JSON writes use application/json, GETs and deletes
+  have no body. Capture generated identifiers independently on each oracle side and create
+  records through the real management endpoints with B860's isolated PostgreSQL fixture.
+
+  Catalog audit. MCPServers and MCPServerSelector GET /v1/mcp/server, optionally team_id,
+  reading the raw array's server_id,server_name,alias,url,transport,auth_type,mcp_info,
+  mcp_access_groups,allowed_tools and credential/redaction metadata. GET /v1/mcp/access_groups
+  reads access_groups[]. These exact requests are already planned by B9735; include its
+  mcp-servers-and-group-labels case, do not write another selector case. B4720 implements
+  these reads and B8625 mounts them. The health hook additionally GETs
+  /v1/mcp/server/health?include_reachability=true, initially without server_ids and then with
+  repeated server_ids for refresh; it reads server_id,status per result. MCP discovery GETs
+  /v1/mcp/discover without filters, reading categories[] and servers[] with
+  name,title,description,category,url,transport and authentication metadata. GET
+  /v1/mcp/openapi-registry reads apis[].name,title,description,icon_url,spec_url,
+  oauth.authorization_url/token_url/pkce/docs_url and key_tools[].name/description to
+  fill the create form. Those two and health are also B4720/B8625.
+
+  CreateMCPServer POST /v1/mcp/server and EditMCPServer PUT /v1/mcp/server use
+  createServerPayload and editServerPayload, not hand-normalized partial samples. Include
+  server_name,url,transport,auth_type,alias,mcp_access_groups,mcp_info with server_name,
+  description,optional logo_url,mcp_server_cost_info and tool_allowlist_enforced; include
+  allowed_tools,display-name/description maps,allow_all_keys,available_on_public_internet,
+  delegate_auth_to_upstream,oauth_passthrough,dcr_bridge,static_headers,env_vars and the
+  selected authentication fields. Default allow_all_keys is false and public internet is
+  true; openapi form transport becomes http. Create sends empty maps/arrays where the
+  builder does; edit adds server_id,extra_headers,disallowed_tools and sends cleared maps
+  as null. Its untouched allowlist is omitted. Preserve client-forwarded credential omission
+  and clearing stored app credentials with {client_id:null,client_secret:null}. Create reads
+  response.server_id before saving user credentials; update/delete success triggers refetch.
+  DELETE /v1/mcp/server/{server_id} has no body. B4721 implements all three, B8627 mounts them.
+  Import POST /v1/mcp/server/import accepts the UI's parsed {mcpServers:{name:config}} and
+  {mcp_servers:[...]}; read imported[].name/server_id/alias,skipped[].name/reason and
+  errors[].name/error. This is the same B4721/B8627 ownership, including partial import.
+
+  Review audit. Non-admin submission POST /v1/mcp/server/register uses the same server form;
+  GET /v1/mcp/server/submissions returns items with approval_status and review metadata
+  plus total,pending_review,active,rejected counts. PUT /v1/mcp/server/{id}/approve
+  sends no body; PUT /v1/mcp/server/{id}/reject
+  sends {review_notes:string|null}. These are B4722 handlers mounted by B8625. Compare both
+  submitting user and reviewing admin, and a denied review, without enterprise modules.
+  Submission-rules config requests are covered with the other settings in B9762.
+
+  Toolsets audit. GET /v1/mcp/toolset returns a bare array of toolset_id,toolset_name,
+  description and tools[{server_id,tool_name}]; reuse B9735's toolset/tool selector case.
+  POST /v1/mcp/toolset sends {toolset_name,description?,tools:[{server_id,tool_name}]}; PUT
+  on the same path adds toolset_id; DELETE /v1/mcp/toolset/{id} has no body. The tab consumes
+  mutations only by refetching. All four belong to B4725/B8701. Prove that an edited
+  selection survives a list and is removed by deletion, and that team visibility is retained.
+  StdioAvailability's direct public GET /.well-known/litellm-ui-config has no auth or body
+  and reads mcp_stdio_enabled. B3211 implements it and B8670 mounts it; test
+  LITELLM_ENABLE_MCP_STDIO=false by default and true explicitly, not an invented config key.
+  The same owner serves /litellm/.well-known/litellm-ui-config for root-mounted discovery;
+  StdioAvailability calls only the first spelling.
+
+  No on-disk HTTP case currently sends these management requests. B8625/B8627/B8701 have
+  planned generic route cases, but not the create/edit builder's null/omission choices,
+  import-result projection or review/toolset sequence. The shared B9735 cases are planned,
+  not existing evidence. Use B136's /__mcp_fixture/ protocol and $mcp_request_id substitution
+  for local MCP health targets; compare status, response
+  envelopes, content-type, auth error type/param/code and secret redaction. Limit comparison
+  exclusions to generated IDs, timestamps and human error text at their actual pointers.
+scope:
+  paths:
+    - tools/oracle/cases/ui/mcp-catalog/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L4707-L4999
+    why: Catalog, health, server mutation, toolset and submission request construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/mcp-servers/_components/createServerPayload.ts#L128-L233
+    why: The create form's exact transport, credential and empty-field decisions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/mcp-servers/_components/editServerPayload.ts#L241-L405
+    why: Edit has its own null-clearing and omitted-allowlist behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1191-L1447
+    why: Existing list, health and registration decorators under /v1/mcp.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1508-L1711
+    why: Existing submission list and approve/reject routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1802-L2008
+    why: Server create and import belong to B4721.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2354-L2418
+    why: Bodyless server deletion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2941-L3095
+    why: Server update decorator and field handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L3185-L3450
+    why: Discovery, OpenAPI registry and all toolset decorators, with no additional aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/ui_discovery_endpoints.py#L16-L46
+    why: B3211/B8670's public discovery aliases include the stdio flag read by the form.
+dod:
+  - text: Server create, edit, import and delete use the complete page payloads and preserve visible fields without leaking stored credentials.
+    proof: [catalog-transcripts, oracle]
+  - text: Health, discovery, stdio discovery, approval and toolset workflows match the page's query/body/envelope contracts under the appropriate caller.
+    proof: [catalog-transcripts, oracle]
+checks:
+  optional: []
+  commands:
+    - id: catalog-transcripts
+      why: The source intake alone does not exercise any MCP form against a running proxy.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/mcp-catalog)"
+oracle_cases:
+  - tools/oracle/cases/ui/mcp-catalog/create-edit-clear-delete.yaml
+  - tools/oracle/cases/ui/mcp-catalog/import-config-results.yaml
+  - tools/oracle/cases/ui/mcp-catalog/health-and-discovery.yaml
+  - tools/oracle/cases/ui/mcp-catalog/submit-approve-reject.yaml
+  - tools/oracle/cases/ui/mcp-catalog/toolset-edit-delete.yaml
+  - tools/oracle/cases/ui/mcp-catalog/stdio-ui-discovery.yaml
+  - tools/oracle/cases/ui/management-selectors/mcp-servers-and-group-labels.yaml
+  - tools/oracle/cases/ui/management-selectors/mcp-toolsets-and-tools.yaml
+deviations: []
+out_of_scope:
+  - B9090 retains all functions and tests in the covered dashboard files; no TypeScript port or patch is required by this plan.
+  - B4720, B4721, B4722 and B4725 retain every backend function referenced above; B9761 covers credentials and sessions, B9762 tools and settings.
+  - Shared catalogs are B9735; browser boot and authenticated static navigation are B144.
+pitfalls:
+  - Sending an empty object to approve differs from the page's bodyless PUT.
+  - MCP imports report individual skipped and failed records even when the outer request succeeds.
+  - Clearing an edit field with null is not equivalent to omitting it.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

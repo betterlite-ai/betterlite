@@ -1,0 +1,6 @@
+kind: helper
+name: cold-storage-key-null-metadata-still-keyed-seed
+call:
+  b9520: {"cold_storage_custom_logger": "s3_v2", "metadata": null, "start_time": "2026-01-02T03:04:05.123456", "response_id": "chatcmpl-1", "s3_v2": {"path": "logs/", "partition_granularity": null}}
+env: {}
+compare: {ignore: []}

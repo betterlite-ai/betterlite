@@ -1,0 +1,68 @@
+id: B8544
+title: Install the managed agent admission port
+description: >-
+  B855 runs LiteLLM's auth admission order and calls managed agents only through its `ManagedAdmission` port: create a managed
+  identity store when a database exists, admit a non-null agent_id, and prepare the invocation of a resolved target before the
+  common checks (user_api_key_auth.py L3270-L3312). B855 must not depend on the agent crates, and B732's server construction refuses
+  a configured capability without its port, so a proxy with agents has no working admission until something implements that
+  port. B4781 built the two functions, `admit_managed_actor` and `prepare_agent_invocation`, in
+  crates/betterlite-auth/src/managed_admission, generic over the store; B4773 built `AgentIdentityStore` in
+  crates/betterlite-auth/src/agent_store. This task joins them and installs the result. Read B855's port in
+  crates/betterlite-auth/src/auth_admission and B4781's ports.rs first; use the method names and outcome types they define and
+  add no third shape.
+
+  New betterlite-server module `managed_admission_port` (crates/betterlite-server/src/managed_admission_port.rs and
+  managed_admission_port/, declared by the skeleton). `AgentAdmission` is a struct holding the B4776 `AgentRegistry`, the B4778
+  and B4780 `AgentAccessResolver`, the read-through registry lookup B4781's invoke step takes, and an
+  `Option<AgentIdentityStore>`; take all four from B8645's AgentServices::new(config, shared) instead of building them here. Build it at server start: the store is Some exactly when the server holds a database pool (B700),
+  built over B726's repositories and the shared cache B4773 names, and None otherwise, which is what LiteLLM's "create a managed
+  identity store only when DB exists" means. Implement B855's ManagedAdmission for it. The admit method forwards to
+  admit_managed_actor with the store as Option<&S>; the prepare method forwards to prepare_agent_invocation with the target name and
+  the billable flag B855 computed. Map B4781's `AdmissionError { status, detail }` to B855's outcome type without changing the
+  status or the text: 403 and 503 stay as they are, and "Managed agent policy requires a database" stays word for word.
+
+  Install it in crates/betterlite-server/src/state/auth_admission.rs, where B855 builds its admission state, so every route that
+  runs B052's user_api_key_auth gets it. Nothing else in that file changes.
+
+  Tests in `managed_admission_port::tests`: with no database the port answers the 503 for a registered managed agent and passes a
+  plain agent; with an in-memory store fake the admit and prepare calls reach B4781's functions with the same arguments, and an
+  AdmissionError keeps its status and detail through the mapping; a PostgreSQL test seeds an agent key bound to a managed agent and
+  runs one admission through the real store. No oracle case: every path needs a database-backed agent key, the oracle runs without
+  a database, and B855's own cases already cover the order.
+scope:
+  paths:
+    - crates/betterlite-server/src/managed_admission_port.rs
+    - crates/betterlite-server/src/managed_admission_port/**
+    - crates/betterlite-server/src/state/auth_admission.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3270-L3312
+    why: Where LiteLLM creates the store only with a database and calls admit and prepare.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/managed_authorization.py
+    why: admit_managed_actor and prepare_agent_invocation, which the port forwards to.
+dod:
+  - text: The port forwards admit and prepare to B4781's functions with a store only when a database exists, and keeps every status and message.
+    proof: [port-tests]
+  - text: B855's admission state holds the port, so a server with a database admits managed agent keys through the real store.
+    proof: [port-tests, port-postgres-tests]
+checks:
+  optional: []
+  commands:
+    - id: port-tests
+      why: The port, its database-optional store or the error mapping is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^managed_admission_port::/) - test(/postgres/)'
+    - id: port-postgres-tests
+      why: The admission through the real identity store is missing or fails
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^managed_admission_port::/) & test(/postgres/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The admission order, the route 403 and the billable rule: B855."
+  - "The admission and invocation rules themselves: B4781. The store: B4773. The registry and access resolver: B4776, B4778 and B4780."
+pitfalls:
+  - The store must be None without a database, not an empty store, because B4781 answers the 503 policy_unavailable only when it gets None.
+  - The billable flag comes from B855's reading of the original request method, so the port must pass it through and never recompute it.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

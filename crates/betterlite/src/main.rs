@@ -1,4 +1,5 @@
 use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_config::sections::chatgpt_token_store::home::HomeEnvironment;
 use betterlite_config::types::Config;
 use betterlite_server::server::chat_setup::chat_executor;
 use betterlite_server::server::run;
@@ -90,7 +91,10 @@ fn load_config(location: &Path, environment: BTreeMap<String, String>) -> Option
     use betterlite_config::sections::includes::{IncludeError, LoadError, load_file};
 
     let loader = ConfigLoader {
-        lookup: environment,
+        lookup: HomeEnvironment {
+            variables: environment,
+            home: env::home_dir(),
+        },
     };
     match load_file(&loader, location) {
         Ok(config) => Some(config),
@@ -118,16 +122,6 @@ fn load_config(location: &Path, environment: BTreeMap<String, String>) -> Option
         }
     }
 }
-const fn config_error_category(error: &ConfigError) -> &'static str {
-    match error {
-        ConfigError::Yaml { .. } => "yaml",
-        ConfigError::Unsupported { .. } => "unsupported_key",
-        ConfigError::MissingEnvironment { .. } => "missing_environment",
-        ConfigError::InvalidFloat { .. } => "invalid_float",
-        ConfigError::InvalidInteger { .. } => "invalid_integer",
-        ConfigError::InvalidScalar { .. } => "invalid_scalar",
-    }
-}
 fn log_config_error(error: &ConfigError, location: &Path) {
     match error {
         ConfigError::Unsupported { paths } => {
@@ -150,9 +144,10 @@ fn log_config_error(error: &ConfigError, location: &Path) {
         ConfigError::Yaml { .. }
         | ConfigError::InvalidFloat { .. }
         | ConfigError::InvalidInteger { .. }
-        | ConfigError::InvalidScalar { .. } => {
+        | ConfigError::InvalidScalar { .. }
+        | ConfigError::Environment { .. } => {
             tracing::error!(
-                category = config_error_category(error),
+                category = error.category(),
                 location = %location.display(),
                 "failed to load configuration"
             );

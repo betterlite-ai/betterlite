@@ -1,0 +1,8 @@
+kind: helper
+name: iso-time-invalid-reads-null
+call:
+  savings_evidence:
+    operation: billed_at
+    text: "not-a-date"
+compare: {ignore: []}
+env: {}

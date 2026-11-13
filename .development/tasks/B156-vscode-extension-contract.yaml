@@ -1,0 +1,99 @@
+id: B156
+title: Betterlite answers the requests LiteLLM's VS Code extension sends
+description: >-
+  Prove, without any release, that the extension built by B7770 works against betterlite. The extension makes two kinds of call and nothing else: GET /model_group/info with the user's key, and POST /v1/chat/completions as a stream. So the proof has two halves that share one set of files. The first half is oracle cases that send exactly what the extension sends to LiteLLM and to betterlite and require equal answers. The second half is a vitest file in the extension that reads those same case files, makes the extension's own code produce the request, and fails when the request differs from the case. A change in the extension that alters its wire request therefore breaks the oracle's expectations, and a gateway difference breaks the oracle.
+  Oracle cases, all in tools/oracle/cases/vscode/ and all with headers content-type application/json (GET cases omit the body), authorization Bearer oracle-master and user-agent betterlite-vscode/0.1.0, with the standard compare block of the chat cases: model-group-info (model_list oracle-chat with model_info mode chat, max_input_tokens 128000, max_output_tokens 16384, input_cost_per_token 2.5e-6, output_cost_per_token 1e-5, supports_vision true, supports_function_calling true, plus oracle-embed with mode embedding; upstream empty; GET /model_group/info), model-group-info-efforts (one model whose model_info has supported_reasoning_efforts [low, medium, high] and supports_reasoning true), model-group-info-bad-key (authorization Bearer wrong-key, expects LiteLLM's 401 error body that the extension shows through error.message), chat-stream-text, chat-stream-tool-call, chat-stream-tool-round, chat-stream-effort, chat-stream-length and chat-bad-key. The chat cases use model_list model_name oracle-model with litellm_params model openai/oracle-model, api_base "{{upstream}}" and api_key oracle-key, except chat-stream-effort, which names the upstream model openai/gpt-5-mini because LiteLLM rejects reasoning_effort for an unknown OpenAI model; run the oracle and confirm LiteLLM answers 200 with a stream there.
+  Chat request bodies are the extension's: content is a list of parts, not a string, for user turns ({role: user, content: [{type: text, text: "..."}]}); system turns are one string; an assistant turn that only called tools has content null and tool_calls [{id, type: function, function: {name, arguments}}] with arguments a JSON string; tool results are {role: tool, tool_call_id, content: string}; every body has stream true and stream_options {include_usage: true}. chat-stream-tool-call adds tools [{type: function, function: {name, description, parameters}}] and tool_choice "required", and its upstream events split one call over several chunks (id and name first, then argument fragments, then finish_reason tool_calls, then a usage-only chunk with empty choices, then [DONE]). chat-stream-tool-round sends the history system, user, assistant with tool_calls, tool, user. chat-stream-effort adds reasoning_effort "high". chat-stream-length ends with finish_reason "length". chat-bad-key sends the text request with a wrong key and expects LiteLLM's 401. Write the case files from this text; tests/contract.test.ts needs the exact bodies.
+  Contract test: ui/vscode-extension/tests/contract.test.ts with a local helper tests/local-gateway.ts (a node http server that records method, url, headers and body, and replies as the test says; copy the idea of startGateway from tests/gateway.test.ts without editing that file). Add the yaml package as a devDependency (the newest release at least 7 days old, install it with npm install --save-dev --ignore-scripts yaml@<version> so the lock gains it). The test reads every file in ../../tools/oracle/cases/vscode, fails if there are fewer than 9, and per case: for model-group-info and model-group-info-efforts it calls createGatewayClient().listModelGroups against the helper, serving tests/fixtures/<case name>.json, and requires the recorded method, path, authorization and user-agent to equal the case request and the parsed groups to match the fixture; for the bad-key case it serves 401 with the error body shape and requires summarizeErrorBody to return the message. For each chat case it builds the request with buildChatCompletionParams from an input table inside the test (one input per case name, using the same model, texts and tools as the case), calls streamChatCompletion through the helper and requires the JSON body the helper recorded to toEqual the case's request.body, then replies with the case's upstream events as server-sent events and checks the parts responseParts yields (text Hello!, one assembled tool call with parsed input, the truncated part for length). The fixtures are hand-written JSON in tests/fixtures: {data: [...]} rows with every ModelGroupInfoProxy field (model_group, providers, max_input_tokens, max_output_tokens, input_cost_per_token, output_cost_per_token, input_cost_per_pixel, mode, tpm, rpm, itpm, otpm, the supports_* booleans, supported_reasoning_efforts, supported_openai_params, configurable_clientside_auth_params, is_public_model_group, health_status, health_response_time, health_checked_at), null where LiteLLM's default is None. Where the oracle has already stored LiteLLM's answer for the case (target/oracle-answers), use that body instead.
+  README: rewrite ui/vscode-extension/README.md for a betterlite user: what the extension does, the two routes it calls, setup through Chat: Manage Language Models with the gateway URL and a virtual key (default http://localhost:4000 is only the manifest default), the Betterlite: Refresh Models command, the reasoning effort menu fed by supported_reasoning_efforts, requirements (VS Code 1.115, a key with at least one chat model group), and development (npm ci, npm run typecheck, npm test, npm run package, code --install-extension). State that nothing is published from this repo.
+scope:
+  paths:
+    - tools/oracle/cases/vscode/**
+    - ui/vscode-extension/tests/contract.test.ts
+    - ui/vscode-extension/tests/local-gateway.ts
+    - ui/vscode-extension/tests/fixtures/**
+    - ui/vscode-extension/package.json
+    - ui/vscode-extension/package-lock.json
+    - ui/vscode-extension/README.md
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16354-L16581
+    why: GET /model_group/info, the route the extension calls for its model list (its decorator starts at L16354).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L783-L816
+    why: ModelGroupInfo fields and defaults (mode defaults to chat, booleans to false, supported_reasoning_efforts to None), the shape of the fixtures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/model_management_endpoints.py#L9-L13
+    why: ModelGroupInfoProxy adds is_public_model_group and the health fields that appear in every row.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/reasoning_effort_capability.py#L76-L87
+    why: A model_info supported_reasoning_efforts list is the declared answer and is ordered by LiteLLM's advertisement order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/src/models.ts#L51-L74
+    why: The row fields the extension reads, and the fields it treats as unknown when null.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/src/messages.ts#L168-L188
+    why: The exact chat body the extension builds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/vscode-extension/README.md#L1-L31
+    why: The README to rewrite for betterlite.
+dod:
+  - text: The nine oracle cases exist in tools/oracle/cases/vscode and betterlite answers each one like LiteLLM, including the 401 bodies, the model group rows and the streamed chunks.
+    proof: [cases-added, oracle]
+  - text: tests/contract.test.ts passes, and for every chat case the request the extension builds equals the case's request body, with the same authorization and user-agent as the case.
+    proof: [contract-tests]
+  - text: The extension's stream code turns the cases' upstream events into the expected text, tool call and truncated parts, and its discovery code parses the fixtures and the 401 body.
+    proof: [contract-tests]
+  - text: The whole extension test suite and the type check still pass with the yaml devDependency in the lock.
+    proof: [extension-suite, yaml-dev-dependency]
+  - text: The README is rewritten for betterlite users and says nothing is published from this repo.
+    proof: [readme]
+checks:
+  optional: []
+  commands:
+    - id: cases-added
+      why: fewer than nine oracle case files were added under tools/oracle/cases/vscode
+      run: test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/vscode | grep -c '\.yaml$')" -ge 9
+    - id: contract-tests
+      why: the extension's requests or parsing no longer match the oracle case files and fixtures
+      run: test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- ui/vscode-extension/tests/fixtures | grep -c "[.]json$")" -ge 2 && cd ui/vscode-extension && npm ci --ignore-scripts --no-audit --no-fund && npx vitest run tests/contract.test.ts
+    - id: extension-suite
+      why: the full extension suite or its type check broke
+      run: cd ui/vscode-extension && npm ci --ignore-scripts --no-audit --no-fund && npm run typecheck && npm test
+    - id: yaml-dev-dependency
+      why: yaml is not a dev-only dependency, or the lock does not hold it
+      run: cd ui/vscode-extension && jq -e '.devDependencies.yaml != null and (.dependencies | has("yaml") | not) and .dependencies.openai == "^7.18.0"' package.json && jq -e '.packages["node_modules/yaml"].dev == true' package-lock.json
+    - id: readme
+      why: the README is still the stub or still describes LiteLLM's own setup
+      run: >-
+        cd ui/vscode-extension &&
+        grep -q 'Manage Language Models' README.md && grep -q '/model_group/info' README.md && grep -q '/v1/chat/completions' README.md &&
+        grep -q 'Betterlite: Refresh Models' README.md && grep -q 'supported_reasoning_efforts' README.md &&
+        grep -q 'code --install-extension' README.md && grep -qi 'nothing is published' README.md
+oracle_cases:
+  - tools/oracle/cases/vscode/model-group-info.yaml
+  - tools/oracle/cases/vscode/model-group-info-efforts.yaml
+  - tools/oracle/cases/vscode/model-group-info-bad-key.yaml
+  - tools/oracle/cases/vscode/chat-stream-text.yaml
+  - tools/oracle/cases/vscode/chat-stream-tool-call.yaml
+  - tools/oracle/cases/vscode/chat-stream-tool-round.yaml
+  - tools/oracle/cases/vscode/chat-stream-effort.yaml
+  - tools/oracle/cases/vscode/chat-stream-length.yaml
+  - tools/oracle/cases/vscode/chat-bad-key.yaml
+deviations:
+  - what: The extension talks to betterlite under the vendor id betterlite and the user agent betterlite-vscode/0.1.0, not LiteLLM's names.
+    why: B7770 rebrands the package; the gateway treats the user agent as opaque, so the cases pin it only to match the extension.
+out_of_scope:
+  - "Anything that only a real release can prove: installing the .vsix in a running VS Code, the marketplace listing and the publisher account. B7770 proves the package builds; Max decides when to publish."
+  - "Virtual key scoping of the model list (a key limited to some models). B060 and B124 own it and need a database; the cases use the master key."
+  - "The extension's build, packaging and unit tests (B7770)."
+  - "Adding node and npm to the gate toolchain and CI image, and excluding package-lock.json from the line budget (architect)."
+  - "Anthropic /v1/messages (B081). The extension does not call it."
+pitfalls:
+  - The extension sends user content as a list of parts, so a gateway that only reads string content fails these cases while the existing chat cases pass.
+  - An assistant turn that only called tools has content null, and an empty-text turn is dropped by the extension, never sent as an empty string.
+  - "The stream_options {include_usage: true} setting makes the last chunk carry usage with an empty choices list; responseParts must ignore it and the case must keep it."
+  - LiteLLM answers reasoning_effort on an unknown OpenAI model with a 400, so chat-stream-effort needs a model its map lists; check the oracle's LiteLLM side returns 200.
+  - model_group/info rows hold floats such as 2.5e-6 and 1e-5; the case compares full bodies, so number formatting must match LiteLLM's JSON output.
+  - Without model_info.mode LiteLLM reports mode chat by default, and the extension also keeps rows with no mode, so the embedding model is what proves the filter.
+  - The 401 body is read by the extension through error.message, then detail; the bad-key cases need LiteLLM's real body, not a guess.
+  - npm install is allowed only once here, for the yaml devDependency; use --save-dev and --ignore-scripts, and do not let it bump other entries in the lock.
+  - The contract test must run from any current directory, so it resolves the cases folder from import.meta.url and not from process.cwd().
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

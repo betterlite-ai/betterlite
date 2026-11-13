@@ -8,6 +8,6 @@ fuzz_target!(|bytes: &[u8]| {
     let Ok(text) = from_utf8(bytes) else {
         return;
     };
-    let _ = scrub(text, false);
-    let _ = scrub(text, true);
+    let _unscrubbed_mode = scrub(text, false);
+    let _scrubbed_mode = scrub(text, true);
 });

@@ -1,0 +1,5 @@
+kind: helper
+name: request-post-no-retry
+call: {"b3152": {"operation": "request", "method": "POST", "path": "user/repos", "replies": [{"status": 429}, {"status": 200, "body": []}]}}
+env: {}
+compare: {ignore: []}

@@ -3,10 +3,10 @@ title: Read masked SSO settings and replace their encrypted stored configuration
 description: >-
   Add sso_settings_routes for authenticated GET /get/sso_settings and PATCH
   /update/sso_settings. Reuse B052's route policy without an extra handler role check, B1608's
-  SSOConfig record, B120's resolve_sso_config/descriptor mappings and B1656's schema metadata.
+  SSOConfig record, B4141's resolve_sso_config/descriptor mappings and B1656's schema metadata.
   GET requires DB and reads row sso_config through B726. Resolve scalar fields from decrypted
   stored values, environment and descriptor defaults, including generic_scope="openid email profile";
-  use B120's structured role/team mappings and source labels. Apply B244's masking to the three
+  use B4141's structured role/team mappings and source labels. Apply B244's masking to the three
   client-secret fields only after resolution. GET must not mutate the runtime environment.
   Its schema uses each raw field's type or string fallback without the generic optional-union
   projection, and provenance is exactly the resolver's map, not invented labels for structured
@@ -15,13 +15,21 @@ description: >-
   PATCH requires DB then effective store_model_in_db=true. Reuse decode_sso_record for the
   request and add decode_stored_sso_settings(bytes) for JSON-string before/cleanup rows.
   Capture an existing truthy row, parse it when it is a string, and decrypt dictionary values
-  through B124/B1600 for the audit before-image. Load current config before publishing the
-  full model dump, including null/default fields. For each of B120's sixteen SSO_FIELD_ENV_VARS,
+  through B8382/B1600 for the audit before-image. Load current config before publishing the
+  full model dump, including null/default fields. That load is reload_config on B8379's
+  ConfigOverlayPort (betterlite-server's config_overlay_port), since get_config lives in the
+  binary crate this crate cannot depend on; the router this module exports takes the port as an
+  `Arc<dyn ConfigOverlayPort>` argument. A port error stops PATCH before anything is published,
+  upserted or audited and is answered as LiteLLM's unhandled-error handler does
+  (proxy_server.py L2049-L2080): DatabaseUnavailable is 503 with B1217's projection,
+  `betterlite_db::database_availability::projection::service_unavailable_error(&Chain::default())`
+  (type no_db_connection, param "None", code "503"), and Reload and PassThrough are 500
+  {"error": {"message": "Internal server error", "type": "internal_server_error"}}. For each of B4141's sixteen SSO_FIELD_ENV_VARS,
   truthy values replace the live value and falsey values clear it. Publish this through B1646's
   runtime environment overlay, consumed by the SSO composition's per-request snapshot.
-  Encrypt string values with B1600 through B124's _encrypt_env_variables contract, preserving
+  Encrypt string values with B1600 through B8382's encrypt_env (_encrypt_env_variables) contract, preserving
   non-string nulls and structured mappings, and upsert the JSON-string row. Submit config audit
-  with action updated and the SSO table name after the upsert; audit redaction stays B124's.
+  with action updated and the SSO table name after the upsert; audit redaction stays B8594's.
   Finally read the environment_variables config row, parse string storage when needed, remove
   only the sixteen mapped environment names, update its JSON representation and invalidate
   that parameter. A missing row needs no cleanup. Cleanup failure returns the source's 500
@@ -29,7 +37,9 @@ description: >-
   them or the submitted audit. Success echoes the full submitted SSO settings, including the
   client secrets, as the source does; use explicit secret exposure only for this authorized
   response and never put those values in diagnostics.
-  Native tests cover partial writes and untouched unrelated environment variables. HTTP
+  Native tests cover partial writes and untouched unrelated environment variables; tests named
+  `reload_database_unavailable_*` and `reload_failure_*` drive PATCH with a ConfigOverlayPort
+  fake that returns those errors. HTTP
   sequences compare masked GET, plaintext PATCH echo, full replacement clearing omitted fields,
   structured mappings, DB/storage failures and auth errors. Fuzz stored_sso_settings and replay
   replays_the_stored_sso_settings_corpus; extend B1608's sso_record corpus for route bodies.
@@ -64,6 +74,8 @@ dod:
     proof: [sso-settings-tests, oracle, sso-settings-corpora]
   - text: Audit and legacy-environment cleanup retain their post-upsert order and visible partial failure behavior.
     proof: [sso-settings-tests, oracle]
+  - text: PATCH loads config only through ConfigOverlayPort::reload_config, and a port error changes nothing and answers 503 no_db_connection for DatabaseUnavailable and 500 internal_server_error otherwise.
+    proof: [sso-settings-tests]
 checks:
   optional: []
   commands:

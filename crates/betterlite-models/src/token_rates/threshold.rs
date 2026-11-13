@@ -36,11 +36,6 @@ pub(super) fn parse_token_threshold(text: &str, key: &str) -> Result<Decimal, To
     }
 }
 
-pub(super) fn prompt_exceeds(prompt_tokens: i64, limit: Decimal, inclusive: bool) -> bool {
-    let tokens = Decimal::from(prompt_tokens);
-    tokens > limit || (inclusive && tokens == limit)
-}
-
 pub(super) fn crossed_input_threshold(
     model: &ModelInfo,
     usage: Usage,
@@ -54,16 +49,19 @@ pub(super) fn crossed_input_threshold(
         if !is_threshold_candidate(key, &tier_suffix) {
             continue;
         }
-        let text = above_text(key);
+        // A key without `_tokens` at all is used in full, matching the source's lenient split.
+        let rest = key.strip_prefix(INPUT_THRESHOLD_PREFIX).unwrap_or(key);
+        let text = rest.split("_tokens").next().unwrap_or(rest);
         let limit = parse_token_threshold(text, key)?;
         parsed.push((limit, key.clone(), text.to_owned()));
     }
     parsed.sort_by_key(|(limit, _, _)| Reverse(*limit));
+    let tokens = Decimal::from(usage.prompt_tokens);
     for (limit, key, text) in parsed {
         if matches!(model.get(&key), None | Some(Scalar::Null)) {
             continue;
         }
-        if prompt_exceeds(usage.prompt_tokens, limit, inclusive) {
+        if tokens > limit || (inclusive && tokens == limit) {
             return Ok(Some(text));
         }
     }
@@ -80,12 +78,6 @@ fn is_threshold_candidate(key: &str, tier_suffix: &str) -> bool {
         .chain(["_batches"])
         .any(|suffix| key.ends_with(suffix));
     !is_non_standard || (!tier_suffix.is_empty() && key.ends_with(tier_suffix))
-}
-
-// A key without `_tokens` at all is used in full, matching the source's lenient split.
-fn above_text(key: &str) -> &str {
-    let rest = key.strip_prefix(INPUT_THRESHOLD_PREFIX).unwrap_or(key);
-    rest.split("_tokens").next().unwrap_or(rest)
 }
 
 pub(super) fn apply_threshold_overrides(

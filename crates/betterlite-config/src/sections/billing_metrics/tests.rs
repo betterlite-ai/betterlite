@@ -114,35 +114,55 @@ fn billing_metrics_config_treats_empty_values_as_unset() {
 #[case::largest_magnitude(Some("9223372036854775807"), i64::MAX, false)]
 #[case::negative_largest_magnitude(Some("-9223372036854775807"), -i64::MAX, false)]
 #[case::positive_overflow(Some("9223372036854775808"), 60_000, true)]
-#[case::negative_magnitude_overflow(Some("-9223372036854775808"), 60_000, true)]
+#[case::smallest(Some("-9223372036854775808"), i64::MIN, false)]
 #[case::multiplication_overflow(Some("92233720368547758070"), 60_000, true)]
 #[case::sign_only(Some("+"), 60_000, true)]
 #[case::text(Some("soon"), 60_000, true)]
 #[case::fraction(Some("1.5"), 60_000, true)]
-#[case::empty(Some(""), 60_000, true)]
-#[case::underscored(Some("5_000"), 5000, false)]
-#[case::negative_underscored(Some("-1_234"), -1234, false)]
-#[case::unicode_digits(Some("\u{0665}\u{0660}\u{0660}\u{0660}"), 5000, false)]
+#[case::empty(Some(""), 60_000, false)]
+#[case::underscored(Some("5_000"), 5000, true)]
+#[case::negative_underscored(Some("-1_234"), -1234, true)]
+#[case::unicode_digits(Some("\u{0665}\u{0660}\u{0660}\u{0660}"), 5000, true)]
 #[case::leading_underscore(Some("_1000"), 60_000, true)]
 #[case::trailing_underscore(Some("1000_"), 60_000, true)]
 #[case::doubled_underscore(Some("1__000"), 60_000, true)]
 fn billing_metrics_config_parses_the_export_interval(
     #[case] raw: Option<&str>,
     #[case] expected: i64,
-    #[case] warns: bool,
+    #[case] invalid: bool,
 ) {
     let pairs: Vec<(&str, &str)> = raw
         .map(|value| (EXPORT_INTERVAL_ENV, value))
         .into_iter()
         .collect();
-    let (configured, output) = logged(|| settings(&pairs));
-    assert_eq!(configured.export_interval_ms, expected);
-    let warning = format!(
-        "Invalid LITELLM_BILLING_METRICS_EXPORT_INTERVAL_MS={:?}, falling back to 60000 ms",
-        raw.unwrap_or_default()
+    let lookup = pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect::<BTreeMap<_, _>>();
+    let result = Raw::default().convert(&lookup);
+    if invalid {
+        assert!(result.is_err());
+    } else {
+        assert_eq!(result.unwrap().export_interval_ms, expected);
+    }
+}
+
+#[test]
+fn shared_env_billing_interval() {
+    let enabled = BTreeMap::from([(EXPORT_INTERVAL_ENV.to_owned(), " 250 ".to_owned())]);
+    assert_eq!(
+        Raw::default().convert(&enabled).unwrap().export_interval_ms,
+        250
     );
-    assert_eq!(output.contains(&warning), warns, "{output}");
-    assert_eq!(output.contains("WARN"), warns, "{output}");
+    let empty = BTreeMap::from([(EXPORT_INTERVAL_ENV.to_owned(), String::new())]);
+    assert_eq!(
+        Raw::default().convert(&empty).unwrap().export_interval_ms,
+        60_000
+    );
+    let invalid = BTreeMap::from([(EXPORT_INTERVAL_ENV.to_owned(), "1_000".to_owned())]);
+    let error = Raw::default().convert(&invalid).unwrap_err().to_string();
+    assert!(error.contains(EXPORT_INTERVAL_ENV));
+    assert!(!error.contains("1_000"));
 }
 
 #[rstest]

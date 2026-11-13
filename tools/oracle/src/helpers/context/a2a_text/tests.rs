@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::case::{HelperCase, parse_helper_case};
+use crate::case::{HelperCase, helper::validate_helper};
 use std::{fs, path::Path};
 
 #[test]
@@ -18,7 +18,12 @@ fn helper_seeds_select_a2a_text() {
         .collect();
     assert!(!seeds.is_empty());
     assert!(seeds.iter().all(|source| {
-        parse_helper_case(source).is_ok()
+        serde_saphyr::from_str(source)
+            .map_err(|error| error.to_string())
+            .and_then(|parsed| {
+                validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
+            })
+            .is_ok()
             && serde_saphyr::from_str::<HelperCase>(source)
                 .unwrap()
                 .call

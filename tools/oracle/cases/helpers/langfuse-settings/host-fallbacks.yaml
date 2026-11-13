@@ -1,0 +1,26 @@
+kind: helper
+name: langfuse-settings-host-fallbacks
+call:
+  b3900:
+    function: host
+    steps:
+      - host: https://arg-host
+        environment:
+          LANGFUSE_HOST: env-host
+          LANGFUSE_BASE_URL: https://base-host
+      - host: ""
+        environment:
+          LANGFUSE_HOST: env-host
+          LANGFUSE_BASE_URL: https://base-host
+      - host: null
+        environment:
+          LANGFUSE_HOST: https://env-host
+          LANGFUSE_BASE_URL: https://base-host
+      - host: null
+        environment:
+          LANGFUSE_HOST: ""
+          LANGFUSE_BASE_URL: https://base-host
+      - host: null
+        environment: {}
+env: {}
+compare: {ignore: []}

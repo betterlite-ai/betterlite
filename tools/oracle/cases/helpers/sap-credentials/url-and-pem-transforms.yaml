@@ -1,0 +1,19 @@
+kind: helper
+name: sap-credentials-url-and-pem-transforms
+call:
+  b5950:
+    function: credentials
+    environment:
+      vars: {}
+      files: {}
+      home: /home/sap
+    service_key:
+      credentials:
+        clientid: c
+        certurl: https://cert.example.com/
+        serviceurls:
+          AI_API_URL: https://api.example.com/v2/
+        certificate: 'line1\nline2'
+        key: 'key1\nkey2'
+env: {}
+compare: {ignore: []}

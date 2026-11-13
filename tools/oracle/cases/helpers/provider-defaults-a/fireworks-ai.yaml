@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-a-fireworks-ai
+call:
+  provider_defaults_a:
+    provider: fireworks_ai
+    model: accounts/fireworks/models/llama
+    environment:
+      FIREWORKS_AI_TOKEN: fw-token
+env: {}
+compare: {ignore: []}

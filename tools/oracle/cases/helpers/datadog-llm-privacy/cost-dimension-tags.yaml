@@ -1,0 +1,36 @@
+kind: helper
+name: datadog-llm-privacy-cost-dimension-tags
+call:
+  b3936:
+    function: cost_dimension_tags
+    span_tags: ["team:engineering", "env:prod"]
+    payload:
+      id: "chatcmpl-1"
+      trace_id: "trace-1"
+      session_id: "session-1"
+      call_type: "completion"
+      response_cost: 0.5
+      status: "success"
+      status_fields: {"llm_api_status": "success", "guardrail_status": "not_run"}
+      total_tokens: 5
+      prompt_tokens: 2
+      completion_tokens: 3
+      startTime: 1704067200.0
+      endTime: 1704067201.5
+      completionStartTime: 1704067200.5
+      response_time: 1.5
+      model_map_information: {}
+      model: "gpt-4o"
+      model_group: "Chat Models"
+      api_base: "https://api.openai.com"
+      metadata:
+        user_api_key_user_id: "Alice Smith"
+        user_api_key_alias: "Prod Key"
+        routing_decision: {tier: "LOW", cause: "Heuristic", escalated: true, routed_model: "GPT 4o Mini"}
+      saved_cache_cost: 0.0
+      request_tags: []
+      model_parameters: {}
+      hidden_params: {}
+      standard_built_in_tools_params: null
+env: {}
+compare: {ignore: []}

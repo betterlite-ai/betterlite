@@ -25,7 +25,6 @@ description: >-
   in 330 production lines, 160 tests, 100 adapters and 150 configuration/wiring, maximum 800.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,gemini_options}.rs
     - crates/betterlite-vertex/src/gemini_options.rs
     - crates/betterlite-vertex/src/gemini_options/**
     - crates/betterlite-config/src/{model,settings}.rs

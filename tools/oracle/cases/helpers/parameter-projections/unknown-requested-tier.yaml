@@ -1,0 +1,11 @@
+kind: helper
+name: parameter-projections-unknown-requested-tier
+call:
+  parameter_projections:
+    steps:
+      - {function: resolved_service_tier, requested_tier: turbo}
+      - {function: resolved_service_tier, requested_tier: AUTO}
+      - {function: resolved_service_tier, requested_tier: standard-only}
+      - {function: resolved_service_tier, requested_tier: ""}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,25 @@
+kind: helper
+name: caching-request-batch-drain-flushes-all-open-post-call
+call:
+  b4331:
+    caches:
+      - {setting: one, namespace: ns}
+    deadline_millis: 1000
+    in_scope: false
+    replies:
+      one:
+        INCRBYFLOAT:
+          - {bulk: "1.5"}
+          - {bulk: "2.5"}
+    steps:
+      - {kind: create_request}
+      - {kind: create_request}
+      - {kind: post_call_on, request: 0, call: {cache: 0, key: first, value: 1.5, ttl: null}}
+      - {kind: post_call_on, request: 1, call: {cache: 0, key: second, value: 2.5, ttl: null}}
+      - {kind: snapshot}
+      - {kind: drain}
+      - {kind: snapshot}
+      - {kind: drain}
+      - {kind: snapshot}
+env: {}
+compare: {ignore: []}

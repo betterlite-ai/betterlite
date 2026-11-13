@@ -1,0 +1,8 @@
+kind: helper
+name: upload-security-bzip-binary
+call:
+  b3452:
+    content_hex: '425a68ff'
+env: {}
+compare:
+  ignore: []

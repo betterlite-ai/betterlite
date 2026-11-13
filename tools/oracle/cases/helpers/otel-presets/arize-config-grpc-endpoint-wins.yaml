@@ -1,0 +1,13 @@
+kind: helper
+name: arize-config-grpc-endpoint-wins
+call:
+  b3850:
+    function: arize_config
+    environment:
+      ARIZE_ENDPOINT: grpc://arize-collector:443
+      ARIZE_HTTP_ENDPOINT: http://arize-collector:6006
+env:
+  ARIZE_ENDPOINT: grpc://arize-collector:443
+  ARIZE_HTTP_ENDPOINT: http://arize-collector:6006
+compare:
+  ignore: []

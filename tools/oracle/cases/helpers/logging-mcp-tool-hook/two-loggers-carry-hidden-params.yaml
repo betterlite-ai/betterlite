@@ -1,0 +1,17 @@
+kind: helper
+name: logging-mcp-tool-hook-two-loggers-carry-hidden-params
+call:
+  b9650:
+    result:
+      content: [{type: text, text: hello}]
+    dynamic_success: []
+    global_success:
+      - name: alpha
+        behavior: replace
+        content: [{type: text, text: alpha}]
+        response_cost: 0.1
+      - name: beta
+        behavior: replace
+        content: [{type: text, text: beta}]
+env: {}
+compare: {ignore: []}

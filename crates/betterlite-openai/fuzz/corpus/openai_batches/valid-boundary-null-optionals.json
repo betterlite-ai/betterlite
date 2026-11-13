@@ -1,0 +1,1 @@
+{"id":"batch_3","object":"batch","endpoint":"/v1/responses","input_file_id":"file-4","completion_window":"24h","status":"failed","created_at":0,"errors":{"object":"list","data":[{"code":null,"line":null,"message":null,"param":null}]},"metadata":null,"usage":null,"request_counts":null}

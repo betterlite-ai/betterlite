@@ -1,0 +1,23 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-params-invalid",
+  "call": {
+    "b3843": {
+      "function": "request_params",
+      "value": {
+        "temperature": {},
+        "top_p": [],
+        "top_k": {},
+        "max_tokens": {},
+        "frequency_penalty": [],
+        "presence_penalty": {},
+        "stop": {},
+        "seed": {}
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

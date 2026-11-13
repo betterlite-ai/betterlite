@@ -1,0 +1,15 @@
+id: B8250
+milestone: M7 observability
+title: Langfuse root span stamping and server span policy
+status: todo
+depends_on: [B3842, B3846, B3847, B3853, B3857, B3892]
+file: tasks/B8250-langfuse-otel-root-server-span.yaml
+covers:
+  - "litellm/integrations/otel/langfuse_logger.py"
+  - "litellm/integrations/otel/mount.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

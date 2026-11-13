@@ -1,0 +1,20 @@
+kind: helper
+name: for-destination-proxy-owned
+call:
+  b3849:
+    function: for_destination
+    endpoint: http://collector:4318
+    span:
+      name: POST /v1/chat
+      attributes:
+        http.route: /v1/chat
+        error.message: "prisma: connection refused"
+        error: legacy text
+        http.url: https://proxy.example/v1/chat?key=sk-1
+        http.target: /v1/chat?key=sk-1
+        url.query: key=sk-1
+        http.request.header.authorization: Bearer sk-1
+        http.response.header.set-cookie: session=1
+        litellm.provider.error.stack_trace: at operator.py:1
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,87 @@
+id: B9551
+title: Mount the debugging routes and prove them over HTTP
+description: >-
+  B4174 builds LiteLLM's debugging router in crates/betterlite-server/src/debug_routes (GET /debug/asyncio-tasks,
+  /memory-usage when LITELLM_PROFILE is true, /memory-usage-in-mem-cache, /memory-usage-in-mem-cache-items,
+  /debug/memory/summary, /debug/memory/details, POST /debug/memory/gc/configure and GET /otel-spans). Its scope is that
+  module only, and no B1100 registry entry or area mount merges it, so every one of those paths answers 404. LiteLLM adds
+  the router to the app with `app.include_router(debugging_endpoints_router)` and every route on it depends on
+  user_api_key_auth. This task merges it into the app inside the auth layers and proves the paths over HTTP. GET
+  /debug/report is not part of it: B4171 fills routes/debug_report.rs, which B1100's route registry already merges.
+
+
+  Where. crates/betterlite-server/src/app/admin.rs is the area file B8610's app.rs calls; the skeleton declares the
+  submodule `debugging` there as an empty file. Put this task's code in app/admin/debugging.rs with tests in
+  app/admin/debugging/tests.rs. In admin.rs add one line to `mount` that merges `debugging::mount(router, state)` and
+  touch no other line, since other admin parts add their own calls. Nothing goes into mount_public: LiteLLM serves none
+  of these paths without a key.
+
+
+  `pub(crate) fn mount(router: Router, state: &Arc<ServerState>) -> Router` builds B4174's router once from what its
+  constructor takes and merges it as is, without a prefix. Read B4174's merged module first and pass the values it asks
+  for from `state.config` and `state.shared`: the auth cache is `shared.auth_cache` (LiteLLM's user_api_key_cache), the
+  router is `shared.router`, the proxy logging object is `shared.proxy_logging`, and the span exporter is whatever the
+  OpenTelemetry callback B4174 reads exposes, absent when no otel callback is configured. B4174 decides whether
+  /memory-usage exists from LITELLM_PROFILE; pass the environment it asks for and add no second check. Register no path
+  here.
+
+
+  Tests in app::admin::debugging::tests build a ServerState without a database (the way B8610's server tests build one
+  from in-memory values), call mount on an empty Router behind the same auth layers application() uses, and send one
+  request each with tower's oneshot: GET /debug/asyncio-tasks with no key is the auth 401; GET
+  /memory-usage-in-mem-cache with the master key answers 200 with the three num_items keys; GET /memory-usage with the
+  master key and LITELLM_PROFILE unset is 404.
+
+
+  HTTP oracle cases through the booted proxy, in tools/oracle/cases/debugging/, with the oracle's master key
+  oracle-master where a key is sent: asyncio-tasks-needs-key.yaml (GET /debug/asyncio-tasks, no Authorization, the 401
+  envelope on both sides); gc-configure-needs-key.yaml (POST /debug/memory/gc/configure with no key, 401);
+  cache-counts-master-key.yaml (GET /memory-usage-in-mem-cache with the master key, 200, with the three count values in
+  compare.ignore since they depend on what each process cached, so the case checks status and keys);
+  memory-usage-without-profile.yaml (GET /memory-usage with the master key and no LITELLM_PROFILE, 404 Not Found on
+  both); otel-spans-without-exporter.yaml (GET /otel-spans with the master key and no otel callback, 200 with
+  otel_spans [], spans_grouped_by_parent {} and most_recent_parent null). B4174's 501 answers differ from LiteLLM by
+  its own deviation, so no case sends a key to those routes.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/admin.rs
+    - crates/betterlite-server/src/app/admin/debugging.rs
+    - crates/betterlite-server/src/app/admin/debugging/**
+    - tools/oracle/cases/debugging/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19983
+    why: The debugging router is included without a prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L59-L169
+    why: The asyncio tasks route, the LITELLM_PROFILE memory route and the cache count route, each behind user_api_key_auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/debug_utils.py#L731-L831
+    why: The GC configure route, /debug/report (B4171's) and the start of /otel-spans with its empty answer when no exporter exists.
+dod:
+  - text: Every route B4174's router registers answers through the booted proxy, behind the same key check as other keyed routes, and /memory-usage stays absent without LITELLM_PROFILE.
+    proof: [debugging-mount-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: debugging-mount-tests
+      why: The debugging router is not merged into the app, is merged outside the auth layers, or /memory-usage appears without LITELLM_PROFILE
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::admin::debugging::/)'
+oracle_cases:
+  - tools/oracle/cases/debugging/asyncio-tasks-needs-key.yaml
+  - tools/oracle/cases/debugging/gc-configure-needs-key.yaml
+  - tools/oracle/cases/debugging/cache-counts-master-key.yaml
+  - tools/oracle/cases/debugging/memory-usage-without-profile.yaml
+  - tools/oracle/cases/debugging/otel-spans-without-exporter.yaml
+deviations: []
+out_of_scope:
+  - "The debugging handlers, their 501 answers and the LITELLM_PROFILE check: B4174 over B4173's snapshots."
+  - "GET /debug/report: B4171 fills routes/debug_report.rs and B1100's registry merges it."
+  - "configure_gc_thresholds at startup: B4173."
+pitfalls:
+  - Merging the router through mount_public would serve the cache item route, which lists cached key objects, without a key.
+  - /memory-usage-in-mem-cache and the items route are on LiteLLM's master_key_only_routes list, and user_api_key_auth refuses a non-master key for them (user_api_key_auth.py L2119-L2120), not the handler; do not add a second check here.
+  - The cache count values depend on what each process cached while booting and serving the readiness probe, so the case may only compare keys and status.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

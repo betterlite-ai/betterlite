@@ -1,0 +1,109 @@
+id: B8101
+title: LangFlow run API chat config
+description: >-
+  Build the chat provider for LangFlow flows, model langflow/{flow_id}, in the module langflow_chat of betterlite-provider.
+  It covers litellm/llms/langflow/chat/transformation.py (LangFlowConfig and LangFlowError, 262 code lines). The file
+  litellm/llms/langflow/a2a.py needs no work here: B4809 already inlines merge_a2a_session_into_litellm_params in its
+  langflow_config module.
+
+
+  Connection settings. Provider info returns api_base = explicit, else LANGFLOW_API_BASE, else http://localhost:7860, and
+  api_key = explicit, else LANGFLOW_API_KEY (None when unset). Read env vars through the shared secret getter, never
+  std::env directly. Supported OpenAI params are only stream, and mapping returns the options unchanged. get_complete_url fails
+  with "api_base is required for LangFlow. Set it via LANGFLOW_API_BASE env var or api_base parameter." when api_base is None,
+  strips trailing slashes and returns {api_base}/api/v1/run/{flow_id} with the flow id percent-encoded with no safe
+  characters (B171's encoder behavior, Python quote safe="").
+
+
+  Flow id. It comes only from the model: the text after the first "/" when there is one, else the whole model, then stripped
+  of whitespace. A non-null optional_params flow_id fails with LangFlowError 400 "flow_id cannot be set via request parameters;
+  use model langflow/{flow_id}". An empty id fails with 400 "flow_id is required; use model langflow/{flow_id}".
+
+
+  Request. tweaks may never come from the caller: a non-null tweaks in optional_params fails in transform_request, and a
+  non-null tweaks in the final request body fails in sign_request, both with LangFlowError 400 "tweaks cannot be set via request
+  parameters; they would override the operator-configured LangFlow flow components". sign_request otherwise returns the headers
+  and no signed body. transform_request sends input_value (the text of the last user message; list content goes through the shared
+  content-to-text helper; with no user message the last message of any role; with no messages an empty string), input_type
+  (optional_params input_type, default chat), output_type (default chat) and session_id only when it is truthy.
+  validate_environment sets Content-Type application/json and, when a key exists, the header x-api-key (not Authorization).
+  supports_stream_param_in_request_body is false and should_fake_stream is true exactly when stream is true.
+
+
+  Response. A body that is not JSON raises LangFlowError with the HTTP status and "LangFlow returned a non-JSON response: <error>".
+  The reply text is outputs[0].outputs[0].results.message.text when that is a non-empty value, else the first non-empty
+  message.text found while walking the values of outputs[0].outputs[0].outputs in order; every non-list, empty list or non-object
+  step on the way gives no text. No text raises LangFlowError 500 "Could not extract a message from the LangFlow response; ensure
+  the flow ends in a Chat Output component". Otherwise the reply is one stop choice with the model set to the requested model.
+  Usage comes from B196's token counter with the requested model name (not gpt-3.5-turbo); a counter failure logs a warning
+  "Failed to calculate token usage: <error>" and leaves usage unset. get_error_class returns LangFlowError with status and message.
+  The dispatch in main.py (_complete_langflow) is B050's.
+scope:
+  paths:
+    - crates/betterlite-provider/src/langflow_chat.rs
+    - crates/betterlite-provider/src/langflow_chat/**
+    - tools/oracle/cases/helpers/langflow-chat/**
+    - tools/oracle/helpers/b8101.py
+    - tools/oracle/helpers/b8101/**
+    - tools/oracle/src/helpers/provider/b8101.rs
+    - tools/oracle/src/helpers/provider/b8101/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langflow/chat/transformation.py#L30-L66
+    why: LangFlowError, default base URL, env vars and supported params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langflow/chat/transformation.py#L68-L105
+    why: Flow id extraction rules and the run URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langflow/chat/transformation.py#L107-L173
+    why: Last user message selection, tweaks rejection and the request body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langflow/chat/transformation.py#L175-L271
+    why: Reply text extraction, the two error cases and the usage estimate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/langflow/chat/transformation.py#L273-L317
+    why: sign_request tweaks check, x-api-key header, error class and fake stream.
+  - url: https://docs.langflow.org/api-reference-api-examples
+    why: The run API request and response shapes.
+dod:
+  - text: Provider info and the run URL follow the LANGFLOW_API_BASE and localhost:7860 defaults and encode the flow id.
+    proof: [langflow-chat-tests, oracle]
+  - text: A flow id from request params or an empty flow id fails with the two 400 messages.
+    proof: [langflow-chat-tests, oracle]
+  - text: Tweaks are refused both from request options and from the final request body.
+    proof: [langflow-chat-tests, oracle]
+  - text: The request body carries the last user message, the chat defaults and a session id only when truthy.
+    proof: [langflow-chat-tests, oracle]
+  - text: Reply text is read from both documented paths and a missing message raises the 500 error.
+    proof: [langflow-chat-tests, oracle]
+  - text: The key goes in x-api-key and streaming is always faked.
+    proof: [langflow-chat-tests]
+checks:
+  optional: []
+  commands:
+    - id: langflow-chat-tests
+      why: the langflow_chat behavior tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^langflow_chat::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/langflow-chat/flow-id-from-model.yaml
+  - tools/oracle/cases/helpers/langflow-chat/flow-id-in-params.yaml
+  - tools/oracle/cases/helpers/langflow-chat/flow-id-empty.yaml
+  - tools/oracle/cases/helpers/langflow-chat/url-encodes-flow-id.yaml
+  - tools/oracle/cases/helpers/langflow-chat/tweaks-in-params.yaml
+  - tools/oracle/cases/helpers/langflow-chat/request-last-user-message.yaml
+  - tools/oracle/cases/helpers/langflow-chat/response-nested-outputs.yaml
+  - tools/oracle/cases/helpers/langflow-chat/response-no-message.yaml
+deviations:
+  - what: Usage uses betterlite's tokenizer (B196), so token counts match LiteLLM only where B196 does.
+    why: LiteLLM calls its own token_counter, which B196 owns.
+out_of_scope:
+  - "llms/langflow/a2a.py: B4809 inlines it in betterlite-a2a (langflow_config). Its covers do not list the file yet, see the notes."
+  - "llms/langflow/__init__.py and llms/langflow/chat/__init__.py hold no code."
+  - "main.py _complete_langflow and the langflow arm of the dispatch belong to B050."
+pitfalls:
+  - The flow id comes from the model only. A model of langflow/abc and a model of abc both give abc, and only the first "/" splits.
+  - tweaks is refused in two places (request options and final body) so a body built elsewhere cannot smuggle it in.
+  - session_id is dropped when it is empty or zero; input_type and output_type keep the caller value even when empty.
+  - The last user message wins over a later assistant message, and the fallback to the last message of any role applies only when no user message exists.
+  - A results.message.text of "" falls through to the outputs map walk instead of returning empty text.
+  - The usage estimate uses the requested model name, unlike A2A and LangGraph which use gpt-3.5-turbo.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

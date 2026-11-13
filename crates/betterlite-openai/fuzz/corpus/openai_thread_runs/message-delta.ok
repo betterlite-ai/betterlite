@@ -1,0 +1,3 @@
+event: thread.message.delta
+data: {"id":"msg_1","object":"thread.message.delta","delta":{}}
+

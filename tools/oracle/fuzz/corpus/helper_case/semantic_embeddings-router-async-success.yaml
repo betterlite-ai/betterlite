@@ -1,0 +1,18 @@
+kind: helper
+name: semantic_embeddings-router-async-success-seed
+call:
+  b4381:
+    embedding_model: text-embedding-3-small
+    prompt: hello world
+    metadata: {user: a}
+    embedding_max_input_tokens: 0
+    embedding_timeout: 2.5
+    router_present: true
+    model_list:
+      - model_name: text-embedding-3-small
+        max_input_tokens: 3
+    method: async
+    outcome: success
+    vectors: [[0.25, 0.5], [0.75, 1.0]]
+env: {}
+compare: {ignore: []}

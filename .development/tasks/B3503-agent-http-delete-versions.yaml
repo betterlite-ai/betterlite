@@ -1,0 +1,80 @@
+id: B3503
+title: Send managed-agent deletion and version-list requests
+description: >-
+  Build the outbound HTTP calls that delete an agent and list an agent's versions, in the new module betterlite_http::interactions::agents_delete_versions (crates/betterlite-http/src/interactions/agents_delete_versions.rs).
+  LiteLLM's AgentsHTTPHandler has six request methods; this task owns delete_agent and list_agent_versions, each with a sync and an async form. Create, list and get belong to B3502, which built them in its own module agents_create_read. Do not touch that module.
+  The Rust form has no _is_async switch. Write one blocking function and one async function per operation (delete_agent and async_delete_agent, list_agent_versions and async_list_agent_versions). Client resolution comes from B3492's base module: the blocking form calls its sync client resolver, the async form calls its async client resolver, and both pass the optional caller-supplied client first. Error conversion also comes from B3492's handle_error, called with the agents config; never rebuild either here.
+  All four functions take the agents config (B1392's Studio agent config, behind the same trait B3501 selects), the agent name, the litellm params, the logging object, optional extra headers and an optional timeout.
+  Delete flow: headers = config.validate_environment(extra headers or an empty map, params); url = config.transform_delete_request(name, params.api_base, params); pre_call with input = name, api_key = "" and additional_args holding only api_base = url and headers; send DELETE to url with headers and timeout = the caller's timeout, or the global request_timeout (REQUEST_TIMEOUT env var, default 6000 seconds, owned by B198) when the caller gave none; any error goes through handle_error with the agents config and is returned as that value; on success post_call with original_response = the response text and empty additional_args, then return config.transform_delete_response(response, name).
+  List-versions flow: headers as above; (url, params) = config.transform_list_versions_request(name, params.api_base, params); pre_call exactly as in delete (input = name, additional_args api_base and headers); GET url with headers and the query params and no timeout, so the client default applies and the timeout argument is accepted and ignored; errors through handle_error; post_call with the response text and empty additional_args; return config.transform_list_versions_response(response, name).
+  The call order inside each function is fixed: resolve the client first, then validate_environment, then URL building, then pre_call, then the request. A failing validate_environment therefore still creates the client and never logs.
+  LiteLLM ends the file with a module-level agents_http_handler = AgentsHTTPHandler() that B3504 and B3505 import. betterlite has no module-level state and AgentsHTTPHandler holds none, so this task builds no static and no wrapper type. B3504 and B3505 call the free functions of agents_create_read (B3502) and agents_delete_versions (this task) directly.
+  The module is a thin transport layer. It does not pick the provider (B3501), build URLs or parse responses (B1392), or create the logging object (B3501). It must not call a provider crate directly; it sees only the config trait object.
+scope:
+  paths:
+    - crates/betterlite-http/src/interactions/agents_delete_versions.rs
+    - crates/betterlite-http/src/interactions/agents_delete_versions/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L288-L333
+    why: delete_agent, including the _is_async dispatch that drops client and the timeout or request_timeout fallback on the DELETE.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L335-L365
+    why: async_delete_agent, the same flow with an awaited DELETE.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L367-L412
+    why: list_agent_versions, whose GET passes params and never a timeout, and whose pre_call logs api_base and headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/agents/http_handler.py#L414-L447
+    why: async_list_agent_versions and the agents_http_handler singleton at the end of the file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/http_handler.py#L37-L73
+    why: The inherited _handle_error, _sync_client and _async_client that B3492 builds and this module calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L561-L577
+    why: request_timeout and its 6000 second default, used when delete gets no timeout.
+dod:
+  - text: delete_agent and async_delete_agent build headers and URL through the config, send DELETE with the caller's timeout or the 6000 second request_timeout default, and return the config's transformed delete response with the name.
+    proof: [agent-delete-tests]
+  - text: Delete logs pre_call with the name as input, an empty api_key and additional_args holding api_base and headers, and post_call with the response text and empty additional_args.
+    proof: [agent-delete-tests]
+  - text: list_agent_versions and async_list_agent_versions GET the URL and query params from transform_list_versions_request with no timeout, log the name as input with api_base and headers, and return transform_list_versions_response with the name.
+    proof: [agent-versions-tests]
+  - text: A transport status error in any of the four functions is converted by handle_error with the agents config, and no post_call is logged for it.
+    proof: [agent-delete-tests, agent-versions-tests]
+  - text: A caller-supplied client is used as is, and without one the sync form resolves a sync client and the async form an async client, both through B3492's base module.
+    proof: [agent-delete-client-tests]
+checks:
+  optional: []
+  commands:
+    - id: agent-delete-tests
+      why: delete_agent or async_delete_agent use the wrong timeout, log the wrong fields, skip error conversion or drop the name from the response transform
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::agents_delete_versions::delete_/)'
+    - id: agent-versions-tests
+      why: list_agent_versions or async_list_agent_versions send a timeout, drop the query params, log the wrong fields or skip error conversion
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::agents_delete_versions::versions_/)'
+    - id: agent-delete-client-tests
+      why: the four functions do not use the supplied client or do not resolve one through B3492's base module
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^interactions::agents_delete_versions::client_/)'
+oracle_cases: []
+deviations:
+  - what: Each operation is a blocking function plus an async function, with no _is_async flag and no function that returns either a value or a coroutine.
+    why: Rust has no dynamic return type of that kind; B3504 and B3505 pick the form from the caller's adelete_agent or alist_agent_versions flag.
+  - what: There is no agents_http_handler singleton and no AgentsHTTPHandler type; callers use the free functions of the two modules.
+    why: The class holds no state, and the rules forbid module-level state and one-line wrappers. B3502's note gave this singleton to B3503, so the architect should confirm.
+  - what: The async functions accept an optional async client, which LiteLLM's dispatcher never forwards.
+    why: LiteLLM's async_* methods already have a client parameter, and the dispatcher drops it only by omission; no caller at the pin supplies one, so a direct async call keeps the parameter.
+out_of_scope:
+  - "create_agent, async_create_agent, list_agents, async_list_agents, get_agent and async_get_agent: B3502 owns them in agents_create_read."
+  - "Provider selection, header merging and the logging object: B3501."
+  - "The transform_delete_*, transform_list_versions_* methods, validate_environment and get_complete_url bodies: B1392."
+  - "_handle_error, _sync_client and _async_client: B3492."
+  - "The public delete_agent and list_agent_versions entry points that read adelete_agent and alist_agent_versions from kwargs: B3505."
+pitfalls:
+  - Delete sends timeout or request_timeout, but list_agent_versions calls GET with url, headers and params only, so a timeout argument there has no effect.
+  - Both operations log pre_call with additional_args {api_base, headers} and the agent name as input; unlike create, there is no complete_input_dict.
+  - post_call carries an empty additional_args for both operations; do not add the URL or headers there.
+  - transform_delete_request returns only a URL, but transform_list_versions_request returns a (url, params) pair; do not mix them up.
+  - transform_delete_response and transform_list_versions_response both get the name as a second argument; losing it changes the returned id.
+  - validate_environment gets headers = extra_headers or {}, so None and an empty map behave the same.
+  - The error from a failed request is returned through handle_error, which only converts httpx HTTPStatusError; connection and timeout errors pass through unchanged.
+  - LiteLLM's _is_async dispatcher calls the async method without the client argument, so a sync client given to delete_agent is never used on the async path.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

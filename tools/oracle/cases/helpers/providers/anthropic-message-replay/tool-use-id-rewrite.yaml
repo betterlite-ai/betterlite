@@ -1,0 +1,59 @@
+kind: helper
+name: tool-use-id-rewrite
+call:
+  anthropic_message_replay:
+    function: tool_use_ids
+    messages:
+    - pass-through
+    - role: assistant
+      content:
+      - type: tool_use
+        id: functions.Bash:0
+      - type: text
+        text: kept
+    - role: user
+      content:
+      - type: tool_result
+        tool_use_id: call.1
+    - role: assistant
+      content:
+      - type: server_tool_use
+        id: a__thought__b
+        name: x
+    - role: assistant
+      content:
+      - type: tool_use
+        id: ok_id-1
+    - role: assistant
+      content:
+      - type: tool_use
+        id: ''
+    - role: assistant
+      content:
+      - type: tool_use
+        id: __thought__abc
+    - role: assistant
+      content:
+      - type: tool_use
+        id: 5
+    - role: assistant
+      content:
+      - type: tool_result
+        tool_use_id: x y
+    - role: assistant
+      content: string
+    - role: assistant
+      content:
+      - type: tool_result
+        tool_use_id: a.b
+        content:
+        - type: tool_use
+          id: nested.bad
+      - opaque
+    - role: assistant
+      content:
+      - type: tool_use
+        id: "a\xE9b"
+env: {}
+compare:
+  ignore: []

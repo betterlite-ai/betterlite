@@ -1,0 +1,116 @@
+id: B8871
+title: Load and invoke configured local MCP tools through embedded Python
+description: >-
+  A valid mcp_tools handler currently reaches B4680's synchronous ToolHandlerLoader port
+  without a production implementation. B165 can import and call the Python object, but
+  nothing connects that handle to the local registry. Build app::mcp::python_tools in
+  betterlite-server, exporting an async load_configured_tools service and a PythonToolHandler
+  that implements B4680's ToolHandler. Reuse the one PythonHooks service and the one
+  ToolRegistry supplied by startup. The registry loader, config decoder, Python interpreter
+  and MCP HTTP renderers keep their existing owners.
+
+  The service takes B4680's typed optional entries, the operator config path and PythonHooks.
+  Walk entries in order. For each complete mapping, await load_hook(McpToolHandler, handler)
+  before passing a ready, synchronous ToolHandlerLoader to load_tools_from_config for that
+  single entry. The ready loader returns the already loaded handle and never blocks a Tokio
+  worker on Python or starts a nested runtime. Delegate incomplete mappings, NotAMapping,
+  missing-list errors, replacement order and warning behavior to B4680; a preliminary
+  completeness check may decide whether an import is necessary but must use exactly the
+  same nonempty name, description and handler conditions. A missing list calls B4680 with
+  None, while an empty list performs no import. Never preload the whole list: a bad later
+  import or non-mapping leaves all earlier tools registered. Stop at that failure and do
+  not load later entries. An object resolving to None returns the loader's None result and
+  takes B4680's warning-and-skip path. Inspect the loaded object without calling it; a
+  non-callable non-None object remains a loaded tool and fails when invoked, as the source
+  does. Do not apply the callbacks-only class validation from B165 to this slot.
+
+  PythonToolHandler::call passes no positional arguments and passes the decoded arguments
+  mapping as keyword arguments, unchanged. It does not pass the Rust OpenApiCallContext as
+  an extra user keyword, validate input_schema, inject auth headers into arguments, or run
+  the handler while loading config. B165 handles sync and async callables and bounds the
+  call at 30 seconds, with 60 seconds for imports. Convert JSON-compatible returned values
+  into B4683's OpenApiToolOutput, leaving MCP content and isError conversion to the existing
+  local-tool operation. A returned string remains a string, including an empty string;
+  objects and arrays remain structured values. Follow docs/compatibility.md for textual
+  representations instead of implementing Python repr. Preserve the Python exception message
+  in ToolHandlerError::Failed so the operation emits its existing error tool result rather
+  than an HTTP 500 from this adapter. This task has no new HTTP error mapper.
+
+  Only the config-file caller supplies config_file_path to PythonHooks. Preserve B8042's
+  refusal to load s3:// or gcs:// modules without that provenance, and reuse B165's bucket
+  fetcher when a path exists. Do not accept a path from an MCP tools/call body. Runtime
+  settings, sandboxing, shutdown and remote download limits remain the embedded-host
+  tasks' policies. No Python process is started for absent, empty or skipped mcp_tools.
+
+  B8614's BootRegistries::mcp_tools awaits this service at B8590's non-LLM-registry
+  position with the PythonHooks it holds: the one B8375 builds for the process and
+  B8587's PyStartupHooks also wraps. The service takes that handle as `&PythonHooks` and
+  never calls PythonHooks::new outside tests. There is still one startup call and one
+  registry; do not add a second load in an area mount. B124 supplies the HTTP integration
+  cases through the already owned MCP routes once B8614's call is in place. This task can
+  run before those mounts and uses native tests with actual temporary Python modules, not
+  a helper adapter that simulates imports. No new config/body decoder is introduced.
+
+  Tests in app/mcp/python_tools/tests.rs and tests/ exercise imports next to config.yaml,
+  sync and async keyword calls, duplicate replacement without reordering, skipped entries
+  that name nonexistent modules, None-valued handlers, a later import failure retaining
+  earlier tools, a later non-mapping retaining earlier tools, no execution at load time,
+  extra/missing keyword errors, string and structured outputs, and loading without a
+  config path. Test deadlines with the host's controllable deadline API, without sleeping
+  for 30 seconds. Reuse B8042's remote-loader test transport for the provenance refusal;
+  no real bucket or network credentials belong in tests. Allow approximately 260 adapter
+  lines, 300 tests and 40 fixture lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp/python_tools.rs
+    - crates/betterlite-server/src/app/mcp/python_tools/**
+    - crates/betterlite-server/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_registry.py#L87-L143
+    why: Sequential handler loading and registration, with skipping distinct from import failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L9-L65
+    why: Operator config-path provenance, local imports and the value returned by get_instance_fn.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7046-L7058
+    why: The existing startup caller loads only a truthy mcp_tools list and passes its config path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2611-L2646
+    why: The local operation invokes sync or async handlers with kwargs and converts handler failures to tool results.
+dod:
+  - text: Real Python handlers load once in entry order, and an invalid later entry keeps the successfully registered prefix without importing any subsequent handler.
+    proof: [loading-tests]
+  - text: Local tool calls use decoded keyword arguments, preserve string and structured results, and pass failures to the existing operation mapper.
+    proof: [invocation-tests]
+  - text: Empty or skipped config does not start Python, and remote handler provenance and host deadlines remain enforced.
+    proof: [host-boundary-tests]
+checks:
+  optional: []
+  commands:
+    - id: loading-tests
+      why: The real registry cannot load Python handlers or incorrectly makes partial loading atomic.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::python_tools::tests::loading::/)'
+    - id: invocation-tests
+      why: Python kwargs, returned values or handler errors do not reach the registry call contract.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::python_tools::tests::invocation::/)'
+    - id: host-boundary-tests
+      why: The adapter starts Python unnecessarily, accepts request-supplied loading provenance or bypasses the host deadline.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::python_tools::tests::host_boundary::/)'
+oracle_cases: []
+deviations:
+  - what: Loading a configured handler is bounded by B165's 60-second deadline, and a tool handler exceeding 30 seconds returns the existing MCP error-tool result instead of waiting indefinitely.
+    why: The embedded host already bounds imports and hook execution; this adapter uses that policy without introducing another timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2633-L2645
+out_of_scope:
+  - B4680 owns every tool_registry.py registry operation and the mcp_tools config decoder; this task supplies its previously missing production loader and handler only.
+  - B8042 owns get_instance_fn and remote/local module loading, B8043 the loaded object interface, and B165 the lazy shared PythonHooks runtime and bucket-fetcher adapter.
+  - B4683 owns OpenApiToolOutput and OpenAPI execution; B8198 owns _handle_local_mcp_tool, its missing-tool 404 and its handler error result, with the result-conversion tasks owning handler_outcome and wire compatibility.
+  - B8590 owns _init_non_llm_configs orchestration and B8614 its concrete registry calls, including the BootRegistries::mcp_tools call into this service. B8375 builds the one PythonHooks it passes.
+  - B8626, B8701 and B8728 own MCP area mounts; B124 adds configured-local-tool HTTP cases without registering those routes again.
+pitfalls:
+  - An async Python import cannot run inside the synchronous ToolHandlerLoader::load by blocking the current executor.
+  - Importing all handlers before the first registration loses LiteLLM's successfully registered prefix on a later failure.
+  - Skipped entries must not import their handler, even when that handler string names a missing module.
+  - A local handler receives kwargs, not one positional JSON dictionary and not the OpenAPI transport context.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

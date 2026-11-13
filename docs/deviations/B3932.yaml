@@ -1,0 +1,20 @@
+task: B3932
+deviations:
+  - what: Legacy v1 payloads are JSON-serialized with the exact sixteen fields LiteLLM wrote, including response_time in milliseconds computed from the request timestamps.
+    why: betterlite replicates LiteLLM's v1 format for backward compatibility when litellm.datadog_use_v1 is true, though the standard format is preferred.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L680-L761
+  - what: Metadata cleaning in legacy payloads removes endpoint, caching_groups and previous_models keys before serialization; all other metadata keys are kept.
+    why: These internal LiteLLM keys contain routing and caching metadata that should not appear in observable logs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L713-L728
+  - what: The legacy v1 builder attaches dd.trace_id and dd.span_id from the active tracer span; LiteLLM's _create_v0_logging_payload attaches no trace context.
+    why: The task requires both payload builders to correlate with the active APM trace, so v1 records carry the same two fields as standard records.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L753-L761
+  - what: The fallback id for a response object without an id is supplied by the caller instead of being generated inside the payload builder.
+    why: The random source is injected so the builder is a pure function a test can pin; LiteLLM evaluates uuid.uuid4() eagerly at the same point and nothing relies on the value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L700-L701
+  - what: The standard builder takes its status as an input; DataDogStatus::from_logging_status carries LiteLLM's rule of INFO for a success payload and ERROR for a failure payload.
+    why: The task's interface names the status as a parameter, so the batch logger maps the payload's status through the ported rule at the call site.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L562-L564
+  - what: Legacy v1 payloads write the status their caller passes; LiteLLM always writes INFO for v1 records.
+    why: The task's interface injects the status so one builder serves both callbacks; the only LiteLLM v1 call site logs a success and passes INFO, so its records are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L753-L759

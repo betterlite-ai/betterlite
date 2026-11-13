@@ -1,0 +1,22 @@
+kind: helper
+name: crawl-search-providers-fastcrw-flat-data-only
+call:
+  b8022:
+    provider: fastcrw
+    function: transform_search_response
+    replies:
+      - success: true
+        data:
+          - {title: "A", url: "https://a.test", description: "description only"}
+          - {title: "B", url: "https://b.test", markdown: "markdown body", description: "ignored"}
+          - {title: "C", url: "https://c.test", description: "dated", date: "2024-01-02", last_updated: "2024-02-03"}
+      - success: true
+        data:
+          web:
+            - {title: "W", url: "https://w.test", markdown: "web markdown"}
+      - success: true
+        data: "unexpected text"
+      - success: true
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,14 @@
+id: B8873
+milestone: M8 platform
+title: Initialize the secret manager before resolving the rest of the config
+status: todo
+depends_on: [B002, B3662, B4410, B8500, B8590]
+file: tasks/B8873-secret-manager-bootstrap.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

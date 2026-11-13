@@ -2,8 +2,8 @@ id: B098
 milestone: M5 api families
 title: Google GenAI and Interactions APIs
 status: todo
-depends_on: [B3480, B3481, B3483, B3484, B3485, B3486, B3487, B3488, B3489, B3490, B3491, B3492, B3493, B3494, B3495, B3496, B3497, B3498, B3499, B3500, B3501, B3502, B3503, B3504, B3505, B3506, B3507, B3508, B014, B052]
-file: null
+depends_on: [B3481, B3498, B3499, B932, B1078, B8774, B9840]
+file: tasks/B098-genai-interactions-wiring.yaml
 covers:
   - "litellm/google_genai/{__init__.py,Readme.md}"
   - "litellm/google_genai/adapters/__init__.py"

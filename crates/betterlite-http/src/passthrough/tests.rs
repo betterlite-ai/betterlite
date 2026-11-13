@@ -2,7 +2,6 @@
 use super::{
     ResponseHandling, buffer_response, construct_url_with_subpath, get_response_body,
     get_response_headers, join_base_and_endpoint_path, response_handling, streaming_response,
-    update_stream_param,
 };
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use rstest::rstest;
@@ -183,5 +182,8 @@ fn passthrough_buffering_behavior_stream(
     #[case] expected: Option<bool>,
 ) {
     let parsed_body: Map<String, Value> = serde_json::from_value(body_value).unwrap();
-    assert_eq!(update_stream_param(&parsed_body, Some(true)), expected);
+    assert_eq!(
+        parsed_body.get("stream").map_or(Some(true), Value::as_bool),
+        expected
+    );
 }

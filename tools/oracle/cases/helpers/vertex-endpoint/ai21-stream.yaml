@@ -1,0 +1,29 @@
+kind: helper
+name: ai21-stream
+call:
+  vertex_endpoint:
+    ai21_stream:
+      complete:
+        - {partner: ai21, model: jamba-1.5-large, location: us-central1, project: proj, project_id: defproj, stream: true, api_base: null}
+        - {partner: ai21, model: jamba-1.5-large, location: us-central1, project: proj, project_id: defproj, stream: false, api_base: null}
+        - {partner: ai21, model: jamba-1.5-large, location: us-central1, project: proj, project_id: defproj, stream: null, api_base: null}
+        - {partner: mistralai, model: mistral-large, location: us-central1, project: proj, project_id: defproj, stream: true, api_base: null}
+        - {partner: mistralai, model: mistral-large, location: us-central1, project: proj, project_id: defproj, stream: false, api_base: https://proxy.example.com}
+        - {partner: mistralai, model: mistral-large, location: us-central1, project: proj, project_id: defproj, stream: true, api_base: https://proxy.example.com/v1}
+        - {partner: mistralai, model: mistral-large, location: us-central1, project: proj, project_id: defproj, stream: false, api_base: https://proxy.example.com/foo}
+        - {partner: claude, model: claude-3-5-sonnet, location: us-central1, project: proj, project_id: defproj, stream: true, api_base: null}
+        - {partner: claude, model: claude-3-5-sonnet, location: us-central1, project: proj, project_id: defproj, stream: false, api_base: https://proxy.example.com}
+        - {partner: claude, model: claude-3-5-sonnet, location: us-central1, project: proj, project_id: defproj, stream: true, api_base: https://proxy.example.com/v1}
+        - {partner: ai21, model: jamba-1.5-large, location: europe-west1, project: proj, project_id: defproj, stream: false, api_base: https://proxy.example.com}
+      create:
+        - {partner: llama, model: llama-3.3-70b, location: us-central1, project: proj, stream: true, api_base: null}
+        - {partner: llama, model: llama-3.3-70b, location: us-central1, project: proj, stream: false, api_base: https://proxy.example.com}
+        - {partner: mistralai, model: mistral-large, location: us-central1, project: proj, stream: true, api_base: null}
+        - {partner: mistralai, model: mistral-large, location: us-central1, project: proj, stream: false, api_base: null}
+        - {partner: ai21, model: jamba-1.5-large, location: us-central1, project: proj, stream: true, api_base: null}
+        - {partner: ai21, model: jamba-1.5-large, location: us-central1, project: proj, stream: false, api_base: https://proxy.example.com}
+        - {partner: claude, model: claude-3-5-sonnet, location: us-central1, project: proj, stream: true, api_base: null}
+        - {partner: claude, model: claude-3-5-sonnet, location: us-central1, project: proj, stream: false, api_base: null}
+        - {partner: ai21, model: bge/1234, location: global, project: proj, stream: null, api_base: null}
+env: {}
+compare: {ignore: []}

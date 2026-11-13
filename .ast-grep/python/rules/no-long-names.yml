@@ -1,0 +1,24 @@
+id: no-long-names
+language: python
+severity: error
+message: a name past 30 characters hides the word that matters; say it in fewer words
+note: names that come from another package (an imported name, a called function, an attribute after a dot, a keyword argument) are exempt, since a long name of ours already fails where it is defined
+rule:
+  kind: identifier
+  regex: ^.{31,}$
+  not:
+    any:
+      - inside:
+          stopBy: end
+          any:
+            - kind: import_statement
+            - kind: import_from_statement
+      - inside:
+          kind: attribute
+          field: attribute
+      - inside:
+          kind: keyword_argument
+          field: name
+      - inside:
+          kind: call
+          field: function

@@ -1,0 +1,16 @@
+kind: helper
+name: crawl-search-providers-firecrawl-news-snippet-fallback
+call:
+  b8022:
+    provider: firecrawl
+    function: transform_search_response
+    replies:
+      - data:
+          web:
+            - {title: "W", url: "https://w.test", markdown: "", description: "web description"}
+          news:
+            - {title: "N", url: "https://n.test", markdown: "", snippet: "news snippet"}
+            - {title: "D", url: "https://d.test", snippet: "dated", date: "2023-01-02"}
+env: {}
+compare:
+  ignore: []

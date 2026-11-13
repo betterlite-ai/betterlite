@@ -1,0 +1,14 @@
+id: B7844
+milestone: M12 python
+title: Python Google GenAI generate-content functions
+status: todo
+depends_on: [B3489, B6040, B158]
+file: tasks/B7844-python-google-genai.yaml
+covers:
+  - "litellm/google_genai/main.py"
+parent: B160
+split_from: B160
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

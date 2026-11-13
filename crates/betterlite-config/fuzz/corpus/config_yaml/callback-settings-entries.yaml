@@ -1,0 +1,14 @@
+callback_settings:
+  otel:
+    endpoint: http://collector:4318
+    headers: api-key=secret
+    exporters:
+      - kind: otlp_http
+        endpoint: http://collector:4318/v1/traces
+  langfuse:
+    langfuse_public_key: pk
+    langfuse_secret: sk
+    langfuse_span_scope: full
+    retries: 3
+    enabled: true
+    optional: null

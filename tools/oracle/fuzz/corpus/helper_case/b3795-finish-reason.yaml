@@ -1,0 +1,11 @@
+# straiker_webhook_records: finish reason from top-level fields and choices
+kind: helper
+name: b3795-finish-reason-seed
+call:
+  b3795:
+    finish_reason:
+      response:
+        choices:
+          - {finish_reason: null, stop_reason: end_turn}
+env: {}
+compare: {ignore: []}

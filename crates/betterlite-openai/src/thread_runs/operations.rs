@@ -1,0 +1,169 @@
+use std::sync::Arc;
+use std::time::Duration;
+
+use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::outbound::RequestBody;
+use serde_json::{Map, Value};
+use tokio::time::sleep;
+
+use crate::assistants::client::{ClientKind, ClientOptions, SdkClient};
+use crate::assistants::operations::AssistantsApi;
+use crate::assistants::transport::AssistantsTransport;
+use crate::thread_runs::client::{CallKind, DEFAULT_TIMEOUT, outbound, send};
+use crate::thread_runs::error::ThreadRunsError;
+use crate::thread_runs::records::reply;
+use crate::thread_runs::records::{RunReply, RunRequest};
+use crate::thread_runs::stream::{RunEventHandler, RunStream};
+
+const TERMINAL: &str = "requires_action cancelled completed failed expired incomplete";
+pub struct RunsApi<T> {
+    pub transport: Arc<T>,
+}
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RunDispatch {
+    pub arun_thread: bool,
+    pub stream: bool,
+}
+pub struct RunCall<T> {
+    pub options: ClientOptions,
+    pub client: Option<SdkClient<T>>,
+    pub dispatch: RunDispatch,
+    pub handler: Option<Arc<dyn RunEventHandler>>,
+}
+// The buffered and streaming results stay distinct, and each names the facade it was built for.
+pub enum RunInvocation<T> {
+    Polled(ClientKind, Box<RunReply>),
+    Streaming(Box<RunStream<T>>),
+}
+impl<T: AssistantsTransport> RunsApi<T> {
+    pub async fn create_and_poll(
+        &self,
+        client: &SdkClient<T>,
+        request: &RunRequest,
+    ) -> Result<RunReply, ThreadRunsError> {
+        let segments = thread_segments(&request.thread_id)?;
+        let bytes = create_body(request, false);
+        let create = outbound(
+            client,
+            CallKind::Create,
+            &segments,
+            RequestBody::Json(bytes),
+        )?;
+        let created = send(self.transport.as_ref(), create).await?;
+        let mut run = reply(&created.body)?;
+        let run_id = run.id.clone();
+        let mut interval = None;
+        loop {
+            let poll_segments = run_segments(&request.thread_id, &run_id)?;
+            let poll = outbound(client, CallKind::Poll, &poll_segments, RequestBody::Empty)?;
+            let response = send(self.transport.as_ref(), poll).await?;
+            run = reply(&response.body)?;
+            if TERMINAL.split(' ').any(|state| state == run.status) {
+                return Ok(run);
+            }
+            let wait = interval.map_or_else(|| poll_interval(&response), Ok)?;
+            interval = Some(wait);
+            sleep(wait).await;
+        }
+    }
+    pub fn create_stream(
+        &self,
+        client: &SdkClient<T>,
+        request: &RunRequest,
+        handler: Option<Arc<dyn RunEventHandler>>,
+    ) -> Result<RunStream<T>, ThreadRunsError> {
+        let segments = thread_segments(&request.thread_id)?;
+        let bytes = create_body(request, true);
+        let kind = CallKind::Stream;
+        let stream_request = outbound(client, kind, &segments, RequestBody::Json(bytes))?;
+        Ok(RunStream {
+            kind: client.kind,
+            handler,
+            transport: Arc::clone(&self.transport),
+            request: stream_request,
+            read_timeout: client.timeout.unwrap_or(DEFAULT_TIMEOUT),
+        })
+    }
+    pub async fn run_thread(
+        &self,
+        call: RunCall<T>,
+        request: &RunRequest,
+    ) -> Result<RunInvocation<T>, ThreadRunsError> {
+        let kind = if call.dispatch.arun_thread {
+            ClientKind::Async
+        } else {
+            ClientKind::Sync
+        };
+        let client = AssistantsApi {
+            transport: Arc::clone(&self.transport),
+        }
+        .get_openai_client(kind, call.options, call.client);
+        if call.dispatch.stream {
+            let stream = self.create_stream(&client, request, call.handler)?;
+            return Ok(RunInvocation::Streaming(Box::new(stream)));
+        }
+        let run = self.create_and_poll(&client, request).await?;
+        Ok(RunInvocation::Polled(kind, Box::new(run)))
+    }
+}
+// The SDK always sends every keyword LiteLLM's wrapper received, so a None argument stays null on the wire.
+fn create_body(request: &RunRequest, stream: bool) -> Vec<u8> {
+    let mut body = Map::new();
+    body.insert(
+        String::from("assistant_id"),
+        Value::from(request.assistant_id.as_str()),
+    );
+    body.insert(
+        String::from("additional_instructions"),
+        Value::from(request.additional_instructions.as_deref()),
+    );
+    body.insert(
+        String::from("instructions"),
+        Value::from(request.instructions.as_deref()),
+    );
+    body.insert(
+        String::from("metadata"),
+        request.metadata.clone().unwrap_or(Value::Null),
+    );
+    body.insert(String::from("model"), Value::from(request.model.as_deref()));
+    body.insert(String::from("stream"), Value::from(stream));
+    body.insert(
+        String::from("tools"),
+        request.tools.clone().unwrap_or(Value::Null),
+    );
+    Value::Object(body).to_string().into_bytes()
+}
+fn thread_segments(thread_id: &str) -> Result<[&str; 3], ThreadRunsError> {
+    check_segment(thread_id, ThreadRunsError::EmptyThreadId)?;
+    Ok(["threads", thread_id, "runs"])
+}
+fn run_segments<'call>(
+    thread_id: &'call str,
+    run_id: &'call str,
+) -> Result<[&'call str; 4], ThreadRunsError> {
+    check_segment(thread_id, ThreadRunsError::EmptyThreadId)?;
+    check_segment(run_id, ThreadRunsError::EmptyRunId)?;
+    Ok(["threads", thread_id, "runs", run_id])
+}
+// The SDK quotes the id before its dot check, so only the literal dot segments reach the check here.
+fn check_segment(segment: &str, empty: ThreadRunsError) -> Result<(), ThreadRunsError> {
+    if segment.is_empty() {
+        return Err(empty);
+    }
+    if matches!(segment, "." | "..") {
+        return Err(ThreadRunsError::DotSegment(segment.to_owned()));
+    }
+    Ok(())
+}
+fn poll_interval(response: &UpstreamResponse) -> Result<Duration, ThreadRunsError> {
+    let Some(value) = response.headers.get("openai-poll-after-ms") else {
+        return Ok(Duration::from_millis(1000));
+    };
+    let text = value
+        .to_str()
+        .map_err(|error| ThreadRunsError::PollAfter(error.to_string()))?;
+    let millis = text
+        .parse::<u64>()
+        .map_err(|_invalid| ThreadRunsError::PollAfter(text.to_owned()))?;
+    Ok(Duration::from_millis(millis))
+}

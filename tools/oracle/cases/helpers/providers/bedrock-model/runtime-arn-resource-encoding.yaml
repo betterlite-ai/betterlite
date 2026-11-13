@@ -1,0 +1,5 @@
+kind: helper
+name: runtime-arn-resource-encoding
+call: {bedrock_model: {endpoint: 'arn:aws:bedrock:ap-southeast-1:123456789012:application-inference-profile/abdefg12334'}}
+env: {}
+compare: {ignore: []}

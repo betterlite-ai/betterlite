@@ -1,0 +1,1 @@
+{"type":"chat","prompt":[{"role":"system","content":"You help"},{"type":"placeholder","name":"history"}],"name":"greeting","version":2,"config":{},"labels":[],"tags":[],"commitMessage":"first","resolutionGraph":{"prompt":"greeting"}}

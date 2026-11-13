@@ -1,0 +1,3 @@
+[default.extend-words]
+# The SDK comparison-filter protocol spells the not-in operator this way.
+nin = "nin"

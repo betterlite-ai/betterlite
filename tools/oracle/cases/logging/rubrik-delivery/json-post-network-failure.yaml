@@ -1,0 +1,13 @@
+kind: helper
+name: rubrik-delivery-json-post-network-failure
+call:
+  b3976:
+    environment: {}
+    init: {api_base: "https://rubrik.test", api_key: test-key}
+    replies:
+      - {fail: true}
+    actions:
+      - do: post_prompt
+        payload: {model: gpt-4o}
+env: {}
+compare: {ignore: []}

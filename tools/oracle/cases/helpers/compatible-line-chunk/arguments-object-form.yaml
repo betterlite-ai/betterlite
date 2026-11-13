@@ -1,0 +1,11 @@
+kind: helper
+name: object_arguments_become_a_json_string
+call:
+  compatible_line_chunk:
+    mode: sync
+    events:
+      - {kind: line, line: 'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"t","function":{"name":"f","arguments":{"city":"Paris","days":3}}}]}}]}'}
+      - {kind: line, line: 'data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"t","function":{"name":"f","arguments":"{\"city\": \"Rome\"}"}}]}}]}'}
+env: {}
+compare:
+  ignore: []

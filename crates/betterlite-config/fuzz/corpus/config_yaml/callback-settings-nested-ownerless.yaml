@@ -1,0 +1,5 @@
+callback_settings:
+  generic_api:
+    endpoint: https://hook
+    headers:
+      authorization: Bearer secret

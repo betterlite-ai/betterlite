@@ -1,0 +1,19 @@
+kind: helper
+name: select-by-name
+call:
+  b4114:
+    operation: select_tool
+    search_tool_name: preferred
+    search_tools:
+      - search_tool_name: other
+        litellm_params:
+          search_provider: tavily
+      - search_tool_name: preferred
+        litellm_params:
+          search_provider: perplexity
+          api_key: key-preferred
+      - search_tool_name: later
+        litellm_params:
+          search_provider: brave
+env: {}
+compare: {ignore: []}

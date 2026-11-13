@@ -1,0 +1,21 @@
+kind: helper
+name: applying-chain-members-condition-match
+call:
+  b3241:
+    policy_memory_matching_matcher:
+      action: applying_chain_members
+      policies:
+        parent:
+          guardrails:
+            add: [g-parent]
+        child:
+          inherit: parent
+          guardrails:
+            add: [g-child]
+          condition:
+            model: claude.*
+      context:
+        model: claude-opus-4-1
+      policy_name: child
+env: {}
+compare: {ignore: []}

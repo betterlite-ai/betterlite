@@ -1,0 +1,8 @@
+task: B719
+deviations:
+  - what: The database-views command connects without TLS, so a database URL that requires TLS fails to connect.
+    why: The native TLS connector for betterlite-db is not built yet, so the command uses tokio-postgres with NoTls and fails with the driver's own error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/create_views.py#L11-L15
+  - what: The database-views command prints its stdout lines after the batch ends, not after each statement, and a failure prints the completed lines before the error.
+    why: The admin service contract returns an outcome and takes no output stream, so the lines travel in the outcome or the error. The printed text and order match the script.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/create_views.py#L26-L33

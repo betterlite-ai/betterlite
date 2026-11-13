@@ -2,23 +2,32 @@ id: B4563
 title: Claude configuration ownership receipts and safe undo
 description: >-
   Build per-field fingerprints and the configure/unconfigure transaction sequence in
-  tools/management-cli/src/claude_settings/receipts.rs as a Rust submodule extending B4562's claude_settings
+  crates/betterlite-cli/src/claude_settings/receipts.rs as a Rust submodule extending B4562's claude_settings
   module. Persist receipt records that capture what each setting held before configuration and what betterlite
-  wrote, so unconfigure can restore only the values betterlite still owns. When a user edits a setting between
-  configure and unconfigure, the fingerprint no longer matches and that setting is left alone. Credential slots
-  record the ANTHROPIC_BASE_URL endpoint they were issued for; during unconfigure, put credentials back only
-  if the restored settings still point to the same server, else withhold them in a trimmed receipt for a later
-  unconfigure attempt (when the URL changes back). The transaction sequence writes a receipt file before touching
-  settings, and if settings write fails after receipt lands, the file never describes settings that were not written.
-  Build the OwnedValue contract (present flag and JSON value), ConfigureReceipt and related outcome types,
-  and the ownership check, fingerprinting, transaction and restoration logic. Preserve the ability to detect
-  when a configure succeeded despite an unconfigure failure (receipt describes a state, settings may differ),
-  and distinguish retryable unconfigures from failed ones without claiming the two file renames are atomic together.
+  wrote, so unconfigure can restore only the values betterlite still owns. configure_claude_settings resolves
+  the settings path, its receipt path and its owners through B4562's claude_settings_path, configure_state_path
+  and settings_file_owners, calls B4562's refuse_while_owned before touching anything, builds the new document
+  with B4562's merge_claude_settings (passing the status-line command B4562's install_statusline_script returns),
+  and commits both files through B192's staged private JSON write and commit operations, called behind an
+  injected trait so a test can make one commit fail without touching a real filesystem. When model is UnpinModel,
+  configure first clears the model paths an earlier receipt still owns (the same fingerprint check unconfigure
+  uses) before merging, so a model the user pinned by hand, which never matches the earlier receipt, is left
+  alone. When a user edits a setting between configure and unconfigure, the fingerprint no longer matches and
+  that setting is left alone. Credential slots record the ANTHROPIC_BASE_URL endpoint they were issued for;
+  during unconfigure, put credentials back only if the restored settings still point to the same server, else
+  withhold them in a trimmed receipt for a later unconfigure attempt (when the URL changes back). The transaction
+  sequence commits the receipt before the settings file, and when the settings commit then fails, re-stages the
+  earlier receipt (which may itself fail) rather than leaving a receipt that describes settings nobody wrote.
+  Build the OwnedValue contract (present flag and JSON value), ConfigureReceipt and related outcome types, and
+  the dotted-path lookup, mutation, ownership-check, fingerprinting, transaction and restoration logic receipts.rs
+  owns on top of B4562's settings document. Preserve the ability to detect when a configure succeeded despite
+  an unconfigure failure (receipt describes a state, settings may differ), and distinguish retryable unconfigures
+  from failed ones without claiming the two file renames are atomic together.
 
 scope:
   paths:
-    - tools/management-cli/src/claude_settings/receipts.rs
-    - tools/management-cli/src/claude_settings/receipts/**
+    - crates/betterlite-cli/src/claude_settings/receipts.rs
+    - crates/betterlite-cli/src/claude_settings/receipts/**
   lint_tables: false
 
 references:
@@ -39,73 +48,78 @@ references:
 
 dod:
   - text: >-
-      OwnedValue type holds present (bool) and value (JSON), ConfigureReceipt holds file_existed, env_present,
-      env_was_object, previous (path -> OwnedValue), written (path -> fingerprint), endpoints (path -> OwnedValue);
-      WithheldCredential holds key and endpoint; UnconfigureOutcome holds restored/kept/withheld paths and file_removed flag.
-    proof: [receipt-types]
+      OwnedValue holds a present flag and a JSON value, and ConfigureReceipt holds file_existed, env_present,
+      env_was_object, and the previous, written and endpoints maps keyed by dotted setting path (env.X or a bare
+      top-level key); the fingerprint in written is a SHA-256 hash of the canonical, key-sorted JSON of the
+      OwnedValue betterlite wrote, so the same value always hashes the same regardless of map order.
+      configure_claude_settings, unconfigure_claude_settings, read_configure_receipt and preflight_claude_settings
+      are the module's public functions; every other helper stays private to receipts.rs.
+    proof: [configure-records-ownership]
   - text: >-
-      Fingerprints are SHA256 hashes of canonical JSON (keys sorted) of an OwnedValue serialized to serde_json::Value.
-    proof: [fingerprinting]
+      Configure captures each path's previous value once, at the first configure, and carries it through repeats
+      as long as the live value still matches that path's fingerprint; once the live value stops matching (the
+      user edited it), the next configure captures the edited value as the new previous baseline. Configure also
+      captures the ANTHROPIC_BASE_URL endpoint beside each credential path (env.ANTHROPIC_AUTH_TOKEN,
+      env.ANTHROPIC_API_KEY, apiKeyHelper) for later endpoint matching.
+    proof: [configure-records-ownership]
   - text: >-
-      Ownership check _ours compares a fingerprint against the current setting value; a match means betterlite still
-      owns it and can restore it, a mismatch means the user edited it after configure.
-    proof: [ownership-check]
+      When model is UnpinModel, configure clears the model paths (the top-level model key and env.ANTHROPIC_MODEL)
+      that an earlier receipt still owns before computing the merged document, so merge_claude_settings starts
+      from the unpinned state; a model the user set directly, which does not match the earlier receipt's
+      fingerprint, is left alone.
+    proof: [configure-records-ownership]
   - text: >-
-      Configure stages both receipt and settings before committing either; receipt commits first, then settings; if
-      settings commit fails, an earlier receipt is re-staged and may fail too, with a clear error about the inconsistent state.
-    proof: [configure-transaction]
+      Configure stages the receipt and the merged settings document before committing either, through an injected
+      commit operation so a test can make one commit fail without touching the real filesystem. The receipt
+      commits first; when the settings commit then fails, configure re-stages the earlier receipt (or removes the
+      new one when there was none) and returns an error naming the inconsistent state if that re-stage itself fails.
+    proof: [configure-records-ownership]
   - text: >-
-      Configure captures previous values (what was there before this configure), carried from an earlier receipt if
-      the key still matches, and captures the ANTHROPIC_BASE_URL endpoint beside each credential for later matching.
-    proof: [receipt-capture]
+      read_configure_receipt returns no receipt, not an error, when the state file is absent, and a distinct error
+      for a present file that is unreadable or not valid receipt JSON; unconfigure_claude_settings turns a missing
+      receipt into its own error naming that there is nothing to undo, while preflight_claude_settings surfaces
+      read_configure_receipt's own errors before configure or unconfigure runs, with no receipt required to exist yet.
+    proof: [receipt-reading-distinguishes-failures]
   - text: >-
-      Unconfigure restores only paths in the receipt's written set where the current value still matches the fingerprint,
-      leaves other paths alone, and withholds credentials where the previous value is present but the restored settings
-      point to a different ANTHROPIC_BASE_URL than the one captured.
-    proof: [unconfigure-restoration]
+      Unconfigure restores a path from the receipt's written set only when the live setting still matches that
+      path's fingerprint; every other owned path the user edited since configure, and that is still present in
+      the live settings, is reported as kept, not restored, and left exactly as the user set it.
+    proof: [unconfigure-restores-fingerprint-matches]
   - text: >-
-      Unconfigure with withheld credentials trims the receipt to record only those withheld paths (marking them with
-      a "not present" fingerprint), so a later unconfigure can attempt restoration if the URL changes back.
-    proof: [withheld-trimming]
+      Restoring every owned path to an empty settings document deletes the settings file only when it did not
+      exist before the first configure; otherwise unconfigure writes back an empty document, or just the minimal
+      env object env_was_object recorded, and the returned UnconfigureOutcome's file_removed flag matches which
+      one happened.
+    proof: [unconfigure-restores-fingerprint-matches]
   - text: >-
-      read_configure_receipt and preflight_claude_settings deserialize/validate receipts and detect missing receipts,
-      unreadable files and invalid JSON as distinct errors.
-    proof: [receipt-io]
+      Unconfigure withholds a credential path when the receipt's previous value for it is present and the restored
+      settings now point at a different ANTHROPIC_BASE_URL than the endpoint the receipt captured for it; when both
+      endpoints are absent (the default Anthropic endpoint on both sides), the credential is restored, not withheld.
+      WithheldCredential records the key and a readable form of the endpoint it was withheld for, and
+      UnconfigureOutcome separates restored, kept and withheld paths plus whether the file was removed.
+    proof: [withheld-credentials-reported]
   - text: >-
-      configure_claude_settings and unconfigure_claude_settings are exported; receipt reading, preflight and undo
-      outcome types are public; internal helpers (_owned, _fingerprint, _env, _lookup, _with*, _claim) are private.
-    proof: [exports]
+      A withheld credential's path stays absent from the restored document and leaves a trimmed receipt behind that
+      records only the withheld paths, each with the fingerprint of an absent value, so a later unconfigure sees
+      the key is still absent, the endpoint is still recorded, and restores it once the live settings point at that
+      endpoint again.
+    proof: [withheld-credentials-reported]
 
 checks:
   optional: []
   commands:
-    - id: receipt-types
-      why: OwnedValue, ConfigureReceipt, WithheldCredential or UnconfigureOutcome types are missing or incorrect
-      run: grep -q "struct OwnedValue\|OwnedValue {" tools/management-cli/src/claude_settings/receipts.rs && grep -q "struct ConfigureReceipt\|ConfigureReceipt {" tools/management-cli/src/claude_settings/receipts.rs && grep -q "struct WithheldCredential\|WithheldCredential {" tools/management-cli/src/claude_settings/receipts.rs && grep -q "struct UnconfigureOutcome\|UnconfigureOutcome {" tools/management-cli/src/claude_settings/receipts.rs
-    - id: fingerprinting
-      why: fingerprinting does not use SHA256 or does not canonicalize JSON
-      run: grep -q "sha256\|SHA256" tools/management-cli/src/claude_settings/receipts.rs && grep -q "json" tools/management-cli/src/claude_settings/receipts.rs
-    - id: ownership-check
-      why: ownership check _ours does not compare fingerprints against current values
-      run: grep -q "_ours\|is_owned" tools/management-cli/src/claude_settings/receipts.rs && grep -qE "fingerprint.*==" tools/management-cli/src/claude_settings/receipts.rs
-    - id: configure-transaction
-      why: configure does not stage both files or does not handle partial-write rollback
-      run: grep -q "stage_private_json\|stage_private_bytes" tools/management-cli/src/claude_settings/receipts.rs && grep -q "configure_claude_settings\|configure" tools/management-cli/src/claude_settings/receipts.rs && grep -q "discard_staged_json\|rollback" tools/management-cli/src/claude_settings/receipts.rs
-    - id: receipt-capture
-      why: receipt does not capture previous values, carried from earlier receipt, or endpoint for credentials
-      run: grep -q "previous\|previous_value" tools/management-cli/src/claude_settings/receipts.rs && grep -q "endpoint\|ANTHROPIC_BASE_URL" tools/management-cli/src/claude_settings/receipts.rs
-    - id: unconfigure-restoration
-      why: unconfigure does not restore only owned values or does not withhold mismatched credentials
-      run: grep -q "unconfigure_claude_settings\|restore" tools/management-cli/src/claude_settings/receipts.rs && grep -q "_ours\|is_owned" tools/management-cli/src/claude_settings/receipts.rs && grep -q "WithheldCredential" tools/management-cli/src/claude_settings/receipts.rs
-    - id: withheld-trimming
-      why: unconfigure does not trim receipt for withheld credentials
-      run: grep -q "withheld" tools/management-cli/src/claude_settings/receipts.rs && grep -q "model_copy\|copy\|trim" tools/management-cli/src/claude_settings/receipts.rs
-    - id: receipt-io
-      why: read_configure_receipt or preflight validation is missing or does not distinguish error cases
-      run: grep -q "read_configure_receipt" tools/management-cli/src/claude_settings/receipts.rs && grep -q "preflight_claude_settings" tools/management-cli/src/claude_settings/receipts.rs
-    - id: exports
-      why: public exports or configure_claude_settings/unconfigure_claude_settings are missing
-      run: grep -q "pub fn configure_claude_settings\|pub.*configure_claude_settings" tools/management-cli/src/claude_settings/receipts.rs && grep -q "pub fn unconfigure_claude_settings\|pub.*unconfigure_claude_settings" tools/management-cli/src/claude_settings/receipts.rs
+    - id: configure-records-ownership
+      why: configure does not compute a stable fingerprint, does not carry a receipt's previous value and endpoint across repeats, does not clear an owned model pin before merging, or does not stage the receipt before settings with rollback on a failed settings commit
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^claude_settings::receipts::.*configure/) - test(/^claude_settings::receipts::.*unconfigure/) - test(/^claude_settings::receipts::.*read_configure_receipt/) - test(/^claude_settings::receipts::.*preflight/)'
+    - id: receipt-reading-distinguishes-failures
+      why: read_configure_receipt or preflight_claude_settings treat a missing, an unreadable and an invalid receipt file the same way
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^claude_settings::receipts::.*(preflight|read_configure_receipt)/)'
+    - id: unconfigure-restores-fingerprint-matches
+      why: unconfigure restores a path whose fingerprint no longer matches the live value, touches a path the user edited and kept, or mishandles the settings file left empty
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^claude_settings::receipts::.*restor/)'
+    - id: withheld-credentials-reported
+      why: unconfigure puts a credential back at the wrong endpoint, fails to report it as withheld, or does not trim the receipt so a later unconfigure can retry it
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^claude_settings::receipts::.*withh/)'
 
 oracle_cases: []
 
@@ -114,12 +128,15 @@ deviations: []
 out_of_scope:
   - Receipt storage/locking and concurrent access patterns. B192 handles staged-file naming and atomic commit; this
     task only reads and writes the receipt through B192's helpers.
-  - CLI command parsing and user-facing error messages for configure/unconfigure. B4571 handles the command wiring
-    and error presentation.
+  - CLI command parsing and user-facing error messages. B4571 wires configure and reconfigure, calling
+    configure_claude_settings and preflight_claude_settings; B4572 wires unconfigure, calling
+    unconfigure_claude_settings and reporting withheld credentials from its UnconfigureOutcome.
   - Model-choice type definitions and merge rules. B4562 owns StaticToken, KeepModel, UnpinModel and StartOn; this
     task imports them and uses them in the transaction sequence.
   - Credential renewal, storage and keyring integration. B4574 owns token lifecycle; this task records the endpoint
     a credential was issued for and uses it to gate restoration, but never reads or writes credentials directly.
+  - Status-line command resolution. B4562's install_statusline_script resolves and quotes the command this task
+    passes into merge_claude_settings; receipts.rs never builds or quotes that command itself.
 
 pitfalls:
   - >-
@@ -147,8 +164,16 @@ pitfalls:
       The two file commits (receipt then settings) are not atomic. If the first succeeds and the second fails, the receipt
       on disk describes settings that were not written. Unconfigure will still see the receipt and try to restore, reading
       whatever is actually in the settings file now. The error message tells the user to remove the receipt if this happens.
+  - >-
+      UnpinModel clears the model paths an earlier receipt owns before merge_claude_settings runs, not after. Clearing
+      after merge would erase a model the merge itself just set for a different model choice, and checking the live value
+      instead of the receipt's fingerprint would also clear a model the user pinned by hand.
+  - >-
+      The commit step is a trait the transaction calls, not a direct file write, so a test can fail the settings commit
+      after the receipt commit already succeeded without touching a real filesystem. A test double that always succeeds
+      never exercises the re-stage-the-earlier-receipt path, so DoD coverage needs a double that fails on its second call.
 
-review_level: standard
+review_level: security
 
 budget:
   max_changed_lines: 1500

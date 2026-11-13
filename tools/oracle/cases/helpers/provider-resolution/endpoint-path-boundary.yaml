@@ -1,0 +1,10 @@
+kind: helper
+name: provider-resolution-endpoint-path-boundary
+call:
+  provider_resolution:
+    model: llama3-8b-8192
+    api_base: https://api.groq.com/openai/v1x
+    environment:
+      GROQ_API_KEY: groq-env-key
+env: {}
+compare: {ignore: []}

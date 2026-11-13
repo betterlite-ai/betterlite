@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8191_allowlist_load_duplicate_values","call":{"b8191":{"operation":"allowlist_load","settings":{"mcp_allowed_clients":[{"alias":"first","value":"client-1"},{"alias":"second","value":"client-1"}]}}},"env":{},"compare":{"ignore":[]}}

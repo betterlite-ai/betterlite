@@ -1,0 +1,5 @@
+kind: helper
+name: arn-and-region-path
+call: {bedrock_model: {model: 'bedrock/us-east-1/arn:aws:bedrock:us-east-1:111:foo/bar'}}
+env: {}
+compare: {ignore: []}

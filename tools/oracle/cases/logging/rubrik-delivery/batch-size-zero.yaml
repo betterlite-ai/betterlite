@@ -1,0 +1,10 @@
+kind: helper
+name: rubrik-delivery-batch-size-zero
+call:
+  b3976:
+    environment: {RUBRIK_BATCH_SIZE: "0"}
+    init: {api_base: "https://rubrik.test", api_key: test-key}
+    replies: []
+    actions: []
+env: {}
+compare: {ignore: []}

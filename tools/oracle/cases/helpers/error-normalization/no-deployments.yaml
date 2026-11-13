@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-no-deployments
+call: {"error_normalization": {"message": "no deployments available", "status_code": 418}}
+env: {}
+compare: {ignore: []}

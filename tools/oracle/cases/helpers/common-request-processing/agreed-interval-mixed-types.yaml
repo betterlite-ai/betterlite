@@ -1,0 +1,25 @@
+kind: helper
+name: common-request-processing-agreed-interval-mixed-types
+call:
+  b7324:
+    function: agreed
+    groups:
+      - deployments:
+          - {litellm_params: {keepalive_seconds: 5}}
+          - {litellm_params: {keepalive_seconds: "5"}}
+        global_interval: 7
+      - deployments:
+          - {litellm_params: {keepalive_seconds: 5}}
+          - {litellm_params: {}}
+        global_interval: 7
+      - deployments: []
+        global_interval: 7
+      - deployments:
+          - {litellm_params: {keepalive_seconds: 2}}
+          - {litellm_params: {keepalive_seconds: 0}}
+        global_interval: 7
+      - deployments:
+          - {litellm_params: {}}
+        global_interval: 7
+env: {}
+compare: {ignore: []}

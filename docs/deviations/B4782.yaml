@@ -1,0 +1,23 @@
+task: B4782
+deviations:
+  - what: The token request does not follow redirects. A 3xx answer from the token endpoint is reported as a failed request with its status.
+    why: Following a redirect would send the Basic client_id:client_secret header to a host the operator never configured, and a token endpoint does not redirect in normal use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L168-L180
+  - what: The token request is sent once. A refused or reset connection is not retried.
+    why: The shared betterlite HTTP client has no transport retry, and a failed fetch already surfaces as an error the caller can repeat.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L168-L180
+  - what: A cache lifetime above u32::MAX seconds is capped at u32::MAX. A huge expires_in therefore caches for about 136 years instead of an unbounded time.
+    why: The cache lifetime is held in an unsigned 32-bit count, and no real token lives that long.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L205-L210
+  - what: An access_token that is not a string (a number, an object) is rejected as missing. LiteLLM accepts any truthy value and returns it as the token.
+    why: The bearer value is a string by definition, and returning a non-string would break the Authorization header LiteLLM builds from it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L196-L199
+  - what: An expires_in number outside the range of a 96-bit decimal is read as unparsable and falls back to 3600 seconds. LiteLLM would read it as a very large int.
+    why: The decimal type that reads JSON numbers has a fixed range, and a token that lives beyond it is not a real case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L201-L206
+  - what: The lock of an expired or evicted key is dropped the next time the cache touches its keys, not at the moment the cache removes the token.
+    why: The betterlite cache has no removal hook. The set of locks stays bounded by the live keys, and a lock that a caller still waits on is kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L134-L140
+  - what: The token cache is an object passed to resolve_oauth_header, not a module-level singleton.
+    why: The project rules forbid module-level state, so the caller owns one cache and shares it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/databricks_oauth.py#L215-L216

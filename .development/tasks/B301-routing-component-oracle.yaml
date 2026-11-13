@@ -2,7 +2,7 @@ id: B301
 title: Component probes for deterministic routing oracle cases
 description: 'Register tagged component cases in the existing B001 oracle CLI using B392 IPC and child
   lifecycle. Define a closed ProbeOperation enum in tools/oracle/src/router_probes/mod.rs and Python operation
-  dispatch in tools/oracle/litellm/probes/registry.py; every later task adds its named variant there.
+  dispatch in tools/oracle/litellm/probes/registry.py, and register every operation that the probe-stubs check lists up front, each with its variant, a stub tools/oracle/src/router_probes/<module>.rs and a stub tools/oracle/litellm/probes/<module>.py that answer not built on both sides, so a later task replaces only its own two files and never edits mod.rs or registry.py. The stubs and their registry lines sit outside the line budget below.
   Start with SingleCandidate invoking production simple-shuffle on both sides. Build betterlite-router-probe
   with a 300-second deadline and run probes with a 30-second deadline. Permit betterlite-oracle as the
   test-tool consumer of betterlite-router and betterlite-server in deny.toml, preserving their existing
@@ -27,10 +27,12 @@ scope:
   - tools/oracle/Cargo.toml
   - tools/oracle/src/bin/betterlite-router-probe.rs
   - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/src/router_probes/*.rs
   - tools/oracle/litellm/pyproject.toml
   - tools/oracle/litellm/uv.lock
   - tools/oracle/litellm/probes/registry.py
   - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/*.py
   - tools/oracle/litellm/probes/tests/**
   - tools/oracle/cases/routing/probes/**
   - Cargo.toml
@@ -72,6 +74,10 @@ dod:
   proof:
   - parser-corpus
   - routing-component-oracle-boundaries
+- text: Every operation in the probe-stubs list has its ProbeOperation variant, a Rust stub module and a Python stub adapter, and routing_component_oracle_boundaries asserts that a stub answers not built on both sides.
+  proof:
+  - probe-stubs
+  - routing-component-oracle-boundaries
 - text: The oracle is the only new tool consumer of router and server; existing product consumer restrictions
     remain.
   proof:
@@ -105,6 +111,119 @@ checks:
     run: grep -qE 'crate = "betterlite-router", wrappers = \["betterlite-server", "betterlite-oracle"\]'
       deny.toml && grep -qE 'crate = "betterlite-server", wrappers = \["betterlite", "betterlite-oracle"\]'
       deny.toml
+  - id: probe-stubs
+    why: a planned probe operation has no variant, Rust stub or Python stub, so its task would have to edit mod.rs or registry.py
+    run: |-
+      while read -r variant module; do
+        test -f "tools/oracle/src/router_probes/$module.rs" && test -f "tools/oracle/litellm/probes/$module.py" && grep -qw "$variant" tools/oracle/src/router_probes/mod.rs && grep -qw "$module" tools/oracle/litellm/probes/registry.py || { echo "probe $variant ($module) is not registered"; exit 1; }
+      done <<'EOF'
+      AccessWindows access_windows
+      AdaptiveClassification adaptive_classification
+      AdaptiveConcurrency adaptive_concurrency
+      AdaptiveFeedback adaptive_feedback
+      AdaptivePersistence adaptive_persistence
+      AdaptiveSelection adaptive_selection
+      AdmissionControl admission_control
+      AffinityClaims affinity_claims
+      AutomaticRouterPipeline automatic_router_pipeline
+      AutoRouterAccess auto_router_access
+      AutoRouterPreview auto_router_preview
+      AutoRouterReadApi auto_router_read_api
+      AutoRouterRollups auto_router_rollups
+      BenchmarkAggregates benchmark_aggregates
+      BudgetWindows budget_windows
+      CacheCostRouting cache_cost_routing
+      CapabilityClassifier capability_classifier
+      CapabilityForecast capability_forecast
+      CatalogUpdates catalog_updates
+      ChatStreamFallback chat_stream_fallback
+      ClassifierContext classifier_context
+      ClassifierMessageText classifier_message_text
+      ClassifierVerdict classifier_verdict
+      CompactionHistory compaction_history
+      ComplexityAdaptivePlacement complexity_adaptive_placement
+      ComplexityConfig complexity_config
+      ComplexityEvaluation complexity_evaluation
+      ComplexityPipeline complexity_pipeline
+      ComplexityPlacement complexity_placement
+      ComplexityPlacementGates complexity_placement_gates
+      ComplexityScoring complexity_scoring
+      ComplexitySessions complexity_sessions
+      ComplexityTurnOverrides complexity_turn_overrides
+      ContextPlacement context_placement
+      CooldownDecisions cooldown_decisions
+      CooldownPolicy cooldown_policy
+      CooldownState cooldown_state
+      CostRouting cost_routing
+      CustomDimensions custom_dimensions
+      DeploymentAffinity deployment_affinity
+      DeploymentCatalog deployment_catalog
+      DeploymentClients deployment_clients
+      DeploymentIdentity deployment_identity
+      FallbackAttempts fallback_attempts
+      FallbackCategories fallback_categories
+      FallbackManagement fallback_management
+      FallbackObservations fallback_observations
+      FallbackPlans fallback_plans
+      FeedbackSignals feedback_signals
+      IoTokenLimits io_token_limits
+      IoTokenReservations io_token_reservations
+      JevClassifier jev_classifier
+      Lar1Routing lar1_routing
+      LatencyObservations latency_observations
+      LatencyRouting latency_routing
+      LeastBusy least_busy
+      LlmClassifier llm_classifier
+      MemberRouterWrites member_router_writes
+      ModelGeneralizations model_generalizations
+      ModelRateLimits model_rate_limits
+      NativeStreamFallback native_stream_fallback
+      PassthroughSelection passthrough_selection
+      PreRoutingRegistry pre_routing_registry
+      PromptAffinity prompt_affinity
+      QualityRouter quality_router
+      RedisFailurePolicy redis_failure_policy
+      RequestScheduler request_scheduler
+      ResponsesStreamFallback responses_stream_fallback
+      RetryPolicy retry_policy
+      RouterCompaction router_compaction
+      RouterCore router_core
+      RouterDependencies router_dependencies
+      RouterObservations router_observations
+      RouterPreviewValidation router_preview_validation
+      RouterSettings router_settings
+      RouterWeights router_weights
+      RoutingBaselines routing_baselines
+      RoutingBudgets routing_budgets
+      RoutingBudgetState routing_budget_state
+      RoutingGroups routing_groups
+      RoutingPlugins routing_plugins
+      RoutingReadBatch routing_read_batch
+      RoutingRetries routing_retries
+      RoutingState routing_state
+      RoutingStateStore routing_state_store
+      RoutingTimeouts routing_timeouts
+      RoutingValueStore routing_value_store
+      SemanticRouter semantic_router
+      ShadowEvalLifecycle shadow_eval_lifecycle
+      ShadowEvalModels shadow_eval_models
+      ShadowEvalResults shadow_eval_results
+      ShadowEvalValidation shadow_eval_validation
+      ShadowResultAggregation shadow_result_aggregation
+      StaticEligibility static_eligibility
+      StrategyDispatch strategy_dispatch
+      StrategyRegistration strategy_registration
+      StrategyRouterHealth strategy_router_health
+      TagMatchers tag_matchers
+      TagRouting tag_routing
+      TierArtifactPredictor tier_artifact_predictor
+      TierDefinitions tier_definitions
+      TwoSolverClassifier two_solver_classifier
+      UsageRouting usage_routing
+      UsageRoutingV2 usage_routing_v2
+      UsageV2Accounting usage_v2_accounting
+      WildcardCatalog wildcard_catalog
+      EOF
 oracle_cases:
 - tools/oracle/cases/routing/probes/single-candidate.yaml
 deviations: []
@@ -119,9 +238,9 @@ pitfalls:
 - Later task adapters must call production functions, not independently calculate expected outcomes.
 - Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
   a hard request error.
-- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets, but not the probe stubs and their registry lines; split source modules
   at the repository 300-line limit.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2600
   max_new_expects: 1

@@ -1,0 +1,192 @@
+id: B9200
+title: Native self-hosted inference and metadata HTTP parity
+description: >-
+  B8157 connects the self-hosted provider implementations to inference, but its oracle
+  cases and those of B8153 to B8156 only exercise helpers. Add the missing booted-proxy
+  HTTP cases for Ollama, Triton and the remote Petals handler, then exercise Ollama and
+  Lemonade metadata through the existing model routes. This is a fixture task: the
+  provider transforms, config loaders, dispatch and routes remain with their owners.
+  A mismatch identifies a fix for that owner's module; do not copy an implementation
+  into an oracle adapter or widen this task into another dispatcher.
+
+  Use kind: http, general_settings.master_key=sk-test, Authorization: Bearer sk-test,
+  router_settings.num_retries=0, and configured model_list entries whose litellm_params
+  contain the provider-prefixed model and api_base pointing to {{upstream}}. Background
+  health checks stay disabled. Give each deployment a fixed model_info.id and each call
+  a fixed x-litellm-call-id. Keep all outbound origins in configuration. Use the B900
+  raw upstream answer body: {body_kind: bytes, fixture: <path>, content_type: <type>} for
+  newline-delimited Ollama replies; events would prepend SSE data: and test a different
+  input protocol. Commit the small NDJSON files under
+  tools/oracle/fixtures/multipart-oracle/self-hosted-native and use fixture names
+  relative to multipart-oracle, such as self-hosted-native/chat.ndjson.
+  Existing case, JSON, multipart, stream and provider decoders are reused; no new
+  decoder, fuzz target, helper operation or config section is needed.
+
+  Chat cases. ollama-chat uses ollama_chat/llama3.1 and sends max_tokens, frequency_penalty,
+  response_format=json_object and an assistant function call with JSON-string arguments.
+  The /api/chat capture has options.num_predict, options.repeat_penalty, top-level format,
+  and object arguments. Reply with message.thinking, content, a complete tool call,
+  done_reason and explicit prompt_eval_count/eval_count; compare the model prefix,
+  reasoning_content, tool_calls finish reason and usage. ollama-chat-stream returns
+  NDJSON with separate thinking, content and done records, explicit usage on the last
+  record and stream_options.include_usage=true on the client call. Compare the actual
+  OpenAI SSE frames, final reason and usage, ignoring only generated ids/timestamps.
+  ollama-generate sends ollama/llama3.1 with max_tokens and reasoning_effort=high, verifies
+  /api/generate, a prompt instead of messages, options.num_predict and top-level think,
+  and returns a thinking field plus response and token counts. ollama-generate-stream
+  returns separate <think>, reasoning, </think>, answer and done NDJSON records and
+  verifies reasoning deltas and final usage through the generate iterator.
+
+  triton-generate configures api_base={{upstream}}/v2/models/test/generate, sends
+  max_tokens=7 and checks text_input, parameters and stream=false against a text_output
+  reply. triton-infer changes the base suffix to /infer and sends two messages: only
+  the first content becomes inputs[name=text_input], with shape [1], datatype BYTES;
+  the default max_tokens input is INT32 with data [20]. triton-stream starts with the
+  /generate base and stream=true, checks the /generate_stream upstream path, and serves
+  text_output/is_finished/stop_reason records. petals-http uses petals/test-model with
+  an explicit remote base, max_tokens=7 and stream=true: the outbound request is form
+  data with inputs and max_new_tokens, not an OpenAI JSON body, and the single outputs
+  reply is converted into the proxy's synthetic stream. No torch or local vLLM engine
+  is installed or started.
+
+  embeddings uses two steps, both POST /v1/embeddings. The ollama/test-embed deployment
+  reaches /api/embed with input as a string list, dimensions/truncate/keep_alive at the
+  top level and an ordinary provider option under options. Return embeddings and
+  prompt_eval_count=9; verify object=list, model=ollama/test-embed and total_tokens=9.
+  The triton/test-embed deployment has a complete configured /infer URL, receives the
+  input_text BYTES tensor, and returns one output of shape [2,2] with four values;
+  compare both indexed vectors and request-derived usage. ollama-token-input sends a
+  token-id array, a declared embedding input type which this provider rejects; compare
+  the 400 error's type, param and code and require no inference upstream request.
+
+  Model cases use GET /models and /v1/models for listings, and GET /model/info and
+  /v1/model/info for metadata, using steps for the aliases. ollama-listing configures
+  model_name=ollama/*, backend ollama/*, an explicit server base and
+  litellm_settings.check_provider_endpoint=true (default false, loaded by B2328).
+  Return tags with duplicate names and one already prefixed name; compare the sorted
+  deduplicated public ids, /api/tags and absence of Authorization when only an ambient
+  OLLAMA_API_KEY was supplied with the explicit base. A second deployment with an
+  explicit key must send that key. lemonade-listing instead expands lemonade/* from
+  {data: [{id: test-model}]} at the configured /models URL; the sentinel key lemonade
+  sends no Authorization for this metadata request. Both cases keep credential values
+  out of the client response.
+
+  ollama-metadata sets OLLAMA_API_BASE={{upstream}} and uses a noncatalog model so the
+  metadata resolver queries /api/show with {name: test-runtime}; the response has
+  model_info.llama.context_length=8192 and a template containing tools. Assert the
+  three token limits and supports_function_calling in model_info. lemonade-metadata
+  sets LEMONADE_API_BASE={{upstream}}/api/v1 and uses lemonade/team/test-runtime;
+  GET /models/team%2Ftest-runtime returns recipe_options.ctx_size=8192,
+  max_input_tokens=4096 and max_output_tokens=512. Check context precedence and
+  max_tokens=512 rather than 8192. Supply metadata replies for any startup lookup as
+  well as the route lookup; do not mask their upstream paths or silently substitute a
+  static catalog record. metadata-fallback supplies non-2xx metadata replies and
+  compares the successful listing with absent limits; preserve B849's public price
+  projection, including null prices when its unpriced stamp overrides provider zeros.
+
+  Chat routes already registered by B004/B005 are POST /v1/chat/completions,
+  /chat/completions, /engines/{model:path}/chat/completions and
+  /openai/deployments/{model:path}/chat/completions. Embedding routes owned by B006 are
+  POST /v1/embeddings, /embeddings, /engines/{model:path}/embeddings and
+  /openai/deployments/{model:path}/embeddings. Distribute the inference cases across
+  those aliases using configured public deployment names; never add a route.
+  auth-required makes unauthenticated chat, embedding and model-list requests and
+  verifies 401 with no provider call. Compare status, error type/param/code, response
+  content-type and x-litellm-call-id, upstream method/path/body and Authorization when
+  the protocol sends it. Ignore /error/message only because betterlite writes its own
+  error prose. Neither usage nor model prefixes nor upstream credentials may be ignored.
+  B040 covers the compatible providers and media independently. This task owns zero
+  new LiteLLM implementation lines; allow roughly 600 fixture lines including streams.
+scope:
+  paths:
+    - tools/oracle/cases/self-hosted-native/**
+    - tools/oracle/fixtures/multipart-oracle/self-hosted-native/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4458-L4573
+    why: B8157 dispatch context for Ollama generate/chat and Triton; HTTP verification only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4615-L4652
+    why: Remote Petals dispatch removes stream before the form request and wraps the result afterwards.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6941-L6962
+    why: Ollama input validation and async embedding dispatch, implemented by B8157.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/chat/transformation.py#L146-L557
+    why: Existing B8155 request, reasoning, tools and stream behavior exercised through HTTP.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/transformation.py#L195-L589
+    why: B8156 generate protocol, response reasoning and terminal stream usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/completion/handler.py#L29-L135
+    why: Native embedding options, /api/embed and reported token usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/triton/completion/transformation.py#L36-L335
+    why: B8154 generate/infer selection, tensor input and stream URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/triton/embedding/transformation.py#L49-L141
+    why: Triton vector splitting and request-based usage already implemented by B8154.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/petals/completion/handler.py#L20-L146
+    why: B8153 remote form request and outputs response; the local branch and empty embedding function are excluded.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ollama/common_utils.py#L55-L249
+    why: B2223 metadata and B8157 model-listing behavior, without new implementations here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lemonade/chat/transformation.py#L71-L222
+    why: B2224 model limits/auth and B8157 listing; the quoted model path is observable on HTTP.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L12102
+    why: Existing chat decorators and all four aliases; no registration belongs to this task.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12275-L12395
+    why: Existing embedding decorators and their four aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11545-L11784
+    why: B007 model listing routes reached by provider wildcard expansion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16051-L16275
+    why: B851 metadata route decorators and enrichment path, reused for runtime provider information.
+dod:
+  - text: Native chat requests, reasoning, tools, usage and stream replies match LiteLLM through the booted proxy, including Petals form forwarding and Triton's endpoint-dependent request shape.
+    proof: [native-cases, oracle]
+  - text: Ollama and Triton embeddings preserve their native payloads and usage, and token-id input is rejected before an Ollama inference request.
+    proof: [embedding-cases, oracle]
+  - text: Model listings and metadata reach the selected live adapter with the correct credentials, prefixes, limits and fallback results through both public aliases.
+    proof: [metadata-cases, oracle]
+  - text: Missing keys fail before any inference or listing upstream call and retain the pinned status, type, param and code.
+    proof: [auth-case, oracle]
+checks:
+  optional: []
+  commands:
+    - id: native-cases
+      why: Native protocol checks must be added on this branch rather than passing only existing helper cases.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/self-hosted-native/chat)"
+    - id: embedding-cases
+      why: The two embedding protocols and provider-specific input rejection need real proxy requests.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/self-hosted-native/embedding)"
+    - id: metadata-cases
+      why: Pure metadata helpers do not prove that public listing and info routes select those adapters.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/self-hosted-native/metadata)"
+    - id: auth-case
+      why: No unauthenticated request may be mistaken for a provider protocol test.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/self-hosted-native/auth-required.yaml)"
+oracle_cases:
+  - tools/oracle/cases/self-hosted-native/chat/ollama-chat.yaml
+  - tools/oracle/cases/self-hosted-native/chat/ollama-chat-stream.yaml
+  - tools/oracle/cases/self-hosted-native/chat/ollama-generate.yaml
+  - tools/oracle/cases/self-hosted-native/chat/ollama-generate-stream.yaml
+  - tools/oracle/cases/self-hosted-native/chat/triton-generate.yaml
+  - tools/oracle/cases/self-hosted-native/chat/triton-infer.yaml
+  - tools/oracle/cases/self-hosted-native/chat/triton-stream.yaml
+  - tools/oracle/cases/self-hosted-native/chat/petals-http.yaml
+  - tools/oracle/cases/self-hosted-native/embedding/embeddings.yaml
+  - tools/oracle/cases/self-hosted-native/embedding/ollama-token-input.yaml
+  - tools/oracle/cases/self-hosted-native/metadata/ollama-listing.yaml
+  - tools/oracle/cases/self-hosted-native/metadata/lemonade-listing.yaml
+  - tools/oracle/cases/self-hosted-native/metadata/ollama-metadata.yaml
+  - tools/oracle/cases/self-hosted-native/metadata/lemonade-metadata.yaml
+  - tools/oracle/cases/self-hosted-native/metadata/metadata-fallback.yaml
+  - tools/oracle/cases/self-hosted-native/auth-required.yaml
+deviations: []
+out_of_scope:
+  - "All functions in ollama/chat/transformation.py belong to B8155. All functions in ollama/completion/transformation.py and the async embedding helpers/handler in completion/handler.py belong to B8156; the synchronous handler is not used by the proxy. TokenEncoder.encode is a tokenizer protocol, supplied by B195/B196, not a second tokenizer."
+  - "ollama/common_utils.py is split by function: OllamaError belongs to B8155; _reencode_as_jpeg and _convert_image to B8156; get_api_key, get_api_base, get_server_api_base, _strip_ollama_model_prefix, _is_static_ollama_model, _supports_function_calling, _get_max_tokens, get_runtime_model_info and get_model_info to B2223; get_models, validate_environment and get_base_model to B8157. Their coverage-glob corrections are planner report notes, not worker edits."
+  - "Every function in triton/common_utils.py, completion/transformation.py and embedding/transformation.py belongs to B8154; completion/handler.py contains only a docstring. types/llms/ollama.py and the empty triton.py remain B7929, not new native types."
+  - "PetalsError, PetalsConfig and the remote completion handler belong to B8153. The transformation class's transform_request/transform_response raise NotImplementedError and are not the live dispatch path. petals/completion/handler.py::embedding has no caller at the pin. The local torch branch and in-process vLLM behavior retain B8153's existing deviation pending the architect's decision; no new local-engine contract is chosen here."
+  - "B8157 owns main.py self-hosted dispatch and Lemonade get_models; B2220 owns its constructor and B2224 its metadata. B2328/B759 own enumeration and wildcard expansion. B007/B851 own model routes, B004/B005/B006 inference routes and B8610 server composition. B8609/B8690 already own /vllm passthrough composition and HTTP cases."
+  - "The executable SelfHosted provider/operation stub must be installed by B010 before B8157 runs; the planner report specifies this shared-registry correction. This task consumes that dispatch and never alters registry variants."
+pitfalls:
+  - "Ollama /api/embed does not inherit the chat handler's Authorization header; compare the actual embedding request rather than imposing chat authentication on it."
+  - "A catalog-known Ollama model bypasses /api/show, so a static model name cannot prove runtime metadata wiring."
+  - "Lemonade metadata uses the environment base on this info route; the enrichment helper does not pass the deployment's api_base into get_model_info."
+  - "Triton infer defaults max_tokens to 20, whereas generate uses DEFAULT_MAX_TOKENS_FOR_TRITON; keep the cases separate."
+  - "Existing HTTP raw-body fixtures can carry NDJSON; adding a new upstream event format would unnecessarily change the shared oracle parser."
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

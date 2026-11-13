@@ -1,0 +1,29 @@
+task: B4416
+deviations:
+  - what: The Vault manager does not check for a premium license.
+    why: betterlite has no paid tier, so there is nothing to gate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L122-L125
+  - what: The AppRole token is kept in its own slot, apart from the cached secret bodies.
+    why: LiteLLM keeps both in one cache capped at 200 entries, so many cached secrets can evict the token and force an extra login. In its own slot only the lease ends the token.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L129-L131
+  - what: An async caller logs in over the async transport.
+    why: LiteLLM's _get_request_headers is synchronous, so an async read blocks the event loop for the whole login. betterlite never blocks inside async code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L378-L396
+  - what: A failed login reports the method and the HTTP status or transport error in betterlite's own words, not the text of the Python exception.
+    why: The exception text comes from httpx and the JSON decoder and can quote response content, and a login response holds a token.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L218-L219
+  - what: A negative HCP_VAULT_REFRESH_INTERVAL or SECRET_MANAGER_REFRESH_INTERVAL is rejected at construction.
+    why: The interval is an unsigned number of seconds. LiteLLM accepts a negative number and then expires every entry at once.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L129-L131
+  - what: A login response with a negative or fractional lease_duration is a failed login.
+    why: Vault sends the lease as whole seconds, so betterlite reads it as an unsigned integer. LiteLLM would pass any number on to its cache.
+    link: https://developer.hashicorp.com/vault/api-docs/auth/approle
+  - what: A Vault response body over 1 MiB is refused, and the body cache has no separate per-item limit.
+    why: Every outside body has a size limit in betterlite. LiteLLM reads any size, and its cache's 1 MiB item check is not needed once the body is capped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L56
+  - what: The HTTP client is injected through the VaultTransport trait instead of being built inside the manager.
+    why: The shared pooled client belongs to B173 and the outbound wiring to B4421, so the manager takes the transport from its caller and tests use a scripted one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L95-L150
+  - what: The constructor sets no process-wide secret manager client.
+    why: LiteLLM's constructor assigns litellm.secret_manager_client and litellm._key_management_system. B4421 owns choosing the manager at startup, so the caller keeps the manager here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L127-L128

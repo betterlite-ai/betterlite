@@ -1,0 +1,8 @@
+kind: helper
+name: responses-usage-typed-response-alias-details
+call:
+  responses_usage:
+    typed_object: true
+    usage: {input_tokens: 2, output_tokens: 3, total_tokens: 5, input_token_details: {audio_tokens: 2}, output_token_details: {audio_tokens: 3}}
+env: {}
+compare: {ignore: []}

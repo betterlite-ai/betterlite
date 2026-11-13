@@ -2,8 +2,8 @@ id: B4307
 milestone: M8 platform
 title: Describe cache settings and return redacted effective values
 status: todo
-depends_on: [B002, B003, B726, B1600, B4306]
-file: null
+depends_on: [B002, B003, B726, B1600, B4306, B4321]
+file: tasks/B4307-cache-settings-read.yaml
 covers:
   - "litellm/proxy/management_endpoints/cache_settings_endpoints.py"
   - "litellm/types/management_endpoints/cache_settings_endpoints.py"

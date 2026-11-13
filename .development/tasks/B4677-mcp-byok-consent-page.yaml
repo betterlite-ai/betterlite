@@ -5,13 +5,18 @@ description: >-
 
   Session identity comes from the UI token cookie with claims: exp (required), login_method ("sso" or "username_password"), and type (rejected if "byok_session"). Session keys starting with sk- are re-resolved against the database to catch revoked sessions from logout or password change, using the session-key DB liveness lookup (get_key_object, hash_token).
 
-  The authorization code store is in-memory with a 300-second TTL per code and a 1000-entry capacity limit; lazy cleanup runs on each request to prevent memory exhaustion. RFC 6749 requirements enforced: response_type must be "code", code_challenge is required, redirect_uri must be a loopback address (127.0.0.1, ::1, localhost over http/https), and client_id is recorded for later verification by B4678. The POST response is a 302 redirect to redirect_uri?code=...&state=... (with & if redirect_uri has existing query string).
+  The authorization code store is in-memory with a 300-second TTL per code and a 1000-entry capacity limit; lazy cleanup runs on each request to prevent memory exhaustion. The store is `AuthCodeStore` in crates/betterlite-mcp/src/byok_consent/store.rs, holding `AuthCodeRecord` values (api_key, server_id, code_challenge, redirect_uri, client_id, user_id, expires_at as Unix seconds in f64) and exposing `purge_expired(&self, now: f64)`, `get(&self, code: &str) -> Option<AuthCodeRecord>` and `remove(&self, code: &str)` for B4678's AuthCodeLookup port. RFC 6749 requirements enforced: response_type must be "code", code_challenge is required, redirect_uri must be a loopback address (127.0.0.1, ::1, localhost over http/https), and client_id is recorded for later verification by B4678. The POST response is a 302 redirect to redirect_uri?code=...&state=... (with & if redirect_uri has existing query string).
+  B1100 registers routes/mcp_byok_consent.rs as a stub, so fill only crates/betterlite-server/src/routes/mcp_byok_consent.rs and leave routes.rs as it is.
 
 scope:
   paths:
     - Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-mcp/**
+    - crates/betterlite-server/src/routes/mcp_byok_consent.rs
+    - crates/betterlite-server/src/routes/mcp_byok_consent/**
+    - crates/betterlite-mcp/src/byok_consent.rs
+    - crates/betterlite-mcp/src/byok_consent/**
+    - crates/betterlite-mcp/src/mcp_registry_resolve.rs
+    - crates/betterlite-mcp/src/mcp_registry_resolve/**
     - tools/oracle/helpers/b4677.py
     - tools/oracle/helpers/b4677/**
     - tools/oracle/src/helpers/server/b4677.rs
@@ -38,7 +43,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L85-L88
     why: >-
       User ID extraction wrapper (_user_id_from_session_cookie): simple 2-line helper that returns
-      just the user_id from the session cookie, used by B136 (discoverable_endpoints.py lines 425/428, 904/913)
+      just the user_id from the session cookie, used by B7971 (discoverable_endpoints.py lines 425/428, 904/913)
 
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L91-L131
     why: >-
@@ -110,6 +115,9 @@ dod:
   - text: Authorization codes expire after 300 seconds and are purged lazily on the POST request; expired codes are deleted and cannot be reused.
     proof: [byok-consent-post, auth-code-ttl]
 
+  - text: "The store is `AuthCodeStore` with a public `AuthCodeRecord` and the methods `purge_expired(&self, now: f64)`, `get(&self, code: &str) -> Option<AuthCodeRecord>` and `remove(&self, code: &str)`, which B4678 reads through its AuthCodeLookup port."
+    proof: [auth-code-ttl]
+
   - text: POST /v1/mcp/oauth/authorize returns 302 redirect to redirect_uri with Location header containing code and state query parameters (& separator if redirect_uri has existing query string).
     proof: [byok-consent-post, oracle]
 
@@ -129,15 +137,15 @@ checks:
 
     - id: session-auth
       why: session cookie parsing, validation or liveness check is missing or incorrect
-      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_session_auth::/)' -E 'test(/^session_identity::/)'
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_consent::session_auth::/)'
 
     - id: session-liveness
       why: session key re-resolution against database is missing or does not reject revoked sessions
-      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^session_key_is_live::/)'
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_consent::session_liveness::/)'
 
     - id: form-structure
       why: HTML form does not have two-step layout, navigation, progress dots, or other required elements
-      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^build_authorize_html::/)'
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_consent::form_structure::/)'
 
     - id: xss-test
       why: HTML form does not escape user-supplied and externally-derived values
@@ -149,11 +157,11 @@ checks:
 
     - id: auth-code-limit
       why: authorization code capacity limit (1000 entries) is not enforced
-      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^auth_code_limit::/)'
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_consent::auth_code_limit::/)'
 
     - id: auth-code-ttl
       why: authorization code expiration (300 seconds) or lazy cleanup is missing
-      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^auth_code_ttl::/)'
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^byok_consent::auth_code_ttl::/)'
 
     - id: byok-oracle-cases
       why: oracle cases fail or the GET/POST endpoints do not match LiteLLM on HTML form, auth codes, redirects, headers or error responses
@@ -177,23 +185,24 @@ deviations:
     why: "Consistency with betterlite's error responses, and LiteLLM's error messages reference the Python library name."
 
   - what: "The authorization code store is in-memory HashMap with time-based expiration; no distributed backend is used."
-    why: "Matches LiteLLM's single-proxy design. Multi-proxy support with shared state is deferred to B4658 or later tasks."
+    why: "Matches LiteLLM's single-proxy design. Multi-proxy support with shared state is deferred to later tasks."
 
 out_of_scope:
   - "HTML form builder (_build_authorize_html, lines 187-644): Split into B4687 per call-graph split rule."
-  - "_user_id_from_session_cookie (lines 85-88): thin wrapper over _session_identity_from_cookie, returns user_id; called from B136's discoverable_endpoints.py lines 425/428, 904/913. Owned by B4678 (shares this file)."
+  - "_user_id_from_session_cookie (lines 85-88): thin wrapper over _session_identity_from_cookie, returns user_id; called from B7971's discoverable_endpoints.py lines 425/428, 904/913. Owned by B4655."
   - "PKCE verification (_verify_pkce function, checking code_verifier against stored code_challenge). Owned by B4678."
   - "OAuth error response formatting (_oauth_token_error). Owned by B4678."
   - "Token endpoint (POST /v1/mcp/oauth/token). Owned by B4678."
   - "OAuth metadata discovery endpoints (/.well-known/oauth-authorization-server, /.well-known/oauth-authorization-server/.../v1/mcp/oauth, /.well-known/oauth-authorization-server/{root_path:path}/v1/mcp/oauth). Owned by B4678."
   - "GET /v1/mcp/oauth/protected-resource (byok_protected_resource_metadata). Owned by B4678."
-  - "store_user_credential database write (persisting the credential from the API key field). Owned by B4658."
-  - "global_mcp_server_manager and MCP registry lookup (ServerConfig metadata retrieval). Owned by B136."
+  - "store_user_credential database write (persisting the credential from the API key field). Owned by B4713."
+  - "global_mcp_server_manager and MCP registry lookup (ServerConfig metadata retrieval). Owned by B4731."
   - "Session-key DB liveness lookup (get_key_object, hash_token utilities). Owned by B738."
   - "get_request_base_url and validate_loopback_redirect_uri utilities. Owned by B4654."
   - "master_key global. Owned by proxy core config."
 
 pitfalls:
+  - "This task's own code goes in crates/betterlite-mcp/src/byok_consent.rs (GET and POST handlers, the authorization code store) and crates/betterlite-mcp/src/mcp_registry_resolve.rs (registry lookup with fallback); the HTML form and the session cookie and redirect_uri checks already exist in other modules, so call them instead of rebuilding them. Its tests sit in byok_consent submodules named session_auth, session_liveness, form_structure, auth_code_limit and auth_code_ttl, matching the check filters."
   - "The HTML string is 450+ lines with nested CSS and JavaScript; double-braces {{ }} in CSS must escape single braces correctly in Rust string interpolation to avoid format string collisions."
   - "Session identity extraction requires HS256 decryption with master_key; reject if exp claim is missing (use jwt library's require=[\"exp\"] equivalent) or if payload type equals \"byok_session\"."
   - "The session_key field is optional; older tokens may not have it. Only sk- prefixed keys are looked up against the database; non-sk- tokens pass through."

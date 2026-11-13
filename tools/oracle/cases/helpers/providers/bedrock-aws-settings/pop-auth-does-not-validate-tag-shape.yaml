@@ -1,0 +1,19 @@
+{
+  "kind": "helper",
+  "name": "pop-auth-does-not-validate-tag-shape",
+  "call": {
+    "bedrock_aws_settings": {
+      "operation": "pop_auth",
+      "params": {
+        "aws_access_key_id": "id",
+        "aws_secret_access_key": "secret",
+        "aws_session_tags": { "not": "a list" },
+        "aws_region_name": "us-west-2"
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

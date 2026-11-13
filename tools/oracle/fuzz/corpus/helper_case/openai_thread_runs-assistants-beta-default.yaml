@@ -1,0 +1,5 @@
+kind: helper
+name: openai-thread-runs-seed-assistants-beta-default
+call: {openai_thread_runs: {assistants_beta_default: {options: {api_key: sk-seed}, rounds: []}}}
+env: {}
+compare: {ignore: []}

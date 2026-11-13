@@ -1,14 +1,14 @@
 id: B4231
 milestone: M8 platform
 title: Pinned OpenAPI registry catalog
-status: todo
+status: done
 depends_on: []
 file: tasks/B4231-openapi-registry-catalog.yaml
 covers:
   - "litellm/proxy/openapi_registry.json"
 parent: B123
 split_from: B123
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 659

@@ -59,6 +59,8 @@ pub(super) fn build_catalog(
         lookup: accumulators.lookup,
         generalizations,
         warnings: accumulators.warnings.messages,
+        revision: None,
+        adopted_size: 0,
     })
 }
 
@@ -183,7 +185,10 @@ fn validate_model_info(
         ) => Err(error),
         Ok(_) | Err(CatalogError::Fields { .. }) => {
             let prices = parse_prices(&path, fields.as_ref(), unknown, warnings);
-            if matches!(&prices, Err(CatalogError::Prices { .. })) {
+            if matches!(
+                &prices,
+                Err(CatalogError::Prices { .. } | CatalogError::Json(_))
+            ) {
                 Ok(())
             } else {
                 prices.map(|_| ())

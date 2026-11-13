@@ -1,0 +1,11 @@
+kind: helper
+name: catalog-fetch-policy-validate-map
+call:
+  catalog_fetch_policy:
+    operation: validate_map
+    model_keys: [sample_spec, model]
+    backup_model_count: 2
+    min_model_count: 1
+    max_shrink_ratio: "0.5"
+compare: {ignore: []}
+env: {}

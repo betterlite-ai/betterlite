@@ -1,0 +1,11 @@
+kind: helper
+name: managed-resource-store-duplicate-key-scopes
+call:
+  managed_resource_store:
+    principal: {user_id: 'user:u', api_key: a, token: a}
+    owner: key:a
+    probes:
+      - {principal: {user_id: 'team:t', team_id: t, token: b}, owner: 'team:t'}
+      - {principal: {user_id: 'key:b', api_key: a, token: b}, owner: 'key:b'}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: search-ranking-filter
+call: {"openai_vector_stores": {"search_request": {"vector_store_id": "vs_abc", "query": ["alpha", "beta"], "params": {"filters": {"type": "eq", "key": "topic", "value": "x"}, "max_num_results": 5, "ranking_options": {"ranker": "auto", "score_threshold": 0.5}, "rewrite_query": true}, "api_base": "https://api.example.test/v1/vector_stores"}}}
+env: {}
+compare: {ignore: []}

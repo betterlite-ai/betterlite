@@ -1,0 +1,6 @@
+kind: helper
+name: vector-file-list-query-filter
+call:
+  vector_file_contracts: {operation: list_query_filter, queries: [{after: null, limit: 0, filter: unexpected, unknown: 1}]}
+env: {}
+compare: {ignore: []}

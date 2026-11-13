@@ -1,0 +1,28 @@
+kind: helper
+name: openai-chat-content-file-block-without-file
+call:
+  openai_chat_content:
+    transform_requests:
+      requests:
+        - model: gpt-4o
+          provider: openai
+          messages:
+            - role: user
+              content:
+                - type: file
+        - model: gpt-4o
+          provider: openai
+          messages:
+            - role: user
+              content:
+                - type: file
+                  file: null
+        - model: gpt-4o
+          provider: openai
+          messages:
+            - role: user
+              content:
+                - type: file
+                  file: {}
+env: {}
+compare: {ignore: []}

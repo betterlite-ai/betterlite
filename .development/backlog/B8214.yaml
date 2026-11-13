@@ -1,0 +1,15 @@
+id: B8214
+milestone: M6 guardrails
+title: Semantic guard hook and match action
+status: todo
+depends_on: [B3662, B3801, B3808, B5471]
+file: tasks/B8214-semantic-guard-hook.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/semantic_guard/semantic_guard.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/semantic_guard/__init__.py"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

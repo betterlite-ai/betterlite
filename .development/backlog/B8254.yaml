@@ -1,0 +1,14 @@
+id: B8254
+milestone: M6 guardrails
+title: MCP JWT signer guardrail initializer
+status: todo
+depends_on: [B3816, B3817, B3662]
+file: tasks/B8254-mcp-jwt-signer-init.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/__init__.py"
+parent: B109
+split_from: B109
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

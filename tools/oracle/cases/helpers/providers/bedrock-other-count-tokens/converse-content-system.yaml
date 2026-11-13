@@ -1,0 +1,63 @@
+kind: helper
+name: converse-content-system
+call:
+  bedrock_other_count_tokens:
+    converse_content_system:
+      requests:
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: Hello
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: assistant
+              content:
+                - text: a
+                - toolUse: {name: t}
+                - bare
+                - 5
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: 5
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: null
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: []
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          system: be nice
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          system:
+            - text: a
+            - type: text
+              text: b
+            - other: true
+            - skip
+            - 5
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          system: 5
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          system: null
+        - model: anthropic.claude-3-5-sonnet-20241022-v2:0
+          messages:
+            - role: user
+              content: hi
+          system: []
+env: {}
+compare: {ignore: []}

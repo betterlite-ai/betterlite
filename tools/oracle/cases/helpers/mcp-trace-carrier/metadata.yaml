@@ -1,0 +1,13 @@
+kind: helper
+name: metadata_keeps_only_the_w3c_trace_context
+call:
+  b8971:
+    meta:
+      traceparent: 00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01
+      tracestate: vendor=value
+      baggage: litellm.team.id=spoofed
+      litellm.team.id: team-1
+      progressToken: 7
+env: {}
+compare:
+  ignore: []

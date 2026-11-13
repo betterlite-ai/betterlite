@@ -1,0 +1,25 @@
+kind: helper
+name: opensandbox-run-custom-language
+call:
+  b3518:
+    operation: run
+    container:
+      id: sbx_1
+      provider: opensandbox
+      domain: http://stored.example
+      hidden_params:
+        api_base: http://stored.example
+        api_key: stored-key
+        execd_endpoint: http://execd.local
+        execd_headers:
+          X-Execd-Token: execd-token
+        use_server_proxy: false
+    code: "print('r')"
+    language: r
+    responses:
+      - status: 200
+        body: |
+          data: {"type":"stdout","text":"r\n"}
+env: {}
+compare:
+  ignore: []

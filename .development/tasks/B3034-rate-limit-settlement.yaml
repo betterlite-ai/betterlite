@@ -145,7 +145,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^settlement_and_rollback::refund_failure(::|$)/)'
     - id: oracle-cases-tests
       why: Oracle cases verify consistent settlement and rollback behavior across sequential, pipelined, and failure paths
-      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/settlement_and_rollback -k 'b3034'
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/settlement_and_rollback
 
 oracle_cases:
   - tools/oracle/cases/settlement_and_rollback/sequential-success.yaml

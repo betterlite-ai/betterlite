@@ -1,0 +1,224 @@
+id: B170
+title: Python wheels for Linux, macOS and Windows and the PyPI release workflow
+description: >-
+  B5369 builds one wheel on the machine you run it on. Users on Linux, macOS and Windows need a wheel for each, on PyPI
+  under the name `betterlite`. This task adds the build matrix, the wheel checks and the publish job. It does not upload
+  anything: the upload runs only when a person pushes a release tag, and the steps that need a PyPI account stay manual
+  (see out_of_scope). Everything the gate runs must work offline from the repo, with no PyPI, no token and no tag.
+
+
+  The wheels are built with `uv build --wheel crates/betterlite-python`, the same command B157 and the other Python tasks
+  use. maturin 1.16.0 is pinned in `[build-system]` by B5369, so no extra build action is needed. Five wheels ship, all
+  `cp310-abi3` so one file covers Python 3.10 and newer:
+  Linux x86_64 and Linux aarch64 (tag `manylinux_2_28`), macOS x86_64 (`macosx_*_x86_64`), macOS arm64
+  (`macosx_*_arm64`) and Windows x64 (`win_amd64`). Linux wheels must be built inside the `quay.io/pypa/manylinux_2_28_x86_64`
+  and `quay.io/pypa/manylinux_2_28_aarch64` containers, pinned by digest, with Rust 1.98.0 (rust-toolchain.toml) and uv 0.11.14
+  (checks.yaml) installed in the container. A wheel built straight on the Ubuntu runner is tagged with that runner's glibc
+  and does not install on older distributions. Use native runners instead of cross compiling: `ubuntu-24.04`,
+  `ubuntu-24.04-arm`, `macos-15-intel`, `macos-15` and `windows-2025`.
+
+
+  Add `.github/workflows/python-wheels.yml`. It runs on `pull_request` with a `paths` filter (the workflow file,
+  `crates/betterlite-python/**`, `tools/python-release/**`, `Cargo.lock`), on `workflow_dispatch`, and on a push of a tag
+  matching `python-v*`. Top-level `permissions: {}`. Job `build` has the five-entry matrix and `contents: read`. Each entry
+  checks out with `persist-credentials: false`, builds the wheel, runs `check_wheel.py` on it with that entry's platform
+  pattern, runs `smoke_wheel.py` on Python 3.10 and on 3.14 in a fresh environment, and uploads the wheel as an artifact.
+  Job `publish` needs `build`, runs only when `github.event_name == 'push'` and the ref starts with `refs/tags/python-v`,
+  uses `environment: pypi`, and is the only job with `permissions: id-token: write`. It downloads all wheels into one
+  folder, runs `check_wheel.py` on each with `--tag "$GITHUB_REF_NAME"` and checks that exactly five wheels are there, then
+  runs `uv publish --trusted-publishing always`. No `PYPI_TOKEN` or any other secret appears in the file. Pin every action
+  by commit sha with the version in a comment, like gate.yml does (actions/checkout is
+  `3d3c42e5aac5ba805825da76410c181273ba90b1`, v7.0.1); look up the sha of `astral-sh/setup-uv`, `actions/upload-artifact`
+  and `actions/download-artifact` with `gh api` on the release tag and never write one from memory. Pass every `${{ }}`
+  value to a script through `env:`, since zizmor refuses inline expansion.
+
+
+  Add the tools under `tools/python-release/`, plain standard-library Python so they run on all three systems with
+  `uv run --no-project python -I`:
+
+  - `check_wheel.py <wheel> --platform <regex> [--tag <git tag>]` exits 1 with one line per problem. It reads the file
+    name (`betterlite-<version>-cp310-abi3-<platform>.whl`) and checks: the python tag is `cp310` and the abi tag is `abi3`;
+    the platform tag, split on `.`, has every piece matching `--platform`; the zip holds `betterlite/__init__.py`,
+    `betterlite/py.typed` and exactly one `betterlite/_native.abi3.so` (Linux and macOS) or `betterlite/_native.pyd`
+    (Windows); it holds no path starting with `tests/` or ending in `.pyc`; `METADATA` has `Name: betterlite`, the same
+    `Version` as the file name, `Requires-Python: >=3.10`, a `License-Expression: MIT`, a non-empty `Summary` and a
+    `Description`, and its only `Requires-Dist` entries are `python-dotenv` and `typing-extensions`; `betterlite-<version>.dist-info/licenses/LICENSE`
+    exists. With `--tag`, the tag must be `python-v` plus the wheel version, so a tag on the wrong commit cannot publish a
+    mismatched file. The `RECORD` file must list every entry in the zip.
+  - `smoke_wheel.py <expected version>` is run inside an environment that has only the wheel installed. It imports
+    `betterlite`, and exits 1 unless `betterlite.__version__`, `betterlite._version.version` and
+    `betterlite._native.core_version()` all equal the argument and `import litellm` fails (the wheel must not bring
+    LiteLLM along).
+  - `tests/test_built_wheel.py` reads the wheel folder from the env var `BETTERLITE_WHEEL_DIR`, runs the checker's `main` on the one wheel there with `--platform` allowing `linux_` or `manylinux_` and `--tag python-v` plus the version from the root `Cargo.toml`, then imports `betterlite` and compares `__version__`, `_version.version` and `_native.core_version()` with that version. The gate runs it with the wheel installed next to LiteLLM, so it cannot test for a missing `litellm`; `smoke_wheel.py` does that in CI.
+  - `tests/test_check_wheel.py` builds fake wheels with `zipfile` in `tmp_path` and runs `check_wheel.py` on them, one
+    case for every rule above and one passing wheel for each of the five platforms. It does not need Rust.
+  - `pyrightconfig.json` in strict mode for the folder.
+
+
+  Metadata is part of the work. Edit `crates/betterlite-python/pyproject.toml`: set `description`, `readme = "README.md"`,
+  `license = "MIT"`, `license-files = ["LICENSE"]`, `authors` (Max Azatian), `classifiers` (MIT, the three operating
+  systems, Python 3.10 to 3.14, Rust) and `[project.urls]` for the repository https://github.com/betterlite-ai/betterlite.
+  Maturin looks for the license file inside the crate folder, so copy the root `LICENSE` to
+  `crates/betterlite-python/LICENSE` byte for byte (add it to scope and compare with `cmp`). Write
+  `crates/betterlite-python/README.md` as the PyPI page: what betterlite is, `pip install betterlite`, and
+  `import betterlite as litellm`, in under 40 lines. Do not change what B5369 and B157 put in the package.
+
+
+  Add the Windows target to deny.toml's `targets` list: `x86_64-pc-windows-msvc`. The file says to add a target before
+  shipping a build for it. `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin` and
+  `x86_64-unknown-linux-gnu` are already there. If `cargo deny` then fails on a Windows-only crate, fix it in deny.toml
+  with a reason, and if a workspace crate does not compile on Windows or macOS, stop and report a blocker with the
+  compiler error, since that fix belongs to the crate's own task.
+scope:
+  paths:
+  - .github/workflows/python-wheels.yml
+  - tools/python-release/**
+  - crates/betterlite-python/pyproject.toml
+  - crates/betterlite-python/README.md
+  - crates/betterlite-python/LICENSE
+  - deny.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml
+  why: LiteLLM's name, license, classifiers and project URLs, to compare with what the wheel metadata says.
+- url: https://docs.astral.sh/uv/guides/package/#publishing-your-package
+  why: "`uv publish` and its `--trusted-publishing` flag."
+- url: https://docs.pypi.org/trusted-publishers/using-a-publisher/
+  why: What the publish job needs for tokenless upload, and the manual setup on the PyPI side.
+- url: https://packaging.python.org/en/latest/specifications/binary-distribution-format/
+  why: The wheel file name, `.dist-info`, `RECORD` and `licenses/` layout the checker reads.
+- url: https://packaging.python.org/en/latest/specifications/platform-compatibility-tags/
+  why: manylinux, macosx and win_amd64 platform tag forms.
+- url: https://github.com/PyO3/maturin/tree/v1.16.0
+  why: "`--compatibility`, license file lookup and the files maturin puts in a wheel."
+dod:
+- text: >-
+    `check_wheel.py` accepts a good wheel for each of the five platforms and rejects, with a message, a wrong python or
+    abi tag, a platform tag outside `--platform`, a missing or doubled native module, a missing `py.typed`, a `tests/`
+    or `.pyc` entry, wrong Name, Version, Requires-Python, license or extra Requires-Dist, a missing LICENSE, a
+    `RECORD` that misses a file, and a `--tag` that is not `python-v` plus the version.
+  proof: [checker-tests]
+- text: >-
+    The wheel `uv build` makes from the repo passes `check_wheel.py` with the repo version as the tag, and installs and
+    imports in an isolated environment with matching versions and no `litellm`.
+  proof: [built-wheel]
+- text: >-
+    The workflow builds exactly the five targets on the named runners, Linux ones inside the manylinux_2_28 containers
+    pinned by digest, and runs the checker and the smoke test on every entry before uploading the artifact.
+  proof: [workflow-shape]
+- text: >-
+    Nothing uploads outside a `python-v*` tag push: `publish` is the only job with `id-token: write`, the only one
+    that mentions `uv publish`, it is gated on the tag ref and on `environment: pypi`, and no token secret is named.
+  proof: [publish-gate]
+- text: Every action is pinned by a 40-character sha and the workflow passes zizmor.
+  proof: [workflow-shape, workflows-audit]
+- text: >-
+    The metadata edit is in place, the crate LICENSE equals the root LICENSE, and README.md is under 40 lines.
+  proof: [built-wheel, metadata-files]
+- text: deny.toml covers Windows and `cargo deny` still passes licenses, bans and sources.
+  proof: [deny-windows]
+- text: Python files in tools/python-release pass ruff and basedpyright in strict mode.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: checker-tests
+    why: The checker misses a bad wheel or refuses a good one.
+    run: uv run --locked --project tools/oracle/litellm pytest tools/python-release/tests/test_check_wheel.py
+  - id: built-wheel
+    why: The real wheel fails the release rules, or does not import with matching versions.
+    run: |-
+      set -e
+      rm -rf target/python-wheel-release
+      uv build --wheel --out-dir target/python-wheel-release crates/betterlite-python
+      LITELLM_LOCAL_MODEL_COST_MAP=True BETTERLITE_WHEEL_DIR=target/python-wheel-release uv run --locked --project tools/oracle/litellm --with target/python-wheel-release/betterlite-*.whl pytest tools/python-release/tests/test_built_wheel.py
+  - id: workflow-shape
+    why: A target, a runner, a container pin or a step is missing from the workflow.
+    run: |-
+      set -e
+      f=.github/workflows/python-wheels.yml
+      test -f "$f"
+      for s in ubuntu-24.04 ubuntu-24.04-arm macos-15-intel macos-15 windows-2025 manylinux_2_28_x86_64 manylinux_2_28_aarch64 check_wheel.py smoke_wheel.py "python-v\*" workflow_dispatch pull_request; do
+        grep -q -e "$s" "$f" || { echo "missing $s"; exit 1; }
+      done
+      test "$(grep -c 'quay.io/pypa/manylinux_2_28_[a-z0-9_]*@sha256:[0-9a-f]\{64\}' "$f")" -ge 2
+      ! grep -E '^\s*-?\s*uses:' "$f" | grep -vE '@[0-9a-f]{40}( |$)'
+      grep -q '^permissions: {}' "$f"
+  - id: publish-gate
+    why: A job other than publish can upload, or the upload can run without a release tag.
+    run: |-
+      set -e
+      f=.github/workflows/python-wheels.yml
+      test "$(grep -c 'id-token: write' "$f")" -eq 1
+      test "$(grep -c 'uv publish' "$f")" -eq 1
+      grep -q 'environment: pypi' "$f"
+      grep -q "refs/tags/python-v" "$f"
+      grep -q -e '--trusted-publishing always' "$f"
+      ! grep -qiE 'secrets\.|PYPI_TOKEN|UV_PUBLISH_TOKEN|password' "$f"
+      awk '/^  publish:/{p=1} p&&/id-token: write/{ok=1} /^  build:/{p=0} END{exit !ok}' "$f"
+  - id: workflows-audit
+    why: zizmor refuses the workflow.
+    run: zizmor --offline .github
+  - id: metadata-files
+    why: The PyPI page, license or project metadata is missing.
+    run: |-
+      set -e
+      cmp LICENSE crates/betterlite-python/LICENSE
+      test "$(wc -l < crates/betterlite-python/README.md)" -lt 40
+      grep -q 'import betterlite as litellm' crates/betterlite-python/README.md
+      for k in '^description' '^readme' '^license = "MIT"' '^license-files' '^classifiers' '^\[project.urls\]'; do
+        grep -q -e "$k" crates/betterlite-python/pyproject.toml || { echo "pyproject.toml misses $k"; exit 1; }
+      done
+  - id: deny-windows
+    why: The Windows target is not in deny.toml, or a Windows crate breaks the license or ban policy.
+    run: grep -q 'x86_64-pc-windows-msvc' deny.toml && cargo deny --locked check licenses bans sources
+  - id: python-lint
+    why: Strict typing has to hold for the release tools.
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/python-release && uv run --locked --project tools/oracle/litellm basedpyright --project tools/python-release/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: betterlite ships platform wheels only, with no sdist, no musllinux wheels, no Windows ARM and no 32-bit wheels.
+  why: An sdist would carry the whole Rust workspace, and the five wheels cover the platforms Max asked for. Other systems get pip's "no matching distribution" error.
+- what: The wheel needs glibc 2.28 or newer on Linux.
+  why: manylinux_2_28 is the oldest tag whose build image still gets updates. Open question for the architect, see notes.
+- what: This task has no helper oracle cases.
+  why: Nothing here is LiteLLM behavior. The checks inspect wheel files and the workflow text.
+out_of_scope:
+- >-
+  The PyPI upload itself, and everything that needs a PyPI account: claiming the project name `betterlite`, adding the
+  trusted publisher (repository betterlite-ai/betterlite, workflow `python-wheels.yml`, environment `pypi`), creating
+  the `pypi` environment in the repository settings with a required reviewer, choosing the version and pushing the
+  `python-v<version>` tag. Max does these; the task only makes them possible.
+- Wheel contents beyond what B5369 and B157 put in the package, and any change to `crates/betterlite-python/src`.
+- The gateway binary release (a separate artifact, not a wheel) and any container image.
+- Changes to `.github/workflows/gate.yml`. This workflow runs beside it, and the merge queue does not wait for it.
+pitfalls:
+- >-
+  `uv build --wheel` on a plain Linux host may tag the wheel `linux_x86_64`, which PyPI refuses. The built-wheel check
+  allows `linux_` so the gate can pass on the host, but the workflow entry for Linux uses a strict `manylinux_2_28` pattern.
+- >-
+  The Windows runner has no `unzip` and its bash is Git Bash, so the tools are Python with `zipfile` and the workflow runs
+  them with `uv run --no-project python -I`, never `python3` or `unzip`.
+- >-
+  The manylinux containers are AlmaLinux and have no Rust or uv. Install both in a first step and put `$HOME/.cargo/bin` on
+  PATH for the later steps, and check that `actions/checkout` runs in the image before relying on it; if it does not, check
+  out on the runner and mount the folder.
+- >-
+  `abi3` wheels are named `cp310-abi3`. A name with `cp314` means `abi3-py310` did not reach maturin, which is the B5369
+  pitfall, so do not fix it here by adding per-version wheels.
+- >-
+  macOS wheels carry a deployment target in the tag (`macosx_11_0_arm64`, `macosx_10_12_x86_64`) that maturin picks from
+  the runner. Match `^macosx_[0-9]+_[0-9]+_(x86_64|arm64)$` and do not pin one number.
+- >-
+  The tag check compares `python-v0.1.0` with wheel version `0.1.0`. The version comes from the workspace `Cargo.toml`
+  (`publish = false` there only blocks crates.io), so a release bumps that one line.
+- >-
+  `uv publish --trusted-publishing always` fails outside GitHub Actions on purpose. A local run of the publish step must
+  never be added to any check.
+- >-
+  Do not add `pull_request_target` or a `workflow_dispatch` input that picks a ref. `publish` reads only the tag that
+  triggered the run.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,22 @@
+kind: helper
+name: vector-store-base-contract-defaults
+call:
+  vector_store_contracts:
+    operation: base_contract_defaults
+    optional_params: {filters: {x: 1}}
+    non_default_params: {filters: {x: 1}, ranking_options: null}
+    headers: {X-Test: x}
+    request_data: {k: v}
+    api_key: null
+    api_base: https://example.test
+    api_bases: ["", "https://example.test/path", null]
+    error: {message: denied, status_code: 403, headers: {X-Test: x}}
+    forward:
+      vector_store_id: vs_a
+      query: hello
+      optional_params: {filters: {}}
+      api_base: https://example.test
+      litellm_params: {litellm_embedding_model: openai/text-embedding-3-small}
+      extra_body: {e: true}
+env: {}
+compare: {ignore: []}

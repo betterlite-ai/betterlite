@@ -1,0 +1,14 @@
+id: B7875
+milestone: M12 python
+title: Python vector_stores create and search
+status: todo
+depends_on: [B6040, B158, B167, B1064]
+file: tasks/B7875-python-vector-create-search.yaml
+covers:
+  - "litellm/vector_stores/main.py"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

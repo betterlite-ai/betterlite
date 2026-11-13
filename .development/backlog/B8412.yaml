@@ -1,0 +1,14 @@
+id: B8412
+milestone: M8 platform
+title: Team and organization member request contracts
+status: todo
+depends_on: [B188, B770, B859, B2310, B2314, B2363]
+file: tasks/B8412-member-request-contracts.yaml
+covers:
+  - "litellm/proxy/_types.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

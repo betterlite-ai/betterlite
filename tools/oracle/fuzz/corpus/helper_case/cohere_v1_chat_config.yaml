@@ -1,0 +1,11 @@
+kind: helper
+name: cohere-v1-chat-seed-config
+call:
+  cohere_v1_chat:
+    function: options
+    supported_model: command-r
+    mappings:
+      - non_default_params: {top_p: 0.9, tool_choice: auto}
+        optional_params: {kept: null}
+compare: {ignore: []}
+env: {}

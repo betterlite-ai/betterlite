@@ -1,0 +1,9 @@
+kind: helper
+name: endpoint-timeout-wins
+call:
+  b3571:
+    operation: proxy_timeout
+    endpoint_timeout: 12.5
+    settings_timeout: 30
+compare: {ignore: []}
+env: {}

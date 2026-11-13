@@ -1,10 +1,18 @@
 [package]
 name = "betterlite-server-fuzz"
 version = "0.0.0"
+publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
+
 [package.metadata]
 cargo-fuzz = true
 [dependencies]
+betterlite-auth = { path = "../../betterlite-auth" }
+betterlite-core = { path = "../../betterlite-core" }
 betterlite-server = { path = ".." }
 libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
@@ -52,9 +60,106 @@ doc = false
 bench = false
 
 [[bin]]
+name = "route_path"
+path = "fuzz_targets/route_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "list_query"
 path = "fuzz_targets/list_query.rs"
 test = false
 doc = false
 bench = false
-[workspace]
+
+[[bin]]
+name = "mcp_jsonrpc_message"
+path = "fuzz_targets/mcp_jsonrpc_message.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mcp_routing_peek"
+path = "fuzz_targets/mcp_routing_peek.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "route_pattern"
+path = "fuzz_targets/route_pattern.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "custom_code_test_body"
+path = "fuzz_targets/custom_code_test_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vantage_export_body"
+path = "fuzz_targets/vantage_export_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stream_usage_cost"
+path = "fuzz_targets/stream_usage_cost.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prompt_tools"
+path = "fuzz_targets/prompt_tools.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ui_asset_path"
+path = "fuzz_targets/ui_asset_path.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "blog_feed"
+path = "fuzz_targets/blog_feed.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "first_chunk_error"
+path = "fuzz_targets/first_chunk_error.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "accept_encoding"
+path = "fuzz_targets/accept_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "request_body"
+path = "fuzz_targets/request_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_event_stream"
+path = "fuzz_targets/bedrock_event_stream.rs"
+test = false
+doc = false
+bench = false

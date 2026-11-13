@@ -1,0 +1,13 @@
+kind: helper
+name: should-run-guardrail-checks-mode
+call:
+  b3737:
+    should_run:
+      settings:
+        auth_token: test-token
+        base_url: https://ibm.test
+        detector_id: jailbreak-detector
+        mode: during_call
+      event_type: during_call
+env: {}
+compare: {ignore: []}

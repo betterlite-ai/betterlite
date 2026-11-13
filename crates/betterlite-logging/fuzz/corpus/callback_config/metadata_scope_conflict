@@ -1,0 +1,1 @@
+{"logging":[{"callback_name":"langfuse_otel","callback_vars":{"langfuse_span_scope":"full"}},{"callback_name":"langfuse_otel","callback_vars":{"langfuse_span_scope":"llm_only"}}]}

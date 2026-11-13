@@ -1,0 +1,22 @@
+kind: helper
+name: ragflow-default-base-url
+call:
+  b7814:
+    calls:
+      - call: complete_url
+        input: {api_base: "https://explicit.example.test///", litellm_params: null, env: {}}
+      - call: complete_url
+        input: {api_base: "https://explicit.example.test", litellm_params: {api_base: "https://params.example.test"}, env: {RAGFLOW_API_BASE: "https://env.example.test"}}
+      - call: complete_url
+        input: {api_base: null, litellm_params: {api_base: "https://params.example.test//"}, env: {}}
+      - call: complete_url
+        input: {api_base: null, litellm_params: {api_base: null}, env: {RAGFLOW_API_BASE: "https://env.example.test/"}}
+      - call: complete_url
+        input: {api_base: null, litellm_params: null, env: {}}
+      - call: complete_url
+        input: {api_base: "/", litellm_params: null, env: {}}
+      - call: complete_url
+        input: {api_base: "", litellm_params: {api_base: ""}, env: {RAGFLOW_API_BASE: ""}}
+      - call: endpoints
+env: {}
+compare: {ignore: []}

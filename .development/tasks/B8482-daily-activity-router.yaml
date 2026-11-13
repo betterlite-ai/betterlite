@@ -1,0 +1,136 @@
+id: B8482
+title: Compose daily activity routes for every entity and the cache activity route
+description: >-
+  Build the module `daily_activity_router` in betterlite-server with one public function, `routes()`, that returns the axum router for every daily activity path and the cache activity report. It is the port of `register_daily_activity_routes` and the loop over the six resolvers at the bottom of litellm/proxy/management_endpoints/daily_activity_routes.py (L560-L579), plus the `app.include_router(analytics_router)` line in proxy_server.py (L19981). The handlers are built: B3096 (key pages, model leaders, cache leakage), B3097 (aggregated and search) and B3098 (export) each expose a function that returns the routes for one resolver, and B3099 exposes the cache activity route. This task only calls them in LiteLLM's order. This task also merges `routes()` in the spend area's `mount(router, state)` in crates/betterlite-server/src/app/spend.rs (the skeleton stubs it, and B8610's app::mount calls it inside the auth layers), so the routes of B3096 to B3099 answer through the booted proxy for the first time.
+
+  The loop. For each resolver in this order: user, team, tag, organization, customer, agent (B3094's `USER_RESOLVER` and `TEAM_RESOLVER`, B3095's `TAG_RESOLVER`, `ORGANIZATION_RESOLVER`, `CUSTOMER_RESOLVER` and `AGENT_RESOLVER`, or the matching variants of B3094's `Entity` enum), and for each prefix in that resolver's `route_prefixes` (customer has `/customer` and then `/end_user`), add in this order: aggregated (B3097), key page (B3096), search (B3097), model leaders (B3096), export (B3098), and for the user entity only, cache leakage (B3096). Then add B3099's cache activity route once. Where a part's function already loops over the prefixes of its resolver, call it once per resolver and keep the per-prefix order above by calling the parts in that order for each resolver; if a part's function takes a prefix, call it once per prefix. Read the three parts' merged signatures first and follow them.
+
+  Why order matters: FastAPI lists paths in /openapi.json in registration order, and the OpenAPI owner reads the router's order. The `/end_user` routes are left out of the schema by the parts (`include_in_schema=prefix != "/end_user"`); keep that, and register each path exactly once, since axum panics on a duplicate route.
+
+  HTTP oracle cases for the parts. B3096 and B3097 have unit tests only, because their routes answer over HTTP only once this task mounts them, so their cases are this task's: the 20 key page, model leaders and cache leakage cases in tools/oracle/cases/management/daily-activity-keys/ and the 35 aggregated and search cases in tools/oracle/cases/management/daily-activity-aggregate/, listed under oracle_cases with the file names given. They cover empty reports (the seeded database has users, keys and teams but no daily spend rows), parameter bounds, date errors, access errors, the route set per prefix, the missing credential and the missing database. Read B3096's and B3097's DoD and pitfalls for the exact defaults, bounds and messages each case checks.
+
+  HTTP oracle cases through the booted proxy, in tools/oracle/cases/daily-activity-router/, for the prefixes the parts' own cases do not reach: a request without credentials to `/tag/daily/activity/aggregated/keys`, `/organization/daily/activity/aggregated/model_top_keys`, `/agent/daily/activity/export` and `/tag/daily/activity/aggregated/search` gets LiteLLM's 401; `/customer/daily/activity/aggregated/cache_leakage_keys` and `/agent/daily/activity/aggregated/cache_leakage_keys` answer like an unknown path; and `/openapi.json` lists the `/customer` daily activity paths but no `/end_user` path. Each case sends what the route declares and compares status, body and the error type, param and code.
+
+  Module layout: `crates/betterlite-server/src/daily_activity_router.rs` and `daily_activity_router/tests.rs`. Tests build `routes()` with fake handler state and assert that every expected method and path answers (not 404 or 405), that cache leakage exists only under `/user`, and that building the router does not panic.
+scope:
+  paths:
+    - crates/betterlite-server/src/daily_activity_router.rs
+    - crates/betterlite-server/src/daily_activity_router/**
+    - crates/betterlite-server/src/app/spend.rs
+    - tools/oracle/cases/daily-activity-router/**
+    - tools/oracle/cases/management/daily-activity-keys/**
+    - tools/oracle/cases/management/daily-activity-aggregate/**
+    - tools/oracle/helpers/b8482.py
+    - tools/oracle/helpers/b8482/**
+    - tools/oracle/src/helpers/server/b8482.rs
+    - tools/oracle/src/helpers/server/b8482/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L560-L579
+    why: register_daily_activity_routes, its per-prefix order, the user-only cache leakage route and the six resolvers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L548-L557
+    why: The add_api_route call shape the parts copy, with include_in_schema false for /end_user.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19981
+    why: The analytics_router include that carries the cache activity route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L358-L472
+    why: The resolver constants and their route_prefixes (B3094 and B3095 build them).
+dod:
+  - text: Every daily activity path for all six entities and both customer prefixes answers its GET, cache leakage exists only under /user, and the cache activity route is included once.
+    proof: [router-tests, new-cases, oracle]
+  - text: The router builds without a duplicate route panic, and /end_user paths stay out of /openapi.json.
+    proof: [router-tests, oracle]
+  - text: routes() is merged in app/spend.rs's mount, so every daily activity path and the cache activity route answer through the booted proxy.
+    proof: [oracle]
+  - text: Over HTTP, B3096's key page answers with limit default 50 and maximum 100 and offset default 0, both echoed; model leaders requires a non-empty model_group, defaults by_model_group to true and limit to 5 and echoes model_group as model; cache leakage exists on /user only with limit default 20 and maximum 100.
+    proof: [oracle]
+  - text: Over HTTP, B3097's aggregated route answers SpendAnalyticsPaginatedResponse on every prefix with api_key_limit 1 to 1000 (default 100), the search route requires a non-empty search with limit 1 to 100 (default 100), and /end_user answers like /customer.
+    proof: [oracle]
+  - text: Over HTTP, an out of range limit, offset or api_key_limit and a malformed timezone or include_current_utc_day answer 422; a missing, non-canonical or reversed date and a range over 400 days answer 400, except that the user aggregated route has no cap and answers the canonical-date message for a missing date.
+    proof: [oracle]
+  - text: Over HTTP, a non-admin asking for another user gets 403 "Non-admin users can only view their own spend data.", a missing credential answers 401, and a missing database answers 500 with the db_not_connected_error text before any 422.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: router-tests
+      why: the composed router is missing, misses an entity or prefix, or registers a path twice
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_router::tests::/)'
+    - id: new-cases
+      why: the composed routes have no booted-proxy case on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/daily-activity-router)"
+oracle_cases:
+  - tools/oracle/cases/daily-activity-router/tag-key-page-no-credentials.yaml
+  - tools/oracle/cases/daily-activity-router/organization-model-top-keys-no-credentials.yaml
+  - tools/oracle/cases/daily-activity-router/agent-export-no-credentials.yaml
+  - tools/oracle/cases/daily-activity-router/tag-search-no-credentials.yaml
+  - tools/oracle/cases/daily-activity-router/customer-cache-leakage-unknown.yaml
+  - tools/oracle/cases/daily-activity-router/agent-cache-leakage-unknown.yaml
+  - tools/oracle/cases/daily-activity-router/openapi-end-user-hidden.yaml
+  - tools/oracle/cases/management/daily-activity-keys/key-page-defaults.yaml
+  - tools/oracle/cases/management/daily-activity-keys/key-page-echoes-offset-and-limit.yaml
+  - tools/oracle/cases/management/daily-activity-keys/key-page-limit-over-max.yaml
+  - tools/oracle/cases/management/daily-activity-keys/key-page-negative-offset.yaml
+  - tools/oracle/cases/management/daily-activity-keys/key-page-bad-timezone.yaml
+  - tools/oracle/cases/management/daily-activity-keys/key-page-missing-dates.yaml
+  - tools/oracle/cases/management/daily-activity-keys/key-page-range-over-400-days.yaml
+  - tools/oracle/cases/management/daily-activity-keys/key-page-other-user-denied.yaml
+  - tools/oracle/cases/management/daily-activity-keys/key-page-team-prefix.yaml
+  - tools/oracle/cases/management/daily-activity-keys/key-page-end-user-alias.yaml
+  - tools/oracle/cases/management/daily-activity-keys/key-page-no-database.yaml
+  - tools/oracle/cases/management/daily-activity-keys/key-page-no-credentials.yaml
+  - tools/oracle/cases/management/daily-activity-keys/model-top-keys-defaults.yaml
+  - tools/oracle/cases/management/daily-activity-keys/model-top-keys-by-model-group-false.yaml
+  - tools/oracle/cases/management/daily-activity-keys/model-top-keys-missing-model-group.yaml
+  - tools/oracle/cases/management/daily-activity-keys/model-top-keys-empty-model-group.yaml
+  - tools/oracle/cases/management/daily-activity-keys/model-top-keys-limit-over-max.yaml
+  - tools/oracle/cases/management/daily-activity-keys/cache-leakage-defaults.yaml
+  - tools/oracle/cases/management/daily-activity-keys/cache-leakage-limit-zero.yaml
+  - tools/oracle/cases/management/daily-activity-keys/cache-leakage-team-prefix-unknown.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-defaults.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-range-over-400-days.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-missing-dates.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-non-canonical-date.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-reversed-range.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-bad-timezone.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-bad-include-current-day.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-user-other-user-denied.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-team-range-over-400-days.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-team-missing-dates.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-team-defaults.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-tag-defaults.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-organization-defaults.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-customer-defaults.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-end-user-alias.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-agent-defaults.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-key-limit-zero.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-key-limit-over-max.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-key-limit-at-max.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-no-database.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/aggregated-no-credentials.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-user-defaults.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-user-range-over-400-days.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-user-missing-dates.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-user-other-user-denied.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-missing-term.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-empty-term.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-limit-zero.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-limit-over-max.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-bad-timezone.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-team-prefix.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-end-user-alias.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-no-database.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-no-database-with-bad-limit.yaml
+  - tools/oracle/cases/management/daily-activity-aggregate/search-no-credentials.yaml
+deviations: []
+out_of_scope:
+  - "The handlers and their per-resolver route functions: B3096, B3097 and B3098. The cache activity handler: B3099."
+  - "The resolvers, their prefixes, tags and operation names: B3094 and B3095."
+  - "The other spend routes, layers and production adapters: B8661 merges the user agent analytics routes (B3100, B3101), GET /gateway/daily/activity (B3102) and GET /agent/daily/activity (B4787) after this one in app/spend.rs; B8662 merges B069's spend report and spend log routes; B8660 passes the budget services to the auth slots and the reservation call; the edge part (B8680) installs B8270's release layer. This task mounts only daily_activity_router::routes()."
+pitfalls:
+  - "The customer resolver has two prefixes; /end_user is the same handler set as /customer, registered once per prefix, never merged into /customer."
+  - "cache_leakage_keys is added after export and only for the user entity; adding it for team gives a route LiteLLM does not have."
+  - "B3099's route belongs to analytics_router, not to the daily activity router, so add it once after the loop and not per resolver."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,5 @@
+task: B4003
+deviations:
+  - what: response_cost and saved_cache_cost travel as an exact decimal JSON number, where LiteLLM's _number reads the value into a float and json.dumps writes the shortest round-trip form.
+    why: The money-is-decimal rule keeps costs in rust_decimal from the payload on, and Delta stores the column as DOUBLE, so the digits a payload carried survive instead of being rounded through a float.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/zerobus/row.py#L79-L83

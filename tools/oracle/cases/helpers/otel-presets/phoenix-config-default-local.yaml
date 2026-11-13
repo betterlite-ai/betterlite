@@ -1,0 +1,9 @@
+kind: helper
+name: phoenix-config-default-local
+call:
+  b3850:
+    function: phoenix_config
+    environment: {}
+env: {}
+compare:
+  ignore: []

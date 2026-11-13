@@ -1,0 +1,5 @@
+kind: helper
+name: openai-fine-tuning-azure-null-organization-files
+call: {"openai_fine_tuning": {"steps": [{"action": "normalize", "is_azure": true, "record": {"organization_id": null, "result_files": null, "status": "queued"}}, {"action": "normalize", "is_azure": true, "record": {"status": "queued"}}, {"action": "normalize", "is_azure": true, "record": {"organization_id": "o", "result_files": ["f"]}}, {"action": "normalize", "is_azure": false, "record": {"organization_id": null, "result_files": null}}, {"action": "create", "client": "azure_sync", "reply": {"status": 200, "body": {"id": "ft_1", "created_at": 1, "error": null, "fine_tuned_model": null, "finished_at": null, "estimated_finish": null, "integrations": null, "metadata": null, "hyperparameters": {"batch_size": null, "learning_rate_multiplier": null, "n_epochs": 3}, "method": null, "model": "gpt-4o-mini", "object": "fine_tuning.job", "organization_id": null, "result_files": [], "seed": 5, "status": "queued", "trained_tokens": null, "training_file": "file_a", "validation_file": null}}, "data": {"model": "m", "training_file": "f"}}]}}
+env: {}
+compare: {ignore: []}

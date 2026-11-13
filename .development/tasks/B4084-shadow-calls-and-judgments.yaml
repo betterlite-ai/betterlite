@@ -1,0 +1,130 @@
+id: B4084
+title: Execute shadow calls and blind pairwise judgments
+description: >-
+  Build the two outbound calls of a shadow evaluation in betterlite-server, in a new module `shadow_calls`: the shadow call that sends the sampled conversation through the arm nobody was served, and the blind pairwise judge call that compares the real reply with the shadow reply. Both return a typed outcome and never raise for a provider fault: a provider or parse fault becomes a `CallFailure` value that carries any cost the call still billed. The caller (B4085) turns the outcome into an attempt row.
+
+  Shadow call. `call_router_shadow(target_model, messages, shadow_params, parent_metadata)` returns `Result<ShadowResponse, CallFailure>` (use B4081's two record types). It takes the router through an injected `ShadowRouter` trait with one async method `acompletion` and a `ShadowRouterProvider` that returns `Option<Arc<dyn ShadowRouter>>` at call time, because the router is created lazily. With no router it returns `CallFailure` with the exact error `no router configured on this pod`. Otherwise it builds the call metadata with `betterlite_logging::logging_privacy::internal::forward(parent_metadata, Origin::ShadowEvalRouter, Forwarding::Detached)` (B188), which keeps only the caller identity and stamps `internal_call_origin`. The router call gets `model=target_model`, a copy of `messages`, that metadata, `num_retries=0`, `fallbacks=[]`, and then every entry of `shadow_params` (the sampled request's own sampling params and tools). The router may write a routing decision back into the same metadata map, so the call receives it mutably and it is read after the call. If the router call errors, return `CallFailure` with error `shadow router call failed: ` plus B4081's failure detail text, cost 0 and `classifier_cost` from B4081's decision classifier cost reader on the metadata (a classifier can bill before the model call fails). On success take the reply text with B4081's chat text reader. The served model is the response's `model` if it is non-empty, else the metadata routing decision's `routed_model`, else the empty string. When the text is empty return `CallFailure` with B4081's empty-reply error, `cost` from B4081's call cost reader (the empty reply still billed) and the classifier cost. Otherwise return `ShadowResponse` with the text, served model, B4081's routed tier, the call cost and the classifier cost.
+
+  Judge call. `call_judge(judge_model, messages, real_text, shadow_text, tools, parent_metadata)` returns `Result<JudgeVerdict, CallFailure>`. A position-bias coin decides which reply is A: `real_is_a` is true when `random.random() < 0.5`. Take the coin from an injected `PositionCoin` trait (`fn real_is_a(&self) -> bool`) so tests are deterministic; production uses a uniform random source. `response_a` is the real text when `real_is_a`, else the shadow text, and `response_b` is the other one. The conversation text is one line per message that has non-null `content`, in order, as `ROLE: text`, with the role upper-cased (a missing role reads `user`) and the text from B4080's `extract_text_from_content`, joined with a newline. Judge metadata comes from `forward(parent_metadata, Origin::ShadowEvalJudge, Forwarding::Detached)`. The judge messages are a system message with `PAIRWISE_JUDGE_SYSTEM_PROMPT` (copy the text byte for byte, including the two-line JSON shape at the end) and a user message from `judge_user_prompt(conversation, response_a, response_b, tool_definitions_text(tools))`. Dispatch with B4080's `judge_acompletion` using the router from the provider, the team id from `forwarded_team_id(parent_metadata)`, `temperature=0`, `max_tokens=JUDGE_MAX_OUTPUT_TOKENS` (4096), `response_format=PAIRWISE_JUDGE_RESPONSE_FORMAT` and the judge metadata. A dispatch error returns `CallFailure` with error `judge call failed: ` plus the error text and cost 0. When B4080 reports the judge target as `nothing`, treat it as a dispatch error with that same prefix. Parse the reply: take `choices[0].message.content` (null reads as the empty string), run B4080's `parse_json_verdict`, and validate the object as `PairwiseVerdict`: `preference` must be exactly `A`, `B` or `tie` and `confidence` must be a number, both required, extra keys ignored. A reply with no choices, no message, bad JSON or a failed validation returns `CallFailure` with error `unparseable judge verdict: ` plus the parser or validation message, then `; ` plus B4081's judge reply shape text, and `cost` from the call cost reader (the judge billed). On success return `JudgeVerdict` with `preference` from `unmask_preference(verdict.preference, real_is_a)`, `confidence` clamped to 0..1 and the call cost.
+
+  Pure helpers, all exposed as `pub(crate)` functions so they can be tested and compared against LiteLLM on their own. `unmask_preference(raw, real_is_a)` trims and lower-cases `raw`; `a` gives `real` when `real_is_a` else `shadow`, `b` gives `shadow` when `real_is_a` else `real`, anything else gives `tie`. `tool_definitions_text(tools)` returns the empty string unless `tools` is a JSON array; it skips string entries, uses each entry's `function` object, else its `custom` object, else the entry itself, and renders one line `- {name}: {description}` with `unnamed` and `no description` when missing or empty, then returns `Tools available to both responses:` plus a newline plus the lines joined by a newline, cut to 2,000 characters (count characters, not bytes). No lines means the empty string. `judge_user_prompt(conversation, a, b, tool_definitions)` cuts each reply to 8,000 characters, builds `prefix` as the tool text plus two newlines (empty when there is no tool text), gives the conversation `24000 - len(a) - len(b) - len(prefix)` characters and keeps the END of the conversation, and returns `{prefix}Conversation:\n{conversation tail}\n\nResponse A:\n{a}\n\nResponse B:\n{b}\n\nWhich response is better?`. `forwarded_team_id(metadata)` returns `user_api_key_team_id` only when it is a non-empty string.
+
+  `PAIRWISE_JUDGE_RESPONSE_FORMAT` is the exact value LiteLLM's `type_to_response_format_param(PairwiseVerdict)` returns (`type: json_schema`, `json_schema.name: PairwiseVerdict`, `strict: true`, and the strict schema with `additionalProperties: false`, both fields required, `preference` as an `enum` of `A`, `B`, `tie` and `confidence` as a `number`). Write it as a constant in Rust and prove it against the Python function with an oracle case; do not port pydantic.
+
+  Out of this task: choosing arms, gating budgets, writing attempt rows, and the loop over arms (B4085); the job and attempt storage (B4083); response readers, cost and failure text (B4081, used here).
+scope:
+  paths:
+    - crates/betterlite-server/src/shadow_calls.rs
+    - crates/betterlite-server/src/shadow_calls/**
+    - tools/oracle/cases/helpers/shadow-calls/**
+    - tools/oracle/helpers/b4084.py
+    - tools/oracle/helpers/b4084/**
+    - tools/oracle/src/helpers/server/b4084.rs
+    - tools/oracle/src/helpers/server/b4084/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L60-L70
+    why: The prompt and output budgets, `_MAX_JUDGE_RESPONSE_CHARS` 8000, `_MAX_JUDGE_PROMPT_CHARS` 24000, and `JUDGE_MAX_OUTPUT_TOKENS` 4096.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L452-L480
+    why: The system prompt text, the `PairwiseVerdict` model and the response format built from it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
+    why: What `type_to_response_format_param` returns for a pydantic class (strict schema, name, strict true).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L534-L578
+    why: "`_unmask_preference`, `_tool_definitions_text` and `_judge_user_prompt`."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L663-L668
+    why: "`_forwarded_team_id`: nothing else at the pin owns it, and the judge call is its only caller."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1266-L1313
+    why: "`_call_router_shadow`: no-router failure, detached metadata, router call arguments and the three outcomes."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1316-L1371
+    why: "`_call_judge`: coin, conversation text, judge call arguments, parse and unmask."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/internal_call_metadata.py#L158-L168
+    why: "`sanitized_forwardable_call_metadata`, built in Rust as `forward(.., Forwarding::Detached)` by B188."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L112-L140
+    why: "`judge_acompletion`: the team id is an argument here, it picks router or SDK dispatch."
+dod:
+  - text: With no router the shadow call returns the failure `no router configured on this pod`, and the router is not called.
+    proof: [router-call-tests]
+  - text: The router call gets the target model, a copy of the messages, detached shadow-origin metadata, zero retries, no fallbacks and every shadow param.
+    proof: [router-call-tests]
+  - text: A router error gives a `shadow router call failed:` failure with cost 0 and the classifier cost already in the metadata.
+    proof: [router-call-tests]
+  - text: An empty reply gives the empty-reply failure that keeps the call cost and classifier cost; a non-empty reply gives a ShadowResponse whose model falls back from the response model to the routing decision to the empty string.
+    proof: [router-call-tests]
+  - text: The judge sees the replies in coin order and the verdict is unmasked back to real, shadow or tie for both coin results.
+    proof: [judge-call-tests, unmask-tests]
+  - text: The judge call sends the system prompt, the budgeted user prompt, temperature 0, 4096 max tokens, the strict response format and judge-origin metadata with the forwarded team id.
+    proof: [judge-call-tests, response-format-oracle]
+  - text: A dispatch error gives a `judge call failed:` failure with cost 0.
+    proof: [judge-call-tests]
+  - text: A reply that is not valid JSON, not an object, lacks a field, has another preference or a non-number confidence gives an `unparseable judge verdict:` failure with the reply shape and the billed cost.
+    proof: [judge-call-tests]
+  - text: Confidence outside 0..1 is clamped on the returned verdict.
+    proof: [judge-call-tests]
+  - text: The tool text, judge prompt and unmask helpers match LiteLLM on the oracle cases, including the character caps and keeping the end of a long conversation.
+    proof: [prompt-tests, unmask-tests, helper-oracle]
+  - text: The response format constant equals LiteLLM's `type_to_response_format_param(PairwiseVerdict)` output.
+    proof: [response-format-oracle]
+checks:
+  optional: []
+  commands:
+    - id: router-call-tests
+      why: the shadow call tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shadow_calls::router_call::/)'
+    - id: judge-call-tests
+      why: the judge call tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shadow_calls::judge_call::/)'
+    - id: prompt-tests
+      why: the tool text and judge prompt tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shadow_calls::judge_prompt::/)'
+    - id: unmask-tests
+      why: the unmask tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shadow_calls::unmask::/)'
+    - id: helper-oracle
+      why: the prompt and unmask helpers differ from pinned LiteLLM
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/shadow-calls)" && cargo build --locked -p betterlite-oracle && target/debug/betterlite-oracle tools/oracle/cases/helpers/shadow-calls
+    - id: response-format-oracle
+      why: the response format constant is missing or differs from pinned LiteLLM
+      run: test -f tools/oracle/cases/helpers/shadow-calls/pairwise-response-format.yaml && cargo build --locked -p betterlite-oracle && target/debug/betterlite-oracle tools/oracle/cases/helpers/shadow-calls/pairwise-response-format.yaml
+oracle_cases:
+  - tools/oracle/cases/helpers/shadow-calls/tool-definitions-function.yaml
+  - tools/oracle/cases/helpers/shadow-calls/tool-definitions-custom-and-bare.yaml
+  - tools/oracle/cases/helpers/shadow-calls/tool-definitions-capped.yaml
+  - tools/oracle/cases/helpers/shadow-calls/tool-definitions-not-a-list.yaml
+  - tools/oracle/cases/helpers/shadow-calls/judge-prompt-plain.yaml
+  - tools/oracle/cases/helpers/shadow-calls/judge-prompt-with-tools.yaml
+  - tools/oracle/cases/helpers/shadow-calls/judge-prompt-long-conversation.yaml
+  - tools/oracle/cases/helpers/shadow-calls/judge-prompt-long-replies.yaml
+  - tools/oracle/cases/helpers/shadow-calls/unmask-a-real-first.yaml
+  - tools/oracle/cases/helpers/shadow-calls/unmask-b-real-first.yaml
+  - tools/oracle/cases/helpers/shadow-calls/unmask-tie.yaml
+  - tools/oracle/cases/helpers/shadow-calls/pairwise-response-format.yaml
+deviations:
+  - what: The A/B coin comes from an injected `PositionCoin`, a uniform random source in production, instead of a call to Python's `random.random()`.
+    why: Tests and oracle runs need a fixed coin; the distribution a user sees is the same, a fair coin per judge call.
+  - what: The router and the judge model are reached through injected traits, not the proxy's global router.
+    why: betterlite keeps no module-level state; LiteLLM's `default_router_provider` reads a proxy global (B4080 owns that note).
+  - what: The 8,000, 24,000 and 2,000 character caps count Unicode characters, as Python slicing does, and never cut inside a character.
+    why: Rust strings slice by bytes; counting characters keeps the prompt identical to LiteLLM's for non-ASCII chat.
+out_of_scope:
+  - "Arm choice, budget gates, the loop over arms and the attempt outcome for each exit: B4085."
+  - "Active job loading, sampling and attempt rows: B4083."
+  - "Chat text reader, call cost reader, failure detail, judge reply shape, empty-reply error, routing decision readers and the ShadowResponse, JudgeVerdict and CallFailure records: B4081 owns them, this task calls them."
+  - "parse_json_verdict, extract_text_from_content, judge_target and judge_acompletion: B4080."
+  - "Forwardable metadata (`forward`, `Origin`, `Forwarding`): B188."
+  - "Request normalization and the shadow_params the caller builds: B4082."
+  - "Router.acompletion itself: no task owns a Rust router call API at the pin of this plan; this task only declares the `ShadowRouter` trait it needs."
+pitfalls:
+  - "A shadow call that returns an empty reply still billed: the failure keeps the call cost, so job spend never undercounts."
+  - "A router error cannot know a call cost, so cost is 0, but the routing classifier may have billed already: read `classifier_cost` from the metadata the router wrote back to."
+  - "The router call takes the sanitized metadata map by mutable reference and reads the routing decision after the call; passing a copy loses `routed_model` and the tier."
+  - "Both calls forward identity only (`Forwarding::Detached`); copying the parent's full metadata would carry the real call's routing decision and logging payload into a call that outlives it."
+  - "The judge dispatch needs the team id from `user_api_key_team_id` as an argument; without it a team-only judge model resolves as a public name and the call is declined."
+  - "`confidence` accepts any JSON number, but the verdict must still have `preference` exactly `A`, `B` or `tie`: lower-case `a` fails validation and becomes an unparseable-verdict failure, so the lower-casing in `unmask_preference` never sees it from this path."
+  - "A reply with `content: null` reads as the empty string and then fails JSON parsing, so it is an unparseable-verdict failure and still carries the judge cost."
+  - "The conversation budget is never zero: replies are capped at 8,000 characters each and the tool text at 2,002 with its separator, so at least 5,998 characters remain; keep the LAST budget characters of the conversation, not the first."
+  - "Messages whose `content` is null are skipped, but a message with empty-string content is kept and prints `USER: `."
+  - "Tool definitions show name and description only; do not forward parameter schemas, and do not count the header in the caps differently: the 2,000 limit applies to the whole text including `Tools available to both responses:`."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

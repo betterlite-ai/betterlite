@@ -1,0 +1,67 @@
+kind: probe
+name: fenced-prose-json
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.0"}
+        reply: {kind: text, content: "  ```\n{\"crux\":\"fenced\",\"primary_rule\":\"SUP-1\",\"capability_boundary\":\"supported\",\"p_solve\":0.8}\n```  "}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.0"}
+        reply: {kind: text, content: "```json\n{\"crux\":\"tagged fence\",\"primary_rule\":\"UNC-1\",\"capability_boundary\":\"uncertain\",\"p_solve\":0.75}\n```"}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.0"}
+        reply: {kind: text, content: "Sure {here} is the verdict you asked for:\n\n{\"crux\":\"prose before\",\"primary_rule\":\"LIM-1\",\"capability_boundary\":\"unsupported\",\"p_solve\":0.25}"}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.0"}
+        reply: {kind: text, content: "{\"crux\":\"prose after\",\"primary_rule\":\"none\",\"capability_boundary\":\"unmatched\",\"p_solve\":0.5}\n\nThe efficient solver should handle this {well}."}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.0"}
+        reply: {kind: text, content: "```json\n{\"crux\":\"fenced then prose\",\"primary_rule\":\"SUP-5\",\"capability_boundary\":\"supported\",\"p_solve\":0.9}\n```\n\n## Reasoning\n\nThe task is coupled, so the forecasts differ."}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.0"}
+        reply: {kind: text, content: "{\"note\": 1}\n{\"crux\":\"second object\",\"primary_rule\":\"SUP-1\",\"capability_boundary\":\"supported\",\"p_solve\":0.8}"}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.0"}
+        reply: {kind: text, content: "The task text is too {vague} for a forecast, sorry."}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.0"}
+        reply: {kind: text, content: "{\"crux\":\"not a number\",\"primary_rule\":\"SUP-1\",\"capability_boundary\":\"supported\",\"p_solve\":NaN}\n{\"crux\":\"later verdict\",\"primary_rule\":\"SUP-1\",\"capability_boundary\":\"supported\",\"p_solve\":0.8}"}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.0"}
+        reply: {kind: text, content: "{\"crux\":\"infinite\",\"primary_rule\":\"SUP-1\",\"capability_boundary\":\"supported\",\"p_solve\":Infinity}\n{\"crux\":\"later verdict\",\"primary_rule\":\"SUP-1\",\"capability_boundary\":\"supported\",\"p_solve\":0.8}"}
+compare: {ignore: []}

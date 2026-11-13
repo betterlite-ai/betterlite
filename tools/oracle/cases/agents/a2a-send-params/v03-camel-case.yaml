@@ -1,0 +1,28 @@
+kind: helper
+name: a2a-send-params-v03-camel-case
+call:
+  b6950:
+    params:
+      message:
+        messageId: m1
+        role: user
+        parts:
+          - kind: text
+            text: hi
+        contextId: c1
+        taskId: t1
+        referenceTaskIds: [r1]
+        extensions: [e1]
+        metadata: {k: 1}
+      configuration:
+        acceptedOutputModes: [text]
+        blocking: false
+        historyLength: 3
+        pushNotificationConfig:
+          url: "https://x"
+          id: p1
+          token: tok
+          authentication: {schemes: [Bearer], credentials: cred}
+      metadata: {a: 1}
+env: {}
+compare: {ignore: []}

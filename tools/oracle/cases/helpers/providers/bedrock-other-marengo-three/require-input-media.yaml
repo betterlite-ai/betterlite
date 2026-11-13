@@ -1,0 +1,12 @@
+kind: helper
+name: require-input-media
+call:
+  bedrock_other_marengo_three:
+    require_input_media:
+      model: marengo-embed-3-0-v1:0
+      input: hi
+      inference_params:
+        inputType: text_image
+env: {}
+compare:
+  ignore: []

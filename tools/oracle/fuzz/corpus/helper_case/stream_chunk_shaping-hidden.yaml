@@ -1,0 +1,12 @@
+kind: helper
+name: stream-chunk-shaping-hidden-seed
+call:
+  b5652:
+    state: {model: gpt-4, provider: openai}
+    repeated_chunk_limit: 100
+    steps:
+      - op: provider_hidden_params
+        chunk: {id: c, created: 1, model: provider-model, hidden_params: {provider_specific_fields: {a: 1}}}
+        provider_response_model: provider-model
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+id: B8646
+milestone: M9 agents and mcp
+title: Install the agent ports into the authentication stages
+status: todo
+depends_on: [B8610, B8645, B053, B748, B760, B761, B875, B877, B4772, B4773, B4778, B4780]
+file: tasks/B8646-agent-auth-ports.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

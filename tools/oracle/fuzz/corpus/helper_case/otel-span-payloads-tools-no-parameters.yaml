@@ -1,0 +1,21 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-tools-no-parameters",
+  "call": {
+    "b3844": {
+      "function": "tools",
+      "value": {
+        "tools": [
+          {
+            "name": "tool",
+            "parameters": null
+          }
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

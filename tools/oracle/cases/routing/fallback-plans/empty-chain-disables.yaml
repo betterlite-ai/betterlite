@@ -1,0 +1,78 @@
+kind: probe
+name: fallback-empty-chain-disables
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [router-model]}
+          context_window_fallbacks:
+            - {gpt-4: [router-long]}
+          max_fallbacks: 5
+        request:
+          fallbacks: []
+          context_window_fallbacks: []
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+          disable_fallbacks: true
+        config:
+          fallbacks:
+            - {gpt-4: [router-model]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+          metadata:
+            present: true
+            disable_fallbacks: true
+        config:
+          fallbacks:
+            - {gpt-4: [router-model]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+          metadata:
+            present: true
+        config:
+          fallbacks:
+            - {gpt-4: [router-model]}
+          max_fallbacks: 5
+        request: {}
+        record_disable: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+          metadata:
+            present: true
+            disable_fallbacks: true
+        config:
+          fallbacks:
+            - {gpt-4: [router-model]}
+          max_fallbacks: 5
+        request: {}
+        record_disable: false

@@ -105,7 +105,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^metrics_cleanup::/)'
     - id: listener-tests
       why: metrics listener and server builder tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-http -p betterlite --no-tests=fail -E 'test(/^metrics_server::/) - test(/^metrics_server_process::/) - test(/^prometheus_listener::/)'
+      run: cargo nextest run --locked -p betterlite-http -p betterlite --no-tests=fail -E 'test(/^metrics_server::/) - test(/^(metrics_listener|metrics_listener::tests|metrics_server|metrics_server::tests)::(.*::)?metrics_server_process::/) - test(/^(metrics_listener|metrics_listener::tests|metrics_server|metrics_server::tests)::(.*::)?prometheus_listener::/)'
 
 oracle_cases: []
 

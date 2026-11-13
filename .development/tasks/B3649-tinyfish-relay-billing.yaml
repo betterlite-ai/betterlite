@@ -133,15 +133,14 @@ deviations:
   - what: "Polling tasks run asynchronously and are not awaited by the relayed response handler. Both blocking-run and async-run paths are non-blocking except blocking-run processes the response body synchronously."
     why: "Blocking requests poll synchronously; async requests spawn a task so the relayed response returns immediately. SSE polling also runs detached. This preserves LiteLLM's async pattern and non-blocking relayed responses."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L191-L201
-  - what: "The task lifetime is server-owned and persists across client disconnects for SSE and async runs. Tasks are registered in a global set and removed on completion or cancellation."
+  - what: "The task lifetime is server-owned and persists across client disconnects for SSE and async runs. Tasks are spawned on the injected per-server task tracker, which removes them on completion and drains or cancels them at shutdown; there is no global set."
     why: "Polling must survive client disconnect for cost measurement. Weak reference cleanup ensures tasks are properly freed when done. This keeps billing from leaking tasks or stopping on disconnect."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L55-L62
 
 out_of_scope:
   - B3648 owns run parsing, endpoint validation, API base resolution, cost-per-step parsing, and the logging payload record type. This task calls those functions and uses their records.
-  - B173 owns the async HTTP client and credential lookup through passthrough_endpoint_router.get_credentials.
-  - The framework's PassThroughEndpointLogging._handle_logging sink and passthrough_endpoint_router service are unresolved dependencies per the outline.
-  - HTTP routing and request forwarding belong to the unresolved B102 route handler.
+  - B173 owns the async HTTP client. Credential lookup through passthrough_endpoint_router.get_credentials is the injected B3602 port, and the framework's PassThroughEndpointLogging._handle_logging sink is the injected B3605 dispatch. B8931 implements both adapters.
+  - HTTP routing and request forwarding belong to B3626 and B8609 (the TinyFish route and its mount).
   - "B3648 owns SSE frame parsing via _run_id_from_sse_chunks, which parses each data: line as a TinyfishRun and extracts the first run_id; this task dispatches that extraction to polling and billing."
 
 pitfalls:

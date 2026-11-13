@@ -1,0 +1,10 @@
+kind: helper
+name: endpoint-splunk-and-langtrace
+call:
+  b3855:
+    function: normalize_otel_endpoint
+    endpoint: https://app.langtrace.ai/api/trace
+    signal: traces
+    callback_name: langtrace
+env: {}
+compare: {ignore: []}

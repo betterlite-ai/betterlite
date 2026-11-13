@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-tools-tool-name-roundtrip
+call:
+  bedrock_tools:
+    call: valid_names
+    names:
+      - get_weather
+      - "my tool!"
+      - 9lives
+      - ""
+      - "   "
+      - a.b/c
+      - _private
+      - "9"
+      - already_valid-1
+      - dup name
+      - dup_name
+env: {}
+compare:
+  ignore: []

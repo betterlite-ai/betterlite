@@ -1,0 +1,17 @@
+kind: helper
+name: deduplication-broadest-match
+call:
+  b3241:
+    policy_memory_matching_attachment:
+      action: attached_policies
+      attachments:
+        - policy: shared-policy
+          models: [gpt-4]
+        - policy: model-policy
+          models: [gpt-4]
+        - policy: shared-policy
+          scope: "*"
+      context:
+        model: gpt-4
+env: {}
+compare: {ignore: []}

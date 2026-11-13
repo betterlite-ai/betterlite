@@ -1,0 +1,35 @@
+task: B4418
+deviations:
+  - what: The CyberArk manager does not check for a premium license.
+    why: betterlite has no paid tier, so there is nothing to gate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/cyberark_secret_manager.py#L62-L65
+  - what: The native provider reader and writer hook is not ported, so every read and write goes through the manager's own HTTP path.
+    why: The hook hands the call to a LiteLLM Rust bridge that betterlite does not have, and the Python fallback is the behavior this task owns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/cyberark_secret_manager.py#L202-L204
+  - what: The session token and the secret values are cached in two separate caches.
+    why: LiteLLM stores both in one cache, so a secret named cyberark_auth_token overwrites the session token and is later sent as the token. Separate caches remove the collision and keep the same TTL and eviction for both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/cyberark_secret_manager.py#L58-L60
+  - what: The cache holds at most 200 entries and drops the entry closest to expiry when full, and it has no 1 MiB per-item size limit.
+    why: Secret values are short strings, so the item size limit of LiteLLM's in-memory cache never applies. The entry cap keeps memory bounded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py
+  - what: The HTTP client is injected through the ConjurTransport trait instead of being built inside the manager.
+    why: The shared pooled client belongs to B173 and the outbound wiring to B4421, so the manager takes the transport from its caller and tests use a scripted one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/cyberark_secret_manager.py#L92-L102
+  - what: Error text is betterlite's own, and response bodies are not written to the logs.
+    why: LiteLLM logs the exception and the Conjur response text, which can echo secret material back into the log. betterlite logs the status only. The log level and the event stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/cyberark_secret_manager.py#L225-L232
+  - what: CYBERARK_SSL_VERIFY reads 1, yes, on, 0, no and off as well as true and false, case-insensitively, through the shared boolean reader.
+    why: The task reads env strings into the field's type with one shared reader, and an empty value counts as unset. LiteLLM's str_to_bool accepts only true and false.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/cyberark_secret_manager.py#L46-L47
+  - what: A negative CYBERARK_REFRESH_INTERVAL is rejected at construction.
+    why: The interval is an unsigned number of seconds. LiteLLM accepts a negative number and then expires every entry immediately.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/cyberark_secret_manager.py#L59-L60
+  - what: Rotation is overridden for CyberArk. It reads the current value, writes the new one, reads the new one back, then deletes the current name, and it accepts the same name for both.
+    why: Deleting is a no-op for Conjur and the cache must be cleared for the old name, so the default rotation of the base class would fail on a same-name rotation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L114
+  - what: Rotation failures are not logged with the base class's AWS-worded error message.
+    why: The message names AWS Secrets Manager for a CyberArk failure. The caller gets a typed error that says which step failed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L114
+  - what: The async login runs on the async transport instead of blocking the task.
+    why: LiteLLM's async read and write call a blocking login, which stalls the event loop for the length of the request. The requests, headers and token cache are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/cyberark_secret_manager.py#L72-L115

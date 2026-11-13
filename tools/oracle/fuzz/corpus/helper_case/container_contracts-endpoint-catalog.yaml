@@ -1,0 +1,7 @@
+kind: helper
+name: container-contracts-endpoint-catalog-seed
+call:
+  b3360:
+    operation: endpoint_catalog
+env: {}
+compare: {ignore: []}

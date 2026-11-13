@@ -18,18 +18,15 @@ description: >-
   is covered natively; no B171 adapter is needed. Test modules are api::file_read_route::tests in
   server/core. Owned source has 354 nonblank/non-comment lines; budget 280 implementation, 190 tests,
   245 cases and 35 wiring lines, totaling 750. Decoding remains B1100/B1019/provider owned.
+  B1100 registers routes/file_read.rs as a stub, so fill only crates/betterlite-server/src/routes/file_read.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/file_read.rs
+  - crates/betterlite-server/src/routes/file_read/**
   - crates/betterlite-server/src/api/file_read_route.rs
   - crates/betterlite-server/src/api/file_read_route/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/file_read_route.rs
   - crates/betterlite-core/src/api/file_read_route/**
   - tools/oracle/cases/api/file-read-route/**
@@ -135,7 +132,7 @@ deviations:
 out_of_scope:
 - B1031 owns upload helpers, B1032 create_file, B1033 get_file_content and B087 delete_file. B1017 owns list-page records and B1019 limit/ID codecs.
 - Managed hook retrieval L1361-L1370 and managed listing L1780-L1788 have no reachable MIT caller. They do not justify B1018 ownership filtering or managed repository dependencies here.
-- B1020/B886 own credential grants and their errors; B003/B004 own validation/error serialization and custom headers; B124 owns callback execution/status persistence.
+- B1020/B886 own credential grants and their errors; B003/B004 own validation/error serialization and custom headers; B8393 and B8394 own callback execution and B8395 status persistence (update_request_status).
 pitfalls:
 - target_model_names list splitting does not trim spaces or remove empty entries.
 - List success hooks replace a page only when they return a single OpenAIFileObject.

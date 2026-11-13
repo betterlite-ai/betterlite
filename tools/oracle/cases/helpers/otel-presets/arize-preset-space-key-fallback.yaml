@@ -1,0 +1,19 @@
+kind: helper
+name: arize-preset-space-key-fallback
+call:
+  b3850:
+    function: arize_preset
+    environment:
+      ARIZE_SPACE_KEY: space-key-1
+    base:
+      exporters:
+        - kind: otlp_http
+          endpoint: https://collector.example/v1/traces
+          headers: x-collector=1
+      mapper_names: [genai]
+      resource_attributes:
+        deployment.environment: test
+env:
+  ARIZE_SPACE_KEY: space-key-1
+compare:
+  ignore: []

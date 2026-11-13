@@ -1,0 +1,12 @@
+kind: helper
+name: replicate-headers-ignore-input
+env: {}
+compare: {ignore: []}
+call:
+  b5847:
+    op: headers
+    requests:
+      - api_key: key
+        headers: {Authorization: "Bearer caller", X-Extra: "1"}
+      - api_key: null
+        headers: {}

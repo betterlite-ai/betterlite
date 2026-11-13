@@ -1,0 +1,18 @@
+id: B5842
+milestone: M3 providers
+title: watsonx provider
+status: todo
+depends_on: [B5970, B5971, B5972, B186, B1013, B515, B1001, B3570]
+file: tasks/B5842-watsonx-provider.yaml
+covers:
+  - "litellm/llms/watsonx/embed/**"
+  - "litellm/llms/watsonx/rerank/**"
+  - "litellm/llms/watsonx/audio_transcription/**"
+  - "litellm/llms/watsonx/passthrough/**"
+  - "litellm/llms/watsonx/__init__.py"
+parent: B042
+split_from: B042
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

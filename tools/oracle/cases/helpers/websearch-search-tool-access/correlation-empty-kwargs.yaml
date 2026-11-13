@@ -1,0 +1,11 @@
+kind: helper
+name: correlation-empty-kwargs
+call:
+  b4114:
+    operation: parent_correlation
+    kwargs: {}
+    caller:
+      team_id: team
+      parent_otel_span: caller-span
+env: {}
+compare: {ignore: []}

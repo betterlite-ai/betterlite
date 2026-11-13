@@ -1,0 +1,7 @@
+kind: helper
+name: responses-usage-totals-and-aliases
+call:
+  responses_usage:
+    usage: {input_tokens: 2, output_tokens: 3, total_tokens: 99, input_token_details: {audio_tokens: 2}, output_token_details: {audio_tokens: 3}}
+env: {}
+compare: {ignore: []}

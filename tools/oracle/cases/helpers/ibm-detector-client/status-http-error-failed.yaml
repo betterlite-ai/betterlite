@@ -1,0 +1,14 @@
+kind: helper
+name: status-http-error-failed
+call:
+  b3736:
+    detect:
+      settings:
+        auth_token: test-token
+        detector_id: jailbreak-detector
+        is_detector_server: false
+      environment: {}
+      contents: [hello]
+      answer: {status: 500, headers: {}, body: {error: detector unavailable}}
+env: {}
+compare: {ignore: []}

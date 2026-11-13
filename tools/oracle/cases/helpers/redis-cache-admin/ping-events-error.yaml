@@ -1,0 +1,9 @@
+kind: helper
+name: redis-cache-admin-ping-events-error
+call:
+  b4326:
+    function: ping_events
+    outcome: error
+    error_text: the scripted connection dropped
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-text-rewrite-model-without-structured-content
+call: {b3761: {function: rewrite_model_text, response: {content: [{type: text, text: old}], isError: false}, text: new}}
+env: {}
+compare: {ignore: []}

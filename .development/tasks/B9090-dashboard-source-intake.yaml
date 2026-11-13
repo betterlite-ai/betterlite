@@ -1,0 +1,103 @@
+id: B9090
+title: Fetch and verify the pinned MIT dashboard without vendoring its source tree
+description: >-
+  Keep the existing Next.js application by materializing upstream sources at build time, not by
+  rewriting React components or adding thousands of upstream files to a worker's diff. Implement
+  tools/dashboard/source.mjs, patches.mjs and source.pin.json using Node's standard library and
+  Git. The pin is repository https://github.com/BerriAI/litellm.git, commit
+  d665dc1a6315847fcad6cc2c1264ceb47c06abce. Fetch that object into a private cache under
+  target/dashboard; a caller may supply --source-repo for an already available read-only checkout,
+  but its object and resulting archive must pass exactly the same verification. Never use a tag,
+  working-tree contents, a local modification or an unverified cache entry as the source.
+
+  Export with git archive --format=tar and these path arguments in order: LICENSE, ui,
+  litellm/proxy/cached_logo.jpg, litellm/proxy/logo.png, litellm/proxy/logo_dark.png,
+  litellm/proxy/logo_monogram.png, litellm/proxy/logo_monogram_dark.png. The SHA-256 of those tar
+  bytes, checked against the pinned checkout, is
+  4ae985fb9e429a7c9b1b1d4dd5880a4a58417316020628c5a00a140219f2b9f5.
+  Verify before extraction; use a fresh isolated Git configuration, the committed attributes,
+  no working-tree attributes and the default tar.umask 0002 so user configuration cannot alter
+  the archive. Also verify the dashboard tree object dead15ffe851217ccee431b92bf956f7da1476c5
+  and the unchanged package-lock.json SHA-256
+  9e5c81c0efa13d1648706e11719f907686d09ecc23804e9782eef34cafe13ad3.
+  Extraction is limited to the selected paths, rejects escaping links and never includes
+  enterprise/, litellm_enterprise or the committed _experimental/out bundle.
+
+  prepare makes target/dashboard/source with the original repository layout. Apply the checked-in
+  files ui/dashboard/patches/*.patch in lexical filename order using git apply --check before
+  application; reject failed hunks and paths outside the selected export. An adjacent .json for
+  each patch records its target paths and preimage/postimage SHA-256 values, checked in order.
+  This allows another task's later patch to depend on an earlier patch without a shared series
+  file. Reconstruct from the pristine verified export every time; do not patch an old generated
+  tree in place. B9091 owns 10-build.patch, B9092 owns 20-branding.patch, and B144 owns
+  30-browser-paths.patch if required. Later page tasks add their own uniquely named patch and
+  tests through this interface; none edits target/dashboard/source as an authoritative source.
+  Overlays for branding are applied only by B9092's explicit mapping, not by arbitrary copying.
+
+  verify --repeat prepares twice in separate clean directories and compares sorted relative
+  paths, file modes and file hashes, excluding nothing from the extracted source. Check that
+  package.json, package-lock.json and .npmrc remain byte-identical to upstream after patches;
+  rebranding the private npm package name is unnecessary because it is never distributed.
+  Keep the full upstream LICENSE, including Copyright (c) 2023 Berri AI and its permission and
+  warranty text. There is no separate dashboard LICENSE or NOTICE at this pin and its README is
+  the Next.js starter README; preserve any notices inside retained assets and source anyway.
+  B9091 carries these into the distributable artifact. No upstream function is translated in
+  this task: every covered shared component, networking function, utility and hook is retained
+  byte-for-byte and compiled by B9091, with later changes only through the declared patches.
+
+  Document commands, cache verification, offline --source-repo use and the patch contract in
+  tools/dashboard/README.md. Bound fetch/archive/apply subprocesses and hold process groups so
+  cancellation cleans them up. Tests deliberately corrupt the archive, lockfile, cache, patch
+  preimage and a patch destination, and prove no prepared output is published on failure.
+  The large retained tree contributes zero committed source lines; allow about 280 intake and
+  patch-application lines, 180 tests and 80 documentation/pin/check lines, roughly 540 in all.
+scope:
+  paths:
+    - tools/dashboard/source.mjs
+    - tools/dashboard/patches.mjs
+    - tools/dashboard/source.pin.json
+    - tools/dashboard/README.md
+    - tools/dashboard/tests/source/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/LICENSE#L1-L26
+    why: The selected non-enterprise sources are MIT and every substantial copy must carry Berri AI's notice and permission text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/package.json#L1-L115
+    why: Retain the application and its dependency versions rather than creating a new dashboard implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/README.md#L1-L36
+    why: Dashboard provenance and the existing Next.js toolchain; this file contains no separate license grant.
+  - url: https://git-scm.com/docs/git-archive
+    why: Archiving a commit uses its commit time and committed export attributes; the checked tar is the reproducible intake boundary.
+dod:
+  - text: A clean checkout reproduces the pinned source archive and lockfile and produces identical prepared trees twice.
+    proof: [source-reproduction, source-tests]
+  - text: Corrupt caches, wrong commits, altered dependency files and invalid patches fail before a prepared tree is published.
+    proof: [source-tests]
+  - text: Only MIT paths enter the build and upstream copyright and permission notices survive patch preparation.
+    proof: [source-reproduction, source-tests]
+checks:
+  optional: []
+  commands:
+    - id: source-reproduction
+      why: The source pin or deterministic preparation command is missing, unverified or accepts dependency drift.
+      run: node tools/dashboard/source.mjs verify --repeat
+    - id: source-tests
+      why: Intake accepts tampered material, unsafe destinations or stale prepared files.
+      run: node --test tools/dashboard/tests/source/*.test.mjs
+oracle_cases: []
+deviations:
+  - what: Source checkouts contain the pin and reviewed patches; the retained dashboard is fetched into target/dashboard instead of committed under ui/litellm-dashboard.
+    why: A verified build input preserves the MIT application without spending a 1500-line worker budget on generated copies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/README.md#L1-L21
+out_of_scope:
+  - B9091 owns npm execution, static export and notices in the shipped bundle; B9092 owns visible branding and the text wordmark.
+  - B144 owns the assembled login/session browser contract; B145-B150 own page-specific API behavior even though their sources must be fetched for a complete Next.js build.
+  - ui/Dockerfile and ui/nginx.conf describe a separate nginx UI deployment; B9091 uses a build-only image and B9093 serves assets from the Rust proxy, so no nginx runtime is built here.
+pitfalls:
+  - git archive must receive the commit rather than its tree object, because a tree archive uses the current time.
+  - A cache hit is not evidence of integrity; check the archive hash before every extraction.
+  - Global LiteLLM-to-betterlite replacement would corrupt wire names, package integrity and copyright notices.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

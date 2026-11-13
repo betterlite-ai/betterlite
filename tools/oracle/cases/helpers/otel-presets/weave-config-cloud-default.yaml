@@ -1,0 +1,13 @@
+kind: helper
+name: weave-config-cloud-default
+call:
+  b3850:
+    function: weave_config
+    environment:
+      WANDB_API_KEY: abc
+      WANDB_PROJECT_ID: entity/project
+env:
+  WANDB_API_KEY: abc
+  WANDB_PROJECT_ID: entity/project
+compare:
+  ignore: []

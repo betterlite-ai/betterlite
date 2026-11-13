@@ -1,6 +1,6 @@
 use std::task::{Context, Poll, Waker};
 
-use betterlite_bedrock::error::BedrockError;
+use crate::helpers::{HelperError, HelperResult};
 use betterlite_bedrock::request_policy::aws_params::{map_auth_aliases, merge_aws_request_params};
 use betterlite_bedrock::request_policy::validation::validate_request_metadata;
 use betterlite_bedrock::request_policy::{
@@ -54,26 +54,13 @@ pub(crate) enum IteratorCall {
     Async,
 }
 
-pub(crate) fn invoke(
-    input: &BedrockRequestPolicyInput,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let policy = BedrockRequestPolicy::from_fields(&input.fields);
-    let failure = |class: &str, status: Option<u16>, message: String| {
-        Box::new(crate::helpers::HelperError {
-            class: class.to_owned(),
-            status,
-            error_type: None,
-            param: None,
-            code: None,
-            message,
-        })
-    };
-    let bedrock_failure =
-        |error: BedrockError| failure("BedrockError", Some(error.status_code()), error.to_string());
-    let value_failure = |error: serde_json::Error| failure("ValueError", None, error.to_string());
+pub(crate) fn invoke(input: &BedrockRequestPolicyInput) -> HelperResult {
+    let policy = (!input.fields.is_empty()).then_some(BedrockRequestPolicy {
+        fields: input.fields.iter().cloned().collect(),
+    });
     let projected = match &input.step {
         PolicyStep::Resolve { litellm_params, caller } => {
-            resolve(policy.as_ref(), litellm_params, caller).map_err(bedrock_failure)?
+            resolve(policy.as_ref(), litellm_params, caller)?
         }
         PolicyStep::Validate { metadata } => metadata
             .iter()
@@ -83,15 +70,15 @@ pub(crate) fn invoke(
             })
             .collect(),
         PolicyStep::Merge { headers, guardrail, litellm_params } => {
-            merge(headers, guardrail, policy.as_ref(), litellm_params).map_err(bedrock_failure)?
+            merge(headers, guardrail, policy.as_ref(), litellm_params)?
         }
         PolicyStep::Aliases { non_default, optional } => {
             let mut params = entries(optional);
             map_auth_aliases(&entries(non_default), &mut params);
-            pairs_json(&params).map_err(value_failure)?
+            pairs_json(&params)?
         }
         PolicyStep::MergeParams { deployment, request } => {
-            pairs_json(&merge_aws_request_params(&entries(deployment), &entries(request))).map_err(value_failure)?
+            pairs_json(&merge_aws_request_params(&entries(deployment), &entries(request)))?
         }
         PolicyStep::Iterate { response, calls } => iterate(response, calls),
     };
@@ -102,7 +89,7 @@ fn resolve(
     policy: Option<&BedrockRequestPolicy>,
     litellm_params: &Value,
     caller: &Value,
-) -> Result<Value, BedrockError> {
+) -> HelperResult {
     let params = entries(litellm_params);
     let caller_value = request_value(caller);
     let resolved = policy.and_then(|owner| owner.resolve(&params, Some(&caller_value)));
@@ -110,7 +97,17 @@ fn resolve(
         resolved.map(|pairs| pairs.into_iter().collect());
     let header = policy
         .map(|owner| owner.metadata_header(&params))
-        .transpose()?
+        .transpose()
+        .map_err(|error| {
+            Box::new(HelperError {
+                class: "BedrockError".to_owned(),
+                status: Some(error.status_code()),
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?
         .flatten();
     let names: Vec<String> = policy
         .iter()
@@ -130,9 +127,19 @@ fn merge(
     guardrail: &[(String, String)],
     policy: Option<&BedrockRequestPolicy>,
     litellm_params: &Value,
-) -> Result<Value, BedrockError> {
+) -> HelperResult {
     let original = headers.iter().cloned().collect();
-    let merged = merge_invoke_headers(&original, guardrail, policy, &entries(litellm_params))?;
+    let merged = merge_invoke_headers(&original, guardrail, policy, &entries(litellm_params))
+        .map_err(|error| {
+            Box::new(HelperError {
+                class: "BedrockError".to_owned(),
+                status: Some(error.status_code()),
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
     Ok(json!(merged.into_iter().collect::<Vec<_>>()))
 }
 
@@ -174,10 +181,22 @@ fn entries(value: &Value) -> Params {
     }
 }
 
-fn pairs_json(params: &Params) -> Result<Value, serde_json::Error> {
+fn pairs_json(params: &Params) -> HelperResult {
     let mut pairs = Vec::new();
     for (key, value) in params {
-        pairs.push(json!([key, json_value(value)?]));
+        pairs.push(json!([
+            key,
+            json_value(value).map_err(|error| {
+                Box::new(HelperError {
+                    class: "ValueError".to_owned(),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: error.to_string(),
+                })
+            })?
+        ]));
     }
     Ok(Value::Array(pairs))
 }
@@ -201,7 +220,7 @@ pub(crate) struct Op;
 impl crate::helpers::Helper for Op {
     type Input = BedrockRequestPolicyInput;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         invoke(input)
     }
 }

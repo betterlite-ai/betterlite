@@ -1,13 +1,13 @@
 id: B699
 milestone: M3 providers
 title: Azure hosted managed-identity protocols
-status: todo
+status: done
 depends_on: [B173, B171, B187, B673, B2213]
 file: tasks/B699-azure-hosted-identity.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1167

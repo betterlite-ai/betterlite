@@ -4,7 +4,7 @@ use std::cell::Cell;
 use std::path::Path;
 
 use betterlite_server::assets::images::{self, AssetLogger};
-use betterlite_server::assets::paths::{self, FilenameError, PathError};
+use betterlite_server::assets::paths::{self, PathError};
 use fixture::Entry;
 use soft_canonicalize::soft_canonicalize;
 use tempfile::TempDir;
@@ -55,9 +55,10 @@ impl crate::helpers::Helper for Op {
             Input::TrySafeJoin { fixture, parts } => run_safe_join(fixture, parts, false),
             Input::IsWithin { fixture, path } => run_is_within(fixture, path),
             Input::JoinWithin { base_dir, parts } => run_join_within(base_dir, parts),
-            Input::SafeFilename { filename } => {
-                Ok(serde_json::Value::String(paths::safe_filename(filename)?))
-            }
+            Input::SafeFilename { filename } => Ok(serde_json::Value::String(
+                paths::safe_filename(filename)
+                    .map_err(|error| classified_error("ValueError", error.to_string()))?,
+            )),
             Input::DetectLocalImageMediaType { header_hex } => run_detect(header_hex),
             Input::ResolveLocalImage { fixture, candidate } => run_resolve(fixture, candidate),
         }
@@ -181,21 +182,9 @@ fn classified_error(class: &str, message: String) -> Box<crate::helpers::HelperE
     })
 }
 
-impl From<std::io::Error> for Box<crate::helpers::HelperError> {
-    fn from(error: std::io::Error) -> Self {
-        classified_error("OSError", error.to_string())
-    }
-}
-
 impl From<Invalid> for Box<crate::helpers::HelperError> {
     fn from(Invalid(message): Invalid) -> Self {
         classified_error("ValueError", message)
-    }
-}
-
-impl From<FilenameError> for Box<crate::helpers::HelperError> {
-    fn from(error: FilenameError) -> Self {
-        Self::from(Invalid(error.to_string()))
     }
 }
 

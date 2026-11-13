@@ -1,0 +1,26 @@
+kind: probe
+name: admission-bounded-queue
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      admission_control:
+        settings:
+          max_in_flight_requests_per_worker: 1
+          max_queued_requests_per_worker: 1
+          admission_queue_timeout_seconds: 1.0
+        root_path: ""
+        requests:
+          - {id: 0, path: /a, behavior: hold}
+          - {id: 1, path: /b, behavior: immediate}
+        steps:
+          - {kind: start, request: 0}
+          - {kind: await_started, request: 0}
+          - {kind: start, request: 1}
+          - {kind: await_queued, queued: 1}
+          - {kind: stats}
+          - {kind: release, request: 0}
+          - {kind: await_started, request: 1}
+          - {kind: complete, request: 0}
+          - {kind: complete, request: 1}
+          - {kind: stats}

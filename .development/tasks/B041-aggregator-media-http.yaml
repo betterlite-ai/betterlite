@@ -1,0 +1,182 @@
+id: B041
+title: Complete aggregator media HTTP coverage and run the family regression
+description: >-
+  Finish the aggregator umbrella with the missing public media proofs. All seven
+  aggregator _complete_* functions and their embedding/speech branches already belong
+  to B8310 and B8311; their tests cover chat and embeddings. B5830's OpenRouter image
+  configs and B5838's Eden AI media configs have only helper cases. Add HTTP fixtures
+  under tools/oracle/cases/http/aggregator-media and run the new hosted-platform and
+  structured-endpoint suites from B9210 and B9211 as this umbrella's closing regression.
+  No product code, provider constructor, route or parser is introduced. The implementation
+  remainder is zero LiteLLM lines; the work is approximately 700 media fixture lines and
+  small binary assets. The two sibling entries split the larger HTTP matrix into bounded
+  tasks, and their cases are direct inputs of this task's family-regression check.
+
+  Use the booted proxy, the existing HTTP case/steps schema and the harness mock provider.
+  Set general_settings.master_key and router_settings.num_retries: 0. Deployment entries
+  under model_list supply litellm_params.model, api_key and api_base, with fixed dummy
+  credentials and bases inside the mock. Eden AI fixtures exercise its /v3 base prefix;
+  OpenRouter fixtures use a base ending /api/v1. EDENAI_API_BASE otherwise defaults to
+  https://api.edenai.run/v3, and OpenRouter image generation otherwise calls
+  https://openrouter.ai/api/v1/chat/completions; neither public default may be contacted.
+  The existing config sections resolve EDENAI_API_KEY and OPENROUTER_API_KEY. No new
+  setting or alternative key policy belongs in this task.
+
+  openrouter-generation uses openrouter/google/gemini-2.5-flash-image with size 1792x1024
+  and quality high. The captured request goes to /api/v1/chat/completions with one user
+  text message and image_config {aspect_ratio: '16:9', image_size: '4K'}, without modalities.
+  Return two images in choices[].message.images, one data URL and one ordinary URL, plus
+  explicit usage with prompt_tokens, completion_tokens_details.image_tokens, total_tokens
+  and numeric cost. Compare the ImageResponse data, input/output usage and stable cost
+  headers the image route exposes. openrouter-edit uploads a tiny PNG through the existing
+  multipart fixture mechanism with prompt, model, size and quality fields. Capture the
+  JSON chat request: image_url data first, text second, modalities [image, text], no
+  multipart provider body. Its reply includes prompt_tokens_details.image_tokens, proving
+  input text tokens are prompt minus image tokens rather than generation's all-text count.
+
+  edenai-image uses edenai/openai/gpt-image-1-mini with n, size and output_format, expecting
+  /v3/images/generations and seller model openai/gpt-image-1-mini. Return deterministic
+  image data, usage and top-level cost. edenai-transcription uses edenai/openai/whisper-1
+  with a WAV upload, language en and response_format json, then a text-format step. Verify
+  /v3/audio/transcriptions receives a file and flat form fields, and preserve the returned
+  transcription text and JSON usage. The JSON reply's top-level cost is not a replacement
+  for its transcription text. edenai-speech uses edenai/openai/tts-1, input, voice alloy,
+  response_format mp3 and speed. Capture the JSON body at /v3/audio/speech and return a
+  small deterministic byte fixture with x-edenai-cost. Use a UTF-8-safe mock byte sequence
+  for this transport proof because the current oracle renders audio/mpeg as text; compare
+  every byte and content-type instead of ignoring the audio body. This is a mock transport
+  response, not an audio codec test.
+
+  edenai-video follows create, status, list and content through the existing video routes.
+  Configure edenai/pruna/p-video, EDENAI_API_KEY with the dummy provider key and
+  EDENAI_API_BASE at the same mock /v3 base so list's direct-provider path has credentials
+  and cannot escape to the public default. Create with prompt and a
+  mapping input_reference accepted by the JSON route, keeping that map in the provider
+  JSON rather than converting it into a file. Return fixed video metadata and top-level
+  cost; capture the returned id separately on each side for the status/content requests
+  using the existing steps capture syntax. Check usage.provider_reported_cost_usd after
+  create and status. Supply the existing custom_llm_provider header/query hint for list
+  and retain its query_params nesting. Follow successful content with mock 404 replies
+  for status, list and content: Eden's raise_for_status must prevent error bytes from
+  becoming a successful video response. Use the existing byte fixture format with a
+  deterministic UTF-8-safe payload; no codec or new binary comparator is needed.
+
+  media-auth-errors configures these same deployments and sends valid image, audio and
+  video requests without proxy Authorization, then a configured upstream 401 on an
+  authenticated Eden image call. Compare HTTP status and the complete error envelope
+  except /error/message, whose wording is betterlite's. Missing proxy auth must consume
+  no mock answer. The non-error cases compare client content-type, upstream authorization
+  and content-type, paths and bodies. Keep image data, usage and cost fields compared;
+  only individually identified generated ids/timestamps may be ignored. Mock responses
+  should supply fixed values wherever the provider controls them.
+
+  Paths and aliases, already registered by B082, B083, B3343 and B3344: POST
+  /v1/images/generations, /images/generations and
+  /openai/deployments/{model:path}/images/generations; POST /v1/images/edits, /images/edits
+  and /openai/deployments/{model:path}/images/edits; POST /v1/audio/transcriptions and
+  /audio/transcriptions; POST /v1/audio/speech and /audio/speech; POST and GET /v1/videos
+  and /videos; GET /v1/videos/{video_id} and /videos/{video_id}; GET
+  /v1/videos/{video_id}/content and /videos/{video_id}/content. Cover each alias once with
+  steps distributed across the relevant case. There are no /openai/v1 or provider-prefix
+  aliases for these handlers. B8610's area aggregation, B8634's search/decisions mount,
+  B8606's NVIDIA/OpenRouter passthrough mount and B8580's Eden Messages binding remain
+  their owners' work. In particular, this task never merges any router again.
+scope:
+  paths:
+    - tools/oracle/cases/http/aggregator-media/**
+    - tools/oracle/fixtures/multipart-oracle/aggregator-media/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8319-L8333
+    why: B8311's existing Eden speech dispatch is exercised, not reimplemented.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openrouter.py#L1-L7
+    why: The whole residual type file has no executable functions; B7929 owns its Python TypedDict surface.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/image_generation/transformation.py#L68-L409
+    why: B5830's image-generation projection and usage are the observable media assertions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openrouter/image_edit/transformation.py#L83-L368
+    why: B5830's multipart-to-JSON edit composition and input-image usage split.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/common_utils.py#L18-L80
+    why: B6100 owns Eden's default base, authorized headers and reported-cost extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/image_generation/transformation.py#L25-L114
+    why: B5838's image body and cost projection through B082.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/audio_transcription/transformation.py#L25-L91
+    why: B5838's form fields, JSON cost and text response branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/text_to_speech/transformation.py#L21-L83
+    why: B5838's speech request and x-edenai-cost response header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/videos/transformation.py#L27-L148
+    why: B5838's JSON input_reference, reported usage cost and GET error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L67-L224
+    why: Existing generation decorators, dispatch and response headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L226-L277
+    why: Existing edit decorators and multipart entry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12522-L12653
+    why: Existing speech aliases, authenticated entry, cost headers and audio content type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12655-L12733
+    why: Existing transcription aliases, upload handling and auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L33-L119
+    why: B3343's video creation aliases and body handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L121-L306
+    why: Video list/status aliases and provider hints remain B3343's.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L308-L411
+    why: B3344's content aliases and byte response transport.
+dod:
+  - text: OpenRouter generation and editing reach its chat endpoint through every image alias, preserving their different request modalities and image usage.
+    proof: [image-cases, oracle]
+  - text: Eden image, transcription and speech routes pass seller models and credentials and retain the provider's payload, content type and reported cost.
+    proof: [eden-media-cases, oracle]
+  - text: Eden video creation and retrieval preserve input_reference and usage, while failed status, list and content responses remain HTTP errors.
+    proof: [video-case, oracle]
+  - text: Auth rejection happens before media transport and an upstream authentication failure keeps LiteLLM's status, type, param and code.
+    proof: [auth-case, oracle]
+  - text: The hosted-platform and structured-endpoint fixtures supplied by the two new parts pass against the same built gateway as the final media suite.
+    proof: [family-regression, oracle]
+checks:
+  optional: []
+  commands:
+    - id: image-cases
+      why: Both OpenRouter image projections require newly added HTTP cases.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/aggregator-media)" && test -f tools/oracle/cases/http/aggregator-media/openrouter-generation.yaml && test -f tools/oracle/cases/http/aggregator-media/openrouter-edit.yaml
+    - id: eden-media-cases
+      why: No prior task proves all three Eden media families through their public routes.
+      run: test -f tools/oracle/cases/http/aggregator-media/edenai-image.yaml && test -f tools/oracle/cases/http/aggregator-media/edenai-transcription.yaml && test -f tools/oracle/cases/http/aggregator-media/edenai-speech.yaml
+    - id: video-case
+      why: Helper-only video tests cannot prove provider selection or GET error serialization.
+      run: test -f tools/oracle/cases/http/aggregator-media/edenai-video.yaml
+    - id: auth-case
+      why: The media boundary needs a real auth rejection with no captured upstream request.
+      run: test -f tools/oracle/cases/http/aggregator-media/media-auth-errors.yaml
+    - id: family-regression
+      why: The final umbrella directly consumes its two new parts' suites and fails on the base before its own media fixtures exist.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/aggregator-media)" && cargo run --locked -p betterlite-oracle -- tools/oracle/cases/http/hosted-platform-remainder tools/oracle/cases/http/aggregator-structured
+oracle_cases:
+  - tools/oracle/cases/http/aggregator-media/openrouter-generation.yaml
+  - tools/oracle/cases/http/aggregator-media/openrouter-edit.yaml
+  - tools/oracle/cases/http/aggregator-media/edenai-image.yaml
+  - tools/oracle/cases/http/aggregator-media/edenai-transcription.yaml
+  - tools/oracle/cases/http/aggregator-media/edenai-speech.yaml
+  - tools/oracle/cases/http/aggregator-media/edenai-video.yaml
+  - tools/oracle/cases/http/aggregator-media/media-auth-errors.yaml
+deviations: []
+out_of_scope:
+  - All functions in the OpenRouter image files remain B5830's, all Eden media functions remain B5838's and every Eden common helper remains B6100's; these references specify HTTP observations only.
+  - OpenRouterErrorMessage in types/llms/openrouter.py has no runtime function; B7929 preserves the Python type, while B6080 represents the native streaming error fields.
+  - The only existing task mention of B041 is B1672's resolved B041 -> B024 -> B068 cycle; _as_rate and with_default_cache_read_rate remain B1672's, with no handoff here.
+  - In main.py, _complete_fireworks_ai, _complete_together_ai, _complete_groq, _complete_cloudflare and their selected embedding branches belong to B8310; _complete_openrouter, _complete_vercel_ai_gateway, _complete_edenai and their embedding/speech branches belong to B8311.
+  - The remaining main.py provider functions stay with their existing owners, grouped by _complete_ suffix below; no provider dispatch function is built by this fixture task.
+  - B024 owns text_completion_openai and custom_openai; B025 azure and azure_text; B026 azure_ai; B027 anthropic and anthropic_text; B028 bedrock, bedrock_mantle and amazon_nova; B031 vertex_ai and vertex_ai_beta; B036 xai, mistral and text_completion_codestral; B037 cohere_chat.
+  - B038 owns deepseek, heroku, cometapi, compactifai, datarobot, text_completion_inception, gradient_ai, gdc and bytez; B039 owns maritalk, nadir and ovhcloud; B049 ragflow; B046 fal_ai; B050 a2a, langgraph and langflow.
+  - B8157 owns hosted_vllm, oobabooga, vllm, ollama, ollama_chat, triton, petals and lemonade; B8312 minimax, gigachat and nlp_cloud; B8330 oci, databricks and snowflake; B8331 sap, sagemaker_chat, sagemaker, watsonx and watsonx_text; B8332 replicate, huggingface and predibase; B044 aiohttp_openai, custom, custom_providers and _custom_api_first_output.
+  - B5650 owns _resolve_control_options, _is_claude_tool_target, _without_anthropic_only_tool_keys, _drop_anthropic_only_tool_keys, _ProxyAuthHeadersProvider.get_auth_headers, _proxy_auth_headers, _build_custom_pricing_entry, _get_router_deployment_id and _register_custom_pricing_for_request; B198 owns _provider_config_items, _locals_snapshot, _dispatch_metadata and the _dispatch_client_http, _dispatch_client_azure and _dispatch_client_openai accessors.
+  - B158 owns the LiteLLM, Chat, Completions and AsyncCompletions constructors/create methods, config_completion and __getattr__; B5655 and B5656 own completion/acompletion preparation and execution, cached response projection, _resolve_dispatched_chat_response, _async_streaming and acount_tokens; B5659 exposes the native Python completion calls.
+  - B255 owns mock_completion, _handle_mock_potential_exceptions, both _handle_mock_timeout variants, both _sleep_for_timeout variants, admission_input_tokens and admitted_prompt_token_counter; B500 owns _is_openai_backed_api_base and _resolve_openai_api_base; B5651 owns responses_api_bridge_check; B5656 owns completion_with_retries and acompletion_with_retries, while B7841 owns responses_with_retries and aresponses_with_retries.
+  - B6041 and B159 own aembedding and embedding wrappers around the provider arms; B6042 owns atext_completion, text_completion, _resolve_dispatched_text_completion_response and _resolve_pending_chat_response; B158 and B159 retain aadapter_completion, aadapter_generate_content and adapter_completion; B015 owns moderation/amoderation; B1082, B1083 and B1084 own transcription/atranscription and speech/aspeech around the provider branches, with B6045's Python exposure.
+  - B4449 owns ahealth_check; B2239 print_verbose; B195 _load_default_encoding; B196 _load_module_encoding and _get_encoding; B2227 owns stream_chunk_builder_text_completion, _reported_cost_is_priced_by_calculator, _stream_builder_response_cost, _joined_streamed_citations, _stream_builder_model_map_cost, _set_stream_builder_response_cost, _stamp_streaming_usage_cost, _stream_choice_delta, _delta_carries_more_than_text, _simple_text_part and stream_chunk_builder.
+  - HTTP mounts are B082, B083, B3343 and B3344 through B1100 and B8610; B8626, B8701 and B8728 concern MCP only. B9210 and B9211 own the other new HTTP fixtures, not production code.
+pitfalls:
+  - OpenRouter generation omits modalities while edit adds [image, text], although both post to chat/completions.
+  - Eden speech reads x-edenai-cost from headers, whereas image and transcription inspect the JSON cost field.
+  - Eden video's list handler nests query parameters, so do not invent a flat model query that the pinned handler never reads.
+  - Captured video ids belong to each proxy process and must be substituted independently before status or content requests.
+  - A successful helper invocation is not evidence that an image or audio route selected these configs; every new fixture must boot the proxy.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

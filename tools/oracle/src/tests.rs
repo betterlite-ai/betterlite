@@ -24,7 +24,7 @@ use serde_json::Value;
 use crate::OracleError;
 use crate::artifacts;
 use crate::case::{
-    Case, Compare, Ignore, LoadedCase, UpstreamAnswer, load_cases, parse_helper_case,
+    Case, Compare, Ignore, LoadedCase, UpstreamAnswer, helper::validate_helper, load_cases,
 };
 use crate::cli::Options;
 use crate::compare;
@@ -524,11 +524,12 @@ fn replays_the_helper_case_corpus() {
         .map(|entry| {
             let path = entry.unwrap().path();
             let source = fs::read_to_string(path).unwrap();
-            parse_helper_case(&source)
+            let parsed = serde_saphyr::from_str(&source).map_err(|error| error.to_string())?;
+            validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
         })
         .collect::<Result<Vec<_>, _>>();
     results.unwrap();
-    assert!(parse_helper_case("kind: helper\nname: ''\ncall: {url_path: {function: segment, value: id}}\nenv: {}\ncompare: {ignore: []}\n").is_err());
+    assert!(serde_saphyr::from_str("kind: helper\nname: ''\ncall: {url_path: {function: segment, value: id}}\nenv: {}\ncompare: {ignore: []}\n").map_err(|error| error.to_string()).and_then(|parsed| validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())).is_err());
 }
 
 #[test]
@@ -774,10 +775,18 @@ fn artifact_write_reports_a_missing_gateway_log() {
 fn runner_selects_cases_and_gateways() {
     let request = request(Value::Null);
     assert_eq!(
-        runner::request_slice(slice::from_ref(&request), 0, 1).len(),
+        slice::from_ref(&request)
+            .get(0_usize..0_usize.saturating_add(1))
+            .unwrap_or_default()
+            .len(),
         1
     );
-    assert!(runner::request_slice(slice::from_ref(&request), 1, 1).is_empty());
+    assert!(
+        slice::from_ref(&request)
+            .get(1_usize..1_usize.saturating_add(1))
+            .unwrap_or_default()
+            .is_empty()
+    );
     let normal = <Options as clap::Parser>::try_parse_from(["oracle", "cases"]).unwrap();
     runner::run_cases(&normal, Vec::new()).unwrap_err();
     let group_root = env::temp_dir().join(format!("betterlite-empty-group-{}", process::id()));

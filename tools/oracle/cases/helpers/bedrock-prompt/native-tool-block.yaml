@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-prompt-native-tool-block
+call:
+  bedrock_prompt:
+    messages:
+      - {role: user, content: ground}
+    tools:
+      - toolSpec: {name: native, description: kept, inputSchema: {json: {type: object}}}
+      - type: function
+        function:
+          name: get_weather
+          description: Get the weather
+          parameters: {type: object}
+      - systemTool: {name: nova_grounding}
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+env: {}
+compare: {ignore: []}

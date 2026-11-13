@@ -1,0 +1,131 @@
+id: B8081
+title: Native A2A client calls in the Python crate
+description: >-
+  The Python A2A functions have to reach the Rust A2A client. This task adds the native bridge for them to crates/betterlite-python:
+  a client handle, a stream handle, a few card functions and an error type. It holds no A2A logic. It moves JSON text across the
+  language boundary and runs futures, the same way B5659 does for completion. Read B5659's task file first and follow its
+  family rules: this is the `a2a` family, it owns `src/a2a.rs`, `src/a2a/**` and `python/betterlite/_native_a2a.pyi`, and
+  `src/a2a.rs` has one `pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()>`. B5369 declares the `a2a` family in `lib.rs` and `_native.pyi` with a stub `register` that this task fills. This task also adds the `betterlite-a2a` dependency to the crate Cargo.toml.
+
+
+  Every function that does I/O returns an awaitable made with `pyo3_async_runtimes::tokio::future_into_py`, since LiteLLM's A2A
+  entry points are async (`send_message` wraps `asend_message` in Python). `create_client(settings)` takes JSON with `base_url`,
+  `timeout` (default `DEFAULT_A2A_AGENT_TIMEOUT`, 6000.0, read through B002 as B4801 does), `extra_headers`, `streaming`
+  (default false) and `relative_card_path`. It resolves the card with B4800, builds the handle with B4801's create function and
+  gives a `NativeA2aClient` that keeps the handle. `get_agent_card(settings)` takes the same keys and gives the card as JSON
+  text, using B4800 only (LiteLLM's `aget_agent_card` builds no client).
+
+
+  `NativeA2aClient` has `base_url`, `agent_card()` (JSON text, the card after B4800's interface normalization and URL fixing),
+  `send_message(call)` and `send_message_streaming(call)`. `call` is JSON with `request` (the A2A JSON-RPC request body as a
+  map), `api_base`, `litellm_params`, `agent_id`, `agent_extra_headers`, `litellm_call_id`, `litellm_trace_id` and `metadata`.
+  Both go to B4814's send entry points, which already do the routing to the completion bridge when `litellm_params` has
+  `custom_llm_provider`, the trace and agent headers, usage and the accounting of B4810. `send_message` gives the response as
+  JSON text with the keys of `LiteLLMSendMessageResponse` (`id`, `jsonrpc`, `result`, `error`, `usage`) plus `_hidden_params`.
+  `send_message_streaming` gives a `NativeA2aStream`, a `#[pyclass]` over B4810's streaming iterator behind a
+  `tokio::sync::Mutex`, with `anext_chunk()` (chunk JSON text, or None at the end) and `aclose()`. The module-level
+  `send_message_direct(call)` and `send_message_streaming_direct(call)` are the same entry points with no client handle; they
+  take `api_base` and let B4814 create the client, as `asend_message(api_base=...)` does.
+
+
+  Pure helpers over a card or a URL, each taking and giving JSON text or a plain value, call B4800: `is_localhost_or_internal_url(url)`,
+  `normalize_agent_card_interfaces(card)`, `get_agent_card_url(card)`, `set_agent_card_url(card, url)` and
+  `fix_agent_card_url(card, base_url)`.
+
+
+  `NativeA2aError` comes from `pyo3::create_exception!` with `Exception` as base. Its one argument is JSON text with `type`
+  ("A2AError", "A2AConnectionError", "A2AAgentCardError", "A2AAgentCardDiscoveryError", "A2ALocalhostURLError",
+  "ValueError" or "RuntimeError"), `message` (without the "litellm.A2AError: " prefix, which Python adds), `status_code`,
+  `llm_provider`, `url`, `model`, `litellm_debug_info`, `max_retries`, `num_retries`, `base_url`, `localhost_url`, `failures`
+  (a list of `{path, error}`) and `original_error` (text). Conversions between JSON text and SDK types sit in
+  `src/a2a/convert.rs` and need no interpreter, so `cargo nextest` covers them. Test names there start with `request_`,
+  `result_` and `error_`. `python/betterlite/_native_a2a.pyi` types everything above.
+
+
+  The Python tests run the wheel against `tests/a2a_server.py`, a small server written with `http.server`. It serves the card at
+  `/.well-known/agent-card.json` (and 404 at the other two paths, or a card only at `/.well-known/agent.json` on demand), answers
+  `POST /` JSON-RPC `message/send` with a message result, answers `message/stream` with a server-sent-events body of three
+  events, can put `http://localhost:9/` in the card's `url` to test the localhost recovery, and records every request header.
+  B8083 reuses it.
+scope:
+  paths:
+  - crates/betterlite-python/src/a2a.rs
+  - crates/betterlite-python/src/a2a/**
+  - crates/betterlite-python/python/betterlite/_native_a2a.pyi
+  - crates/betterlite-python/Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-python/tests/a2a_server.py
+  - crates/betterlite-python/tests/test_native_a2a.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L404-L552
+  why: The send call and the keys it takes, which `call` must carry.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L627-L764
+  why: The streaming send.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L767-L890
+  why: create_a2a_client and aget_agent_card, the two functions the settings JSON stands for.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L49-L158
+  why: The card and URL helpers exposed as plain functions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L12-L160
+  why: The error classes and fields the error JSON carries.
+dod:
+- text: A settings or call JSON turns into the Rust arguments, and malformed text gives an error with no panic.
+  proof: [a2a-native-request]
+- text: Every Rust A2A error and result turns into `NativeA2aError` JSON or result JSON with the fields listed above.
+  proof: [a2a-native-result]
+- text: "`create_client`, `get_agent_card` and `send_message` work against a local agent, and the extra headers reach the card request and the send request."
+  proof: [a2a-native-send]
+- text: A stream gives its events in order, None at the end, and closes once.
+  proof: [a2a-native-stream]
+- text: A card with a localhost URL is recovered from, and a dead agent raises `NativeA2aError` with the connection type.
+  proof: [a2a-native-errors]
+- text: The five card helpers match B4800 on the same input.
+  proof: [a2a-native-card]
+- text: The stubs pass strict basedpyright, and the Python tests pass ruff.
+  proof: [python-lint]
+- text: >-
+    This task adds the `betterlite-a2a` dependency and any other crate it uses to Cargo.toml, and no unused dependency.
+  proof: [a2a-native-request]
+checks:
+  optional: []
+  commands:
+  - id: a2a-native-request
+    why: Settings or a call change on the way in.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^a2a::convert::tests::request_/)'
+  - id: a2a-native-result
+    why: A response field or an error field gets lost on the way out.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^a2a::convert::tests::(result|error)_/)'
+  - id: a2a-native-send
+    why: A send call is not wired to the Rust entry point or drops headers.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_a2a.py -k send
+  - id: a2a-native-stream
+    why: A stream hangs at its end or leaks its connection.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_a2a.py -k stream
+  - id: a2a-native-errors
+    why: A failing agent looks like a success or a generic error.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_a2a.py -k errors
+  - id: a2a-native-card
+    why: A card helper is missing or changes the card.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_a2a.py -k card
+  - id: python-lint
+    why: Stubs that drift from the native names break every typed caller.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The native client handle holds no `a2a.client.Client` object, and a caller cannot pass an SDK client into a native call.
+  why: The a2a-sdk is a Python library and the wheel has no dependency on it. The handle comes from `create_client` here.
+out_of_scope:
+- The Python `create_a2a_client`, `aget_agent_card`, `asend_message`, `asend_message_streaming` and `send_message` functions, the error classes and the dict-backed request and response objects are B8083.
+- The `A2AClient` class and the package `__init__` files are B168.
+- The A2A logic itself is B4800, B4801, B4810, B4813 and B4814. This task only calls their public items. If one is missing, stop and report a blocker.
+- The MCP natives are B8080.
+pitfalls:
+- A stream holds its mutex only while it waits for one chunk, so `aclose()` has to cancel the wait through a signal and not queue behind it.
+- '`agent_extra_headers` wins over the trace and agent headers B4814 sets, so pass it as given and do not merge it here.'
+- The localhost retry belongs to B4801 and B4813, so a second attempt here would send the request three times.
+- '`status_code` of `A2AAgentCardError` is 404 by default but a discovery error carries its own, so send it as a number and never default it in Python.'
+- A panic inside `future_into_py` turns into a Python exception with no error JSON, so return errors and never unwrap.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

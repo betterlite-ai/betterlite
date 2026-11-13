@@ -1,0 +1,7 @@
+kind: helper
+name: responses-usage-seed
+call:
+  responses_usage:
+    usage: {input_tokens: 2, output_tokens: 3, total_tokens: 5}
+env: {}
+compare: {ignore: []}

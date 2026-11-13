@@ -1,0 +1,17 @@
+kind: helper
+name: oci-common-signing-seed
+call:
+  b5940:
+    function: sign
+    explicit:
+      oci_user: seeded-user
+      oci_fingerprint: seeded-fingerprint
+      oci_tenancy: seeded-tenancy
+      oci_key: |-
+        -----BEGIN PRIVATE KEY-----\nseeded\n-----END PRIVATE KEY-----
+    env: {}
+    api_base: https://host/20231130/actions/chat
+    request: {}
+    headers: {}
+env: {}
+compare: {ignore: []}

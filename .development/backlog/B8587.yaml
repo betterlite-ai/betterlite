@@ -1,0 +1,14 @@
+id: B8587
+milestone: M8 platform
+title: Python routing plugin resolution and the startup hooks port
+status: todo
+depends_on: [B8378, B165]
+file: tasks/B8587-routing-plugin-resolve.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

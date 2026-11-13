@@ -83,7 +83,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^alert_digest::/)'
     - id: alert-delivery-tests
       why: periodic flush, async batch sending or webhook alert delivery tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^alert_delivery::/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(alert_batching|alert_digest|alert_teams)::(.*::)?alert_delivery::/)'
 oracle_cases: []
 deviations:
   - what: WebhookEvent carries budget spend data (spend, max_budget, soft_budget) and a hashed key token; webhook POST serializes all fields to JSON and sends to an externally configured URL.

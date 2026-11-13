@@ -1,0 +1,8 @@
+kind: helper
+name: query-uses-last-message
+call:
+  vector_context_shaping:
+    operation: query_uses_last_message
+    messages: [{role: user, content: first}, {role: assistant, content: last}]
+env: {}
+compare: {ignore: []}

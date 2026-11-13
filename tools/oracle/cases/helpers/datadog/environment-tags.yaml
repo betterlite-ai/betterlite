@@ -9,7 +9,7 @@ call:
       DD_VERSION: v1
       DD_BASE_URL: https://dd.example
       USE_DDTRACE: " TRUE "
-      USE_DDPROFILER: "1"
+      USE_DDPROFILER: "false"
     request_tags: [" Foo.Bar ", "A__B / C"]
     metadata:
       user_api_key_team_alias: ""

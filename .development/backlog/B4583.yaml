@@ -1,15 +1,15 @@
 id: B4583
 milestone: M8 platform
 title: Local autoroute configuration and interactive tier selection
-status: todo
-depends_on: [B4575]
+status: done
+depends_on: [B4575, B192, B4560]
 file: tasks/B4583-cli-autoroute-configuration.yaml
 covers:
   - "litellm/proxy/client/cli/commands/autoroute/{config,wizard}.py"
   - "litellm/proxy/client/cli/commands/autoroute/process.py"
 parent: B134
 split_from: B134
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1306

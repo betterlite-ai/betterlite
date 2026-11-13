@@ -1,0 +1,42 @@
+kind: helper
+name: image-transport-selection
+call:
+  bedrock_other_image_call:
+    function: image_transport_selection
+    probes:
+      - supplied: none
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": []}'}
+      - supplied: async
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": []}'}
+      - supplied: sync
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": []}'}
+      - aimg_generation: true
+        supplied: none
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": []}'}
+      - aimg_generation: true
+        supplied: none
+        timeout_ms: 2500
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": []}'}
+      - aimg_generation: true
+        supplied: async
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": []}'}
+      - aimg_generation: true
+        supplied: sync
+        timeout_ms: 2500
+        credentials: {access_key_id: AKIAIOSFODNN7EXAMPLE, secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY}
+        optional_params: {aws_access_key_id: AKIAIOSFODNN7EXAMPLE, aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY, aws_region_name: us-east-1}
+        reply: {body: '{"images": []}'}
+env: {}
+compare: {ignore: []}

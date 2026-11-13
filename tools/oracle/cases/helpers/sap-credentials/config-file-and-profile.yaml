@@ -1,0 +1,13 @@
+kind: helper
+name: sap-credentials-config-file-and-profile
+call:
+  b5950:
+    function: credentials
+    environment:
+      vars:
+        AICORE_PROFILE: dev
+      files:
+        /home/sap/.aicore/config_dev.json: '{"AICORE_CLIENT_ID": "profile-client", "client_secret": "profile-secret", "base_url": "https://profile.example.com", "AICORE_RESOURCE_GROUP": "profile-rg", "AICORE_CLIENT_SECRET": null}'
+      home: /home/sap
+env: {}
+compare: {ignore: []}

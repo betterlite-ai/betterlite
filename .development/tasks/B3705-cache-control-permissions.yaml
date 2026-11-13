@@ -9,6 +9,8 @@ scope:
   paths:
     - crates/betterlite-server/src/hooks/cache_control_permissions.rs
     - crates/betterlite-server/src/hooks/cache_control_permissions/**
+    - crates/betterlite-auth/src/resolved_key/auth.rs
+    - crates/betterlite-auth/src/resolved_key/auth/**
     - Cargo.toml
   lint_tables: false
 
@@ -33,6 +35,8 @@ dod:
     proof: [cache-control-error-handling]
   - text: Tests cover success (no cache, empty cache, nonempty allowlist with permitted keys), rejection (unauthorized key), absence (None/empty allowlist).
     proof: [cache-control-behavior-tests]
+  - text: Read cache-control permissions through typed principal data without serializing unrelated fields. Regression tests prove that mixed-type allowlists and opaque tracing spans cannot bypass a nonempty allowlist.
+    proof: [cache-control-behavior-tests, cache-control-principal-tests]
 
 checks:
   optional: []
@@ -56,6 +60,10 @@ checks:
       why: Behavior tests for cache control permissions are missing or do not pass
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^hooks::cache_control_permissions::/)'
 
+    - id: cache-control-principal-tests
+      why: Typed principal permission access must remain independent of opaque tracing spans
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/resolved_key::auth::tests::.*cache_control/)'
+
 oracle_cases: []
 
 deviations:
@@ -65,11 +73,11 @@ deviations:
 
 out_of_scope:
   - "Hook registration and dispatcher mechanics (belongs to the hook framework task)"
-  - "UserAPIKeyAuth construction and field resolution (belongs to B720 and B732)"
+  - "UserAPIKeyAuth construction and field resolution remain owned by B720 and B732, except the narrow typed cache-control access and opaque-span regression support required by this hook."
   - "DualCache implementation (belongs to B360)"
 
 pitfalls:
-  - "allowed_cache_controls is a list of strings or None; an empty list (not None) must also permit all controls per the source comment on prisma empty-list semantics."
+  - "allowed_cache_controls is a heterogeneous list or None. Compare cache keys against string entries without treating other element types as a read failure; None and an empty list permit all controls."
   - "The cache_args dict keys are strings; iteration must handle the case where cache_args is present but empty (no iteration, no error)."
   - "HTTPException with status_code must be imported from fastapi; it is not a standard Rust Result type."
   - "Debug logging must include the unauthorized key name for troubleshooting; the error message shows it to the user."

@@ -1,0 +1,14 @@
+id: B9461
+milestone: M6 guardrails
+title: TypeSafe guardrail construction and tool result compaction
+status: todo
+depends_on: [B3798, B5471, B3663, B3664, B8218, B173, B224, B3540]
+file: tasks/B9461-typesafe-runtime.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

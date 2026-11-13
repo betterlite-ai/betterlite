@@ -1,0 +1,30 @@
+task: B4325
+deviations:
+  - what: >-
+      The Cluster pubsub client always connects to the first startup node. After LiteLLM's
+      client has initialized, it may use the node redis-py discovered as default.
+    why: >-
+      redis-rs has no default node. Redis Cluster broadcasts PUBLISH to every node, so any
+      node serves pub/sub.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L290-L315
+  - what: >-
+      A RedisCache over a Cluster client answers a cross-slot MGET. redis-py raises an error
+      there, and LiteLLM turns that into a miss.
+    why: >-
+      redis-rs splits MGET per slot on every Cluster connection, so failing would take extra
+      code to lose a working read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cluster_cache.py#L27-L57
+  - what: >-
+      The shared client store keeps a client until it is evicted or removed, where LiteLLM's
+      LLMClientCache expires every entry after 600 seconds and builds a new pool.
+    why: >-
+      The TTL only rebuilds a pool, and the task sets no clock for it; eviction at 200 entries
+      still bounds the store.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/llm_caching_handler.py#L12-L81
+  - what: >-
+      The derived pubsub node record drops read_from_replicas, where LiteLLM keeps the
+      cluster's redis_connect_func in the node pool's kwargs.
+    why: >-
+      The flag configures a cluster client, not a plain node connection; betterlite's node
+      record has no leaf that would use it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L290-L315

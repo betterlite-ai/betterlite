@@ -1,7 +1,7 @@
 id: B733
 title: Typed key and management-object caches
 description: >-
-  Implement auth_cache in betterlite-auth over B4293 DualCache, B2226 InMemoryCache, B4291 CacheCodec and B126 Redis.
+  Implement auth_cache in betterlite-auth over B4293 DualCache, B2226 InMemoryCache, B4291 CacheCodec and B5640 Redis.
   Own user_api_key_cache.py and the shallow cache copy at auth_checks.py L3970-L3978. Reuse B2314's
   resolved-key records; there is no principal resolver, SQL access, key hashing or response-cache
   namespace transformation here. Both in-memory partitions share the same Redis client and literal
@@ -17,7 +17,7 @@ description: >-
   Redis attachment is a no-op for None or an already attached client, changes the TTL only when a
   new client is attached with a nonnull TTL, and never backfills existing memory. Preserve independent
   eviction; ordinary-object churn cannot evict key objects. Underlying expiry, item-size refusal,
-  Redis failures and request batching remain B2226/B4293/B4295/B126 behavior, not a second implementation.
+  Redis failures and request batching remain B2226/B4293/B4295/B4331 behavior, not a second implementation.
 
   Sync and async reads pass local_only=false by default, trace context and extra cache options to
   the selected backend. Without model_type return the raw cached payload, including false/zero/empty
@@ -68,13 +68,13 @@ description: >-
   only None/missing uses DEFAULT_MANAGEMENT_OBJECT_IN_MEMORY_CACHE_TTL. That env var is int() at
   import, default 60; empty/noninteger input stops startup, with no fallback and no positivity clamp.
   In betterlite-config also support general_settings.user_api_key_cache_ttl=None and
-  user_api_key_cache_max_size=None. B124 creates the gateway cache with memory TTL 60; a configured
+  user_api_key_cache_max_size=None. B8374 creates the gateway cache with memory TTL 60; a configured
   nonnull user_api_key_cache_ttl is float-converted and updates BOTH memory and Redis defaults.
   Malformed TTL fails config loading; zero/negative/fractional values are retained, while nonfinite
   or unrepresentable durations get the native checked-duration error. max_size uses the source
   positive integer field: None resets 200, positive integer/coercible integral values pass, zero,
   negative and nonintegral values fail. These settings do not rename the fallback env var or turn
-  it into a YAML key. B124 owns startup installation and database-sourced settings precedence,
+  it into a YAML key. B8374 owns startup installation and B8371 on_cache_size_changed owns database-sourced settings precedence,
   including its warn-and-ignore invalid DB max-size path; this task supplies the typed cache settings.
 
   _copy_user_api_key_auth_for_cache copies the model without revalidating, then clears exactly
@@ -86,7 +86,7 @@ description: >-
   Use the auth_cache helper for key/sentinel/TTL/copy/codec projections and deterministic in-memory
   typed-read logging; it does not fake a FastAPI route or a Redis server. Native recording-backend tests prove partition ordering and
   failure behavior against the actual wrapper. decode_cached_auth consumes Redis payload bytes
-  through the B4291/B126 JSON boundary and requested typed model, then applies the same miss/logging
+  through the B4291/B4324 JSON boundary and requested typed model, then applies the same miss/logging
   policy; cap input at 1048576 bytes and depth 64. Create the auth fuzz workspace here with this
   real decoder target, seed malformed/truncated/scalar/duplicate-field/provenance/limit inputs,
   and replay its corpus separately from behavior tests. Duplicate fields retain the underlying
@@ -193,7 +193,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6708-L6728
     why: Cache settings read sites; startup applies one float TTL to both tiers and validates positive max-size.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2611-L2613
-    why: B124 installs the gateway cache with the 60-second memory default declared at L1888-L1889.
+    why: B8374 installs the gateway cache with the 60-second memory default declared at L1888-L1889.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2847-L2855
     why: Nullable positive integer max-size setting; preserve validation rather than inventing fallback.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_pydantic_utils.py#L39-L91
@@ -289,8 +289,8 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_pydantic_utils.py#L81-L90
 out_of_scope:
   - UserApiKeyCache.flush_cache has no caller at the pin; do not add an auth flush API or cases for it.
-  - B4291 owns CacheCodec, B4293 and B4295 own DualCache behavior and B2226 owns InMemoryCache; B126 owns Redis transport and request pipeline execution.
-  - B124 owns proxy_server startup/DB-setting installation and ConfigGeneralSettings as a whole; this task supplies only the cache settings and operations they consume.
+  - B4291 owns CacheCodec, B4293 and B4295 own DualCache behavior and B2226 owns InMemoryCache; B5640 owns the RedisCache transport and B4331 request pipeline execution.
+  - B8374 owns proxy_server startup installation, B8371 the DB max-size hook, and B124 keeps ConfigGeneralSettings in _types.py as a whole; this task supplies only the cache settings and operations they consume.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B734 owns _cache_management_object (L2771-L2789), _cache_team_object

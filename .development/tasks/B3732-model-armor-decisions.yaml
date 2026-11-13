@@ -105,7 +105,7 @@ deviations:
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L437-L448"
 
 out_of_scope:
-  - "CustomGuardrail.__init__ and parent update methods (belongs to B104)"
+  - "CustomGuardrail.__init__ and parent update methods (belongs to B5471)"
   - "File scanning and document classification (belongs to B3733)"
   - "Native hook implementations (async_pre_call_hook, async_post_call_success_hook) (belongs to B3734)"
   - "Buffered streaming and response assembly (belongs to B3735)"

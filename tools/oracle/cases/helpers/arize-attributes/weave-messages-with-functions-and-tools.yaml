@@ -1,0 +1,20 @@
+kind: helper
+name: weave-messages-with-functions-and-tools
+call:
+  b3861:
+    function: set_weave_attributes
+    kwargs:
+      messages:
+        - {role: user, content: Hi}
+      optional_params:
+        functions:
+          - {name: legacy_function}
+        tools:
+          - type: function
+            function:
+              name: get_weather
+      standard_logging_object:
+        call_type: acompletion
+    response: null
+env: {}
+compare: {ignore: []}

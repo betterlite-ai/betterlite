@@ -1,0 +1,13 @@
+kind: helper
+name: sap-credentials-validate-pem-mode
+call:
+  b5950:
+    function: validate
+    credentials:
+      client_id: c
+      auth_url: https://auth.example.com/oauth/token
+      base_url: https://api.example.com/v2
+      cert_str: cert
+      key_str: key
+env: {}
+compare: {ignore: []}

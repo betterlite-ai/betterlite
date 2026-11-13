@@ -1,0 +1,81 @@
+id: B8670
+title: Mount UI discovery, invitation link, queued chat and fallback login routes
+description: >-
+  Two finished route modules answer 404 today because nothing merges them into the app. B3211 built `ui_discovery::routes(discovery: Arc<UiDiscovery>)` for GET `/.well-known/litellm-ui-config` and GET `/litellm/.well-known/litellm-ui-config`, and left the merge and the startup inputs to the B078 umbrella, which has no task file. B8599 built the invitation link routes (POST `/invitation/new`, GET `/invitation/info`, POST `/invitation/update`, POST `/invitation/delete`), POST `/queue/chat/completions` and GET `/fallback/login` in crates/betterlite-server/src/invitation_routes.rs, and left the mount to this part. No B1100 registry entry merges either module. This task builds their state from the loaded Config and Shared, mounts them, and proves every path over HTTP.
+
+  Where. crates/betterlite-server/src/app/management.rs is the area file B8610's app.rs calls. The skeleton stubs it with `pub(crate) fn mount(router: Router, state: &Arc<ServerState>) -> Router`, `pub(crate) fn mount_public(router: Router, state: &Arc<ServerState>) -> Router` and `pub(crate) async fn start(state: &Arc<ServerState>)`, and declares `pub(crate) mod discovery;`, `pub(crate) mod invitations;` and `mod tests;`. Fill those three functions and the files app/management/discovery.rs, app/management/invitations.rs and app/management/tests.rs. B8671 adds one merge line to mount_public later, so keep each merge on its own line. Read crates/betterlite-server/src/ui_discovery.rs and invitation_routes.rs on the branch before writing and use the names they export. No statics, no trait objects, native async fn. Management loads nothing at startup, so start stays the empty stub.
+
+  1. Discovery inputs (discovery.rs). `pub(crate) fn discovery_inputs(config: &Config) -> UiDiscoveryInputs` fills B3211's struct once: `settings` is `config.sections.ui_discovery`; `server_root_path` is the scalar SERVER_ROOT_PATH from B4200's section `request_root_paths`, "" when unset; `proxy_base_url` is PROXY_BASE_URL from B7323's section `proxy_base_url`, untouched (None when unset, Some("") when empty); `hide_default_credentials_hint` is B799's should_hide_default_credentials_hint over the values its section loaded; `workers` is an empty Vec, since B8590 refuses worker_registry without a license as open-source LiteLLM does. `sso_configured` is LiteLLM's has_user_setup_sso: true when MICROSOFT_CLIENT_ID, GOOGLE_CLIENT_ID or GENERIC_CLIENT_ID is set (an empty value counts as set) or SAML_IDP_METADATA_URL or SAML_IDP_METADATA_XML is non-empty. B881 builds that rule in betterlite-auth's auth_context_sources; call it, do not write the rule again. No config section reads these five variables at this point, so add a new section `sso_presence` (crates/betterlite-config/src/sections/sso_presence.rs and sso_presence/**; the skeleton adds the stub and the sections.rs lines) with `Settings { microsoft_client_id, google_client_id, generic_client_id, saml_idp_metadata_url, saml_idp_metadata_xml }`, each an Option<String> kept exactly as set (Some("") for an empty value), read through the same EnvironmentLookup the section `request_root_paths` uses, and pass them to B881's function. Tests in sections::sso_presence::tests load each variable unset, empty and set. Never read the environment outside the config crate.
+
+  2. Invitation and queue state (invitations.rs). Build the state B8599's `routes` and `public_routes` take, once, from `state.config` and `state.shared`: `shared.db` for B797's invitation repository and B863's scope check (None when there is no database, so the routes answer LiteLLM's db_not_connected_error), `shared.router` (the RouterHandle, passed as the Arc; it may hold no router until a config or database sync installs one, so the queued chat handler reads it per request and answers no_llm_router when empty), `shared.proxy_logging` for the post-call failure hook, B7324's data generator selector, and the general_settings completion_model and the CLI overrides from the loaded Config. The login form for /fallback/login needs only the hint flag from item 1, so compute it once and share it.
+
+  3. Mount (management.rs). `mount` merges `invitation_routes::routes(...)`, so the four invitation routes and /queue/chat/completions sit inside the auth layers that B8610 applies after the area mounts (LiteLLM puts user_api_key_auth on each). `mount_public` merges `ui_discovery::routes(Arc::new(UiDiscovery::new(discovery_inputs(&state.config))))` and `invitation_routes::public_routes(...)`, because LiteLLM checks no key on the discovery paths or /fallback/login. Merge each router once; axum panics on a duplicate path.
+
+  Tests in app/management/tests.rs (module `app::management::tests`) build a ServerState from the in-memory fakes B8610's tests use and call the routers with tower's oneshot. They assert that discovery_inputs copies each section value (proxy_base_url None, Some("") and a URL; sso_configured from each of the five variables; hide hint on and off; workers empty), that the router mount_public returns answers both discovery paths with the same JSON and /fallback/login with 200 HTML and no Authorization header, that the router mount returns answers /invitation/new and /queue/chat/completions (not 404), and that /fallback/login is not on the mount router.
+
+  HTTP oracle cases through the booted proxy, in tools/oracle/cases/management/wiring/, with no database: GET /.well-known/litellm-ui-config without a key and no flags (200, the defaults); GET /litellm/.well-known/litellm-ui-config with PROXY_BASE_URL set to https://proxy.example.com; the document with DISABLE_ADMIN_UI, LITELLM_ENABLE_MCP_STDIO and LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT set to true; the document with GOOGLE_CLIENT_ID set and AUTO_REDIRECT_UI_LOGIN_TO_SSO true (sso_configured and auto_redirect_to_sso true); POST /invitation/new without a key (401); POST /invitation/new and GET /invitation/info?invitation_id=missing with the master key (400 db_not_connected_error); POST /queue/chat/completions without a key (401); POST /queue/chat/completions with the master key, one mock deployment in model_list and `"priority": 0` in the body (200, header x-litellm-priority "0"); GET /fallback/login without a key (200 text/html; compare status and content type and ignore the body, since B799's page is rebranded under its own deviation).
+scope:
+  paths:
+    - crates/betterlite-server/src/app/management.rs
+    - crates/betterlite-server/src/app/management/**
+    - crates/betterlite-config/src/sections/sso_presence.rs
+    - crates/betterlite-config/src/sections/sso_presence/**
+    - tools/oracle/cases/management/wiring/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/discovery_endpoints/ui_discovery_endpoints.py#L12-L46
+    why: Both discovery paths, registered with no auth dependency, and the values the document reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1431-L1451
+    why: has_user_setup_sso, the five variables behind sso_configured.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16758-L16884
+    why: POST /queue/chat/completions with user_api_key_auth, the router scheduler and the x-litellm-priority header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16887-L16911
+    why: GET /fallback/login, an app route with no auth dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17707-L17953
+    why: The four invitation routes, each with user_api_key_auth.
+dod:
+  - text: The sso_presence section loads the five SSO variables, keeping an empty value apart from an unset one.
+    proof: [sso-config-tests]
+  - text: discovery_inputs fills UiDiscoveryInputs once from the config sections, with sso_configured following the five SSO variables and workers empty.
+    proof: [management-tests]
+  - text: The discovery paths and /fallback/login answer without a key through mount_public, and the invitation and queued chat routes sit inside the auth layers through mount.
+    proof: [management-tests, oracle]
+  - text: The invitation routes answer LiteLLM's 401 without a key and db_not_connected_error without a database, and the queued chat route answers the mock deployment with x-litellm-priority.
+    proof: [oracle]
+  - text: The UI discovery document matches LiteLLM through the booted proxy for the defaults, the base URL, the env flags and the SSO redirect.
+    proof: [oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: sso-config-tests
+      why: the sso_presence section is missing, or it drops an empty value or reads a variable wrong
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::sso_presence::/)'
+    - id: management-tests
+      why: the discovery inputs, the invitation state or a merge into mount or mount_public is missing or in the wrong router
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::management::/)'
+oracle_cases:
+  - tools/oracle/cases/management/wiring/ui-config-defaults.yaml
+  - tools/oracle/cases/management/wiring/ui-config-litellm-prefix.yaml
+  - tools/oracle/cases/management/wiring/ui-config-flags.yaml
+  - tools/oracle/cases/management/wiring/ui-config-sso-redirect.yaml
+  - tools/oracle/cases/management/wiring/invitation-new-no-key.yaml
+  - tools/oracle/cases/management/wiring/invitation-new-no-database.yaml
+  - tools/oracle/cases/management/wiring/invitation-info-no-database.yaml
+  - tools/oracle/cases/management/wiring/queue-chat-no-key.yaml
+  - tools/oracle/cases/management/wiring/queue-chat-priority.yaml
+  - tools/oracle/cases/management/wiring/fallback-login-no-key.yaml
+deviations: []
+out_of_scope:
+  - "The discovery document, its section and its rules: B3211. The invitation, queue and fallback login handlers: B8599."
+  - "The onboarding, logo, image and favicon routes: B8671."
+  - "The role table that decides which callers reach the invitation routes: B742, through the auth layers."
+  - "The search tool, usage AI chat and prompt routes: the admin wiring parts (B8675 to B8678)."
+pitfalls:
+  - Merging the discovery router or /fallback/login in mount puts them behind the key check, and the dashboard then gets 401 before it can log in.
+  - has_user_setup_sso counts MICROSOFT_CLIENT_ID, GOOGLE_CLIENT_ID and GENERIC_CLIENT_ID as set even when empty, but the two SAML variables only when non-empty.
+  - server_root_path in the document is the scalar SERVER_ROOT_PATH, not the per-request root that SERVER_ROOT_PATHS matched.
+  - x-litellm-priority is set only on the non-streaming answer, from the priority in the request body.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

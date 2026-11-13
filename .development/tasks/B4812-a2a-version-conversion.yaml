@@ -81,7 +81,7 @@ checks:
   commands:
     - id: version-conversion-tests
       why: version conversion behavior tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^version_conversion::/)'
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^version_convert::(.*::)?version_conversion::/)'
 oracle_cases: []
 deviations:
   - what: >-
@@ -99,7 +99,7 @@ deviations:
 out_of_scope:
   - The A2A SDK protobuf conversions (to_core_*, to_compat_*, pb2_v10 types, MessageToDict, ParseDict), sourced from the a2a crate's own compat module.
   - HTTP request/response I/O and routing decisions; conversion functions receive already-parsed JSON dicts.
-  - URL sanitization on the response path; the eventual route owner (B142) retains responsibility for rewriting stored URLs before serving to clients.
+  - URL sanitization on the response path; the eventual route owner (B8589) retains responsibility for rewriting stored URLs before serving to clients.
 pitfalls:
   - >-
     Version detection for send results checks for `kind` field (0.3) or intersection with {message, task} keys (1.0). For stream events, the envelope key set includes statusUpdate and artifactUpdate. Empty dicts or dicts with no envelope keys return None (unknown version).

@@ -1,0 +1,97 @@
+id: B8376
+title: Cached spend object updates after a request
+description: >-
+  After a request's cost is known, LiteLLM's spend callback calls update_cache in proxy_server.py to add the cost to the
+  cached key, user, end user, team and tag objects and to the global proxy spend, so budget checks on the next request see
+  it before the database write lands. B069 submits these updates and leaves the function here. Build it in
+  crates/betterlite-server/src/spend_cache_update.rs (declared by the skeleton), on B733's auth cache, B4291's CacheCodec,
+  B4294's batched reads and B4331's per-request Redis batch.
+
+  `cache_read_keys(user_id, end_user_id, team_id, tags, response_cost) -> Vec<String>` ports update_cache_read_keys: empty
+  when response_cost is None; otherwise the user id followed by the global proxy spend key (B733's GLOBAL_PROXY_SPEND_CACHE_KEY),
+  then B733's end user cache key, then "team_id:{team_id}", then B733's tag cache key for each non-empty string tag, in that
+  order. `arm_cache_read(keys, cache)` ports arm_update_cache_read: when a per-request Redis batch is active, the cache has a
+  Redis tier and keys is not empty, declare one batched read of those keys in the batch under the slot "update_cache_read",
+  so it rides the same round trip as the post-call counter read. `read_cache_values(keys, span, cache)` takes that armed read
+  when its keys match exactly, else does one batch get with Redis throttling off; any error logs the warning "Spend tracking -
+  failed to read cached spend objects. Budget enforcement may use stale spend values. keys={keys} - {error}" and returns an
+  empty map, so nothing is updated.
+
+  `update_spend_cache(UpdateInput { token, user_id, end_user_id, team_id, response_cost, span, tags }, deps)` ports
+  update_cache in its order: key, user, end user, team, tags. Key: hash a token that starts with "sk-" (B733's hash_token),
+  read the cached UserAPIKeyAuth by the hash and, when it exists, compute new spend; when soft_budget_cooldown is false and
+  soft_budget is set and B8400's `is_projected_spend_over_limit(spend, soft_budget, today)` (crates/betterlite-server/src/proxy_helpers/projected.rs) says
+  the projected spend is over it, call B8400's `projected_spend_over_limit` for the projected spend and date and send a
+  projected_limit_exceeded budget alert in the background with the CallInfo fields LiteLLM fills (token, spend, key_alias,
+  max_budget = soft budget, user_id, projected_spend, projected_exceeded_date as text, event_group key). The key object itself is not written back. User: from the read map,
+  decode the user row, add the cost and queue it; then, when the global proxy spend value is a number, queue it plus the cost.
+  End user, team (the cached team object type) and each tag: decode, add the cost, queue. A missing value or one that does
+  not decode skips that object; a failure inside one group logs that group's "Spend tracking - failed to update {kind} spend
+  in cache" warning and the other groups still run. Finally write the queued objects other than the global spend in one
+  local-only pipeline set, and the global spend in a separate pipeline set that reaches Redis, both with B733's management
+  object TTL, each as a background task.
+
+  Oracle cases are helper cases on cache_read_keys (operation b8376): no cost, user only, team and end user, and tags with an
+  empty string and a non-string value. The update itself reads proxy_server globals, so its behavior is covered by Rust tests
+  against an in-memory cache. The worker writes the cases under tools/oracle/cases/helpers/spend-cache-update/.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend_cache_update.rs
+    - crates/betterlite-server/src/spend_cache_update/**
+    - tools/oracle/cases/helpers/spend-cache-update/**
+    - tools/oracle/helpers/b8376.py
+    - tools/oracle/helpers/b8376/**
+    - tools/oracle/src/helpers/server/b8376.rs
+    - tools/oracle/src/helpers/server/b8376/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3853-L3920
+    why: update_cache_read_keys, arm_update_cache_read, _take_armed_update_cache_read and _read_update_cache_values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3923-L4223
+    why: update_cache with each object's update, the soft budget alert and the two pipeline writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L395-L420
+    why: The spend callback that computes the read keys and calls update_cache.
+dod:
+  - text: cache_read_keys returns LiteLLM's keys in its order and none without a cost.
+    proof: [cache-update-tests, oracle, helper-python]
+  - text: An armed batched read is used only when its keys match, and a read failure logs the warning and updates nothing.
+    proof: [cache-update-tests]
+  - text: User, end user, team, tag and global spend objects get the cost added, and objects that are missing or do not decode are skipped.
+    proof: [cache-update-tests]
+  - text: The soft budget projection sends one projected_limit_exceeded alert without writing the key object back.
+    proof: [cache-update-tests]
+  - text: Object updates are written local-only and the global spend through Redis, with the management object TTL.
+    proof: [cache-update-tests]
+checks:
+  optional: []
+  commands:
+    - id: cache-update-tests
+      why: A cached spend object update, the batched read or the soft budget alert is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend_cache_update::/)'
+    - id: helper-python
+      why: The strict oracle adapter for the cache key cases fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8376)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8376 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8376/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-cache-update/no-cost-no-keys.yaml
+  - tools/oracle/cases/helpers/spend-cache-update/user-only.yaml
+  - tools/oracle/cases/helpers/spend-cache-update/team-and-end-user.yaml
+  - tools/oracle/cases/helpers/spend-cache-update/tags-filtered.yaml
+deviations: []
+out_of_scope:
+  - "_is_projected_spend_over_limit and _get_projected_spend_over_limit in proxy/utils.py: B8400 builds them in proxy_helpers/projected.rs; this task calls them."
+  - "ProxyLogging.budget_alerts: the alerting owner sends the alert; this task only builds the CallInfo and starts the send."
+  - "The spend callback that decides when to call this: B069."
+pitfalls:
+  - The key object is read but never queued for a write, so only the projected limit alert comes out of the key branch.
+  - A user id whose cached row is missing returns from the whole user group, so the global proxy spend is not bumped either.
+  - The global proxy spend is bumped only when its cached value is already a number; an absent value is never created here.
+  - Tag keys skip empty and non-string tags, both when building the read keys and when updating.
+  - The object updates are local-only while the global spend goes to Redis too, so they must be two separate pipeline writes.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

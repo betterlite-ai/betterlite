@@ -1,0 +1,15 @@
+kind: helper
+name: proxy-auth-exception-propagation
+call:
+  proxy_auth:
+    operation: handler
+    params:
+      scope: 'api://proxy/.default'
+      replies:
+        - {refuse: idp down}
+        - {token: recovered, expires_on: 5000}
+      calls:
+        - {at: 1000}
+        - {at: 1001}
+env: {}
+compare: {ignore: []}

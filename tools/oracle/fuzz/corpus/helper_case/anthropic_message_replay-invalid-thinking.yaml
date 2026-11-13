@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-message-replay-invalid-thinking
+call:
+  anthropic_message_replay:
+    function: invalid_thinking_error
+    texts: ["messages.N.content.M.thinking: each thinking block must contain thinking", "rate limit exceeded"]
+    requests:
+    - messages:
+      - {role: assistant, content: [ {type: thinking, thinking: only} ]}
+      thinking: {type: enabled}
+env: {}
+compare: {ignore: []}

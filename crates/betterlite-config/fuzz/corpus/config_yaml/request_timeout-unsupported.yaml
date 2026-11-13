@@ -1,0 +1,2 @@
+litellm_settings:
+  unsupported_timeout: 2

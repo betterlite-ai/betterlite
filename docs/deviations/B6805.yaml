@@ -1,0 +1,11 @@
+task: B6805
+deviations:
+- what: >-
+    A page whose pageNumber is below 1 fails with NumericRange("page.pageNumber"). LiteLLM's
+    checked_sub(1) turns 0 into the page index -1 and -1 into -2, so a malformed answer keeps a
+    negative index instead of failing.
+  why: >-
+    Azure page numbers are 1-based and no working setup receives 0, so a negative index is wrong
+    output rather than behavior to keep, and the task's pitfalls require the NumericRange failure.
+    Oracle cases use page numbers from 1 up, where both implementations agree.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/azure_ai/ocr/document_intelligence/transformation.rs#L406-L411

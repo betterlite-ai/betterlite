@@ -1,0 +1,9 @@
+kind: helper
+name: anthropic-results-image-chunk-object
+call:
+  anthropic_results:
+    function: image_chunk_object
+    chunk: {type: base64, media_type: image/jpeg, data: AAA}
+env: {}
+compare:
+  ignore: []

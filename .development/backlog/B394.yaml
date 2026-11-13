@@ -1,7 +1,7 @@
 id: B394
 milestone: M2 routing
 title: Capability forecast parsing and calibration
-status: todo
+status: done
 depends_on: [B301, B361, B002]
 file: tasks/B394-capability-forecast.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/router_strategy/complexity_router/config.py"
 parent: B021
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 987

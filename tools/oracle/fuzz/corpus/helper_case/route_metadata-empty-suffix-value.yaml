@@ -1,0 +1,11 @@
+kind: helper
+name: route-metadata-empty-suffix-value
+call:
+  route_metadata:
+    {
+      "function": "get_call_types",
+      "route": "/models/:generateContent"
+    }
+env: {}
+compare:
+  ignore: []

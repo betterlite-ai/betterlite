@@ -1,14 +1,14 @@
 id: B246
 milestone: M1 openai data plane
 title: Callback config validators
-status: todo
+status: done
 depends_on: [B188]
 file: tasks/B246-callback-validation.yaml
 covers:
   - "litellm/proxy/common_utils/callback_config_validation.py"
 parent: B012
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 753

@@ -1,0 +1,134 @@
+id: B8624
+title: Mount the MCP OAuth discovery documents, token routes and BYOK routes
+description: >-
+  Three MCP OAuth routers are built but nothing merges them into the app: B4678's routes/mcp_byok_oauth (the BYOK
+  authorization server documents, the BYOK protected resource document and POST /v1/mcp/oauth/token; declared on main
+  but missing from B1100's stub list), B7321's OauthRoot (openid configuration, JWKS, the named authorization server
+  documents, token, revoke, introspect) and B7972's ProtectedRoot (the oauth-protected-resource documents). This task
+  builds their states from McpState and mounts them. The browser routes (authorize, callback, register, the connect
+  flow, /v1/mcp/server/oauth) are B8702.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/oauth_routes.rs and app/mcp/oauth_routes/ (facts.rs, byok.rs, a
+  tests.rs beside each), plus one line in app::mcp::mount_public (crates/betterlite-server/src/app/mcp.rs) that merges
+  `oauth_routes::router(&McpState::shared(state), state)`. LiteLLM serves every one of these routes without a key
+  except POST /introspect, which has Depends(user_api_key_auth), so they go outside the auth layers. Put a small
+  middleware on the merged router that runs the same key auth the app's auth layers run (read app.rs and routes.rs for
+  the B052 layer function) for the path /introspect only, so a missing or bad key there answers B052's 401 and the
+  caller reaches the handler as the extension B7321 reads.
+
+
+  facts.rs. B7972's UpstreamGet over `shared.http` with the Oauth2Check client settings: GET with the accept header
+  given, status and body bytes back, a connect, DNS, TLS or timeout error as GetFailure::Transport and anything else as
+  GetFailure::Other. RequestFacts gives the client ip through B743's trusted-proxy rules and the base url through
+  B4654's get_request_base_url with McpCore's normalized PROXY_BASE_URL. GatewayFacts: jwt_issuers is B7972's
+  merge_issuers over JWT_ISSUER (B8620's section) and the litellm_jwtauth.issuers entries; token_exchange is B4663's
+  TokenExchangePrerequisites from the loaded config. ProtectedRoot takes the registry, the OAuthMetadataCache that
+  `shared.mcp_registry` exposes, these ports, the well-known root suffix (B4654's well_known_root_suffix, computed
+  once here) and a tokio clock. OauthRoot is McpState's oauth.root, built by B8623.
+
+
+  byok.rs. B4678's ByokOauthRoutes: codes is B4677's AuthCodeStore (the same instance routes/mcp_byok_consent writes;
+  read how B4677's slot exposes it and share it), credentials is a ByokCredentialSink that calls B4713's
+  store_user_credential and then drops the cached credential (B5121's cache removal, then B878's peer publish), the
+  master key, a RequestBaseUrl over B4654's get_request_base_url with McpCore's PROXY_BASE_URL and B743's trusted-proxy
+  decision, root_prefixes from B4200's get_server_root_paths, and the same well-known suffix.
+
+
+  Merge order. LiteLLM installs mcp_byok_oauth before mcp_discoverable (_lazy_features.py L159-L187), so for a path
+  both declare the BYOK handler answers. B7321 already leaves the bare GET /.well-known/oauth-authorization-server to
+  B4678. Merge B4678's router first, then OauthRoot, then ProtectedRoot. axum panics on a duplicate path at startup; if
+  one appears, keep the BYOK route and report the duplicate instead of editing the route task's module. Every
+  first-segment path parameter must be named mcp_server_name, as the route tasks name it, or matchit refuses the merge
+  with B8702's routes.
+
+
+  Tests in app::mcp::oauth_routes:: : the merged router builds, each path answers something other than 404 through
+  tower's oneshot, POST /introspect without a key answers 401 and the other paths need none, merge_issuers sees
+  JWT_ISSUER first, and the ByokCredentialSink drops the cache entry after a store and not after a failed store.
+
+
+  HTTP oracle cases. The cases B4678, B7321 and B7972 planned through the booted proxy move here, because their routes
+  only answer once this task mounts them. Write each listed case from its route task's description, DoD and case
+  names (.development/tasks/B4678-mcp-byok-token-exchange.yaml, B7321-mcp-oauth-flows-and-jwks.yaml and
+  B7972-mcp-oauth-protected-resource.yaml), with the config, key and ignore rules each describes. Add one case of this
+  task, tools/oracle/cases/http/mcp-wiring-oauth/authorization-server-root.yaml: GET
+  /.well-known/oauth-authorization-server with no key answers the BYOK document, which proves the merge order.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp.rs
+    - crates/betterlite-server/src/app/mcp/oauth_routes.rs
+    - crates/betterlite-server/src/app/mcp/oauth_routes/**
+    - tools/oracle/cases/http/mcp-wiring-oauth/**
+    - tools/oracle/cases/mcp/byok-oauth/**
+    - tools/oracle/cases/http/mcp-oauth-root/**
+    - tools/oracle/cases/http/mcp-oauth-protected/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L152-L201
+    why: The order mcp_byok_oauth, mcp_discoverable and their path prefixes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/byok_oauth_endpoints.py#L2442-L2611
+    why: The BYOK routes mounted here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L4888-L4921
+    why: /revoke without a key and /introspect with Depends(user_api_key_auth).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L5381-L5674
+    why: The protected resource and authorization server documents, openid configuration and JWKS mounted here.
+dod:
+  - text: The BYOK, OauthRoot and ProtectedRoot routers are merged once each, BYOK first, outside the auth layers, with a key check on /introspect only.
+    proof: [oauth-route-tests, oracle]
+  - text: UpstreamGet, RequestFacts, GatewayFacts, ByokCredentialSink and RequestBaseUrl forward to their owning crates.
+    proof: [oauth-route-tests]
+  - text: The moved B4678, B7321 and B7972 cases and the merge order case match LiteLLM through the booted proxy.
+    proof: [oauth-route-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: oauth-route-tests
+      why: a router is not merged, a path is missing, the introspect key check is wrong, or an adapter is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::oauth_routes::/)'
+    - id: oauth-route-cases
+      why: without the case files the oracle proof compares nothing for these routes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/mcp/byok-oauth tools/oracle/cases/http/mcp-oauth-root tools/oracle/cases/http/mcp-oauth-protected tools/oracle/cases/http/mcp-wiring-oauth)"
+oracle_cases:
+  - tools/oracle/cases/mcp/byok-oauth/metadata-bare.yaml
+  - tools/oracle/cases/mcp/byok-oauth/metadata-oauth-issuer.yaml
+  - tools/oracle/cases/mcp/byok-oauth/metadata-proxy-base-url.yaml
+  - tools/oracle/cases/mcp/byok-oauth/metadata-root-prefix.yaml
+  - tools/oracle/cases/mcp/byok-oauth/protected-resource.yaml
+  - tools/oracle/cases/mcp/byok-oauth/token-unsupported-grant.yaml
+  - tools/oracle/cases/mcp/byok-oauth/token-unknown-code.yaml
+  - tools/oracle/cases/mcp/byok-oauth/token-missing-fields.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/discovery-named-server.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/discovery-standard-and-legacy-paths.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/discovery-unknown-server.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/openid-configuration-no-signer.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/jwks-empty.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/token-missing-field.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/token-unknown-server.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/revoke-unknown-client.yaml
+  - tools/oracle/cases/http/mcp-oauth-root/introspect-no-key.yaml
+  - tools/oracle/cases/http/mcp-oauth-protected/root-document.yaml
+  - tools/oracle/cases/http/mcp-oauth-protected/aggregate-resource.yaml
+  - tools/oracle/cases/http/mcp-oauth-protected/aggregate-authorization-server.yaml
+  - tools/oracle/cases/http/mcp-oauth-protected/named-gateway-standard.yaml
+  - tools/oracle/cases/http/mcp-oauth-protected/named-gateway-legacy.yaml
+  - tools/oracle/cases/http/mcp-oauth-protected/named-per-server-relay.yaml
+  - tools/oracle/cases/http/mcp-oauth-protected/named-dcr-bridge.yaml
+  - tools/oracle/cases/http/mcp-oauth-protected/unknown-server-404.yaml
+  - tools/oracle/cases/http/mcp-oauth-protected/non-oauth-server-404.yaml
+  - tools/oracle/cases/http/mcp-oauth-protected/passthrough-unreachable-502.yaml
+  - tools/oracle/cases/http/mcp-wiring-oauth/authorization-server-root.yaml
+deviations: []
+out_of_scope:
+  - "Route behavior: B4678, B7321 and B7972."
+  - "The browser routes and /v1/mcp/server/oauth: B8702. The BYOK consent routes GET and POST /v1/mcp/oauth/authorize: B4677 through B1100's routes/mcp_byok_consent."
+  - "The /mcp transport and its path routes: B8592 and the B136 server.py work."
+pitfalls:
+  - B4677 and B4678 must share one AuthCodeStore; two instances make every BYOK token request fail with an unknown code.
+  - These routes go through mount_public; mounting them inside the auth layers turns every discovery request from an MCP client into a 401.
+  - A first-segment path parameter named anything but mcp_server_name makes matchit refuse the merge at startup.
+  - Compute well_known_root_suffix once and pass it to both B4678 and B7972, so their paths agree.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

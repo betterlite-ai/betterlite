@@ -1,0 +1,14 @@
+id: B7877
+milestone: M12 python
+title: Python vector_store_files functions
+status: todo
+depends_on: [B6040, B158, B167, B1072, B1073, B1074, B1111]
+file: tasks/B7877-python-vector-store-files.yaml
+covers:
+  - "litellm/vector_store_files/**"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

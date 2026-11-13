@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-content-duplicate-content
+call:
+  bedrock_content:
+    function: deduplicate_content
+    block_key: toolResult
+    blocks:
+      - toolResult: {toolUseId: tu-1, content: [{text: first}]}
+      - cachePoint: {type: default}
+      - toolResult: {toolUseId: tu-1, content: [{text: second}]}
+      - toolResult: {toolUseId: tu-2, content: [{text: third}]}
+      - toolResult: {toolUseId: "", content: [{text: fourth}]}
+      - toolResult: {toolUseId: "", content: [{text: fifth}]}
+      - toolResult: {content: [{text: no-id}]}
+      - toolResult: null
+      - toolUse: {toolUseId: tu-1, name: untouched, input: {}}
+      - text: keep
+env: {}
+compare:
+  ignore: []

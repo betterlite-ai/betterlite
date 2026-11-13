@@ -1,0 +1,5 @@
+task: B8273
+deviations:
+  - what: "sample_report clamps the report's end, start and each merge date, and the spend date that follows, at 0001-01-01, where Python's date arithmetic raises OverflowError for a now in the first 29 days of year 1."
+    why: "Rule no-panics forbids the panicking subtraction, the demo route always passes the current time, and no working setup can rely on that exception."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/sample.py#L8"

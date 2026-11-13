@@ -1,0 +1,8 @@
+kind: helper
+name: assumed-role-arn-matching
+call:
+  bedrock_assume_role:
+    operation: parse_arn
+    params: {'arn': 'arn:aws:sts::123456789012:assumed-role/MyRole/session-name'}
+env: {}
+compare: {ignore: []}

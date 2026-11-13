@@ -1,0 +1,122 @@
+id: B9324
+title: Run the inspection and enrichment HTTP matrix after its mount exists
+description: >-
+  B3250 and B3252 were planned with HTTP cases before any production task mounted their routers. B9321 now
+  provides those mounts and the real enrichment model client. Move their fourteen inspection and twelve enrichment
+  HTTP cases to this task before dispatch; the architect removes the corresponding scope entries, oracle paths
+  and HTTP proof links from those original tasks. Their pure helpers, decoders and fake-client handler tests
+  remain. Write the cases listed below against the production gateway rather than a Python-handler helper.
+
+  The inspection group starts with general_settings.master_key oracle-master, no database and no policies.
+  POST /policy/validate accepts an empty policies object, reports an undefined inherit parent, and reports two
+  policies inheriting each other. It rejects an extra top-level field or missing policies with 422 and missing
+  credentials with 401. GET /policy/list returns policies {} and total_count 0; its missing-key case is 401.
+  GET /policy/info/missing returns the engine-not-initialized 404. POST /policy/test with model alone returns
+  empty matches, empty resolved guards, all four context fields and the uninitialized message; an extra field
+  is 422. POST /policies/resolve returns 500 without a database, rejects string tags with 422 before that check,
+  and returns 401 without a key. No versioned, gateway or provider aliases exist for these management routes.
+
+  Enrichment uses POST /policy/templates/enrich and POST /policy/templates/enrich/stream. Use the local template
+  aviation-operations-security with parameters.brand_name, and baseline-pii-protection for the no-enrichment
+  error. Unknown template is 404, absent enrichment support or missing brand is 400, malformed declared fields
+  are 422 and missing authentication is 401. Send declared-type values, not Python truthiness probes. Given
+  competitors with no deployment configured succeeds without discovery and retains empty variations when the
+  model client reports no router. A given-competitors-with-variations case supplies oracle-model through an
+  OpenAI deployment, inert api_key and api_base {{upstream}}; the scripted first-choice text contains known and
+  unknown names, case-only duplicate spellings and replacement variation lines. Compare the resulting blocked
+  word definitions, preserving the untouched template definitions and competitor list order.
+
+  discovery-from-model.yaml omits competitors and scripts discovery followed by variation replies. Keep prompt,
+  model and temperature in the captured provider body. B9320 supplies MAX_COMPETITOR_NAMES default 100 and
+  COMPETITOR_LLM_TEMPERATURE default 0.3; these cases leave them unset. B9321 separately tests explicit environment
+  overrides and the absent-model gpt-4o-mini default, so use request model oracle-model here. Configure no retries
+  in provider-error cases. Do not substitute the direct SDK suggestion adapter for the actual router client.
+
+  Stream cases cover discovery, supplied names and refinement with both instruction and supplied names. Script
+  deltas crossing name/newline boundaries, repeated case-insensitive names and a final unterminated name. Refinement
+  emits supplied names before newly discovered names; supplied names without instruction require only the later
+  nonstream variation call. Successful streams then emit the generating-variations status, building-definitions
+  status and done with competitors, competitor_variations and guardrailDefinitions. No-router discovery emits an
+  error event and stops without done. Compare every event in order plus text/event-stream, Cache-Control no-cache
+  and X-Accel-Buffering no. Leave litellm_settings.sse_keepalive_ping_interval_seconds absent (null); B005 already
+  proves idle keep-alives. B9321 covers validation before streaming headers.
+
+  Copy only the existing oracle's mock transport shape from chat/openai-basic.yaml and openai-stream.yaml, not
+  expected policy responses. Let the pinned gateway determine stable bodies. Retain HTTP status, content-type,
+  complete response data and provider captures, normalizing only human error-message leaves. Do not drop entire
+  detail arrays: validation location/type and domain error records remain compared. An absent kind selects the
+  HTTP driver. Approximately 650-800 fixture lines cover this matrix; there is no new module, decoder or fuzz
+  target and no change to route registration. The ordinary oracle run, not --self-check, proves native parity.
+scope:
+  paths:
+    - tools/oracle/cases/policies/inspect/**
+    - tools/oracle/cases/policies/templates-enrich/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L383-L604
+    why: Inspection decorators, uninitialized branches, validation and response shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolve_endpoints.py#L215-L315
+    why: Resolve decorator and database/error ordering reached through the real mount.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L667-L711
+    why: Enrichment request records and pre-response validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L714-L753
+    why: Nonstream enrichment route beginning at its decorator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L756-L867
+    why: Name streaming, refinement prompt and event generation reused from the handler owner.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L870-L898
+    why: Stream route decorator and response headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L901-L1084
+    why: Discovery, variations and blocked-word definitions already implemented by B3252.
+dod:
+  - text: Unloaded inspection and validation paths return pinned success/error records through authenticated production mounts.
+    proof: [api-transcripts, oracle]
+  - text: Supplied and discovered competitors use real router calls and produce the local template's exact enriched definitions.
+    proof: [api-transcripts, oracle]
+  - text: All three streaming modes preserve event order and headers, and model failure terminates with error rather than done.
+    proof: [api-transcripts, oracle]
+checks:
+  optional: []
+  commands:
+    - id: api-transcripts
+      why: the transferred matrix has not been written after its upstream tasks lost HTTP ownership
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/policies/inspect tools/oracle/cases/policies/templates-enrich)"
+oracle_cases:
+  - tools/oracle/cases/policies/inspect/validate-empty-valid.yaml
+  - tools/oracle/cases/policies/inspect/validate-undefined-parent.yaml
+  - tools/oracle/cases/policies/inspect/validate-circular-parents.yaml
+  - tools/oracle/cases/policies/inspect/validate-extra-field-422.yaml
+  - tools/oracle/cases/policies/inspect/validate-missing-policies-422.yaml
+  - tools/oracle/cases/policies/inspect/validate-no-auth-401.yaml
+  - tools/oracle/cases/policies/inspect/list-nothing-loaded.yaml
+  - tools/oracle/cases/policies/inspect/list-no-auth-401.yaml
+  - tools/oracle/cases/policies/inspect/info-not-initialized-404.yaml
+  - tools/oracle/cases/policies/inspect/test-not-initialized.yaml
+  - tools/oracle/cases/policies/inspect/test-extra-field-422.yaml
+  - tools/oracle/cases/policies/inspect/resolve-no-database-500.yaml
+  - tools/oracle/cases/policies/inspect/resolve-tags-string-422.yaml
+  - tools/oracle/cases/policies/inspect/resolve-no-auth-401.yaml
+  - tools/oracle/cases/policies/templates-enrich/unknown-template-404.yaml
+  - tools/oracle/cases/policies/templates-enrich/no-enrichment-400.yaml
+  - tools/oracle/cases/policies/templates-enrich/missing-brand-400.yaml
+  - tools/oracle/cases/policies/templates-enrich/bad-body-422.yaml
+  - tools/oracle/cases/policies/templates-enrich/no-auth-401.yaml
+  - tools/oracle/cases/policies/templates-enrich/given-competitors-no-router.yaml
+  - tools/oracle/cases/policies/templates-enrich/given-competitors-with-variations.yaml
+  - tools/oracle/cases/policies/templates-enrich/discovery-from-model.yaml
+  - tools/oracle/cases/policies/templates-enrich/stream-discovery.yaml
+  - tools/oracle/cases/policies/templates-enrich/stream-given-competitors.yaml
+  - tools/oracle/cases/policies/templates-enrich/stream-refinement.yaml
+  - tools/oracle/cases/policies/templates-enrich/stream-no-router-error.yaml
+deviations: []
+out_of_scope:
+  - B3250 retains all inspection/startup implementation and B3252 all enrichment/catalog implementation, byte decoding and pure helper cases.
+  - B9321 assembles production state and router clients and tests environment/default-model wiring; this task consumes its mounted surface.
+  - B9322 covers loaded configuration, B079 database-backed resolution and B9753 the dashboard's enrichment request contract.
+pitfalls:
+  - A nonstream no-router discovery recovers with empty names, while streaming discovery emits error and never done.
+  - Supplied competitor names skip discovery but still cause a variations call when a router exists.
+  - Ignoring the whole 422 detail array would hide wrong field locations and validation types.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

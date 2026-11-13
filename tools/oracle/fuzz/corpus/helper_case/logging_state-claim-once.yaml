@@ -1,0 +1,25 @@
+kind: helper
+name: logging-state-claim-once
+call:
+  logging_state:
+    instances:
+      - init:
+          model: gpt-4o
+          messages: "hello"
+          stream: false
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-1
+          function_id: fn-1
+          litellm_trace_id: trace-1
+        operations:
+          - op: claim_async_success_log
+          - op: claim_async_success_log
+          - op: is_sync_litellm_request
+            litellm_params: {}
+          - op: is_sync_litellm_request
+            litellm_params: {"acompletion": true}
+          - op: is_sync_litellm_request
+            litellm_params: {"acompletion": "true"}
+env: {}
+compare: {ignore: []}

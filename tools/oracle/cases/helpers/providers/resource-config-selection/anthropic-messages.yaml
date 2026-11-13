@@ -1,0 +1,20 @@
+kind: helper
+name: resource-config-anthropic-messages
+call:
+  b5360:
+    requests:
+      - selector: messages
+        calls:
+          - {provider: anthropic, model: claude-sonnet-4-6}
+          - {provider: bedrock, model: anthropic.claude-3-haiku}
+          - {provider: bedrock, model: amazon.nova-lite}
+          - {provider: bedrock_mantle, model: CLAUDE-3}
+          - {provider: bedrock_mantle, model: nova}
+          - {provider: vertex_ai, model: claude-3-opus}
+          - {provider: vertex_ai, model: gemini-2.5}
+          - {provider: azure_ai, model: claude-3}
+          - {provider: azure_ai, model: gpt-4o}
+          - {provider: minimax, model: minimax-m2}
+          - {provider: openai, model: claude-3}
+env: {}
+compare: {ignore: []}

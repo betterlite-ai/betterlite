@@ -1,0 +1,15 @@
+kind: helper
+name: compatible-model-limits-first-id-and-empty-list
+call:
+  compatible_model_limits:
+    calls:
+      - {model: m, body: '{"data":[{"id":"m","max_model_len":10},{"id":"m","max_model_len":20}]}'}
+      - {model: m, body: '{"data":[{"id":"x","max_model_len":10}]}'}
+      - {model: m, body: '{"data":[]}'}
+      - {model: m, body: '{}'}
+      - {model: m, body: '{"data":'}
+      - {model: m, body: '[]'}
+      - {model: m, body: '{"data":null}'}
+      - {model: m, body: '{"data":[{"max_model_len":5}]}'}
+env: {}
+compare: {ignore: []}

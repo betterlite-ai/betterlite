@@ -1,0 +1,43 @@
+kind: helper
+name: mcp_sigv4_canonical_signing_vectors
+call:
+  b4742:
+    settings:
+      aws_access_key_id: AKIDEXAMPLE
+      aws_secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      aws_service_name: service
+    now: 1440938160
+    requests:
+      - {method: GET, url: 'https://example.amazonaws.com/'}
+      - {method: GET, url: 'https://example.amazonaws.com/?Param2=value2&Param1=value1'}
+      - {method: GET, url: 'https://example.amazonaws.com/?Param-3=value3&Param=value1&Param=value2'}
+      - {method: GET, url: 'https://example.amazonaws.com/?Param1=value1&param1=value2'}
+      - {method: GET, url: 'https://example.amazonaws.com/?Param1=value%201&Param2=a%2Fb&Param3'}
+      - {method: GET, url: 'https://example.amazonaws.com/a/./b/../c//d/'}
+      - {method: GET, url: 'https://example.amazonaws.com/a%20b/%E1%88%B4'}
+      - {method: GET, url: 'https://example.amazonaws.com:8443/mcp'}
+      - {method: GET, url: 'https://example.amazonaws.com:443/mcp'}
+      - method: GET
+        url: 'https://example.amazonaws.com/'
+        headers:
+          - [my-header1, '  a   b   c  ']
+          - [my-header2, '"a   b   c"']
+      - method: GET
+        url: 'https://example.amazonaws.com/'
+        headers:
+          - [my-header1, value2]
+          - [my-header1, value1]
+          - [user-agent, mcp-client]
+          - [connection, keep-alive]
+      - method: POST
+        url: 'https://example.amazonaws.com/'
+        headers:
+          - [content-type, application/x-www-form-urlencoded; charset=utf-8]
+          - [content-length, '13']
+        body: 'Param1=value1'
+      - method: POST
+        url: 'https://example.amazonaws.com/'
+        headers:
+          - [content-length, '0']
+env: {}
+compare: {ignore: []}

@@ -210,7 +210,7 @@ out_of_scope:
   - "_apply_guardrail_responses_to_output_streaming (B3668): supplied for streaming response rewriting."
   - "apply_guardrail (B3664): supplied for guardrail execution."
   - "merge_user_api_key_metadata_into_request (B3661): supplied for metadata injection."
-  - "GenericGuardrailAPIInputs (B3662): supplied for guardrail input typing."
+  - "GenericGuardrailAPIInputs (B5471): supplied for guardrail input typing."
   - "custom_tool_grammar_suffix (B907): supplied for custom-tool grammar marker stripping."
   - "transform_chat_completion_tool_params_to_responses_api_tools (B913): supplied for chat-to-Responses tool conversion."
   - "translate_openai_response_to_anthropic (B966): supplied for response format translation."

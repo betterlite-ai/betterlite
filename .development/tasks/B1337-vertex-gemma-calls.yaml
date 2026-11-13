@@ -21,7 +21,6 @@ description: >-
   effectful facade has no helper adapter. Budget 290 call code, 300 tests and 100 parser/fuzz lines.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,gemma_call}.rs
     - crates/betterlite-vertex/src/gemma_call.rs
     - crates/betterlite-vertex/src/gemma_call/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

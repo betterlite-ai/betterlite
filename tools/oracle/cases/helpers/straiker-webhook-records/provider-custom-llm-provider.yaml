@@ -1,0 +1,11 @@
+kind: helper
+name: provider-custom-llm-provider
+call:
+  b3795:
+    provider:
+      request_data:
+        custom_llm_provider: cohere_chat
+        model: command-r
+      model: command-r
+env: {}
+compare: {ignore: []}

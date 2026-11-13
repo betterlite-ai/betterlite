@@ -14,7 +14,11 @@ use crate::loader::{ConfigError, ConfigLoader};
 #[case::loads_truthy_non_boolean("litellm_settings:\n  set_verbose: 1\n", BTreeMap::new(), json!(1_i64))]
 #[case::default("{}\n", BTreeMap::new(), json!(false))]
 #[case::explicit_false("litellm_settings:\n  set_verbose: false\n", BTreeMap::new(), json!(false))]
-#[case::environment("litellm_settings:\n  set_verbose: os.environ/VERBOSE\n", BTreeMap::from([("VERBOSE".to_owned(), "yes".to_owned())]), json!("yes"))]
+#[case::environment("litellm_settings:\n  set_verbose: os.environ/VERBOSE\n", BTreeMap::from([("VERBOSE".to_owned(), "yes".to_owned())]), json!(true))]
+#[case::environment_true("litellm_settings:\n  set_verbose: os.environ/VERBOSE\n", BTreeMap::from([("VERBOSE".to_owned(), "true".to_owned())]), json!(true))]
+#[case::environment_false("litellm_settings:\n  set_verbose: os.environ/VERBOSE\n", BTreeMap::from([("VERBOSE".to_owned(), "False".to_owned())]), json!(false))]
+#[case::environment_empty("litellm_settings:\n  set_verbose: os.environ/VERBOSE\n", BTreeMap::from([("VERBOSE".to_owned(), String::new())]), json!(false))]
+#[case::literal_true_string("litellm_settings:\n  set_verbose: 'true'\n", BTreeMap::new(), json!("true"))]
 #[case::literal_string("litellm_settings:\n  set_verbose: 'yes'\n", BTreeMap::new(), json!("yes"))]
 fn verbose_hooks_config_cases(
     #[case] source: &str,
@@ -47,6 +51,18 @@ fn missing_verbose_environment_is_named() {
         matches!(error, ConfigError::MissingEnvironment { variable, path }
         if variable == "VERBOSE" && path == "litellm_settings.set_verbose")
     );
+}
+
+#[test]
+fn invalid_verbose_environment_is_named() {
+    let error = ConfigLoader {
+        lookup: BTreeMap::from([("VERBOSE".to_owned(), "maybe".to_owned())]),
+    }
+    .load("litellm_settings:\n  set_verbose: os.environ/VERBOSE\n")
+    .unwrap_err();
+    let message = error.to_string();
+    assert!(message.contains("VERBOSE"));
+    assert!(!message.contains("maybe"));
 }
 
 #[test]

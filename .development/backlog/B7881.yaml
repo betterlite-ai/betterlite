@@ -1,0 +1,14 @@
+id: B7881
+milestone: M12 python
+title: Python container files, endpoint factory and the containers package
+status: todo
+depends_on: [B7880, B6040, B158, B167, B3366, B3367, B3368, B3360, B3361]
+file: tasks/B7881-python-container-files.yaml
+covers:
+  - "litellm/containers/**"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

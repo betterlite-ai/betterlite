@@ -273,7 +273,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::qwen_deepseek_cases::case_[0-9]+_deepseek_buffered_response$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_qwen_deepseek.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_qwen_deepseek.py tools/oracle/helpers/bedrock_qwen_deepseek)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -286,7 +286,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_qwen_deepseek)"
       && grep -q 'decode_qwen_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_qwen_deepseek.rs && cargo
-      nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_qwen_deepseek_corpus$/)'
+      nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_qwen_deepseek_corpus(::|$)/)'
   - id: case-qwen3-tool-prompt
     why: 'For an assistant with a truthy list of tool_calls, omit its content and emit one block per call: <|im_start|>assistant
 

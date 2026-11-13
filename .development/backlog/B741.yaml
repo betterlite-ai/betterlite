@@ -1,7 +1,7 @@
 id: B741
 milestone: M4 keys, spend and management
 title: Canonical route and allowlist matching
-status: todo
+status: done
 depends_on: [B001, B002, B003, B171, B732, B856]
 file: tasks/B741-auth-route-patterns.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/auth/auth_checks.py"
 parent: B052
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 629

@@ -1,0 +1,9 @@
+kind: helper
+name: media-fetch-bad-port-retried
+call:
+  b5083:
+    call: convert
+    url: "http://127.0.0.1:99999/image.png"
+env: {}
+compare:
+  ignore: []

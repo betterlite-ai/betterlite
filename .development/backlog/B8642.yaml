@@ -1,0 +1,14 @@
+id: B8642
+milestone: M5 api families
+title: Pass-through WebSocket socket adapters
+status: todo
+depends_on: [B3611, B3612, B3628]
+file: tasks/B8642-passthrough-socket-adapters.yaml
+covers:
+  - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

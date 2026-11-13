@@ -1,0 +1,13 @@
+id: B8650
+milestone: M8 platform
+title: Mount the cache settings and cache admin routes
+status: todo
+depends_on: [B8610, B8612, B726, B1600, B2330, B4299, B4307, B4308, B4309, B8502]
+file: tasks/B8650-cache-route-wiring.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,49 @@
+kind: helper
+name: logging-state-correlation-restore
+call:
+  logging_state:
+    instances:
+      - init:
+          model: gpt-4o
+          messages: "hello"
+          stream: false
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-inner
+          function_id: fn-inner
+          litellm_trace_id: "inner\r-trace"
+          kwargs: {"litellm_session_id": "inner-session"}
+        correlation:
+          context: {"trace_id": "outer-trace", "session_id": "outer-session"}
+          settings: {"supports_correlation_logging": true, "request_correlation_in_logs": true}
+        operations:
+          - op: update_completion_start_time
+            completion_start_time: "2026-01-01T00:00:05+00:00"
+          - op: set_correlation
+            trace_id: foreign-trace
+            session_id: foreign-session
+          - op: restore_correlation_guarded
+          - op: set_correlation
+            trace_id: inner-trace
+            session_id: inner-session
+          - op: restore_correlation_guarded
+          - op: set_correlation
+            trace_id: foreign-trace
+            session_id: inner-session
+          - op: restore_correlation_guarded
+          - op: restore_correlation
+      - init:
+          model: gpt-4o
+          messages: "hello"
+          stream: false
+          call_type: completion
+          start_time: "2026-01-01T00:00:00+00:00"
+          litellm_call_id: call-outer
+          function_id: fn-outer
+          litellm_trace_id: trace-outer
+        correlation:
+          context: {"trace_id": "outer-trace", "session_id": "outer-session"}
+        operations:
+          - op: restore_correlation
+env: {}
+compare: {ignore: []}

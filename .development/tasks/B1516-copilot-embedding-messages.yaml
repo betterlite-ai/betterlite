@@ -29,8 +29,6 @@ description: >-
   composition lines, with a 650-line cap.
 scope:
   paths:
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/copilot_embedding.rs
     - crates/betterlite-core/src/api/copilot_embedding/**
     - crates/betterlite-core/src/api/copilot_messages.rs

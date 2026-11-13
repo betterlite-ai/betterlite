@@ -1,13 +1,139 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::Path;
 
 use globset::GlobSet;
+use serde::Deserialize;
 
 use crate::builtins::globs::glob_set;
 use crate::error::GateError;
-use crate::spec::backlog::{Backlog, BacklogEntry, Status};
+use crate::spec::backlog::{Backlog, Status};
 use crate::spec::catalog::Catalog;
 use crate::spec::task::Task;
+use crate::validate::command_args::filtered_runs;
+
+#[derive(Deserialize)]
+struct Manifest {
+    package: Option<Package>,
+}
+
+#[derive(Deserialize)]
+struct Package {
+    name: String,
+}
+
+struct OpenModule {
+    check: String,
+    name: String,
+    places: Vec<String>,
+}
+
+impl OpenModule {
+    fn files(&self) -> Vec<String> {
+        let name = &self.name;
+        self.places
+            .iter()
+            .flat_map(|place| {
+                [
+                    format!("{place}/src/{name}.rs"),
+                    format!("{place}/src/{name}/mod.rs"),
+                ]
+            })
+            .collect()
+    }
+
+    fn problem(&self, id: &str, own: &GlobSet, dependencies: &GlobSet) -> Option<String> {
+        let files = self.files();
+        if files.iter().any(|file| dependencies.is_match(file)) {
+            return None;
+        }
+        let creates = files.iter().any(|file| own.is_match(file));
+        let declares = self.places.iter().any(|place| {
+            own.is_match(format!("{place}/src/lib.rs"))
+                || own.is_match(format!("{place}/src/main.rs"))
+        });
+        let (check, name) = (&self.check, &self.name);
+        match (creates, declares) {
+            (true, true) => None,
+            (true, false) => Some(format!(
+                "{id}: check {check} filters tests under {name}::, a module its scope creates but no crate root declares; the skeleton declares it before dispatch"
+            )),
+            (false, _) => Some(format!(
+                "{id}: check {check} filters tests under {name}::, but {}/src has no module {name} and neither its scope nor an open dependency's creates one",
+                self.places.join("/src, ")
+            )),
+        }
+    }
+}
+
+fn package_folders(root: &Path) -> Result<BTreeMap<String, String>, GateError> {
+    let mut folders = BTreeMap::new();
+    for group in ["crates", "tools"] {
+        let parent = root.join(group);
+        let listing = fs::read_dir(&parent).map_err(|source| GateError::Read {
+            path: parent.clone(),
+            source,
+        })?;
+        for listed in listing {
+            let member = listed.map_err(|source| GateError::Read {
+                path: parent.clone(),
+                source,
+            })?;
+            let path = member.path().join("Cargo.toml");
+            let file_name = member.file_name();
+            let Some(folder) = file_name.to_str().filter(|_| path.is_file()) else {
+                continue;
+            };
+            let text = fs::read_to_string(&path).map_err(|source| GateError::Read {
+                path: path.clone(),
+                source,
+            })?;
+            let manifest: Manifest = toml::from_str(&text).map_err(|source| GateError::Toml {
+                path: path.clone(),
+                source: Box::new(source),
+            })?;
+            if let Some(package) = manifest.package {
+                folders.insert(package.name, format!("{group}/{folder}"));
+            }
+        }
+    }
+    Ok(folders)
+}
+
+// a nextest filter on a module that no crate declares matches nothing, and --no-tests=fail fails it
+fn open_modules(root: &Path, folders: &BTreeMap<String, String>, task: &Task) -> Vec<OpenModule> {
+    let mut open = Vec::new();
+    for check in &task.checks.commands {
+        for run in filtered_runs(&check.run) {
+            let Some(places): Option<Vec<String>> = run
+                .packages
+                .iter()
+                .map(|package| folders.get(package).cloned())
+                .collect()
+            else {
+                continue;
+            };
+            let writes_tests = task.scope.paths.iter().any(|path| {
+                places
+                    .iter()
+                    .any(|place| path.starts_with(&format!("{place}/tests/")))
+            });
+            if writes_tests {
+                continue;
+            }
+            let modules = run.modules.into_iter().map(|name| OpenModule {
+                check: check.id.clone(),
+                name,
+                places: places.clone(),
+            });
+            open.extend(
+                modules
+                    .filter(|module| !module.files().iter().any(|file| root.join(file).is_file())),
+            );
+        }
+    }
+    open
+}
 
 // a folder (a `test -d` path or an oracle case folder) counts as covered when a file inside it would be
 pub(crate) fn needed_paths(task: &Task) -> Vec<(String, bool)> {
@@ -73,19 +199,24 @@ fn added_file_pathspecs(words: &[&str]) -> Vec<(String, bool)> {
     found
 }
 
-fn dependency_closure<'backlog>(
-    backlog: &'backlog Backlog,
+// a done dependency is on main already, so its scope adds no file that main lacks
+fn open_dependency_scopes(
+    backlog: &Backlog,
+    tasks: &BTreeMap<String, Task>,
     id: &str,
-) -> Vec<&'backlog BacklogEntry> {
+) -> Vec<String> {
     let mut seen = BTreeSet::new();
-    let mut closure = Vec::new();
+    let mut scopes = Vec::new();
     let mut stack = vec![id];
     while let Some(current) = stack.pop() {
         let Some(entry) = backlog.tasks.iter().find(|entry| entry.id == current) else {
             continue;
         };
-        if current != id {
-            closure.push(entry);
+        if current != id
+            && entry.status != Status::Done
+            && let Some(task) = tasks.get(current)
+        {
+            scopes.extend(task.scope.paths.iter().cloned());
         }
         for dependency in &entry.depends_on {
             if seen.insert(dependency.as_str()) {
@@ -93,7 +224,7 @@ fn dependency_closure<'backlog>(
             }
         }
     }
-    closure
+    scopes
 }
 
 fn open_needs(root: &Path, task: &Task, own: &GlobSet) -> Vec<(String, String)> {
@@ -117,6 +248,7 @@ pub(crate) fn problems(
     backlog: &Backlog,
     tasks: &BTreeMap<String, Task>,
 ) -> Result<Vec<String>, GateError> {
+    let folders = package_folders(root)?;
     let mut problems = Vec::new();
     for entry in backlog
         .tasks
@@ -128,27 +260,30 @@ pub(crate) fn problems(
         };
         let mut allowed = task.scope.paths.clone();
         allowed.extend(catalog.settings.always_in_scope.iter().cloned());
-        let open = open_needs(root, task, &glob_set(&allowed)?);
-        if open.is_empty() {
+        let own = glob_set(&allowed)?;
+        let open = open_needs(root, task, &own);
+        let modules = if entry.status == Status::Todo {
+            open_modules(root, &folders, task)
+        } else {
+            Vec::new()
+        };
+        if open.is_empty() && modules.is_empty() {
             continue;
         }
-        // a done dependency is on main already, so its scope adds no file that main lacks
-        for dependency in dependency_closure(backlog, &entry.id) {
-            if dependency.status != Status::Done
-                && let Some(other) = tasks.get(&dependency.id)
-            {
-                allowed.extend(other.scope.paths.iter().cloned());
-            }
-        }
-        let owned = glob_set(&allowed)?;
+        let dependencies = glob_set(&open_dependency_scopes(backlog, tasks, &entry.id))?;
         for (path, probe) in open {
-            if !owned.is_match(&probe) {
+            if !dependencies.is_match(&probe) {
                 problems.push(format!(
                     "{}: needs {path}, which is neither in its scope or an open dependency's nor on main",
                     entry.id
                 ));
             }
         }
+        problems.extend(
+            modules
+                .iter()
+                .filter_map(|module| module.problem(&entry.id, &own, &dependencies)),
+        );
     }
     Ok(problems)
 }

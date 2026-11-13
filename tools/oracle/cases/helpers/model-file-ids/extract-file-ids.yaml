@@ -1,0 +1,38 @@
+kind: helper
+name: model-file-ids-extract-file-ids
+call:
+  model_file_ids:
+    function: get_file_ids_from_messages
+    messages:
+      - role: user
+        content:
+          - type: file
+            file:
+              file_id: file-plain
+          - type: text
+            text: hello
+          - type: file
+            file:
+              file_id: bGl0ZWxsbV9wcm94eTpmaWxlLmFiYzEyMzt1bmlmaWVkX2lkLGFiYy0xMjM7dGFyZ2V0X21vZGVsX25hbWVzLGdwdC00O2xsbV9vdXRwdXRfZmlsZV9pZCxmaWxlLXh5ejtsbG1fb3V0cHV0X2ZpbGVfbW9kZWxfaWQsZGVwbG95bWVudC0x
+          - type: file
+            file:
+              file_id: file-bGl0ZWxsbTpmaWxlLWFiYzEyMzttb2RlbCxncHQtNG8tbGl0ZWxsbQ
+          - type: file
+          - type: file
+            file:
+              file_id: file-plain
+      - role: assistant
+        content:
+          - type: file
+            file:
+              file_id: file-assistant
+      - role: user
+        content: plain string
+      - role: user
+        content:
+          - type: image_url
+            image_url:
+              url: https://example.com/x.png
+env: {}
+compare:
+  ignore: []

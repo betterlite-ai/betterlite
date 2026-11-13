@@ -1,0 +1,8 @@
+kind: helper
+name: a2a-discover-trailing-slash-normalized
+call:
+  b8202:
+    operation: urls
+    base_url: https://agent.example///
+env: {}
+compare: {ignore: []}

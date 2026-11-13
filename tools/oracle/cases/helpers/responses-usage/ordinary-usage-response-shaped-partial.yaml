@@ -1,0 +1,7 @@
+kind: helper
+name: responses-usage-ordinary-usage-response-shaped-partial
+call:
+  responses_usage:
+    usage: {input_tokens: 2}
+env: {}
+compare: {ignore: []}

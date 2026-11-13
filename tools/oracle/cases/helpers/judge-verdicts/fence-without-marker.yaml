@@ -1,0 +1,11 @@
+kind: helper
+name: judge-verdict-fence-without-marker
+call:
+  b4080:
+    check: parse
+    raw: |
+      ```
+      {"score": 2}
+      ```
+env: {}
+compare: {ignore: []}

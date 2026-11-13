@@ -1,0 +1,17 @@
+kind: helper
+name: chat-config-selection-seed-factory
+call:
+  chat_config_selection:
+    function: factory_table
+    catalog:
+      chat_models: [gpt-4o]
+      text_models: []
+    vertex:
+      mistral_models: [mistral-large]
+      ai21_models: []
+    calls:
+      - {provider: anthropic, model: test-model}
+      - {provider: cohere, model: v1/command}
+      - {provider: vertex_ai, model: mistral-large}
+env: {}
+compare: {ignore: []}

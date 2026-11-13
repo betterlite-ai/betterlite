@@ -137,7 +137,7 @@ async fn ask(
         navigation: state.navigation.as_ref(),
         must_decide: state.stalled,
     };
-    let prompt = prompt::build(&request)?;
+    let prompt = serde_json::to_string(&prompt::payload(&request)?)?;
     if prompt.chars().count() > PROMPT_LIMIT {
         return Ok(None);
     }

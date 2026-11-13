@@ -1,0 +1,20 @@
+# get_str_response raises Exception("No response found in payload.") for a null response, and an absent key reads as its default the same way
+kind: helper
+name: argilla-missing-response
+call:
+  b3960:
+    scenarios:
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: response
+            payload: {messages: [{role: user, content: hi}], response: null}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: response
+            payload: {messages: [{role: user, content: hi}]}
+env: {}
+compare: {ignore: []}

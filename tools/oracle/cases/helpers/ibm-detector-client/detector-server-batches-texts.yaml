@@ -1,0 +1,19 @@
+kind: helper
+name: detector-server-batches-texts
+call:
+  b3736:
+    detect:
+      settings:
+        auth_token: test-token
+        detector_id: jailbreak-detector
+        optional_params: {detector_params: {threshold: 3}}
+      environment: {}
+      contents: ["first message", "second message"]
+      answer:
+        status: 200
+        headers: {}
+        body:
+          - [{detection_type: toxic, score: 0.9, text: first}]
+          - []
+env: {}
+compare: {ignore: []}

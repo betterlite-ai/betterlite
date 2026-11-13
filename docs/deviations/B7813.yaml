@@ -1,0 +1,18 @@
+task: B7813
+deviations:
+  - what: >-
+      A litellm_params value of the wrong type (for example valkey_port as text) gives a short config error
+      naming the key, not a pydantic validation report.
+    why: pydantic's message text is a Python library format and no client depends on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/valkey/vector_stores/transformation.py#L82-L94
+  - what: >-
+      An embedding response with no vectors fails with a typed error instead of Python's IndexError on
+      embedding_response.data[0].
+    why: A provider that returns no embedding data is a broken response the caller must report, not a crash whose
+      class depends on a list index.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/valkey/vector_stores/transformation.py#L241-L241
+  - what: >-
+      A vector_distance that is not a finite number fails with a typed error instead of becoming a NaN or Infinity
+      score in the response.
+    why: json.dumps writes Infinity and NaN, which are not JSON, so no working setup can rely on that reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/valkey/vector_stores/transformation.py#L191-L196

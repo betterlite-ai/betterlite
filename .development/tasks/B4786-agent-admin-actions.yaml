@@ -11,7 +11,7 @@ description: >-
   writing an audit log entry after the attempt completes, and returns 200 with the result
   when the webhook answered 2xx, or 502 with the same body when it answered non-2xx.
   Resolution prioritizes the DB row when present; config.yaml agents fall back to the
-  in-memory registry. The route calls _check_agent_management_permission for admin access.
+  in-memory registry. The route calls B4781's `crate::agent_endpoints::identity_admin::permission::check_agent_management_permission(&auth)` for admin access and turns its `IdentityAdminError` into the response with the status and detail that error already carries. It does not rebuild the check.
 
   The make_agent_public route adds a single agent's ID to the public_agent_groups list after
   checking the agent exists and is not already listed. It updates litellm_settings.public_agent_groups
@@ -30,7 +30,6 @@ scope:
     - crates/betterlite-server/src/agent_endpoints/admin_actions.rs
     - crates/betterlite-server/src/agent_endpoints/admin_actions/**
     - crates/betterlite-server/src/agent_endpoints/admin_actions/tests.rs
-    - tools/oracle/cases/management/agent-admin-actions/**
     - tools/oracle/helpers/b4786.py
     - tools/oracle/helpers/b4786/**
     - tools/oracle/src/helpers/server/b4786.rs
@@ -114,10 +113,8 @@ dod:
   - text: >-
       make_agents_public raises 500 CommonProxyErrors.db_not_connected_error when prisma_client is None.
     proof: [http-make-public-bulk-db-missing]
-  - text: >-
-      Every HTTP status code, error type, param, code and detail message a user can observe in the three
-      routes is covered by a named oracle case with literal input and outcome.
-    proof: [oracle-management-routes]
+  - text: The three handlers are tested with tower's oneshot over their own Router and fake ports; B8647 mounts them and proves every status, error type and detail over HTTP with the oracle cases moved there.
+    proof: [http-kill-switch-route, http-make-public-single-route, http-make-public-bulk-route]
   - text: Every mutant in public discovery list management is caught by a test.
     proof: [mutants]
 
@@ -175,33 +172,11 @@ checks:
     - id: http-make-public-bulk-db-missing
       why: The make_agents_public route does not raise 500 db_not_connected when prisma_client is None.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::admin_actions::tests::.*make.*bulk.*(db.*missing|not.*connected)/)'
-    - id: oracle-management-routes
-      why: >-
-        Kill-switch triggering, public agent management, error status codes, error shapes or permission
-        behaviors deviate from LiteLLM behavior in the booted proxy.
-      run: >-
-        cargo run --locked -p betterlite-oracle --
-        tools/oracle/cases/management/agent-admin-actions
 
-oracle_cases:
-  - tools/oracle/cases/management/agent-admin-actions/kill-switch-resolve-db.yaml
-  - tools/oracle/cases/management/agent-admin-actions/kill-switch-resolve-registry.yaml
-  - tools/oracle/cases/management/agent-admin-actions/kill-switch-missing-agent.yaml
-  - tools/oracle/cases/management/agent-admin-actions/kill-switch-no-config.yaml
-  - tools/oracle/cases/management/agent-admin-actions/kill-switch-success.yaml
-  - tools/oracle/cases/management/agent-admin-actions/kill-switch-webhook-failure-502.yaml
-  - tools/oracle/cases/management/agent-admin-actions/make-public-single-admin-check.yaml
-  - tools/oracle/cases/management/agent-admin-actions/make-public-single-missing-agent.yaml
-  - tools/oracle/cases/management/agent-admin-actions/make-public-single-duplicate.yaml
-  - tools/oracle/cases/management/agent-admin-actions/make-public-single-success.yaml
-  - tools/oracle/cases/management/agent-admin-actions/make-public-single-db-missing.yaml
-  - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-admin-check.yaml
-  - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-validate-all.yaml
-  - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-success.yaml
-  - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-db-missing.yaml
+oracle_cases: []
 
 deviations:
-  - what: The kill_switch route uses the shared _check_agent_management_permission predicate from B4775,
+  - what: The kill_switch route uses the shared _check_agent_management_permission predicate, which is B4781's `crate::agent_endpoints::identity_admin::permission::check_agent_management_permission`,
       while make_agent_public and make_agents_public each perform their own inline user_role == PROXY_ADMIN
       check with the detail "Only proxy admins can update public model groups. Your role={user_api_key_dict.user_role}".
     why: LiteLLM implements the permission checks this way at the pinned commit. The kill_switch route
@@ -231,7 +206,7 @@ out_of_scope:
     owns check_feature_access_for_user.
 
 pitfalls:
-  - Only trigger_agent_kill_switch uses the _check_agent_management_permission predicate from B4775.
+  - Only trigger_agent_kill_switch uses the _check_agent_management_permission predicate (B4781's check_agent_management_permission, not a copy).
     make_agent_public and make_agents_public each implement their own inline PROXY_ADMIN role check
     with the literal error detail "Only proxy admins can update public model groups. Your role={user_api_key_dict.user_role}".
     Do not unify these three routes onto one permission check; the public-discovery routes have different

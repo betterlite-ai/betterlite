@@ -1,0 +1,129 @@
+id: B8210
+title: Decision model guardrail
+description: >-
+  Build the decision model guardrail in betterlite-guardrails, module decision_model_guard, with
+  decision_model_guard/init.rs for the initializer in decision_model/__init__.py. A decisions-API model scores the
+  request or response text against named predicate checks, and the guardrail blocks when a check with action "block"
+  reaches its threshold. Supported hooks: pre_call, during_call and post_call. The type DecisionModelCheck (name,
+  instructions, threshold 0.7, action "block" or "log") and the config model come from B3662.
+
+  Constructor checks (all errors, nothing is started): no checks gives "decision_model guardrail requires at least one
+  check"; more than MAX_DECISION_QUESTIONS checks gives "decision_model guardrail supports at most <max> checks, got
+  <n>"; repeated names give "decision_model guardrail check names must be unique". Defaults: unreachable_fallback
+  "fail_closed", max_input_chars 24000, max_concurrent_decision_calls 8, streaming_end_of_stream_only false,
+  streaming_sampling_rate 5, event hook pre_call when none is given. The guardrail writes its own guardrail
+  information (records_own_guardrail_information is true), so the shared logging decorator must not add a second record.
+
+  Texts. apply_guardrail(inputs, request_data, input_type) builds the list of texts to screen: every non-blank entry of
+  inputs.texts, then the tool call texts. A tool call text is "<name>(<arguments>)" with the name empty when missing,
+  and only calls whose arguments are a non-blank string count. Tool calls come from inputs.tool_calls followed by the
+  tool_calls of each assistant message in inputs.structured_messages, and duplicates are dropped keeping the first. No
+  texts returns inputs without a call. Each text longer than max_input_chars is cut into chunks of at most
+  max_input_chars with a step of max_input_chars minus min(2000, max_input_chars / 4), so neighbours overlap and the
+  last chunk reaches the end of the text.
+
+  Calls. The questions are one {"type": "predicate", "name", "instructions" (or "")} per check. Every chunk is one
+  decisions call with the model, the chunk as input, the questions, zero retries and the guardrail timeout. When
+  judge_target (B4080) says the model resolves through the router, the call goes through the router with empty
+  fallbacks; otherwise through the SDK entry point (B3514). One semaphore per event loop, sized
+  max_concurrent_decision_calls, limits the calls of this guardrail instance. The answer must be the OpenAI decision
+  format, otherwise it is an error. The chunks of one text run together and their errors are collected, not raised; an
+  error that is not an ordinary exception is raised at once.
+
+  Verdicts. For each check, collect its answer from every call. The probability is the largest probability among
+  predicate answers, and none when there is none. A call with no predicate answer for the check counts as missing and
+  logs a warning that names the guardrail, the check and how many of how many calls lacked it. A check is flagged when
+  its probability is at least the threshold, or when an answer is missing, the action is "block" and
+  unreachable_fallback is "fail_closed". The verdict carries name, probability, threshold, action, flagged and reason
+  ("no_answer" when any answer is missing, else none). Texts are screened in order, and the loop stops early once any
+  "block" check is flagged.
+
+  Outcome. If there were errors and no response at all: log guardrail info with status "guardrail_failed_to_respond"
+  and no verdicts, then fail_open logs a warning and returns inputs, and fail_closed logs the error and raises HTTP 502
+  with detail {"error": "Decision model guardrail failed to respond"}. If a "block" check is flagged: status
+  "guardrail_intervened" and HTTP 400 with detail {"error": "Violated decision model guardrail policy",
+  "guardrail_name", "flagged_checks": [names of flagged block checks]}. If there were errors but nothing blocked:
+  status "guardrail_failed_to_respond" and the same fail_open or fail_closed handling. Otherwise status
+  "guardrail_flagged" when any (log-only) check is flagged, else "success", and inputs are returned. The guardrail
+  information has provider "decision_model" and the JSON {model, checks: [name, probability, threshold, action, flagged,
+  reason]}.
+
+  initialize_decision_model(params, guardrail_name) in decision_model_guard/init.rs returns DecisionModelArgs or a
+  start error. decision_model must be set ("decision_model guardrail requires decision_model in litellm_params"). The
+  checks list is parsed into DecisionModelCheck values, and a parse failure is "decision_model guardrail has invalid
+  checks: <error>". The mode becomes the event hook (a single name or a list of names or a tagged mode).
+  unreachable_fallback is the params value only when the params set it explicitly, else "fail_closed". max_input_chars
+  and max_concurrent_decision_calls use the default when absent or zero. streaming_end_of_stream_only must be a bool
+  (absent is false), and a wrong type is "streaming_end_of_stream_only must be a boolean". streaming_sampling_rate must
+  be an integer and not a bool (absent is 5), and a value below 1 is "streaming_sampling_rate must be at least 1". The
+  guardrail name is required here, and default_on is false when absent.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/decision_model_guard.rs
+    - crates/betterlite-guardrails/src/decision_model_guard/**
+    - tools/oracle/cases/guardrails/decision-model-*.yaml
+    - tools/oracle/helpers/b8210.py
+    - tools/oracle/helpers/b8210/**
+    - tools/oracle/src/helpers/guardrails/b8210.rs
+    - tools/oracle/src/helpers/guardrails/b8210/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/decision_model/decision_model.py
+    why: The DecisionModelGuardrail class, the chunking and tool call text helpers, the verdict rules and apply_guardrail.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/decision_model/__init__.py
+    why: The initializer and its checks, streaming and fallback parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/decision_model.py
+    why: DecisionModelCheck and the config model (built by B3662).
+
+dod:
+  - text: Constructor checks refuse an empty, oversized or repeated-name check list with the documented messages.
+    proof: [unit-tests]
+  - text: Tool call texts and chunking follow the documented rules, including overlap and de-duplication.
+    proof: [unit-tests]
+  - text: Verdicts take the largest probability, flag at the threshold, and treat a missing answer as a block under fail_closed only.
+    proof: [unit-tests]
+  - text: A flagged block check raises 400 with the flagged check names, and a log-only check only changes the status.
+    proof: [oracle]
+  - text: A failed call gives 502 under fail_closed and passes under fail_open, and a mix of answers and errors follows the documented rule.
+    proof: [oracle]
+  - text: The initializer applies the documented defaults and refuses bad checks and bad streaming values.
+    proof: [init-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: unit-tests
+      why: a unit test of the decision_model_guard module fails
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^decision_model_guard::/)'
+    - id: init-tests
+      why: the initializer arguments differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^decision_model_guard::init::/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/decision-model-clean.yaml
+  - tools/oracle/cases/guardrails/decision-model-block.yaml
+  - tools/oracle/cases/guardrails/decision-model-log-only.yaml
+  - tools/oracle/cases/guardrails/decision-model-open.yaml
+  - tools/oracle/cases/guardrails/decision-model-closed.yaml
+  - tools/oracle/cases/guardrails/decision-model-chunked.yaml
+
+deviations:
+  - what: The initializer returns DecisionModelArgs and registers nothing.
+    why: B3682 owns the registry and the registration, as with B3681.
+  - what: A pydantic ValidationError on the checks becomes a Rust start error with the same message prefix.
+    why: The Rust config types are not pydantic.
+
+out_of_scope:
+  - The decisions call itself and its response format (B3514), and judge_target (B4080).
+  - The guardrail base class and event hook plumbing (B5471).
+  - The initializer registry and the callback registration (B3682).
+
+pitfalls:
+  - The step between chunks is max_chars minus the overlap, and the last chunk must reach the end of the text, so the range of starts runs to len minus max_chars plus step.
+  - An unanswered "log" check never blocks, even under fail_closed. Only an unanswered "block" check does.
+  - Early exit looks only at flagged "block" checks, so a flagged log check does not stop the screening.
+  - The semaphore is per event loop and per guardrail instance, so two guardrails do not share a limit.
+review_level: standard
+budget:
+  max_changed_lines: 1800
+  max_new_expects: 0

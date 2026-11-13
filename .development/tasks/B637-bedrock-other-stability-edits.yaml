@@ -242,7 +242,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::stability_edits_cases::case_[0-9]+_stability_edit_url$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_stability_edits.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_stability_edits.py tools/oracle/helpers/bedrock_other_stability_edits)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -255,7 +255,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_stability_edits)"
       && grep -q 'decode_stability_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_stability_edits.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_stability_edits_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_stability_edits_corpus(::|$)/)'
   - id: case-stability-option-mapping
     why: Supported params are n,size,response_format,mask in that order. Copy options; map exact sizes 1024x1024,512x512,256x256
       to aspect_ratio=1:1, 1792x1024 to 16:9 and 1024x1792 to 9:16. Unknown sizes add nothing. Store n as _n and

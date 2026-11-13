@@ -1,0 +1,16 @@
+kind: helper
+name: azure-error-fields
+call:
+  azure_client_secret:
+    action: azure_error_fields
+    steps:
+      - status_code: 400
+        message: caller message
+      - status_code: 401
+        message: supplied message
+        request: {method: GET, url: 'https://example.test/resource'}
+        response: {status_code: 401}
+        headers: {x-request-id: abc}
+        body: {error: boom}
+env: {}
+compare: {ignore: []}

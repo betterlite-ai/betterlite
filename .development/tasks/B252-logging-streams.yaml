@@ -1,10 +1,22 @@
 id: B252
 title: Bounded stream logging and served text
 description: >-
-  Implement _get_assembled_streaming_response and chat/embedding stream/result normalization, flush_passthrough_collected_chunks/async_flush_passthrough_collected_chunks,
+  Implement the stream gate and chat branch of _get_assembled_streaming_response, chat/embedding stream/result normalization, flush_passthrough_collected_chunks/async_flush_passthrough_collected_chunks,
   logging_utils _assemble_complete_response_from_streaming_chunks/_set_duration_in_model_call_details and served_output_texts
   chat/stream extraction and overlay. Aggregate incrementally with bounded tool/text buffers and sparse-index checks;
-  no per-chunk retained list. Responses/Anthropic native shapes stay with B080/B081 and text completion with B203.
+  no per-chunk retained list. Text completion stream assembly stays with B203.
+
+
+  The assembly branch is `pub struct ChatStreamAssembler` in logging_streams, a unit struct that implements B250's
+  StreamAssembler (crates/betterlite-logging/src/logging_success/ports.rs) for litellm_logging.py L4116-L4119 and
+  L4143-L4144. assemble(state, result, mode) returns None unless state.stream is Some(true); then a SuccessResult::Chat
+  result, and an Other result whose object is "text_completion" (the TextCompletionResponse B203's text stream hands
+  over), come back unchanged, and every other result gives None. The Responses branch (L4120-L4140) and the interaction
+  branch (L4141-L4171) are B9840's, whose LoggedStreamAssembler holds this type and hands it every result it does not
+  answer itself; that composed type is the production assembler, so nothing here reaches betterlite-core. The Anthropic
+  /v1/messages stream hands the success handlers an assembled ModelResponse, so it needs no branch beyond the chat one.
+  Name its tests chat_stream_assembler_* in logging_streams's tests.rs: a streamed Chat result, a streamed text
+  completion, a streamed chunk and a plain object, and each of them with stream None and Some(false).
   Budget 280 logic/types, 120 Rust/Python adapters, 300 tests and 60 wiring (760 total). Write the behavior rstest
   functions logging_streams_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
   in the DoD; corpus replay tests have separate names. The helper operation logging_streams is already registered; each operation has its own Rust and Python adapter file and corpus seed.
@@ -37,8 +49,12 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2712-L2716
   why: async_flush_passthrough_collected_chunks
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4108-L4144
-  why: _get_assembled_streaming_response
+  why: _get_assembled_streaming_response; ChatStreamAssembler is its stream gate and chat branch (L4116-L4119, L4143-L4144), and B9840 builds the Responses and interaction branches between them.
 dod:
+- text: ChatStreamAssembler returns a streamed chat or text completion result unchanged and None for every other result
+    and for every call that is not streamed.
+  proof:
+  - chat-assembler-tests
 - text: Each listed helper case compares its named production function with the pinned Python function, including
     precedence, omissions and error facts.
   proof:
@@ -59,6 +75,9 @@ checks:
     why: new behavior tests are missing or fail
     run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::logging_streams_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
+  - id: chat-assembler-tests
+    why: the chat branch of the stream assembler is missing, passes on a result it should drop or ignores the stream flag
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_streams::.*chat_stream_assembler_/)'
   - id: helper-python
     why: strict adapters fail
     run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
@@ -79,9 +98,14 @@ deviations: []
 out_of_scope:
 - The remaining functions in the shared covered paths belong to B190 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
-- Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B117; MCP hooks 1633-1709 B140;
-  cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B098; native response logging
-  4147-4320 B080/B081/B098; A2A response conversion 4322-4343 B142.
+- Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B8560; MCP hooks 1633-1709 B140;
+  cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B3481/B3496; interaction stream shape B098; the Responses and
+  interaction branches of _get_assembled_streaming_response 4120-4142 and _assemble_completed_interaction_response
+  4146-4171 B9840; record_streamed_anthropic_message_id 4174-4175 B976; the call-type result conversion in
+  _success_handler_helper_fn 2519-2527 and the Anthropic messages, Responses, GenAI and A2A conversions it calls
+  4177-4343 B9840.
+- Building the production StreamAssembler is B9840's LoggedStreamAssembler, which wraps ChatStreamAssembler; handing
+  one value of it to the server's success handlers is the server composition root's.
 - Enterprise callback controls are excluded by repository licensing rules; no enterprise implementation is read
   or ported.
 pitfalls:
@@ -89,6 +113,8 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as logging_streams in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/streams.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/logging_streams.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
   wording reason.
+- ChatStreamAssembler tests the stream flag before the result, so a complete Chat result on a call whose stream is None
+  assembles nothing; a ModelResponseStream chunk gives None too, since the stream wrapper hands over the built response.
 review_level: standard
 budget:
   max_changed_lines: 1500

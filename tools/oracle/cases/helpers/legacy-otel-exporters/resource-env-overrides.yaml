@@ -1,0 +1,16 @@
+kind: helper
+name: resource-env-overrides
+call:
+  b3855:
+    function: litellm_resource
+    config:
+      service_name: checkout
+      deployment_environment: staging
+      model_id: gpt-4o
+    environment:
+      OTEL_RESOURCE_ATTRIBUTES: service.name=env-service,cloud.region=my%20region,broken-entry
+      OTEL_SERVICE_NAME: from-env
+env:
+  OTEL_RESOURCE_ATTRIBUTES: service.name=env-service,cloud.region=my%20region,broken-entry
+  OTEL_SERVICE_NAME: from-env
+compare: {ignore: []}

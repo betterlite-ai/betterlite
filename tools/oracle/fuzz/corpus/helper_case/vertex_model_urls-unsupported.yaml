@@ -1,0 +1,8 @@
+kind: helper
+name: vertex-model-urls-unsupported-seed
+call:
+  vertex_model_urls:
+    unsupported_modes:
+      modes: [batch_embedding, image_generation]
+env: {}
+compare: {ignore: []}

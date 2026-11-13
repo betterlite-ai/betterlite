@@ -1,0 +1,105 @@
+{
+  "authentication": {
+    "family": "authentication",
+    "message": "m"
+  },
+  "not_found": {
+    "family": "not_found",
+    "message": "m"
+  },
+  "permission": {
+    "family": "permission_denied",
+    "message": "m"
+  },
+  "request": {
+    "family": "bad_request",
+    "message": "m"
+  },
+  "unprocessable": {
+    "family": "unprocessable_entity",
+    "message": "m"
+  },
+  "context": {
+    "family": "context_window_exceeded",
+    "message": "m"
+  },
+  "policy": {
+    "family": "content_policy_violation",
+    "message": "m"
+  },
+  "unavailable": {
+    "family": "service_unavailable",
+    "message": "m"
+  },
+  "gateway": {
+    "family": "bad_gateway",
+    "message": "m"
+  },
+  "internal": {
+    "family": "internal_server",
+    "message": "m"
+  },
+  "connection": {
+    "family": "api_connection",
+    "message": "m"
+  },
+  "unsupported": {
+    "family": "unsupported_params",
+    "message": "m"
+  },
+  "timeout": {
+    "family": "timeout",
+    "context": {
+      "message": "m"
+    }
+  },
+  "rate_limit": {
+    "family": "rate_limit",
+    "context": {
+      "message": "m"
+    },
+    "category": "vendor_rate_limit"
+  },
+  "budget": {
+    "family": "budget_exceeded",
+    "current_cost": 2,
+    "max_budget": 1,
+    "status_code": 422
+  },
+  "guardrail": {
+    "family": "guardrail_raised",
+    "message": "m",
+    "status_code": 400,
+    "blocked_content": true
+  },
+  "fallback": {
+    "family": "mid_stream_fallback",
+    "context": {
+      "message": "m"
+    },
+    "generated_content": "",
+    "is_pre_first_chunk": true
+  },
+  "api": {
+    "family": "api",
+    "context": {
+      "message": "m"
+    },
+    "status": 500
+  },
+  "response_validation": {
+    "family": "api_response_validation",
+    "message": "m"
+  },
+  "schema": {
+    "family": "json_schema_validation",
+    "model": "m",
+    "provider": "p",
+    "raw_response": "",
+    "schema": ""
+  },
+  "unknown": {
+    "family": "unclassified",
+    "message": "m"
+  }
+}

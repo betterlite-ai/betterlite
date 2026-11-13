@@ -195,7 +195,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_stream_errors_cases::case_[0-9]+_stream_http_failure$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_stream_errors.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_stream_errors.py tools/oracle/helpers/azure_stream_errors)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -208,7 +208,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_stream_errors)"
       && grep -q 'decode_content_filter_error' crates/betterlite-azure/fuzz/fuzz_targets/azure_stream_errors.rs
-      && cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_stream_errors_corpus$/)'
+      && cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_stream_errors_corpus(::|$)/)'
   - id: case-stream-header-difference
     why: Sync passes B529 process_azure_headers output to the wrapper; async passes raw headers. Keep fixture rows
       for each facade and header absence/case variants; do not normalize both paths into the sync behavior.

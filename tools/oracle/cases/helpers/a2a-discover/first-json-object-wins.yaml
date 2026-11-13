@@ -1,0 +1,15 @@
+kind: helper
+name: a2a-discover-first-json-object-wins
+call:
+  b8202:
+    operation: card
+    base_url: https://agent.example
+    replies:
+      - status: 404
+        body: not found
+      - status: 200
+        body: '{"name":"agent","skills":[{"id":"echo"}]}'
+      - status: 200
+        body: '{"name":"later"}'
+env: {}
+compare: {ignore: []}

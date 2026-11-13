@@ -1,0 +1,5 @@
+kind: helper
+name: aws-iso-f
+call: {aws_partition: {region: us-isof-east-1, value: 'arn:aws-iso-f:bedrock:x'}}
+env: {}
+compare: {ignore: []}

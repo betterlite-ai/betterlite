@@ -1,0 +1,1 @@
+{"object":"vector_store.search_results.page","search_query":"q","data":[{"score":1.5,"content":[{"type":"text","text":"x","confidence":1}],"file_id":"f","filename":"n","attributes":{"a":1}}],"extra":true}

@@ -1,0 +1,111 @@
+id: B7811
+title: MongoDB sidecar vector store
+description: >-
+  Build the MongoDB BETA sidecar vector store as pure typed functions in betterlite-openai, module mongodb_vector_store, over
+  B1131 wire records (mongodb/vector_stores/transformation.py, 388 lines). The store is search-only and talks to a separate
+  sidecar over HTTP. The caller (B1064 and B2484) embeds the query and sends the request, and passes MongoEnv with the
+  sidecar key from MONGODB_SIDECAR_API_KEY. Every failure is one typed error enum, MongoDbError, with the variants BadRequest,
+  Authentication, Timeout and ServiceUnavailable and the exact LiteLLM message for each. Each message names llm_provider
+  "mongodb".
+
+  Parameters. litellm_params is validated first. A non-null mongodb_connection_string fails with the message that tells the
+  user to move it to MONGODB_CONNECTION_STRING in the sidecar. Any key that starts with "mongodb_" and is not one of
+  mongodb_database, mongodb_collection, mongodb_text_field, mongodb_embedding_field, mongodb_num_candidates fails with
+  "Unrecognised MongoDB vector store parameter(s): <sorted, comma joined>. Supported: <sorted, comma joined>." A non-empty
+  extra_body fails. filters, ranking_options and rewrite_query each fail when not null. The remaining keys must parse as the
+  typed view: litellm_embedding_model (string), litellm_embedding_config (map), the four mongodb_ strings and
+  mongodb_num_candidates (integer), other keys ignored; a parse failure gives "Invalid MongoDB vector-store configuration.
+  Check the database, collection, fields, and candidate count." Then require, in this order, mongodb_database,
+  mongodb_collection, and litellm_embedding_model, each with its own message from the pin. Defaults: text field "text",
+  embedding field "embedding".
+
+  Limits. The query text is a string, or a list joined by one space; it fails when blank after strip ("query must not be
+  empty") or longer than 32000 characters. max_num_results defaults to 10 and must be 1 to 50. num_candidates is the
+  configured value (it must be at least the limit and at most 10000) or min(max(limit*10, 100), 10000). The timeout becomes
+  timeout_ms: no timeout is 30000, a read timeout of a timeout object is used, a non-positive or non-finite value fails, and
+  the result is max(1, int(seconds*1000)).
+
+  Environment and URL. Headers need litellm_params (else "Configure api_base and api_key for the MongoDB BETA sidecar."),
+  run the unknown-parameter check, take the explicit key else MONGODB_SIDECAR_API_KEY, and set Authorization "Bearer <key>"
+  and Content-Type application/json over the given headers. The base URL must be http or https with a host, port other than
+  0, and no user, password, query or fragment; plain http is allowed only for a loopback IP address (a name such as
+  localhost is refused). The result has trailing slashes removed.
+
+  Request. After the embedding comes back, it must have data and a non-empty vector of finite numbers. The request is POST
+  {base}/v1/vector_stores/{id percent-encoded with nothing safe}/search with the body query, query_vector, mongodb_database,
+  mongodb_collection, mongodb_embedding_field, mongodb_text_field, mongodb_num_candidates, max_num_results and timeout_ms.
+  Response. decode_mongodb_search parses strict JSON with object "vector_store.search_results.page", search_query, and data
+  rows that have score (number or null, finite), content ([{type "text", text}]), file_id and filename (string or null).
+  Any mismatch gives the ServiceUnavailable message "MongoDB sidecar returned an invalid search response. Check the sidecar
+  version and deployment." Error statuses: 400 gives BadRequest with the sidecar text, 401 "MongoDB sidecar rejected
+  api_key." as Authentication, 408 Timeout with the sidecar text, anything else ServiceUnavailable "MongoDB sidecar is
+  unavailable. Check its address, health, and logs." Create-store, its request and its response all fail with the search-only
+  message. Endpoints are empty. Add a fuzz target for decode_mongodb_search. About 345 LiteLLM lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/mongodb_vector_store.rs
+    - crates/betterlite-openai/src/mongodb_vector_store/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/mongodb_vector_store.rs
+    - crates/betterlite-openai/fuzz/corpus/mongodb_vector_store/**
+    - tools/oracle/cases/helpers/mongodb-vector-store/**
+    - tools/oracle/helpers/b7811.py
+    - tools/oracle/helpers/b7811/**
+    - tools/oracle/src/helpers/openai/b7811.rs
+    - tools/oracle/src/helpers/openai/b7811/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mongodb/vector_stores/transformation.py#L32-L125
+    why: Constants, the typed parameter view and the required-field messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mongodb/vector_stores/transformation.py#L138-L186
+    why: Unknown parameter rejection, query text, limit and candidate count rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mongodb/vector_stores/transformation.py#L187-L263
+    why: Headers, sidecar URL checks, timeout conversion and search parameter validation order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mongodb/vector_stores/transformation.py#L265-L388
+    why: Request body, response validation, error mapping and the search-only create calls.
+dod:
+  - text: Parameter validation rejects the connection string, unknown mongodb_ keys, extra_body and the three unsupported options with LiteLLM's messages and order.
+    proof: [mongodb-tests, oracle]
+  - text: Query, limit, candidate count and timeout rules match, including the 32000 character cap and the 1 to 50 limit.
+    proof: [mongodb-tests, oracle]
+  - text: The sidecar URL accepts https and loopback http only and strips trailing slashes.
+    proof: [mongodb-tests, oracle]
+  - text: The search request has the nine body keys and a percent-encoded store id, and rejects an empty or non-finite vector.
+    proof: [mongodb-tests, oracle]
+  - text: Response decoding is strict and every sidecar status maps to the right error.
+    proof: [mongodb-tests, oracle]
+  - text: Sidecar response bytes replay through decode_mongodb_search without a panic.
+    proof: [mongodb-corpus]
+checks:
+  optional: []
+  commands:
+    - id: mongodb-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^mongodb_vector_store::/) - test(replays_the_mongodb_vector_store_corpus)'
+      why: Fixtures cover validation order, limits, URL rules, request body, response and error mapping.
+    - id: mongodb-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/mongodb_vector_store.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/mongodb_vector_store)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_mongodb_vector_store_corpus)'
+      why: Added corpus files replay through the strict response decoder.
+oracle_cases:
+  - tools/oracle/cases/helpers/mongodb-vector-store/connection-string-rejected.yaml
+  - tools/oracle/cases/helpers/mongodb-vector-store/unknown-param-sorted.yaml
+  - tools/oracle/cases/helpers/mongodb-vector-store/unsupported-options.yaml
+  - tools/oracle/cases/helpers/mongodb-vector-store/candidate-count-default.yaml
+  - tools/oracle/cases/helpers/mongodb-vector-store/candidate-count-out-of-range.yaml
+  - tools/oracle/cases/helpers/mongodb-vector-store/timeout-ms.yaml
+  - tools/oracle/cases/helpers/mongodb-vector-store/http-loopback-only.yaml
+  - tools/oracle/cases/helpers/mongodb-vector-store/search-request-body.yaml
+  - tools/oracle/cases/helpers/mongodb-vector-store/invalid-response.yaml
+  - tools/oracle/cases/helpers/mongodb-vector-store/status-mapping.yaml
+deviations: []
+out_of_scope:
+  - B1064 and B2484 read MONGODB_SIDECAR_API_KEY, run the embedding through B1058 and B1059 executors, and send the HTTP request.
+  - Turning MongoDbError into an HTTP status for the client is done by the caller that wires the provider. The error variants name the LiteLLM exception class.
+  - The Mongo sidecar itself is not built.
+pitfalls:
+  - The parameter check order is connection string, unknown keys, extra_body, unsupported options, typed parse, then database, collection and embedding model. A test that sets two faults sees the first one only.
+  - localhost is refused over http because only a literal loopback IP passes. 127.0.0.1 and ::1 pass.
+  - get_error_class raises for every status and its 400 branch passes the sidecar text through unchanged, but 401 and 5xx replace it with a fixed message.
+  - max_num_results of 0 or 51 fails before any embedding, and a configured mongodb_num_candidates below the limit fails too.
+  - The vector is sent as a list of numbers, and an integer in the vector is valid.
+budget: {max_changed_lines: 1500, max_new_expects: 1}
+review_level: standard

@@ -1,0 +1,8 @@
+task: B4415
+deviations:
+  - what: A failed replication logs a warning after creation succeeds and does not roll back the created secret.
+    why: The source implements replication as best-effort with warning-only cleanup, preserving creation success even when regional failover is unavailable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager_v2.py#L328-L334
+  - what: Dict tags reach AWS in key order, not in the caller's insertion order.
+    why: B4410's SecretTags::Mapping is a BTreeMap, so its items serialize sorted, while LiteLLM iterates the caller's dict in insertion order. Both send the same {Key, Value} set.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager_v2.py#L299-L306

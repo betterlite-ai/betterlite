@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-a-model-rewrite
+call:
+  provider_defaults_a:
+    provider: bedrock_mantle
+    model: us-east-1/openai.gpt-oss-120b
+    environment:
+      BEDROCK_MANTLE_API_KEY: mantle-key
+env: {}
+compare: {ignore: []}

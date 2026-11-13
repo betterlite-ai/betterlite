@@ -232,6 +232,7 @@ pitfalls:
     resolve_pipelines_for_context skips policies whose condition fails the context,
     while resolve_guardrails_for_context uses get_policies_with_matching_conditions which
     includes policies where ancestors apply despite child condition failure.
+  - "Call B3240's matches_pattern and scope_matches and drop those oracle cases. Expect sorted names, since B3240 sorts ascending."
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

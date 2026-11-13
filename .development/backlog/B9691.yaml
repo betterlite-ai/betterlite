@@ -1,0 +1,16 @@
+id: B9691
+milestone: M10 admin ui
+title: Add-model and auto-router form requests without the team-model paid gate
+status: todo
+depends_on: [B9090, B9091, B860, B5076, B1644, B1215, B835, B838, B1601, B3190, B8676, B8681, B379, B349, B840, B3192, B077, B007, B850, B004, B006, B4446]
+file: tasks/B9691-dashboard-model-form-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/models-and-endpoints/panels/{AddModel,AutoRoutersTab}Panel*"
+  - "ui/litellm-dashboard/src/app/(dashboard)/models-and-endpoints/components/AutoRouters/**"
+  - "ui/litellm-dashboard/src/components/{add_model,edit_auto_router}/**"
+parent: B146
+split_from: B146
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

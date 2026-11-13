@@ -1,0 +1,27 @@
+kind: helper
+name: bedrock-converse-content-json-mode-filter
+call:
+  bedrock_converse_content:
+    json_mode_filter:
+      json_mode: true
+      message:
+        content: "prefix:"
+      tools:
+        - id: null
+          type: function
+          function: {name: real, arguments: '{"x": 1}'}
+          index: 0
+        - id: call-2
+          type: function
+          function: {name: json_tool_call, arguments: '{"properties": {"a": 1, "b": [2, 3]}}'}
+          index: 1
+        - id: call-3
+          type: function
+          function: {name: json_tool_call, arguments: '{"ignored": true}'}
+          index: 2
+        - id: call-4
+          type: function
+          function: {name: other, arguments: "{}"}
+          index: 3
+env: {}
+compare: {ignore: []}

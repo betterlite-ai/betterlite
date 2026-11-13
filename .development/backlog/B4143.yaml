@@ -2,8 +2,8 @@ id: B4143
 milestone: M8 platform
 title: Read bucket configs and download configured Python modules
 status: todo
-depends_on: [B4142, B594]
-file: null
+depends_on: [B4142, B594, B3997, B173, B002]
+file: tasks/B4143-bucket-config-and-modules.yaml
 covers:
   - "litellm/proxy/common_utils/load_config_utils.py"
 parent: B120

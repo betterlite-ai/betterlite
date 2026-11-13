@@ -1,0 +1,28 @@
+kind: helper
+name: model-file-ids-unmapped-id
+call:
+  model_file_ids:
+    function: update_responses_tools_with_model_file_ids
+    model_id: deployment-1
+    mapping:
+      file-mapped:
+        deployment-1: provider-file-9
+    tools:
+      - type: file_search
+        vector_store_ids:
+          - bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCxhYmMtMTIzO3RhcmdldF9tb2RlbF9uYW1lcyxncHQtNDtyZXNvdXJjZV9pZCx2c19hYmMxMjM7bW9kZWxfaWQsZGVwbG95bWVudC0x
+          - vs_plain
+      - type: code_interpreter
+        container:
+          type: auto
+          file_ids:
+            - file-mapped
+            - file-plain
+      - type: code_interpreter
+        container:
+          file_ids: nope
+      - type: function
+        name: lookup
+env: {}
+compare:
+  ignore: []

@@ -9,8 +9,16 @@ use std::collections::BTreeMap;
 #[case::three_gpp("3gpp", FileType::ThreeGpp, "video/3gpp")]
 #[case::mpa("mpa", FileType::Mpa, "audio/m4a")]
 fn mime_extension_table(#[case] extension: &str, #[case] file_type: FileType, #[case] mime: &str) {
-    assert_eq!(type_from_extension(extension), Ok(file_type));
-    assert_eq!(mime_from_extension(extension), Ok(mime));
+    assert_eq!(
+        find_type(extension).ok_or_else(|| FileTypeError::UnknownExtension(extension.to_owned())),
+        Ok(file_type)
+    );
+    assert_eq!(
+        find_type(extension)
+            .ok_or_else(|| FileTypeError::UnknownExtension(extension.to_owned()))
+            .map(mime_from_type),
+        Ok(mime)
+    );
     let canonical_extension = if extension == "jpg" {
         "jpeg"
     } else {
@@ -27,7 +35,10 @@ fn mime_extension_table(#[case] extension: &str, #[case] file_type: FileType, #[
 #[case::dot(".jpg", Err(FileTypeError::UnknownExtension(String::from(".jpg"))))]
 #[case::space(" jpg", Err(FileTypeError::UnknownExtension(String::from(" jpg"))))]
 fn mime_lookup_edges(#[case] input: &str, #[case] expected: Result<FileType, FileTypeError>) {
-    assert_eq!(type_from_extension(input), expected);
+    assert_eq!(
+        find_type(input).ok_or_else(|| FileTypeError::UnknownExtension(input.to_owned())),
+        expected
+    );
 }
 
 #[rstest]

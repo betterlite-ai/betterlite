@@ -1,0 +1,1 @@
+{"fallback_generalizations":{"rules":[{"name":"bad","pattern":"^x","model_info":null},{"name":"tiers","pattern":"^y","model_info":{"tiered_pricing":{}}},{"name":"windows","pattern":"^z","model_info":{"off_peak_pricing":{"windows":null}}}]},"model":{"litellm_provider":"openai"}}

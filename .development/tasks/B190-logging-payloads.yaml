@@ -4,6 +4,9 @@ description: >-
   Complete get_standard_logging_object_payload/emit_standard_logging_payload (litellm_logging.py 6485-6779) over
   B254 typed fields, B253 metadata and B252 stream aggregation. Compose the Logging lifecycle supplied by B247 state,
   B248 dynamic callbacks, B249 pre/post dispatch, B250 success and B251 failure; B012 wires them into server routes.
+  The composed lifecycle takes the success handler's StreamAssembler (B250's port) as an `Arc<dyn StreamAssembler>`
+  input and never picks one: B012 passes B252's ChatStreamAssembler, and B8610 later passes
+  B9840's LoggedStreamAssembler, which also covers Responses and interaction streams, in its place.
   Implement redact_messages.py redacted_standard_logging_payload/_redact_standard_logging_object (175-210) after
   assembling independent per-callback snapshots. Preserve Decimal seconds/numbers for startTime/endTime/completionStartTime/response_time,
   optional cost fields, service tier from B212 and absent unimplemented auth/spend fields. Classifier audit belongs
@@ -17,7 +20,6 @@ scope:
   - crates/betterlite-logging/Cargo.toml
   - crates/betterlite-logging/src/payload.rs
   - crates/betterlite-logging/src/payload/**
-  - crates/betterlite-openai/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/logging/payload.rs
   - tools/oracle/src/helpers/logging/payload/**
@@ -104,7 +106,7 @@ out_of_scope:
   B250, failure B251, stream aggregation B252; payload setup B253/B254.
 - >-
   ClassifierAudit helpers and _autorouter_savings_for_payload are B021; deployment pricing and cost helpers B068/B069;
-  callback setup/get_custom_logger_compatible_class B189 plus exporter branches B110-B118; prompt-management B117,
+  callback setup/get_custom_logger_compatible_class B189 plus exporter branches B110-B118; prompt-management registry B117 and logging prompt methods B8560,
   MCP B140, other endpoint conversions B080-B099.
 - >-
   Complete remaining litellm_logging ownership: _get_cached_prometheus_logger is B111; pricing helpers 417-533,
@@ -116,13 +118,15 @@ out_of_scope:
   Logging._build_standard_logging_payload is the thin call into this task; access-group extraction 5604-5637 is
   B052 auth metadata, _autorouter_savings_for_payload is B021, and _get_traceback_str_for_error is B251. create_dummy_standard_logging_payload
   is a Python test/SDK convenience owned by B164, not production event synthesis. Every StandardLoggingPayloadSetup
-  method is B253/B254 except get_model_cost_information (B068) and _generate_cold_storage_object_key (B115).
+  method is B253/B254 except get_model_cost_information (B068) and _generate_cold_storage_object_key (B9520). Call B9520's stamp_cold_storage_object_key right after get_standard_logging_metadata, with the start time, the response id and the injected ColdStorageLocator's locate().
 pitfalls:
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/logging_payload-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as logging_payload in the logging group. Replace the stub Op in tools/oracle/src/helpers/logging/payload.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/logging_payload.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Logged output must reflect post-processing that changed the served response, not the raw provider text.
 - A sparse choice index must not allocate an unbounded vector.
 - Do not create a permissive catch-all JSON logging record to avoid typing the standard payload.
+- The lifecycle tests drive streams through a recording StreamAssembler; naming ChatStreamAssembler inside the lifecycle
+  would leave a Responses or interaction stream with no assembled response once the production assembler is passed in.
 review_level: standard
 budget:
   max_changed_lines: 1500

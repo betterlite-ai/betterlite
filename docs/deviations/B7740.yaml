@@ -1,0 +1,17 @@
+task: B7740
+deviations:
+  - what: The Swagger page has no LazyLoadPlugin and POST /lazy/warm/<tag> does not exist. The page keeps only the tagsSorter "alpha" edit.
+    why: LiteLLM loads some route groups on first use and the plugin warms them from the browser. betterlite registers every route at startup, so there is nothing to warm and no "(expand to load routes)" hint to show.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2493-L2555
+  - what: Responses for /swagger files carry content-type and content-length but no last-modified, etag, accept-ranges or content-range headers; conditional requests and Range requests are ignored and always get the full 200 body, so a Range request never gets a 206 or a 416.
+    why: The files are embedded in the binary, so there is no file time or byte-range source to report. Browsers load these assets with plain GETs, and an HTTP client that sent a range accepts a full 200 response. The oracle cases ignore those headers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2484
+  - what: The OpenAPI url, asset urls and OAuth2 redirect url use the scalar SERVER_ROOT_PATH, not the per-request prefix that SERVER_ROOT_PATHS picks.
+    why: FastAPI reads scope root_path, which the per-request middleware rewrites. This task has no access to that value; the scalar value is used until a later task wires the request prefix in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1731-L1742
+  - what: The slash redirects build an absolute Location with the http scheme, where Starlette builds it from the request's scheme, so over TLS or through a proxy that sets X-Forwarded-Proto LiteLLM answers with an https Location and betterlite with an http one.
+    why: betterlite's HTTP server has no TLS listener and does not put the peer address in request extensions, so docs_router can neither see TLS nor tell whether X-Forwarded-Proto comes from a trusted proxy (uvicorn trusts 127.0.0.1 and ::1). Carrying the scheme into the router needs a server-layer change outside this task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2484
+  - what: Route matching normalizes the configured SERVER_ROOT_PATH by trimming trailing slashes and treating "/" as empty, where FastAPI compares root_path as given; with root_path "/api/" LiteLLM answers /api/redoc with 404 and /api//redoc with 200, and with "/" GET / redirects to "//".
+    why: A root path with a trailing slash cannot match its own routes under get_route_path, so no working setup serves docs with it; LiteLLM's page urls already strip that slash, and betterlite uses the same normalization for matching. A test pins /api/redoc at 200 for the root path /api/.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1738

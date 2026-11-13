@@ -199,39 +199,30 @@ fn inner_error_present_without_matching_code_blocks_innererror_fallback() {
     assert!(!matches!(class, ErrorClass::ContentPolicyViolation(_)));
 }
 
-#[test]
-fn azure_error_code_falls_back_to_top_level_code_without_error_object() {
-    let mut request = input("invalid_encrypted_content body", Some(400));
-    request.body = Some(AzureErrorBody {
-        kind: None,
-        param: None,
-        code: Some("invalid_encrypted_content".to_owned()),
-        message: None,
-        error: None,
-    });
+#[rstest]
+#[case::nested_encrypted_on_server_status(
+    AzureErrorBody { kind: None, param: None, code: None, message: None, error: Some(AzureErrorDetail { kind: None, param: None, code: Some("invalid_encrypted_content".to_owned()), message: None, inner_error: None, innererror: None }) }, Some(500), "bad_request", 500
+)]
+#[case::nested_encrypted_without_status(
+    AzureErrorBody { kind: None, param: None, code: None, message: None, error: Some(AzureErrorDetail { kind: None, param: None, code: Some("invalid_encrypted_content".to_owned()), message: None, inner_error: None, innererror: None }) }, None, "bad_request", 400
+)]
+#[case::top_level_encrypted_on_server_status(
+    AzureErrorBody { kind: None, param: None, code: Some("invalid_encrypted_content".to_owned()), message: None, error: None }, Some(500), "bad_request", 500
+)]
+#[case::top_level_policy_on_server_status(
+    AzureErrorBody { kind: None, param: None, code: Some("content_policy_violation".to_owned()), message: None, error: None }, Some(500), "content_policy_violation", 500
+)]
+fn body_code_decides_the_class(
+    #[case] body: AzureErrorBody,
+    #[case] status_code: Option<u16>,
+    #[case] expected_family: &str,
+    #[case] expected_status: u16,
+) {
+    let mut request = input("boom", status_code);
+    request.body = Some(body);
     let class = map_azure_exception(&request);
-    assert!(matches!(class, ErrorClass::BadRequest(_)));
-}
-
-#[test]
-fn invalid_encrypted_content_body_code_routes_bad_request() {
-    let mut request = input("boom", Some(400));
-    request.body = Some(AzureErrorBody {
-        kind: None,
-        param: None,
-        code: None,
-        message: None,
-        error: Some(AzureErrorDetail {
-            kind: None,
-            param: None,
-            code: Some("invalid_encrypted_content".to_owned()),
-            message: None,
-            inner_error: None,
-            innererror: None,
-        }),
-    });
-    let class = map_azure_exception(&request);
-    assert!(matches!(class, ErrorClass::BadRequest(_)));
+    assert_eq!(describe(&class).0, expected_family);
+    assert_eq!(class.metadata().status_code, expected_status);
 }
 
 #[test]
@@ -272,6 +263,9 @@ fn status_classification_renders_the_matching_label(#[case] status: u16, #[case]
     Some(500),
     500
 )]
+#[case::request_timeout_408("boom", Some(408), 408)]
+#[case::gateway_timeout_504("boom", Some(504), 504)]
+#[case::unmapped_status_418("boom", Some(418), 418)]
 fn response_branches_answer_the_provider_status(
     #[case] error_str: &str,
     #[case] status_code: Option<u16>,
@@ -279,6 +273,37 @@ fn response_branches_answer_the_provider_status(
 ) {
     let class = map_azure_exception(&input(error_str, status_code));
     assert_eq!(class.metadata().status_code, expected_status);
+}
+
+#[rstest]
+#[case::missing_credential_keeps_caller(
+    "The api_key client option must be set either by passing api_key to the client or by setting",
+    None,
+    "azure_text"
+)]
+#[case::connection_error_keeps_caller("Connection error talking to Azure", None, "azure_text")]
+#[case::text_branch_answers_azure("Internal server error occurred", None, "azure")]
+#[case::content_policy_answers_azure(
+    "content_policy_violation detected in prompt",
+    Some(400),
+    "azure"
+)]
+#[case::encrypted_answers_azure("the signature could not be verified", Some(500), "azure")]
+#[case::invalid_request_answers_azure("invalid_request_error: bad field", None, "azure")]
+#[case::status_branch_answers_azure("boom", Some(401), "azure")]
+#[case::no_status_answers_azure("boom", None, "azure")]
+fn provider_split_for_azure_text(
+    #[case] error_str: &str,
+    #[case] status_code: Option<u16>,
+    #[case] expected_provider: &str,
+) {
+    let mut request = input(error_str, status_code);
+    request.custom_llm_provider = "azure_text".to_owned();
+    let class = map_azure_exception(&request);
+    assert_eq!(
+        class.metadata().provider.as_deref(),
+        Some(expected_provider)
+    );
 }
 
 #[test]

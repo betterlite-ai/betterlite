@@ -1,0 +1,9 @@
+task: B606
+deviations:
+  - what: >-
+      JSON nested deeper than serde_json's 128-level recursion limit is not parsed, while Python's json.loads handles roughly 990 levels. A textual function call whose arguments nest 129 to about 990 levels deep becomes tool_calls with finish_reason tool_calls in LiteLLM
+      (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2306-L2315) and is left untouched here; a properties payload of that depth is unwrapped there, and past Python's own limit LiteLLM's unwrap raises RecursionError
+      (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2475-L2479) where betterlite returns the input string.
+    why: >-
+      Every input needs a bound, and serde_json's recursion limit is the parser's fixed stack-safety bound. Raising it would let one provider response exhaust the stack, so the cap stays and both call paths behave as they do for any document the parser rejects: recovery keeps the message and finish reason, unwrap returns the original text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L2306-L2315

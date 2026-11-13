@@ -1,0 +1,9 @@
+kind: helper
+name: endpoint-swap-sibling-signal
+call:
+  b3855:
+    function: normalize_otel_endpoint
+    endpoint: http://collector:4318/v1/logs
+    signal: metrics
+env: {}
+compare: {ignore: []}

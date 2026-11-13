@@ -1,0 +1,5 @@
+kind: helper
+name: request-get-retry-429
+call: {"b3152": {"operation": "request", "method": "GET", "path": "user/repos", "replies": [{"status": 429}, {"status": 502}, {"status": 200, "body": []}]}}
+env: {}
+compare: {ignore: []}

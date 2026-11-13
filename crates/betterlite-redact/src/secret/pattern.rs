@@ -67,12 +67,6 @@ pub(super) fn dotted_i(pattern: &str) -> String {
     folded
 }
 
-// Matches Python's `\w` set (`\p{L}\p{N}_`), which excludes combining marks that char::is_alphanumeric() treats as alphabetic.
-fn is_py_word_char(py_word: &Regex, ch: char) -> bool {
-    let mut buf = [0_u8; 4];
-    py_word.is_match(ch.encode_utf8(&mut buf))
-}
-
 fn branches(minimum_custom_key_length: usize) -> Vec<String> {
     let sk_min_len = minimum_custom_key_length.saturating_sub(SK_PREFIX.len());
     let raw = vec![
@@ -120,9 +114,12 @@ pub(super) struct SecretPatterns {
 }
 
 // Builds one anchored regex per (name, branch subset), joined and compiled as `^(?:...)` to re-run at a credential's start, letting the named branches compete for that same start.
-fn anchored_regexes<'branch>(
-    selections: impl IntoIterator<Item = (&'static str, Vec<&'branch str>)>,
-) -> Result<Vec<(&'static str, Regex)>, RedactionError> {
+fn anchored_regexes<'branch, Selections>(
+    selections: Selections,
+) -> Result<Vec<(&'static str, Regex)>, RedactionError>
+where
+    Selections: IntoIterator<Item = (&'static str, Vec<&'branch str>)>,
+{
     let mut patterns = Vec::new();
     for (name, selected) in selections {
         let joined = selected.join("|");
@@ -197,10 +194,14 @@ impl SecretPatterns {
             let Some(credential) = captures.name(name) else {
                 continue;
             };
+            // Matches Python's `\w` set (`\p{L}\p{N}_`), which excludes combining marks that char::is_alphanumeric() treats as alphabetic.
             let preceded_by_word_char = text
                 .get(..credential.start())
                 .and_then(|prefix| prefix.chars().next_back())
-                .is_some_and(|ch| is_py_word_char(&self.py_word, ch));
+                .is_some_and(|ch| {
+                    let mut buf = [0_u8; 4];
+                    self.py_word.is_match(ch.encode_utf8(&mut buf))
+                });
             if !preceded_by_word_char {
                 return Some((credential.start(), credential.end()));
             }

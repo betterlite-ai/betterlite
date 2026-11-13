@@ -95,7 +95,7 @@ out_of_scope:
   - Evidence fetching and worker model inference; B4507, B4508, B4509 consume these primitives.
   - The orchestrator that sequences extraction, investigation and grouping; B4509 owns that.
   - Server routes and HTTP registration; B4503 and B4505 register handlers using these types.
-  - The worker executable and its model/read/progress callback implementations; B132 supplies those.
+  - The worker executable and its model/read/progress callback implementations; B8232 supplies those.
 pitfalls:
   - concurrent_results manages asyncio tasks directly; ensure task cancellation and error collection in the finally block match LiteLLM's exception handling order.
   - partition_items uses reduce to build batches; a zero limit or an item larger than the limit will cause batches to grow without bound. Validate limits and item sizes in tests.

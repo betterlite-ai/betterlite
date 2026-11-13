@@ -1,0 +1,195 @@
+id: B3861
+title: Arize and Weave attributes and passthrough projection
+description: >-
+  Port the rest of LiteLLM's Arize attribute code and the Weave attribute setters: the `set_attributes` flow that fills one span for an LLM call, the session, user and cost extras, the passthrough input and output projection, the MCP tool projection, and Weave's own message and span attributes. Arize code goes under `crates/betterlite-logging/src/otel/integrations/arize_attributes.rs` and its folder, Weave code under `weave_attributes.rs` and its folder. Nothing calls it yet: B3862 (Arize and Phoenix), B3863 (Weave) and the Langfuse OTel attributes task call it from their callbacks.
+
+
+  Reuse what earlier tasks built, and do not copy it. B3844 gives `SafeSetAttribute::safe_set_attribute(&mut self, key: &str, value: &OtelModelValue)` on every `opentelemetry::trace::Span`, the `LLMObsAttributes` trait and `OtelModelValue` (with `as_object`, `as_array`, `as_str`, `as_bool`). `MetadataMap` is `BTreeMap<String, OtelModelValue>`. B3860 gives, in `otel/integrations/arize_messages`, the `keys` submodule of attribute names, `ArizeOtelAttributes` (the `LLMObsAttributes` impl that writes input messages), `coerce_text(&OtelModelValue) -> Option<String>` and `set_response_attributes(span, response: &OtelModelValue)`. B3846 gives, in `otel/integrations/arize_span_kind.rs`, the Rust forms of `_infer_open_inference_span_kind` and `_set_tool_attributes`. Read the exact pub names and signatures of those three modules on main before you start, and call them as they are. Use `keys` from B3860 for `input.value`, `output.value`, `llm.input_messages`, `llm.output_messages`, `message.role` and `message.content`. Put the other attribute names this task needs in your own `arize_attributes/keys.rs` as public `&str` constants: `metadata`, `llm.model_name`, `llm.provider`, `llm.invocation_parameters`, `user.id`, `session.id`, `tool.name`, `input.mime_type`, `output.mime_type`, `openinference.span.kind`, `llm.request.type`, `llm.request.max_tokens`, `llm.request.temperature`, `llm.request.top_p`, `llm.is_streaming`, `llm.user`, `llm.response.id`, `llm.response.model`, `litellm.trace_id`, `litellm.team_id`, `litellm.team_alias`, `litellm.key_alias`, `llm.cost.total`, `llm.response.cost`, and the two mime values `application/json` and `text/plain`.
+
+
+  Python reads dicts with `.get` and truthiness. Rust reads `OtelModelValue` only, so every function takes `&MetadataMap` or `&OtelModelValue`, and a missing key and a null value read the same unless a rule below says otherwise. Write one small `is_truthy(&OtelModelValue) -> bool` in `arize_attributes/truthy.rs` for the "when truthy" rules: null and false are not, a number is when it is not zero, a string, array or object is when it is not empty. Every function takes the span as `&mut S` with `S: opentelemetry::trace::Span`. The Python `_safe_emit` only swallows exceptions, and nothing in this task can fail, so it has no Rust form. `_coerce_response_obj_for_attrs` also has none: it turns a Pydantic model or an `httpx.Response` into a dict, and betterlite already holds every response as a JSON value, so the response is used as it is. LiteLLM's `safe_dumps` becomes `serde_json::to_string` of the `OtelModelValue`.
+
+
+  `set_attributes<A: LLMObsAttributes, S: Span>(span: &mut S, kwargs: &MetadataMap, response: &OtelModelValue, redact_messages: bool)` is `_utils.set_attributes`. `redact_messages` is LiteLLM's `should_redact_message_logging(kwargs)`; the logger that calls this works it out once with the logging privacy code (B188) and passes the answer, so this task never reads redaction settings. The steps run in this order.
+
+
+  First, the early span kind: `slp` is `kwargs["standard_logging_object"]`, `call_type` is its `call_type` when `slp` is an object, and `openinference.span.kind` is written with the B3846 span kind function applied to `call_type`. Second, the main block. When `slp` is not an object, log `[Arize/Phoenix] Failed to set OpenInference span attributes: standard_logging_object not found in kwargs` with `tracing::error!`, add a span event named `exception` with the attributes `exception.type` = `ValueError` and `exception.message` = `standard_logging_object not found in kwargs`, and skip the rest of this block. Otherwise run these in order. (a) `metadata` is `slp["metadata"]`: when present and not null, write `metadata` with its JSON text. (b) `optional_params` is `kwargs["optional_params"]` when it is an object and an empty object otherwise. `litellm_params` is `kwargs["litellm_params"]` or an empty object. (c) The request attributes, in this order: `llm.model_name` from `kwargs["model"]` when truthy; `llm.request.type` from `slp["call_type"]`; `llm.provider` from `litellm_params["custom_llm_provider"]`, or `Unknown` when the key is absent; `llm.request.max_tokens`, `llm.request.temperature` and `llm.request.top_p` from the same names in `optional_params`, each only when truthy; `llm.is_streaming` as the text `True` or `False` of `optional_params["stream"]` (`False` when absent, `None` when null); `llm.user` from `optional_params["user"]` when truthy. Then, only when `response` is an object: `llm.response.id` and `llm.response.model` from its `id` and `model`, each when truthy. (d) The B3846 tool attributes function, with `optional_params["tools"]` and the metadata tools, which are `slp["metadata"]["llm"]["tools"]` when `metadata` and `llm` are objects and nothing otherwise. (e) `A::set_messages(span, kwargs)`. (f) `model_parameters` is `slp["model_parameters"]`; when it is truthy write `llm.invocation_parameters` with its JSON text, and when its `user` is truthy write `user.id` from it. (g) B3860's `set_response_attributes(span, response)`. Third, after the main block whatever happened in it, the four extra emitters in this order: session and user, response cost, passthrough, MCP.
+
+
+  `identity.rs` holds the first two extras. Session and user (`_set_session_and_user_attrs`): nothing unless `slp` is an object, and `metadata` is `slp["metadata"]` or an empty object, and nothing again unless that is an object. `user_api_key_end_user_id`, when truthy, writes `session.id`. `slp["trace_id"]`, when truthy, writes `litellm.trace_id`. If neither `optional_params["user"]` (the unsanitized `kwargs["optional_params"]` object) nor `slp["model_parameters"]["user"]` is truthy, `metadata["user_api_key_user_id"]` when truthy writes `user.id`. Then `user_api_key_team_id`, `user_api_key_team_alias` and `user_api_key_alias`, each when truthy, write `litellm.team_id`, `litellm.team_alias` and `litellm.key_alias`. Values are declared strings and are written as they are. Response cost (`_set_response_cost_attr`): nothing unless `slp` is an object with a `response_cost` that is not null. A number, or a string that `str::parse::<f64>` accepts after trimming, becomes an `f64`; a bool becomes 1.0 or 0.0; any other value, and any value that is not a finite float, writes nothing. The float is written to `llm.cost.total` and then `llm.response.cost`. Build the attribute number with `serde_json::Number::from_f64`, never from an integer, so a cost of `1` is still the float `1.0`.
+
+
+  `passthrough.rs` is `_maybe_normalize_passthrough` and its three helpers. It runs only when `slp` is an object and its `call_type` lowercased contains `passthrough` or `pass_through`; an absent or empty `call_type` does not. When `redact_messages` is true it returns at once, so neither input nor output is written. Input: `kwargs["additional_args"]["complete_input_dict"]` must be an object, and its `messages` must be a non-empty array. `input.value` is written first, and only when a text is found: walk the messages from last to first, skip non-objects, and the first one whose `coerce_text(content)` is a non-empty string gives the text. Then for each message at `idx`, skipping non-objects, with `prefix = "llm.input_messages.{idx}"`: write `{prefix}.message.role` when `role` is truthy, and write `{prefix}.message.content` when `coerce_text(content)` is not None (an empty string is written). Output: the parsed response comes from `parse_passthrough_response(response, kwargs)`, which is `_parse_passthrough_response` with raw and coerced response being the same value. If `response` is an object: when it has a `response` key and neither a `content` nor a `choices` key, look at `response["response"]`. A string that parses with `serde_json::from_str` into an object is the answer, and a string that does not parse, or parses into anything else, ends the search for this candidate. An object value is the answer, and any other value ends the search for this candidate. An object `response` with a `content` or a `choices` key, or with no `response` key, is itself the answer. If there is still no answer, use `kwargs["original_response"]`: an object is the answer, a string that parses into an object is the answer, and anything else gives None. With None, stop. With an answer, run two independent steps in this order. Step one: `content` must be a non-empty array. Collect each object entry's `text` when it is a string, drop empty ones, and join the rest with two newlines. When the result is not empty, write `output.value`, `llm.output_messages.0.message.role` from the answer's `role` (`assistant` when the key is absent) and `llm.output_messages.0.message.content`, both with the joined text. Step two: `choices` must be a non-empty array whose first entry is an object with an object `message`. When `coerce_text(message["content"])` is a non-empty string, write `output.value`, `llm.output_messages.0.message.role` from the message's `role` (`assistant` when absent) and `llm.output_messages.0.message.content`. Step two runs even after step one wrote, and its `output.value` replaces it.
+
+
+  `mcp.rs` is `_maybe_set_mcp_tool_attrs`, `_has_only_text_parts` and `_set_mcp_tool_output`. It runs only when `slp` is an object with `call_type` equal to `call_mcp_tool`, and `slp["metadata"]["mcp_tool_call_metadata"]` is an object (nothing when `metadata` is not an object or the key is absent or null). `tool.name` is written from its `name`, else its `namespaced_tool_name`, when that is truthy. When `redact_messages` is true, stop here. If `arguments` is not null, write `input.value` with its JSON text and `input.mime_type` = `application/json`. Then the output, which needs the response to be an object. `content` is `response["content"]` and `text` is `coerce_text(content)`. When `text` is a non-empty string and `content` is either not an array or an array where every entry has `coerce_text` of that one-entry array not None, write `output.value` = the text and `output.mime_type` = `text/plain`, and stop. Otherwise `structured` is `response["structured_content"]` when that key exists (even if null), else `response["structuredContent"]`. The payload is `content` when `content` is truthy, else `structured` when it is not null, else `content`. A null or absent payload stops. Otherwise write `output.value` with the payload's JSON text and `output.mime_type` = `application/json`. So an empty `content` array with no structured value still writes `[]`.
+
+
+  Weave. `weave_attributes.rs` holds `WeaveSpanAttributes` as public constants in a `keys` submodule: `wandb.display_name`, `wandb.thread_id`, `wandb.is_turn`. `WeaveOtelAttributes` is a unit struct that implements `LLMObsAttributes`; its `set_messages` writes `input.value` as the JSON text of an object with `messages` first (`kwargs["messages"]` when it is an array, else an empty array), then `functions` and then `tools` from `kwargs["optional_params"]`, each only when present and not null. `set_weave_specific_attributes<S: Span>(span, kwargs: &MetadataMap, response: &OtelModelValue)` is `_set_weave_specific_attributes`. `metadata` is `kwargs["metadata"]` or an empty object, `model` is `kwargs["model"]` or the empty string, and the provider is `kwargs["litellm_params"]["custom_llm_provider"]` or the empty string. `display_name` is `metadata["display_name"]` when truthy; otherwise, when `model` is not empty, it is `{provider}/{model}` with a non-empty provider and `model` alone without one. When there is a display name, every `/` in it becomes `__` and it is written to `wandb.display_name`. When `metadata["session_id"]` is present and not null, an array or object value is first replaced by its JSON text, then `wandb.thread_id` is written with it and `wandb.is_turn` with `true`. Last, when `response` is an object that is not empty, `output.value` is written with its JSON text, replacing the value from the earlier steps. `set_weave_otel_attributes<S: Span>(span, kwargs, response, redact_messages)` runs `set_attributes::<WeaveOtelAttributes, S>` and then `set_weave_specific_attributes`. `WeaveOtelLogger`, `get_weave_otel_config`, `weave_otel_endpoint`, `WeaveOtelConfig` and the auth header are not this task's, see out_of_scope.
+
+
+  Tests sit in `arize_attributes/tests.rs` and `weave_attributes/tests.rs`, declared with `#[path]`. They read attributes back through `opentelemetry_sdk::trace::InMemorySpanExporter`, as B3844's tests do. Test names in the Arize file start with `attributes_`, `session_`, `cost_`, `passthrough_` and `mcp_`, and in the Weave file with `weave_`. Use rstest tables where several inputs share one assertion. The oracle adapter is operation `b3861`. Tagged inputs: `{"function": "set_attributes", "kwargs": {...}, "response": ..., "redact_messages": false}` runs the Arize flow with `ArizeOTELAttributes`, and `{"function": "set_weave_attributes", "kwargs": {...}, "response": ..., "redact_messages": false}` runs `set_weave_otel_attributes`. Both answer `{"result": {"attributes": {key: value}, "exceptions": [{"type": "...", "message": "..."}]}}`, where `exceptions` lists what `record_exception` received. On both sides a value stored under `output.value`, `input.value`, `metadata` or `llm.invocation_parameters` is replaced by its parsed JSON when it parses, so spacing and key order in `json.dumps` text never matter. For a message whose `content` is an array, both sides drop `input.value` and `llm.input_messages.{n}.message.content`, since LiteLLM writes Python's list repr there (B3860 has the same rule). The Python adapter calls the real `_utils.set_attributes` and `set_weave_otel_attributes` with a recording span that keeps what `set_attribute` receives and what `record_exception` receives. When `redact_messages` is true it sets `kwargs["litellm_params"]["metadata"]["headers"]["x-litellm-enable-message-redaction"] = True` first, creating the dicts if they are missing, so the real `should_redact_message_logging` answers true, and cases that set it must not also carry a `turn_off_message_logging` value. As in the B3860 adapter, Responses `output` items become `SimpleNamespace` objects before the call.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/integrations/arize_attributes.rs
+    - crates/betterlite-logging/src/otel/integrations/arize_attributes/**
+    - crates/betterlite-logging/src/otel/integrations/weave_attributes.rs
+    - crates/betterlite-logging/src/otel/integrations/weave_attributes/**
+    - tools/oracle/cases/helpers/arize-attributes/**
+    - tools/oracle/helpers/b3861.py
+    - tools/oracle/helpers/b3861/**
+    - tools/oracle/src/helpers/logging/b3861.rs
+    - tools/oracle/src/helpers/logging/b3861/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L413-L486
+    why: set_attributes, with the early span kind, the guarded main block in its order, and the four extra emitters after it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L488-L567
+    why: _sanitize_optional_params, _set_metadata_attributes, the tool extractors, _set_request_attributes and _set_model_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L570-L617
+    why: _safe_emit, _set_early_span_kind and _coerce_response_obj_for_attrs, which has no Rust form.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L836-L905
+    why: _set_session_and_user_attrs and _set_response_cost_attr.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L908-L1086
+    why: The passthrough call type test, _maybe_normalize_passthrough, the input and output writers and _parse_passthrough_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L1089-L1151
+    why: _maybe_set_mcp_tool_attrs, _has_only_text_parts and _set_mcp_tool_output.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weave/weave_otel.py#L37-L106
+    why: WeaveLLMObsOTELAttributes.set_messages and _set_weave_specific_attributes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weave/weave_otel.py#L173-L179
+    why: set_weave_otel_attributes, the order of the shared flow and the Weave extras.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/weave_otel.py#L17-L30
+    why: WeaveSpanAttributes values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2372-L2395
+    why: How the legacy OTel logger reaches set_weave_otel_attributes, and what it skips for the other vendors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2866-L2900
+    why: StandardLoggingMCPToolCall fields read by the MCP projection (name, namespaced_tool_name, arguments).
+  - url: https://arize-ai.github.io/openinference/spec/semantic_conventions.html
+    why: The OpenInference attribute reference these keys come from.
+
+dod:
+  - text: set_attributes writes the early span kind, the request attributes with their truthy and default rules, the metadata and invocation parameter JSON, the tool attributes, the messages and the response attributes in LiteLLM's order.
+    proof: [attribute-flow, oracle, helper-python]
+  - text: A missing standard_logging_object logs an error, adds the exception event, writes only the early span kind and the extras, and does not stop the extras.
+    proof: [attribute-flow, oracle, helper-python]
+  - text: Session, user, team and key alias attributes follow the has-user rule and are skipped when empty, and response cost writes both cost keys as floats and nothing for an unparsable value.
+    proof: [identity-extras, oracle, helper-python]
+  - text: Passthrough input and output are projected only for passthrough call types and never when redaction is on, including the wrapper response, the original_response fallback and the content then choices override.
+    proof: [passthrough-projection, oracle, helper-python]
+  - text: MCP tool spans get tool.name always, and arguments and output only without redaction, with the text, structured and empty content rules and the matching mime types.
+    proof: [mcp-projection, oracle, helper-python]
+  - text: Weave writes the prompt JSON, the display name with slashes replaced, the thread id and is_turn flag, and the response JSON as output.value.
+    proof: [weave-attributes, oracle, helper-python]
+
+checks:
+  optional: []
+  commands:
+    - id: attribute-flow
+      why: the set_attributes tests are missing or an attribute, its order, a default or the missing-payload path differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_attributes::tests::attributes_/)'
+    - id: identity-extras
+      why: the session, user, team or cost tests are missing or a key, the has-user rule or the float rule differs
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_attributes::tests::(session|cost)_/)'
+    - id: passthrough-projection
+      why: the passthrough tests are missing or the call type test, the response search, the redaction stop or an output key differs
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_attributes::tests::passthrough_/)'
+    - id: mcp-projection
+      why: the MCP tests are missing or the tool name, arguments, text, structured or mime rules differ
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::arize_attributes::tests::mcp_/)'
+    - id: weave-attributes
+      why: the Weave tests are missing or the prompt JSON, display name, thread id or output override differs
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::integrations::weave_attributes::tests::weave_/)'
+    - id: helper-python
+      why: the oracle adapter is untouched or fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3861.py tools/oracle/helpers/b3861)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/arize-attributes/attributes-chat-request-basic.yaml
+  - tools/oracle/cases/helpers/arize-attributes/attributes-zero-params-skipped.yaml
+  - tools/oracle/cases/helpers/arize-attributes/attributes-provider-defaults-to-unknown.yaml
+  - tools/oracle/cases/helpers/arize-attributes/attributes-stream-flag-text.yaml
+  - tools/oracle/cases/helpers/arize-attributes/attributes-tools-in-optional-params.yaml
+  - tools/oracle/cases/helpers/arize-attributes/attributes-metadata-llm-tools.yaml
+  - tools/oracle/cases/helpers/arize-attributes/attributes-model-parameters-user.yaml
+  - tools/oracle/cases/helpers/arize-attributes/attributes-missing-standard-logging-object.yaml
+  - tools/oracle/cases/helpers/arize-attributes/attributes-response-id-and-model.yaml
+  - tools/oracle/cases/helpers/arize-attributes/attributes-call-type-sets-span-kind.yaml
+  - tools/oracle/cases/helpers/arize-attributes/session-end-user-and-team.yaml
+  - tools/oracle/cases/helpers/arize-attributes/session-user-skipped-when-optional-user-set.yaml
+  - tools/oracle/cases/helpers/arize-attributes/session-user-from-key-metadata.yaml
+  - tools/oracle/cases/helpers/arize-attributes/session-empty-values-skipped.yaml
+  - tools/oracle/cases/helpers/arize-attributes/cost-number-and-string.yaml
+  - tools/oracle/cases/helpers/arize-attributes/cost-invalid-and-null.yaml
+  - tools/oracle/cases/helpers/arize-attributes/passthrough-input-last-text.yaml
+  - tools/oracle/cases/helpers/arize-attributes/passthrough-input-roles-and-empty-content.yaml
+  - tools/oracle/cases/helpers/arize-attributes/passthrough-output-anthropic-content.yaml
+  - tools/oracle/cases/helpers/arize-attributes/passthrough-output-openai-choices.yaml
+  - tools/oracle/cases/helpers/arize-attributes/passthrough-choices-override-content.yaml
+  - tools/oracle/cases/helpers/arize-attributes/passthrough-wrapper-response-string.yaml
+  - tools/oracle/cases/helpers/arize-attributes/passthrough-wrapper-response-object.yaml
+  - tools/oracle/cases/helpers/arize-attributes/passthrough-original-response-fallback.yaml
+  - tools/oracle/cases/helpers/arize-attributes/passthrough-redacted-writes-nothing.yaml
+  - tools/oracle/cases/helpers/arize-attributes/passthrough-ordinary-call-type-skipped.yaml
+  - tools/oracle/cases/helpers/arize-attributes/passthrough-underscore-spelling.yaml
+  - tools/oracle/cases/helpers/arize-attributes/mcp-text-output.yaml
+  - tools/oracle/cases/helpers/arize-attributes/mcp-structured-content.yaml
+  - tools/oracle/cases/helpers/arize-attributes/mcp-mixed-parts-json.yaml
+  - tools/oracle/cases/helpers/arize-attributes/mcp-redacted-keeps-tool-name.yaml
+  - tools/oracle/cases/helpers/arize-attributes/mcp-namespaced-tool-name.yaml
+  - tools/oracle/cases/helpers/arize-attributes/mcp-empty-content-array.yaml
+  - tools/oracle/cases/helpers/arize-attributes/mcp-camel-case-structured-content.yaml
+  - tools/oracle/cases/helpers/arize-attributes/mcp-no-tool-metadata.yaml
+  - tools/oracle/cases/helpers/arize-attributes/weave-messages-with-functions-and-tools.yaml
+  - tools/oracle/cases/helpers/arize-attributes/weave-display-name-provider-and-model.yaml
+  - tools/oracle/cases/helpers/arize-attributes/weave-display-name-from-metadata.yaml
+  - tools/oracle/cases/helpers/arize-attributes/weave-session-id-string.yaml
+  - tools/oracle/cases/helpers/arize-attributes/weave-session-id-object.yaml
+  - tools/oracle/cases/helpers/arize-attributes/weave-no-session-no-model.yaml
+  - tools/oracle/cases/helpers/arize-attributes/weave-output-replaces-response-projection.yaml
+  - tools/oracle/cases/helpers/arize-attributes/weave-empty-response.yaml
+
+deviations:
+  - what: Every JSON text written to an attribute (`metadata`, `llm.invocation_parameters`, the MCP arguments and payload, Weave's prompt and output) comes from `serde_json::to_string`. It has no spaces after `:` and `,`, it sorts object keys, it keeps NUL characters, and it has no depth limit with a `MaxDepthExceeded` marker.
+    why: >-
+      Spacing is a json.dumps habit that docs/compatibility.md leaves out of the contract. Key order is a BTreeMap detail of OtelModelValue. The NUL strip exists for PostgreSQL columns and the depth marker for Python object graphs, and neither applies to a span attribute built from parsed JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L12-L93
+  - what: A response cost that is NaN or infinite (a string such as `nan`) writes no cost attributes. LiteLLM writes the float.
+    why: >-
+      OtelModelValue holds a serde_json number, which cannot carry a non-finite float. A real response_cost is never one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L886-L905
+  - what: The `exception` span event written for a missing standard_logging_object has `exception.type` and `exception.message` only, with no `exception.stacktrace`.
+    why: >-
+      There is no Python traceback to record, and the message names the same cause. The oracle compares type and message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/_utils.py#L413-L486
+
+out_of_scope:
+  - _infer_open_inference_span_kind and _set_tool_attributes (_utils.py L307-L410) belong to B3846. This task calls them.
+  - ArizeOTELAttributes.set_messages, _set_response_attributes and its six writers, _safe_get, _set_usage_outputs, _coerce_text, _to_plain_dict, the tool call helpers and _emit_input_message_extras (_utils.py L33-L304 and L620-L833) belong to B3860. This task calls set_messages, set_response_attributes and coerce_text.
+  - _safe_emit (L570-L577) and _coerce_response_obj_for_attrs (L591-L617) are not built. One only swallows exceptions and the other converts Python objects, and betterlite has neither problem.
+  - The `secret_fields` pop in _sanitize_optional_params changes the caller's dict in place, which docs/compatibility.md leaves out. Nothing in this task reads `secret_fields`, so the Rust code simply never reads it.
+  - safe_set_attribute, cast_as_primitive_value_type and the LLMObsAttributes trait belong to B3844. should_redact_message_logging belongs to B188 and the caller passes its answer in.
+  - WeaveOtelLogger, _get_weave_authorization_header, weave_otel_endpoint, get_weave_otel_config and WeaveOtelConfig (weave_otel.py L109-L331, types L1-L14) belong to B3850 (settings) and B3863 (the logger class).
+  - Arize and Phoenix callbacks that call set_attributes belong to B3862. The branch in opentelemetry.py that picks set_weave_otel_attributes by callback name belongs to B3856.
+
+pitfalls:
+  - The early span kind is written before the standard_logging_object check, so a missing payload still leaves `openinference.span.kind` on the span, and the extras after the main block still run.
+  - '`llm.provider` defaults to `Unknown` only when `custom_llm_provider` is absent. A null value goes through safe_set_attribute and becomes the empty string.'
+  - '`llm.request.max_tokens`, `temperature` and `top_p` are skipped at 0, so a temperature of 0 writes nothing, while `llm.request.type` is written even when `call_type` is missing (as the empty string).'
+  - '`llm.is_streaming` is Python''s `str(bool)`, so the text is `True` or `False` with a capital letter.'
+  - '`user.id` can be written by the model_parameters step and by the key metadata step. The metadata step runs only when neither `optional_params.user` nor `model_parameters.user` is truthy, so it never overwrites.'
+  - Passthrough input writes `llm.input_messages.*` after `ArizeOTELAttributes.set_messages` already did from `kwargs["messages"]`. The later write wins on shared keys, and a role that is falsy is not written at all, unlike set_messages which writes the empty string.
+  - A wrapper `response` string that does not parse into an object gives no answer, and the `original_response` fallback then runs. The fallback runs only when the wrapper gave nothing.
+  - The passthrough output has two independent steps. A response with both `content` and `choices` writes `output.value` twice and the `choices` text wins, while the Anthropic step joins parts with two newlines and `coerce_text` joins with one.
+  - '`coerce_text` treats a part with `text: ""` and no `input_text` as having no text, so an MCP content array holding one makes the whole array not text-only and sends the output down the JSON path.'
+  - MCP `structured_content` counts as present when the key exists with a null value, and then `structuredContent` is not looked at.
+  - MCP `tool.name` is written before the redaction check, so a redacted MCP span keeps its tool name but has no input or output.
+  - Weave's `set_messages` does not touch `llm.input_messages.*`, and its `output.value` replaces the one the shared flow wrote. A response that is an empty object writes no Weave output.
+  - The display name replaces `/` with `__` after the provider prefix is added, so `openai/gpt-4o` becomes `openai__gpt-4o`, and a name taken from `metadata.display_name` is changed the same way.
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

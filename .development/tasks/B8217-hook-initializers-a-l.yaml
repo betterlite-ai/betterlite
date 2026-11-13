@@ -1,0 +1,126 @@
+id: B8217
+title: Hook initializer arguments A to L
+description: >-
+  Port the initializer in the __init__.py of twelve guardrail folders: aim, akto, aporia_ai, cisco_ai_defense, conduct,
+  crowdstrike_aidr, deepkeep, generic_guardrail_api, grayswan, guardrails_ai, headroom and lasso. Each LiteLLM function
+  takes the configured guardrail (`LitellmParams` plus the guardrail dict), builds its callback class and adds it to
+  `litellm.logging_callback_manager`. The callback classes belong to other tasks and the registry that calls the
+  initializers is B3682's, so this task follows B3681: one argument struct and one function for each initializer, no
+  class and no registration. B3682 builds each class from the struct.
+
+  Code goes in crates/betterlite-guardrails/src/third_party_init_a.rs and third_party_init_a/. Files: aim.rs, akto.rs,
+  aporia.rs, cisco.rs, conduct.rs, crowdstrike.rs, deepkeep.rs, generic_api.rs, grayswan.rs, guardrails_ai.rs,
+  headroom.rs, lasso.rs and error.rs. error.rs holds `ThirdPartyInitAError`, built with thiserror, one variant for each
+  refusal below. Its text never holds a secret. `LitellmParams` and its base fields come from B3662 (betterlite-config,
+  sections::guardrail_params); read its params.rs and base.rs for the exact field names. Secrets stay `SecretString`.
+  Every function is `initialize_<name>(params: &LitellmParams, guardrail_name: Option<&str>) -> Result<XArgs,
+  ThirdPartyInitAError>`. Every struct has event_hook (a clone of params.mode), default_on, timeout and the name. The name is
+  the empty string when absent, unless the function says it is required. Fields copy without change and an absent
+  value stays absent, except where a default is listed.
+
+  Fields by guardrail (the field is a param of the same name unless noted):
+  - aim: api_base, api_key, inspect_embeddings, timeout.
+  - akto: akto_base_url, akto_api_key, akto_account_id, akto_vxlan_id, unreachable_fallback (default "fail_closed"),
+    guardrail_timeout (a separate field, the struct gets no `timeout`).
+  - aporia: api_base, api_key, timeout.
+  - cisco: the name is required ("Cisco AI Defense: guardrail_name is required"). api_key and api_base are plain.
+    inspection_type, inspect_path, enabled_rules, integration_profile_id, integration_profile_version,
+    integration_tenant_id, integration_type, on_flagged_action, fallback_on_error and timeout are read with the helper
+    `_get_optional_value`: the entry of params.optional_params when present (a dict entry counts even when null, an
+    object field only when it was set and is not null), else the top-level param only when the config set it
+    explicitly, else none. default_on is false when absent. Read the helper in the file for the exact order.
+  - conduct: api_url (the param api_base), agent_token (api_key), workspace_id and tool_name from the extras map
+    (tool_name defaults to "llm_call"), unreachable_fallback, timeout (8.0 when absent).
+  - crowdstrike: the name is required ("CrowdStrike AIDR guardrail name is required"). api_base, api_key, fail_on_error
+    and timeout are plain. The four streaming fields come from `streaming_params_from_litellm_params` (B3766); call it,
+    do not copy it.
+  - deepkeep: api_base, api_key, firewall_id (the param deepkeep_firewall_id), unreachable_fallback (default
+    "fail_closed"), extra_headers.
+  - generic_api: api_base, api_key, headers, additional_provider_specific_params (default empty map),
+    unreachable_fallback (default "fail_closed"), fail_on_error (default true), extra_headers, timeout, and
+    streaming_end_of_stream_only, streaming_sampling_rate and streaming_transform_mode, each from optional_params when
+    its value there is not null, else none (the helper `_get_config_value`).
+  - grayswan: the name is required ("Gray Swan guardrail requires a guardrail_name"). api_key, api_base,
+    on_flagged_action, violation_threshold, reasoning_mode, categories, policy_id, fail_open and guardrail_timeout come
+    from optional_params through `_get_config_value` (read it for the fallback). streaming_end_of_stream_only is that
+    value or false, and streaming_sampling_rate is that value or 5 (a value of 0 also becomes 5).
+  - guardrails_ai: guard_name is required, otherwise the error "GuardrailsAIException - Please pass the Guardrails AI
+    guard name via 'litellm_params::guard_name'". api_base, api_key, timeout, and guardrails_ai_api_input_format
+    (default "llmOutput").
+  - headroom: the name is required (LiteLLM indexes guardrail["guardrail_name"]). api_base, api_key, model,
+    unreachable_fallback, timeout, ccr_retrieval. default_on is false when absent. The mode becomes the event hook:
+    a tagged mode stays, a list of names becomes a list of hook names, a single name becomes the hook of that name.
+  - lasso: api_key, api_base, user_id (the param lasso_user_id), conversation_id (the param lasso_conversation_id).
+  B3681 already has an initialize_lasso for guardrail_initializers.py; this one is the function in lasso/__init__.py and
+  has its own struct. Keep the two apart: here the struct is `LassoFolderArgs` and the function `initialize_lasso_folder`, so B8521 can use both modules without a name clash.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/third_party_init_a.rs
+    - crates/betterlite-guardrails/src/third_party_init_a/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aim/__init__.py
+    why: aim initializer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/__init__.py
+    why: akto initializer and its fallback default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aporia_ai/__init__.py
+    why: aporia initializer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/cisco_ai_defense/__init__.py
+    why: cisco initializer and the _get_optional_value helper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/conduct/__init__.py
+    why: conduct initializer, its timeout default and the extras reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/crowdstrike_aidr/__init__.py
+    why: crowdstrike initializer and its use of the streaming helper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/deepkeep/__init__.py
+    why: deepkeep initializer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/generic_guardrail_api/__init__.py
+    why: generic API initializer and _get_config_value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/grayswan/__init__.py
+    why: grayswan initializer and its two or-defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/__init__.py
+    why: guardrails_ai initializer and the guard_name check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/__init__.py
+    why: headroom initializer and the event hook coercion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lasso/__init__.py
+    why: lasso initializer.
+
+dod:
+  - text: Each function copies the listed fields and applies the listed defaults.
+    proof: [init-tests]
+  - text: The cisco, crowdstrike, grayswan, guardrails_ai and headroom functions refuse the missing name or guard_name with the documented message.
+    proof: [init-tests]
+  - text: The optional_params lookups for cisco, generic_api and grayswan follow the order of the LiteLLM helpers, including null entries.
+    proof: [init-tests]
+  - text: The grayswan streaming fields and the conduct timeout use their defaults.
+    proof: [init-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: init-tests
+      why: an initializer argument, default or refusal differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^third_party_init_a::/)'
+
+deviations:
+  - what: The initializers return argument structs and register nothing.
+    why: The callback classes have their own tasks and B3682 owns the registry and the registration, as with B3681.
+  - what: A refusal is a ThirdPartyInitAError, not a Python ValueError or Exception.
+    why: Same outcome with a Rust error type.
+
+out_of_scope:
+  - 'The twelve callback classes and their behaviour: their own hook tasks.'
+  - 'The initializer registry, the class registry and the registration with the callback manager: B3682.'
+  - 'initialize_lasso and the other functions of guardrail_initializers.py: B3681.'
+
+pitfalls:
+  - 'Cisco, Gray Swan, Pillar-style helpers do not agree on the order of optional_params and the top-level param, so read each helper and do not share one.'
+  - 'akto and grayswan use guardrail_timeout, and the others use timeout.'
+  - 'Gray Swan treats 0 and false as unset for the two streaming fields because LiteLLM uses an or-chain.'
+  - 'Conduct falls back to 8.0 only when the timeout is None, and an explicit 0 stays 0.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+oracle_cases: []

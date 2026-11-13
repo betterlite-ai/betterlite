@@ -1,0 +1,13 @@
+kind: helper
+name: gigachat-request-url-from-env
+call:
+  b8177:
+    steps:
+      - kind: request
+        model: gigachat/GigaChat
+        messages:
+          - {role: user, content: hi}
+        env_base: https://env.example/v1
+        token: token-1
+env: {GIGACHAT_API_BASE: "https://env.example/v1"}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+# AzureSentinelLogger resolves tenant_id, client_id, the AZURE_SENTINEL_DCR_IMMUTABLE_ID and AZURE_SENTINEL_ENDPOINT settings from arguments first, then the environment, and treats an empty argument as unset
+kind: helper
+name: azure-sentinel-initialization
+call:
+  b4002:
+    scenarios:
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-1, AZURE_SENTINEL_ENDPOINT: "https://dce.example.test", AZURE_SENTINEL_TENANT_ID: tenant-1, AZURE_SENTINEL_CLIENT_ID: client-1, AZURE_SENTINEL_CLIENT_SECRET: secret-1}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-env, AZURE_SENTINEL_ENDPOINT: "https://env.example.test", AZURE_SENTINEL_TENANT_ID: tenant-env, AZURE_SENTINEL_CLIENT_ID: client-env, AZURE_SENTINEL_CLIENT_SECRET: secret-env}
+        init: {dcr_immutable_id: dcr-arg, stream_name: Custom-Arg, endpoint: "https://arg.example.test/", tenant_id: tenant-arg, client_id: client-arg, client_secret: secret-arg, audit_stream_name: Custom-Audit, authority_host: login.microsoftonline.us/}
+      - environment: {AZURE_SENTINEL_DCR_IMMUTABLE_ID: dcr-env, AZURE_SENTINEL_ENDPOINT: "https://env.example.test", AZURE_SENTINEL_TENANT_ID: tenant-env, AZURE_SENTINEL_CLIENT_ID: client-env, AZURE_SENTINEL_CLIENT_SECRET: secret-env}
+        init: {dcr_immutable_id: "", endpoint: "", tenant_id: "", client_id: "", client_secret: ""}
+      - init: {dcr_immutable_id: dcr-arg, endpoint: "https://arg.example.test///", tenant_id: tenant-arg, client_id: client-arg, client_secret: secret-arg}
+      - init: {dcr_immutable_id: dcr-arg, endpoint: "https://arg.example.test", tenant_id: tenant-arg, client_id: client-arg}
+      - init: {dcr_immutable_id: dcr-arg, endpoint: "https://arg.example.test", tenant_id: tenant-arg, client_secret: secret-arg}
+      - init: {dcr_immutable_id: dcr-arg, endpoint: "https://arg.example.test", client_id: client-arg, client_secret: secret-arg}
+      - init: {dcr_immutable_id: dcr-arg, tenant_id: tenant-arg, client_id: client-arg, client_secret: secret-arg}
+      - init: {endpoint: "https://arg.example.test", tenant_id: tenant-arg, client_id: client-arg, client_secret: secret-arg}
+      - {}
+env: {}
+compare: {ignore: []}

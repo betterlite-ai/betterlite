@@ -1,0 +1,11 @@
+kind: helper
+name: redis-semantic-cache-index-fallback
+call:
+  b4382:
+    operation: index_fallback
+    index_name: litellm_semantic_cache_index
+    dimension: 3
+    mismatch_attempts: [0, 1]
+env: {}
+compare:
+  ignore: []

@@ -251,7 +251,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_input_cases::case_[0-9]+_unknown_client_event$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_input.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_input.py tools/oracle/helpers/bedrock_services_realtime_input)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -264,7 +264,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_realtime_input)"
       && grep -q 'decode_realtime_client_input' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_realtime_input.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_realtime_input_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_realtime_input_corpus(::|$)/)'
   - id: case-audio-sample-rate-transition
     why: When audio marker exists and saved sample rate differs from current input rate, emit contentEnd for old
       audio_content_name,clear marker,allocate new UUID audio_content_name,then contentStart+audioInput at newrate.

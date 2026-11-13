@@ -1,0 +1,100 @@
+kind: probe
+name: cooldown-caller-timeout-not-provider-failure
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure:
+          class: timeout
+          status: 408
+          advisor_orchestration: false
+          background_response_cost_poll: false
+          caller_timeout: {client_side_timeout: true, timeout_seconds: 5.0, elapsed_seconds: 5.2}
+        minute: {successes: 0, failures: 5}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure:
+          class: timeout
+          status: 408
+          advisor_orchestration: false
+          background_response_cost_poll: false
+          caller_timeout: {client_side_timeout: true, timeout_seconds: 5.0, elapsed_seconds: 4.9}
+        minute: {successes: 0, failures: 5}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure:
+          class: timeout
+          status: 408
+          advisor_orchestration: false
+          background_response_cost_poll: false
+          caller_timeout: {client_side_timeout: true, timeout_seconds: 5.0, elapsed_seconds: 5.0}
+        minute: {successes: 0, failures: 5}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure:
+          class: timeout
+          status: 408
+          advisor_orchestration: false
+          background_response_cost_poll: false
+          caller_timeout: {client_side_timeout: false, timeout_seconds: 5.0, elapsed_seconds: 5.2}
+        minute: {successes: 0, failures: 5}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure:
+          class: timeout
+          status: 408
+          advisor_orchestration: false
+          background_response_cost_poll: false
+          caller_timeout: {client_side_timeout: true, timeout_seconds: 5.0, elapsed_seconds: null}
+        minute: {successes: 0, failures: 5}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure:
+          class: rate_limit
+          status: 429
+          advisor_orchestration: true
+          background_response_cost_poll: false
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure:
+          class: internal_server
+          status: 500
+          advisor_orchestration: false
+          background_response_cost_poll: false
+          caller_timeout: {client_side_timeout: true, timeout_seconds: 5.0, elapsed_seconds: 5.2}
+        minute: {successes: 0, failures: 5}
+        allowed_fails_before: 0

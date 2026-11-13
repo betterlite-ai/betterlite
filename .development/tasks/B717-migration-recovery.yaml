@@ -184,7 +184,7 @@ out_of_scope:
     _is_idempotent_error, _resolve_all_migrations, _mark_migrations_applied, _run_migrations
     and _filter_migration_job_owned_drift. _roll_back_migration_best_effort and _mark_migration_applied
     have no caller at the pin. Do not confuse those with the live _v2_ rollback helper owned here.
-  - B2307 owns extras str_to_bool and CLI query/timeout-option helpers; B121 owns the remaining
+  - B2307 owns extras str_to_bool and CLI query/timeout-option helpers; B8375 owns the remaining
     proxy_cli.py shell and flag declarations, while this task owns resolve_v2_migration_resolver.
 pitfalls:
   - A confirmed recovery checkpoint restarts the per-pass budgets; it is not one of the four failed attempts.

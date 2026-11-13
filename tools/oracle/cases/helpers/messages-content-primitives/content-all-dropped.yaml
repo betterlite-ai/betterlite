@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-content-all-dropped
+call: {"messages_content_primitives": {"operation": "tool_result_content", "raw_content": [7, null, {"type": "mystery"}, ["x"]]}}
+env: {}
+compare: {ignore: []}

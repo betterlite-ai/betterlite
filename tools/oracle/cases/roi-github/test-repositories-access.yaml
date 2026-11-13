@@ -1,0 +1,5 @@
+kind: helper
+name: test-repositories-access
+call: {"b3152": {"operation": "test_repositories", "repos": ["Owner/Repo"], "replies": [{"status": 200, "body": {}}, {"status": 200, "body": []}]}}
+env: {}
+compare: {ignore: []}

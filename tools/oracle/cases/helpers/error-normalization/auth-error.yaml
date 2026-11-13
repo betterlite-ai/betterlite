@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-auth-error
+call: {"error_normalization": {"message": "timed out", "status_code": 418, "proxy_type": "auth_error"}}
+env: {}
+compare: {ignore: []}

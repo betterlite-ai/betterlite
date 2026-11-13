@@ -1,6 +1,7 @@
+use crate::helpers::OrHelperError as _;
 use std::collections::BTreeMap;
 
-use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::LiteLlmSettings;
 use betterlite_openai::base_helpers::{
     DUMMY_TOOLS, HiddenCarrier, HistoryMessage, ImageEditBase, ResponseKind, ResponsesBase,
@@ -101,19 +102,23 @@ pub(crate) struct ModifyCall {
 }
 
 pub(crate) fn invoke(call: &BaseCall) -> Outcome {
-    let encode = |source| OpenAiError::Encode { source };
+    let openai = |error: OpenAiError| openai_helper_error(&error);
     let value = match call.clone() {
         BaseCall::BaseError(parts) => serde_json::to_value(ProviderError::from(parts)),
-        BaseCall::ClassConfig(members) => Ok(Value::Object(provider_config(&members.values)?)),
+        BaseCall::ClassConfig(members) => Ok(Value::Object(
+            provider_config(&members.values).map_err(openai)?,
+        )),
         BaseCall::Thinking(params) => serde_json::to_value(thinking_request(&params)),
-        BaseCall::ThinkingMaxTokens(input) => return input.run(),
+        BaseCall::ThinkingMaxTokens(input) => return input.run().map(Value::Object),
         BaseCall::AppendTools(mut input) => {
-            append_tools(&mut input.options, input.tools)?;
+            append_tools(&mut input.options, input.tools).map_err(openai)?;
             Ok(Value::Object(input.options))
         }
         BaseCall::ResponseFormat(input) => {
             let template = input.ref_template.as_deref();
-            serde_json::to_value(response_format_refs(input.format.as_ref(), template)?)
+            serde_json::to_value(
+                response_format_refs(input.format.as_ref(), template).map_err(openai)?,
+            )
         }
         BaseCall::HiddenParams(input) => input.run(),
         BaseCall::History(messages) => serde_json::to_value([
@@ -123,30 +128,29 @@ pub(crate) fn invoke(call: &BaseCall) -> Outcome {
         ]),
         BaseCall::DummyTool(()) => serde_json::to_value(DUMMY_TOOLS),
         BaseCall::ModifyParams(input) => return input.run(),
-        BaseCall::ResponsesInit(()) => serde_json::to_value(Vec::from_iter(
-            provider_config(&ResponsesBase)?
-                .into_iter()
-                .map(|(name, _)| name),
-        )),
-        BaseCall::ImageEditInit(()) => serde_json::to_value(Vec::from_iter(
-            provider_config(&ImageEditBase)?
-                .into_iter()
-                .map(|(name, _)| name),
-        )),
+        BaseCall::ResponsesInit(()) => serde_json::to_value(
+            provider_config(&ResponsesBase)
+                .map_err(openai)?
+                .keys()
+                .collect::<Vec<_>>(),
+        ),
+        BaseCall::ImageEditInit(()) => serde_json::to_value(
+            provider_config(&ImageEditBase)
+                .map_err(openai)?
+                .keys()
+                .collect::<Vec<_>>(),
+        ),
     };
-    Ok(value.map_err(encode)?)
-}
-
-fn load_settings(lookup: Environment, source: &str) -> Result<LiteLlmSettings, ConfigError> {
-    let loaded = ConfigLoader { lookup }.load(source)?;
-    Ok(loaded.litellm_settings)
+    value.map_err(|source| openai(OpenAiError::Encode { source }))
 }
 
 impl TokensCall {
-    fn run(mut self) -> Outcome {
+    fn run(self) -> Result<Object, Box<HelperError>> {
         let default_max_tokens = load_settings(self.environment, "")?.default_max_tokens;
-        add_thinking_max_tokens(&self.requested, &mut self.options, default_max_tokens)?;
-        Ok(Value::Object(self.options))
+        let mut options = self.options;
+        add_thinking_max_tokens(&self.requested, &mut options, default_max_tokens)
+            .map_err(|error| openai_helper_error(&error))?;
+        Ok(options)
     }
 }
 
@@ -167,52 +171,50 @@ impl HiddenCall {
 
 impl ModifyCall {
     fn run(self) -> Outcome {
-        let source = self.configured.map_or_else(String::new, |value| {
-            format!("litellm_settings:\n  modify_params: {value}\n")
-        });
+        let source = match self.configured {
+            None => "",
+            Some(true) => "litellm_settings: {modify_params: true}",
+            Some(false) => "litellm_settings: {modify_params: false}",
+        };
         Ok(Value::Bool(
-            load_settings(self.environment, &source)?.modify_params,
+            load_settings(self.environment, source)?.modify_params,
         ))
     }
 }
 
-impl From<OpenAiError> for Box<HelperError> {
-    fn from(error: OpenAiError) -> Self {
-        let class = match &error {
-            OpenAiError::MissingKey { .. } | OpenAiError::TemplateField { .. } => "KeyError",
-            OpenAiError::NotSubscriptable { .. }
-            | OpenAiError::ToolsNotList
-            | OpenAiError::BudgetNotInteger => "TypeError",
-            OpenAiError::RefNotText => "AttributeError",
-            OpenAiError::TemplatePosition => "IndexError",
-            OpenAiError::TemplateBrace => "ValueError",
-            OpenAiError::Provider(_)
-            | OpenAiError::BudgetOverflow
-            | OpenAiError::ConfigNotObject
-            | OpenAiError::Encode { .. } => "OpenAiError",
-        };
-        Self::new(HelperError {
-            class: class.to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
+fn load_settings(
+    environment: Environment,
+    source: &str,
+) -> Result<LiteLlmSettings, Box<HelperError>> {
+    let loaded = ConfigLoader {
+        lookup: environment,
     }
+    .load(source);
+    Ok(loaded.or_config_error()?.litellm_settings)
 }
 
-impl From<ConfigError> for Box<HelperError> {
-    fn from(error: ConfigError) -> Self {
-        Self::new(HelperError {
-            class: "ConfigError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    }
+fn openai_helper_error(error: &OpenAiError) -> Box<HelperError> {
+    let class = match error {
+        OpenAiError::MissingKey { .. } | OpenAiError::TemplateField { .. } => "KeyError",
+        OpenAiError::NotSubscriptable { .. }
+        | OpenAiError::ToolsNotList
+        | OpenAiError::BudgetNotInteger => "TypeError",
+        OpenAiError::RefNotText => "AttributeError",
+        OpenAiError::TemplatePosition => "IndexError",
+        OpenAiError::TemplateBrace => "ValueError",
+        OpenAiError::Provider(_)
+        | OpenAiError::BudgetOverflow
+        | OpenAiError::ConfigNotObject
+        | OpenAiError::Encode { .. } => "OpenAiError",
+    };
+    Box::new(HelperError {
+        class: class.to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
 }
 
 pub(crate) struct Op;

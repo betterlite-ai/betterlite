@@ -1,0 +1,13 @@
+kind: helper
+name: responses-bridge-failed-lookup
+call:
+  b5651:
+    request:
+      model: responses/azure/gpt-4o
+      custom_llm_provider: azure
+    capabilities:
+      model_info_fails: true
+      resolved_openai_api_base: ""
+env: {}
+compare:
+  ignore: []

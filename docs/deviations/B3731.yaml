@@ -1,0 +1,17 @@
+task: B3731
+deviations:
+  - what: The API key falls back to the global litellm.api_key and litellm.openai_key values the caller passes in, but never to get_secret_str("OPENAI_API_KEY").
+    why: Secret managers are resolved by the config loader (B129), so a key held only in one would already have been read into the guardrail's api_key setting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L95-L101
+  - what: apply_guardrail does not call add_guardrail_scan_id. The moderation response id stays in the stashed response and in the guardrail log record.
+    why: The scan id registry belongs to the guardrail logging framework (B104) and does not exist yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L223-L229
+  - what: Every non-200 upstream answer, including 4xx and 5xx, becomes an error that carries the upstream status and body text. The detail carries the error text "OpenAI Moderation API request failed" and the body as details.
+    why: LiteLLM's HTTP handler turns 4xx and 5xx into a masked httpx error before the guardrail's own status check runs, so the HTTPException branch is only reachable for 1xx and 3xx answers. Keeping one typed error with the upstream status is the documented intent of that branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L124-L131
+  - what: A non-200 answer whose body is not UTF-8 fails with the upstream status and no body text.
+    why: Python decodes the body with replacement characters, and the project does not decode lossily.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L124-L131
+  - what: A moderation response larger than 1 MiB is refused with an error.
+    why: LiteLLM reads the whole body into memory with no limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/openai/moderations.py#L112-L122

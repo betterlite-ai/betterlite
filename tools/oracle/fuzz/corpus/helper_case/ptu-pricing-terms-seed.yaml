@@ -1,0 +1,12 @@
+kind: helper
+name: ptu-pricing-terms-seed
+call:
+  ptu_pricing:
+    operation: terms
+    model_info:
+      ptu_count: 2
+      cost_per_ptu_per_hour: 0.25
+      team_id: team-capacity
+      ptu_effective_from: "2026-01-01T00:00:00Z"
+env: {}
+compare: {ignore: []}

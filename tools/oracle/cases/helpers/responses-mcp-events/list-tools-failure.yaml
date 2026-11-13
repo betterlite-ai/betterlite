@@ -1,0 +1,13 @@
+kind: helper
+name: list-tools-failure
+call:
+  responses_mcp_events:
+    operation: list_tools
+    base_item_id: mcp_list_2
+    servers:
+      - {server_label: zapier}
+    tools:
+      - {name: weather}
+      - {name: broken, raises: {description: boom}}
+env: {}
+compare: {ignore: []}

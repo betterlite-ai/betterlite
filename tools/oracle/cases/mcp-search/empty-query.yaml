@@ -1,0 +1,5 @@
+kind: helper
+name: empty-query
+call: {"mcp_search_primitives": {"empty": {"core_tools": ["weather"], "tools": [{"name": "weather", "description": "local forecast", "inputSchema": {}}, {"name": "billing", "description": "invoices", "inputSchema": {}}]}}}
+env: {}
+compare: {ignore: []}

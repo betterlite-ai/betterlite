@@ -1,0 +1,35 @@
+kind: helper
+name: metadata-hidden-copies
+call:
+  vertex_model_policy:
+    metadata:
+      logged_objects:
+        - vertex_ai_grounding_metadata: [grounding]
+          vertex_ai_url_context_metadata: [url]
+          vertex_ai_safety_ratings: [rating]
+          vertex_ai_safety_results: [result]
+          vertex_ai_citation_metadata: [citation]
+          _hidden_params:
+            vertex_ai_grounding_metadata: [hidden]
+            vertex_ai_citation_metadata: [hidden]
+            kept: true
+          keep: true
+        - {keep: 1}
+        - {nested: {vertex_ai_grounding_metadata: [nested]}}
+        - {vertex_ai_safety_ratings: null, _hidden_params: copies}
+        - {_hidden_params: {vertex_ai_safety_results: []}}
+        - not-an-object
+        - [1, 2]
+      call_details:
+        - litellm_params:
+            metadata:
+              hidden_params: {vertex_ai_grounding_metadata: [hidden], vertex_ai_safety_results: [hidden], kept: 2}
+            litellm_metadata:
+              hidden_params: {vertex_ai_citation_metadata: [hidden]}
+        - {litellm_params: {metadata: {hidden_params: copies}}}
+        - {litellm_params: copies}
+        - {other: 1}
+        - {litellm_params: null}
+        - {}
+env: {}
+compare: {ignore: []}

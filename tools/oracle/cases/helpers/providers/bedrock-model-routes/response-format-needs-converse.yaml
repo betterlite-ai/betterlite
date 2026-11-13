@@ -1,0 +1,44 @@
+kind: helper
+name: bedrock-response-format-needs-converse
+call:
+  bedrock_model_routes:
+    price_map:
+      openai.gpt-5.6:
+        supports_bedrock_runtime_chat_completions_response_format: true
+      "openai.gpt-oss-20b-1:0":
+        supported_endpoints: ["/v1/chat/completions"]
+    converse_models: []
+    request_metadata_fields: []
+    tool_names: {}
+    step:
+      response_format:
+        probes:
+          - model: openai.gpt-5.6
+            response_format: null
+          - model: openai.gpt-5.6
+            response_format: {type: text}
+          - model: openai.gpt-5.6
+            response_format: {type: text, json_schema: {}}
+          - model: openai.gpt-5.6
+            response_format: {type: json_schema, json_schema: null}
+          - model: openai.gpt-5.6
+            response_format: {type: json_schema, json_schema: {name: x}}
+          - model: openai.gpt-5.6
+            response_format: {type: json_object}
+          - model: openai.gpt-5.6
+            response_format: {type: json_schema}
+          - model: openai.gpt-5.6
+            response_format: {}
+          - model: openai.gpt-5.6
+            response_format: {type: 5}
+          - model: "openai.gpt-oss-20b-1:0"
+            response_format: {type: json_schema, json_schema: {}}
+          - model: "openai.gpt-oss-20b-1:0"
+            response_format: json schema
+          - model: openai.gpt-5.6
+            response_format: json schema
+          - model: openai.gpt-5.6
+            response_format: []
+env: {}
+compare:
+  ignore: []

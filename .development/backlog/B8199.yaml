@@ -1,0 +1,14 @@
+id: B8199
+milestone: M9 agents and mcp
+title: "MCP operations: gateway dispatch and prepare_context"
+status: todo
+depends_on: [B8195, B8197, B8198, B8463]
+file: tasks/B8199-mcp-ops-gateway.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/operations.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,21 @@
+kind: helper
+name: bedrock-content-duplicate-name
+call:
+  bedrock_content:
+    function: rename_duplicate_documents
+    contents:
+      - role: user
+        content:
+          - {document: {name: report, format: pdf, source: {bytes: QUFB}}}
+          - {text: first}
+      - role: assistant
+        content:
+          - {document: {name: report_2, format: pdf, source: {bytes: QkJC}}}
+      - role: user
+        content:
+          - {document: {name: report, format: pdf, source: {bytes: QUFB}}}
+          - {document: {name: report, format: txt, source: {bytes: Q0ND}}}
+          - {cachePoint: {type: default}}
+env: {}
+compare:
+  ignore: []

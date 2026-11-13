@@ -1,0 +1,11 @@
+kind: helper
+name: allowlist-alternation-start
+call:
+  route_match:
+    function: check_route_access
+    route: /prefix/bar
+    allowed_routes:
+      - /foo|/bar
+env: {}
+compare:
+  ignore: []

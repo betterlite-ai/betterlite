@@ -2,10 +2,12 @@ id: B049
 milestone: M3 providers
 title: Vector store, RAG and OCR providers
 status: todo
-depends_on: [B090, B092]
-file: null
+depends_on: [B004, B005, B010, B2230, B500, B7810, B7892, B7811, B7812, B7813, B7814]
+file: tasks/B049-ragflow-chat-dispatch.yaml
 covers:
-  - "litellm/llms/{milvus,mongodb,pg_vector,s3_vectors,valkey,ragflow,reducto}/**"
+  - "litellm/llms/ragflow/chat/**"
+  - "litellm/llms/ragflow/__init__.py"
+  - "litellm/llms/reducto/__init__.py"
   - "litellm/main.py"
 parent: null
 split_from: null

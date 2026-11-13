@@ -1,0 +1,15 @@
+kind: helper
+name: redis-client-reuse-corpus-client-key-order
+call:
+  b4325:
+    function: client_key_same
+    left:
+      host: fuzz.internal
+      decode_responses: true
+      retry_on_timeout: true
+    right:
+      host: fuzz.internal
+      retry_on_timeout: true
+      decode_responses: true
+env: {}
+compare: {ignore: []}

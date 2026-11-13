@@ -1,0 +1,193 @@
+id: B4833
+title: Manage Docker sandbox commands, files and container lifetime
+description: >-
+  Build DockerSandbox in crates/betterlite-harness, module sandbox::docker. It implements the
+  Sandbox trait that B4830 put in sandbox.rs, and runs a harness runtime inside one long-lived
+  container that it drives through the `docker` command line program. It is the Docker twin of
+  B4832's LocalSandbox. Reuse the trait, SandboxCommand, CompletedRun, Process and HarnessError
+  as they are, and take the skip list and the file size limit from snapshots.rs
+  (SKIP_DIRS and MAX_FILE_BYTES from B4831).
+
+  Constructor. `DockerSandbox::new(image, mounts, workdir, env, name)`. `image` is a String,
+  `mounts` an ordered list of (host path, container path) pairs, `workdir` defaults to
+  "/workspace", `env` an ordered list of name and SecretString value, `name` an optional
+  container name. An empty image fails with "docker sandbox needs an image". A workdir that is
+  not absolute fails with "docker workdir must be absolute: <workdir>". The workdir is stored
+  normalized the way posixpath.normpath does it. Each host path is made absolute without
+  resolving symlinks (os.path.abspath: join with the current directory, collapse "." and ".."),
+  and two mounts with the same absolute host path collapse to one, the later container path
+  winning, in first-seen order. The sandbox starts with no container id and not closed.
+  `is_container()` returns true: the Codex harness (B4835) reads it to skip its own nested sandbox.
+  `host_url(port)` is "http://host.docker.internal:<port>" (DOCKER_HOST_ALIAS).
+
+  The docker program. Each call looks up `docker` on PATH again. If it is missing the error is
+  "docker sandbox requires the `docker` CLI on PATH; install Docker or use sandbox.local(path)".
+  A start failure is "could not run docker: <io error>". Use the `which` crate already in
+  Cargo.toml. The program is started with piped stdin, stdout and stderr and inherits the host
+  environment (it needs DOCKER_HOST and the like), unlike LocalSandbox, which clears it. Because
+  a test needs a fake `docker`, the constructor takes an optional docker program path that skips
+  the PATH lookup; tests write a small shell script into a tempdir and pass it. Tests never set
+  environment variables.
+
+  Argument lists, exactly:
+  - run_args: `run -d --rm --add-host=host.docker.internal:host-gateway`, then `--name <name>`
+    when a name is set, then `-v <host>:<container>` per mount, then `-e <key>=<value>` per env
+    entry, then `-w <workdir> <image> sleep infinity`.
+  - exec_args(container id, cmd, env, cwd): `exec -i -w <container_path(cwd, or workdir when cwd
+    is absent or empty)>`, then `-e <key>=<value>` per call env entry, then the container id,
+    then cmd.
+  - container_path(path): an absolute path stays, a relative one is joined onto workdir, then
+    normalized like posixpath.normpath (collapses "//" except a leading exactly-two-slash
+    prefix, "." and ".."; an empty result is ".").
+  Env values appear in the docker argv, so they are visible in the host process list. LiteLLM does
+  the same; do not change it, and expose a SecretString only while building the argv.
+
+  Container lifetime. `start()` is async and returns the container id. It fails with "sandbox is
+  closed" once closed. A lock serializes concurrent callers (tokio Mutex) so only one `docker run`
+  happens: a second caller waits and gets the same id. If an id is stored, return it. Otherwise
+  run run_args to completion. A nonzero exit fails with "docker run <image> failed (<code>):
+  <stderr, lossy UTF-8, trimmed>". A blank trimmed stdout fails with "docker run returned no
+  container id". Otherwise store and return the trimmed stdout. A command's own exit code is
+  never an error for exec and run.
+
+  Commands. `exec(command)`: an empty argv fails with "exec() needs a non-empty command"; call
+  start(); spawn `docker` with exec_args and register the child in a live-process registry owned
+  by the sandbox, then return it as a Process (stdin, stdout, stderr, wait, kill). `kill` here
+  signals only the local docker client; reuse the SIGTERM, 5 second grace, SIGKILL shape of
+  B4832's process module if you can make it public without editing B4832's files, otherwise
+  write the same small shape in sandbox/docker/process.rs. Start the docker client in its own
+  process group and kill it when its handle is dropped (rule processes-die-with-owner).
+  `run(command, timeout, max_output_bytes)`: exec, then close stdin, read stdout and stderr to
+  EOF with the byte cap (ContentLimitExceeded with CappedOperation::RunOutput when over), wait,
+  decode both as UTF-8 with U+FFFD for bad bytes, return CompletedRun. On timeout, return a
+  typed error that names the timeout and the first argv word, and kill the handle. Remove the
+  handle from the registry in every case.
+
+  Files. `read(path, max_bytes)` runs `cat <container_path>` through `exec -i -w <workdir>
+  <id> cat <target>` and returns stdout; nonzero exit fails with "could not read <target>:
+  <stderr trimmed>"; stdout over max_bytes fails with ContentLimitExceeded and CappedOperation::Read.
+  `write(path, data)` runs `sh -c 'mkdir -p "$(dirname "$1")" && cat > "$1"' sh <target>` with
+  data on stdin; nonzero exit fails with "could not write <target>: <stderr trimmed>". Both calls
+  go through one internal helper that starts the container, runs exec_args with no env and the
+  workdir as cwd, feeds optional stdin bytes, closes stdin and returns (code, stdout, stderr).
+  `which(binary)` runs `sh -lc 'command -v "$1"' sh <binary>` and returns the trimmed stdout only
+  when the exit code is 0 and it is not empty, else None. `tempdir()` runs `mktemp -d` and
+  returns the trimmed stdout, failing with "mktemp -d failed: <stderr trimmed>" on a nonzero code
+  or empty output.
+
+  Snapshot. `snapshot()` runs `sh -c <script> sh <workdir>` where the script is built from
+  SKIP_DIRS sorted: `cd "$1" && find . -type d \( -name '.git' -o -name '.mypy_cache' ... \)
+  -prune -o -type f -size -<MAX_FILE_BYTES + 1>c -exec sha256sum {} +`. A nonzero exit fails with
+  "snapshot failed: <stderr trimmed>". Parse stdout (lossy UTF-8) with `parse_sha256sum`: each
+  line longer than 66 characters becomes key = text from character 66 onward with one leading
+  "./" removed, value = the first 64 characters; shorter lines are skipped. Return a BTreeMap.
+  parse_sha256sum reads bytes from outside, so it gets a fuzz target.
+
+  Close. `close()` is idempotent. The first call sets closed, kills every registered process that
+  is still running (all of them at once, ignoring each kill's failure), clears the registry, and,
+  when a container id is stored, clears it and runs `docker rm -f <id>`, whose exit code is
+  ignored but whose start failure is returned. Later calls do nothing. Close does not take the
+  start lock, as in LiteLLM. Also provide an explicit public async `start` for the Python
+  `async with` entry, which just calls start().
+
+  Errors. DockerSandboxError, in sandbox/docker/error.rs, one variant per message above, with
+  the same texts. It converts to HarnessError::Sandbox the way B4832's SandboxError does.
+
+scope:
+  paths:
+    - crates/betterlite-harness/src/sandbox/docker.rs
+    - crates/betterlite-harness/src/sandbox/docker/**
+    - crates/betterlite-harness/fuzz/fuzz_targets/docker_sha256sum.rs
+    - crates/betterlite-harness/fuzz/corpus/docker_sha256sum/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L1-L45
+    why: Imports, constants, the snapshot find script and parse_sha256sum.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L47-L115
+    why: Constructor validation, mount and env normalization, docker lookup, spawn and the awaited docker call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L117-L214
+    why: run_args, exec_args, container_path, start with its lock, exec and run.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/docker.py#L216-L290
+    why: read, write, host_url, which, tempdir, snapshot, close, the context manager, stdin feeding and the docker() factory.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/sandbox/base.py#L29-L62
+    why: The Sandbox contract the class implements.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codex/harness/transformation.py#L282-L292
+    why: The only caller of is_container, which turns off Codex's nested sandbox.
+  - url: https://docs.docker.com/reference/cli/docker/container/run/
+    why: Meaning of -d, --rm, --add-host with host-gateway, -v, -e and -w.
+
+dod:
+  - text: Construction rejects an empty image and a relative workdir with LiteLLM's messages, normalizes the workdir and mount host paths, and collapses duplicate host paths.
+    proof: [docker-sandbox-tests]
+  - text: run_args, exec_args and container_path produce exactly LiteLLM's argument lists and paths, including the name, mount and env flags, the empty-cwd fallback and the leading double slash rule.
+    proof: [docker-sandbox-tests]
+  - text: start launches one container for concurrent callers, returns the trimmed id, fails on nonzero exit or blank output with LiteLLM's messages, and refuses after close.
+    proof: [docker-sandbox-tests]
+  - text: exec rejects an empty command and registers the process, and run returns decoded stdout, stderr and the exit code without treating a nonzero code as an error.
+    proof: [docker-sandbox-tests]
+  - text: run on timeout and over-cap output returns a typed error and kills the docker client, and the handle leaves the registry.
+    proof: [docker-sandbox-tests]
+  - text: read, write, which and tempdir use the exact container commands and error texts, and read enforces the byte cap.
+    proof: [docker-sandbox-tests]
+  - text: snapshot builds the find script from the sorted skip list and the file size limit, and parse_sha256sum strips "./" and ignores short lines.
+    proof: [docker-sandbox-tests]
+  - text: close kills live processes, removes the container once, ignores a nonzero docker rm exit and is idempotent; the docker client dies with its owner.
+    proof: [docker-sandbox-tests]
+  - text: A missing docker program gives the install hint message, and host_url and is_container match LiteLLM.
+    proof: [docker-sandbox-tests]
+  - text: The sha256sum parser has a fuzz target with a replayed corpus.
+    proof: [docker-sha256sum-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: docker-sandbox-tests
+      why: the Docker sandbox behavior tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^sandbox::docker::/) - test(replays_the_docker_sha256sum_corpus)'
+    - id: docker-sha256sum-corpus
+      why: the fuzz target or its fresh corpus is missing, or replay fails
+      run: >-
+        test -f crates/betterlite-harness/fuzz/fuzz_targets/docker_sha256sum.rs &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-harness/fuzz/corpus/docker_sha256sum)" &&
+        cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(replays_the_docker_sha256sum_corpus)'
+
+oracle_cases: []
+
+deviations:
+  - what: run takes a required Duration timeout and a byte cap, and read takes a byte cap, because the Rust Sandbox trait already requires them.
+    why: LiteLLM's timeout is optional and its output is unbounded; the bounded-inputs rule needs a cap, and callers in the harness crates pass explicit values.
+  - what: The docker client is started in its own process group and killed on drop.
+    why: The processes-die-with-owner rule; LiteLLM leaves the client to the event loop.
+  - what: The constructor can take a docker program path.
+    why: Tests need a fake docker without changing the process environment; with no path the PATH lookup is LiteLLM's.
+
+out_of_scope:
+  - The `timeout` argument of the private docker call (_docker). No caller at the pin passes it, so there is no "docker <verb> timed out" error.
+  - DockerSandbox.__repr__. No caller at the pin.
+  - The docker() factory function and the re-exports in litellm/harness/sandbox/__init__.py and litellm/sandbox/__init__.py. They are Python package glue with no Rust code, so they are not built; the factory is DockerSandbox::new.
+  - __aenter__ and __aexit__ as Python protocol methods. The Rust equivalents are the public start and close.
+  - Stopping the program that a container command started when its docker client is killed. LiteLLM does not do it either.
+
+pitfalls:
+  - Killing the local `docker exec` client does not stop the command inside the container, so a timed-out run can leave work running until close removes the container with `rm -f`.
+  - >-
+    `docker run` prints the container id on stdout with a trailing newline, and an empty id after exit 0 is an error ("docker run returned no container id").
+  - >-
+    `--rm` plus `sleep infinity` means the container dies when `docker rm -f` runs or the daemon stops, so a later exec on a dead id returns a nonzero exit with the daemon's message on stderr.
+  - exec_args uses `cwd or workdir`, so an empty cwd string means the workdir, not the root.
+  - >-
+    posixpath.normpath keeps exactly two leading slashes ("//a" stays "//a") and turns "" into "."; three or more leading slashes collapse to one.
+  - >-
+    `find -size -N c` means smaller than N bytes, so the script uses MAX_FILE_BYTES + 1 to keep files of exactly 50 MiB, and `-type f` leaves symlinks out.
+  - >-
+    `sha256sum` output for names that contain newlines or backslashes is escaped by the tool; parse lines as given and do not unescape them.
+  - The sh one-liners get the path as "$1" after a literal `sh` argument; never put the path inside the script text.
+  - which uses `sh -lc`, a login shell, so it sees the PATH the profile files set up, not the container's plain PATH.
+  - close does not wait for a start in flight, so a start that finishes after close can leave a container behind; keep LiteLLM's order and do not add a hidden fix.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

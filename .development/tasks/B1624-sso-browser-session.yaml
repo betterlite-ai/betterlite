@@ -23,7 +23,7 @@ description: >-
   after ordinary key creation. Encode the outer JWT with B788, then use B1618's return-target
   handler or a 303 dashboard redirect and token cookie. Returned metadata keeps login_method=sso,
   password_reset_required=false, general_settings.litellm_key_header_name=Authorization and
-  B124's root path. litellm.key_generation_settings defaults None; the UI personal-key hint is
+  B7323's root path. litellm.key_generation_settings defaults None; the UI personal-key hint is
   true whenever personal_key_generation.allowed_user_roles contains proxy_admin.
   Test loads_browser_session_policy through config and compare pure identity/access projection
   in sso_session_policy. PostgreSQL tests prove key-before-denial and experimental-login writes.

@@ -1,0 +1,28 @@
+kind: helper
+name: braintrust project resolution caches a name per endpoint
+call:
+  b3962:
+    function: resolve_project
+    scenarios:
+      - path: sync
+        project_name: analytics
+        calls: 2
+        environment: {BRAINTRUST_API_KEY: braintrust-key}
+        api_base: "http://braintrust.test/v1"
+        answers:
+          - {status: 200, body: {id: proj-sync}}
+      - path: async
+        project_name: analytics
+        calls: 2
+        environment: {BRAINTRUST_API_KEY: braintrust-key}
+        api_base: "http://braintrust.test/v1"
+        answers:
+          - {status: 200, body: {id: proj-async}}
+      - path: sync
+        project_name: other
+        environment: {BRAINTRUST_API_KEY: braintrust-key}
+        api_base: "http://braintrust.test/v1"
+        answers:
+          - {status: 200, body: {id: proj-other}}
+env: {}
+compare: {ignore: []}

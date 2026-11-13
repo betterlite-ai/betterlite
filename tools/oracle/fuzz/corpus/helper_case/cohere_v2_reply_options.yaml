@@ -1,0 +1,12 @@
+kind: helper
+name: cohere-v2-reply-seed-options
+call:
+  cohere_v2_reply:
+    function: options
+    supported_model: command-r-plus
+    mappings:
+      - non_default_params: {max_tokens: 1, max_completion_tokens: 2}
+        optional_params: {}
+      - non_default_params: {top_p: 0.9, stop: [end]}
+compare: {ignore: []}
+env: {}

@@ -9,9 +9,18 @@ deviations:
   - what: extract_text_from_pdf returns None on a missing library or extraction failure without logging. LiteLLM logs at debug level on ImportError or extraction failure before returning None.
     why: The ingestion pipeline decides whether a missing PDF library is recoverable (OCR can fill in) or a pipeline failure. betterlite surfaces None and lets the caller's logging layer report it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/file_parsers/pdf_parser.py#L10-L68
-  - what: extract_text_from_pdf reads pages through the native lopdf crate instead of trying pypdf and falling back to PyPDF2. It still joins non-empty pages with "\n\n" and returns None on any failure, matching the Python fallback's text_parts assembly.
-    why: betterlite ships no Python interpreter, so neither pypdf nor PyPDF2 is reachable at runtime. lopdf reads the same page content and text operators natively, with no subprocess or embedded interpreter.
+  - what: extract_text_from_pdf reads PDF operators through lopdf instead of trying pypdf and falling back to PyPDF2. It joins non-empty pages with "\n\n", returns None on any failure, and applies pypdf's vertical baseline rule for Td, TD, Tm and T* movement. Strings whose active font is absent or has no usable encoding are skipped; pypdf substitutes Unknown-font characters. Horizontal movement adds no space. TJ adds a space after each array and after integer offsets below -100, retaining lopdf spacing instead of pypdf font-width-aware spacing.
+    why: betterlite has no Python runtime, and lopdf exposes the operator stream and font encodings without a subprocess or embedded interpreter.
+    link: https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_text_extraction/__init__.py#L100-L185
+  - what: extract_text_from_pdf bounds each decompressed stream and page contents to 64 MiB. A page that exceeds the limit makes extraction return None. pypdf instead bounds each deflate stream's decompressed output at 75,000,000 bytes.
+    why: lopdf exposes both bounds through LoadOptions::with_max_decompressed_size and get_page_content_with_limit; 64 MiB stays below pypdf's stream limit.
+    link: https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_configuration.py#L60-L64
+  - what: extract_text_from_pdf returns None once the joined text of all pages, including "\n\n" separators, would exceed 67108864 bytes. LiteLLM and pypdf build the complete joined string without a total text bound.
+    why: Many pages can share one compressed stream, making a small request expand into gigabytes of text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/file_parsers/pdf_parser.py#L10-L68
-  - what: extract_text_from_pdf bounds each page's decompressed content to 64 MiB through lopdf's LoadOptions::with_max_decompressed_size, returning None for a page that would exceed it. LiteLLM's pypdf path carries no such bound.
-    why: The gateway accepts PDF bytes from a client request; lopdf exposes the decompression-bomb guard directly, so bounding the work costs one constant and no extra dependency.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/file_parsers/pdf_parser.py#L10-L68
+  - what: split_text returns SplitError::OutputTooLarge when output chunks would exceed 268435456 bytes. LiteLLM's splitter builds the complete list without an output cap.
+    why: Near-total overlap can replicate each input character into many chunks and exhaust gateway memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/text_splitters/recursive_character_text_splitter.py#L20-L134
+  - what: PDF integer text-space coordinates and font sizes outside the i32 range are treated as nonnumeric operands and use the corresponding operator fallback. pypdf can retain larger integers.
+    why: PDF integers use the i32 range; checked conversion through i32 keeps coordinate conversion explicit without casts or string round trips.
+    link: https://github.com/py-pdf/pypdf/blob/6.21.4/pypdf/_text_extraction/_text_extractor.py#L38-L42

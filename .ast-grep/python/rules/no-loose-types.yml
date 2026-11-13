@@ -1,0 +1,10 @@
+id: no-loose-types
+language: python
+severity: error
+message: object and Any accept every value and say nothing about it; name the type, a TypedDict for a JSON object whose fields the code reads, or JsonValue (pydantic's in oracle helpers, betterlite.types.utils.values in the wheel) for JSON whose shape is really open
+rule:
+  kind: identifier
+  regex: ^(object|Any)$
+  inside:
+    stopBy: end
+    kind: type

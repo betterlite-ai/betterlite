@@ -1,0 +1,24 @@
+kind: helper
+name: url-selection
+call:
+  b5991:
+    steps:
+      - {kind: url, model: "https://model.example/embed", api_base: "https://api.example", env: {HF_API_BASE: "https://hf.example"}, task: "embed"}
+      - {kind: url, model: "http://model.example/embed", task: "rerank"}
+      - {kind: url, model: "org/model", api_base: "https://api.example", env: {HF_API_BASE: "https://hf.example"}, task: "embed"}
+      - {kind: url, model: "org/model", api_base: "", env: {HF_API_BASE: "https://hf.example"}, task: "embed"}
+      - {kind: url, model: "org/model", env: {HF_API_BASE: "https://hf.example", HUGGINGFACE_API_BASE: "https://other.example"}, task: "embed"}
+      - {kind: url, model: "org/model", env: {HUGGINGFACE_API_BASE: "https://other.example"}, task: "embed"}
+      - {kind: url, model: "org/model", env: {HF_API_BASE: ""}, task: "embed"}
+      - {kind: url, model: "org/model", env: {HUGGINGFACE_API_BASE: ""}, task: "embed"}
+      - {kind: url, model: "org/model", task: "feature-extraction"}
+      - {kind: url, model: "org/model", task: null}
+      - {kind: validate_environment}
+      - {kind: validate_environment, api_key: ""}
+      - {kind: validate_environment, api_key: "sk-hf", headers: {content-type: "text/plain", x-call: kept}}
+      - kind: prepare
+        model: "https://model.example/embed"
+        input: ["hello"]
+        pipeline_tag: "embed"
+env: {}
+compare: {ignore: []}

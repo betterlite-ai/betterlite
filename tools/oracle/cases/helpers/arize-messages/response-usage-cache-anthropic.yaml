@@ -1,0 +1,13 @@
+kind: helper
+name: response-usage-cache-anthropic
+call:
+  b3860:
+    function: set_response
+    response:
+      usage:
+        total_tokens: 30
+        prompt_tokens: 10
+        cache_read_input_tokens: 7
+        cache_creation_input_tokens: 4
+env: {}
+compare: {ignore: []}

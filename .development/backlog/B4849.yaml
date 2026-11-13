@@ -2,8 +2,8 @@ id: B4849
 milestone: M9 agents and mcp
 title: Bridge synchronous harness streams and sessions to owned async work
 status: todo
-depends_on: [B4830, B4846, B4847]
-file: null
+depends_on: [B4830, B4846, B4847, B4848]
+file: tasks/B4849-harness-sync-bridge.yaml
 covers:
   - "litellm/harness/sync.py"
 parent: B143

@@ -1,0 +1,4 @@
+callback_settings:
+  langfuse:
+    langfuse_public_key: os.environ/CALLBACK_PUBLIC_KEY
+    langfuse_secret: os.environ/CALLBACK_SECRET

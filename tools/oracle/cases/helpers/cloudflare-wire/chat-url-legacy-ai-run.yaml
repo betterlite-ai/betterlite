@@ -1,0 +1,13 @@
+kind: helper
+name: cloudflare-wire-chat-url-legacy-ai-run
+call:
+  b5836:
+    chat_urls:
+      - {api_base: "https://api.cloudflare.com/client/v4/accounts/A/ai/run"}
+      - {api_base: "https://api.cloudflare.com/client/v4/accounts/A/ai/run/"}
+      - {api_base: "https://api.cloudflare.com/client/v4/accounts/A/ai/run//"}
+      - {api_base: "https://api.cloudflare.com/client/v4/accounts/A/ai/run/@cf/meta/llama"}
+      - {api_base: "https://api.cloudflare.com/client/v4/accounts/A/ai/run/chat/completions"}
+      - {api_base: "https://api.cloudflare.com/client/v4/accounts/A/ai/v1/ai/run"}
+env: {}
+compare: {ignore: []}

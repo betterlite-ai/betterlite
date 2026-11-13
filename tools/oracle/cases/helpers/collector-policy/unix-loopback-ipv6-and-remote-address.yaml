@@ -1,0 +1,9 @@
+kind: helper
+name: unix-loopback-ipv6-and-remote-address
+call:
+  collector_policy:
+    addresses: ['unix:///a.sock', 'unix://ignored/a/../b%20c', 'unix:relative', 'tcp://localhost:1', 'tcp://LOCALHOST:0', 'tcp://127.3.2.1:65535', 'tcp://[::1]:4312', 'tcp://example.com:1', 'tcp://192.168.1.1:1', "unix:///a.sock\n", ' unix:///a.sock']
+    policies: []
+env: {}
+compare:
+  ignore: []

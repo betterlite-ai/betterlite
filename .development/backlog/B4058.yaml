@@ -1,7 +1,7 @@
 id: B4058
 milestone: M7 observability
 title: Prompt compilation orchestration and completion hooks
-status: todo
+status: done
 depends_on: [B4050, B4052, B4054, B4056, B4057]
 file: tasks/B4058-prompt-completion-hooks.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "litellm/integrations/generic_prompt_management/generic_prompt_manager.py"
 parent: B117
 split_from: B117
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 847

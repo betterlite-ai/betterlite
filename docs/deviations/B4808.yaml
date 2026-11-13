@@ -1,0 +1,17 @@
+task: B4808
+deviations:
+  - what: 'The runs API is reached through an injected RunTransport trait, and betterlite-a2a ships no HTTP client for this provider; the handler passes the 90 second non-streaming and 120 second streaming timeouts on every request, and the transport reports a request that never got headers as its own Timeout outcome, which the streaming handler returns instead of falling back.'
+    why: 'The gateway wiring that owns the HTTP client and the connection pool belongs to B173, and an injected transport makes the poll pauses, the request bodies and the fallback boundary testable.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L283-L290
+  - what: 'The provider config is a WatsonxRunConfig struct with one handle method that takes the reply shape (message or stream) instead of an implementation of BaseA2AProviderConfig with two methods. Streaming returns the WXO stream steps with the delay after each event rather than an async iterator.'
+    why: 'BaseA2AProviderConfig yields the completion bridge StreamEvent, whose task event always carries a history list and whose artifact always carries a name, while the watsonx Orchestrate handler emits events without either field; implementing the trait would change the JSON LiteLLM sends. B4806 took the same route.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/config.py#L17-L56
+  - what: 'A run body or SSE stream past 8 MiB, an SSE line past 1 MiB, and an accumulated answer text past 4 MiB fail with a typed error; the transport contract carries the 8 MiB response limit so a client stops reading at it. LiteLLM reads and accumulates all of these without a bound.'
+    why: 'A response of unbounded size allocates in proportion to input the provider controls; the limits sit far above any real answer and name the bound that was crossed.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L230-L247
+  - what: 'An SSE line whose bytes are not UTF-8 is skipped like a malformed payload. httpx decodes invalid bytes with replacement characters, so LiteLLM can still parse a payload whose JSON carries them.'
+    why: 'The project refuses lossy text decoding, and a payload with invalid bytes cannot hold the text the declared types describe; skipping it matches how LiteLLM treats the malformed payloads that replacement characters usually produce.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L234-L243
+  - what: 'The bearer token request carries no timeout of its own, so the 90 second non-streaming and 120 second streaming timeouts apply to the run requests only. LiteLLM hands the same httpx client to the token fetch, which applies them there too.'
+    why: 'B4807 owns TokenTransport and its request type has no timeout field; the transport that implements it applies its configured client timeout.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L284-L290

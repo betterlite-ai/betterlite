@@ -10,6 +10,7 @@ description: >-
   purge on identity-change, and soft-error handling for orphaned credential cleanup. Support config keys
   litellm.mcp_tool_search, litellm_settings.mcp_tool_search for search config with top_k (default 5, range 1–100),
   similarity_threshold (default 0, range 0–1), embedding_model absent by default, and core_tools empty by default.
+  get_draft_mcp_server(server_id, ttl_seconds) returns the draft row only while it is younger than the TTL (the age is a query filter on updated_at, so an expired draft is unreadable at once, with no sweeper), with only the global env var values decrypted, and None otherwise; B4718 and B4711 call it.
   Preserve legacy JSON coerce_top_k fallback. Encrypt global-scoped env vars at rest and manage credentials blob
   migration on auth_type changes. Database operations use Prisma transactions with pg_advisory_xact_lock for
   collision detection and best-effort cleanup on delete (credential rows, env var rows, OAuth client rows, token cache
@@ -41,6 +42,8 @@ references:
     why: create_draft_mcp_server with TTL expiry, create-if-absent, and race recovery logic.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1055-L1075
     why: _prune_expired_draft_mcp_servers deletes drafts past TTL; age checked after fetch, not in query.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1077-L1100
+    why: get_draft_mcp_server with the TTL cutoff in the query.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1143-L1272
     why: update_mcp_server with exclude_unset partial update, auth_type change handling, and credential merge logic.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1103-L1141
@@ -61,6 +64,9 @@ dod:
   - text: >-
       create_draft_mcp_server creates a short-lived draft with approval_status=draft, implements create-if-absent
       (returns existing without overwriting), prunes expired drafts on write, and recovers from concurrent create races.
+    proof: [behavior-tests]
+  - text: >-
+      get_draft_mcp_server returns a draft row younger than the TTL with global env vars decrypted, and None for an expired, missing or non-draft row.
     proof: [behavior-tests]
   - text: >-
       update_mcp_server uses exclude_unset so omitted fields keep their DB value (not reset to schema defaults);

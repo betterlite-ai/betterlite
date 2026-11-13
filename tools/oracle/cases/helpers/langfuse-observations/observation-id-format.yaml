@@ -1,0 +1,22 @@
+kind: helper
+name: langfuse-observation-id-format
+call:
+  b3901:
+    steps:
+      - function: resolve_observation_id
+        input: null
+      - function: resolve_observation_id
+        input: ""
+      - function: resolve_observation_id
+        input: "0102030405060708"
+      - function: resolve_observation_id
+        input: "AABBCCDDEEFF0011"
+      - function: resolve_observation_id
+        input: "abc"
+      - function: resolve_observation_id
+        input: "0000000000000000"
+      - function: resolve_observation_id
+        input: "123e4567e89b12d3a456426614174000"
+env: {}
+compare:
+  ignore: []

@@ -9,7 +9,7 @@ fn error_facts_behavior_tests_behavior(#[case] name: &str) {
     if name == "APIConnectionError" {
         assert_eq!(
             result.unwrap().map(|facts| facts.name),
-            Some(name.to_owned())
+            Some(ExceptionName::ApiConnection)
         );
     } else {
         assert!(matches!(

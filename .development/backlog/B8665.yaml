@@ -1,0 +1,13 @@
+id: B8665
+milestone: M8 platform
+title: Guardrail ports for tool policies, OCR, read-through and policy suggestions
+status: todo
+depends_on: [B3682, B3683, B3814, B1606, B888, B8231, B8612, B3680, B036, B3253, B175, B5656]
+file: tasks/B8665-guardrail-ports.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

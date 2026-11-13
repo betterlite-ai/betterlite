@@ -1,0 +1,17 @@
+kind: helper
+name: datadog-llm-obs-response-literal-string
+call:
+  b3935:
+    function: response_messages
+    call_type: acompletion
+    response: |
+      {'choices': [{'message': {'content': 'word word word word word word word '
+                                            'word word word word',
+                                'role': 'assistant',
+                                'tool_calls': [{'function': {'arguments': '{"a": 1}',
+                                                             'name': 'f'},
+                                                'id': 'call_9',
+                                                'type': 'function'}]}}]}
+env: {}
+compare:
+  ignore: []

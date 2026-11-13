@@ -30,8 +30,8 @@ description: >-
   apply_conduct_guardrail calls the check, raises the blocked exception on block/approval verdicts, records the decision
   and returns inputs unchanged. binds_unreachable_fallback detects whether the optional package's ConductGuard class
   accepts an unreachable_fallback parameter by inspecting its __init__ signature. The Python module-level names (initialize_guardrail,
-  guardrail_initializer_registry, guardrail_class_registry) are owned by B107; Conduct's own initializer, @log_guardrail_information wrapper, and
-  call-site orchestration stay with B107.
+  guardrail_initializer_registry, guardrail_class_registry) are owned by B8217 (the initializer) and B8521 (the registries); Conduct's own @log_guardrail_information wrapper,
+  adapter class and call-site orchestration stay with B9451.
 scope:
   paths:
     - crates/betterlite-guardrails/src/alice.rs
@@ -52,7 +52,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L145-L325
     why: The complete AliceGuardrail class with __init__, apply_guardrail, _evaluate, _enforce, _apply_replacements, _mask_rejected and _on_unreachable.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/__init__.py#L11-L35
-    why: The initialize_guardrail function and guardrail_initializer_registry, guardrail_class_registry registries that B107 owns; B3752 provides the AliceGuardrail class these registries wrap.
+    why: The initialize_guardrail function and guardrail_initializer_registry, guardrail_class_registry registries, which B8521 ports as Alice argument function and registry arm; B3752 provides the AliceGuardrail class these registries wrap.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L327-L373
     why: The _json_safe helper for bounded serialization with credential stripping and depth/cycle limits.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/alice.py
@@ -148,7 +148,7 @@ deviations:
 out_of_scope:
   - Lifecycle hook entry points (apply_guardrail decorator wrapper logic); B107 orchestrates when Alice guardrails are invoked and integrates the initialized callbacks into the logging pipeline.
   - The threshold-based decision whether to run Alice on a particular request; B219 and other tasks handle that.
-  - Conduct's initializer, @log_guardrail_information wrapper, adapter class and call-site orchestration logic; B107 integrates the helpers.
+  - Conduct's initializer, @log_guardrail_information wrapper, adapter class and call-site orchestration logic; B8217 owns the initializer, B8521 the registries and B9451 the adapter class and call site.
   - The optional external conduct-litellm-guard package implementation and its ConductGuard class; betterlite only adapts it.
   - Other guardrail providers (Akto, Cisco, etc.); each gets its own task.
 pitfalls:

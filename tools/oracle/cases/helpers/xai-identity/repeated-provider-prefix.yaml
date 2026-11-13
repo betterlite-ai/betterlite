@@ -1,0 +1,12 @@
+kind: helper
+name: xai-identity-repeated-provider-prefix
+call:
+  xai_identity:
+    calls:
+      - {model: "xai/grok-4", api_key: null}
+      - {model: "xai/xai/grok-4", api_key: null}
+      - {model: "a/xai/b", api_key: null}
+      - {model: "grok-4", api_key: null}
+      - {model: "xai/", api_key: null}
+env: {}
+compare: {ignore: []}

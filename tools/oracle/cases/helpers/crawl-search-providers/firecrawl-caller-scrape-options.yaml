@@ -1,0 +1,18 @@
+kind: helper
+name: crawl-search-providers-firecrawl-caller-scrape-options
+call:
+  b8022:
+    provider: firecrawl
+    function: transform_search_request
+    query: "fire"
+    optional_params:
+      scrapeOptions: {}
+      country: "us"
+    environment:
+      FIRECRAWL_API_KEY: "fc-server-key"
+    api_key: "fc-caller-key"
+    api_base: "https://proxy.oracle.test/search"
+env:
+  FIRECRAWL_API_KEY: "fc-server-key"
+compare:
+  ignore: []

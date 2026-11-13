@@ -1,0 +1,45 @@
+kind: helper
+name: gemini-history-server-tool-replay
+call:
+  gemini_history:
+    cases:
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields:
+              server_side_tool_invocations:
+                - tool_type: "google_search"
+                  id: "s1"
+                  args: {q: "x"}
+                  thought_signature: "sigs"
+                  response: {r: 1}
+                  response_thought_signature: "sigr"
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields:
+              server_side_tool_invocations:
+                - {id: "s1"}
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields:
+              server_side_tool_invocations:
+                - {id: "s1", response: null}
+                - {id: "s2", response: {r: 2}}
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields: {server_side_tool_invocations: []}
+      - messages:
+          - {role: user, content: "q"}
+          - role: assistant
+            content: "a"
+            provider_specific_fields: null
+env: {}
+compare:
+  ignore: []

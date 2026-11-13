@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-aws-endpoints-invalid-region-seed
+call:
+  bedrock_aws_endpoints:
+    invalid_region:
+      values: [us-east-1, 'US-EAST-1', '']
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,23 @@
+{
+  "kind": "helper",
+  "name": "genai-mapping-llm-call-failure-without-class",
+  "call": {
+    "b3845": {
+      "function": "genai_llm_call",
+      "payload": {
+        "id": "call-1",
+        "model": "gpt-4o",
+        "call_type": "completion",
+        "custom_llm_provider": "openai",
+        "status": "failure",
+        "error_information": {
+          "error_message": "boom"
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

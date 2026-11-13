@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-task-default
+call: {"b4803": {"operation": "task"}}
+env: {}
+compare: {ignore: []}

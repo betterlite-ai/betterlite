@@ -1,0 +1,22 @@
+task: B4802
+deviations:
+  - what: >-
+      A cost is kept as rust_decimal::Decimal from the logging state through multiplication and addition, and an amount that overflows Decimal is a typed error. LiteLLM multiplies Python floats, so its sum can carry binary rounding and saturates to a non-finite value instead of failing.
+    why: >-
+      Costs, prices and spend are Decimal by project rule, so a stored price reproduces exactly and an overflow is reported rather than producing a non-finite charge.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/cost_calculator.py#L99-L103'
+  - what: >-
+      Cost parameters are parsed from the logging state into rust_decimal::Decimal. A string price is accepted when it reads as a decimal or scientific-notation number; Python's float() also accepts "inf", "nan", digit-grouping underscores and JSON booleans, which betterlite rejects with an error that names the field.
+    why: >-
+      Costs, prices and spend are Decimal from the moment they are read, so betterlite never multiplies Python floats. A non-finite, digit-grouped or boolean price is not a value a working agent setup relies on.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/cost_calculator.py#L48-L57'
+  - what: >-
+      The usage in model_call_details is read from its JSON object as prompt_tokens and completion_tokens. LiteLLM reads those fields as attributes of a Usage object, and a plain dict usage has no such attributes there, which prices it at zero.
+    why: >-
+      betterlite's logging state keeps model_call_details as typed JSON, so the usage the A2A logging helper writes is an object; reading it as token counts keeps the token-based price that LiteLLM's Usage object produces.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/cost_calculator.py#L90-L101'
+  - what: >-
+      A contextId that is present but not a string is an error naming the field. LiteLLM returns it untyped: the AgentCore hop treats a non-string contextId as no session, and the LangFlow merge formats it into the scoped session id.
+    why: >-
+      get_session_id_from_a2a_params is declared str | None, and betterlite answers a value of the wrong type with an error naming the field instead of formatting or silently dropping it.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/utils.py#L145-L149'

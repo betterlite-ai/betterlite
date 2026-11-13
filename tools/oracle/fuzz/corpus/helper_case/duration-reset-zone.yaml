@@ -1,0 +1,10 @@
+kind: helper
+name: duration_reset_zone
+call:
+  duration:
+    calls:
+      - {function: reset, duration: "1d", now: "2024-03-09T12:00:00Z", timezone: "America/New_York", reset_time_of_day: "02:30:00"}
+      - {function: reset, duration: "0s", now: "2024-11-03T06:00:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "1mo", now: "2024-01-15T10:00:00Z", timezone: null}
+env: {}
+compare: {ignore: []}

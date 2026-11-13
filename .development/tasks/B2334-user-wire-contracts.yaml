@@ -23,9 +23,9 @@ description: >-
   BulkDeleteUsersResponse is {data:tuple}, without meta/links. Cases update_response_defaults,
   delete_bounds_and_extras, delete_duplicates_preserved and delete_response_empty_teams cover all fields.
 
-  BulkNewUserItem inherits B124 NewUserRequest, overrides auto_create_key=false, forbids extras,
+  BulkNewUserItem inherits B8411 NewUserRequest, overrides auto_create_key=false, forbids extras,
   and rejects truthy parsed send_invite_email; null/false pass. The inherited password validator
-  rejects all non-null passwords, including empty string. B124 owns other inherited defaults,
+  rejects all non-null passwords, including empty string. B8411 owns other inherited defaults,
   including user_role=null,teams=null,send_invite_email=null and team records role=user/budget=null.
   BulkNewUserRequest forbids extras and requires 1..500 users. UserCreateResult requires success;
   user_id,user_email,teams,key,error default null, distinct from empty teams. BulkNewUserMeta
@@ -106,7 +106,7 @@ deviations:
     why: README bounded parsing; user_contract_input_limits proves the concrete boundary.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L42-L72
 out_of_scope:
-  - B770 owns InsensitiveContains, B124 inherited request/row declarations, B067 the other
+  - B770 owns InsensitiveContains, B8411 inherited request declarations, B720 row declarations, B067 the other
     management_v1 response shapes. B790 retains mutation/role helpers; B791 info, B792 updates,
     B795 bulk updates, B796 list, B797 deletion, B798 activity, B1203 search and B1226 default teams.
 pitfalls:

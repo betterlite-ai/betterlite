@@ -282,7 +282,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_file_language_prompt$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_transcription.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_transcription.py tools/oracle/helpers/azure_transcription)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -295,7 +295,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_transcription)"
       && grep -q 'decode_native_transcription' crates/betterlite-azure/fuzz/fuzz_targets/azure_transcription.rs
-      && cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_transcription_corpus$/)'
+      && cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_transcription_corpus(::|$)/)'
   - id: config-azure-speech-api-base
     why: The AZURE_SPEECH_API_BASE setting is not loaded with its required defaults and precedence.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_transcription_config_cases::case_[0-9]+_loads_azure_speech_api_base$/)'

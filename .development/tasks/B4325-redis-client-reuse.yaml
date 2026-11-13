@@ -1,0 +1,328 @@
+id: B4325
+title: Reuse Redis clients and bind Cluster reads and pubsub
+description: >-
+  B5220 opens live connections. This task decides when to open one and when to
+  reuse one, the way `RedisCache` and `RedisClusterCache` do. It adds the module
+  `redis_client_reuse` to betterlite-redis. The async tasks B4326 to B4331 and
+  B4144 reach Redis through its `RedisTransport`.
+
+  Cache key. `async_client_cache_key(settings: &RedisConnectionSettings) -> String`
+  returns `async-redis-client-` followed by the first 16 hex characters of a SHA-256
+  over a canonical form of the settings. LiteLLM hashes sorted JSON of the kwargs.
+  Build a private `#[derive(Serialize)]` struct with every field of the settings,
+  password included, serialize it with `serde_json` and hash that. `passthrough` is
+  already a `BTreeMap`, so key order can't change the key, and `_opaque_kwarg_key` has
+  no counterpart because the settings are typed. Two settings differing in
+  any field, password included, get different keys. The literal text need not equal
+  LiteLLM's since it never leaves the process. B4328's `async_register_script` uses
+  this same key. Add `sha2` and `hex` to `crates/betterlite-redis/Cargo.toml` from
+  the workspace, and `tokio` with `sync`.
+
+  Store. `RedisClientStore::new()` is injected, with no global. It holds a
+  `std::sync::Mutex` around a `HashMap<String, Arc<tokio::sync::OnceCell<LiveAsyncClient>>>`
+  and a `VecDeque<String>` of insertion order. `async fn get_or_open(&self, key: &str,
+  factory: &LiveClientFactory, client: &RedisClient, pool: Option<&PoolConfig>) ->
+  Result<LiveAsyncClient, ClientReuseError>` takes the cell under the lock, drops the
+  lock, then calls `get_or_try_init`, so concurrent callers open one connection and
+  a failed open leaves the cell empty for the next try. The cap is 200 entries, the
+  size of LiteLLM's `LLMClientCache`, and the oldest entry goes first. Eviction needs
+  no timer: an evicted client closes when its last clone drops.
+  `fn remove(&self, key: &str)` drops an entry. LiteLLM's 600 second TTL only makes
+  it rebuild a pool and a caller can't see that, so there is no clock. The event loop
+  id in LiteLLM's keys has no counterpart either, because betterlite has one Tokio
+  runtime.
+
+  Transport. `RedisCacheFamily` is `Standalone` for `RedisCache` and `Cluster` for
+  `RedisClusterCache`. B4330 and the rate limiter branch on this, as LiteLLM's
+  `isinstance` checks do. `RedisTransport::new(settings: RedisConnectionSettings,
+  family: RedisCacheFamily, factory: Arc<LiveClientFactory>, store:
+  Arc<RedisClientStore>, pool: Option<PoolConfig>) -> Result<Self, ClientReuseError>`
+  builds both records with `redis_client_factories::dispatch::build_client` for
+  `ClientKind::Async` and `ClientKind::Sync`. The public fields `family`, `cache_key`
+  and `sync_client: LiveSyncClient` are read directly, with no accessor methods.
+
+  `async fn async_client(&self) -> Result<LiveAsyncClient, ClientReuseError>` is
+  `init_async_client` and also `_async_commands`, because `LiveAsyncClient` already
+  implements `AsyncRedisCommands`. For the `Standalone` family it goes through the
+  store with `cache_key`. For the `Cluster` family it follows
+  `RedisClusterCache.init_async_client`: it holds the client in a per-instance
+  `tokio::sync::OnceCell` and never touches the store, and only a
+  `LiveAsyncClient::Cluster` is held. Any other kind is opened on every call.
+
+  Reads. `fn mget(&self, keys: &[String]) -> Result<Vec<redis::Value>,
+  ClientReuseError>` and `async fn async_mget(...)` with the same arguments are the
+  four `_run_redis_mget_operation` and `_async_run_redis_mget_operation` methods.
+  Values come back in input order with `redis::Value::Nil` for a miss, and duplicate
+  keys work. One `redis::cmd("MGET")` is enough on both families, because redis-rs
+  splits a multi-slot MGET and merges it in order, sync and async alike, and that is
+  what `mget_nonatomic` does. Empty `keys` return an empty list and send nothing.
+  redis-rs would send a bare `MGET` and raise the server's error, while redis-py
+  catches that error through `EMPTY_RESPONSE` on a plain client and sends nothing
+  from `mget_nonatomic`. A caller sees an empty list in every LiteLLM case.
+
+  Sync client. `LiveSyncClient` in `redis_client_reuse/sync_client.rs` holds an
+  `Arc<LiveClientFactory>`, the sync `RedisClient` and a `std::sync::Mutex<Option<..>>`
+  with a `redis::Connection` or a `redis::cluster::ClusterConnection`. `fn query<T:
+  redis::FromRedisValue>(&self, command: &redis::Cmd) -> Result<T, ClientReuseError>`
+  opens through `factory.blocking_endpoint` when the slot is empty, using
+  `get_connection_with_timeout(connect_timeout)` and then `set_read_timeout` and
+  `set_write_timeout` with `response_timeout`. An error with `is_connection_dropped()`
+  clears the slot and is returned, so the next call reopens with a fresh credential.
+  A connection is kept because LiteLLM's comments put re-creating a client at 3000 ms.
+  This call blocks. It is for sync call sites only, and async code must not call it
+  outside `spawn_blocking`.
+
+  Pubsub. `async fn pubsub_client(&self) -> Result<LivePubSubClient,
+  ClientReuseError>` is `init_pubsub_client`. The test is the client's kind, not the
+  family: a `Standalone` family cache with startup nodes holds a Cluster client too.
+  A client that isn't `LiveAsyncClient::Cluster` serves pubsub as it is. For a Cluster
+  client, build a plain record with `cluster_node_connection` and open it through the
+  store under `{cache_key}-pubsub`, so every caller shares one. This key is what
+  `async fn close_pubsub_client(&self)` removes for B4326's `disconnect`.
+  `fn cluster_node_connection(cluster: &ClusterClient) -> Result<ConnectionFields,
+  ClientReuseError>` is `_cluster_node_pubsub_client`. It takes the first startup node
+  and keeps username, password, `ssl`, `ssl_password`, timeouts, keepalive,
+  `max_connections`, the credential fields and the passthrough map, minus
+  `read_from_replicas`. `response_callbacks` from `_CLUSTER_ONLY_CONNECTION_KWARGS`
+  has no counterpart in the record. With no nodes it returns
+  `ClientReuseError::NoPubSubNode`, whose text is "cannot derive a pub/sub client:
+  redis cluster has no default node and no startup nodes".
+
+  `LivePubSubClient` in `redis_client_reuse/pubsub.rs` matches the Protocols in
+  config_sync_pubsub.py. `async fn publish(&self, channel: &str, message: &str) ->
+  Result<i64, ClientReuseError>` sends PUBLISH through the held client. `async fn
+  subscribe(&self, channels: &[String]) -> Result<LiveSubscription, ClientReuseError>`
+  calls `factory.blocking_endpoint` in an awaited `spawn_blocking`, so it gets a fresh
+  credential and the current Sentinel master, then opens
+  `redis::Client::get_async_pubsub` under `tokio::time::timeout(connect_timeout)`. A
+  `LiveTarget::Cluster` there is `ClientReuseError::ClusterPubSub`. `async fn
+  next_message(&mut self, timeout: Duration) -> Result<Option<LiveMessage>,
+  ClientReuseError>` returns `None` when the wait ends with no message, and only
+  published messages come back, matching `ignore_subscribe_messages=True`.
+  `LiveMessage` has `channel: String` and `payload: Vec<u8>`. Dropping a
+  `LiveSubscription` closes its connection, so there is no close method.
+
+  `ClientReuseError` is a `thiserror` enum owned by this module, wrapping
+  `LiveClientError` and `FactoryError` with `#[from]` and holding `NoPubSubNode`,
+  `ClusterPubSub` and `Timeout`.
+
+  Service seam. This module also declares the pieces B4326 to B4329 share, so none
+  of them declares its own. `ServiceEvent` has `call_type: &'static str`, `duration:
+  Duration` and `key: Option<String>`. `trait ServiceHooks: Send + Sync` is sync and
+  object safe, with `fn success(&self, event: &ServiceEvent)` and `fn failure(&self,
+  event: &ServiceEvent, error: &(dyn std::error::Error + Send + Sync))`.
+  `BreakerAdmission` holds a private `u64` that only the gate fills. `BreakerOpen`
+  is a small `thiserror` struct whose text is "Redis circuit breaker is open,
+  skipping" followed by the breaker name. `trait BreakerGate: Send + Sync` is sync
+  and object safe, with `fn enter(&self, name: &'static str) ->
+  Result<BreakerAdmission, BreakerOpen>`, `fn exit(&self, admission:
+  BreakerAdmission)`, `fn record_failure(&self, error: &(dyn std::error::Error +
+  Send + Sync))` and `fn swallowed(&self, admission: &BreakerAdmission, error: &(dyn
+  std::error::Error + Send + Sync))`. They stand in for `_enter_circuit_breaker`,
+  `_exit_circuit_breaker`, the health-failure check and
+  `_record_swallowed_redis_failure` (B393) and for `service_success_hook` and
+  `service_failure_hook` (B012). B5630 implements the gate over B393 and the hooks
+  over B012. `swallowed` takes the admission so the gate can count a failure per
+  call, since LiteLLM's ContextVar counter has no counterpart. Each of the four sits
+  in its own file under `redis_client_reuse/`, and B4326 to B4329 import them from
+  `redis_client_reuse`.
+
+  Tests reuse the fake server at `crate::redis_live_client::tests::fake_server`, and
+  each group is a file under `redis_client_reuse/tests/`. The oracle helper op `b4325`
+  has two functions. `cluster_pubsub_node` takes startup nodes, username, password,
+  ssl and socket_timeout, and returns host, port, username, has_password, ssl and
+  socket_timeout. Its Python side builds an unconnected `redis.asyncio.RedisCluster`,
+  whose default node is None, and reads the kwargs of the returned client's pool. For
+  the no-nodes case Python passes a stub because `RedisCluster` refuses empty nodes.
+  `client_key_same` takes two settings maps and returns `{same: bool}`. Each case file
+  is `kind: helper` with `call: {b4325: {function: ..., ...}}`.
+
+scope:
+  paths:
+    - crates/betterlite-redis/src/redis_client_reuse.rs
+    - crates/betterlite-redis/src/redis_client_reuse/**
+    - tools/oracle/cases/helpers/redis-client-reuse/**
+    - "tools/oracle/fuzz/corpus/helper_case/redis_client_reuse-*"
+    - tools/oracle/helpers/b4325.py
+    - tools/oracle/helpers/b4325/**
+    - tools/oracle/src/helpers/redis/b4325.rs
+    - tools/oracle/src/helpers/redis/b4325/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L290-L315
+    why: Opaque kwarg keys, cluster-only kwargs, and how the pubsub node and its pool are chosen.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L734-L788
+    why: The client cache key, init_async_client, init_pubsub_client and _async_commands.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1566-L1581
+    why: Plain MGET on RedisCache, sync and async.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cluster_cache.py#L27-L57
+    why: Per-instance Cluster client with no store, and mget_nonatomic reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/llm_caching_handler.py#L12-L81
+    why: The 200 entry cap the store copies and the TTL it doesn't.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L16-L27
+    why: The publish, subscribe and get_message shapes B4144 calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_batch.py#L344-L368
+    why: Why callers need the Cluster family as a value and a client they can pipeline on.
+
+dod:
+  - text: >-
+      `async_client_cache_key` has the `async-redis-client-` prefix and 16 hex
+      characters, ignores passthrough insertion order, changes when any field changes,
+      password included, and the output and any log hold no password.
+    proof: [cache-key-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `RedisClientStore` opens once for concurrent callers of one key, shares the
+      connection between later callers, retries after a failed open, evicts the oldest
+      entry past 200, and drops an entry on `remove`.
+    proof: [store-tests]
+  - text: >-
+      A `Standalone` family transport reuses one store entry across two transports with
+      equal settings and opens two connections for settings with different passwords.
+    proof: [async-client-tests]
+  - text: >-
+      A `Cluster` family transport holds one Cluster client per instance, two instances
+      open two clients, the store stays empty, and a non-Cluster client isn't held.
+    proof: [cluster-client-tests]
+  - text: >-
+      `mget` and `async_mget` return values in input order with Nil for a miss, on a
+      plain client and across two Cluster nodes, with duplicate keys. Empty keys return
+      an empty list and the fake records no command.
+    proof: [mget-tests]
+  - text: >-
+      `LiveSyncClient` reuses its connection across calls, reopens after a dropped
+      connection, and fetches a new credential on reopen. A silent server fails at the
+      response timeout.
+    proof: [sync-client-tests]
+  - text: >-
+      `cluster_node_connection` picks the first startup node and keeps auth, TLS and
+      timeouts, and with no nodes returns the LiteLLM error text. `pubsub_client`
+      returns a plain client as it is, and for a Cluster client shares one node client
+      under `{cache_key}-pubsub`, including a `Standalone` family cache with startup
+      nodes. `close_pubsub_client` removes it.
+    proof: [pubsub-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `publish` returns the subscriber count. `subscribe` then `next_message` delivers
+      a published message, skips the subscribe confirmation, and returns `None` when
+      the wait ends. A connect that hangs ends in `Timeout`.
+    proof: [subscription-tests]
+  - text: >-
+      `ServiceHooks` and `BreakerGate` compile as `Arc<dyn ...>` objects, and a test
+      gate and a test hook can be built from them. `ServiceEvent`, `BreakerAdmission`
+      and `BreakerOpen` are importable from `redis_client_reuse`, and the `BreakerOpen`
+      text names the breaker.
+    proof: [service-seam-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: cache-key-tests
+      why: The key's prefix, length, stability or password sensitivity is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_client_reuse::tests::cache_key::/)'
+    - id: store-tests
+      why: Single open, retry after failure or eviction is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_client_reuse::tests::store::/)'
+    - id: async-client-tests
+      why: RedisCache client reuse through the store is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_client_reuse::tests::async_client::/)'
+    - id: cluster-client-tests
+      why: RedisClusterCache's per-instance client rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_client_reuse::tests::cluster_client::/)'
+    - id: mget-tests
+      why: Order, misses, cross-slot reads or the empty-keys rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_client_reuse::tests::mget::/)'
+    - id: sync-client-tests
+      why: Sync connection reuse, reopen or timeouts are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_client_reuse::tests::sync_client::/)'
+    - id: pubsub-tests
+      why: Node selection or the shared pubsub client is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_client_reuse::tests::pubsub::/)'
+    - id: subscription-tests
+      why: Publish, subscribe or the message wait is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_client_reuse::tests::subscription::/)'
+    - id: service-seam-tests
+      why: The shared hook and breaker traits are missing or not object safe
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_client_reuse::tests::service_seam::/)'
+    - id: helper-python
+      why: The strict oracle adapter fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4325)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4325 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4325/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new client reuse cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/redis_client_reuse-*")" &&
+        grep -lE '^[[:space:]]+b4325:' tools/oracle/fuzz/corpus/helper_case/redis_client_reuse-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/redis-client-reuse/cluster-pubsub-first-startup-node.yaml
+  - tools/oracle/cases/helpers/redis-client-reuse/cluster-pubsub-keeps-auth-and-tls.yaml
+  - tools/oracle/cases/helpers/redis-client-reuse/cluster-pubsub-no-nodes.yaml
+  - tools/oracle/cases/helpers/redis-client-reuse/client-key-order-independent.yaml
+  - tools/oracle/cases/helpers/redis-client-reuse/client-key-password-differs.yaml
+
+deviations:
+  - what: >-
+      The Cluster pubsub client always connects to the first startup node. After
+      LiteLLM's client has initialized, it may use the node redis-py discovered as
+      default.
+    why: redis-rs has no default node. Redis Cluster broadcasts PUBLISH to every node, so any node works.
+  - what: >-
+      A `RedisCache` over a Cluster client answers a cross-slot MGET. redis-py raises
+      an error there, and LiteLLM turns that into a miss.
+    why: redis-rs splits MGET per slot on every Cluster connection, so failing would take extra code to lose a working read.
+
+out_of_scope:
+  - RedisCircuitBreaker and the Redis failure guards in `litellm/caching/redis_cache.py`; B393 owns them.
+  - "`RedisCache.__init__`, `async_increment`, `async_get_cache`, `async_batch_get_cache`, `async_increment_pipeline`, `async_get_ttl` and `async_refresh_ttl`; B360 owns them and can build on `RedisTransport`."
+  - "`_AsyncRedisCommands`, `_decoded_counts`, `_get_call_stack_info`, `check_and_fix_namespace`, `_parse_redis_major_version`, `_get_cache_logic` and `_BreakerMetrics`; B4324 owns them."
+  - "`_setup_health_pings`, `_handle_async_ping_error`, `_handle_sync_ping_error`, `sync_ping`, `ping`, `delete_cache_keys`, `client_list`, `info`, `flush_cache`, `flushall`, `disconnect`, `test_connection` on both cache classes, `async_delete_cache` and `delete_cache`; B4326 owns them."
+  - "`set_cache`, `async_set_cache`, `_pipeline_helper`, `async_set_cache_pipeline`, `async_set_cache_pipeline_with_ttls`, `_set_cache_sadd_helper`, `async_set_cache_sadd`, `batch_cache_write` and `flush_cache_buffer`; B4327 owns them."
+  - "`increment_cache`, `increment_with_floor`, `batch_get_counts`, `async_batch_get_counts`, `async_scan_iter`, `async_register_script`, `_register_script_for_current_loop`, `_incrbyfloat_with_ttl`, `async_set_max`, `async_increment_with_floor` and `_pipeline_increment_helper`; B4328 owns them."
+  - "`RedisCache.get_cache` (L1541-L1564) and `RedisCache.batch_get_cache` (L1583-L1645); B4327 takes them with the rest of the sync cache surface, on top of `sync_client` and `mget` here."
+  - The list operations at L2053-L2420 of `litellm/caching/redis_cache.py`; B4329 owns them.
+  - "`RedisClusterCache.redis_sync_redis_cluster_client` is set to None and never assigned; no caller at the pin."
+  - "`LLMClientCache` itself in `litellm/caching/llm_caching_handler.py`; this entry doesn't cover that file and only copies its cap."
+
+pitfalls:
+  - >-
+    The test for pubsub is the client's kind and the test for `init_async_client` is
+    the family. A `RedisCache` with startup nodes is the case where they differ, so
+    don't merge the two into one check.
+  - >-
+    Never hold the store's mutex across `.await`. Take the `Arc` to the cell, drop the
+    guard, then await `get_or_try_init`.
+  - A key that leaves out the password would hand one tenant's connection to another. Include every field and never log the serialized form.
+  - >-
+    `RedisScalar` and `AsyncRedisCommands` don't include MGET, so go through
+    `LiveAsyncClient::query` and don't add methods to the trait, since
+    `cache_primitives` belongs to B4324.
+  - The rule against one-line functions applies here, so use public fields rather than getters.
+  - "`LiveSyncClient::query` holds a `std::sync::Mutex` during network I/O. This is fine only because it never runs on an async thread."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

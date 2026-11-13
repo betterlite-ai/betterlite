@@ -105,6 +105,10 @@ fn an_existing_task_branch_is_reused_in_a_private_checkout() {
     prepare(&root, &target, branch).unwrap();
     assert_eq!(git(&target, &["rev-parse", "HEAD"]).unwrap(), head);
     assert_eq!(git(&target, &["config", "user.name"]).unwrap(), "Fixture\n");
+    assert_eq!(
+        git(&target, &["config", "maintenance.auto"]).unwrap(),
+        "false\n"
+    );
     assert_eq!(coordinator(&target).unwrap(), common_dir(&root).unwrap());
     assert!(prepare(&root, &target, "task/B124-other").is_err());
 }

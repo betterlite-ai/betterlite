@@ -1,0 +1,11 @@
+kind: helper
+name: provider-defaults-a-datarobot
+call:
+  provider_defaults_a:
+    provider: datarobot
+    model: my-model
+    api_base: https://tenant.datarobot.com/api/v2
+    environment:
+      DATAROBOT_API_TOKEN: token
+env: {}
+compare: {ignore: []}

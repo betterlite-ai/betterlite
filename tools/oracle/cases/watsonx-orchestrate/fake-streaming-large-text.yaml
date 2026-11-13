@@ -1,0 +1,9 @@
+kind: helper
+name: watsonx-fake-streaming-large-text
+call:
+  b4807:
+    operation: stream
+    request_id: req-1
+    text: "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz0123456789"
+env: {}
+compare: {ignore: []}

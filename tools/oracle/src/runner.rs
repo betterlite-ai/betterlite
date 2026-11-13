@@ -22,8 +22,11 @@ pub(crate) mod browser_flow_group;
 pub(crate) mod compare_cases;
 mod config;
 mod fixtures;
+pub(crate) mod http_scenarios;
 pub(crate) mod native_feature_eligibility;
 mod scenario;
+pub(crate) mod sdk_http;
+mod websocket;
 
 #[derive(Debug, clap::Parser)]
 pub(crate) struct DatabaseEnvironment {
@@ -40,15 +43,13 @@ pub(crate) fn run_cases(
     }
     let mut groups = BTreeMap::<String, Vec<Case>>::new();
     let mut scenarios = Vec::new();
+    let mut websocket_cases = Vec::new();
     let mut helper_outcome = helpers::HelperRun::Match;
     for loaded_case in cases {
         match loaded_case {
             LoadedCase::Http(http_case) => {
-                let group_key = format!(
-                    "{}\n{:?}\n{}",
-                    http_case.config, http_case.env, http_case.native_feature_eligibility
-                );
-                groups.entry(group_key).or_default().push(http_case);
+                let key = group_key(&http_case);
+                groups.entry(key).or_default().push(http_case);
             }
             LoadedCase::Scenario(scenario_case) => scenarios.push(scenario_case),
             LoadedCase::Helper(helper_case) => {
@@ -57,6 +58,7 @@ pub(crate) fn run_cases(
                     helper_outcome = helpers::HelperRun::Difference;
                 }
             }
+            LoadedCase::WebSocket(websocket_case) => websocket_cases.push(*websocket_case),
         }
     }
     let root = artifact_root()?;
@@ -68,6 +70,7 @@ pub(crate) fn run_cases(
     for scenario_case in &scenarios {
         outcomes.push(scenario::run_scenario_case(options, &root, scenario_case)?);
     }
+    outcomes.extend(websocket::run_cases(options, &root, &websocket_cases)?);
     if matches!(helper_outcome, helpers::HelperRun::Difference) {
         return Ok(exit_status(true));
     }
@@ -80,6 +83,14 @@ pub(crate) fn exit_status(different: bool) -> ExitCode {
     } else {
         ExitCode::SUCCESS
     }
+}
+
+// Two cases may share one boot only when their include bodies match too, since the first case writes the tree.
+pub(crate) fn group_key(case: &Case) -> String {
+    format!(
+        "{}\n{:?}\n{}\n{:?}",
+        case.config, case.env, case.native_feature_eligibility, case.config_files
+    )
 }
 
 pub(crate) fn run_group(
@@ -194,7 +205,16 @@ fn run_group_capture(input: GroupCaptureInput<'_>) -> Result<Vec<bool>, OracleEr
         mock,
         |http_client, gateway| capture_gateway(http_client, gateway, cases),
     )?;
-    compare_group(root, cases, &captures)
+    let prepared_cases = comparison_cases(cases, options.self_check);
+    compare_group(root, &prepared_cases, &captures)
+}
+
+pub(crate) fn comparison_cases(cases: &[Case], self_check: bool) -> Vec<Case> {
+    let mut owned = Vec::with_capacity(cases.len());
+    for case in cases {
+        owned.push(case.with_self_check(self_check));
+    }
+    owned
 }
 
 // Shared by the Http and Scenario pipelines: start a gateway, capture against it, then the next.
@@ -258,13 +278,4 @@ pub(crate) fn capture_gateway(
     }
     gateway.stop()?;
     Ok(captures)
-}
-
-pub(crate) fn request_slice(
-    requests: &[ProviderRequest],
-    offset: usize,
-    count: usize,
-) -> &[ProviderRequest] {
-    let end = offset.saturating_add(count);
-    requests.get(offset..end).unwrap_or_default()
 }

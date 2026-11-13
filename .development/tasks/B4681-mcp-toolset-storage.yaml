@@ -195,7 +195,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L113-L121
 
 out_of_scope:
-  - MCP toolset manager or startup wiring; that comes in B138.
+  - MCP toolset manager or startup wiring; those are B6591, B6592, B8701 and B4725.
   - HTTP routes or endpoints for toolset operations; those come in a later management task.
   - Searching or filtering toolsets by properties beyond name or ID.
   - Audit log records beyond created_by/updated_by timestamps.

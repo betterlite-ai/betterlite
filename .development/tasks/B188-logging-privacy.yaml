@@ -23,9 +23,14 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-logging/**
-  - crates/betterlite-config/**
-  - crates/betterlite-openai/**
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/logging_privacy.rs
+  - crates/betterlite-logging/src/logging_privacy/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/sections/logging_privacy.rs
+  - crates/betterlite-config/src/sections/logging_privacy/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/logging_privacy*
+  - crates/betterlite-openai/fuzz/corpus/chat_request/logging-privacy-*
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/logging/privacy.rs
   - tools/oracle/src/helpers/logging/privacy/**

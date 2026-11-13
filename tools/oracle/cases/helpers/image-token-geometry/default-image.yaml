@@ -1,0 +1,21 @@
+kind: helper
+name: image-token-geometry-default-image
+call:
+  image_tokens:
+    settings:
+      default_token_count: 123
+    calls:
+      - function: calculate_img_tokens
+        data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAA="
+        mode: high
+        use_default_image_token_count: true
+      - function: calculate_img_tokens
+        data: "not a data url"
+        mode: low
+        use_default_image_token_count: true
+      - function: calculate_img_tokens
+        data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAA="
+        mode: high
+        use_default_image_token_count: false
+env: {}
+compare: {ignore: []}

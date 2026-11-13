@@ -1,0 +1,17 @@
+kind: helper
+name: media-config-selection-seed-transcription
+call:
+  b5360:
+    model_cost:
+      azure-speech: {audio_transcription_config: azure_speech}
+    bundled_model_cost: {}
+    requests:
+      - selector: transcription
+        calls:
+          - {provider: deepgram, model: nova-3}
+          - {provider: openai, model: gpt-4o-transcribe}
+          - {provider: vertex_ai, model: vertex_ai/gemini-1.5-transcribe}
+          - {provider: azure, model: azure-speech}
+          - {provider: azure, model: unknown}
+env: {}
+compare: {ignore: []}

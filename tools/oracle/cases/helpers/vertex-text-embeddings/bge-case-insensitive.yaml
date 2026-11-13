@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-text-embeddings-bge-case-insensitive
+call:
+  vertex_text_embeddings:
+    requests:
+      - {model: BGE-small-en-v1.5, input: [a, b], optional: {title: doc}}
+      - {model: bge/204379420394258432, input: [a, b], optional: {title: doc}}
+      - {model: bge, input: [a, b], optional: {title: doc}}
+      - {model: text-embedding-005, input: [a, b], optional: {title: doc}}
+      - {model: not-a-model, input: [a, b], optional: {title: doc}}
+compare: {ignore: []}
+env: {}

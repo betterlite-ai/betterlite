@@ -1,8 +1,9 @@
 #![cfg(test)]
 
+use crate::schema::{drop_non_python_regex_patterns, flatten::flatten_top_level};
+
 use crate::arguments::json::{Json, Object};
-use crate::schema::drop_non_python_regex_patterns;
-use crate::schema::flatten::{flatten_and_drop, tool_with_sanitized_parameters};
+use crate::schema::flatten::tool_with_sanitized_parameters;
 use rstest::rstest;
 use std::{fs, path::PathBuf};
 
@@ -62,7 +63,9 @@ fn tool_schemas_tool_schema_tests_sanitizes_only_parameters() {
         r#"{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}"#,
     );
     assert_eq!(
-        tool_with_sanitized_parameters(tool, flatten_and_drop),
+        tool_with_sanitized_parameters(tool, |schema| flatten_top_level(&flatten_top_level(
+            &drop_non_python_regex_patterns(schema)
+        ))),
         expected
     );
 }
@@ -76,5 +79,7 @@ fn replays_the_tool_schema_corpus(#[files("fuzz/corpus/tool_schema/*")] path: Pa
     let Ok(schema) = serde_json::from_slice::<Object>(&bytes) else {
         return;
     };
-    drop(flatten_and_drop(&schema));
+    drop(flatten_top_level(&flatten_top_level(
+        &drop_non_python_regex_patterns(&schema),
+    )));
 }

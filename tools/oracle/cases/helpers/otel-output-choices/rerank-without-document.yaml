@@ -1,0 +1,9 @@
+kind: helper
+name: rerank-without-document
+call:
+  b5240:
+    function: "output_choices"
+    response: {"results": [{"index": 2, "relevance_score": 0.25}]}
+env: {}
+compare:
+  ignore: []

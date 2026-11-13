@@ -1,0 +1,9 @@
+kind: helper
+name: image-b64-padding
+call:
+  b5240:
+    function: "output_choices"
+    response: {"data": [{"b64_json": "aGVsbG8="}]}
+env: {}
+compare:
+  ignore: []

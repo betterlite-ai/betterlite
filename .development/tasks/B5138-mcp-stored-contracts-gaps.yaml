@@ -1,0 +1,82 @@
+id: B5138
+title: Close the B2305 MCP stored contract audit gap
+description: >-
+  B2305 built the stored MCP credential and pinned tool contracts in betterlite-db::mcp_stored_contracts.
+  An Opus review after it merged found one weak test. The production code on main is right and stays as
+  it is; only the unit test and one oracle step change. The module is unchanged on main since 169701fd.
+
+
+  LiteLLM declares MCPCredentials as a plain typing_extensions TypedDict with total=False and no config
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L156-L295).
+  Pydantic validates such a TypedDict with extra_behavior 'ignore'
+  (https://github.com/pydantic/pydantic/blob/v2.14.1/pydantic/_internal/_generate_schema.py#L1514-L1522,
+  the version tools/oracle/litellm/uv.lock pins), so TypeAdapter(MCPCredentials).validate_python returns
+  the record without unknown keys: {"future": true} gives {}, and {"client_id": "id", "future": true}
+  gives {"client_id": "id"}. betterlite's MCPCredentials has neither deny_unknown_fields nor a flattened
+  map, so serde skips the key and the stored record matches.
+
+
+  The test that should prove this can't fail. unknown_credential_keys in
+  crates/betterlite-db/src/mcp_stored_contracts/tests.rs parses {"future":true} and only asserts that
+  client_id is None. That holds whatever happens to the extra key, so a record that kept "future" and
+  wrote it back would still pass. Turn it into an rstest over the stored JSON and the exact string
+  serde_json::to_string gives for the parsed record, with two named cases: extra_only, {"future":true}
+  giving {}, and extra_beside_known, {"client_id":"id","future":true} giving {"client_id":"id"}. Watch
+  it fail first: add a temporary #[serde(flatten)] field of BTreeMap<String, serde_json::Value> to
+  MCPCredentials, see both cases fail on the written-back "future" key, then remove the field before you
+  commit.
+
+
+  The credential-fields.yaml oracle case already has an unknown_credential_keys step with only an extra
+  key, and that step does catch a written-back key. It gets one more step, unknown_key_beside_known, calling
+  credential_contract with {"client_id": "client_id-value", "future": "ignored"}, so LiteLLM itself
+  confirms that a known field survives next to a dropped one. The mcp_stored_contracts helper operation
+  and its Rust and Python adapters already handle credential_contract and stay unchanged.
+scope:
+  paths:
+    - crates/betterlite-db/src/mcp_stored_contracts/tests.rs
+    - tools/oracle/cases/helpers/mcp-stored-contracts/credential-fields.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L156-L295
+    why: MCPCredentials is a total=False TypedDict with no pydantic config, so validation ignores unknown keys.
+  - url: https://github.com/pydantic/pydantic/blob/v2.14.1/pydantic/_internal/_generate_schema.py#L1514-L1522
+    why: A TypedDict that is not closed and declares no extra items validates with extra_behavior 'ignore'.
+dod:
+  - text: >-
+      unknown_credential_keys is an rstest whose cases extra_only and extra_beside_known parse the stored
+      JSON into MCPCredentials and assert the exact serialized string, {} and {"client_id":"id"}. On
+      today's main it is a plain test without those cases, so the check finds no test and fails; it
+      passes once the rstest exists, and both cases fail while a temporary flattened extras map keeps
+      the "future" key.
+    proof: [unknown-credential-keys]
+  - text: >-
+      credential-fields.yaml has a step unknown_key_beside_known that sends {"client_id":
+      "client_id-value", "future": "ignored"} to credential_contract, and betterlite and LiteLLM both
+      answer {"client_id": "client_id-value"}. Today's main has no such step, so the grep fails.
+    proof: [beside-known-step, oracle]
+checks:
+  optional: []
+  commands:
+    - id: unknown-credential-keys
+      why: unknown_credential_keys still only checks client_id, so a record that kept and wrote back an unknown key would pass it
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_stored_contracts::tests::unknown_credential_keys::case_[0-9]+_extra_only$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_stored_contracts::tests::unknown_credential_keys::case_[0-9]+_extra_beside_known$/)'
+    - id: beside-known-step
+      why: no oracle step pins LiteLLM's answer for an unknown credential key next to a known one
+      run: grep -q '"unknown_key_beside_known"' tools/oracle/cases/helpers/mcp-stored-contracts/credential-fields.yaml
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-stored-contracts/credential-fields.yaml
+deviations: []
+out_of_scope:
+  - mcp_stored_contracts.rs, decode.rs, pinned.rs and secret.rs stay as they are. They already drop unknown credential keys, and no finding asks to change them.
+  - The helper adapters tools/oracle/src/helpers/db/mcp_stored_contracts.rs and tools/oracle/helpers/mcp_stored_contracts.py stay as they are. They already route credential_contract.
+  - Padded one-line functions anywhere in the module belong to B5094. It owns the legacy lists under .ast-grep/rules/.
+pitfalls:
+  - Don't add deny_unknown_fields to MCPCredentials to make the test stricter; pydantic ignores the extra key here, so a stored row with one would then fail where LiteLLM accepts it.
+  - Assert on the serialized string, not on a field such as client_id, because a field check passes whether or not "future" survived.
+  - The temporary flatten field has to be a serde_json::Value map, since JsonValue deserializes through Box<RawValue> and RawValue can't sit inside a flattened struct.
+  - The expected string for extra_beside_known is exactly {"client_id":"id"} with no spaces, since serde_json::to_string writes compact JSON and skip_serializing_if leaves out every absent field.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

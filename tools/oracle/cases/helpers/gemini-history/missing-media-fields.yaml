@@ -1,0 +1,54 @@
+kind: helper
+name: gemini-history-missing-media-fields
+call:
+  gemini_history:
+    cases:
+      - messages:
+          - {role: user, content: [{type: image_url}]}
+      - messages:
+          - {role: user, content: [{type: image_url, image_url: null}]}
+      - messages:
+          - {role: user, content: [{type: image_url, image_url: {}}]}
+      - messages:
+          - {role: user, content: [{type: file}]}
+      - messages:
+          - {role: user, content: [{type: file, file: null}]}
+      - messages:
+          - {role: user, content: [{type: file, file: {file_data: "gs://bucket/anim.gif"}}]}
+      - messages:
+          - {role: user, content: [{type: image_url, image_url: {url: "gs://bucket/anim.gif"}}]}
+      - messages:
+          - {role: user, content: [{type: image_url, image_url: {url: "data:image/png;base64,YWJj"}}]}
+      - messages:
+          - {role: user, content: [{type: file, file: {file_data: "plain-text"}}]}
+      - messages:
+          - {role: user, content: [{type: file, file: {file_data: "base64-payload"}}]}
+      - messages:
+          - {role: user, content: [{type: file, file: {file_id: "plain-id"}}]}
+      - model: "gemini-2.5-flash"
+        messages:
+          - role: user
+            content:
+              - type: file
+                file:
+                  file_id: "gs://b/clip.mp4"
+                  video_metadata: {fps: 1, note: "x"}
+      - messages:
+          - role: user
+            content:
+              - type: file
+                file:
+                  file_id: "gs://b/clip.mp4"
+                  video_metadata: {fps: 1, note: "x"}
+      - model: "gemini-3-pro-preview"
+        messages:
+          - role: user
+            content:
+              - type: file
+                file:
+                  file_id: "gs://b/clip.mp4"
+                  detail: "high"
+                  video_metadata: {fps: 2, start_offset: "1s"}
+env: {}
+compare:
+  ignore: []

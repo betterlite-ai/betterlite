@@ -1,0 +1,42 @@
+kind: helper
+name: base-metadata
+call:
+  stream_base_assembly:
+    function: batch
+    cases:
+      - function: base_metadata
+        chunks:
+          - {object: chat.completion.chunk, id: '', created: 7, model: orig, system_fingerprint: fp, choices: []}
+          - {object: chat.completion.chunk, id: id2, created: 7, model: real-1, choices: [{delta: {role: user}, finish_reason: null}]}
+          - {object: chat.completion.chunk, id: id3, created: 7, model: real-2, service_tier: t1, choices: [{delta: {role: tool}}]}
+          - {object: chat.completion.chunk, service_tier: t2}
+          - {object: chat.completion.chunk, service_tier: ''}
+      - function: base_metadata
+        chunks:
+          - {object: chat.completion.chunk, id: a, created: 7, model: orig, system_fingerprint: fp, choices: [], _hidden_params: {created_at: 2}}
+          - {object: chat.completion.chunk, id: b, created: 9, model: orig2, choices: [], _hidden_params: {created_at: 1}}
+      - function: base_metadata
+        chunks:
+          - {form: model_response_stream, object: chat.completion.chunk, id: '', created: 7, model: orig, system_fingerprint: fp, choices: []}
+          - {form: model_response_stream, object: chat.completion.chunk, id: id2, created: 7, model: real, service_tier: t1, choices: [{delta: {role: user}}]}
+      - function: base_metadata
+        chunks:
+          - {object: chat.completion.chunk, created: 1, model: m, choices: []}
+          - {object: chat.completion.chunk, created: 1, model: m, choices: [{delta: {role: ''}}, {delta: {role: tool}}]}
+          - {object: chat.completion.chunk, created: 1, model: m, choices: [{delta: {role: user}}]}
+      - function: base_metadata
+        chunks:
+          - {object: chat.completion.chunk, created: 1, model: orig, choices: []}
+      - function: base_metadata
+        chunks:
+          - {object: chat.completion.chunk, model: orig, choices: []}
+      - function: base_metadata
+        chunks:
+          - {object: chat.completion.chunk, created: 1, choices: []}
+      - function: base_metadata
+        chunks:
+          - {created: 1, model: orig, choices: []}
+      - function: base_metadata
+        chunks: []
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

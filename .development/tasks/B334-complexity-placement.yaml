@@ -6,35 +6,23 @@ description: 'Build TierPlacement over B374 tier pools, B323 routing groups, B37
   session replay. Configuration boundary keys introduced or consumed here: return_raw_model_name, max_tokens_from_tier_model.
   Pinned declaration defaults: return_raw_model_name=False; max_tokens_from_tier_model=True. Resolve env
   values once in betterlite-config, never in router code. Implement the owned native service in crates/betterlite-router/src/complexity_placement.rs.
-  Add ProbeOperation::ComplexityPlacement in tools/oracle/src/router_probes/mod.rs and the corresponding B334 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::ComplexityPlacement and its Python entry as stubs, so fill only tools/oracle/src/router_probes/complexity_placement.rs and tools/oracle/litellm/probes/complexity_placement.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/complexity_router.py:
   ComplexityRouter.get_model_for_tier (L2791-L2813), ComplexityRouter._litellm_params_for_model (L2815-L2824),
   ComplexityRouter._pick_from_tier_value (L2827-L2832), ComplexityRouter._tier_pools (L2834-L2835), ComplexityRouter._pin_model_for_tier
   (L2837-L2880). Implement these behaviors through the typed Rust services above; synchronous facades
-  and structural accessors reuse the same primitive instead of separate ports.'
+  and structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B366 composes this service.'
 scope:
   paths:
   - crates/betterlite-router/src/complexity_placement.rs
   - crates/betterlite-router/src/complexity_placement/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/complexity_placement.rs
   - crates/betterlite-server/src/routing/complexity_placement/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/complexity_placement.rs
   - tools/oracle/src/router_probes/complexity_placement/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/complexity_placement.py
   - tools/oracle/cases/routing/complexity-placement/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/complexity-placement-*
@@ -208,6 +196,7 @@ out_of_scope:
   (L3386-L3421).'
 - 'litellm/router_strategy/complexity_router/complexity_router.py: B400 owns: ComplexityRouter.__init__
   (L1324-L1479).'
+- "B8350 builds `as_output_cap` in `betterlite_router::router_predicates`. Router._restore_client_ceiling_no_tier_pins calls it to read the client output cap and does not rebuild it."
 pitfalls:
 - Tier overrides cannot smuggle provider destinations or credentials through a passthrough map.
 - A context limit must account for both input and effective output budget.

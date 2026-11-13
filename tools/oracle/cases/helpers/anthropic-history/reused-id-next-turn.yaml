@@ -1,0 +1,26 @@
+kind: helper
+name: anthropic-history-reused-id-next-turn
+call:
+  anthropic_history:
+    function: sanitize_messages_for_tool_calling
+    modify_params: true
+    messages:
+      - role: assistant
+        tool_calls:
+          - id: reused
+            type: function
+            function: {name: first, arguments: "{}"}
+      - role: tool
+        tool_call_id: reused
+        content: previous-turn
+      - role: assistant
+        tool_calls:
+          - id: reused
+            type: function
+            function: {name: second, arguments: "{}"}
+      - role: tool
+        tool_call_id: reused
+        content: current-turn
+env: {}
+compare:
+  ignore: []

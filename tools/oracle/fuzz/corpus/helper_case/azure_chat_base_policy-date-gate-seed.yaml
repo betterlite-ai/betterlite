@@ -1,0 +1,12 @@
+kind: helper
+name: azure-chat-base-policy-date-gate-seed
+call:
+  azure_chat_base_policy:
+    action: azure_tool_choice_date_gate
+    settings: {}
+    steps:
+      - model: gpt-4o
+        api_version: '2023-11-30'
+        non_default: {tool_choice: auto}
+env: {}
+compare: {ignore: []}

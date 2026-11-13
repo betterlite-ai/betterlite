@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-prompt-converse-text-seed
+call:
+  bedrock_prompt:
+    messages:
+      - {role: user, content: hi}
+      - {role: assistant, content: hello}
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+env: {}
+compare: {ignore: []}

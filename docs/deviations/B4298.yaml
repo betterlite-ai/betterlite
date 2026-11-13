@@ -1,0 +1,11 @@
+task: B4298
+deviations:
+  - what: Native batch storage is an injected NativeEmbeddingStore; LiteLLM's ResponseCacheRuntime and the NativeCacheRequest builder behind _native_request are not built, and B4299 never sets a native cache, so the native branch runs only when a test or the oracle injects a store.
+    why: The rust_bridge package is outside the repository inventory per repository policy. The pipeline still asks the store for one request per entry, drops an entry whose request is absent, and passes the request and response batches to async_store_batch, logging a failure instead of blocking the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L938-L948
+  - what: The configured backend receives the embedding batch through the response facade's EnvelopeBackend, which stores each entry with async_set_cache in turn; the batch is not handed to CacheBackend's async_set_cache_pipeline, which a Redis backend writes as one multi-set.
+    why: The facade's backend trait from B4297 exposes single-entry reads and writes only, and this task's scope cannot add a bulk method to it. The per-entry loop gives the same storage outcome as LiteLLM's InMemoryCache and DiskCache pipelines; only a Redis-backed facade loses the multi-set.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L949-L954
+  - what: A batch item's embedding cache key is derived from a private copy of the key request carrying that item's input, with litellm_params.preset_cache_key cleared; the caller's request and its preset stay untouched.
+    why: LiteLLM's get_cache_key stores the first computed key as preset_cache_key and returns it for every later item of the same batch, so each write replaces the one before and a later request for the first input can read the last input's vector. No working setup can rely on that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L866-L900

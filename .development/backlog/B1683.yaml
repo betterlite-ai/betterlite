@@ -1,7 +1,7 @@
 id: B1683
 milestone: M4 keys, spend and management
 title: Normalize response usage and explain billable zero-cost results
-status: todo
+status: done
 depends_on: [B004, B171, B204, B579, B906, B1668]
 file: tasks/B1683-billing-usage-and-diagnostics.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/litellm_core_utils/llm_cost_calc/zero_cost_diagnostic.py"
 parent: B068
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1048

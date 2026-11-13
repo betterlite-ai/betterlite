@@ -7,7 +7,7 @@ description: >-
   version=3; request_id is nonempty, timestamps are finite/nonnegative, minimum_cache_tokens
   defaults zero, outcome is complete/uncertain/response_cache, and usage/plan/reason are
   optional. Extract CountedBreakpoint and CountedPromptCachePlan from Anthropic's prediction
-  module into this lower layer so B075 can consume them without a B068-B070-B075 cycle.
+  module into this lower layer so B3121 and B3122 can consume them without a B068-B070-B075 cycle.
   Keep both fingerprint lists, default empty content fingerprint/lists and the original
   field order. This task does not build a prompt parser or obtain token counts.
   Complete usage requires nonnegative prompt/completion counts, exact total equality, and
@@ -99,7 +99,7 @@ deviations:
     why: Replay must not wrap token counts or admit an infinite cache lifetime into persisted estimates.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/baseline_accounting.py#L142-L169
 out_of_scope:
-  - B075 owns every function and record in anthropic/prompt_cache_prediction.py except the two counted records extracted here; it builds/fills those records and performs provider counting.
+  - B3120, B3121 and B3122 own every function and record in anthropic/prompt_cache_prediction.py except the two counted records extracted here; B3121 builds/fills those records and performs provider counting.
   - The database baseline-accounting tasks own ordering observations, durable checkpoints and publication; B1694 owns pricing a supplied estimate.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as baseline_history in the models group. Replace the stub Op in tools/oracle/src/helpers/models/baseline_history.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/baseline_history.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

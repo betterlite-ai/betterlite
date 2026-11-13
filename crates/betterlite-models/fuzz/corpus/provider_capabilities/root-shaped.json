@@ -1,0 +1,23 @@
+{
+  "_comment": "This file defines which endpoints are supported by each LiteLLM provider",
+  "_schema": {
+    "provider_slug": {
+      "display_name": "Display name shown in README",
+      "url": "Link to provider documentation",
+      "endpoints": {"a2a_(Agent Gateway)": "Supports the A2A Protocol", "container_file": "Supports containers"}
+    }
+  },
+  "providers": {
+    "e2b": {"display_name": "E2B (`e2b`)", "endpoints": {"sandbox": true}},
+    "apiserpent": {"display_name": "APISerpent (`apiserpent`)", "url": "https://docs.litellm.ai/docs/search/apiserpent", "endpoints": {"search": true}}
+  },
+  "endpoints": {
+    "sandbox": {
+      "docs_label": "sandbox",
+      "display_name": "Sandbox",
+      "leftnav_label": "/sandbox",
+      "provider_json_field": "sandbox",
+      "url": "https://docs.litellm.ai/docs/sandbox"
+    }
+  }
+}

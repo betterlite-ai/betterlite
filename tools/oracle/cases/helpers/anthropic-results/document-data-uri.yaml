@@ -1,0 +1,18 @@
+kind: helper
+name: anthropic-results-document-data-uri
+call:
+  anthropic_results:
+    function: document_data_uris
+    values:
+      - "data:application/pdf;base64,QQ=="
+      - "data:text/plain,hello"
+      - "data:text/plain;charset=utf-8;base64,QQ=="
+      - "data:image/png;base64,QQ=="
+      - "data:;base64,QQ=="
+      - "application/pdf;base64,QQ=="
+      - " data:application/pdf;base64,QQ=="
+      - "data:"
+      - "data:APPLICATION/PDF;base64,QQ=="
+env: {}
+compare:
+  ignore: []

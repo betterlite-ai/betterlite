@@ -1,0 +1,1 @@
+{"embeddings": {"float": [[0.1, 0.2]], "int8": [[1, 2]]}, "meta": {"billed_units": {"input_tokens": 3, "images": 1}}}

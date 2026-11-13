@@ -1,0 +1,7 @@
+kind: helper
+name: jwt_claim_hints
+call:
+  chatgpt_token_store: {"record": "{\"access_token\": \"h.eyJleHAiOiAxMDAwLjksICJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOiB7ImNoYXRncHRfYWNjb3VudF9pZCI6ICJhY2N0LWFjY2VzcyJ9fQ.unverified\", \"refresh_token\": \"refresh\", \"extra\": [1, 2]}", "replacement": null, "now": 939, "fail_write": false, "actions": ["expired", "account", "read", "build"]}
+env: {}
+compare:
+  ignore: []

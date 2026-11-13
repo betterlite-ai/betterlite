@@ -1,0 +1,11 @@
+kind: helper
+name: weave-config-missing-project
+call:
+  b3850:
+    function: weave_config
+    environment:
+      WANDB_API_KEY: abc
+env:
+  WANDB_API_KEY: abc
+compare:
+  ignore: []

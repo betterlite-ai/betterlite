@@ -79,6 +79,11 @@ pub(crate) struct Runner {
     )]
     pub(crate) resume: Option<Vec<String>>,
     pub(crate) output: OutputMode,
+    #[schemars(
+        length(min = 1),
+        description = "A file of NAME=VALUE lines that the run gets as environment variables, so a key stays out of the repository. {home} expands. Blank lines and lines that start with # are skipped, and a value in single quotes loses them."
+    )]
+    pub(crate) env_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
@@ -115,7 +120,7 @@ pub(crate) struct Role {
     pub(crate) instructions: String,
     #[schemars(
         length(min = 1),
-        description = "Rungs tried in order. A worker climbs to the next rung when a rung's attempts run out. While a worker rung's vendor is at its usage limit, its tries go to the first later rung on another vendor and the rung keeps its own attempts; with no such rung the dispatch stops and keeps its progress. A reviewer skips a rung whose vendor is at its usage limit."
+        description = "Rungs tried in order. A worker rung's level is its place among its own vendor's rungs. After a failed start the worker stays on its rung while it has attempts left, then moves to its vendor's next rung, then to the first open rung of another vendor at the same level or above. A start that fails the same way as the start before it (the same red check, or the same timeout, silent run or rejected report) goes to that other vendor first. While a worker rung's vendor is at its usage limit, its runs go to that other vendor and the rung keeps its own attempts; with no such rung the dispatch stops and keeps its progress. A reviewer skips a rung whose vendor is at its usage limit."
     )]
     pub(crate) ladder: Vec<Rung>,
 }
@@ -133,6 +138,26 @@ pub(crate) struct Rung {
     pub(crate) attempts: u32,
     #[schemars(range(min = 1))]
     pub(crate) timeout_minutes: u32,
+    #[schemars(
+        length(min = 1),
+        description = "The model a worker fix turn on this rung runs on after a run that reported done: failed task checks, review changes or a CI round. It resumes the rung's session with the rung's effort. A run after a blocked, unfinished or malformed answer keeps the rung's model."
+    )]
+    pub(crate) fix_model: Option<String>,
+    #[schemars(
+        length(min = 1),
+        description = "The only tasks this worker rung runs for. Every other task's ladder leaves the rung out, so the places their saved progress points at stay the same."
+    )]
+    pub(crate) tasks: Option<Vec<String>>,
+}
+
+impl Role {
+    pub(crate) fn keep_rungs_for(&mut self, task: &str) {
+        self.ladder.retain(|rung| {
+            rung.tasks
+                .as_ref()
+                .is_none_or(|tasks| tasks.iter().any(|id| id == task))
+        });
+    }
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -144,7 +169,7 @@ pub(crate) struct Policy {
     pub(crate) review_by_other_vendor: bool,
     #[schemars(
         range(min = 1),
-        description = "Fresh worker starts across the whole ladder, tries lent to a later rung included. Fix turns and runs that hit a usage limit don't count. cargo gate dispatch --grant adds starts on the last rung once these are used."
+        description = "Fresh worker starts across the whole ladder, runs on another vendor's rung included. Fix turns and runs that hit a usage limit don't count. cargo gate dispatch --grant adds starts on the last rung once these are used."
     )]
     pub(crate) max_worker_attempts: u32,
     #[schemars(
@@ -158,7 +183,7 @@ pub(crate) struct Policy {
     )]
     pub(crate) max_parallel: u32,
     #[schemars(
-        description = "When every seat of a worker rung's vendor is taken, the try runs on the first later rung of another vendor that has a free seat. It still counts as a try on its own rung."
+        description = "When every worker seat of a rung's vendor is taken, the start runs on another vendor's open rung at the same level that has a free seat, and counts there."
     )]
     pub(crate) overflow: bool,
     #[schemars(
@@ -170,7 +195,7 @@ pub(crate) struct Policy {
     )]
     pub(crate) max_review_rounds: u32,
     #[schemars(
-        description = "Blocked reports in a row before a task goes back to the architect instead of climbing to the next rung."
+        description = "Blocked reports in a row before a task goes back to the architect. A report before that resumes the worker's session on the same rung, with a note that unfinished work is not a blocker."
     )]
     pub(crate) max_blocked_reports: u32,
     #[schemars(

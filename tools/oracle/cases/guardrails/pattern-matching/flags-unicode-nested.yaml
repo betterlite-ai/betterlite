@@ -1,0 +1,1 @@
+{"kind":"helper","name":"flags-unicode-nested","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"(?a:(?u:\\w))","action":"MASK"}],"text":"\u00e9"}},"env":{},"compare":{"ignore":[]}}

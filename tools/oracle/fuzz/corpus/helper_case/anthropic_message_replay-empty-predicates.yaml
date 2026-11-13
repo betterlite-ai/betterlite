@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-message-replay-empty-predicates
+call:
+  anthropic_message_replay:
+    function: empty_predicates
+    blocks:
+    - {type: thinking, thinking: "", signature: "sig"}
+    - {type: thinking, thinking: "", signature: ""}
+    - {type: text, text: "  "}
+    - not-a-block
+env: {}
+compare: {ignore: []}

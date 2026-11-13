@@ -1,0 +1,29 @@
+kind: helper
+name: model-metadata-resolution-generalization-only-unknown
+call:
+  model_metadata_resolution:
+    scenario: generalization_only_unknown
+    fixture:
+      model_cost:
+        anthropic/blocked-prefix: {litellm_provider: openai, mode: chat}
+      fallback_generalizations:
+        - pattern: "^anthropic/claude-future$"
+          model_info: {max_tokens: 4096, litellm_provider: anthropic}
+        - pattern: "^claude-future$"
+          model_info: {max_tokens: 1}
+        - pattern: "^mystery-model$"
+          model_info: {max_tokens: 7, litellm_provider: acme}
+        - pattern: "^empty-rule$"
+          model_info: {}
+        - pattern: "^anthropic/blocked"
+          model_info: {max_tokens: 11}
+    queries:
+      - {model: claude-future, custom_llm_provider: anthropic}
+      - {model: claude-future-2024-01-01, custom_llm_provider: anthropic}
+      - {model: mystery-model-2024-01-01}
+      - {model: mystery-model-2024-01-01, custom_llm_provider: other}
+      - {model: empty-rule, custom_llm_provider: acme}
+      - {model: empty-rule}
+      - {model: blocked-prefix, custom_llm_provider: anthropic}
+env: {}
+compare: {ignore: []}

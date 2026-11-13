@@ -1,0 +1,170 @@
+id: B3459
+title: S3 Vectors RAG embedding and storage workflow
+description: >-
+  Build the workflow half of LiteLLM's S3VectorsRAGIngestion in a new module `s3_vectors_workflow` of the betterlite-rag crate. B3458 (module `s3_vectors_ingestion`)
+  already owns the signed calls GetVectorBucket/CreateVectorBucket, GetIndex/CreateIndex and PutVectors, and the two config helpers `s3_vectors_ingest_target` and
+  `s3_vectors_ingest_embedding_options`. This task owns the settings, the dimension probe, the lazy initialization, `embed` and `store`. Import B3458's items and never copy them.
+  `query_vector_store` has no caller at the pin and is not built.
+
+  Signing. Never write SigV4 code. Every S3 Vectors request is signed by B3456's `BedrockRagClients::signed_request_with(service, signing_region, method, url, headers, body)` with
+  service "s3vectors" (B3456 holds the credential resolution for the ten aws_* keys and the injected `AwsRagTransport`). B3458's four calls are the only place that sends a request.
+  This task builds the `BedrockRagClients` value from the S3 Vectors settings (the ten credential keys and the region) and passes it to B3458's calls. Read the exact constructors and
+  method names in crates/betterlite-rag/src/bedrock_ingestion and crates/betterlite-rag/src/s3_vectors_ingestion before writing; if B3456's constructor only takes its own Bedrock
+  settings record, fill that record with the ten keys and the region and leave its Bedrock fields at their defaults. Put the three calls this task makes behind a small trait
+  `S3VectorsApi` (ensure_bucket, ensure_index, put_vectors) declared in this task's `workflow` module, implement it once for B3458's client type, and test the flow against a
+  recording fake of the trait.
+
+  Module `settings`. `S3VectorsSettings` is built from the S3 Vectors vector store record that B3450 and B5134 define in betterlite-config (read crates/betterlite-config/src/rag/document.rs;
+  do not edit it, and report a missing key as a blocker) and the optional embedding options of the ingest request (`model`). Fields and defaults, as in `__init__` (L88-L121):
+  (1) `vector_bucket_name` and `index_name: Option<String>` from B3458's `s3_vectors_ingest_target`; its ValueError text is "vector_store_id must be in format 'bucket_name:index_name' for S3 Vectors,
+  or vector_bucket_name must be provided in litellm_params" and it surfaces as this module's `SettingsError::Target`. (2) `embedding_model: Option<String>` from `s3_vectors_ingest_embedding_options`,
+  which replaces the request's embedding options when the store config holds litellm_embedding_model or embedding_model. (3) `distance_metric`, default env S3_VECTORS_DEFAULT_DISTANCE_METRIC, else "cosine".
+  (4) `non_filterable_metadata_keys`, default ["source_text"]. (5) `dimension: Option<i64>`, set only when the key `dimension` is present (L158-L167); absent means "detect later". The default for a failed
+  or skipped probe is env S3_VECTORS_DEFAULT_DIMENSION, else 1024; read both env vars through B198's env helpers and the real config loader, never std::env directly in the module.
+  (6) `aws_region_name`: the explicit value only when non-empty, passed to B591's non-LLM region function (explicit, then AWS_REGION_NAME, AWS_REGION, us-west-2, validated).
+  (7) the ten credential keys, held as secrecy values where secret. (8) `ssl_verify` (a bool or a CA bundle path) is parsed and kept; see deviations. The record is validated once at construction,
+  so a bad value is a typed `SettingsError`, never a panic.
+
+  Module `dimension`. `detect_dimension(embedder, embedding_model)` (L123-L156). With no embedding model (the options are absent or hold no `model`) it returns the default dimension and sends nothing.
+  Otherwise it calls the injected `RagEmbedder` with the model and the one-element input ["test"] and returns the length of the first vector. An empty answer returns the default. Any `EmbedError` is logged
+  at warning level ("Could not auto-detect dimension from embedding model: {error}. Using default dimension of {default}.") and returns the default; this is the only place a failure is swallowed.
+  `RagEmbedder` is a trait declared here: `embed(model: &str, input: Vec<String>) -> Result<Vec<Vec<f64>>, EmbedError>`. Python calls router.aembedding when a router exists and litellm.aembedding
+  otherwise; the caller (B3460) picks and wires one implementation, so this crate never imports the router or betterlite-core except in the trait impl below.
+
+  Module `workflow`. `S3VectorsWorkflow` holds the settings, the `S3VectorsApi`, the `RagEmbedder`, a `unique_id: String` (8 lowercase hex characters from the caller; Python takes uuid4().hex[:8])
+  and the `initialized` flag. `ensure_config_initialized` (L169-L189): return at once when initialized; if dimension is unset, set it from `detect_dimension`; call ensure_bucket; if index_name is unset,
+  set it to "litellm-index-{unique_id}"; call ensure_index with bucket, index, dimension, distance metric and non-filterable keys; set the flag last. The dimension and index name stay set after a failure,
+  so a retry reuses them and runs the probe only once; only the flag is withheld.
+  `embed(chunks)` (L399-L428): empty chunks return `None`. With no embedding model it logs the warning "No embedding config provided, using default text-embedding-3-small" and stores that model in the settings.
+  It then calls the embedder once with all chunks and returns the vectors in order. An embedder error propagates as `WorkflowError::Embed`.
+  `store(file_content, filename, content_type, chunks, embeddings, existing_file_id)` (L430-L493): file_content, content_type and existing_file_id are ignored. Call `ensure_config_initialized` first.
+  Then if embeddings are absent or empty, or chunks are empty, log the message at error level and return `WorkflowError::NoContent` carrying exactly the text in LiteLLM (L452-L460). Otherwise build one entry per
+  pair of (chunk, embedding), stopping at the shorter list (Python zip): key "{filename}_{i}" when filename is non-empty, else "chunk_{i}"; data {"float32": vector}; metadata {"source_text": chunk,
+  "chunk_index": "{i}"} plus "filename" when filename is non-empty. Call put_vectors once with all entries and return ("{bucket}:{index}", filename). Entries are typed structs with the AWS field names.
+
+  Module `ingest`. Implements the ingestion trait that B3451 declares in betterlite-core `rag::ingestion` for `S3VectorsWorkflow`, forwarding `embed` and `store`. Read the exact trait and method names in
+  crates/betterlite-core/src/rag/ingestion.rs first. Add the betterlite-core path dependency to crates/betterlite-rag/Cargo.toml only for this module (B3457 does the same for its impl); settings, dimension and workflow
+  stay free of betterlite-core. Each module that can fail owns its error enum (`SettingsError`, `WorkflowError`, `EmbedError`) and none carries a credential.
+
+scope:
+  paths:
+    - crates/betterlite-rag/Cargo.toml
+    - crates/betterlite-rag/src/s3_vectors_workflow.rs
+    - crates/betterlite-rag/src/s3_vectors_workflow/**
+    - tools/oracle/cases/helpers/s3-vectors-rag-workflow/**
+    - tools/oracle/helpers/b3459.py
+    - tools/oracle/helpers/b3459/**
+    - tools/oracle/src/helpers/bedrock/b3459.rs
+    - tools/oracle/src/helpers/bedrock/b3459/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L88-L121
+    why: Constructor settings, defaults, target and embedding helpers, region lookup and the ssl_verify client setup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L123-L167
+    why: Dimension probe with the fallback warning, and the dimension-from-config rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L169-L189
+    why: Lazy initialization order, generated index name and the flag set last.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L399-L428
+    why: embed default model, empty-chunk result and the router versus litellm choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/s3_vectors_ingestion.py#L430-L493
+    why: store error text, vector keys, metadata and the returned id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/s3_vectors/vector_stores/transformation.py#L49-L73
+    why: The two helpers B3458 owns and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2037-L2039
+    why: S3_VECTORS_DEFAULT_DIMENSION, S3_VECTORS_DEFAULT_DISTANCE_METRIC and the default non-filterable keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L845-L872
+    why: Non-LLM region precedence used for aws_region_name.
+  - url: https://docs.aws.amazon.com/AmazonS3/latest/API/API_S3VectorBuckets_PutVectors.html
+    why: PutVectors entry shape (key, data.float32, metadata).
+
+dod:
+  - text: Settings take bucket and index from B3458's target helper, the embedding model from its options helper, and apply the defaults for distance metric, non-filterable keys, region and credential keys; dimension stays unset unless the key is present.
+    proof: [settings-tests, oracle]
+  - text: A bad target or a bad typed value is a typed SettingsError, and no error value carries a credential.
+    proof: [settings-tests]
+  - text: detect_dimension sends nothing without an embedding model, probes with the single input "test", returns the first vector length, and returns the default dimension on an empty answer or any embedder error.
+    proof: [dimension-tests, oracle]
+  - text: ensure_config_initialized probes only when dimension is unset, creates the bucket, generates "litellm-index-{unique_id}" when no index is set, creates the index with the resolved values and sets the flag last; a failure keeps dimension and index name and leaves the flag unset.
+    proof: [flow-tests, oracle]
+  - text: embed returns None for no chunks, falls back to text-embedding-3-small when no model is set, and returns the vectors in order.
+    proof: [embed-tests, oracle]
+  - text: store initializes first, rejects missing or empty embeddings or chunks with the exact NoContent text, builds keys and metadata with and without a filename, truncates to the shorter list, sends one put_vectors and returns "{bucket}:{index}" with the filename.
+    proof: [store-tests, oracle]
+  - text: The ingestion trait impl from B3451 forwards embed and store, and S3 Vectors requests are signed only through B3456's signed_request_with with service "s3vectors".
+    proof: [store-tests, signing-check]
+  - text: The helper adapter passes strict lint and type checks.
+    proof: [helper-python]
+
+checks:
+  optional: []
+  commands:
+    - id: settings-tests
+      why: settings parsing, defaults or typed errors are missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_workflow::(.*::)?tests::settings_/)'
+    - id: dimension-tests
+      why: the dimension probe or its fallback is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_workflow::(.*::)?tests::dimension_/)'
+    - id: flow-tests
+      why: the lazy initialization flow or its retry rule is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_workflow::(.*::)?tests::flow_/)'
+    - id: embed-tests
+      why: embed, its default model or its empty-input result is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_workflow::(.*::)?tests::embed_/)'
+    - id: store-tests
+      why: store, its entries, its error text or the trait impl is missing
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_workflow::(.*::)?tests::store_/)'
+    - id: signing-check
+      why: the workflow does not sign through B3456's signed_request_with for s3vectors
+      run: grep -rq 'signed_request_with' crates/betterlite-rag/src/s3_vectors_workflow crates/betterlite-rag/src/s3_vectors_ingestion.rs
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3459)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3459 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3459/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/s3-vectors-rag-workflow/settings-defaults.yaml
+  - tools/oracle/cases/helpers/s3-vectors-rag-workflow/settings-dimension-set.yaml
+  - tools/oracle/cases/helpers/s3-vectors-rag-workflow/dimension-probe.yaml
+  - tools/oracle/cases/helpers/s3-vectors-rag-workflow/dimension-probe-fails.yaml
+  - tools/oracle/cases/helpers/s3-vectors-rag-workflow/flow-order.yaml
+  - tools/oracle/cases/helpers/s3-vectors-rag-workflow/embed-default-model.yaml
+  - tools/oracle/cases/helpers/s3-vectors-rag-workflow/store-entries.yaml
+  - tools/oracle/cases/helpers/s3-vectors-rag-workflow/store-no-filename.yaml
+  - tools/oracle/cases/helpers/s3-vectors-rag-workflow/store-no-content.yaml
+
+deviations:
+  - what: Signing and sending go through B3456's signed_request_with and the injected AwsRagTransport, not LiteLLM's requests plus botocore SigV4Auth and its pooled httpx client.
+    why: One signing path for every AWS call, and the rules forbid hand-rolled SigV4. Oracle cases compare the operation order and AWS-named parameters from a recording fake on the Python side.
+  - what: The per-store ssl_verify value is parsed and kept but does not change TLS checks. The deployment's pooled client decides them.
+    why: B173's client is shared and built once, so a request cannot lower or replace its trust store. Open question in notes.
+  - what: The embedding call is made through an injected RagEmbedder trait instead of choosing between router.aembedding and litellm.aembedding here.
+    why: This crate cannot import the router; B3460 supplies one implementation that does the same choice.
+  - what: A non-integer dimension, or a distance metric that is not text, is a typed SettingsError at construction.
+    why: Python would fail later with TypeError or send the value on to AWS; the declared types make it an input error.
+
+out_of_scope:
+  - "_sign_and_execute_request, _ensure_vector_bucket_exists, _ensure_vector_index_exists and _put_vectors: B3458 owns them; this task calls them through S3VectorsApi."
+  - "s3_vectors_ingest_target, split_s3_vectors_store_id and s3_vectors_ingest_embedding_options: B3458 owns them (B5134 says so too); this task calls them."
+  - "query_vector_store, S3VectorsQueryMatch and S3VectorsQueryResponse: no caller at the pin."
+  - "BaseRAGIngestion state, credential overlay, upload, OCR and chunking: B3451 owns them."
+  - "Credential resolution, signing, region validation and partition lookup: B594, B595, B591 and B198 own them."
+  - "Choosing the router or global embedding client, the pooled HTTP transport and the ingestion registry: B3460 and B3457 own the wiring."
+
+pitfalls:
+  - The empty-content check in store runs after ensure_config_initialized, so a call with no chunks still creates the bucket and index first.
+  - dimension is set only when the key is present; a present value is never probed, and the probe runs at most once per workflow because the result is stored.
+  - A failed ensure_index keeps the generated index name, so the retry creates the same name instead of a second "litellm-index-" index.
+  - A filename of "" is falsy in Python, so the keys are "chunk_{i}" and the metadata has no filename; the returned filename is still the empty string.
+  - chunk_index in the metadata is a string ("0"), because S3 Vectors metadata values here are strings.
+  - The probe fallback also covers a successful answer with no data; only an error or an empty list returns the default, never a panic on indexing.
+  - embed stores the fallback model in the settings, so the second embed call and a later probe see the same model.
+  - The returned vector store id is "{bucket}:{index}" with a colon, which is the format B3458's target helper splits again.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,16 @@
+kind: helper
+name: anthropic-invokes-tool-invoke-error
+call:
+  anthropic_invokes:
+    function: convert_to_anthropic_tool_invoke
+    tool_calls:
+      - id: call_bad
+        type: function
+        function:
+          name: broken
+          arguments: not json
+    web_search_results: []
+    tool_results: []
+env: {}
+compare:
+  ignore: []

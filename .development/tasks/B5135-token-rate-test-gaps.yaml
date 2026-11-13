@@ -1,0 +1,304 @@
+id: B5135
+title: Close the B1670 token rate audit gaps
+description: >-
+  Fix the gaps an Opus review found in B1670's token rate selection after it merged. Every kept
+  finding is a test gap: betterlite-models::token_rates already does what LiteLLM does in each case
+  below, but no native test or oracle case would fail if that behavior broke. So the task adds and
+  changes tests in crates/betterlite-models/src/token_rates/tests.rs and cases under
+  tools/oracle/cases/helpers/token-rates/, and changes no source file. Each new test is written
+  first, then watched failing against the code change its sentence names (made by hand and undone),
+  so it is known to guard that line.
+
+  LiteLLM finds the thresholds of each *_batches family from that family's own keys and takes the
+  largest one the prompt crosses (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L311-L347). batch-families-cross-different-thresholds.yaml
+  can't fail on that today: its only output threshold (5k) is not crossed at 2000 prompt tokens, so
+  an output family that borrowed the input family's 1k threshold, or one threshold set shared by all
+  families, still answers the flat 0.000003. The case gains output_cost_per_token_above_1500_tokens_batches
+  "0.000005" and keeps its 5k key, so LiteLLM answers output 0.000005, a borrowed 1k threshold answers
+  0.000003 and a shared set picks 1500 for input too and answers the flat input rate. The native
+  batch_families_select_independent_thresholds gains the same output 1500 key and asserts its rate.
+
+  LiteLLM's _get_cost_per_unit logs a nonnull string that float() rejects and returns the default;
+  only a missing or None value takes the service suffix fallback (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L804-L842).
+  fast-priority-and-invalid-nonnull-rate.yaml has no standard output_cost_per_token, so a wrong
+  fallback from its invalid output_cost_per_token_priority would still give output 0. The case gains
+  output_cost_per_token 0.000003; LiteLLM keeps output_rate 0 and a wrong fallback answers 0.000003.
+  The native side already has this guard in invalid_nonnull_rate_does_not_take_missing_key_fallback,
+  whose standard input gives the fallback something to find.
+
+  LiteLLM resolves the reasoning rate in order: an open off-peak reasoning rate, then the selected
+  tier's output_cost_per_reasoning_token or else its output_cost_per_token, then the service tier
+  reasoning key, and only then the service output price or the standard reasoning rate
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L361-L367 and https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1251-L1288). reasoning-off-peak-tier-and-service-precedence.yaml
+  opens an off-peak window with its own reasoning rate, so it returns at the first step. Nothing
+  reaches base_cost.rs tiered_reasoning_rate or the service reasoning key branch at the top of
+  reasoning.rs resolve_reasoning_token_cost, and deleting either leaves every test green. The
+  off-peak case stays, since it guards the first step. Three new cases have no off-peak block:
+  reasoning-tier-reasoning-rate-beats-model-rate.yaml (the tier sets output_cost_per_reasoning_token
+  "0.000007" and the model "0.000009"; expect 0.000007), reasoning-tier-output-rate-stands-in-for-reasoning.yaml
+  (the tier sets only output_cost_per_token "0.000005" beside the same model rate; expect 0.000005)
+  and reasoning-priority-reasoning-key-beats-priority-output.yaml (service_tier priority with
+  output_cost_per_reasoning_token_priority "0.000008", output_cost_per_token_priority "0.000004" and
+  output_cost_per_reasoning_token "0.000009"; expect 0.000008). The native rstest
+  reasoning_uses_selected_tier_rate_before_model_rate covers both tier shapes, and
+  reasoning_prefers_service_reasoning_key_over_service_output covers the third.
+
+  LiteLLM sorts the threshold keys before its guarded loop, so a malformed sort key raises. A
+  malformed price on a crossed threshold still selects that threshold: _get_cost_per_unit returns the
+  default for it and the loop breaks, so no lower threshold is tried (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L682-L761).
+  malformed-sort-key-versus-malformed-tier-price.yaml errors on its sort key before any threshold is
+  picked, and its 1 prompt token crosses nothing, so a loop that skipped unparseable prices the way
+  threshold.rs crossed_input_threshold skips nulls would still pass. The new
+  malformed-price-on-highest-crossed-threshold.yaml sets input_cost_per_token "0.000001",
+  input_cost_per_token_above_100_tokens garbage, input_cost_per_token_above_50_tokens "0.000003" and
+  output_cost_per_token_above_100_tokens "0.000008" at 200 prompt tokens. LiteLLM answers input
+  0.000001 and output 0.000008; a skip answers input 0.000003. The native
+  malformed_price_on_crossed_threshold_keeps_that_threshold asserts the same.
+
+  Once a threshold X is crossed, LiteLLM reads five keys for it, each with the request's service tier
+  suffix at the end and each falling back to the rate it already had: input_cost_per_token_above_X_tokens,
+  output_cost_per_token_above_X_tokens, cache_read_input_token_cost_above_X_tokens,
+  cache_creation_input_token_cost_above_X_tokens and cache_creation_input_token_cost_above_1hr_above_X_tokens
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L689-L757, suffix from _get_service_tier_cost_key at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L253-L271). Threshold keys
+  that end in the request's own tier suffix count as candidates too (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L670-L678). Every test
+  and case today sets only the input key, so dropping any other lookup in threshold.rs
+  apply_threshold_overrides, or the tier suffix in its keyed closure, fails nothing. Three new cases:
+  crossed-threshold-overrides-every-rate.yaml (no service tier; distinct model and above_100 prices
+  for all five rates at 200 prompt tokens; expect the five above_100 prices),
+  priority-threshold-keys-beat-standard-threshold-keys.yaml (service_tier priority with both
+  input_cost_per_token_above_100_tokens and input_cost_per_token_above_100_tokens_priority, and both
+  output keys; expect the priority prices) and priority-threshold-falls-back-to-standard-threshold-key.yaml
+  (service_tier priority with input_cost_per_token_priority set and only the standard above_100 keys;
+  expect the standard above_100 prices through the suffix fallback). The native
+  crossed_threshold_overrides_every_rate asserts all five rates. The native rstest
+  service_tier_threshold_keys_follow_the_request_tier covers the two priority shapes plus a model
+  whose only threshold key is input_cost_per_token_above_100_tokens_priority: priority selects it and
+  flex ignores it.
+
+  LiteLLM walks the threshold keys from the highest down, skips a key whose value is None and stops
+  at the first crossed one (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L682-L686). Every case and test today has a single threshold
+  key, so removing Reverse from the sort in crossed_input_threshold, or its null skip, changes
+  nothing. The new highest-crossed-nonnull-threshold-wins.yaml sets input_cost_per_token "0.000001",
+  input_cost_per_token_above_100_tokens "0.000002", input_cost_per_token_above_200_tokens "0.000003"
+  and a null input_cost_per_token_above_250_tokens at 300 prompt tokens. LiteLLM answers 0.000003; an
+  ascending sort answers 0.000002, and a loop that keeps the null key answers the standard 0.000001.
+  The native highest_crossed_nonnull_threshold_wins asserts the same.
+
+  When the service-aware output price is 0 or absent, LiteLLM bills output at
+  output_cost_per_image_token if the model sets it (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L655-L660). No test or case sets that
+  key, so deleting the substitution in base_cost.rs initial_base_rates passes. Three new cases each
+  set output_cost_per_image_token "0.00004": image-token-rate-replaces-absent-output.yaml (no
+  output_cost_per_token; expect output 0.00004), image-token-rate-replaces-zero-output.yaml
+  (output_cost_per_token 0; expect 0.00004) and image-token-rate-ignored-for-priced-output.yaml
+  (output_cost_per_token "0.000002"; expect 0.000002). The native rstest
+  image_token_rate_stands_in_for_unpriced_output covers the same three.
+
+  get_batch_cost_rates passes the inclusive comparison for provider xai to every batch family, so xai
+  crosses a batch threshold at exactly its token count and any other provider needs one more token
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L83-L96, https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L282-L283 and https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L340-L347). No batch test or case uses xai, so a
+  strict batch comparison for xai in batch.rs get_batch_cost_rates passes. The new
+  xai-batch-threshold-is-inclusive.yaml and openai-batch-threshold-is-strict.yaml both set
+  input_cost_per_token_batches "0.000001" and input_cost_per_token_above_1k_tokens_batches "0.000002"
+  at exactly 1000 prompt tokens; xai answers input 0.000002 and openai 0.000001. The native rstest
+  batch_threshold_matches_provider_rule covers both.
+
+  deployment_pricing keeps every CustomPricingLiteLLMParams field that is set and parses
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L53 and https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L845-L859, fields at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3711-L3843). deployment.rs lists the
+  same 119 wire names today, but custom-fields-zero-and-scientific-notation.yaml and the native
+  deployment tests set only input_cost_per_token, output_cost_per_token and tiered_pricing, so a
+  misspelled wire name among the other 116 fails nothing. The new
+  deployment-keeps-every-custom-pricing-field.yaml sets all 119 fields, each to a distinct value of
+  its declared type: a float for each float field, an int for output_vector_size, a list of one tier
+  for tiered_pricing and a dict for search_context_cost_per_query. LiteLLM returns the 117 numeric
+  fields and drops the list and the dict, so the case fails once any wire name in deployment.rs
+  differs from LiteLLM's field. The case is the proof here: a native test would copy the same 119
+  names out of deployment.rs and check nothing against LiteLLM.
+
+  LiteLLM reads the model's cache_creation_input_token_cost_above_1hr with no default, so an explicit
+  0 stays 0. After the off-peak step a present one-hour price is kept, and only an absent one follows
+  the final cache creation rate (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L661-L664 and https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L609-L612). No test or case sets a
+  model-level one-hour price, so passing None for it in base_cost.rs resolve_standard_cost passes.
+  The new model-one-hour-zero-stays-zero.yaml sets cache_creation_input_token_cost "0.000002" and
+  cache_creation_input_token_cost_above_1hr 0 and expects a one-hour rate of 0. The new
+  model-one-hour-price-survives-off-peak-creation.yaml sets cache_creation_input_token_cost_above_1hr
+  "0.000006" under an open off-peak window whose cache_creation_input_token_cost is "0.0000001" and
+  expects cache creation 0.0000001 and one-hour 0.000006. The native rstest model_one_hour_price_is_kept
+  covers both.
+
+  One finding is left out, and out_of_scope says why: rates.rs ServiceTier::ALL already holds
+  LiteLLM's suffix order, and no order can change a key, since "_fast" never occurs inside
+  "_ultrafast".
+scope:
+  paths:
+    - crates/betterlite-models/src/token_rates/tests.rs
+    - tools/oracle/cases/helpers/token-rates/batch-families-cross-different-thresholds.yaml
+    - tools/oracle/cases/helpers/token-rates/fast-priority-and-invalid-nonnull-rate.yaml
+    - tools/oracle/cases/helpers/token-rates/reasoning-tier-reasoning-rate-beats-model-rate.yaml
+    - tools/oracle/cases/helpers/token-rates/reasoning-tier-output-rate-stands-in-for-reasoning.yaml
+    - tools/oracle/cases/helpers/token-rates/reasoning-priority-reasoning-key-beats-priority-output.yaml
+    - tools/oracle/cases/helpers/token-rates/malformed-price-on-highest-crossed-threshold.yaml
+    - tools/oracle/cases/helpers/token-rates/crossed-threshold-overrides-every-rate.yaml
+    - tools/oracle/cases/helpers/token-rates/priority-threshold-keys-beat-standard-threshold-keys.yaml
+    - tools/oracle/cases/helpers/token-rates/priority-threshold-falls-back-to-standard-threshold-key.yaml
+    - tools/oracle/cases/helpers/token-rates/highest-crossed-nonnull-threshold-wins.yaml
+    - tools/oracle/cases/helpers/token-rates/image-token-rate-replaces-absent-output.yaml
+    - tools/oracle/cases/helpers/token-rates/image-token-rate-replaces-zero-output.yaml
+    - tools/oracle/cases/helpers/token-rates/image-token-rate-ignored-for-priced-output.yaml
+    - tools/oracle/cases/helpers/token-rates/xai-batch-threshold-is-inclusive.yaml
+    - tools/oracle/cases/helpers/token-rates/openai-batch-threshold-is-strict.yaml
+    - tools/oracle/cases/helpers/token-rates/deployment-keeps-every-custom-pricing-field.yaml
+    - tools/oracle/cases/helpers/token-rates/model-one-hour-zero-stays-zero.yaml
+    - tools/oracle/cases/helpers/token-rates/model-one-hour-price-survives-off-peak-creation.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L53-L96
+    why: Deployment pricing key set, longest-first service suffixes, xai as the one inclusive provider and the batch key grammar.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L253-L283
+    why: Service tier key suffix, threshold text parsing and the strict or inclusive crossing rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L294-L367
+    why: Per-family batch thresholds, the priced tier and the tier reasoning rate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L585-L612
+    why: Read only (B1669 owns it); a present one-hour price passes the off-peak step untouched.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L616-L783
+    why: Image token output, the model one-hour price, threshold candidates, descending walk, null skip and the five above-threshold keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L804-L859
+    why: Invalid string keeps the default, only None takes the suffix fallback, and deployment_pricing keeps what parses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1251-L1288
+    why: Reasoning order after the off-peak step, including the service tier reasoning key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3711-L3843
+    why: The 119 custom pricing fields and their declared types for the deployment case.
+dod:
+  - text: >-
+      batch-families-cross-different-thresholds.yaml sets output_cost_per_token_above_1500_tokens_batches
+      "0.000005" and expects output 0.000005 at 2000 prompt tokens, and
+      batch_families_select_independent_thresholds asserts the output tier rate too. Both fail once the
+      output family borrows the input family's threshold or every family shares one threshold set.
+    proof: [changed-cases, token-rate-tests, oracle]
+  - text: >-
+      fast-priority-and-invalid-nonnull-rate.yaml sets a standard output_cost_per_token 0.000003 and still
+      expects output_rate 0, so it fails once an invalid nonnull output_cost_per_token_priority takes the
+      missing key fallback.
+    proof: [changed-cases, oracle]
+  - text: >-
+      The three reasoning cases with no off-peak block expect the tier reasoning rate, the tier output rate
+      and the priority reasoning key, and the two native reasoning tests assert the same. They fail once
+      tiered_reasoning_rate is ignored or the service reasoning key branch is deleted.
+    proof: [token-rate-cases, token-rate-tests, oracle]
+  - text: >-
+      malformed-price-on-highest-crossed-threshold.yaml and
+      malformed_price_on_crossed_threshold_keeps_that_threshold expect input 0.000001 and output 0.000008,
+      and fail once a malformed price on a crossed threshold is skipped like a null.
+    proof: [token-rate-cases, token-rate-tests, oracle]
+  - text: >-
+      crossed-threshold-overrides-every-rate.yaml and crossed_threshold_overrides_every_rate assert all five
+      above-threshold rates, the two priority threshold cases and service_tier_threshold_keys_follow_the_request_tier
+      assert the suffixed and fallback keys, and each fails once one lookup or the tier suffix is dropped
+      from apply_threshold_overrides.
+    proof: [token-rate-cases, token-rate-tests, oracle]
+  - text: >-
+      highest-crossed-nonnull-threshold-wins.yaml and highest_crossed_nonnull_threshold_wins expect the
+      above_200 price at 300 prompt tokens beside a null above_250, and fail once the sort is ascending or
+      the null skip is gone.
+    proof: [token-rate-cases, token-rate-tests, oracle]
+  - text: >-
+      The three image token cases and image_token_rate_stands_in_for_unpriced_output expect
+      output_cost_per_image_token for an absent or zero output price and the output price otherwise, and
+      fail once the substitution in initial_base_rates is deleted.
+    proof: [token-rate-cases, token-rate-tests, oracle]
+  - text: >-
+      xai-batch-threshold-is-inclusive.yaml, openai-batch-threshold-is-strict.yaml and
+      batch_threshold_matches_provider_rule expect the 1k batch tier for xai and the flat batch rate for
+      openai at exactly 1000 prompt tokens, and fail once batch rates compare strictly for xai.
+    proof: [token-rate-cases, token-rate-tests, oracle]
+  - text: >-
+      deployment-keeps-every-custom-pricing-field.yaml sets all 119 CustomPricingLiteLLMParams fields to
+      distinct values of their declared types and matches LiteLLM's 117 kept fields, so it fails once any
+      wire name in deployment.rs is misspelled or missing.
+    proof: [token-rate-cases, deployment-fields, oracle]
+  - text: >-
+      model-one-hour-zero-stays-zero.yaml, model-one-hour-price-survives-off-peak-creation.yaml and
+      model_one_hour_price_is_kept expect the model's own one-hour price (0, then 0.000006 under an open
+      off-peak window), and fail once resolve_standard_cost drops it.
+    proof: [token-rate-cases, token-rate-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: token-rate-tests
+      why: The nine new native tests and the batch output tier key must exist and pass, or the branches they guard stay untested.
+      run: test "$(grep -cE '^fn (reasoning_uses_selected_tier_rate_before_model_rate|reasoning_prefers_service_reasoning_key_over_service_output|malformed_price_on_crossed_threshold_keeps_that_threshold|crossed_threshold_overrides_every_rate|service_tier_threshold_keys_follow_the_request_tier|highest_crossed_nonnull_threshold_wins|image_token_rate_stands_in_for_unpriced_output|batch_threshold_matches_provider_rule|model_one_hour_price_is_kept)\(' crates/betterlite-models/src/token_rates/tests.rs)" = 9 && grep -q output_cost_per_token_above_1500_tokens_batches crates/betterlite-models/src/token_rates/tests.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^token_rates::/)'
+    - id: token-rate-cases
+      why: The sixteen new oracle cases must be added, not folded into the existing ones.
+      run: test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/token-rates | wc -l)" = 16
+    - id: changed-cases
+      why: The batch family and invalid nonnull cases must gain the keys that let them fail.
+      run: grep -q output_cost_per_token_above_1500_tokens_batches tools/oracle/cases/helpers/token-rates/batch-families-cross-different-thresholds.yaml && grep -qE '^ +output_cost_per_token:[[:space:]]' tools/oracle/cases/helpers/token-rates/fast-priority-and-invalid-nonnull-rate.yaml
+    - id: deployment-fields
+      why: The deployment case must set every one of the 119 custom pricing fields.
+      run: test "$(grep -cE '^ {6}[a-z][a-z0-9_]*:' tools/oracle/cases/helpers/token-rates/deployment-keeps-every-custom-pricing-field.yaml)" = 119
+oracle_cases:
+  - tools/oracle/cases/helpers/token-rates/batch-families-cross-different-thresholds.yaml
+  - tools/oracle/cases/helpers/token-rates/crossed-threshold-overrides-every-rate.yaml
+  - tools/oracle/cases/helpers/token-rates/custom-fields-zero-and-scientific-notation.yaml
+  - tools/oracle/cases/helpers/token-rates/deployment-keeps-every-custom-pricing-field.yaml
+  - tools/oracle/cases/helpers/token-rates/fast-priority-and-invalid-nonnull-rate.yaml
+  - tools/oracle/cases/helpers/token-rates/highest-crossed-nonnull-threshold-wins.yaml
+  - tools/oracle/cases/helpers/token-rates/image-token-rate-ignored-for-priced-output.yaml
+  - tools/oracle/cases/helpers/token-rates/image-token-rate-replaces-absent-output.yaml
+  - tools/oracle/cases/helpers/token-rates/image-token-rate-replaces-zero-output.yaml
+  - tools/oracle/cases/helpers/token-rates/malformed-price-on-highest-crossed-threshold.yaml
+  - tools/oracle/cases/helpers/token-rates/malformed-sort-key-versus-malformed-tier-price.yaml
+  - tools/oracle/cases/helpers/token-rates/model-one-hour-price-survives-off-peak-creation.yaml
+  - tools/oracle/cases/helpers/token-rates/model-one-hour-zero-stays-zero.yaml
+  - tools/oracle/cases/helpers/token-rates/off-peak-input-defaults-for-missing-cache.yaml
+  - tools/oracle/cases/helpers/token-rates/openai-batch-threshold-is-strict.yaml
+  - tools/oracle/cases/helpers/token-rates/priority-threshold-falls-back-to-standard-threshold-key.yaml
+  - tools/oracle/cases/helpers/token-rates/priority-threshold-keys-beat-standard-threshold-keys.yaml
+  - tools/oracle/cases/helpers/token-rates/reasoning-off-peak-tier-and-service-precedence.yaml
+  - tools/oracle/cases/helpers/token-rates/reasoning-priority-reasoning-key-beats-priority-output.yaml
+  - tools/oracle/cases/helpers/token-rates/reasoning-tier-output-rate-stands-in-for-reasoning.yaml
+  - tools/oracle/cases/helpers/token-rates/reasoning-tier-reasoning-rate-beats-model-rate.yaml
+  - tools/oracle/cases/helpers/token-rates/tier-table-output-fallback-and-one-hour-zero.yaml
+  - tools/oracle/cases/helpers/token-rates/tiered-pricing-respects-open-off-peak-window.yaml
+  - tools/oracle/cases/helpers/token-rates/xai-batch-threshold-is-inclusive.yaml
+  - tools/oracle/cases/helpers/token-rates/xai-equality-versus-openai-strict-threshold.yaml
+deviations: []
+out_of_scope:
+  - >-
+    The finding that ServiceTier::ALL in rates.rs must try _ultrafast before _fast is left out as wrong.
+    LiteLLM sorts its suffixes longest first (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L63-L68) and ALL already holds the same order, but
+    no order can change a result: "_fast" never occurs inside "_ultrafast", since the letter before
+    "fast" there is "a", so a case with an absent ultrafast rate can't fail on the order it names.
+  - >-
+    Source files stay as they are: betterlite matches LiteLLM on every behavior above, and the oracle
+    adapters tools/oracle/src/helpers/models/token_rates.rs and tools/oracle/helpers/token_rates.py
+    already accept every input these cases send.
+pitfalls:
+  - >-
+    The priority threshold key puts the suffix last, input_cost_per_token_above_100_tokens_priority; the
+    input_cost_per_token_priority_above_200k_tokens spelling in LiteLLM's comment at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L690-L692
+    is never a candidate, since it doesn't start with input_cost_per_token_above_.
+  - >-
+    The one-hour above-threshold key has the threshold after the 1hr part,
+    cache_creation_input_token_cost_above_1hr_above_100_tokens, and a key spelled any other way is
+    ignored on both sides.
+  - >-
+    The null threshold in highest-crossed-nonnull-threshold-wins.yaml is YAML null. The string "null" is
+    a malformed price: it selects its threshold and keeps the default instead of being skipped.
+  - >-
+    The reasoning cases leave off_peak_pricing out, since an open window with output_cost_per_reasoning_token
+    returns before the tier and service steps they are meant to reach.
+  - >-
+    A tier table goes in the case's tiered_pricing field, as in tier-table-output-fallback-and-one-hour-zero.yaml;
+    the Python adapter moves it into model_info, while a copy written inside model_info never reaches the
+    Rust tier selection.
+  - >-
+    In the deployment case output_vector_size gets an int and search_context_cost_per_query a dict, and
+    all 119 keys sit six spaces in under model_info, the indent the deployment-fields check counts.
+  - >-
+    No new case or test should fail on today's main; one that does shows a real difference from LiteLLM,
+    and the worker reports it rather than bending the expected value.
+  - The oracle helper operation stays token_rates in the models group; this task adds no operation and edits no adapter or registry file.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,39 @@
+kind: helper
+name: resolve-pipelines-matching-context
+call:
+  b3241:
+    policy_memory_matching_resolver:
+      action: resolve_pipelines
+      policies:
+        zeta-pipeline:
+          guardrails:
+            add: [pii]
+          pipeline:
+            mode: pre_call
+            steps:
+              - guardrail: pii
+                on_fail: block
+                on_pass: allow
+              - guardrail: audit
+                on_fail: next
+        alpha-pipeline:
+          guardrails:
+            add: [toxicity]
+          pipeline:
+            mode: post_call
+            steps:
+              - guardrail: toxicity
+        flat-policy:
+          guardrails:
+            add: [audit]
+      attachments:
+        - policy: zeta-pipeline
+          scope: "*"
+        - policy: alpha-pipeline
+          scope: "*"
+        - policy: flat-policy
+          scope: "*"
+      context:
+        model: gpt-4
+env: {}
+compare: {ignore: []}

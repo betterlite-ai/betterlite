@@ -3,10 +3,18 @@
     reason = "The oracle compares arbitrary provider JSON, so captured payloads require serde_json::Value."
 )]
 
+pub mod a2a_http;
 mod artifacts;
+pub mod budget_http;
 pub mod case;
 mod cli;
 mod compare;
+pub mod config_include_fixtures;
+pub mod daily_usage_fixture;
+pub mod dashboard_fixture;
+pub mod dashboard_governance_fixture;
+pub mod discovery_http;
+pub mod finops_fixture;
 mod gateway;
 #[expect(
     clippy::mod_module_files,
@@ -15,16 +23,30 @@ mod gateway;
     clippy::map_err_ignore,
     reason = "The bounded helper process runner owns these CLI and pipe operations."
 )]
-mod helpers;
+pub mod helpers;
 pub mod http;
+pub mod http_scenarios;
+pub mod insights_http;
 pub mod mock;
+pub mod model_insights_http;
 pub mod multipart_oracle;
-mod paths;
+pub mod oracle_comparison_contracts;
+pub mod paths;
 pub mod process;
+#[expect(
+    clippy::mod_module_files,
+    reason = "The probe operations live one per module, and mod.rs keeps their closed enum and dispatch together."
+)]
+pub mod router_probes;
+mod routing_component_oracle;
 pub mod routing_mock_scripts;
 pub mod routing_probe_ipc;
 pub mod routing_scenarios;
 pub mod runner;
+pub mod sdk_http;
+pub mod search_http;
+pub mod websocket_driver;
+pub mod websocket_oracle;
 
 mod tests;
 
@@ -39,10 +61,31 @@ use axum::http::status::InvalidStatusCode;
 use betterlite_postgres_fixture::error::FixtureError;
 use case::browser_flow::PlaceholderError;
 use http::browser_flow::BrowserFlowError;
+use sdk_http::error::SdkHttpError;
 use thiserror::Error;
+use websocket_driver::DriverError;
+use websocket_oracle::decode::DecodeError;
 
 #[derive(Debug, Error)]
 pub enum OracleError {
+    #[error("WebSocket driver failed: {0}")]
+    WebSocket(#[from] DriverError),
+    #[error("SDK HTTP oracle failed: {0}")]
+    SdkHttp(#[from] SdkHttpError),
+    #[error("invalid SDK HTTP case {path}: {source}")]
+    SdkHttpCase {
+        path: PathBuf,
+        #[source]
+        source: SdkHttpError,
+    },
+    #[error("invalid WebSocket case {path}: {source}")]
+    WebSocketCase {
+        path: PathBuf,
+        #[source]
+        source: DecodeError,
+    },
+    #[error(transparent)]
+    GatewayPort(#[from] paths::PortError),
     #[error(transparent)]
     Cli(#[from] clap::Error),
     #[error("cannot read case {path}: {source}")]
@@ -167,6 +210,14 @@ pub enum OracleError {
     ProbeTimeout(Duration),
     #[error("probe exited with {status}")]
     ProbeExited { status: ExitStatus, stderr: Vec<u8> },
+    #[error("cannot start the component probe runtime: {0}")]
+    ProbeRuntime(#[source] io::Error),
+    #[error("cannot find the running probe's own path: {0}")]
+    ProbeExecutable(#[source] io::Error),
+    #[error("betterlite-router-probe is missing next to {directory}")]
+    ProbeBinary { directory: PathBuf },
+    #[error("building betterlite-router-probe exited with {status}")]
+    ProbeBuild { status: ExitStatus, stderr: Vec<u8> },
     #[error("helper input is invalid: {message}")]
     HelperInput { message: String },
     #[error("cannot start helper: {0}")]
@@ -230,10 +281,39 @@ pub enum OracleError {
         "scenario needs at least {requests} upstream answers, one per request, but only {upstream} are scripted"
     )]
     ScenarioUpstreamShort { requests: usize, upstream: usize },
+    #[error("invalid scenario {path}: {source}")]
+    HttpScenarioCase {
+        path: PathBuf,
+        #[source]
+        source: Box<http_scenarios::error::ScenarioError>,
+    },
+    #[error(transparent)]
+    HttpScenario(Box<http_scenarios::error::ScenarioError>),
+}
+
+impl From<http_scenarios::error::ScenarioError> for OracleError {
+    fn from(source: http_scenarios::error::ScenarioError) -> Self {
+        Self::HttpScenario(Box::new(source))
+    }
 }
 
 pub fn run() -> Result<ExitCode, OracleError> {
     let options = <cli::Options as clap::Parser>::try_parse()?;
     let cases = case::load_cases(&options.paths)?;
-    runner::run_cases(&options, cases)
+    let sdk_cases = case::load_sdk_http_cases(&options.paths)?;
+    let probe_cases = case::load_probe_cases(&options.paths)?;
+    let scenario_limits = http_scenarios::model::Limits::default();
+    let http_scenarios = case::load_http_scenario_cases(&options.paths, &scenario_limits)?;
+    let mut different = runner::sdk_http::run_cases(&options, &sdk_cases)?.contains(&true);
+    different |= routing_component_oracle::run_cases(&options, &probe_cases)?.contains(&true);
+    different |= runner::http_scenarios::run_cases(&options, &http_scenarios)?;
+    if cases.is_empty() {
+        return Ok(runner::exit_status(different));
+    }
+    let status = runner::run_cases(&options, cases)?;
+    Ok(if different {
+        runner::exit_status(true)
+    } else {
+        status
+    })
 }

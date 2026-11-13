@@ -1,0 +1,54 @@
+kind: helper
+name: bad-json-skipped
+call:
+  bedrock_services_agentcore_stream:
+    model: agentcore-model
+    ids:
+      - 00000000-0000-4000-8000-000000000051
+      - 00000000-0000-4000-8000-000000000052
+    scenarios:
+      - reads:
+          - |
+            data: {not json}
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"ok"}}}}
+      - reads:
+          - |
+            data: [DONE]
+            data: 42
+            data: [1]
+            data: "text"
+            data: null
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":5}}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":5}}}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":null}}}
+      - reads:
+          - |
+            data: {"event":5}
+            data: {"event":null}
+            data: {"event":[]}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"before"}}}}
+            data: {"event":{"metadata":{"usage":5}}}
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"after"}}}}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"same"}},"metadata":{"usage":5}}}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"one"}}}}
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"two"}}}}
+            data: {"event":{"contentBlockDelta":{"delta":5}}}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"first"}}}}
+          - |
+            data: {"event":{"metadata":{"usage":{"inputTokens":1.5}}}}
+env: {}
+compare: {ignore: []}

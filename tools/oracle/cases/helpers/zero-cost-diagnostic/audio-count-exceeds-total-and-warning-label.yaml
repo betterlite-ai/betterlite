@@ -1,0 +1,47 @@
+kind: helper
+name: zero-cost-diagnostic-audio-count-exceeds-total-and-warning-label
+call:
+  zero_cost_diagnostic:
+    probes:
+      - usage:
+          prompt_tokens: 5
+          completion_tokens: 1
+          total_tokens: 6
+          prompt_tokens_details:
+            audio_tokens: 10
+          completion_tokens_details:
+            audio_tokens: 3
+        pricing_model: model
+        pricing:
+          input_cost_per_audio_token: 0.001
+        calculation_failed: false
+        model: model
+      - usage:
+          prompt_tokens: 100
+          completion_tokens: 50
+          total_tokens: 150
+          prompt_tokens_details:
+            audio_tokens: 10
+          completion_tokens_details:
+            audio_tokens: 5
+        pricing_model: model
+        pricing:
+          input_cost_per_token: 0.001
+          input_cost_per_audio_token: 0.002
+          output_cost_per_token: 0.003
+          output_cost_per_audio_token: 0.004
+        calculation_failed: false
+        model: model
+        model_group: group
+        custom_llm_provider: openai
+      - usage:
+          prompt_tokens: 0
+          completion_tokens: 0
+          total_tokens: 0
+        pricing_model: model
+        pricing:
+          input_cost_per_token: 0.001
+        calculation_failed: false
+        model: model
+env: {}
+compare: {ignore: []}

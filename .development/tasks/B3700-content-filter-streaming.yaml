@@ -216,7 +216,7 @@ deviations: []
 out_of_scope:
   - SSE decoder and streaming framework integration; stream_filter_hook accepts already-decoded ModelResponseStream items.
   - apply_guardrail (the nonstreaming guardrail constructor) and its request path; stream_filter_hook is the post-call path only.
-  - CustomGuardrail base and logging callback dispatch; owned by B104.
+  - CustomGuardrail base is owned by B5471, invocation logging by B3664 and live class dispatch by B8666.
 
 pitfalls:
   - >-

@@ -1,0 +1,5 @@
+kind: helper
+name: b5847-poll-seed
+call: {b5847: {op: poll, requests: [{model: meta-llama/llama-2-70b-chat, messages: [{role: user, content: hi}], retries: 1, create: {body: '{"urls":{"get":"https://poll/seed"}}'}, polls: [{body: '{"status":"succeeded","output":["ok"]}'}]}]}}
+env: {}
+compare: {ignore: []}

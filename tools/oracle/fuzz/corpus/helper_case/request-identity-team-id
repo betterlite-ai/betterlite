@@ -1,0 +1,12 @@
+kind: helper
+name: team-id-prefers-canonical-key
+call:
+  b3841:
+    function: identity
+    payload:
+      model: azure/deployment
+      metadata:
+        user_api_key_team_id: canonical-team
+        team_id: legacy-team
+env: {}
+compare: {ignore: []}

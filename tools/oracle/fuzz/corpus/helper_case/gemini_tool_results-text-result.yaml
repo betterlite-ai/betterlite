@@ -1,0 +1,12 @@
+kind: helper
+name: gemini-tool-results-corpus-text-result
+call:
+  gemini_tool_results:
+    message:
+      role: tool
+      tool_call_id: call_1
+      name: get_weather
+      content: sunny
+env: {}
+compare:
+  ignore: []

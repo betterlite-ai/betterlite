@@ -1,0 +1,13 @@
+kind: helper
+name: endpoint_lookup_no_login
+call:
+  copilot_key:
+    action: get_api_base
+    now: 1700000000
+    api_key_file: '{"token": "cached", "expires_at": 1000, "endpoints": {"api": "https://api.githubcopilot.com", "proxy": "https://proxy.example"}}'
+    access_token_file: null
+    api_replies: []
+    fail_write: false
+env: {}
+compare:
+  ignore: []

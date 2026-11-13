@@ -1,0 +1,2 @@
+litellm_settings:
+  standard_logging_payload_excluded_fields: messages

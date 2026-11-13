@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-passthrough-before-max-budget
+call: {"error_normalization": {"message": "upstream passthrough request failed: max budget", "status_code": 418}}
+env: {}
+compare: {ignore: []}

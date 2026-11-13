@@ -1,0 +1,1 @@
+{"generated_text":"a","details":{"finish_reason":"stop","tokens":[],"best_of_sequences":[{"generated_text":"b","finish_reason":"length","tokens":[{"logprob":-0.25}]},{"generated_text":"","finish_reason":"stop","tokens":[]}]}}

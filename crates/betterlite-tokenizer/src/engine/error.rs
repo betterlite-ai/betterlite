@@ -1,0 +1,31 @@
+use crate::engine::fetch::gpt2::Gpt2Error;
+use kitoken::convert::ConversionError;
+use kitoken::{DecodeError, EncodeError, InitializationError, RegexError};
+use thiserror::Error;
+#[derive(Debug, Error)]
+pub enum EngineError {
+    #[error("the tiktoken vocabulary is invalid")]
+    Vocabulary(#[source] ConversionError),
+    #[error("the tiktoken split pattern is invalid")]
+    Pattern(#[source] RegexError),
+    #[error("the tiktoken tokenizer could not be initialized")]
+    Initialize(#[source] InitializationError),
+    #[error("the text could not be encoded")]
+    TiktokenEncode(#[source] EncodeError),
+    #[error("the token ids could not be decoded")]
+    TiktokenDecode(#[source] DecodeError),
+    #[error("the hugging face tokenizer could not be loaded")]
+    HuggingFaceLoad(#[source] tokenizers::Error),
+    #[error("the text could not be encoded")]
+    HuggingFaceEncode(#[source] tokenizers::Error),
+    #[error("the token ids could not be decoded")]
+    HuggingFaceDecode(#[source] tokenizers::Error),
+    #[error("the gpt2 vocabulary could not be converted")]
+    Gpt2(#[from] Gpt2Error),
+    #[error("the text has {bytes} bytes, over the {limit} byte input limit")]
+    InputTooLarge { bytes: usize, limit: usize },
+    #[error("the text encodes to {ids} ids, over the {limit} id output limit")]
+    OutputTooLarge { ids: usize, limit: usize },
+    #[error("the token counting pool is closed")]
+    PoolClosed,
+}

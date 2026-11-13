@@ -1,0 +1,14 @@
+kind: helper
+name: weave-display-name-provider-and-model
+call:
+  b3861:
+    function: set_weave_attributes
+    kwargs:
+      model: gpt-4o
+      litellm_params:
+        custom_llm_provider: openai
+      standard_logging_object:
+        call_type: acompletion
+    response: null
+env: {}
+compare: {ignore: []}

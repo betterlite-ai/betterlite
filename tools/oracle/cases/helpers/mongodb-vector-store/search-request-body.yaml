@@ -1,0 +1,71 @@
+kind: helper
+name: search-request-body
+call:
+  b7811:
+    calls:
+      - call: mongodb_search_request
+        input:
+          litellm_params: {litellm_embedding_model: openai/text-embedding-3-small, mongodb_database: sample_mflix, mongodb_collection: embedded_movies}
+          optional_params: {}
+          query: find me
+          embedding: [[0.25, 1]]
+          vector_store_id: vs_1
+          api_base: "https://sidecar.example.test"
+      - call: mongodb_search_request
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c, mongodb_text_field: body, mongodb_embedding_field: vector, mongodb_num_candidates: 10000, timeout: 2.5}
+          optional_params: {max_num_results: 50}
+          query: [one, two]
+          embedding: [[0.5]]
+          vector_store_id: "vs/a b"
+          api_base: "http://127.0.0.1:8080"
+      - call: mongodb_search_request
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {}
+          query: q
+          embedding: [[0.25], [9]]
+          vector_store_id: vs_1
+          api_base: "https://sidecar.example.test"
+      - call: mongodb_search_request
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {}
+          query: q
+          embedding: []
+          vector_store_id: vs_1
+          api_base: "https://sidecar.example.test"
+      - call: mongodb_search_request
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {}
+          query: q
+          embedding: [[]]
+          vector_store_id: vs_1
+          api_base: "https://sidecar.example.test"
+      - call: mongodb_search_request
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {}
+          query: q
+          embedding: ["AAAA"]
+          vector_store_id: vs_1
+          api_base: "https://sidecar.example.test"
+      - call: mongodb_search_request
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {}
+          query: "   "
+          embedding: [[0.5]]
+          vector_store_id: vs_1
+          api_base: "https://sidecar.example.test"
+      - call: mongodb_search_request
+        input:
+          litellm_params: {litellm_embedding_model: m, mongodb_database: db, mongodb_collection: c}
+          optional_params: {max_num_results: 51}
+          query: q
+          embedding: [[0.5]]
+          vector_store_id: vs_1
+          api_base: "https://sidecar.example.test"
+env: {}
+compare: {ignore: []}

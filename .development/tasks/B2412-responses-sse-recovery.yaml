@@ -16,8 +16,6 @@ description: >-
   145 tests, 95 fixtures, 80 adapters, 55 fuzz/replay and 25 wiring lines: 560 total.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_sse_recovery.rs
   - crates/betterlite-core/src/api/responses_sse_recovery/**
   - crates/betterlite-core/fuzz/Cargo.toml

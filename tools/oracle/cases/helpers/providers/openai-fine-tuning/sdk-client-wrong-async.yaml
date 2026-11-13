@@ -1,0 +1,5 @@
+kind: helper
+name: openai-fine-tuning-sdk-client-wrong-async
+call: {"openai_fine_tuning": {"steps": [{"action": "create", "is_async": true, "client": "sync", "data": {"model": "m", "training_file": "f"}}, {"action": "list", "is_async": true, "client": "azure_sync"}, {"action": "retrieve", "is_async": true, "client": "sync", "job_id": "ft_1"}, {"action": "cancel", "is_async": true, "client": "sync", "job_id": "ft_1"}]}}
+env: {}
+compare: {ignore: []}

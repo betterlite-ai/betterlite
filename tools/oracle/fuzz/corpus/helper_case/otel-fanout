@@ -1,0 +1,16 @@
+kind: helper
+name: otel-fanout-proxy-owned-seed
+call:
+  b3849:
+    function: for_destination
+    endpoint: http://collector:4318
+    span:
+      name: POST /v1/chat
+      attributes:
+        http.route: /v1/chat
+        error.message: "prisma: connection refused"
+        http.url: https://proxy.example/v1/chat?key=sk-1
+        url.query: key=sk-1
+        http.request.header.authorization: Bearer sk-1
+env: {}
+compare: {ignore: []}

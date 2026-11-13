@@ -3,7 +3,7 @@ title: CLI model management and YAML imports
 description: >-
   Build the models command group for the management CLI, porting LiteLLM's model management
   from litellm/proxy/client/cli/commands/models.py to Rust. Commands dispatch through
-  the shared client B4580 builds in tools/management-cli/src/commands.rs from B4560's
+  the shared client B4580 builds in crates/betterlite-cli/src/commands.rs from B4560's
   cli_context_values, to model endpoints: list with table/json
   output, add and update with multiple --param and --info key=value options split on the first
   =, delete and get (by --id or --name, at least one required), info with flexible --columns
@@ -32,8 +32,8 @@ description: >-
   and compare stdout and stderr against the exact lines and tables this task describes.
 scope:
   paths:
-    - tools/management-cli/src/commands/models.rs
-    - tools/management-cli/src/commands/models/**
+    - crates/betterlite-cli/src/commands/models.rs
+    - crates/betterlite-cli/src/commands/models/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L46-L61
@@ -141,43 +141,43 @@ checks:
   commands:
     - id: list-models
       why: the list tests are missing or the columns, cell formatting or output format differ from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::list_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::models::.*tests::list_/)'
     - id: add-model
       why: the add tests are missing or the --param/--info parsing or the client call differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::add_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::models::.*tests::add_/)'
     - id: delete-model
       why: the delete tests are missing or the client call or output differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::delete_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::models::.*tests::delete_/)'
     - id: get-model
       why: the get tests are missing or the --id/--name requirement differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::get_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::models::.*tests::get_/)'
     - id: info-models
       why: the info tests are missing or the --columns handling or cell formatting differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::info_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::models::.*tests::info_/)'
     - id: update-model
       why: the update tests are missing or the --param/--info parsing or the client call differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::update_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::models::.*tests::update_/)'
     - id: cost-format
       why: the cost tests are missing or the multiply, 4-decimal formatting or empty/error handling differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::cost_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::models::.*tests::cost_/)'
     - id: iso-format
       why: the iso tests are missing or the RFC 3339 parsing or empty/error handling differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::iso_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::models::.*tests::iso_/)'
     - id: unix-format
       why: the unix tests are missing or the timestamp formatting or empty/error handling differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::unix_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::models::.*tests::unix_/)'
     - id: import-models
       why: the import tests are missing or the YAML load, filtering, dry-run or summary differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::import_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::models::.*tests::import_/)'
     - id: filter-model
       why: the filter tests are missing or a missing, empty or wrongly-typed field is handled differently from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::filter_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::models::.*tests::filter_/)'
     - id: print-models
       why: the print tests are missing or the table content differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::print_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::models::.*tests::print_/)'
     - id: print-summary
       why: the summary tests are missing or the provider counts, total or styling differ from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^commands::models::.*tests::summary_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::models::.*tests::summary_/)'
 oracle_cases: []
 deviations:
   - what: >-
@@ -190,7 +190,7 @@ deviations:
       draw their tables with the same crate. Scripts use --format json.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L355-L378
 out_of_scope:
-  - Client HTTP implementation and API integration; the CLI receives the shared client B4580 builds in tools/management-cli/src/commands.rs from B4560's cli_context_values.
+  - Client HTTP implementation and API integration; the CLI receives the shared client B4580 builds in crates/betterlite-cli/src/commands.rs from B4560's cli_context_values.
   - CLI command registration and parameter binding; that happens in the CLI group assembly, not in this module.
   - YAML schema validation beyond model_list key existence and type; individual model field validation is server-side.
 pitfalls:

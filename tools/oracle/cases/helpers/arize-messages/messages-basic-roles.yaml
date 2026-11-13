@@ -1,0 +1,10 @@
+kind: helper
+name: messages-basic-roles
+call:
+  b3860:
+    function: set_messages
+    messages:
+      - {role: system, content: You are a helpful assistant.}
+      - {role: user, content: Hello}
+env: {}
+compare: {ignore: []}

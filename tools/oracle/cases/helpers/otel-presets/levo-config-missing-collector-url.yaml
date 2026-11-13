@@ -1,0 +1,15 @@
+kind: helper
+name: levo-config-missing-collector-url
+call:
+  b3850:
+    function: levo_config
+    environment:
+      LEVOAI_API_KEY: key
+      LEVOAI_ORG_ID: org
+      LEVOAI_WORKSPACE_ID: workspace
+env:
+  LEVOAI_API_KEY: key
+  LEVOAI_ORG_ID: org
+  LEVOAI_WORKSPACE_ID: workspace
+compare:
+  ignore: []

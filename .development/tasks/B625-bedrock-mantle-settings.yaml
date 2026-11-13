@@ -3,7 +3,7 @@ title: Bedrock Mantle standalone provider configuration
 description: >-
   Add BedrockMantleSettings and standalone bedrock_mantle provider mappings for OpenAI chat, native Messages and
   passthrough preparation. Compose B2207 credential/base/region/model-metadata selection with signing and the transport-specific
-  adapter methods. Reuse existing transport/request models; raw native relay remains B101/B103 and Bedrock reply
+  adapter methods. Reuse existing transport/request models; raw native relay remains B8690/B103 and Bedrock reply
   logging B658. Bearer precedence is explicit api_key, BEDROCK_MANTLE_API_KEY, AWS_BEARER_TOKEN_BEDROCK. Region
   precedence is aws_region_name, recognized configured Mantle hostname, BEDROCK_MANTLE_REGION, AWS_REGION_NAME,
   AWS_REGION, then us-east-1.
@@ -299,7 +299,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_settings_cases::case_[0-9]+_mantle_passthrough_path$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_mantle_settings.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_mantle_settings.py tools/oracle/helpers/bedrock_mantle_settings)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus

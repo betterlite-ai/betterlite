@@ -5,7 +5,7 @@ use crate::schema_baseline::{MigrationCatalog, MigrationFile};
 const PINNED_BASELINE_DIFF: MigrationFile = MigrationFile {
     directory: "20260219181415_baseline_diff",
     bytes: include_bytes!("fixtures/20260219181415_baseline_diff.sql"),
-    sha256: "d2baed7a684683cf7163aa52aafb8c3fa6d2d8b9ae4641c8408a4afea3ee7015",
+    sha256: "ecbd073ba23472f98ede77177d4318abb9ae0958bae691ed3939dead91bd299e",
 };
 
 const PINNED_SPEC_PATH_ADDED: MigrationFile = MigrationFile {
@@ -17,7 +17,7 @@ const PINNED_SPEC_PATH_ADDED: MigrationFile = MigrationFile {
 const PINNED_INDEX_AGGREGATES: MigrationFile = MigrationFile {
     directory: "20260220153844_add_composite_index_aggregate_tables",
     bytes: include_bytes!("fixtures/20260220153844_add_composite_index_aggregate_tables.sql"),
-    sha256: "bfa64602f3049c668138388e0dede890cf9bad41c0ced302ed69ebceef0ca8ce",
+    sha256: "3f509af1ecb34b350a56f8e35ef47944541f487ddf5033e70f05c2f0ebcc0615",
 };
 
 const PINNED_PROJECT_ID_VERIFY: MigrationFile = MigrationFile {
@@ -29,7 +29,7 @@ const PINNED_PROJECT_ID_VERIFY: MigrationFile = MigrationFile {
 const PINNED_ADD_POLICY_VERSIONING: MigrationFile = MigrationFile {
     directory: "20260221183800_add_policy_versioning",
     bytes: include_bytes!("fixtures/20260221183800_add_policy_versioning.sql"),
-    sha256: "e83e6e5c2e2f8f2f84e3f1b3e13798836380fcee87d02a06d1c839b3319a602e",
+    sha256: "7f3f29b50badc248a70f5a4aaee3ed06d933e1ad8ebaef543338a6cb816faf4b",
 };
 
 const PINNED_BATCH_PROCESSED: MigrationFile = MigrationFile {
@@ -43,13 +43,13 @@ const PINNED_BATCH_PROCESSED: MigrationFile = MigrationFile {
 const PINNED_SPEND_LOG_DURATION: MigrationFile = MigrationFile {
     directory: "20260224201417_spend_logs_request_duration",
     bytes: include_bytes!("fixtures/20260224201417_spend_logs_request_duration.sql"),
-    sha256: "937da574e62e90a8bc308200a97526759b8c952bf1f8bc22e7185ee945f8226f",
+    sha256: "bc0cb6ca3c8f432c0b32ad128fa3667ed991245b672e62e9fd18ca34552482ee",
 };
 
 const PINNED_AGENT_OBJ_PERMISSIONS: MigrationFile = MigrationFile {
     directory: "20260224203854_add_agent_object_permissions_table",
     bytes: include_bytes!("fixtures/20260224203854_add_agent_object_permissions_table.sql"),
-    sha256: "ba3852c3fed43e7e2553073e1b8452d93db8784ef0bb733bc6cc821f0f650adc",
+    sha256: "c7d02b13901092b4f9bcc4eac1102f23ba8d639ed3fa9745277647df904afb92",
 };
 
 const PINNED_BLOCKED_TOOLS_PERM: MigrationFile = MigrationFile {
@@ -67,7 +67,7 @@ const PINNED_SPEND_TOOL_INDEX: MigrationFile = MigrationFile {
 const PINNED_AGENT_ID_DELETE_KEYS: MigrationFile = MigrationFile {
     directory: "20260226202727_add_agent_id_to_delete_keys",
     bytes: include_bytes!("fixtures/20260226202727_add_agent_id_to_delete_keys.sql"),
-    sha256: "745a05b983d4123a9b7fdbc90ae73333c76aef3fe67b2e47cee979cf418a771b",
+    sha256: "67af990c525e2160cbda0c759d6992ccbfc4b228313c2439b3b47f93c5c4c13c",
 };
 
 const PINNED_CLAUDE_PLUGIN: MigrationFile = MigrationFile {
@@ -91,7 +91,7 @@ const PINNED_MCP_PUBLIC_INTERNET: MigrationFile = MigrationFile {
 const PINNED_TEAM_GUARDRAILS: MigrationFile = MigrationFile {
     directory: "20260228170127_support_team_based_guardrails",
     bytes: include_bytes!("fixtures/20260228170127_support_team_based_guardrails.sql"),
-    sha256: "a3406ec586de8f3dfca15098f0006439d63002e9fa80a1f915d4ff3392502d1e",
+    sha256: "3610ed4728cd666030881bc61380441901e65a0705296ed255a1bc5001bf6457",
 };
 
 const PINNED_TOOL_TABLE_POLICIES: MigrationFile = MigrationFile {
@@ -103,7 +103,7 @@ const PINNED_TOOL_TABLE_POLICIES: MigrationFile = MigrationFile {
 const PINNED_AGENT_SPEND: MigrationFile = MigrationFile {
     directory: "20260304175016_add_spend_to_agent_table",
     bytes: include_bytes!("fixtures/20260304175016_add_spend_to_agent_table.sql"),
-    sha256: "9f9c059ded60570b218dda9b928639f0e9f9b6e8467e24a8a344f1a0d2067a61",
+    sha256: "cbdcbf988896f0ba08bc774f345f550ea3c784c4bc5eda872af093be346cc84d",
 };
 
 const PINNED_ADD_AGENT_HEADERS: MigrationFile = MigrationFile {
@@ -121,13 +121,13 @@ const PINNED_AGENT_RATE_LIMITS: MigrationFile = MigrationFile {
 const PINNED_CONFIG_OVERRIDE: MigrationFile = MigrationFile {
     directory: "20260306175056_add_configs_override_table",
     bytes: include_bytes!("fixtures/20260306175056_add_configs_override_table.sql"),
-    sha256: "e49454e7f5be2ba0e46da7e5be61900942398f971dcfb0ab70ff4fcef9cfd50e",
+    sha256: "f4b1682d40d1999b98215a0677481980372e4cb5659d071e878a343a7a65944b",
 };
 
 const PINNED_SCHEMA_SYNC_20260306: MigrationFile = MigrationFile {
     directory: "20260306233848_schema_sync",
     bytes: include_bytes!("fixtures/20260306233848_schema_sync.sql"),
-    sha256: "1c8a8902aaad9787995e564e895577e22818ed794a37d2a9e14e68ce74c7fd24",
+    sha256: "1fac2f1e9d937b170c06b7828f3de1290d056287d81901b03c174d75bf1e0604",
 };
 
 const PINNED_ADD_MCP_APPROVAL_STATUS: MigrationFile = MigrationFile {
@@ -145,13 +145,13 @@ const PINNED_ADD_MCP_SOURCE_URL: MigrationFile = MigrationFile {
 const PINNED_SCHEMA_SYNC_20260312: MigrationFile = MigrationFile {
     directory: "20260312124619_schema_sync",
     bytes: include_bytes!("fixtures/20260312124619_schema_sync.sql"),
-    sha256: "094fbe1bf41349e54468d0ad7f94570d0a63dee116fa804405e5ecb49fd4b197",
+    sha256: "62bc045f03c1393c83743262d885693297f891b879bcbf11c749c588e005525b",
 };
 
 const PINNED_ADD_INDEX_TO_TEAM_TABLE: MigrationFile = MigrationFile {
     directory: "20260318140652_add_index_to_team_table",
     bytes: include_bytes!("fixtures/20260318140652_add_index_to_team_table.sql"),
-    sha256: "1a639b962624ca135c2e89457fd8868f384c96b96e0bbc6057522bd04c1d9b3f",
+    sha256: "6d2aa9c28c9c3de83bd5f6cee2bdc6a2b671f348ca8dee58dfc7ffd2abf831cb",
 };
 
 const PINNED_MCP_APPROVAL_RESTORE: MigrationFile = MigrationFile {

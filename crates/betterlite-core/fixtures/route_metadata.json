@@ -1,0 +1,1039 @@
+{
+  "source": "litellm@d665dc1a6315847fcad6cc2c1264ceb47c06abce",
+  "call_types": [
+    "embedding",
+    "aembedding",
+    "completion",
+    "acompletion",
+    "atext_completion",
+    "text_completion",
+    "image_generation",
+    "aimage_generation",
+    "image_edit",
+    "aimage_edit",
+    "moderation",
+    "amoderation",
+    "atranscription",
+    "transcription",
+    "aspeech",
+    "speech",
+    "rerank",
+    "arerank",
+    "search",
+    "asearch",
+    "decisions",
+    "adecisions",
+    "systemone",
+    "asystemone",
+    "_arealtime",
+    "_aresponses_websocket",
+    "create_batch",
+    "acreate_batch",
+    "aretrieve_batch",
+    "retrieve_batch",
+    "acancel_batch",
+    "cancel_batch",
+    "pass_through_endpoint",
+    "anthropic_messages",
+    "aanthropic_messages",
+    "get_assistants",
+    "aget_assistants",
+    "create_assistants",
+    "acreate_assistants",
+    "delete_assistant",
+    "adelete_assistant",
+    "acreate_thread",
+    "create_thread",
+    "aget_thread",
+    "get_thread",
+    "a_add_message",
+    "add_message",
+    "aget_messages",
+    "get_messages",
+    "arun_thread",
+    "run_thread",
+    "arun_thread_stream",
+    "run_thread_stream",
+    "afile_retrieve",
+    "file_retrieve",
+    "afile_delete",
+    "file_delete",
+    "afile_list",
+    "file_list",
+    "acreate_file",
+    "create_file",
+    "afile_content",
+    "file_content",
+    "create_fine_tuning_job",
+    "acreate_fine_tuning_job",
+    "create_video",
+    "acreate_video",
+    "video_generation",
+    "avideo_generation",
+    "avideo_retrieve",
+    "video_retrieve",
+    "avideo_content",
+    "video_content",
+    "video_remix",
+    "avideo_remix",
+    "video_list",
+    "avideo_list",
+    "video_retrieve_job",
+    "avideo_retrieve_job",
+    "video_delete",
+    "avideo_delete",
+    "video_create_character",
+    "avideo_create_character",
+    "video_get_character",
+    "avideo_get_character",
+    "video_edit",
+    "avideo_edit",
+    "video_extension",
+    "avideo_extension",
+    "vector_store_file_create",
+    "avector_store_file_create",
+    "vector_store_file_list",
+    "avector_store_file_list",
+    "vector_store_file_retrieve",
+    "avector_store_file_retrieve",
+    "vector_store_file_content",
+    "avector_store_file_content",
+    "vector_store_file_update",
+    "avector_store_file_update",
+    "vector_store_file_delete",
+    "avector_store_file_delete",
+    "vector_store_create",
+    "avector_store_create",
+    "vector_store_search",
+    "avector_store_search",
+    "ingest",
+    "aingest",
+    "query",
+    "aquery",
+    "create_interaction",
+    "acreate_interaction",
+    "create_container",
+    "acreate_container",
+    "list_containers",
+    "alist_containers",
+    "retrieve_container",
+    "aretrieve_container",
+    "delete_container",
+    "adelete_container",
+    "list_container_files",
+    "alist_container_files",
+    "upload_container_file",
+    "aupload_container_file",
+    "create_sandbox",
+    "acreate_sandbox",
+    "delete_sandbox",
+    "adelete_sandbox",
+    "run_code",
+    "arun_code",
+    "code_interpreter_tool",
+    "acode_interpreter_tool",
+    "acancel_fine_tuning_job",
+    "cancel_fine_tuning_job",
+    "alist_fine_tuning_jobs",
+    "list_fine_tuning_jobs",
+    "aretrieve_fine_tuning_job",
+    "retrieve_fine_tuning_job",
+    "responses",
+    "aresponses",
+    "alist_input_items",
+    "llm_passthrough_route",
+    "allm_passthrough_route",
+    "generate_content",
+    "agenerate_content",
+    "generate_content_stream",
+    "agenerate_content_stream",
+    "ocr",
+    "aocr",
+    "call_mcp_tool",
+    "list_mcp_tools",
+    "asend_message",
+    "send_message",
+    "acreate_skill"
+  ],
+  "routes": [
+    {
+      "route": "/chat/completions",
+      "call_types": [
+        "acompletion",
+        "completion"
+      ]
+    },
+    {
+      "route": "/v1/chat/completions",
+      "call_types": [
+        "acompletion",
+        "completion"
+      ]
+    },
+    {
+      "route": "/engines/{model}/chat/completions",
+      "call_types": [
+        "acompletion",
+        "completion"
+      ]
+    },
+    {
+      "route": "/openai/deployments/{model}/chat/completions",
+      "call_types": [
+        "acompletion",
+        "completion"
+      ]
+    },
+    {
+      "route": "/completions",
+      "call_types": [
+        "atext_completion",
+        "text_completion"
+      ]
+    },
+    {
+      "route": "/v1/completions",
+      "call_types": [
+        "atext_completion",
+        "text_completion"
+      ]
+    },
+    {
+      "route": "/engines/{model}/completions",
+      "call_types": [
+        "atext_completion",
+        "text_completion"
+      ]
+    },
+    {
+      "route": "/openai/deployments/{model}/completions",
+      "call_types": [
+        "atext_completion",
+        "text_completion"
+      ]
+    },
+    {
+      "route": "/embeddings",
+      "call_types": [
+        "aembedding",
+        "embedding"
+      ]
+    },
+    {
+      "route": "/v1/embeddings",
+      "call_types": [
+        "aembedding",
+        "embedding"
+      ]
+    },
+    {
+      "route": "/engines/{model}/embeddings",
+      "call_types": [
+        "aembedding",
+        "embedding"
+      ]
+    },
+    {
+      "route": "/openai/deployments/{model}/embeddings",
+      "call_types": [
+        "aembedding",
+        "embedding"
+      ]
+    },
+    {
+      "route": "/images/generations",
+      "call_types": [
+        "aimage_generation",
+        "image_generation"
+      ]
+    },
+    {
+      "route": "/v1/images/generations",
+      "call_types": [
+        "aimage_generation",
+        "image_generation"
+      ]
+    },
+    {
+      "route": "/engines/{model}/images/generations",
+      "call_types": [
+        "aimage_generation",
+        "image_generation"
+      ]
+    },
+    {
+      "route": "/openai/deployments/{model}/images/generations",
+      "call_types": [
+        "aimage_generation",
+        "image_generation"
+      ]
+    },
+    {
+      "route": "/images/edits",
+      "call_types": [
+        "aimage_edit",
+        "image_edit"
+      ]
+    },
+    {
+      "route": "/v1/images/edits",
+      "call_types": [
+        "aimage_edit",
+        "image_edit"
+      ]
+    },
+    {
+      "route": "/audio/transcriptions",
+      "call_types": [
+        "atranscription",
+        "transcription"
+      ]
+    },
+    {
+      "route": "/v1/audio/transcriptions",
+      "call_types": [
+        "atranscription",
+        "transcription"
+      ]
+    },
+    {
+      "route": "/audio/speech",
+      "call_types": [
+        "aspeech",
+        "speech"
+      ]
+    },
+    {
+      "route": "/v1/audio/speech",
+      "call_types": [
+        "aspeech",
+        "speech"
+      ]
+    },
+    {
+      "route": "/moderations",
+      "call_types": [
+        "amoderation",
+        "moderation"
+      ]
+    },
+    {
+      "route": "/v1/moderations",
+      "call_types": [
+        "amoderation",
+        "moderation"
+      ]
+    },
+    {
+      "route": "/rerank",
+      "call_types": [
+        "arerank",
+        "rerank"
+      ]
+    },
+    {
+      "route": "/v1/rerank",
+      "call_types": [
+        "arerank",
+        "rerank"
+      ]
+    },
+    {
+      "route": "/v2/rerank",
+      "call_types": [
+        "arerank",
+        "rerank"
+      ]
+    },
+    {
+      "route": "/search",
+      "call_types": [
+        "asearch",
+        "search"
+      ]
+    },
+    {
+      "route": "/v1/search",
+      "call_types": [
+        "asearch",
+        "search"
+      ]
+    },
+    {
+      "route": "/decisions",
+      "call_types": [
+        "adecisions",
+        "decisions"
+      ]
+    },
+    {
+      "route": "/v1/decisions",
+      "call_types": [
+        "adecisions",
+        "decisions"
+      ]
+    },
+    {
+      "route": "/systemone",
+      "call_types": [
+        "asystemone",
+        "systemone"
+      ]
+    },
+    {
+      "route": "/v1/systemone",
+      "call_types": [
+        "asystemone",
+        "systemone"
+      ]
+    },
+    {
+      "route": "/batches",
+      "call_types": [
+        "acreate_batch",
+        "create_batch"
+      ]
+    },
+    {
+      "route": "/v1/batches",
+      "call_types": [
+        "acreate_batch",
+        "create_batch"
+      ]
+    },
+    {
+      "route": "/batches/{batch_id}",
+      "call_types": [
+        "aretrieve_batch",
+        "retrieve_batch"
+      ]
+    },
+    {
+      "route": "/v1/batches/{batch_id}",
+      "call_types": [
+        "aretrieve_batch",
+        "retrieve_batch"
+      ]
+    },
+    {
+      "route": "/files",
+      "call_types": [
+        "acreate_file",
+        "create_file",
+        "afile_list",
+        "file_list"
+      ]
+    },
+    {
+      "route": "/v1/files",
+      "call_types": [
+        "acreate_file",
+        "create_file",
+        "afile_list",
+        "file_list"
+      ]
+    },
+    {
+      "route": "/files/{file_id}",
+      "call_types": [
+        "afile_retrieve",
+        "file_retrieve",
+        "afile_delete",
+        "file_delete"
+      ]
+    },
+    {
+      "route": "/v1/files/{file_id}",
+      "call_types": [
+        "afile_retrieve",
+        "file_retrieve",
+        "afile_delete",
+        "file_delete"
+      ]
+    },
+    {
+      "route": "/files/{file_id}/content",
+      "call_types": [
+        "afile_content",
+        "file_content"
+      ]
+    },
+    {
+      "route": "/v1/files/{file_id}/content",
+      "call_types": [
+        "afile_content",
+        "file_content"
+      ]
+    },
+    {
+      "route": "/assistants",
+      "call_types": [
+        "aget_assistants",
+        "get_assistants",
+        "acreate_assistants",
+        "create_assistants"
+      ]
+    },
+    {
+      "route": "/v1/assistants",
+      "call_types": [
+        "aget_assistants",
+        "get_assistants",
+        "acreate_assistants",
+        "create_assistants"
+      ]
+    },
+    {
+      "route": "/assistants/{assistant_id}",
+      "call_types": [
+        "adelete_assistant",
+        "delete_assistant"
+      ]
+    },
+    {
+      "route": "/v1/assistants/{assistant_id}",
+      "call_types": [
+        "adelete_assistant",
+        "delete_assistant"
+      ]
+    },
+    {
+      "route": "/threads",
+      "call_types": [
+        "acreate_thread",
+        "create_thread"
+      ]
+    },
+    {
+      "route": "/v1/threads",
+      "call_types": [
+        "acreate_thread",
+        "create_thread"
+      ]
+    },
+    {
+      "route": "/threads/{thread_id}",
+      "call_types": [
+        "aget_thread",
+        "get_thread"
+      ]
+    },
+    {
+      "route": "/v1/threads/{thread_id}",
+      "call_types": [
+        "aget_thread",
+        "get_thread"
+      ]
+    },
+    {
+      "route": "/threads/{thread_id}/messages",
+      "call_types": [
+        "a_add_message",
+        "add_message",
+        "aget_messages",
+        "get_messages"
+      ]
+    },
+    {
+      "route": "/v1/threads/{thread_id}/messages",
+      "call_types": [
+        "a_add_message",
+        "add_message",
+        "aget_messages",
+        "get_messages"
+      ]
+    },
+    {
+      "route": "/threads/{thread_id}/runs",
+      "call_types": [
+        "arun_thread",
+        "run_thread",
+        "arun_thread_stream",
+        "run_thread_stream"
+      ]
+    },
+    {
+      "route": "/v1/threads/{thread_id}/runs",
+      "call_types": [
+        "arun_thread",
+        "run_thread",
+        "arun_thread_stream",
+        "run_thread_stream"
+      ]
+    },
+    {
+      "route": "/fine_tuning/jobs",
+      "call_types": [
+        "acreate_fine_tuning_job",
+        "create_fine_tuning_job",
+        "alist_fine_tuning_jobs",
+        "list_fine_tuning_jobs"
+      ]
+    },
+    {
+      "route": "/v1/fine_tuning/jobs",
+      "call_types": [
+        "acreate_fine_tuning_job",
+        "create_fine_tuning_job",
+        "alist_fine_tuning_jobs",
+        "list_fine_tuning_jobs"
+      ]
+    },
+    {
+      "route": "/fine_tuning/jobs/{fine_tuning_job_id}",
+      "call_types": [
+        "aretrieve_fine_tuning_job",
+        "retrieve_fine_tuning_job"
+      ]
+    },
+    {
+      "route": "/v1/fine_tuning/jobs/{fine_tuning_job_id}",
+      "call_types": [
+        "aretrieve_fine_tuning_job",
+        "retrieve_fine_tuning_job"
+      ]
+    },
+    {
+      "route": "/fine_tuning/jobs/{fine_tuning_job_id}/cancel",
+      "call_types": [
+        "acancel_fine_tuning_job",
+        "cancel_fine_tuning_job"
+      ]
+    },
+    {
+      "route": "/v1/fine_tuning/jobs/{fine_tuning_job_id}/cancel",
+      "call_types": [
+        "acancel_fine_tuning_job",
+        "cancel_fine_tuning_job"
+      ]
+    },
+    {
+      "route": "/videos",
+      "call_types": [
+        "acreate_video",
+        "create_video",
+        "avideo_list",
+        "video_list"
+      ]
+    },
+    {
+      "route": "/v1/videos",
+      "call_types": [
+        "acreate_video",
+        "create_video",
+        "avideo_list",
+        "video_list"
+      ]
+    },
+    {
+      "route": "/videos/{video_id}",
+      "call_types": [
+        "avideo_retrieve",
+        "video_retrieve",
+        "avideo_delete",
+        "video_delete"
+      ]
+    },
+    {
+      "route": "/v1/videos/{video_id}",
+      "call_types": [
+        "avideo_retrieve",
+        "video_retrieve",
+        "avideo_delete",
+        "video_delete"
+      ]
+    },
+    {
+      "route": "/videos/{video_id}/content",
+      "call_types": [
+        "avideo_content",
+        "video_content"
+      ]
+    },
+    {
+      "route": "/v1/videos/{video_id}/content",
+      "call_types": [
+        "avideo_content",
+        "video_content"
+      ]
+    },
+    {
+      "route": "/videos/{video_id}/remix",
+      "call_types": [
+        "avideo_remix",
+        "video_remix"
+      ]
+    },
+    {
+      "route": "/v1/videos/{video_id}/remix",
+      "call_types": [
+        "avideo_remix",
+        "video_remix"
+      ]
+    },
+    {
+      "route": "/videos/characters",
+      "call_types": [
+        "avideo_create_character",
+        "video_create_character"
+      ]
+    },
+    {
+      "route": "/v1/videos/characters",
+      "call_types": [
+        "avideo_create_character",
+        "video_create_character"
+      ]
+    },
+    {
+      "route": "/videos/characters/{character_id}",
+      "call_types": [
+        "avideo_get_character",
+        "video_get_character"
+      ]
+    },
+    {
+      "route": "/v1/videos/characters/{character_id}",
+      "call_types": [
+        "avideo_get_character",
+        "video_get_character"
+      ]
+    },
+    {
+      "route": "/videos/edits",
+      "call_types": [
+        "avideo_edit",
+        "video_edit"
+      ]
+    },
+    {
+      "route": "/v1/videos/edits",
+      "call_types": [
+        "avideo_edit",
+        "video_edit"
+      ]
+    },
+    {
+      "route": "/videos/extensions",
+      "call_types": [
+        "avideo_extension",
+        "video_extension"
+      ]
+    },
+    {
+      "route": "/v1/videos/extensions",
+      "call_types": [
+        "avideo_extension",
+        "video_extension"
+      ]
+    },
+    {
+      "route": "/vector_stores",
+      "call_types": [
+        "avector_store_create",
+        "vector_store_create"
+      ]
+    },
+    {
+      "route": "/v1/vector_stores",
+      "call_types": [
+        "avector_store_create",
+        "vector_store_create"
+      ]
+    },
+    {
+      "route": "/vector_stores/{vector_store_id}/search",
+      "call_types": [
+        "avector_store_search",
+        "vector_store_search"
+      ]
+    },
+    {
+      "route": "/v1/vector_stores/{vector_store_id}/search",
+      "call_types": [
+        "avector_store_search",
+        "vector_store_search"
+      ]
+    },
+    {
+      "route": "/vector_stores/{vector_store_id}/files",
+      "call_types": [
+        "avector_store_file_create",
+        "vector_store_file_create",
+        "avector_store_file_list",
+        "vector_store_file_list"
+      ]
+    },
+    {
+      "route": "/v1/vector_stores/{vector_store_id}/files",
+      "call_types": [
+        "avector_store_file_create",
+        "vector_store_file_create",
+        "avector_store_file_list",
+        "vector_store_file_list"
+      ]
+    },
+    {
+      "route": "/vector_stores/{vector_store_id}/files/{file_id}",
+      "call_types": [
+        "avector_store_file_retrieve",
+        "vector_store_file_retrieve",
+        "avector_store_file_delete",
+        "vector_store_file_delete"
+      ]
+    },
+    {
+      "route": "/v1/vector_stores/{vector_store_id}/files/{file_id}",
+      "call_types": [
+        "avector_store_file_retrieve",
+        "vector_store_file_retrieve",
+        "avector_store_file_delete",
+        "vector_store_file_delete"
+      ]
+    },
+    {
+      "route": "/vector_stores/{vector_store_id}/files/{file_id}/content",
+      "call_types": [
+        "avector_store_file_content",
+        "vector_store_file_content"
+      ]
+    },
+    {
+      "route": "/v1/vector_stores/{vector_store_id}/files/{file_id}/content",
+      "call_types": [
+        "avector_store_file_content",
+        "vector_store_file_content"
+      ]
+    },
+    {
+      "route": "/vector_stores/{vector_store_id}/files/{file_id}/update",
+      "call_types": [
+        "avector_store_file_update",
+        "vector_store_file_update"
+      ]
+    },
+    {
+      "route": "/v1/vector_stores/{vector_store_id}/files/{file_id}/update",
+      "call_types": [
+        "avector_store_file_update",
+        "vector_store_file_update"
+      ]
+    },
+    {
+      "route": "/containers",
+      "call_types": [
+        "acreate_container",
+        "create_container",
+        "alist_containers",
+        "list_containers"
+      ]
+    },
+    {
+      "route": "/v1/containers",
+      "call_types": [
+        "acreate_container",
+        "create_container",
+        "alist_containers",
+        "list_containers"
+      ]
+    },
+    {
+      "route": "/containers/{container_id}",
+      "call_types": [
+        "aretrieve_container",
+        "retrieve_container",
+        "adelete_container",
+        "delete_container"
+      ]
+    },
+    {
+      "route": "/v1/containers/{container_id}",
+      "call_types": [
+        "aretrieve_container",
+        "retrieve_container",
+        "adelete_container",
+        "delete_container"
+      ]
+    },
+    {
+      "route": "/responses",
+      "call_types": [
+        "aresponses",
+        "responses"
+      ]
+    },
+    {
+      "route": "/v1/responses",
+      "call_types": [
+        "aresponses",
+        "responses"
+      ]
+    },
+    {
+      "route": "/openai/v1/responses",
+      "call_types": [
+        "aresponses",
+        "responses"
+      ]
+    },
+    {
+      "route": "/responses/{response_id}",
+      "call_types": [
+        "aresponses",
+        "responses"
+      ]
+    },
+    {
+      "route": "/v1/responses/{response_id}",
+      "call_types": [
+        "aresponses",
+        "responses"
+      ]
+    },
+    {
+      "route": "/openai/v1/responses/{response_id}",
+      "call_types": [
+        "aresponses",
+        "responses"
+      ]
+    },
+    {
+      "route": "/responses/{response_id}/input_items",
+      "call_types": [
+        "alist_input_items"
+      ]
+    },
+    {
+      "route": "/v1/responses/{response_id}/input_items",
+      "call_types": [
+        "alist_input_items"
+      ]
+    },
+    {
+      "route": "/openai/v1/responses/{response_id}/input_items",
+      "call_types": [
+        "alist_input_items"
+      ]
+    },
+    {
+      "route": "/realtime",
+      "call_types": [
+        "_arealtime"
+      ]
+    },
+    {
+      "route": "/v1/realtime",
+      "call_types": [
+        "_arealtime"
+      ]
+    },
+    {
+      "route": "/openai/v1/realtime",
+      "call_types": [
+        "_arealtime"
+      ]
+    },
+    {
+      "route": "/anthropic/v1/messages",
+      "call_types": [
+        "anthropic_messages"
+      ]
+    },
+    {
+      "route": "/generate_content",
+      "call_types": [
+        "agenerate_content",
+        "generate_content"
+      ]
+    },
+    {
+      "route": "/models/{model}:generateContent",
+      "call_types": [
+        "agenerate_content",
+        "generate_content"
+      ]
+    },
+    {
+      "route": "/generate_content_stream",
+      "call_types": [
+        "agenerate_content_stream",
+        "generate_content_stream"
+      ]
+    },
+    {
+      "route": "/models/{model}:streamGenerateContent",
+      "call_types": [
+        "agenerate_content_stream",
+        "generate_content_stream"
+      ]
+    },
+    {
+      "route": "/v1beta/models/{model}:generateContent",
+      "call_types": [
+        "agenerate_content",
+        "generate_content"
+      ]
+    },
+    {
+      "route": "/v1beta/models/{model}:streamGenerateContent",
+      "call_types": [
+        "agenerate_content_stream",
+        "generate_content_stream"
+      ]
+    },
+    {
+      "route": "/mcp/call_tool",
+      "call_types": [
+        "call_mcp_tool"
+      ]
+    },
+    {
+      "route": "/a2a/{agent_id}",
+      "call_types": [
+        "asend_message",
+        "send_message"
+      ]
+    },
+    {
+      "route": "/a2a/{agent_id}/message/send",
+      "call_types": [
+        "asend_message",
+        "send_message"
+      ]
+    },
+    {
+      "route": "/llm_passthrough",
+      "call_types": [
+        "allm_passthrough_route",
+        "llm_passthrough_route"
+      ]
+    },
+    {
+      "route": "/v1/llm_passthrough",
+      "call_types": [
+        "allm_passthrough_route",
+        "llm_passthrough_route"
+      ]
+    },
+    {
+      "route": "/v1/messages",
+      "call_types": [
+        "anthropic_messages"
+      ]
+    },
+    {
+      "route": "/ocr",
+      "call_types": [
+        "aocr",
+        "ocr"
+      ]
+    },
+    {
+      "route": "/v1/ocr",
+      "call_types": [
+        "aocr",
+        "ocr"
+      ]
+    }
+  ]
+}

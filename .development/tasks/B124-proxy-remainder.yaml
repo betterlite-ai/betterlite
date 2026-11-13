@@ -1,0 +1,196 @@
+id: B124
+title: Serve the mounted route directory and verify the remaining proxy integrations
+description: >-
+  Finish the remainder of the proxy-server umbrella. The existing parts already own
+  request preparation, shared types, lifecycle, config endpoints, hooks and their area
+  mounts. The missing route is GET /routes, with no /v1 alias. B4262 built its projections
+  but explicitly left this caller unassigned. B8870, B8871 and B8872 now provide the
+  remaining tenant-destination, Python MCP-tool and audit-callback startup adapters;
+  this task adds their booted HTTP comparisons as well as the route directory. B8873
+  supplies the early secret-manager bootstrap wrongly assigned to a KMS implementation.
+
+  Build betterlite-server::app::edge::route_directory with RouteCatalog, RouteDirectory and its
+  error type. RouteCatalog holds ordered B4262 route descriptors supplied by the actual
+  server registration sites; RouteDirectory reads a snapshot for each request. For an
+  entry with an endpoint, call get_app_routes. Only otherwise, for an entry with an app
+  and a mount path, call get_routes_for_mounted_app. Flatten those results once, preserve
+  their order and null fields, and return 200 application/json with {"routes": records}.
+  A regular entry must not also traverse its app. Keep B4262's one-level mount expansion,
+  absent-method fallback and mounted_app marker; do not recursively walk nested apps,
+  deduplicate entries, add implicit HEAD methods or fabricate Rust symbol names as
+  endpoint names. Registration descriptors carry the pinned Python handler names.
+
+  Axum exposes no route-tree introspection. The architect must add one shared registration
+  catalog alongside the existing mounts and feed this module; its inventory and module
+  declarations are shared-list work outside this task's scope. Populate that catalog from
+  the routes actually mounted, with the same enablement decisions and parameter paths,
+  including /routes itself, docs URLs and MCP sub-app descriptors. Do not derive it from
+  B868's permission tables or B8681's eleven-path OpenAPI subset. The catalog may replace
+  a registration snapshot when its owning mount changes; a request clones the snapshot
+  and releases its lock before projection. Tests must use the booted registration path,
+  not a second hand-maintained list that merely agrees with the expected fixture.
+
+  Export a router constructor for this one route, without a fallback. The architect
+  merges it once through app::edge::mount inside the existing auth layers. Although
+  LiteLLM marks /routes public, its Depends(user_api_key_auth) still runs pre-auth checks
+  and custom auth before the built-in public-route shortcut. Thus ordinary built-in
+  auth accepts a missing or invalid bearer with a master key configured, while a custom
+  auth rejection still stops the handler. Do not move it to mount_public and bypass that
+  dependency. No other route is registered by this task.
+
+  Native app::edge::route_directory::tests::projection cases cover endpoint_before_mount,
+  one_level_mounted_app, null_fields_retained, no_endpoint_or_app_skipped and
+  duplicate_descriptors_keep_order. Boot cases exercise the real application constructor:
+  directory_includes_itself, aliases_are_distinct, custom_auth_still_runs,
+  docs_enablement_matches_catalog, mcp_mount_has_mounted_app and snapshot_replacement.
+  The shared catalog wiring is a prerequisite, not an empty successful fallback.
+
+  HTTP cases under tools/oracle/cases/http/proxy-remainder/ use the real binary and MIT
+  LiteLLM. routes-no-key and routes-invalid-key send GET /routes with a master key
+  configured and no database; both answer 200. routes-docs-disabled sets NO_OPENAPI=true
+  and still answers 200. Compare content-type and the top-level object, ignoring only
+  /body/routes with the explicit inventory deviation below; the native boot tests prove
+  the complete catalog rather than accepting an empty list. Existing B8681 cases remain
+  the proof of docs status/URL behavior.
+
+  local-tool-call and local-tool-failure exercise B8871 through B8626's existing POST
+  /mcp-rest/tools/call. Configure mcp_tools with name serialize, a description, handler
+  json.dumps and an object input_schema. Configure an allowed HTTP MCP server toolsrv
+  against the mock provider; its initialize and tools/list replies advertise serialize.
+  Send server_id toolsrv, name serialize and arguments {"obj": {"answer": 42}} with
+  the master key. The first case returns 200 with the JSON string as text content;
+  the second supplies an unsupported keyword to reach the Python exception and returns
+  the existing 200 error-tool result with isError true. Assert no upstream tools/call
+  is sent: the authorized server selects the local handler. local-tool-no-key uses the
+  same config without a key and compares the 401 auth error's type, param and code.
+  local-tool-orphan uses B8728's existing POST /mcp/ tools/call, no server and the same
+  configured tool; compare the 200 MCP result with isError true and the source's
+  server-unavailable text, not a successful invocation. The operation's internal 503
+  is converted by _execute_handle_call_tool. Do not remove that authorization check to
+  make a configured local tool callable without a server.
+
+  tenant-telemetry-disabled and tenant-telemetry-incomplete use /v1/chat/completions,
+  a mock OpenAI deployment and B860's separate equivalent Postgres fixtures with a
+  virtual key carrying logging metadata. The first has LITELLM_OTEL_V2=false; the second
+  enables it and gives langfuse_otel only langfuse_public_key, without its required
+  secret. Both still return the same 200 completion and provider request. Set
+  allow_dynamic_callback_disabling=false in the parity cases; B8870's native tests
+  prove the intentional no-license behavior and actual tenant span destinations.
+  These HTTP cases prove that real auth reaches the adapter without turning telemetry
+  into an auth failure. Native lifespan::proxy_remainder::tests integration tests assert that
+  the production B855 slot contains B8870, using its recording fan-out so omission of
+  the adapter fails even when the completion itself would succeed.
+
+  audit-disabled-dotted-config sets store_audit_logs=false and audit_log_callbacks to
+  [logging.Logger], then requests /v1/chat/completions. It must boot and return the
+  ordinary 200 completion: audit list imports accept a class and dispatch ignores it,
+  unlike callbacks-list validation. B8872 owns the native warning and cache-reset tests.
+  Integration tests in crates/betterlite/src/lifespan/proxy_remainder.rs and its tests/
+  call B8613's real config boot path and assert the same shared audit service was updated.
+  They also assert B8614 uses B8871's loader and that two area mounts do not load the
+  configured tools twice. A manager_bootstraps_before_reference_resolution case drives
+  B8873 through startup with a manager-only credential; B129 owns its HTTP comparisons.
+  Keep these tests in the binary crate, which can use both its
+  boot services and the server library without a reverse server-to-binary dependency.
+  No helper adapter may replace any of
+  these startup or HTTP observations. No new byte decoder is needed: B4262 consumes
+  descriptors and the HTTP/config decoders are already owned. The remaining Python
+  behavior is the 16 executable lines of get_routes plus these composition seams;
+  allow roughly 180 implementation lines, 300 native tests and 250 HTTP fixture lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/edge/route_directory.rs
+    - crates/betterlite-server/src/app/edge/route_directory/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite/src/lifespan/proxy_remainder.rs
+    - crates/betterlite/src/lifespan/proxy_remainder/**
+    - crates/betterlite/Cargo.toml
+    - tools/oracle/cases/http/proxy-remainder/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19900-L19921
+    why: Complete owned route including its auth dependency and endpoint-first enumeration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/get_routes.py#L14-L90
+    why: B4262's existing descriptor projection and one-level mounted-app semantics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1547-L1599
+    why: Custom auth precedes the built-in public-route shortcut.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L823-L844
+    why: /routes is in the built-in public set despite its dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1159-L1366
+    why: Existing REST surface for the configured local-handler HTTP comparisons.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L1935-L2109
+    why: Authoritative REST server selection and the local-tool authorization gate before handler invocation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2611-L2646
+    why: Local handler exceptions become error-tool results.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2851-L2856
+    why: The MCP operation renders the orphan-tool HTTPException inside its result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3395-L3429
+    why: HTTP coverage for the concrete destination adapter installed into auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6518-L6547
+    why: Boot integration for the audit callback branch now owned by B8872.
+dod:
+  - text: GET /routes projects the actual registered descriptors with endpoint precedence, preserved nulls and B4262's mounted-app rules.
+    proof: [projection-tests, boot-tests]
+  - text: The single route registration preserves built-in public access and custom auth, and the installed docs/MCP routes appear only when actually mounted.
+    proof: [boot-tests, oracle, http-cases]
+  - text: Production startup installs B8870, B8871 and B8872 into the same services used by requests, and invokes B8873 before credential resolution without duplicating tool or audit registration.
+    proof: [integration-tests, oracle, http-cases]
+  - text: Configured local tools retain server authorization and distinguish handler failures from auth failures through the existing MCP HTTP surfaces.
+    proof: [integration-tests, oracle, http-cases]
+checks:
+  optional: []
+  commands:
+    - id: projection-tests
+      why: Route enumeration ignores endpoint precedence, drops nulls or expands mounts incorrectly.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::edge::route_directory::tests::projection::/)'
+    - id: boot-tests
+      why: The route or its actual registration catalog is absent, bypasses custom auth or lists disabled mounts.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::edge::route_directory::tests::boot::/)'
+    - id: integration-tests
+      why: A production startup slot still uses a stub, a different service or a second tool load.
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^lifespan::proxy_remainder::tests::/)'
+    - id: http-cases
+      why: The remainder has no newly added HTTP fixtures to exercise its reachable behavior.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/proxy-remainder)"
+oracle_cases:
+  - tools/oracle/cases/http/proxy-remainder/routes-no-key.yaml
+  - tools/oracle/cases/http/proxy-remainder/routes-invalid-key.yaml
+  - tools/oracle/cases/http/proxy-remainder/routes-docs-disabled.yaml
+  - tools/oracle/cases/http/proxy-remainder/local-tool-call.yaml
+  - tools/oracle/cases/http/proxy-remainder/local-tool-failure.yaml
+  - tools/oracle/cases/http/proxy-remainder/local-tool-no-key.yaml
+  - tools/oracle/cases/http/proxy-remainder/local-tool-orphan.yaml
+  - tools/oracle/cases/http/proxy-remainder/tenant-telemetry-disabled.yaml
+  - tools/oracle/cases/http/proxy-remainder/tenant-telemetry-incomplete.yaml
+  - tools/oracle/cases/http/proxy-remainder/audit-disabled-dotted-config.yaml
+deviations:
+  - what: GET /routes returns 200 with every actually mounted native route in native registration order; its routes array is not the full FastAPI inventory or FastAPI registration order.
+    why: The proxy has its own router and currently installed features. Advertising unmounted Python routes would be false; the shared registration catalog must enumerate native mounts instead. Native boot tests verify the complete array, while HTTP parity compares status, content type and the envelope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19907-L19921
+out_of_scope:
+  - B8870 owns tenant destination adaptation, B8871 Python local MCP handlers, B8872 the audit startup branch and B8873 raw secret-manager bootstrap. Their lower-level functions remain with B855/B1109, B165/B4680, B065 and B8590 respectively; this task adds integration evidence, not second implementations.
+  - "Non-runtime exclusive paths: proxy/.gitignore, proxy/README.md and proxy/__init__.py contain no callable logic to port. proxy/post_call_rules.py::post_response_rule and proxy/_experimental/post_call_rules.py::my_custom_rule have no caller at the pin. proxy/lambda.py only exports Mangum(app, lifespan=on); no caller or deployment reference to that module exists at the pin, so no Lambda adapter is built."
+  - "proxy/hooks/__init__.py::get_proxy_hook, PROXY_HOOKS and LEGACY_MULTI_INSTANCE_RATE_LIMITING belong to B8399, whose description already builds them; the architect must add this path to B8399 covers. The litellm_enterprise extension has no open-source implementation."
+  - "proxy_server.py lifecycle: generate_feedback_box, _redact_worker_config_for_logging, both shutdown flushes, proxy_shutdown_event, _connect_to_count_stored_values, proxy_startup_event, initialize_from_worker_config, initialize and _setup_prisma_client are B8374/B8613; save_worker_config is B8375. B8373 owns ProxyStartupEvent startup checks, prompt detector attach, startup logging, JWT, budget initialization/warming, UI settings and heuristic baselines; semantic tool filtering is B8201. B8370/B8371/B8372 own all scheduler and cleanup helpers and scheduled job setup."
+  - "proxy_server.py L1648-L1885: operation ids, WebSocket schema stubs and get_openapi_schema are B123; custom_openapi and its serving mount are B8681. mount_swagger_ui is B7740. Exception handlers and _get_cors_config are B8591, installed by B8680; _log_model_access_denial, _close_dangling_otel_server_span, general_settings_view and _get_field_default are B8389. _gateway_request_redis_buffer is B8680."
+  - "proxy_server.py spend/cache L2751-L4223: cost_tracking and producer shutdown are B069; current spend, repair and floor functions are B2321/B3014; increment_spend_counters and every preparation/window/batched helper through L3617 are B8593; every counter initialization, cache increment, settlement and pipeline function L3620-L3850 is B3015; update_cache_read_keys, _read_update_cache_values and update_cache are B8376; arm_update_cache_read and _take_armed_update_cache_read are B4294/B4331."
+  - "proxy_server.py health L4239-L4678: RSS helpers are B4442; direct health instrumentation, window-gated save, scheduling and background loop are B4444/B7640/B8540; _get_endpoint_exception_status and _write_health_state_to_router_cache are B8388; _adaptive_router_flusher_loop is B341."
+  - "proxy_server.py config loading: all remote-overlay scrubbing, _ConfigWithBaseline methods, settings-store bindings, ProxyConfig constructor, YAML-store projections, get_config and database overlay/side-effect methods are B8379. YAML file discovery/read/includes are B002/B4142. should_load_db_object and its method wrapper, config saves, delete/write guards, team config and state accessors are B8380. _log_ignored_cost_map_copy belongs to B8382. Coordination Redis functions L4861-L4962, L5862-L5953 and L10259-L10321 are B8377; response-cache construction/switching are B8651/B8612."
+  - "proxy_server.py deployment/config boot: routing and classifier plugin resolution are B8587; the five deployment validators/pinning helpers are B8378. _normalize_user_url_validation and _apply_ssrf_general_settings are B5082/B009. Raw secret-manager initialization is B8873; env-reference resolution is B3662. load_from_azure_key_vault, credential loading, environment overlay, misplaced JWT warnings, _init_non_llm_configs, policy initialization, alerting and initialize_secret_manager are B8590. B8614 supplies its concrete registries. load_config composes these steps through B8374/B8613, per-key sections through B002, callback loading through B165/B189, and the audit branch through B8872."
+  - "proxy_server.py ProxyConfig reloads: deployment deletion/update/addition and its lock, callback list helpers and database callback registration, router-setting application and subscriber start/stop are B8381. Model info/decryption, model-row lookup and credential encryption/decryption are B8382; environment secret reloads also use B1700/B8502. Hierarchical router-setting lookup is B881. Cleanup/retention/cache-size changes are B8371. Semantic, websearch, SSO, Vault and CyberArk reloads are B8383. Non-LLM DB objects, prompts, guardrails, policies, tool policy, vector stores/indexes, MCP, agents, search and pass-through loaders are B8384. Cost-map swap and periodic model-cost/beta reloads are B8385."
+  - "proxy_server.py stream functions L9290-L10096: assistants generator B089, chunk shaping/framing and fallback metadata B8602, keepalive B8603, streaming hook application and async_data_generator B8604/B8632, selection B7324. B7980 and its part B9720 build common_request_processing.py's async_streaming_data_generator and async_sse_data_generator and wire them into /v1/messages and the A2A streams. _pricing_override_stamps and get_litellm_model_info are B849. _blocked_response_usage is B3663."
+  - "proxy_server.py inference handlers L11549-L13798: model_list and model_info are B007/B940, chat_completion B045 and its request/stream integration parts, completion B202, embeddings B038, moderations B015, audio chunking/speech/transcription B083/B047, Vertex live B8608, all realtime query/release/rejection/session functions B1125, assistant CRUD B1085, thread/message CRUD B1086 and run_thread B089. Their mounts and HTTP cases remain B8632/B8633/B8635 and the corresponding inference area parts."
+  - "proxy_server.py utility/model views L13824-L16754: token counters, system-message conversion, supported params, model lookup and transform_request are B8598. Model access/grant/team expansion L14161-L14537 is B848; enrichment/search/sort/page L14540-L15065 is B849; BYOK/team query filtering and model-id lookup are B1216. model_info_v2 is B850, metric routes B8386, v1 model-info helpers/handler B851, deprecation/model-group helper B060, model_group_info B156, model_settings/alerting_settings and their helpers B8389. Listing callback filters L11511-L11542 are B8598."
+  - "proxy_server.py management handlers L16764-L19900: queue, fallback login and invitation CRUD are B8599; login variants B899; onboarding/claim rollback/session-token and logo/image/favicon functions B8387. Config update/audit/redaction helpers are B8594; field/list/delete and UI-setting helpers B8595; callback config/redaction/role gates and YAML view B8596; manual cost-map/beta reload/schedule/cancel/status handlers B8586. home and get_adaptive_router_state are B8597. All MCP stream/path helpers and handlers after L20042 are B8592, composed by B8728."
+  - "No caller at the pin: proxy_server.py::_resolve_typed_dict_type, _resolve_pydantic_type, data_generator, on_backoff and giveup. The on_backoff used by Prisma is a different function in utils.py, owned by B8397. Python-only showwarning, cleanup_router_config_variables, _initialize_shared_aiohttp_session, _init_dd_tracer and _init_pyroscope retain B8374's existing runtime exclusions; _config_param_table and row Protocols are typing glue. run_ollama_serve retains the no-subprocess decision of B4175, not a newly launched Ollama process."
+  - "The removed overlapping covers retain their existing owners: proxy/_types.py B2314/B8410/B8411/B8412 and route-specific contracts; utils.py B2400/B8390-B8401/B2362; litellm_pre_call_utils.py B1102-B1109/B1137 with B8800-B8805 integration; plugin_routes.py B8230; common utilities B4260/B4261/B4263/B4264/B1100-B1102/B8231 and their narrower owners; types/proxy declarations B167/B7949. None is part of the new route implementation."
+pitfalls:
+  - Public-table membership does not eliminate the get_routes auth dependency; a custom auth hook runs before the public shortcut.
+  - An endpoint-bearing route wins over a mounted-app attribute, so expanding both duplicates its records.
+  - Permission tables and the OpenAPI subset contain paths that are not an inventory of installed routers.
+  - A registered local MCP tool without an authorized server is refused at the pin; do not add a direct registry bypass to the HTTP fixture.
+  - The HTTP oracle cannot prove tenant exporter selection from an unchanged completion alone, so the installed-port and recording-fan-out tests are required too.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

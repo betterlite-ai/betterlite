@@ -1,0 +1,36 @@
+kind: helper
+name: malformed-arguments
+call:
+  response_tool_calls:
+    function: get_tool_calls
+    response:
+      choices:
+        - message:
+            tool_calls:
+              - id: call_truncated
+                function:
+                  name: read_file
+                  arguments: '{"path":"/tmp","flags":["a","b'
+              - id: call_concat
+                function:
+                  name: run
+                  arguments: '{"cmd":["a"]}{"cmd":["b"]}'
+              - id: call_broken
+                function:
+                  name: run
+                  arguments: '{not json'
+              - id: call_redacted
+                function:
+                  name: run
+                  arguments: redacted-by-litellm
+              - id: call_concat__concat_1
+                function:
+                  name: run
+                  arguments: '{}'
+              - id: call_concat__concat_2
+                function:
+                  name: run
+                  arguments: '{}'
+env: {}
+compare:
+  ignore: []

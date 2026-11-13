@@ -1,14 +1,14 @@
 id: B4262
 milestone: M8 platform
 title: Proxy route inspection records
-status: todo
+status: done
 depends_on: []
 file: tasks/B4262-route-inspection.yaml
 covers:
   - "litellm/proxy/common_utils/get_routes.py"
 parent: B124
 split_from: B124
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 645

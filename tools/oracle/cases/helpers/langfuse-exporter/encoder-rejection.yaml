@@ -1,0 +1,21 @@
+kind: helper
+name: langfuse-exporter-encoder-rejection
+call:
+  b3902:
+    public_key: pk-lf-b3902
+    secret_key: sk-lf-b3902
+    base_url: https://cloud.langfuse.com
+    spans:
+      - name: first
+        attributes:
+          - [langfuse.observation.input, "a"]
+      - name: second
+        attributes:
+          - [test.unencodable, "true"]
+      - name: third
+        attributes:
+          - [langfuse.observation.input, "c"]
+    replies:
+      - status: 200
+env: {}
+compare: {ignore: []}

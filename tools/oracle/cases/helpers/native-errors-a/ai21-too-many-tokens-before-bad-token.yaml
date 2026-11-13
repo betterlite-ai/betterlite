@@ -1,0 +1,12 @@
+kind: helper
+name: native-errors-a-ai21-too-many-tokens-before-bad-token
+call:
+  native_errors_a:
+    provider: ai21
+    model: ai21/model-a
+    message: "Prompt has too many tokens. Bad or missing API token."
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

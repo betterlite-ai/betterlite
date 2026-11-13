@@ -1,0 +1,20 @@
+kind: helper
+name: anthropic-web-replay-encrypted-protection
+call:
+  anthropic_web_replay:
+    messages:
+      - content:
+          - type: web_search_tool_result
+            tool_use_id: e1
+            content:
+              - {type: web_search_result, url: a, encrypted_content: cipher}
+              - {type: web_search_result, url: b}
+          - type: web_search_tool_result
+            tool_use_id: e2
+            content:
+              - {type: web_search_result, url: c, encrypted_content: ""}
+      - null
+      - role: user
+        content: plain string
+env: {}
+compare: {ignore: []}

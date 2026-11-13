@@ -1,0 +1,24 @@
+kind: helper
+name: gemini-metadata-empty-visible-shadow
+call:
+  gemini_metadata:
+    call: empty_visible_shadow
+    chunks:
+      - vertex_ai_grounding_metadata: []
+        _hidden_params:
+          vertex_ai_grounding_metadata: [{n: hidden-list}]
+      - vertex_ai_grounding_metadata: ''
+        _hidden_params:
+          vertex_ai_grounding_metadata: [{n: hidden-text}]
+      - vertex_ai_grounding_metadata: 0
+        _hidden_params:
+          vertex_ai_grounding_metadata: [{n: hidden-zero}]
+      - vertex_ai_grounding_metadata: false
+        _hidden_params:
+          vertex_ai_grounding_metadata: [{n: hidden-false}]
+      - vertex_ai_grounding_metadata: {}
+        _hidden_params:
+          vertex_ai_grounding_metadata: [{n: hidden-object}]
+      - vertex_ai_grounding_metadata: [0, false, '', {}, []]
+env: {}
+compare: {ignore: []}

@@ -18,6 +18,6 @@ fn settings_sandbox_bash_to_the_worktree_and_the_writable_folders() {
     let compact: String = text.split_whitespace().collect();
     assert_eq!(
         compact,
-        r#"{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"filesystem":{"allowWrite":["/w","/g","/h/.cargo/registry"]},"network":{"allowedDomains":["*"]}}}"#
+        r#"{"sandbox":{"enabled":true,"autoAllowBashIfSandboxed":true,"filesystem":{"allowWrite":["/w","/g","/h/.cargo/registry"]},"network":{"allowedDomains":["*"]}},"attribution":{"commit":"","pr":""}}"#
     );
 }

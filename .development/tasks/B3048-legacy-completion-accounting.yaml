@@ -1,0 +1,156 @@
+id: B3048
+title: Legacy rate-limit completion accounting
+description: >-
+  Build the part of LiteLLM's legacy parallel request limiter that runs after a request ends, in a new module `legacy_completion_accounting` of `betterlite-rate-limit`.
+  LiteLLM only uses this limiter when `LEGACY_MULTI_INSTANCE_RATE_LIMITING` is "true"; B3049 owns the admission hook that counts a request in, and this task owns what counts it out and records its tokens.
+  The methods are an `impl` block on the legacy handler type that B3047 builds in `rate_limiters`, and they use its `internal_usage_cache` field, its `print_verbose` method and the clock it holds for the minute key.
+  Do not call the system clock directly.
+
+  Every counter lives in the cache under `{id}::{precise_minute}::request_count` and holds three integers: `current_requests`, `current_tpm`, `current_rpm`. `precise_minute` is the handler's local time formatted `%Y-%m-%d-%H-%M`, read fresh on each call.
+  Define one typed struct for the counter value (`current_requests`, `current_tpm`, `current_rpm`, all `i64`) if B3047 has not already put one in its module. Use checked arithmetic and return an error on overflow.
+
+  `response_total_tokens(response)` returns `usage.total_tokens` when the response is a chat, embedding or text-completion response whose usage is a real usage object, and 0 for every other response or a missing usage.
+  Model the input as an enum with those three variants (each holding an optional usage with `total_tokens`) plus an `Other` variant.
+
+  `log_success_event` (LiteLLM `async_log_success_event`) takes a typed event: the `litellm_params.metadata` fields `global_max_parallel_requests`, `user_api_key`, `user_api_key_user_id`, `user_api_key_team_id`, `user_api_key_model_max_budget`, `user_api_key_metadata`, `user_api_key_team_metadata`, plus the top-level `user` (the end user id), the response, and the parent trace span that the caller already extracted.
+  It runs in this order.
+  First, when `global_max_parallel_requests` is set, it calls `async_increment_cache` on the key `global_max_parallel_requests` with value -1 and `local_only=true`. There is no floor at zero.
+  Then it reads the counter for each id below with a plain `async_get_cache` (no `local_only`), builds the new value, and appends `(key, new_value)` to a list.
+  For the API key (when `user_api_key` is not None): the fallback when the cache has no entry is `{current_requests: 1, current_tpm: 0, current_rpm: 0}`. The new value is `{max(current_requests - 1, 0), current_tpm + total_tokens, current_rpm}`.
+  For the model group, `model_group` comes from B3891's `get_model_group_from_litellm_kwargs`. This block runs when `user_api_key` and `model_group` are both not None and at least one holds: the key metadata map contains the key `model_rpm_limit`, it contains the key `model_tpm_limit` (presence of the key counts, even with an empty value), `user_api_key_model_max_budget` is not None (an empty map counts), or B745's `get_key_model_tpm_limit` or `get_key_model_rpm_limit` returns a value for `model_group`.
+  Those two lookups run on a key auth value built from only `api_key`, `metadata`, `model_max_budget` and `team_metadata`. The cache key is `{user_api_key}::{model_group}::{precise_minute}::request_count`, with the same fallback and arithmetic as the API key block.
+  For the user, the team and the end user (each only when its id is not None): the fallback is `{current_requests: 1, current_tpm: total_tokens, current_rpm: 1}` and the new value uses the same arithmetic as the API key. That adds the tokens twice when the cache has no entry, and LiteLLM does exactly this.
+  The order of blocks is API key, model group, user, team, end user. At the end one `async_batch_set_cache` call writes the whole list with `ttl=60` (no `local_only`), even when the list is empty.
+  Any error inside this method, including a missing `user_api_key` key in the metadata or a counter value that lacks a field, is caught. It is passed to `print_verbose` and the method returns normally. Writes already made (the global decrement) stay made, and the batch write does not happen.
+  Each new value is also passed to `print_verbose` as "updated_value in success call: {new_val}, precise_minute: {precise_minute}".
+
+  `log_failure_event` (LiteLLM `async_log_failure_event`) takes the metadata map (an absent or empty map is allowed), `user_api_key`, `global_max_parallel_requests`, the exception's message text and the parent span.
+  It returns at once when `user_api_key` is None. It also does nothing at all when the message contains the text "Crossed TPM / RPM / Max Parallel Request Limit" (LiteLLM's `CommonProxyErrors.max_parallel_request_limit_reached`), since that request never took a slot.
+  Otherwise, when `global_max_parallel_requests` is set, it reads the key `global_max_parallel_requests` with `local_only=true`, ignores the value, and then decrements it by 1 with `local_only=true`.
+  Then it reads the key's counter (same fallback `{1, 0, 0}`) and writes `{max(current_requests - 1, 0), current_tpm, current_rpm}` back with a single `async_set_cache(key, value, ttl=60)`. Tokens and the request count are not changed, and the model, user, team and end-user counters are not touched.
+  An error here is logged with the error-level logger and the text "Inside Parallel Request Limiter: An exception occurred - {error}" (with the trace), not through `print_verbose`.
+
+  `post_call_success_hook` (LiteLLM `async_post_call_success_hook`) reads the counter under the logged api key with a plain `async_get_cache`. The logged key is B1106's `get_logged_api_key` (the key alias for a session token that has one, otherwise `api_key`). If that is None the cache key is the text "None::{precise_minute}::request_count", because LiteLLM formats the None into the f-string.
+  When a counter exists: if the auth value's `rpm_limit` is set, remaining requests is `rpm_limit - current_rpm` and the limit is `rpm_limit`. If `tpm_limit` is set, remaining tokens is `tpm_limit - current_tpm` and the limit is `tpm_limit`. A negative remaining value is written as it is.
+  When the response has hidden params (a typed struct or a map), it takes the existing `additional_headers` map (or an empty one), sets whichever of `x-ratelimit-remaining-requests`, `x-ratelimit-limit-requests`, `x-ratelimit-remaining-tokens` and `x-ratelimit-limit-tokens` it computed (as integers, not strings, replacing an existing header of the same name), and stores the hidden params again with every other field unchanged. With no hidden params it changes nothing and returns. It never fails on a missing counter. A cache error is not caught here and goes back to the caller.
+
+  Cache failures need a small error enum owned by this module (`AccountingError`, in `legacy_completion_accounting/error.rs`) with the cache error as `#[source]`.
+  Keep each file under 300 lines. Suggested files: `response_tokens.rs`, `success_event.rs`, `failure_event.rs`, `remaining_headers.rs`, `error.rs`, and the tests in `tests.rs` with `tests/response_tokens.rs`, `tests/success_event.rs`, `tests/failure_event.rs`, `tests/remaining_headers.rs`.
+  Tests use an in-memory test double for the cache that records every call (method, key, value, ttl, `local_only`) in order, and a fixed test clock. Write each test as a named rstest case with literal inputs.
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/legacy_completion_accounting.rs
+    - crates/betterlite-rate-limit/src/legacy_completion_accounting/**
+    - crates/betterlite-rate-limit/Cargo.toml
+    - Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L38-L42
+    why: _response_total_tokens, the isinstance check on the three response classes and on Usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L492-L543
+    why: Start of async_log_success_event, metadata reads, UserAPIKeyAuth construction, global slot decrement, precise_minute and total tokens.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L544-L611
+    why: API key counter update and the model group condition and counter update.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L612-L696
+    why: User, team and end-user counter updates with their different fallbacks, the batch write with ttl=60 and the swallowed exception.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L697-L767
+    why: async_log_failure_event, the max-limit message skip, the global decrement, the single async_set_cache and the exception log.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L803-L855
+    why: async_post_call_success_hook, the remaining and limit values and the four x-ratelimit-* headers on _hidden_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4399
+    why: The max_parallel_request_limit_reached message text that the failure hook skips on.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4891-L4894
+    why: CurrentItemRateLimit, the counter value shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/__init__.py#L20-L36
+    why: The legacy handler is chosen only when LEGACY_MULTI_INSTANCE_RATE_LIMITING is "true"; the v3 limiter is the default.
+dod:
+  - text: response_total_tokens returns total_tokens for chat, embedding and text-completion responses with usage, and 0 for any other response or a missing usage.
+    proof: [response-tokens-tests]
+  - text: The success hook decrements the key global_max_parallel_requests by 1 with local_only=true when global_max_parallel_requests is set, and does not touch it when it is unset.
+    proof: [success-global-slot-tests]
+  - text: The success hook writes the API key counter as {max(requests - 1, 0), tpm + total_tokens, rpm}, with the fallback {1, 0, 0} when the cache has no entry.
+    proof: [success-key-counter-tests]
+  - text: The success hook writes the model group counter under {key}::{model_group}::{minute}::request_count only when the model group is set and a model limit source exists (model_rpm_limit or model_tpm_limit key in metadata, a non-None model_max_budget, or a per-model limit lookup result).
+    proof: [success-model-group-tests]
+  - text: The success hook writes the user, team and end-user counters with the fallback {1, total_tokens, 1}, so tokens are added twice when the cache has no entry.
+    proof: [success-entity-counter-tests]
+  - text: The success hook sends all new values in one batch write with ttl=60 and no local_only, in the order key, model group, user, team, end user, even when the list is empty.
+    proof: [success-batch-write-tests]
+  - text: An error in the success hook goes to print_verbose and the method returns normally, with the batch write skipped.
+    proof: [success-swallowed-error-tests]
+  - text: The failure hook does nothing when user_api_key is None or the exception text contains the max-parallel-request limit message.
+    proof: [failure-skip-tests]
+  - text: The failure hook reads and then decrements the global key with local_only=true when global_max_parallel_requests is set.
+    proof: [failure-global-slot-tests]
+  - text: The failure hook writes the key counter with requests reduced by 1 (not below 0), tokens and rpm unchanged, through one set call with ttl=60.
+    proof: [failure-key-counter-tests]
+  - text: 'The failure hook logs a cache error at error level with the text "Inside Parallel Request Limiter: An exception occurred - {error}" and returns normally.'
+    proof: [failure-logged-error-tests]
+  - text: The post-call hook writes the four x-ratelimit-* integer headers from the key counter and the key's rpm_limit and tpm_limit, keeps other additional_headers and other hidden params, and writes nothing without a counter or without hidden params.
+    proof: [remaining-headers-tests]
+  - text: The post-call hook reads the counter under the text "None::{minute}::request_count" when the logged api key is None.
+    proof: [remaining-none-key-tests]
+checks:
+  optional: []
+  commands:
+    - id: response-tokens-tests
+      why: response_total_tokens is missing or counts tokens for responses it should ignore
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_completion_accounting::tests::response_tokens::/)'
+    - id: success-global-slot-tests
+      why: the success hook does not release the global slot with local_only, or releases it when the limit is unset
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_completion_accounting::tests::success_event::global_slot_/)'
+    - id: success-key-counter-tests
+      why: the API key counter arithmetic or its fallback is wrong
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_completion_accounting::tests::success_event::key_counter_/)'
+    - id: success-model-group-tests
+      why: the model group counter is written when it should not be, or skipped when a limit source exists
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_completion_accounting::tests::success_event::model_group_/)'
+    - id: success-entity-counter-tests
+      why: the user, team or end-user counter uses the wrong fallback or is not written
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_completion_accounting::tests::success_event::entity_counter_/)'
+    - id: success-batch-write-tests
+      why: the success hook writes counters one by one, or with the wrong ttl, order or local_only
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_completion_accounting::tests::success_event::batch_write_/)'
+    - id: success-swallowed-error-tests
+      why: the success hook lets an error escape or still writes the batch after an error
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_completion_accounting::tests::success_event::swallowed_error_/)'
+    - id: failure-skip-tests
+      why: the failure hook decrements for a request that never took a slot
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_completion_accounting::tests::failure_event::skip_/)'
+    - id: failure-global-slot-tests
+      why: the failure hook does not read then decrement the global key with local_only
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_completion_accounting::tests::failure_event::global_slot_/)'
+    - id: failure-key-counter-tests
+      why: the failure hook changes tokens or rpm, skips the floor at 0, or writes with the wrong ttl
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_completion_accounting::tests::failure_event::key_counter_/)'
+    - id: failure-logged-error-tests
+      why: the failure hook returns an error or does not log it at error level with LiteLLM's text
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_completion_accounting::tests::failure_event::logged_error_/)'
+    - id: remaining-headers-tests
+      why: the post-call hook writes wrong header names or values, drops other headers, or writes without a counter
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_completion_accounting::tests::remaining_headers::headers_/)'
+    - id: remaining-none-key-tests
+      why: the post-call hook does not read the text key "None::..." for a missing logged api key
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_completion_accounting::tests::remaining_headers::none_key_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "async_pre_call_hook is owned by B3049; it writes the counters this task decrements."
+  - "get_internal_user_object (L769-L801) has no caller at the pin, so it is not built and has no cases."
+  - "__init__, print_verbose, check_key_in_limits, time_to_next_minute, raise_rate_limit_error and get_all_cache_objects are owned by B3047."
+  - "InternalUsageCache itself, and extracting the parent trace span from kwargs (`_get_parent_otel_span_from_kwargs`); the caller passes the span in."
+  - "Choosing this handler over the v3 limiter from LEGACY_MULTI_INSTANCE_RATE_LIMITING (hooks/__init__.py) and the HTTP oracle cases for it belong to the task that wires hook selection."
+pitfalls:
+  - "The user, team and end-user fallback is {1, total_tokens, 1}, not {1, 0, 0}, and the new value adds total_tokens again, so a cache miss counts the tokens twice and leaves rpm at 1. Only the API key and model group blocks use {1, 0, 0}."
+  - "precise_minute uses local server time (`datetime.now()`), not UTC, in the format %Y-%m-%d-%H-%M; the pre-call hook and these hooks must agree on it."
+  - "The success hook reads metadata with `metadata[\"user_api_key\"]`, which raises when the key is absent, and LiteLLM's catch-all turns that into a verbose print with nothing written; a present key holding None just skips the key block."
+  - "The model group check tests whether `model_rpm_limit` or `model_tpm_limit` is a key of the key metadata, not whether its value is truthy, and `user_api_key_model_max_budget` counts as soon as it is not None, even when empty."
+  - "The failure hook's skip is a substring test on the exception text (`in str(exception)`), not an equality test."
+  - "The failure hook reads the global key and drops the value before decrementing; keep the read so the recorded cache calls match."
+  - "The success hook batch write has no local_only, while the global slot calls in both hooks have local_only=true."
+  - "post_call_success_hook formats a None api key into the key text as `None`, and it writes header values as integers."
+  - "The success and failure hooks swallow errors (verbose print and error log), but the post-call hook does not; a cache error there reaches the caller."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

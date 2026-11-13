@@ -1,0 +1,40 @@
+kind: helper
+name: api-errors-and-cache
+call:
+  available_models:
+    enumerate:
+      environment:
+        OPENAI_API_KEY: sk-openai
+        ANTHROPIC_API_KEY: sk-anthropic
+        COHERE_API_KEY: sk-cohere
+      provider_list: [openai, anthropic, cohere]
+      models_by_provider:
+        cohere: [cohere-a]
+      global_check_provider_endpoint: true
+      calls:
+        - listing:
+            OpenAIGPTConfig: {error: upstream down}
+            AnthropicModelInfo: {models: [listed-a]}
+        - custom_llm_provider: not-a-provider
+          listing: {}
+        - custom_llm_provider: openai
+          listing:
+            OpenAIGPTConfig: {models: []}
+        - custom_llm_provider: openai
+          listing:
+            OpenAIGPTConfig: {models: [never-listed]}
+        - custom_llm_provider: openai
+          cache_clock_fails: true
+          listing:
+            OpenAIGPTConfig: {models: [never-listed]}
+        - custom_llm_provider: openai
+          api_key: cache-fails
+          cache_clock_fails: true
+          listing:
+            OpenAIGPTConfig: {models: [dropped]}
+        - custom_llm_provider: openai
+          api_key: cache-fails
+          listing:
+            OpenAIGPTConfig: {models: [listed-later]}
+env: {}
+compare: {ignore: []}

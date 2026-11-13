@@ -1,0 +1,15 @@
+id: B8201
+milestone: M9 agents and mcp
+title: MCP semantic tool filter hook
+status: todo
+depends_on: [B4685]
+file: tasks/B8201-mcp-semantic-hook.yaml
+covers:
+  - "litellm/proxy/hooks/mcp_semantic_filter/hook.py"
+  - "litellm/proxy/hooks/mcp_semantic_filter/__init__.py"
+parent: B138
+split_from: B138
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

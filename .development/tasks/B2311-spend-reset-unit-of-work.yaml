@@ -110,7 +110,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B726 owns the other repository adapters and re-exports these unit-of-work types.
-  - B071 owns reset-job eligibility, decrements/caps, retry policy and cache invalidation in
+  - B3009 to B3013 own reset-job eligibility, decrements/caps, retry policy and cache invalidation in
     reset_budget_job.py; this service only executes the typed writes its caller queued.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as spend_reset_data in the db group. Replace the stub Op in tools/oracle/src/helpers/db/spend_reset_data.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/spend_reset_data.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

@@ -1,0 +1,10 @@
+kind: helper
+name: messages-context-clear-context-management-error
+call:
+  messages_context_clear:
+    action: visible_edits
+    applied_edits: []
+    compaction_block: null
+    error: {status_code: 403, message: denied}
+env: {}
+compare: {ignore: []}

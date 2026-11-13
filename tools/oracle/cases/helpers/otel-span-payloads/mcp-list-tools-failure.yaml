@@ -1,0 +1,21 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-mcp-list-tools-failure",
+  "call": {
+    "b3844": {
+      "function": "mcp_list_tools",
+      "payload": {
+        "call_type": "list_mcp_tools",
+        "status": "failure",
+        "error_information": {
+          "error_class": "MCPError",
+          "error_code": "503"
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

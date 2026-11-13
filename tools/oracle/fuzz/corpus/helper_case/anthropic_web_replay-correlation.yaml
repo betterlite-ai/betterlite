@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-web-replay-correlation
+call:
+  anthropic_web_replay:
+    messages:
+      - content:
+          - {type: web_search_tool_result, tool_use_id: dup, content: [{type: web_search_result, url: u}]}
+          - {type: server_tool_use, id: dup, input: {query: first}}
+          - {type: server_tool_use, id: dup, name: not_checked, input: {query: last}}
+          - {type: server_tool_use, id: kept}
+          - {type: server_tool_use, id: 7, input: {query: bad}}
+          - {type: server_tool_use, id: nullinput, input: null}
+env: {}
+compare: {ignore: []}

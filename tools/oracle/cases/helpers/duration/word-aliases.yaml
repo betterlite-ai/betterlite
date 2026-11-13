@@ -1,0 +1,18 @@
+kind: helper
+name: word_aliases
+call:
+  duration:
+    calls:
+      - {function: duration_in_seconds, duration: "hourly", now: "2024-01-31T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "daily", now: "2024-01-31T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "weekly", now: "2024-01-31T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "monthly", now: "2024-01-31T00:00:00Z"}
+      - {function: duration_in_seconds, duration: " Daily ", now: "2024-01-31T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "MONTHLY", now: "2024-01-31T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "1mo", now: "2024-01-31T00:00:00Z"}
+      - {function: reset, duration: "daily", now: "2024-01-01T10:00:00Z"}
+      - {function: reset, duration: "weekly", now: "2024-01-03T10:00:00Z"}
+      - {function: reset, duration: "monthly", now: "2024-01-15T10:00:00Z"}
+      - {function: reset, duration: "hourly", now: "2024-01-01T10:30:00Z"}
+env: {}
+compare: {ignore: []}

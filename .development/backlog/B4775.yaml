@@ -2,8 +2,8 @@ id: B4775
 milestone: M9 agents and mcp
 title: Restore stored agent credentials and redact management responses
 status: todo
-depends_on: [B4770, B4774, B002, B192, B244, B732, B869]
-file: null
+depends_on: [B4770, B4774, B244]
+file: tasks/B4775-agent-credential-restore.yaml
 covers:
   - "litellm/proxy/agent_endpoints/agent_registry.py"
   - "litellm/proxy/agent_endpoints/endpoints.py"

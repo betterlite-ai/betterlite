@@ -1,0 +1,11 @@
+kind: helper
+name: config-default-error-class
+call:
+  b3360:
+    operation: config_defaults
+    headers: {}
+    api_key: null
+    api_bases: [https://api.example.test/openai/v1/containers]
+    error: {message: authentication failed, status_code: 401, headers: {Content-Type: application/json, x-request-id: req_1}}
+env: {}
+compare: {ignore: []}

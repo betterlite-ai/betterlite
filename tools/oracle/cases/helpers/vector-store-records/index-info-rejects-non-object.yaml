@@ -1,0 +1,6 @@
+kind: helper
+name: vector-store-index-info-rejects-non-object
+call:
+  vector_store_records: {operation: invalid_index_info, record: {index_name: notes, litellm_params: {vector_store_index: notes, vector_store_name: Notes}, index_info: x}}
+env: {}
+compare: {ignore: []}

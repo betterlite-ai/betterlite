@@ -1,0 +1,14 @@
+kind: helper
+name: linkup-unknown-type-skipped
+call:
+  b8023:
+    operation: linkup_reply
+    params:
+      body: |-
+        {"results":[
+          {"type":"text","name":"Text","url":"https://a.test","content":"a"},
+          {"type":"video","name":"Clip","url":"https://b.test"},
+          {"type":"image","url":"https://c.test/c.png","content":"c"}
+        ]}
+env: {}
+compare: {ignore: []}

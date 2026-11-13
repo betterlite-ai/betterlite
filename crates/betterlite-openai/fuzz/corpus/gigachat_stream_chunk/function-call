@@ -1,0 +1,1 @@
+{"choices": [{"delta": {"function_call": {"name": "lookup", "arguments": {"city": "prague"}}}, "finish_reason": "function_call"}]}

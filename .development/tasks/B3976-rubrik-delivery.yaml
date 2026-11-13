@@ -81,23 +81,23 @@ checks:
   commands:
   - id: rubrik-init-tests
     why: initialization tests are absent, fail or do not cover all config sources
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_initialization_tests::/)
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_delivery::(.*::)?rubrik_initialization_tests::/)
       - test(/replays_the_.*_corpus/)'
   - id: rubrik-client-tests
     why: client setup tests are absent, fail or do not test endpoint URLs
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_client_setup_tests::/)
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_delivery::(.*::)?rubrik_client_setup_tests::/)
       - test(/replays_the_.*_corpus/)'
   - id: rubrik-queue-tests
     why: queue management tests are absent, fail or do not test overflow/warning
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_queue_management_tests::/)
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_delivery::(.*::)?rubrik_queue_management_tests::/)
       - test(/replays_the_.*_corpus/)'
   - id: rubrik-flush-tests
     why: snapshot-based flush tests are absent, fail or do not test drain consistency
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_flush_snapshot_tests::/)
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_delivery::(.*::)?rubrik_flush_snapshot_tests::/)
       - test(/replays_the_.*_corpus/)'
   - id: rubrik-json-tests
     why: JSON POST tests are absent, fail or do not test all endpoints
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_json_post_tests::/)
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^rubrik_delivery::(.*::)?rubrik_json_post_tests::/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

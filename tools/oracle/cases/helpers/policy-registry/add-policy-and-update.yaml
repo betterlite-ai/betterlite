@@ -1,0 +1,18 @@
+kind: helper
+name: add-policy-and-update
+call:
+  b3241:
+    policy_memory_matching_registry:
+      action: scenario
+      add:
+        - name: custom
+          policy:
+            guardrails:
+              add: [first]
+        - name: custom
+          policy:
+            description: updated
+            guardrails:
+              add: [second]
+env: {}
+compare: {ignore: []}

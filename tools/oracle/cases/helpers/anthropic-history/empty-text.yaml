@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-history-empty-text
+call:
+  anthropic_history:
+    function: sanitize_empty_text_content
+    message:
+      role: user
+      content:
+        - {type: text, text: "  "}
+        - {type: image, source: {type: base64, data: abc}}
+env: {}
+compare:
+  ignore: []

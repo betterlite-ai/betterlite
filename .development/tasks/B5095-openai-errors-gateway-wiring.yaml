@@ -91,6 +91,22 @@ description: >-
   secret shape in any input dispatch reads, so that part of the audit note is left out; see out_of_scope.
 scope:
   paths:
+  - "tools/oracle/src/helpers/core_ops/rule_decision.rs"
+  - "tools/oracle/src/helpers/core_ops/mock_calls.rs"
+  - "crates/betterlite-error/src/parse/tests/plain_constructors/tests.rs"
+  - "crates/betterlite-error/src/parse/tests/gate_constructor_cases.rs"
+  - "crates/betterlite-error/src/parse/tests/exception_names/tests.rs"
+  - "crates/betterlite-error/src/parse/tests"
+  - "tools/oracle/src/helpers/core_ops/vector_query_embedding/fixtures.rs"
+  - "tools/oracle/src/sdk_http/vector_query_embedding.rs"
+  - "tools/oracle/src/sdk_http/native.rs"
+  - "tools/oracle/src/sdk_http/embedding_executor.rs"
+  - "crates/betterlite-openai/src/chat/execution/tests.rs"
+  - "crates/betterlite-openai/src/embedding/tests.rs"
+  - "crates/betterlite-server/src/routing/simple_shuffle/tests.rs"
+  - "crates/betterlite-server/src/routes/chat/streaming/tests.rs"
+  - "crates/betterlite-core/src/api/vector_store_contracts/tests.rs"
+  - "crates/betterlite-core/src/api/vector_query_embedding/tests.rs"
   - crates/betterlite-server/src/routes/chat.rs
   - crates/betterlite-server/src/routes/chat/tests.rs
   - crates/betterlite-server/src/routes/embeddings.rs

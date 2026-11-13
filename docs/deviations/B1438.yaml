@@ -1,0 +1,5 @@
+task: B1438
+deviations:
+  - what: A truthy non-string vertex_project or vertex_location in optional_params is rejected with a 400 that names the field, after the missing project and location checks.
+    why: LiteLLM passes the value to _validate_path_id, where re.Pattern.match raises TypeError and the request fails through the generic fallback as a 500; betterlite follows docs/compatibility.md and rejects the request value with a 400, keeping LiteLLM's order so a missing location is still reported as a 401 first.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gdc/chat/transformation.py#L88-L94

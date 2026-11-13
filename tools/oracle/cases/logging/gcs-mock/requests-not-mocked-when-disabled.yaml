@@ -1,0 +1,10 @@
+kind: helper
+name: gcs-mock-requests-not-mocked-when-disabled
+call:
+  b3996:
+    original: {status: 418, body: "original-response"}
+    requests:
+      - method: get
+        url: https://storage.googleapis.com/storage/v1/b/mock-bucket/o/mock-object?alt=media
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: gcs-mock-get-non-storage-url-passes-through
+call:
+  b3996:
+    environment: {GCS_MOCK: "true"}
+    original: {status: 418, body: "original-response"}
+    requests:
+      - method: get
+        url: https://example.com/storage/v1/b/mock-bucket/o/mock-object
+        params: {alt: media}
+        headers: {authorization: "Bearer mock-gcs-token"}
+        follow_redirects: true
+env: {}
+compare: {ignore: []}

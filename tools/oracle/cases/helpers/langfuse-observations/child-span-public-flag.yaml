@@ -1,0 +1,23 @@
+kind: helper
+name: langfuse-child-span-public-flag
+call:
+  b3901:
+    steps:
+      - function: start_child_span
+        parent_trace_id: "0102030405060708090a0b0c0d0e0f10"
+        parent_span_id: "0000000000000005"
+        parent_public: true
+        name: guardrail
+        seconds: 1235.5
+        attributes: [[langfuse.observation.type, span]]
+        child_span_id: "0000000000000009"
+      - function: start_child_span
+        parent_trace_id: "0102030405060708090a0b0c0d0e0f10"
+        parent_span_id: "0000000000000005"
+        parent_public: null
+        name: guardrail
+        attributes: []
+        child_span_id: "000000000000000a"
+env: {}
+compare:
+  ignore: []

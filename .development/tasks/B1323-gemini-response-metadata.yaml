@@ -19,7 +19,6 @@ description: >-
   Allocate 160 production, 160 tests and 130 helper lines within a 475-line cap.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,gemini_metadata}.rs
     - crates/betterlite-vertex/src/gemini_metadata.rs
     - crates/betterlite-vertex/src/gemini_metadata/**
     - tools/oracle/src/helpers/vertex/gemini_metadata.rs

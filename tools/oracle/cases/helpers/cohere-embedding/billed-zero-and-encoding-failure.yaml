@@ -1,0 +1,14 @@
+kind: helper
+name: cohere-embedding-billed-zero-and-encoding-failure
+call:
+  cohere_embedding:
+    function: response
+    model: embed-english-v3.0
+    requests:
+      - {input: [a, b], body: '{"embeddings":{"float":[[1.5]]},"meta":{"billed_units":{"input_tokens":0,"images":0}}}'}
+      - {input: [a, b], body: '{"embeddings":{"float":[[1.5]]}}'}
+      - {input: [first, boom], fail_on: boom, body: '{"embeddings":{"float":[[1.5]]},"meta":{"billed_units":{"input_tokens":9}}}'}
+      - {input: [a], body: '{"meta":{}}'}
+      - {input: [a], body: '{not json'}
+compare: {ignore: []}
+env: {}

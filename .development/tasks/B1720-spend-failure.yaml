@@ -37,8 +37,6 @@ description: >-
   320 source lines receive an 800-line allowance for config, tests and adapters.
 scope:
   paths:
-    - crates/betterlite-server/src/spend.rs
-    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/failure.rs
     - crates/betterlite-server/src/spend/failure/**
     - crates/betterlite-config/src/spend_storage.rs

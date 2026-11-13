@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-replicate-errors-replicate-model-error-before-throttled
+call:
+  anthropic_replicate_errors:
+    provider: replicate
+    model: replicate/some-model
+    error_str: "Request was throttled by replicate"
+    exception_type: ModelError
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

@@ -1,0 +1,13 @@
+kind: helper
+name: provider-api-base-vertex-stream-seed
+call:
+  b7320:
+    model: vertex_ai/claude-3-5-sonnet@20240620
+    params:
+      vertex_location: us-central1
+      vertex_project: proj
+      stream: true
+    hooks:
+      chatgpt: https://chatgpt.test/api
+env: {}
+compare: {ignore: []}

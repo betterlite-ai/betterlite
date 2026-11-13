@@ -1,0 +1,26 @@
+task: B200
+deviations:
+  - what: >-
+      A schema reference outside the document fails with a typed ExternalReference error before the validator is
+      built: any $ref, $dynamicRef or $recursiveRef in schema position that is not "" or a # fragment, including the
+      document's own absolute $id URI and a relative reference resolved against it. Values of const, enum, default
+      and examples are instances rather than schemas, so a $ref inside them is left alone as jsonschema does.
+    why: >-
+      jsonschema's default resolver fetches http, https and file URLs, so a schema a request controls could make
+      the gateway read local files or call internal hosts. Betterlite resolves no reference outside the document,
+      so a schema can never start network or filesystem access.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/json_validation_rule.py#L116-L119
+  - what: >-
+      A schema larger than 1 MiB or 10,000 nodes, a schema nesting deeper than 100 levels, or a response larger
+      than 1 MiB fails with a typed error, where LiteLLM hands every size and depth it parsed to jsonschema.
+    why: >-
+      Validation work grows with the schema and the response, and both come from the request or from the model, so
+      a gateway without these bounds turns one body into unbounded CPU and memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/json_validation_rule.py#L99-L119
+  - what: >-
+      normalize_json_schema_types and normalize_tool_schema keep LiteLLM's 100-level recursion cutoff but refuse a
+      schema over the 1 MiB or 10,000-node bound instead of copying it.
+    why: >-
+      The normalizer recursively copies every value it visits, so the bound that protects validation also protects
+      the copy LiteLLM makes without one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/json_validation_rule.py#L7-L47

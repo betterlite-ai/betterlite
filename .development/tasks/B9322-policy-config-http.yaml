@@ -1,0 +1,98 @@
+id: B9322
+title: Exercise loaded policy configuration and live validation through HTTP
+description: >-
+  The registry helpers already prove parsing and matching, but their callers have no loaded-config HTTP cases.
+  Add ten transcripts under policies/config-http after B9320 supplies startup state and B9321 mounts inspection.
+  Use the normal HTTP oracle driver, selected by omitting kind, with general_settings.master_key oracle-master
+  and no database. Each case starts from its own complete config. When a real guardrail name is required, configure
+  a generic_guardrail_api guard with default_on false, mode pre_call and api_base {{upstream}}. Inspection must
+  not invoke that scanner. Build no handler or replacement registry; this task is about 500-700 fixture lines.
+
+  config-list-info.yaml loads root and child, with child inheriting root and removing its one guardrail. Send
+  GET /policy/list, GET /policy/info/child, GET /policies/list and GET /policies/attachments/list. The singular
+  list retains total_count 0 and empty scope/guardrails even when populated; info reports the child's own add/remove
+  plus its resolved chain, while the plural list reports actual config rows/count. These plural routes come from
+  B8669, not the inspection module. Neither management family has /v1 or provider-prefixed aliases.
+
+  unattached-config.yaml proves a policy without policy_attachments is inspectable but POST /policy/test matches
+  nothing. attachment-without-policies.yaml has attachments alone and proves the startup skip leaves the engine
+  uninitialized. condition-and-default.yaml attaches a global default and a conditional non-default, then changes
+  the request model so a filtered non-default no longer suppresses the default. ancestor-condition.yaml gives an
+  attached child a failing condition and its ancestor a passing one, showing that inherited guardrails still
+  resolve. Inspect the exact matching_policies and resolved_guardrails, not merely the status.
+
+  tags-and-priority.yaml requires tags on one attachment and includes explicit priority zero and two attachments
+  naming the same policy. Send tag-match, tag-miss and duplicate-match contexts; only one policy result survives.
+  scope-dimensions.yaml varies team_alias, key_alias and model independently in /policy/test, using trailing-star
+  scopes and a whole-value regex in condition.model. Assert null/default context fields too. Keep each resolved
+  guardrail set at zero or one member to avoid Python set iteration order, without sorting policy/attachment lists.
+
+  validate-live-registry.yaml POSTs /policy/validate with a policy adding an unknown guard and removing another
+  unknown guard while a different real guard is registered. Compare invalid_guardrail errors and removal warnings.
+  A subsequent policy with only the unknown removal remains valid true. validate-empty-registry.yaml repeats
+  unknown addition with no configured guards, proving that membership validation is skipped. Finally,
+  validate-pipeline-membership.yaml uses a real guard in a pre_call pipeline step but omits it from guardrails.add;
+  the returned errors identify pipeline.steps even though that guard exists in the handler. All are HTTP 200
+  validation records, distinct from malformed-body 422 cases already assigned to B9324.
+
+  Retain complete stable JSON, status and content-type. Ignore only the human message leaf in validation errors
+  and warnings; policy_name, field, error_type and valid remain compared. Scanner/provider captures must be empty.
+  Use ordinary betterlite-versus-pinned-LiteLLM execution; self-check only checks fixture validity. Native startup
+  failure tests remain in B3250/B9320 because a process that never listens cannot supply an HTTP error response.
+  Any mismatch is reported to the owning task with the transcript, rather than adding a private fixture hook.
+scope:
+  paths:
+    - tools/oracle/cases/policies/config-http/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7100-L7138
+    why: Production policy initialization reads both top-level keys but skips everything without policies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L383-L604
+    why: Validation, list, info and test route decorators and loaded-state response projections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L74-L102
+    why: The plural list decorator and config/database view differ from singular inspection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L656-L704
+    why: Attachment list decorator and config-backed rows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_validator.py#L296-L403
+    why: Live-name validation, empty-registry skip and pipeline membership, already implemented by B3245.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_matcher.py#L135-L218
+    why: A matching ancestor can preserve a child whose own condition fails.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L132-L267
+    why: Scope matching, priorities, tag filtering and default-policy selection reused by the routes.
+dod:
+  - text: Loaded configuration reaches both API families, including the singular list quirk and the absent-policy startup skip.
+    proof: [config-transcripts, oracle]
+  - text: Context changes expose the pinned inheritance, condition, default, tag and scope matching results through the mounted test route.
+    proof: [config-transcripts, oracle]
+  - text: Validation uses actual guardrail names and distinguishes empty-registry bypass, unknown names and missing pipeline membership.
+    proof: [config-transcripts, oracle]
+checks:
+  optional: []
+  commands:
+    - id: config-transcripts
+      why: config-loaded HTTP coverage is absent even though the old empty-state cases pass
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/policies/config-http)"
+oracle_cases:
+  - tools/oracle/cases/policies/config-http/config-list-info.yaml
+  - tools/oracle/cases/policies/config-http/unattached-config.yaml
+  - tools/oracle/cases/policies/config-http/attachment-without-policies.yaml
+  - tools/oracle/cases/policies/config-http/condition-and-default.yaml
+  - tools/oracle/cases/policies/config-http/ancestor-condition.yaml
+  - tools/oracle/cases/policies/config-http/tags-and-priority.yaml
+  - tools/oracle/cases/policies/config-http/scope-dimensions.yaml
+  - tools/oracle/cases/policies/config-http/validate-live-registry.yaml
+  - tools/oracle/cases/policies/config-http/validate-empty-registry.yaml
+  - tools/oracle/cases/policies/config-http/validate-pipeline-membership.yaml
+deviations: []
+out_of_scope:
+  - B3240/B3241 implement policy values, conditions, matching and inheritance; B3245 implements validation and B3250 its HTTP handlers.
+  - B9320 owns configuration and startup collaborators, B9321 the inspection mount, and B8669 the plural list mount.
+  - B079 covers live database replacement, B9323 inference and retrieval, and B9324 the original unloaded API matrix.
+pitfalls:
+  - The singular list keeps total_count 0 while the plural list reports actual rows, so a common expected envelope hides a real difference.
+  - Configuring a real guardrail changes validation even when no request ever invokes its scanner.
+  - A condition-filtered attachment must not suppress default policies that would otherwise apply.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

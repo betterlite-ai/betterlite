@@ -1,0 +1,16 @@
+kind: helper
+name: negative-zero-duration-text
+call:
+  bedrock_other_marengo_three:
+    text_versus_timed_options:
+      model: marengo-embed-3-0-v1:0
+      input: AAA
+      inference_params:
+        inputType: video
+        segmentation:
+          method: fixed
+          fixed:
+            durationSec: "-0"
+env: {}
+compare:
+  ignore: []

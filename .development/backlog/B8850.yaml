@@ -1,0 +1,14 @@
+id: B8850
+milestone: M6 guardrails
+title: Prompt injection callback binding and router judge
+status: todo
+depends_on: [B3703, B8390, B8399, B8610, B8630, B8742, B6020, B255]
+file: tasks/B8850-prompt-injection-binding.yaml
+covers:
+  - "litellm/proxy/common_utils/callback_utils.py"
+parent: B105
+split_from: B105
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

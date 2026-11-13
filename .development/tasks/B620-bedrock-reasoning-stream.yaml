@@ -251,7 +251,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::reasoning_stream_cases::case_[0-9]+_buffered_thinking_split$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_reasoning_stream.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_reasoning_stream.py tools/oracle/helpers/bedrock_reasoning_stream)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -264,7 +264,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_reasoning_stream)"
       && grep -q 'decode_reasoning_delta' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_reasoning_stream.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_reasoning_stream_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_reasoning_stream_corpus(::|$)/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-reasoning-stream/tag-split-every-byte.yaml
 - tools/oracle/cases/helpers/providers/bedrock-reasoning-stream/reasoning-and-text.yaml

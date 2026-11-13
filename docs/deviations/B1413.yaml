@@ -1,0 +1,11 @@
+task: B1413
+deviations:
+  - what: A plan built in the sync SDK mode streams lazily on first poll and rejects any status other than 200; LiteLLM's sync branch posts inside the call and feeds an error body to the chunk parser.
+    why: Native execution is one async path for both SDK modes, and the async branch already requires exactly 200; forwarding an error body as empty chunks loses the provider's error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L340-L354
+  - what: A custom_endpoint of true without an api_base leaves the request URL empty, and a prompt_factory selection with no text fails with PromptNotText; each gives a typed error instead of LiteLLM's httpx crash or a null prompt.
+    why: LiteLLM passes None to httpx, or sends a null prompt the provider rejects; no working setup can rely on either.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L256-L271
+  - what: The stream's post-call logger receives the marker "lines" as original_response rather than the Python line iterator.
+    why: A native callback cannot share the line stream the caller consumes, and consuming it for logging would eat the answer; the marker says the logged response is the line stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L112-L119

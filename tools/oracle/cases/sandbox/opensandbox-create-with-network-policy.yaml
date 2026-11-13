@@ -1,0 +1,28 @@
+kind: helper
+name: opensandbox-create-with-network-policy
+call:
+  b3517:
+    operation: create_body
+    template: opensandbox/custom:v2
+    timeout: 120
+    allow_internet_access: true
+    metadata:
+      team: data
+    env_vars:
+      FOO: bar
+    resource_limits:
+      cpu: "2"
+      memory: 4Gi
+    resource_requests:
+      cpu: "0.5"
+    entrypoint:
+      - /bin/sh
+      - -c
+    network_policy:
+      defaultAction: allow
+      egress:
+        - action: allow
+          target: example.com
+env: {}
+compare:
+  ignore: []

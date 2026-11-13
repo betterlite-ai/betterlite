@@ -1,0 +1,222 @@
+id: B3240
+title: Policy values, conditions and inheritance
+description: >-
+  Build the value layer of the policy engine in betterlite-policy. Later tasks (registry, attachment
+  matching, records, validation, pipeline execution, routes) all import these types and functions, so
+  this task has no registry, no database and no route. Everything here is pure.
+
+  Types, one module each. `values` holds PolicyCondition (`model` is one string or a list of strings,
+  or absent), PolicyScope (`teams`, `keys`, `models`, `tags`, each an optional list of strings),
+  PolicyGuardrails (`add`, `remove`, optional lists), Policy (`inherit`, `description`, `guardrails`
+  defaulting to empty PolicyGuardrails, `condition`, `pipeline`), PolicyAttachment (`policy`, `scope`,
+  `teams`, `keys`, `models`, `tags`, `priority` as i32, `default` false) and PolicyConfig (a map of
+  policy name to Policy, in a BTreeMap). `pipeline` holds the pipeline types: PipelineStep (`guardrail`,
+  `on_fail` "block", `on_pass` "allow", `on_error` absent, `pass_data` false, `modify_response_message`
+  absent), GuardrailPipeline (`mode`, `steps`), PipelineStepResult and PipelineExecutionResult. `context`
+  holds PolicyMatchContext (`team_alias`, `key_alias`, `model`, `tags`, all optional) and ResolvedPolicy
+  (`policy_name`, `guardrails`, `inheritance_chain`). Every struct derives serde Serialize and
+  Deserialize and refuses unknown fields, as LiteLLM's `extra="forbid"` does. Optional fields default to
+  absent when missing. Actions and modes are enums (PipelineAction: allow, block, next, modify_response;
+  PipelineMode: pre_call, post_call) that serialize to those exact lowercase words. A bad action fails
+  with the text `Invalid action 'x'. Must be one of: ['allow', 'block', 'modify_response', 'next']` and a
+  bad mode with `Invalid mode 'x'. Must be one of: ['post_call', 'pre_call']`. A pipeline with no steps
+  is rejected, and so is a priority outside the i32 range. `on_error` absent means "use on_fail" and
+  stays absent in the value; the executor (B3247) applies that rule. PipelineStepResult has an outcome
+  enum pass, fail, error. PipelineExecutionResult keeps `original_exception` as an optional boxed error
+  that is skipped when serializing.
+
+  The accessors keep Python truthiness for lists: `PolicyScope::get_teams`, `get_keys`, `get_models`
+  return `["*"]` when the list is absent or empty, `get_tags` returns an empty list in both cases, and
+  `PolicyGuardrails::get_add` and `get_remove` return an empty list. `PolicyAttachment::is_global` is
+  true only when `scope == "*"`. `to_policy_scope` returns teams, keys and models all `["*"]` and no tags
+  for a global attachment, and otherwise copies teams, keys, models and tags (the `scope` string is
+  ignored then).
+
+  `condition` holds `evaluate_condition(condition: Option<&PolicyCondition>, context:
+  &PolicyMatchContext) -> bool`. No condition is true. A condition with no `model` is true. Otherwise a
+  context model of None is false, and the condition matches when any pattern (a single string counts as
+  a list of one) matches. A pattern matches when it equals the model exactly, or when it compiles as a
+  regex and matches the whole model (Python `re.fullmatch`). Use fancy-regex, the engine the other
+  guardrail tasks use, and wrap the pattern so it must cover the whole value, for example
+  `\A(?:pattern)\z`. A pattern that does not compile, or whose match fails at run time, is a plain
+  non-match. An empty list of patterns never matches. Log a debug line `Condition failed: model=%s did
+  not match %s` when the model check fails, with tracing.
+
+  `scope` holds two functions moved here from LiteLLM's PolicyMatcher because the registry task calls
+  them: `matches_pattern(value: Option<&str>, patterns: &[String]) -> bool` and `scope_matches(scope:
+  &PolicyScope, context: &PolicyMatchContext) -> bool`. A value of None matches only when a pattern is
+  exactly `*`. Otherwise a pattern matches through B882's `route_matches_wildcard_pattern` in
+  betterlite-auth (a final `*` is a raw prefix match, anything else is equality). `scope_matches`
+  requires team_alias against the teams, key_alias against the keys and model against the models, each
+  after the `["*"]` default. Tags are checked only when the scope has tags: then the context needs a
+  non-empty tag list and at least one context tag must match one scope pattern.
+
+  `inheritance` holds `resolve_inheritance_chain(policy_name, policies: &BTreeMap<String, Policy>) ->
+  Vec<String>` and `resolve_policy_guardrails(policy_name, policies, context:
+  Option<&PolicyMatchContext>) -> ResolvedPolicy`. The chain runs from the root ancestor to the policy.
+  An unknown name gives an empty chain. An empty `inherit` string means no parent. The visited set is
+  shared down the recursion and a repeat gives an empty chain for that step and a warning `Circular
+  inheritance detected for policy '%s'`, so a cycle a to b to a gives `[b, a]` for a, and a policy that
+  inherits itself gives `[a]`. A missing parent contributes nothing. Resolution walks the chain root
+  first, skips a policy whose condition fails for the context (only when a context was passed, debug line
+  `Policy '%s' condition did not match, skipping guardrails`), adds its `add` names to a set, then
+  discards its `remove` names. The result lists the set sorted ascending, because the Python set order is
+  random per process and the callers treat it as a set.
+
+  Cargo: add betterlite-auth, fancy-regex, serde, serde_json, thiserror and tracing to
+  crates/betterlite-policy/Cargo.toml with the workspace versions. Each module with a failing step owns
+  its error enum (`PipelineError` for bad action, bad mode and empty steps).
+
+  Tests live in `values::tests`, `pipeline::tests`, `condition::tests`, `scope::tests` and
+  `inheritance::tests`. Name one test per branch listed in the DoD. Helper cases call the operation
+  `b3240` with a `function` field (`evaluate_condition`, `matches_pattern`, `scope_matches`,
+  `inheritance_chain`, `resolve_policy_guardrails`, `attachment_scope`, `validate_pipeline`), build the
+  LiteLLM pydantic objects from the case input, and print guardrails sorted.
+scope:
+  paths:
+    - crates/betterlite-policy/src/values.rs
+    - crates/betterlite-policy/src/values/**
+    - crates/betterlite-policy/src/pipeline.rs
+    - crates/betterlite-policy/src/pipeline/**
+    - crates/betterlite-policy/src/context.rs
+    - crates/betterlite-policy/src/context/**
+    - crates/betterlite-policy/src/condition.rs
+    - crates/betterlite-policy/src/condition/**
+    - crates/betterlite-policy/src/scope.rs
+    - crates/betterlite-policy/src/scope/**
+    - crates/betterlite-policy/src/inheritance.rs
+    - crates/betterlite-policy/src/inheritance/**
+    - crates/betterlite-policy/Cargo.toml
+    - tools/oracle/cases/helpers/policy-values/**
+    - "tools/oracle/fuzz/corpus/helper_case/policy-values-*"
+    - tools/oracle/helpers/b3240.py
+    - tools/oracle/helpers/b3240/**
+    - tools/oracle/src/helpers/policy/b3240.rs
+    - tools/oracle/src/helpers/policy/b3240/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/policy_types.py#L41-L130
+    why: PolicyCondition and PolicyScope with the get_* defaults; tags default differs from the other three.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/policy_types.py#L133-L244
+    why: PolicyGuardrails and Policy, including the empty-guardrails default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/policy_types.py#L247-L332
+    why: PolicyAttachment (priority range, default flag), is_global, to_policy_scope, PolicyConfig.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/pipeline_types.py#L13-L105
+    why: Action and mode sets, the two validators with their exact messages, step and result types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L14-L63
+    why: PolicyMatchContext and ResolvedPolicy. B3242 owns the rest of this file from L66.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/condition_evaluator.py#L27-L107
+    why: Condition evaluation, list handling, exact-then-fullmatch pattern rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_matcher.py#L30-L94
+    why: matches_pattern and scope_matches. B3241 owns the rest of the file from L96.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolver.py#L31-L127
+    why: resolve_inheritance_chain and resolve_policy_guardrails. B3241 owns the rest of the file from L129 except get_all_resolved_policies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L557-L584
+    why: The wildcard rule that matches_pattern calls (already built by B882).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/attachment_registry.py#L155-L200
+    why: Call sites of scope_matches and matches_pattern, to see the argument shapes B3241 will pass.
+dod:
+  - text: >-
+      Policy, PolicyScope, PolicyGuardrails, PolicyCondition and PolicyAttachment deserialize with their
+      defaults, refuse unknown fields, and reject a priority outside the i32 range.
+    proof: [behavior-tests]
+  - text: >-
+      The scope and guardrail accessors treat an empty list like an absent one: teams, keys and models give
+      ["*"], tags and add and remove give an empty list.
+    proof: [behavior-tests, oracle]
+  - text: >-
+      A global attachment (scope "*") converts to a scope with teams, keys and models ["*"] and no tags,
+      and a non-global one copies its own lists.
+    proof: [behavior-tests, oracle]
+  - text: >-
+      Pipeline validation rejects an unknown action on on_fail, on_pass or on_error, an unknown mode, and an
+      empty steps list, with LiteLLM's message text, and accepts the defaults block and allow.
+    proof: [behavior-tests, oracle]
+  - text: >-
+      evaluate_condition is true for no condition and for a condition without model, false for a missing
+      model, and matches by exact string, by whole-value regex, and by any entry of a list.
+    proof: [behavior-tests, oracle]
+  - text: >-
+      A regex that only matches part of the model does not match, an invalid regex falls back to exact
+      equality, and an empty list of patterns never matches.
+    proof: [behavior-tests, oracle]
+  - text: >-
+      matches_pattern gives true for None only when "*" is in the list, uses the trailing-star prefix rule
+      otherwise, and scope_matches checks tags only when the scope has tags (requires a non-empty context tag
+      list and one matching tag).
+    proof: [behavior-tests, oracle]
+  - text: >-
+      resolve_inheritance_chain returns root first, an empty chain for an unknown policy, and the cycle and
+      self-inheritance results described above with a warning log.
+    proof: [behavior-tests, oracle]
+  - text: >-
+      resolve_policy_guardrails applies add then remove root first, skips a chain policy whose condition
+      fails only when a context is passed, lets a child remove an inherited guardrail, and returns the
+      guardrails sorted.
+    proof: [behavior-tests, oracle]
+  - text: The b3240 helper operation matches the production functions on every case, and the seed corpus replays.
+    proof: [oracle, helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The value, condition, scope or inheritance tests are missing or a pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-policy --no-tests=fail -E 'test(/^(values|pipeline|context|condition|scope|inheritance)::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The b3240 adapter is missing or the strict Python checks fail.
+      run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No seed was added or the helper case decoder fails the replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/policy-values-*")" && grep -rlq '"b3240' tools/oracle/fuzz/corpus/helper_case/policy-values-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/policy-values/scope-empty-lists-default.yaml
+  - tools/oracle/cases/helpers/policy-values/scope-tags-empty-not-checked.yaml
+  - tools/oracle/cases/helpers/policy-values/attachment-global-scope.yaml
+  - tools/oracle/cases/helpers/policy-values/attachment-non-global-copies-lists.yaml
+  - tools/oracle/cases/helpers/policy-values/pipeline-bad-action-on-error.yaml
+  - tools/oracle/cases/helpers/policy-values/pipeline-bad-mode.yaml
+  - tools/oracle/cases/helpers/policy-values/pipeline-empty-steps.yaml
+  - tools/oracle/cases/helpers/policy-values/condition-none-matches.yaml
+  - tools/oracle/cases/helpers/policy-values/condition-model-missing.yaml
+  - tools/oracle/cases/helpers/policy-values/condition-exact-and-regex.yaml
+  - tools/oracle/cases/helpers/policy-values/condition-partial-regex-no-match.yaml
+  - tools/oracle/cases/helpers/policy-values/condition-invalid-regex-literal.yaml
+  - tools/oracle/cases/helpers/policy-values/condition-list-any.yaml
+  - tools/oracle/cases/helpers/policy-values/condition-empty-list.yaml
+  - tools/oracle/cases/helpers/policy-values/matches-pattern-none-value.yaml
+  - tools/oracle/cases/helpers/policy-values/matches-pattern-prefix-star.yaml
+  - tools/oracle/cases/helpers/policy-values/scope-matches-tags-required.yaml
+  - tools/oracle/cases/helpers/policy-values/scope-matches-all-dimensions.yaml
+  - tools/oracle/cases/helpers/policy-values/chain-root-first.yaml
+  - tools/oracle/cases/helpers/policy-values/chain-cycle.yaml
+  - tools/oracle/cases/helpers/policy-values/chain-self-inherit.yaml
+  - tools/oracle/cases/helpers/policy-values/chain-missing-parent.yaml
+  - tools/oracle/cases/helpers/policy-values/resolve-add-remove-inherited.yaml
+  - tools/oracle/cases/helpers/policy-values/resolve-child-condition-fails.yaml
+  - tools/oracle/cases/helpers/policy-values/resolve-no-context-ignores-conditions.yaml
+deviations:
+  - what: resolve_policy_guardrails returns the guardrail names sorted ascending.
+    why: LiteLLM returns list(set), whose order changes between Python processes, so no caller can depend on it. A fixed order keeps tests and responses stable. Oracle cases compare the names as a set.
+  - what: Condition regexes run on fancy-regex, not Python re. A pattern fancy-regex cannot compile, or a match that exceeds its backtrack limit, counts as no match.
+    why: Python re has no maintained Rust twin. Python would raise re.error for an invalid pattern (same non-match result here) and would run on without a limit for a catastrophic pattern.
+out_of_scope:
+  - "B3241 owns the registries, PolicyMatcher.get_matching_policies, policy_applies, get_policies_with_matching_conditions, resolve_guardrails_for_context, resolve_pipelines_for_context and get_pipeline_managed_guardrails. It calls the functions of this task."
+  - "B3242 owns resolver_types.py from PolicyScopeResponse (L66) on: response records, DB responses, request bodies."
+  - "B3250 owns PolicyResolver.get_all_resolved_policies."
+  - "B3241 parses raw config dicts and legacy guardrail lists into these types; B3247 owns running a pipeline and the on_error-falls-back-to-on_fail rule."
+  - "B079 owns the package re-exports in litellm/types/proxy/policy_engine/__init__.py."
+pitfalls:
+  - "PolicyScope get_tags returns an empty list for an absent or empty list and that means 'skip the tag check', while the other three getters turn the same input into ['*']."
+  - "A condition `model: []` is not 'no condition': the model key is present, any() over nothing is false, so the policy never applies."
+  - "The condition is checked with `is not None`, so an empty-string model pattern is still evaluated; only a missing context model fails outright."
+  - "re.fullmatch is anchored at both ends: pattern `gpt-4` as regex does not match `gpt-4-turbo`, but `gpt-4.*` does. Exact equality is tried first, so `gpt-4.*` also matches the literal string `gpt-4.*`."
+  - "A final `*` in matches_pattern is a raw prefix match with no slash boundary, so `gpt-*` matches `gpt-`; a `*` in the middle is a literal character."
+  - "matches_pattern(None, ...) checks for the exact entry `*`; a pattern like `team-*` does not match a missing value."
+  - "Pydantic only validates on_error when it is given; a missing on_error stays None and does not become 'block' in the value."
+  - "The visited set in resolve_inheritance_chain is shared across the whole recursion and never cleared, so a diamond is not possible (inherit is single) but a cycle returns the partial chain, not an empty one."
+  - "A chain policy whose condition fails is skipped entirely, including its `remove` list, so a child's remove of an inherited name does nothing when the child's condition fails."
+  - "Policy.inherit is tested by truthiness: an empty string is no parent, and a name missing from the map ends the chain silently."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -3,8 +3,8 @@ title: Manage Hashicorp Vault overrides and test the active Vault client
 description: >-
   Add vault_config_routes with POST/GET/DELETE /config_overrides/hashicorp_vault and
   POST /config_overrides/hashicorp_vault/test_connection. Mutations and connection testing
-  require proxy_admin; GET accepts B124's administrator-view predicate. CRUD requires a
-  database, but test_connection checks only the active B129 manager and returns 400 when
+  require proxy_admin; GET accepts B2314's administrator-view predicate. CRUD requires a
+  database, but test_connection checks only the active B4416 manager and returns 400 when
   it is not Vault. Use B1646 request decoding, schema/masking, runtime overlay and audit
   support; litellm-changed-by is the optional header used by the mutation audit records.
   POST merges all omitted or null fields from a non-null stored config, otherwise from
@@ -30,7 +30,7 @@ description: >-
   HTTP transcripts exercise saved configuration, masked reads and a mock Vault's received
   path/headers. Opt into B1644's eligible oracle mode because the MIT Vault client rejects
   initialization behind a premium flag; betterlite follows the README's removal of that
-  flag through B129. The 228 handler lines budget 250 code, 220 tests and 170 fixtures/seeds,
+  flag through B8500. The 228 handler lines budget 250 code, 220 tests and 170 fixtures/seeds,
   capped at 725; new resource samples extend B1646's existing decoder corpus.
 scope:
   paths:
@@ -79,7 +79,7 @@ deviations:
 out_of_scope:
   - B1646 owns config_override_endpoints.py protocols, constants and every helper at L50-L322, including runtime clearing and redacted audit submission.
   - B1648 owns the four CyberArk routes at L650-L932; their persistence rollback is intentionally different.
-  - B129 implements Vault authentication and B124 owns periodic database reload; these routes use those services and do not create another reload loop.
+  - B4416 implements Vault authentication and B8383 owns periodic database reload; these routes use those services and do not create another reload loop.
 pitfalls:
   - A non-null DB config prevents environment fallback even when its parsed mapping is empty.
   - Vault persistence failure follows successful runtime initialization and has no rollback branch in the pinned handler.

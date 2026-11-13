@@ -198,55 +198,55 @@ checks:
       why: Budget alert type classes or factory fail
       run: >-
         cargo nextest run --locked -p betterlite-logging --no-tests=fail
-        -E 'test(/^budget_alert_types::/)' -- --include-ignored
+        -E 'test(/^helpers::budget_alert_types::/)' -- --include-ignored
 
     - id: soft-budget-type-tests
       why: SoftBudgetAlert type or ID mapping fails
       run: >-
         cargo nextest run --locked -p betterlite-logging --no-tests=fail
-        -E 'test(/^budget_alert_types::soft_budget($|::)/)'
+        -E 'test(/^helpers::budget_alert_types::soft_budget($|::)/)'
 
     - id: user-budget-type-tests
       why: UserBudgetAlert type or ID mapping fails
       run: >-
         cargo nextest run --locked -p betterlite-logging --no-tests=fail
-        -E 'test(/^budget_alert_types::user_budget($|::)/)'
+        -E 'test(/^helpers::budget_alert_types::user_budget($|::)/)'
 
     - id: team-budget-type-tests
       why: TeamBudgetAlert type or ID mapping fails
       run: >-
         cargo nextest run --locked -p betterlite-logging --no-tests=fail
-        -E 'test(/^budget_alert_types::team_budget($|::)/)'
+        -E 'test(/^helpers::budget_alert_types::team_budget($|::)/)'
 
     - id: org-budget-type-tests
       why: OrganizationBudgetAlert type or ID mapping fails
       run: >-
         cargo nextest run --locked -p betterlite-logging --no-tests=fail
-        -E 'test(/^budget_alert_types::org_budget($|::)/)'
+        -E 'test(/^helpers::budget_alert_types::org_budget($|::)/)'
 
     - id: token-budget-type-tests
       why: TokenBudgetAlert type or team-member ID mapping fails
       run: >-
         cargo nextest run --locked -p betterlite-logging --no-tests=fail
-        -E 'test(/^budget_alert_types::token_budget($|::)/)'
+        -E 'test(/^helpers::budget_alert_types::token_budget($|::)/)'
 
     - id: projected-type-tests
       why: ProjectedLimitExceededAlert type or ID mapping fails
       run: >-
         cargo nextest run --locked -p betterlite-logging --no-tests=fail
-        -E 'test(/^budget_alert_types::projected($|::)/)'
+        -E 'test(/^helpers::budget_alert_types::projected($|::)/)'
 
     - id: project-budget-type-tests
       why: ProjectBudgetAlert type or ID mapping fails
       run: >-
         cargo nextest run --locked -p betterlite-logging --no-tests=fail
-        -E 'test(/^budget_alert_types::project_budget($|::)/)'
+        -E 'test(/^helpers::budget_alert_types::project_budget($|::)/)'
 
     - id: budget-factory-tests
       why: get_budget_alert_type factory fails or returns wrong types
       run: >-
         cargo nextest run --locked -p betterlite-logging --no-tests=fail
-        -E 'test(/^budget_alert_types::factory($|::)/)'
+        -E 'test(/^helpers::budget_alert_types::factory($|::)/)'
 
     - id: failed-tracking-tests
       why: failed_tracking_alert logic or caching fails

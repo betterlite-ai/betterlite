@@ -1,0 +1,11 @@
+kind: helper
+name: should-use-cache-opt-in-mode
+call:
+  b4296:
+    should_use_cache:
+      mode: default_off
+      cache_control:
+        use-cache: true
+env: {}
+compare:
+  ignore: []

@@ -1,7 +1,7 @@
 id: B1300
 milestone: M3 providers
 title: Vertex federation with rotating AWS credentials
-status: todo
+status: done
 depends_on: [B594, B595, B171]
 file: tasks/B1300-vertex-aws-federation.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/vertex_ai/vertex_ai_aws_wif.py"
 parent: B031
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1291

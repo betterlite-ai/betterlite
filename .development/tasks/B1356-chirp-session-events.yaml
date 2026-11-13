@@ -25,8 +25,6 @@ description: >-
   B1357. Budget 320 core code, 205 tests and 165 oracle lines, cap 775.
 scope:
   paths:
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/vertex_chirp_protocol.rs
     - crates/betterlite-core/src/api/vertex_chirp_protocol/**
     - tools/oracle/src/helpers/core_ops/chirp_events.rs
@@ -56,7 +54,7 @@ checks:
       run: test -f tools/oracle/helpers/chirp_events.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: A deterministic item-ID source makes the pinned event transformer directly comparable.
     - id: chirp-events-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/chirp_events*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::chirp_events::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/chirp_events*')" && cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^chirp_events::/)'
       why: New event-sequence fixtures must deserialize through call.chirp_events.
 oracle_cases:
   - tools/oracle/cases/helpers/chirp-events/punctuation-rewrite.yaml

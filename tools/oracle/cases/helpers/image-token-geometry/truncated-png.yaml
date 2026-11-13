@@ -1,0 +1,10 @@
+kind: helper
+name: image-token-geometry-truncated-png
+call:
+  image_tokens:
+    calls:
+      - function: calculate_img_tokens
+        data: "data:image/png;base64,iVBORw0KGgo="
+        mode: high
+env: {}
+compare: {ignore: []}

@@ -42,11 +42,10 @@ description: >-
   remain the byte boundary, so no new fuzz target belongs here.
 scope:
   paths:
-    - crates/betterlite-core/src/{lib,native_messages_hosts}.rs
     - crates/betterlite-core/src/native_messages_hosts.rs
     - crates/betterlite-core/src/native_messages_hosts/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,native_messages_hosts}.rs
+    - crates/betterlite-config/src/sections/native_messages_hosts_settings.rs
+    - crates/betterlite-config/src/sections/native_messages_hosts_settings/**
     - crates/betterlite-config/tests/native_messages_hosts_settings.rs
     - tools/oracle/src/helpers/core_ops/native_messages_hosts.rs
     - tools/oracle/src/helpers/core_ops/native_messages_hosts/**
@@ -82,7 +81,7 @@ checks:
       run: test -f tools/oracle/helpers/native_messages_hosts.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The oracle must call the parent authentication path for Tencent and MiniMax.
     - id: messages-host-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/native_messages_hosts*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::native_messages_hosts::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/native_messages_hosts*')" && cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^native_messages_hosts::/)'
       why: Parsed seeds assert the native_messages_hosts variant and nonzero coverage per provider.
 oracle_cases:
   - tools/oracle/cases/helpers/native-messages-hosts/deepseek-beta-and-anthropic-paths.yaml
@@ -92,7 +91,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/native-messages-hosts/deepseek-custom-and-server-tools.yaml
 deviations: []
 out_of_scope:
-  - B038 and B043 bind their respective providers into Messages selection and booted HTTP cases; this task adds no route.
+  - B8580 binds these three policies into the Messages config selection and owns their booted HTTP cases; this task adds no route.
   - B960, B961 and B962 own inherited beta, authentication and native wire algorithms.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as native_messages_hosts in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/native_messages_hosts.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/native_messages_hosts.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

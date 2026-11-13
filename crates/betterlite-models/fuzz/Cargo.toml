@@ -3,6 +3,10 @@ name = "betterlite-models-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
@@ -10,6 +14,14 @@ cargo-fuzz = true
 [dependencies]
 betterlite-models = { path = ".." }
 libfuzzer-sys = "0.4.9"
+serde_json = "1.0.154"
+
+[[bin]]
+name = "hf_model_config"
+path = "fuzz_targets/hf_model_config.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "model_fields"
@@ -40,6 +52,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "json_provider_registry"
+path = "fuzz_targets/json_provider_registry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "billed_at"
 path = "fuzz_targets/billed_at.rs"
 test = false
@@ -53,4 +72,51 @@ test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "prompt_api_response"
+path = "fuzz_targets/prompt_api_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ptu_instant"
+path = "fuzz_targets/ptu_instant.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lemonade_model_reply"
+path = "fuzz_targets/lemonade_model_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ollama_model_reply"
+path = "fuzz_targets/ollama_model_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "query_parsing"
+path = "fuzz_targets/query_parsing.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "provider_capabilities"
+path = "fuzz_targets/provider_capabilities.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "judge_verdict_parser"
+path = "fuzz_targets/judge_verdict_parser.rs"
+test = false
+doc = false
+bench = false

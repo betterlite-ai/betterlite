@@ -1,0 +1,169 @@
+id: B5137
+title: Model catalog keeps loading past a malformed generalization rule
+description: >-
+  B193 built the pinned model catalog in betterlite-models. An Opus review after merge found one
+  behavior gap and one test that can't fail. This task closes both in B193's own files: the loader in
+  crates/betterlite-models/src/catalog/loader.rs, its tests.rs, the model_catalog fuzz corpus and the
+  model-catalog helper cases. It changes no oracle adapter and no code in catalog_generalizations.
+
+
+  Gap one. LiteLLM's _finalize_model_cost_map pops fallback_generalizations, hands its rules to
+  set_fallback_generalizations and then expands aliases
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L536-L545).
+  set_rules keeps the raw list and compiles each rule
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L193-L199).
+  When a rule's model_info is not a dict, _compile_rule logs "LiteLLM: skipping malformed fallback
+  generalization rule %s (needs string 'pattern' and dict 'model_info')." and skips only that rule
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L130-L142).
+  A dict model_info is installed as it is, and nothing looks at its price blocks
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L155-L181).
+  Every model entry loads either way. In betterlite, validate_model_info in loader.rs runs parse_prices
+  on each rule's model_info. price_unknown::unknown_paths parses that value as an object, so a null, a
+  string or a list model_info returns CatalogError::Json. The nested walk returns the same error for a
+  dict model_info with a malformed block, such as "tiered_pricing": {}, "tiered_pricing": null or
+  "off_peak_pricing": {"windows": null}. validate_model_info passes the Json error up, so
+  ModelCatalog::parse rejects the whole catalog in both Warn and Reject mode. On main the model_catalog
+  helper answers such a source with an InvalidInput error, where LiteLLM returns the loaded models and
+  one warning per skipped rule. The fix tolerates CatalogError::Json from parse_prices the same way
+  validate_model_info already tolerates CatalogError::Prices, and nothing else. The rule then reaches
+  CatalogGeneralizations::install unchanged: a non-object model_info gives ModelsError::MalformedRule,
+  whose text already matches LiteLLM's line, and a dict model_info becomes a capability rule.
+
+
+  Gap two. The case provider_specific_known in crates/betterlite-models/src/catalog/tests.rs asserts
+  only Outcome::Count(1), so it can't fail on the field it names. B193 added bedrock_invocation_schema:
+  Option<String> to ProviderSpecificPricing in price_fields/nested.rs. That struct has no
+  deny_unknown_fields, and Reject mode learns the key from PROVIDER_SPECIFIC_FIELDS in price_unknown.rs,
+  so deleting the struct field drops the "titan_v2" value with no error and every test and oracle case
+  on main stays green. LiteLLM's pinned map gives amazon.titan-embed-text-v2:0 a provider_specific_entry
+  of {"bedrock_invocation_schema": "titan_v2"}
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.json#L623-L634),
+  and BedrockFilesConfig._is_titan_v2_embed_model trusts that registry value and compares it to
+  "titan_v2"
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L663-L671).
+  Rename the case to provider_specific_schema_kept and give it an outcome that reads
+  catalog.entries["model"].prices.provider_specific.bedrock_invocation_schema and expects
+  Some("titan_v2"). Add the rstest pinned_catalog_keeps_invocation_schema with one case per pinned
+  fixture, fixtures/model_prices_and_context_window.json and
+  fixtures/model_prices_and_context_window_backup.json. Each parses its file in Reject mode and expects
+  the same value for amazon.titan-embed-text-v2:0.
+
+
+  Tests for gap one. Add four cases to model_catalog_tests_behavior. Each source holds the bad rule under
+  fallback_generalizations.rules next to one entry, "model": {"litellm_provider": "openai"}. The cases
+  generalization_model_info_null_warn and generalization_model_info_null_reject use the rule {"name":
+  "bad", "pattern": "^x", "model_info": null}. The catalog loads one entry. Its warnings are exactly
+  ["LiteLLM: skipping malformed fallback generalization rule bad (needs string 'pattern' and dict
+  'model_info')."]. generalizations.rules still holds the one raw rule, and match_routing("x") and
+  match_capabilities("x") are None. The case generalization_tiered_pricing_malformed_warn uses {"name":
+  "tiers", "pattern": "^x", "model_info": {"tiered_pricing": {}}}, and
+  generalization_off_peak_windows_malformed_reject uses {"name": "windows", "pattern": "^x",
+  "model_info": {"off_peak_pricing": {"windows": null}}}. Both load one entry with no warnings, and
+  match_capabilities("x") returns a map that holds the rule's tiered_pricing or off_peak_pricing key.
+  Add the corpus seed crates/betterlite-models/fuzz/corpus/model_catalog/generalization-malformed-rules.json
+  with the null, tiered_pricing and windows rules next to one model, so the fuzz target starts inside
+  this branch. Add the helper cases generalization-model-info-null.yaml and
+  generalization-malformed-price-block.yaml to tools/oracle/cases/helpers/model-catalog/, both on the
+  existing generalizations_excluded operation with compare ignore []. The first holds the rules {name:
+  bad, pattern: '^x', model_info: null} and {name: text, pattern: '^y', model_info: openai} next to
+  gpt-test: {litellm_provider: openai}, so LiteLLM answers two warnings and count 1. The second holds
+  {name: tiers, pattern: '^x', model_info: {tiered_pricing: {}}} and {name: windows, pattern: '^y',
+  model_info: {off_peak_pricing: {windows: null}}} next to the same gpt-test entry, so LiteLLM answers no
+  warnings and count 1.
+scope:
+  paths:
+    - crates/betterlite-models/src/catalog/loader.rs
+    - crates/betterlite-models/src/catalog/tests.rs
+    - crates/betterlite-models/fuzz/corpus/model_catalog/generalization-malformed-rules.json
+    - tools/oracle/cases/helpers/model-catalog/generalization-model-info-null.yaml
+    - tools/oracle/cases/helpers/model-catalog/generalization-malformed-price-block.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L536-L545
+    why: _finalize_model_cost_map pops fallback_generalizations, installs its rules and then expands aliases, so a bad rule never stops the model entries from loading.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L130-L142
+    why: _compile_rule logs the malformed-rule warning and skips only a rule whose model_info is not a dict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L155-L181
+    why: A dict model_info becomes a capability or routing rule as it is, without any check of its price blocks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L193-L199
+    why: set_rules keeps the raw rule list next to the compiled rules, and CatalogGeneralizations.rules mirrors that list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.json#L623-L634
+    why: The pinned amazon.titan-embed-text-v2:0 entry, whose provider_specific_entry sets bedrock_invocation_schema to "titan_v2". The backup asset has the same lines.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L663-L671
+    why: _is_titan_v2_embed_model reads bedrock_invocation_schema from the registry entry and compares it to "titan_v2", so the catalog has to keep the value.
+dod:
+  - text: >-
+      A fallback_generalizations rule whose model_info is not an object no longer fails the catalog. In
+      Warn and Reject mode ModelCatalog::parse loads every model entry, skips that rule with the
+      MalformedRule warning LiteLLM logs, and keeps it in generalizations.rules.
+    proof:
+      - generalization-model-info-not-object
+      - oracle
+  - text: >-
+      A rule whose dict model_info has a malformed price block ("tiered_pricing": {} or
+      "off_peak_pricing": {"windows": null}) no longer fails the catalog. In Warn and Reject mode the rule
+      is installed unchanged as a capability rule, no warning is added, and every model entry loads.
+    proof:
+      - generalization-price-block-malformed
+      - oracle
+  - text: >-
+      provider_specific_known is replaced by provider_specific_schema_kept. It fails when
+      ProviderSpecificPricing.bedrock_invocation_schema is missing or empty, and
+      pinned_catalog_keeps_invocation_schema fails unless both pinned fixtures give
+      amazon.titan-embed-text-v2:0 the value "titan_v2".
+    proof:
+      - invocation-schema-kept
+  - text: >-
+      Every other catalog behavior stays as B193 built it: duplicate keys, unknown price fields in Reject
+      mode, the warning limits and generalization_nested_price_unknown_is_checked still pass, and the new
+      corpus seed with the three malformed rules replays.
+    proof:
+      - model-catalog-tests
+      - model-catalog-corpus
+checks:
+  optional: [mutants]
+  commands:
+    - id: generalization-model-info-not-object
+      why: a rule with a null model_info makes ModelCatalog::parse fail instead of skipping that rule with LiteLLM's warning
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::model_catalog_tests_behavior::case_[0-9]+_generalization_model_info_null_(warn|reject)$/)'
+    - id: generalization-price-block-malformed
+      why: a rule whose dict model_info has a malformed tiered_pricing or off_peak_pricing block makes ModelCatalog::parse fail instead of installing the rule unchanged
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::model_catalog_tests_behavior::case_[0-9]+_generalization_(tiered_pricing_malformed_warn|off_peak_windows_malformed_reject)$/)'
+    - id: invocation-schema-kept
+      why: no test reads bedrock_invocation_schema, so deleting the field from ProviderSpecificPricing keeps every test green
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::model_catalog_tests_behavior::case_[0-9]+_provider_specific_schema_kept$/)' && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::pinned_catalog_keeps_invocation_schema::/)' && ! grep -qF 'case::provider_specific_known(' crates/betterlite-models/src/catalog/tests.rs
+    - id: model-catalog-tests
+      why: the loader change breaks a catalog behavior that B193's tests already pin
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-models/src/catalog/loader.rs)" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^catalog::tests::/) - test(replays_the_model_catalog_corpus)'
+    - id: model-catalog-corpus
+      why: the corpus has no seed with the malformed rule shapes, or the corpus replay panics
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/model_catalog/generalization-malformed-rules.json)" && grep -q fallback_generalizations crates/betterlite-models/fuzz/corpus/model_catalog/generalization-malformed-rules.json && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_model_catalog_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/model-catalog/generalization-model-info-null.yaml
+  - tools/oracle/cases/helpers/model-catalog/generalization-malformed-price-block.yaml
+  - tools/oracle/cases/helpers/model-catalog/generalizations-excluded.yaml
+  - tools/oracle/cases/helpers/model-catalog/canonical-lookup.yaml
+  - tools/oracle/cases/helpers/model-catalog/aliases.yaml
+  - tools/oracle/cases/helpers/model-catalog/aliases-null.yaml
+  - tools/oracle/cases/helpers/model-catalog/alias-canonical-conflict.yaml
+  - tools/oracle/cases/helpers/model-catalog/alias-alias-conflict.yaml
+  - tools/oracle/cases/helpers/model-catalog/packaged-map.yaml
+  - tools/oracle/cases/helpers/model-catalog/bundled-catalog-read-failure.yaml
+deviations: []
+out_of_scope:
+  - Padded one-line functions such as ModelCatalog::lookup and ModelCatalog::metadata in catalog.rs. They belong to B5094, and B5094 clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task does not touch .ast-grep/rules/.
+  - Telling an absent guardrail_cost_per_unit from an empty one in the catalog. B5129 widens B1667's fix into these files and runs after this task.
+  - The fixed status per error class. B5102 owns it and has already merged.
+  - A normal model entry with a malformed nested price block, as tiered_pricing_malformed_warn and off_peak_windows_malformed_warn pin. B193's typed catalog fails on it by design, and neither finding covers it.
+  - catalog_generalizations.rs, its rule.rs and both model_catalog oracle adapters. MalformedRule already prints LiteLLM's text, and the adapters already pass the catalog's warnings and entry count through.
+pitfalls:
+  - Tolerate only CatalogError::Json next to CatalogError::Prices; TooManyWarnings, TooManyWarningBytes, UnknownPriceField and a Fields error with an Unknown source must still fail the parse, so generalizations_unknown_model_info_reject and generalization_nested_price_unknown_is_checked keep passing.
+  - decoder::decode checks duplicate keys in the whole document before build_catalog runs, so tolerating Json inside validate_model_info hides no duplicate key.
+  - Don't add a separate early return for a non-object model_info. The Json tolerance already covers it, and a second branch with the same result leaves a mutant no test can kill.
+  - Read the new assertions through catalog.entries, not ModelCatalog::lookup, since B5094 may inline that method while this task runs.
+  - The rule label comes from python_text, so the name "bad" prints as bad without quotes, the way Python's %s does.
+  - The Python adapter counts len(finalized) and so counts sample_spec, while betterlite leaves sample_spec out. Keep sample_spec out of both new oracle sources.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

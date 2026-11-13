@@ -1,0 +1,8 @@
+router_settings:
+  redis_url: redis://cache.internal:6379/0
+  redis_host: cache.internal
+  redis_port: 6379
+  redis_password: hunter2
+  redis_kwargs:
+    namespace: router
+    socket_timeout: 1.5

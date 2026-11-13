@@ -1,0 +1,24 @@
+kind: helper
+name: langfuse-settings-prompt-cache-ttl
+call:
+  b3900:
+    function: read
+    reading: prompt_cache_ttl
+    steps:
+      - environment: {}
+      - environment:
+          LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS: "0"
+      - environment:
+          LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS: "90"
+      - environment:
+          LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS: "-1"
+      - environment:
+          LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS: "soon"
+      - environment:
+          LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS: ""
+      - environment:
+          LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS: " 90 "
+      - environment:
+          LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS: "60.0"
+env: {}
+compare: {ignore: []}

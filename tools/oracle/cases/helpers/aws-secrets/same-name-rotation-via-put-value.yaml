@@ -1,0 +1,17 @@
+kind: helper
+name: aws-secrets-same-name-rotation-via-put-value
+env: {}
+compare: {ignore: []}
+call:
+  b4415:
+    env:
+      AWS_ACCESS_KEY_ID: AKIAORACLEEXAMPLE
+      AWS_SECRET_ACCESS_KEY: oracle-secret-key
+      AWS_REGION_NAME: us-east-1
+    manager: {replica_regions: [], kms_key_id: null}
+    routes:
+      - route: "POST https://secretsmanager.us-east-1.amazonaws.com"
+        replies:
+          - {status: 200, body: '{"ARN":"arn:put","VersionId":"v2"}'}
+    steps:
+      - {op: async_rotate_secret, current: prod/db, new: prod/db, value: rotated-value}

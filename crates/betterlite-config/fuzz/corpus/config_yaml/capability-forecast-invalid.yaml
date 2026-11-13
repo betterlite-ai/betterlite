@@ -1,0 +1,8 @@
+model_list:
+  - model_name: capability-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        capability_classifier_config:
+          base_threshold: soon
+          response_format: json

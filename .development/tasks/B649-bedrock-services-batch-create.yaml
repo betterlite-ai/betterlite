@@ -318,7 +318,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_create_cases::case_[0-9]+_metadata_sanitization$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_create.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_create.py tools/oracle/helpers/bedrock_services_batch_create)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -331,7 +331,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_create)"
       && grep -q 'decode_created_batch' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_batch_create.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_batch_create_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_batch_create_corpus(::|$)/)'
   - id: config-aws-batch-role-arn
     why: The AWS_BATCH_ROLE_ARN setting is not loaded with its required defaults and precedence.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_batch_create_config_cases::case_[0-9]+_loads_aws_batch_role_arn$/)'

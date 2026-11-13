@@ -1,0 +1,27 @@
+kind: helper
+name: langfuse-attribute-serialization
+call:
+  b3901:
+    steps:
+      - function: trace_attributes
+        fields:
+          input: 5
+          output: [alpha]
+          metadata:
+            ratio: 1.5
+            big: 9007199254740992
+            flag: true
+            nested: [x]
+      - function: observation_attributes
+        fields:
+          observation_type: generation
+          model_parameters: [temperature]
+          usage_details: [prompt_tokens]
+          cost_details: [total]
+          version: 3
+      - function: trace_attributes
+        fields:
+          tags: solo
+env: {}
+compare:
+  ignore: []

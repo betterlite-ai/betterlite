@@ -1,0 +1,14 @@
+kind: helper
+name: duration-status-override
+call:
+  management_guards:
+    calls:
+      - {function: validate_budget_duration, budget_duration: "nonsense", status_code: 422}
+      - {function: validate_budget_duration, budget_duration: "0d"}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/0/detail
+      why: betterlite writes its own message
+    - pointer: /value/1/detail
+      why: betterlite writes its own message

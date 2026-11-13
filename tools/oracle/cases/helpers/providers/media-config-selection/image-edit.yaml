@@ -1,0 +1,23 @@
+kind: helper
+name: media-config-image-edit
+call:
+  b5360:
+    requests:
+      - selector: image_edit
+        calls:
+          - {provider: openai, model: gpt-image-1}
+          - {provider: hosted_vllm, model: gpt-image-1}
+          - {provider: azure, model: gpt-image-1}
+          - {provider: recraft, model: gpt-image-1}
+          - {provider: black_forest_labs, model: gpt-image-1}
+          - {provider: fal_ai, model: gpt-image-1}
+          - {provider: azure_ai, model: gpt-image-1}
+          - {provider: gemini, model: gpt-image-1}
+          - {provider: litellm_proxy, model: gpt-image-1}
+          - {provider: vertex_ai, model: gpt-image-1}
+          - {provider: stability, model: gpt-image-1}
+          - {provider: bedrock, model: gpt-image-1}
+          - {provider: openrouter, model: gpt-image-1}
+          - {provider: groq, model: gpt-image-1}
+env: {}
+compare: {ignore: []}

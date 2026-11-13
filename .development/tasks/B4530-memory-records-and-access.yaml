@@ -3,7 +3,7 @@ title: Memory records, visibility and write authorization
 description: >-
   Build betterlite-server::memory_records with typed memory row models, request decoders, and visibility/authorization helpers
   for the memory API routes. Consume betterlite-auth principals (B732), betterlite-db repositories (B726), team repositories (B724),
-  team-access decisions (B800), and the admin-view predicate (B3079). Keep these helpers below the routes B133 builds and preserve
+  team-access decisions (B800), and the admin-view predicate (B3079). Keep these helpers below the routes B8541 builds and preserve
   the distinction between read and write authorization: visibility filters restrict reads while mutation checks enforce ownership.
 
   Row models: LiteLLM_MemoryRow carries memory_id, key, value, metadata (optional JSON), user_id/team_id (scoping), created_at,
@@ -37,7 +37,7 @@ description: >-
   Production code sizing: 134 lines of owned helper functions + 75 lines of supporting declarations (imports, TypedDict filters, models) = 209 counted lines.
   Preserve all function boundaries; no premature extraction. Native behavior tests exercise role-based access (personal vs team vs admin), visibility OR patterns,
   scope-default logic, unique-violation detection, and error wrapping. Helper cases are pure functions only (not routes); raw database and HTTP oracle coverage
-  belong to B133's route task. Both require security review.
+  belong to B8541, the route task. Both require security review.
 scope:
   paths:
     - crates/betterlite-server/src/memory_records.rs
@@ -136,7 +136,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/memory-records/unique-and-errors.yaml
 deviations: []
 out_of_scope:
-  - 'litellm/proxy/memory/memory_endpoints.py: B133 owns all five routes (create_memory, list_memory, get_memory,
+  - 'litellm/proxy/memory/memory_endpoints.py: B8541 owns all five routes (create_memory, list_memory, get_memory,
     upsert_memory, delete_memory) and the router declaration. This task owns only the helpers they call.'
   - 'litellm/proxy/memory/__init__.py: Empty package initializer; zero lines, no ownership work.'
 pitfalls:

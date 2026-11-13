@@ -1,0 +1,9 @@
+kind: helper
+name: finish-reasons-filtered
+call:
+  b5240:
+    function: "finish_reasons"
+    choices: [{"finish_reason": "stop"}, {"finish_reason": ""}, {"finish_reason": null}, {}, {"finish_reason": "length"}]
+env: {}
+compare:
+  ignore: []

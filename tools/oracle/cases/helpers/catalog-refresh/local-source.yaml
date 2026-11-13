@@ -1,0 +1,11 @@
+kind: helper
+name: catalog-refresh-local-source
+call:
+  catalog_refresh:
+    operation: reload
+    environment:
+      LITELLM_LOCAL_MODEL_COST_MAP: "true"
+    replies: []
+env: {}
+compare:
+  ignore: []

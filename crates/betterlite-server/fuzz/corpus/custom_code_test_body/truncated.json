@@ -1,0 +1,1 @@
+{"custom_code": "def apply_guardrail(inputs, request_data, input_type):\n    return allow()\n", "test_input": {"texts": [

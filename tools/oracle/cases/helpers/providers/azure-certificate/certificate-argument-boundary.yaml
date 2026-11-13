@@ -1,0 +1,431 @@
+kind: helper
+name: certificate-argument-boundary
+call:
+  azure_certificate:
+    steps:
+    - certificate: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCsb3PFs3hBbOjX
+        H7iEb8cOIgUK4QwdXFsAAJatrtqycNPlq92q8hCF30rOOhCCs4DIbn3hUvPAZrwZ
+        +q++tM4kvvUTzHymSwzAHnMlLpljJKFuWcb7Wunobww1NReO8J+Em1yp9d6VS3Hw
+        mKkxYzODTDFhzqn7r4r8TPGlZA8PffQdfvazqnxfLGMz+eED2fM6BQ0yJu1y51jh
+        VCndUZIlHQyk1/uP56svgel6W2SzpcsTedlYP6oZNY/zK+YjYbSGl2Ikl5ETjq3M
+        IwGsV8dxceNXHwm+JyrhqEQzW0MIh5Z9HAseArmFXVts/5VW1emOJyCnqgijMSb+
+        lqyJmSAXAgMBAAECggEAGW6uwp//wpaPmPsCufXKhBkcaUhcAxCWE2AC2UcK1nqx
+        phQ9M3NUYIpYfCYwPTbAbc9uHYegj+YXJDXHKfd82AqaFvt3/wbesI9NKFTBJtBG
+        RwJSyMvV6ARI5qgX+2sd++72MdMjqx1fhr7dZX1eIaVhOy3CAG8ZrrCii2RAnGYX
+        VLBA7DMGNrAwvFwyiJrwm40+W0gUvfnhtYMrgHWJPVzny4Jik5jDupqJBhLg7RQT
+        mldaTwCcqj0sTEtxg57a3UJdMaKK2mTS3ptXjX0G1L/04xQIn0uT4wBJdV9brHsg
+        0/fg1+r62M4a/xk87dVDkS+GX0w7g3Kl80PF1s3ZgQKBgQDYJjT15JPOKjkYNvpK
+        pFQ+GPeNYS9N2c5hHLkKYVlfbhVfNS7t4ADY+cWaqc7vsCBAOxAc5a7KQo7uN6nh
+        H1eyjeRH8C5vL79NILMUC60N6eVu50sTA1rh1sZzY+3F5Jt6m0HFyvtlo2gFdI1S
+        0+4ufIpLKizWPvIn0XgNKepuNwKBgQDMOgqOb77Yv6p5vtdBEk6j9D6oN8TTS2AP
+        kTPb9Vjtg28mCTaVtmGfHIPn05ILmzLkdUhLnSD1lhX1cBYt7snm9EVJB42CX/p2
+        CAWP2aV46buN1anO6iWqfY5FZ4iU0mGqcjpV2yoAkV30hz64VuH5FXNRXQDAMtJR
+        6pkBTGjtIQKBgCgfJ3OBQ2JgegqhoeIbELwaHFF0+bfktydVko93tIQ/Rd5PW++x
+        xdaAvopP/OaG9eWWUQ5cIA7RPgC/+lucWsX9CqPD1Iq0/TiO2k7dP/k2Mm1cp5XW
+        6JbFLD8dDHTQU3/1s8bIP9QE+fkRQm5egnbEjVMYeAwo0QBNJJCk+CwPAoGABdb7
+        Ckujt2rzovuUCCZP3VxUllbR6ADVxFwwkW+YlWIWwY2t4+YNMJGOLAjeujo74FCC
+        OrdJg/xAsH3+BF45o8MEYCw5HatE7C8aiZx9oNF+LXYYnvQPE6r3cICfZTIG3Orb
+        RC06LD3748wiPP8vAwJcA82XAefyH6mHqoPW1EECgYA/5ihI8tibfkWGpPDPml16
+        +nOloINqn3nh27D8S8kK7/3ajuyobPp34VyQO1wfrxaiP4fxyD0Bv58GISABGXXE
+        2zlQ7Ra4tjwZKHM0pFLJWmalD6Sr9qKE6Y/RloPZRu2k6Iqg7MebRjKNY6Eo76oj
+        wx1PMWwEB1QkX7TPdPvOLg==
+        -----END PRIVATE KEY-----
+        -----BEGIN CERTIFICATE-----
+        MIICzDCCAbSgAwIBAgIUb2Ljpg1lbRfvhDKtq7RsRlhdWU0wDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFzEVMBMGA1UEAwwMZml4dHVyZSBsZWFmMIIBIjANBgkqhkiG
+        9w0BAQEFAAOCAQ8AMIIBCgKCAQEArG9zxbN4QWzo1x+4hG/HDiIFCuEMHVxbAACW
+        ra7asnDT5avdqvIQhd9KzjoQgrOAyG594VLzwGa8GfqvvrTOJL71E8x8pksMwB5z
+        JS6ZYyShblnG+1rp6G8MNTUXjvCfhJtcqfXelUtx8JipMWMzg0wxYc6p+6+K/Ezx
+        pWQPD330HX72s6p8XyxjM/nhA9nzOgUNMibtcudY4VQp3VGSJR0MpNf7j+erL4Hp
+        eltks6XLE3nZWD+qGTWP8yvmI2G0hpdiJJeRE46tzCMBrFfHcXHjVx8Jvicq4ahE
+        M1tDCIeWfRwLHgK5hV1bbP+VVtXpjicgp6oIozEm/pasiZkgFwIDAQABoxAwDjAM
+        BgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQAzCgcl9YCHrkwcfkGvHp54
+        qCNjsFmGE1F4GlOOTO+WobRjK9p3amxy7LmljBtYWjc3xoSz50P3qvvVLHkGwZT3
+        LzQeLtUE108z0C5aLDUiCi0q0ISbpvDmC9G/UVV4RyvFPJPjqOxb115m+hmGFnW0
+        0L0sxSQLtJcpG/8vPygVjHxOOZsp7O+7WXIHlcG4020STw9CPel6IjUE8VEhM8pB
+        wed805MMHoyi1Y45CYzk27YIbRpquGMA4zOIgbcQ5q4j040n2vnTQPcC7MnrvTK6
+        pxTxDq/yj8RWpLeFyyXaW+oLA77nJbknE10SqoPPNV2ypKFHgzj1vnhNxRLB9t3o
+        -----END CERTIFICATE-----
+      tenant_id: bad tenant
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCsb3PFs3hBbOjX
+        H7iEb8cOIgUK4QwdXFsAAJatrtqycNPlq92q8hCF30rOOhCCs4DIbn3hUvPAZrwZ
+        +q++tM4kvvUTzHymSwzAHnMlLpljJKFuWcb7Wunobww1NReO8J+Em1yp9d6VS3Hw
+        mKkxYzODTDFhzqn7r4r8TPGlZA8PffQdfvazqnxfLGMz+eED2fM6BQ0yJu1y51jh
+        VCndUZIlHQyk1/uP56svgel6W2SzpcsTedlYP6oZNY/zK+YjYbSGl2Ikl5ETjq3M
+        IwGsV8dxceNXHwm+JyrhqEQzW0MIh5Z9HAseArmFXVts/5VW1emOJyCnqgijMSb+
+        lqyJmSAXAgMBAAECggEAGW6uwp//wpaPmPsCufXKhBkcaUhcAxCWE2AC2UcK1nqx
+        phQ9M3NUYIpYfCYwPTbAbc9uHYegj+YXJDXHKfd82AqaFvt3/wbesI9NKFTBJtBG
+        RwJSyMvV6ARI5qgX+2sd++72MdMjqx1fhr7dZX1eIaVhOy3CAG8ZrrCii2RAnGYX
+        VLBA7DMGNrAwvFwyiJrwm40+W0gUvfnhtYMrgHWJPVzny4Jik5jDupqJBhLg7RQT
+        mldaTwCcqj0sTEtxg57a3UJdMaKK2mTS3ptXjX0G1L/04xQIn0uT4wBJdV9brHsg
+        0/fg1+r62M4a/xk87dVDkS+GX0w7g3Kl80PF1s3ZgQKBgQDYJjT15JPOKjkYNvpK
+        pFQ+GPeNYS9N2c5hHLkKYVlfbhVfNS7t4ADY+cWaqc7vsCBAOxAc5a7KQo7uN6nh
+        H1eyjeRH8C5vL79NILMUC60N6eVu50sTA1rh1sZzY+3F5Jt6m0HFyvtlo2gFdI1S
+        0+4ufIpLKizWPvIn0XgNKepuNwKBgQDMOgqOb77Yv6p5vtdBEk6j9D6oN8TTS2AP
+        kTPb9Vjtg28mCTaVtmGfHIPn05ILmzLkdUhLnSD1lhX1cBYt7snm9EVJB42CX/p2
+        CAWP2aV46buN1anO6iWqfY5FZ4iU0mGqcjpV2yoAkV30hz64VuH5FXNRXQDAMtJR
+        6pkBTGjtIQKBgCgfJ3OBQ2JgegqhoeIbELwaHFF0+bfktydVko93tIQ/Rd5PW++x
+        xdaAvopP/OaG9eWWUQ5cIA7RPgC/+lucWsX9CqPD1Iq0/TiO2k7dP/k2Mm1cp5XW
+        6JbFLD8dDHTQU3/1s8bIP9QE+fkRQm5egnbEjVMYeAwo0QBNJJCk+CwPAoGABdb7
+        Ckujt2rzovuUCCZP3VxUllbR6ADVxFwwkW+YlWIWwY2t4+YNMJGOLAjeujo74FCC
+        OrdJg/xAsH3+BF45o8MEYCw5HatE7C8aiZx9oNF+LXYYnvQPE6r3cICfZTIG3Orb
+        RC06LD3748wiPP8vAwJcA82XAefyH6mHqoPW1EECgYA/5ihI8tibfkWGpPDPml16
+        +nOloINqn3nh27D8S8kK7/3ajuyobPp34VyQO1wfrxaiP4fxyD0Bv58GISABGXXE
+        2zlQ7Ra4tjwZKHM0pFLJWmalD6Sr9qKE6Y/RloPZRu2k6Iqg7MebRjKNY6Eo76oj
+        wx1PMWwEB1QkX7TPdPvOLg==
+        -----END PRIVATE KEY-----
+        -----BEGIN CERTIFICATE-----
+        MIICzDCCAbSgAwIBAgIUb2Ljpg1lbRfvhDKtq7RsRlhdWU0wDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFzEVMBMGA1UEAwwMZml4dHVyZSBsZWFmMIIBIjANBgkqhkiG
+        9w0BAQEFAAOCAQ8AMIIBCgKCAQEArG9zxbN4QWzo1x+4hG/HDiIFCuEMHVxbAACW
+        ra7asnDT5avdqvIQhd9KzjoQgrOAyG594VLzwGa8GfqvvrTOJL71E8x8pksMwB5z
+        JS6ZYyShblnG+1rp6G8MNTUXjvCfhJtcqfXelUtx8JipMWMzg0wxYc6p+6+K/Ezx
+        pWQPD330HX72s6p8XyxjM/nhA9nzOgUNMibtcudY4VQp3VGSJR0MpNf7j+erL4Hp
+        eltks6XLE3nZWD+qGTWP8yvmI2G0hpdiJJeRE46tzCMBrFfHcXHjVx8Jvicq4ahE
+        M1tDCIeWfRwLHgK5hV1bbP+VVtXpjicgp6oIozEm/pasiZkgFwIDAQABoxAwDjAM
+        BgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQAzCgcl9YCHrkwcfkGvHp54
+        qCNjsFmGE1F4GlOOTO+WobRjK9p3amxy7LmljBtYWjc3xoSz50P3qvvVLHkGwZT3
+        LzQeLtUE108z0C5aLDUiCi0q0ISbpvDmC9G/UVV4RyvFPJPjqOxb115m+hmGFnW0
+        0L0sxSQLtJcpG/8vPygVjHxOOZsp7O+7WXIHlcG4020STw9CPel6IjUE8VEhM8pB
+        wed805MMHoyi1Y45CYzk27YIbRpquGMA4zOIgbcQ5q4j040n2vnTQPcC7MnrvTK6
+        pxTxDq/yj8RWpLeFyyXaW+oLA77nJbknE10SqoPPNV2ypKFHgzj1vnhNxRLB9t3o
+        -----END CERTIFICATE-----
+      tenant_id: ''
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCsb3PFs3hBbOjX
+        H7iEb8cOIgUK4QwdXFsAAJatrtqycNPlq92q8hCF30rOOhCCs4DIbn3hUvPAZrwZ
+        +q++tM4kvvUTzHymSwzAHnMlLpljJKFuWcb7Wunobww1NReO8J+Em1yp9d6VS3Hw
+        mKkxYzODTDFhzqn7r4r8TPGlZA8PffQdfvazqnxfLGMz+eED2fM6BQ0yJu1y51jh
+        VCndUZIlHQyk1/uP56svgel6W2SzpcsTedlYP6oZNY/zK+YjYbSGl2Ikl5ETjq3M
+        IwGsV8dxceNXHwm+JyrhqEQzW0MIh5Z9HAseArmFXVts/5VW1emOJyCnqgijMSb+
+        lqyJmSAXAgMBAAECggEAGW6uwp//wpaPmPsCufXKhBkcaUhcAxCWE2AC2UcK1nqx
+        phQ9M3NUYIpYfCYwPTbAbc9uHYegj+YXJDXHKfd82AqaFvt3/wbesI9NKFTBJtBG
+        RwJSyMvV6ARI5qgX+2sd++72MdMjqx1fhr7dZX1eIaVhOy3CAG8ZrrCii2RAnGYX
+        VLBA7DMGNrAwvFwyiJrwm40+W0gUvfnhtYMrgHWJPVzny4Jik5jDupqJBhLg7RQT
+        mldaTwCcqj0sTEtxg57a3UJdMaKK2mTS3ptXjX0G1L/04xQIn0uT4wBJdV9brHsg
+        0/fg1+r62M4a/xk87dVDkS+GX0w7g3Kl80PF1s3ZgQKBgQDYJjT15JPOKjkYNvpK
+        pFQ+GPeNYS9N2c5hHLkKYVlfbhVfNS7t4ADY+cWaqc7vsCBAOxAc5a7KQo7uN6nh
+        H1eyjeRH8C5vL79NILMUC60N6eVu50sTA1rh1sZzY+3F5Jt6m0HFyvtlo2gFdI1S
+        0+4ufIpLKizWPvIn0XgNKepuNwKBgQDMOgqOb77Yv6p5vtdBEk6j9D6oN8TTS2AP
+        kTPb9Vjtg28mCTaVtmGfHIPn05ILmzLkdUhLnSD1lhX1cBYt7snm9EVJB42CX/p2
+        CAWP2aV46buN1anO6iWqfY5FZ4iU0mGqcjpV2yoAkV30hz64VuH5FXNRXQDAMtJR
+        6pkBTGjtIQKBgCgfJ3OBQ2JgegqhoeIbELwaHFF0+bfktydVko93tIQ/Rd5PW++x
+        xdaAvopP/OaG9eWWUQ5cIA7RPgC/+lucWsX9CqPD1Iq0/TiO2k7dP/k2Mm1cp5XW
+        6JbFLD8dDHTQU3/1s8bIP9QE+fkRQm5egnbEjVMYeAwo0QBNJJCk+CwPAoGABdb7
+        Ckujt2rzovuUCCZP3VxUllbR6ADVxFwwkW+YlWIWwY2t4+YNMJGOLAjeujo74FCC
+        OrdJg/xAsH3+BF45o8MEYCw5HatE7C8aiZx9oNF+LXYYnvQPE6r3cICfZTIG3Orb
+        RC06LD3748wiPP8vAwJcA82XAefyH6mHqoPW1EECgYA/5ihI8tibfkWGpPDPml16
+        +nOloINqn3nh27D8S8kK7/3ajuyobPp34VyQO1wfrxaiP4fxyD0Bv58GISABGXXE
+        2zlQ7Ra4tjwZKHM0pFLJWmalD6Sr9qKE6Y/RloPZRu2k6Iqg7MebRjKNY6Eo76oj
+        wx1PMWwEB1QkX7TPdPvOLg==
+        -----END PRIVATE KEY-----
+        -----BEGIN CERTIFICATE-----
+        MIICzDCCAbSgAwIBAgIUb2Ljpg1lbRfvhDKtq7RsRlhdWU0wDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFzEVMBMGA1UEAwwMZml4dHVyZSBsZWFmMIIBIjANBgkqhkiG
+        9w0BAQEFAAOCAQ8AMIIBCgKCAQEArG9zxbN4QWzo1x+4hG/HDiIFCuEMHVxbAACW
+        ra7asnDT5avdqvIQhd9KzjoQgrOAyG594VLzwGa8GfqvvrTOJL71E8x8pksMwB5z
+        JS6ZYyShblnG+1rp6G8MNTUXjvCfhJtcqfXelUtx8JipMWMzg0wxYc6p+6+K/Ezx
+        pWQPD330HX72s6p8XyxjM/nhA9nzOgUNMibtcudY4VQp3VGSJR0MpNf7j+erL4Hp
+        eltks6XLE3nZWD+qGTWP8yvmI2G0hpdiJJeRE46tzCMBrFfHcXHjVx8Jvicq4ahE
+        M1tDCIeWfRwLHgK5hV1bbP+VVtXpjicgp6oIozEm/pasiZkgFwIDAQABoxAwDjAM
+        BgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQAzCgcl9YCHrkwcfkGvHp54
+        qCNjsFmGE1F4GlOOTO+WobRjK9p3amxy7LmljBtYWjc3xoSz50P3qvvVLHkGwZT3
+        LzQeLtUE108z0C5aLDUiCi0q0ISbpvDmC9G/UVV4RyvFPJPjqOxb115m+hmGFnW0
+        0L0sxSQLtJcpG/8vPygVjHxOOZsp7O+7WXIHlcG4020STw9CPel6IjUE8VEhM8pB
+        wed805MMHoyi1Y45CYzk27YIbRpquGMA4zOIgbcQ5q4j040n2vnTQPcC7MnrvTK6
+        pxTxDq/yj8RWpLeFyyXaW+oLA77nJbknE10SqoPPNV2ypKFHgzj1vnhNxRLB9t3o
+        -----END CERTIFICATE-----
+      tenant_id: a/b
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCsb3PFs3hBbOjX
+        H7iEb8cOIgUK4QwdXFsAAJatrtqycNPlq92q8hCF30rOOhCCs4DIbn3hUvPAZrwZ
+        +q++tM4kvvUTzHymSwzAHnMlLpljJKFuWcb7Wunobww1NReO8J+Em1yp9d6VS3Hw
+        mKkxYzODTDFhzqn7r4r8TPGlZA8PffQdfvazqnxfLGMz+eED2fM6BQ0yJu1y51jh
+        VCndUZIlHQyk1/uP56svgel6W2SzpcsTedlYP6oZNY/zK+YjYbSGl2Ikl5ETjq3M
+        IwGsV8dxceNXHwm+JyrhqEQzW0MIh5Z9HAseArmFXVts/5VW1emOJyCnqgijMSb+
+        lqyJmSAXAgMBAAECggEAGW6uwp//wpaPmPsCufXKhBkcaUhcAxCWE2AC2UcK1nqx
+        phQ9M3NUYIpYfCYwPTbAbc9uHYegj+YXJDXHKfd82AqaFvt3/wbesI9NKFTBJtBG
+        RwJSyMvV6ARI5qgX+2sd++72MdMjqx1fhr7dZX1eIaVhOy3CAG8ZrrCii2RAnGYX
+        VLBA7DMGNrAwvFwyiJrwm40+W0gUvfnhtYMrgHWJPVzny4Jik5jDupqJBhLg7RQT
+        mldaTwCcqj0sTEtxg57a3UJdMaKK2mTS3ptXjX0G1L/04xQIn0uT4wBJdV9brHsg
+        0/fg1+r62M4a/xk87dVDkS+GX0w7g3Kl80PF1s3ZgQKBgQDYJjT15JPOKjkYNvpK
+        pFQ+GPeNYS9N2c5hHLkKYVlfbhVfNS7t4ADY+cWaqc7vsCBAOxAc5a7KQo7uN6nh
+        H1eyjeRH8C5vL79NILMUC60N6eVu50sTA1rh1sZzY+3F5Jt6m0HFyvtlo2gFdI1S
+        0+4ufIpLKizWPvIn0XgNKepuNwKBgQDMOgqOb77Yv6p5vtdBEk6j9D6oN8TTS2AP
+        kTPb9Vjtg28mCTaVtmGfHIPn05ILmzLkdUhLnSD1lhX1cBYt7snm9EVJB42CX/p2
+        CAWP2aV46buN1anO6iWqfY5FZ4iU0mGqcjpV2yoAkV30hz64VuH5FXNRXQDAMtJR
+        6pkBTGjtIQKBgCgfJ3OBQ2JgegqhoeIbELwaHFF0+bfktydVko93tIQ/Rd5PW++x
+        xdaAvopP/OaG9eWWUQ5cIA7RPgC/+lucWsX9CqPD1Iq0/TiO2k7dP/k2Mm1cp5XW
+        6JbFLD8dDHTQU3/1s8bIP9QE+fkRQm5egnbEjVMYeAwo0QBNJJCk+CwPAoGABdb7
+        Ckujt2rzovuUCCZP3VxUllbR6ADVxFwwkW+YlWIWwY2t4+YNMJGOLAjeujo74FCC
+        OrdJg/xAsH3+BF45o8MEYCw5HatE7C8aiZx9oNF+LXYYnvQPE6r3cICfZTIG3Orb
+        RC06LD3748wiPP8vAwJcA82XAefyH6mHqoPW1EECgYA/5ihI8tibfkWGpPDPml16
+        +nOloINqn3nh27D8S8kK7/3ajuyobPp34VyQO1wfrxaiP4fxyD0Bv58GISABGXXE
+        2zlQ7Ra4tjwZKHM0pFLJWmalD6Sr9qKE6Y/RloPZRu2k6Iqg7MebRjKNY6Eo76oj
+        wx1PMWwEB1QkX7TPdPvOLg==
+        -----END PRIVATE KEY-----
+        -----BEGIN CERTIFICATE-----
+        MIICzDCCAbSgAwIBAgIUb2Ljpg1lbRfvhDKtq7RsRlhdWU0wDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFzEVMBMGA1UEAwwMZml4dHVyZSBsZWFmMIIBIjANBgkqhkiG
+        9w0BAQEFAAOCAQ8AMIIBCgKCAQEArG9zxbN4QWzo1x+4hG/HDiIFCuEMHVxbAACW
+        ra7asnDT5avdqvIQhd9KzjoQgrOAyG594VLzwGa8GfqvvrTOJL71E8x8pksMwB5z
+        JS6ZYyShblnG+1rp6G8MNTUXjvCfhJtcqfXelUtx8JipMWMzg0wxYc6p+6+K/Ezx
+        pWQPD330HX72s6p8XyxjM/nhA9nzOgUNMibtcudY4VQp3VGSJR0MpNf7j+erL4Hp
+        eltks6XLE3nZWD+qGTWP8yvmI2G0hpdiJJeRE46tzCMBrFfHcXHjVx8Jvicq4ahE
+        M1tDCIeWfRwLHgK5hV1bbP+VVtXpjicgp6oIozEm/pasiZkgFwIDAQABoxAwDjAM
+        BgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQAzCgcl9YCHrkwcfkGvHp54
+        qCNjsFmGE1F4GlOOTO+WobRjK9p3amxy7LmljBtYWjc3xoSz50P3qvvVLHkGwZT3
+        LzQeLtUE108z0C5aLDUiCi0q0ISbpvDmC9G/UVV4RyvFPJPjqOxb115m+hmGFnW0
+        0L0sxSQLtJcpG/8vPygVjHxOOZsp7O+7WXIHlcG4020STw9CPel6IjUE8VEhM8pB
+        wed805MMHoyi1Y45CYzk27YIbRpquGMA4zOIgbcQ5q4j040n2vnTQPcC7MnrvTK6
+        pxTxDq/yj8RWpLeFyyXaW+oLA77nJbknE10SqoPPNV2ypKFHgzj1vnhNxRLB9t3o
+        -----END CERTIFICATE-----
+      tenant_id: Tenant-1.example
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/Tenant-1.example/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/Tenant-1.example/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCsb3PFs3hBbOjX
+        H7iEb8cOIgUK4QwdXFsAAJatrtqycNPlq92q8hCF30rOOhCCs4DIbn3hUvPAZrwZ
+        +q++tM4kvvUTzHymSwzAHnMlLpljJKFuWcb7Wunobww1NReO8J+Em1yp9d6VS3Hw
+        mKkxYzODTDFhzqn7r4r8TPGlZA8PffQdfvazqnxfLGMz+eED2fM6BQ0yJu1y51jh
+        VCndUZIlHQyk1/uP56svgel6W2SzpcsTedlYP6oZNY/zK+YjYbSGl2Ikl5ETjq3M
+        IwGsV8dxceNXHwm+JyrhqEQzW0MIh5Z9HAseArmFXVts/5VW1emOJyCnqgijMSb+
+        lqyJmSAXAgMBAAECggEAGW6uwp//wpaPmPsCufXKhBkcaUhcAxCWE2AC2UcK1nqx
+        phQ9M3NUYIpYfCYwPTbAbc9uHYegj+YXJDXHKfd82AqaFvt3/wbesI9NKFTBJtBG
+        RwJSyMvV6ARI5qgX+2sd++72MdMjqx1fhr7dZX1eIaVhOy3CAG8ZrrCii2RAnGYX
+        VLBA7DMGNrAwvFwyiJrwm40+W0gUvfnhtYMrgHWJPVzny4Jik5jDupqJBhLg7RQT
+        mldaTwCcqj0sTEtxg57a3UJdMaKK2mTS3ptXjX0G1L/04xQIn0uT4wBJdV9brHsg
+        0/fg1+r62M4a/xk87dVDkS+GX0w7g3Kl80PF1s3ZgQKBgQDYJjT15JPOKjkYNvpK
+        pFQ+GPeNYS9N2c5hHLkKYVlfbhVfNS7t4ADY+cWaqc7vsCBAOxAc5a7KQo7uN6nh
+        H1eyjeRH8C5vL79NILMUC60N6eVu50sTA1rh1sZzY+3F5Jt6m0HFyvtlo2gFdI1S
+        0+4ufIpLKizWPvIn0XgNKepuNwKBgQDMOgqOb77Yv6p5vtdBEk6j9D6oN8TTS2AP
+        kTPb9Vjtg28mCTaVtmGfHIPn05ILmzLkdUhLnSD1lhX1cBYt7snm9EVJB42CX/p2
+        CAWP2aV46buN1anO6iWqfY5FZ4iU0mGqcjpV2yoAkV30hz64VuH5FXNRXQDAMtJR
+        6pkBTGjtIQKBgCgfJ3OBQ2JgegqhoeIbELwaHFF0+bfktydVko93tIQ/Rd5PW++x
+        xdaAvopP/OaG9eWWUQ5cIA7RPgC/+lucWsX9CqPD1Iq0/TiO2k7dP/k2Mm1cp5XW
+        6JbFLD8dDHTQU3/1s8bIP9QE+fkRQm5egnbEjVMYeAwo0QBNJJCk+CwPAoGABdb7
+        Ckujt2rzovuUCCZP3VxUllbR6ADVxFwwkW+YlWIWwY2t4+YNMJGOLAjeujo74FCC
+        OrdJg/xAsH3+BF45o8MEYCw5HatE7C8aiZx9oNF+LXYYnvQPE6r3cICfZTIG3Orb
+        RC06LD3748wiPP8vAwJcA82XAefyH6mHqoPW1EECgYA/5ihI8tibfkWGpPDPml16
+        +nOloINqn3nh27D8S8kK7/3ajuyobPp34VyQO1wfrxaiP4fxyD0Bv58GISABGXXE
+        2zlQ7Ra4tjwZKHM0pFLJWmalD6Sr9qKE6Y/RloPZRu2k6Iqg7MebRjKNY6Eo76oj
+        wx1PMWwEB1QkX7TPdPvOLg==
+        -----END PRIVATE KEY-----
+        -----BEGIN CERTIFICATE-----
+        MIICzDCCAbSgAwIBAgIUb2Ljpg1lbRfvhDKtq7RsRlhdWU0wDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFzEVMBMGA1UEAwwMZml4dHVyZSBsZWFmMIIBIjANBgkqhkiG
+        9w0BAQEFAAOCAQ8AMIIBCgKCAQEArG9zxbN4QWzo1x+4hG/HDiIFCuEMHVxbAACW
+        ra7asnDT5avdqvIQhd9KzjoQgrOAyG594VLzwGa8GfqvvrTOJL71E8x8pksMwB5z
+        JS6ZYyShblnG+1rp6G8MNTUXjvCfhJtcqfXelUtx8JipMWMzg0wxYc6p+6+K/Ezx
+        pWQPD330HX72s6p8XyxjM/nhA9nzOgUNMibtcudY4VQp3VGSJR0MpNf7j+erL4Hp
+        eltks6XLE3nZWD+qGTWP8yvmI2G0hpdiJJeRE46tzCMBrFfHcXHjVx8Jvicq4ahE
+        M1tDCIeWfRwLHgK5hV1bbP+VVtXpjicgp6oIozEm/pasiZkgFwIDAQABoxAwDjAM
+        BgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQAzCgcl9YCHrkwcfkGvHp54
+        qCNjsFmGE1F4GlOOTO+WobRjK9p3amxy7LmljBtYWjc3xoSz50P3qvvVLHkGwZT3
+        LzQeLtUE108z0C5aLDUiCi0q0ISbpvDmC9G/UVV4RyvFPJPjqOxb115m+hmGFnW0
+        0L0sxSQLtJcpG/8vPygVjHxOOZsp7O+7WXIHlcG4020STw9CPel6IjUE8VEhM8pB
+        wed805MMHoyi1Y45CYzk27YIbRpquGMA4zOIgbcQ5q4j040n2vnTQPcC7MnrvTK6
+        pxTxDq/yj8RWpLeFyyXaW+oLA77nJbknE10SqoPPNV2ypKFHgzj1vnhNxRLB9t3o
+        -----END CERTIFICATE-----
+      password: ''
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCsb3PFs3hBbOjX
+        H7iEb8cOIgUK4QwdXFsAAJatrtqycNPlq92q8hCF30rOOhCCs4DIbn3hUvPAZrwZ
+        +q++tM4kvvUTzHymSwzAHnMlLpljJKFuWcb7Wunobww1NReO8J+Em1yp9d6VS3Hw
+        mKkxYzODTDFhzqn7r4r8TPGlZA8PffQdfvazqnxfLGMz+eED2fM6BQ0yJu1y51jh
+        VCndUZIlHQyk1/uP56svgel6W2SzpcsTedlYP6oZNY/zK+YjYbSGl2Ikl5ETjq3M
+        IwGsV8dxceNXHwm+JyrhqEQzW0MIh5Z9HAseArmFXVts/5VW1emOJyCnqgijMSb+
+        lqyJmSAXAgMBAAECggEAGW6uwp//wpaPmPsCufXKhBkcaUhcAxCWE2AC2UcK1nqx
+        phQ9M3NUYIpYfCYwPTbAbc9uHYegj+YXJDXHKfd82AqaFvt3/wbesI9NKFTBJtBG
+        RwJSyMvV6ARI5qgX+2sd++72MdMjqx1fhr7dZX1eIaVhOy3CAG8ZrrCii2RAnGYX
+        VLBA7DMGNrAwvFwyiJrwm40+W0gUvfnhtYMrgHWJPVzny4Jik5jDupqJBhLg7RQT
+        mldaTwCcqj0sTEtxg57a3UJdMaKK2mTS3ptXjX0G1L/04xQIn0uT4wBJdV9brHsg
+        0/fg1+r62M4a/xk87dVDkS+GX0w7g3Kl80PF1s3ZgQKBgQDYJjT15JPOKjkYNvpK
+        pFQ+GPeNYS9N2c5hHLkKYVlfbhVfNS7t4ADY+cWaqc7vsCBAOxAc5a7KQo7uN6nh
+        H1eyjeRH8C5vL79NILMUC60N6eVu50sTA1rh1sZzY+3F5Jt6m0HFyvtlo2gFdI1S
+        0+4ufIpLKizWPvIn0XgNKepuNwKBgQDMOgqOb77Yv6p5vtdBEk6j9D6oN8TTS2AP
+        kTPb9Vjtg28mCTaVtmGfHIPn05ILmzLkdUhLnSD1lhX1cBYt7snm9EVJB42CX/p2
+        CAWP2aV46buN1anO6iWqfY5FZ4iU0mGqcjpV2yoAkV30hz64VuH5FXNRXQDAMtJR
+        6pkBTGjtIQKBgCgfJ3OBQ2JgegqhoeIbELwaHFF0+bfktydVko93tIQ/Rd5PW++x
+        xdaAvopP/OaG9eWWUQ5cIA7RPgC/+lucWsX9CqPD1Iq0/TiO2k7dP/k2Mm1cp5XW
+        6JbFLD8dDHTQU3/1s8bIP9QE+fkRQm5egnbEjVMYeAwo0QBNJJCk+CwPAoGABdb7
+        Ckujt2rzovuUCCZP3VxUllbR6ADVxFwwkW+YlWIWwY2t4+YNMJGOLAjeujo74FCC
+        OrdJg/xAsH3+BF45o8MEYCw5HatE7C8aiZx9oNF+LXYYnvQPE6r3cICfZTIG3Orb
+        RC06LD3748wiPP8vAwJcA82XAefyH6mHqoPW1EECgYA/5ihI8tibfkWGpPDPml16
+        +nOloINqn3nh27D8S8kK7/3ajuyobPp34VyQO1wfrxaiP4fxyD0Bv58GISABGXXE
+        2zlQ7Ra4tjwZKHM0pFLJWmalD6Sr9qKE6Y/RloPZRu2k6Iqg7MebRjKNY6Eo76oj
+        wx1PMWwEB1QkX7TPdPvOLg==
+        -----END PRIVATE KEY-----
+        -----BEGIN CERTIFICATE-----
+        MIICzDCCAbSgAwIBAgIUb2Ljpg1lbRfvhDKtq7RsRlhdWU0wDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFzEVMBMGA1UEAwwMZml4dHVyZSBsZWFmMIIBIjANBgkqhkiG
+        9w0BAQEFAAOCAQ8AMIIBCgKCAQEArG9zxbN4QWzo1x+4hG/HDiIFCuEMHVxbAACW
+        ra7asnDT5avdqvIQhd9KzjoQgrOAyG594VLzwGa8GfqvvrTOJL71E8x8pksMwB5z
+        JS6ZYyShblnG+1rp6G8MNTUXjvCfhJtcqfXelUtx8JipMWMzg0wxYc6p+6+K/Ezx
+        pWQPD330HX72s6p8XyxjM/nhA9nzOgUNMibtcudY4VQp3VGSJR0MpNf7j+erL4Hp
+        eltks6XLE3nZWD+qGTWP8yvmI2G0hpdiJJeRE46tzCMBrFfHcXHjVx8Jvicq4ahE
+        M1tDCIeWfRwLHgK5hV1bbP+VVtXpjicgp6oIozEm/pasiZkgFwIDAQABoxAwDjAM
+        BgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQAzCgcl9YCHrkwcfkGvHp54
+        qCNjsFmGE1F4GlOOTO+WobRjK9p3amxy7LmljBtYWjc3xoSz50P3qvvVLHkGwZT3
+        LzQeLtUE108z0C5aLDUiCi0q0ISbpvDmC9G/UVV4RyvFPJPjqOxb115m+hmGFnW0
+        0L0sxSQLtJcpG/8vPygVjHxOOZsp7O+7WXIHlcG4020STw9CPel6IjUE8VEhM8pB
+        wed805MMHoyi1Y45CYzk27YIbRpquGMA4zOIgbcQ5q4j040n2vnTQPcC7MnrvTK6
+        pxTxDq/yj8RWpLeFyyXaW+oLA77nJbknE10SqoPPNV2ypKFHgzj1vnhNxRLB9t3o
+        -----END CERTIFICATE-----
+      password: unneeded
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate_base64: 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
+      password: ''
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCsb3PFs3hBbOjX
+        H7iEb8cOIgUK4QwdXFsAAJatrtqycNPlq92q8hCF30rOOhCCs4DIbn3hUvPAZrwZ
+        +q++tM4kvvUTzHymSwzAHnMlLpljJKFuWcb7Wunobww1NReO8J+Em1yp9d6VS3Hw
+        mKkxYzODTDFhzqn7r4r8TPGlZA8PffQdfvazqnxfLGMz+eED2fM6BQ0yJu1y51jh
+        VCndUZIlHQyk1/uP56svgel6W2SzpcsTedlYP6oZNY/zK+YjYbSGl2Ikl5ETjq3M
+        IwGsV8dxceNXHwm+JyrhqEQzW0MIh5Z9HAseArmFXVts/5VW1emOJyCnqgijMSb+
+        lqyJmSAXAgMBAAECggEAGW6uwp//wpaPmPsCufXKhBkcaUhcAxCWE2AC2UcK1nqx
+        phQ9M3NUYIpYfCYwPTbAbc9uHYegj+YXJDXHKfd82AqaFvt3/wbesI9NKFTBJtBG
+        RwJSyMvV6ARI5qgX+2sd++72MdMjqx1fhr7dZX1eIaVhOy3CAG8ZrrCii2RAnGYX
+        VLBA7DMGNrAwvFwyiJrwm40+W0gUvfnhtYMrgHWJPVzny4Jik5jDupqJBhLg7RQT
+        mldaTwCcqj0sTEtxg57a3UJdMaKK2mTS3ptXjX0G1L/04xQIn0uT4wBJdV9brHsg
+        0/fg1+r62M4a/xk87dVDkS+GX0w7g3Kl80PF1s3ZgQKBgQDYJjT15JPOKjkYNvpK
+        pFQ+GPeNYS9N2c5hHLkKYVlfbhVfNS7t4ADY+cWaqc7vsCBAOxAc5a7KQo7uN6nh
+        H1eyjeRH8C5vL79NILMUC60N6eVu50sTA1rh1sZzY+3F5Jt6m0HFyvtlo2gFdI1S
+        0+4ufIpLKizWPvIn0XgNKepuNwKBgQDMOgqOb77Yv6p5vtdBEk6j9D6oN8TTS2AP
+        kTPb9Vjtg28mCTaVtmGfHIPn05ILmzLkdUhLnSD1lhX1cBYt7snm9EVJB42CX/p2
+        CAWP2aV46buN1anO6iWqfY5FZ4iU0mGqcjpV2yoAkV30hz64VuH5FXNRXQDAMtJR
+        6pkBTGjtIQKBgCgfJ3OBQ2JgegqhoeIbELwaHFF0+bfktydVko93tIQ/Rd5PW++x
+        xdaAvopP/OaG9eWWUQ5cIA7RPgC/+lucWsX9CqPD1Iq0/TiO2k7dP/k2Mm1cp5XW
+        6JbFLD8dDHTQU3/1s8bIP9QE+fkRQm5egnbEjVMYeAwo0QBNJJCk+CwPAoGABdb7
+        Ckujt2rzovuUCCZP3VxUllbR6ADVxFwwkW+YlWIWwY2t4+YNMJGOLAjeujo74FCC
+        OrdJg/xAsH3+BF45o8MEYCw5HatE7C8aiZx9oNF+LXYYnvQPE6r3cICfZTIG3Orb
+        RC06LD3748wiPP8vAwJcA82XAefyH6mHqoPW1EECgYA/5ihI8tibfkWGpPDPml16
+        +nOloINqn3nh27D8S8kK7/3ajuyobPp34VyQO1wfrxaiP4fxyD0Bv58GISABGXXE
+        2zlQ7Ra4tjwZKHM0pFLJWmalD6Sr9qKE6Y/RloPZRu2k6Iqg7MebRjKNY6Eo76oj
+        wx1PMWwEB1QkX7TPdPvOLg==
+        -----END PRIVATE KEY-----
+        -----BEGIN CERTIFICATE-----
+        MIICzDCCAbSgAwIBAgIUb2Ljpg1lbRfvhDKtq7RsRlhdWU0wDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFzEVMBMGA1UEAwwMZml4dHVyZSBsZWFmMIIBIjANBgkqhkiG
+        9w0BAQEFAAOCAQ8AMIIBCgKCAQEArG9zxbN4QWzo1x+4hG/HDiIFCuEMHVxbAACW
+        ra7asnDT5avdqvIQhd9KzjoQgrOAyG594VLzwGa8GfqvvrTOJL71E8x8pksMwB5z
+        JS6ZYyShblnG+1rp6G8MNTUXjvCfhJtcqfXelUtx8JipMWMzg0wxYc6p+6+K/Ezx
+        pWQPD330HX72s6p8XyxjM/nhA9nzOgUNMibtcudY4VQp3VGSJR0MpNf7j+erL4Hp
+        eltks6XLE3nZWD+qGTWP8yvmI2G0hpdiJJeRE46tzCMBrFfHcXHjVx8Jvicq4ahE
+        M1tDCIeWfRwLHgK5hV1bbP+VVtXpjicgp6oIozEm/pasiZkgFwIDAQABoxAwDjAM
+        BgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQAzCgcl9YCHrkwcfkGvHp54
+        qCNjsFmGE1F4GlOOTO+WobRjK9p3amxy7LmljBtYWjc3xoSz50P3qvvVLHkGwZT3
+        LzQeLtUE108z0C5aLDUiCi0q0ISbpvDmC9G/UVV4RyvFPJPjqOxb115m+hmGFnW0
+        0L0sxSQLtJcpG/8vPygVjHxOOZsp7O+7WXIHlcG4020STw9CPel6IjUE8VEhM8pB
+        wed805MMHoyi1Y45CYzk27YIbRpquGMA4zOIgbcQ5q4j040n2vnTQPcC7MnrvTK6
+        pxTxDq/yj8RWpLeFyyXaW+oLA77nJbknE10SqoPPNV2ypKFHgzj1vnhNxRLB9t3o
+        -----END CERTIFICATE-----
+      scope: ''
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+    - certificate: |
+        -----BEGIN PRIVATE KEY-----
+        MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCsb3PFs3hBbOjX
+        H7iEb8cOIgUK4QwdXFsAAJatrtqycNPlq92q8hCF30rOOhCCs4DIbn3hUvPAZrwZ
+        +q++tM4kvvUTzHymSwzAHnMlLpljJKFuWcb7Wunobww1NReO8J+Em1yp9d6VS3Hw
+        mKkxYzODTDFhzqn7r4r8TPGlZA8PffQdfvazqnxfLGMz+eED2fM6BQ0yJu1y51jh
+        VCndUZIlHQyk1/uP56svgel6W2SzpcsTedlYP6oZNY/zK+YjYbSGl2Ikl5ETjq3M
+        IwGsV8dxceNXHwm+JyrhqEQzW0MIh5Z9HAseArmFXVts/5VW1emOJyCnqgijMSb+
+        lqyJmSAXAgMBAAECggEAGW6uwp//wpaPmPsCufXKhBkcaUhcAxCWE2AC2UcK1nqx
+        phQ9M3NUYIpYfCYwPTbAbc9uHYegj+YXJDXHKfd82AqaFvt3/wbesI9NKFTBJtBG
+        RwJSyMvV6ARI5qgX+2sd++72MdMjqx1fhr7dZX1eIaVhOy3CAG8ZrrCii2RAnGYX
+        VLBA7DMGNrAwvFwyiJrwm40+W0gUvfnhtYMrgHWJPVzny4Jik5jDupqJBhLg7RQT
+        mldaTwCcqj0sTEtxg57a3UJdMaKK2mTS3ptXjX0G1L/04xQIn0uT4wBJdV9brHsg
+        0/fg1+r62M4a/xk87dVDkS+GX0w7g3Kl80PF1s3ZgQKBgQDYJjT15JPOKjkYNvpK
+        pFQ+GPeNYS9N2c5hHLkKYVlfbhVfNS7t4ADY+cWaqc7vsCBAOxAc5a7KQo7uN6nh
+        H1eyjeRH8C5vL79NILMUC60N6eVu50sTA1rh1sZzY+3F5Jt6m0HFyvtlo2gFdI1S
+        0+4ufIpLKizWPvIn0XgNKepuNwKBgQDMOgqOb77Yv6p5vtdBEk6j9D6oN8TTS2AP
+        kTPb9Vjtg28mCTaVtmGfHIPn05ILmzLkdUhLnSD1lhX1cBYt7snm9EVJB42CX/p2
+        CAWP2aV46buN1anO6iWqfY5FZ4iU0mGqcjpV2yoAkV30hz64VuH5FXNRXQDAMtJR
+        6pkBTGjtIQKBgCgfJ3OBQ2JgegqhoeIbELwaHFF0+bfktydVko93tIQ/Rd5PW++x
+        xdaAvopP/OaG9eWWUQ5cIA7RPgC/+lucWsX9CqPD1Iq0/TiO2k7dP/k2Mm1cp5XW
+        6JbFLD8dDHTQU3/1s8bIP9QE+fkRQm5egnbEjVMYeAwo0QBNJJCk+CwPAoGABdb7
+        Ckujt2rzovuUCCZP3VxUllbR6ADVxFwwkW+YlWIWwY2t4+YNMJGOLAjeujo74FCC
+        OrdJg/xAsH3+BF45o8MEYCw5HatE7C8aiZx9oNF+LXYYnvQPE6r3cICfZTIG3Orb
+        RC06LD3748wiPP8vAwJcA82XAefyH6mHqoPW1EECgYA/5ihI8tibfkWGpPDPml16
+        +nOloINqn3nh27D8S8kK7/3ajuyobPp34VyQO1wfrxaiP4fxyD0Bv58GISABGXXE
+        2zlQ7Ra4tjwZKHM0pFLJWmalD6Sr9qKE6Y/RloPZRu2k6Iqg7MebRjKNY6Eo76oj
+        wx1PMWwEB1QkX7TPdPvOLg==
+        -----END PRIVATE KEY-----
+        -----BEGIN CERTIFICATE-----
+        MIICzDCCAbSgAwIBAgIUb2Ljpg1lbRfvhDKtq7RsRlhdWU0wDQYJKoZIhvcNAQEL
+        BQAwFTETMBEGA1UEAwwKZml4dHVyZSBjYTAgFw0yNjAxMDEwMDAwMDBaGA8yMTI1
+        MTIwODAwMDAwMFowFzEVMBMGA1UEAwwMZml4dHVyZSBsZWFmMIIBIjANBgkqhkiG
+        9w0BAQEFAAOCAQ8AMIIBCgKCAQEArG9zxbN4QWzo1x+4hG/HDiIFCuEMHVxbAACW
+        ra7asnDT5avdqvIQhd9KzjoQgrOAyG594VLzwGa8GfqvvrTOJL71E8x8pksMwB5z
+        JS6ZYyShblnG+1rp6G8MNTUXjvCfhJtcqfXelUtx8JipMWMzg0wxYc6p+6+K/Ezx
+        pWQPD330HX72s6p8XyxjM/nhA9nzOgUNMibtcudY4VQp3VGSJR0MpNf7j+erL4Hp
+        eltks6XLE3nZWD+qGTWP8yvmI2G0hpdiJJeRE46tzCMBrFfHcXHjVx8Jvicq4ahE
+        M1tDCIeWfRwLHgK5hV1bbP+VVtXpjicgp6oIozEm/pasiZkgFwIDAQABoxAwDjAM
+        BgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQAzCgcl9YCHrkwcfkGvHp54
+        qCNjsFmGE1F4GlOOTO+WobRjK9p3amxy7LmljBtYWjc3xoSz50P3qvvVLHkGwZT3
+        LzQeLtUE108z0C5aLDUiCi0q0ISbpvDmC9G/UVV4RyvFPJPjqOxb115m+hmGFnW0
+        0L0sxSQLtJcpG/8vPygVjHxOOZsp7O+7WXIHlcG4020STw9CPel6IjUE8VEhM8pB
+        wed805MMHoyi1Y45CYzk27YIbRpquGMA4zOIgbcQ5q4j040n2vnTQPcC7MnrvTK6
+        pxTxDq/yj8RWpLeFyyXaW+oLA77nJbknE10SqoPPNV2ypKFHgzj1vnhNxRLB9t3o
+        -----END CERTIFICATE-----
+      scope: https://management.azure.com/.default
+      replies:
+      - status: 200
+        body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+      - status: 200
+        body: '{"access_token":"tok-value","expires_in":3600}'
+env: {}
+compare:
+  ignore: []

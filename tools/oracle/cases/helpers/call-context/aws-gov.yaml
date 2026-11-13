@@ -1,0 +1,5 @@
+kind: helper
+name: aws-gov
+call: {aws_partition: {region: us-gov-west-1, value: 'arn:aws-us-gov:bedrock:us-gov-west-1:1:model/x'}}
+env: {}
+compare: {ignore: []}

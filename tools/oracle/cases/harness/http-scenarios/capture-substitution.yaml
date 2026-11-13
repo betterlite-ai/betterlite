@@ -1,0 +1,23 @@
+kind: http_scenario
+name: http-scenario-capture-substitution
+config: |-
+  model_list: []
+env: {}
+steps:
+  - name: capture-status
+    request:
+      method: GET
+      path: /health/liveliness
+    capture:
+      - name: status
+        pointer: /status
+    upstream: []
+    compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
+  - name: substitute-status
+    request:
+      method: GET
+      path: /health/liveliness
+      headers:
+        x-scenario-status: ${capture.status}
+    upstream: []
+    compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}

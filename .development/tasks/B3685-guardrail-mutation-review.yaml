@@ -1,0 +1,140 @@
+id: B3685
+title: Guardrail mutation and submission decisions
+description: >-
+  Build the write side of the guardrail admin API in betterlite-server: create, replace, patch and delete a guardrail row, and approve or reject a team submission. Everything goes in crates/betterlite-server/src/guardrails/admin_mutations.rs and admin_mutations/. The read routes are B3684's, register, the submission lists and the custom-code test route are B3686's, and B3687 owns the catalog and apply routes. None of them lives here.
+
+  Routes, all behind the normal key check first. `POST /guardrails`, `PUT /guardrails/{guardrail_id}`, `PATCH /guardrails/{guardrail_id}`, `DELETE /guardrails/{guardrail_id}`, `POST /guardrails/submissions/{guardrail_id}/approve` and `POST /guardrails/submissions/{guardrail_id}/reject`. Expose `pub fn routes<R, S>(state: MutationState<R, S>) -> Router` the way the sibling modules in crates/betterlite-server/src/guardrails/ do and read their pattern first. B8667 mounts it, so do not touch app.rs. Do not register `GET /guardrails/{guardrail_id}` or `/guardrails/register`: axum panics on a duplicate method and path, and those belong to B3684 and B3686.
+
+  State and types. `MutationState<R: GuardrailRows, S: ReviewRows>` holds `database: Option<MutationDatabase<R, S>>`, where `None` means the proxy runs without a database. `MutationDatabase` holds `Arc<GuardrailRuntime<R>>` (B3683, crates/betterlite-guardrails/src/guardrail_startup/runtime.rs: `handler()` is a `tokio::sync::RwLock<InMemoryGuardrailHandler>`, `registry()` is B3682's `GuardrailRegistry<R>`) and `Arc<S>`. Types from earlier tasks: `Guardrail`, `LitellmParams`, `BaseLitellmParams`, `PatchGuardrailRequest` with its `sent_fields()` and the decoders `decode_litellm_params` and `decode_patch_request` are B3662's (betterlite-config, sections::guardrail_params). `RegistryError`, `GuardrailRows`, `GuardrailRegistry` and the handler methods `initialize_guardrail`, `delete_in_memory_guardrail` and `sync_guardrail_from_db` are B3682's and B3683's. The admin test is B732's rule that only the exact role `proxy_admin` counts (a `proxy_admin_viewer` is refused). Read each file for exact names before you write code.
+
+  `review_rows.rs` holds the second persistence seam, because B3682's row type leaves out `status`, `team_id` and `reviewed_at`. `ReviewRow { guardrail_id, guardrail_name, litellm_params: Option<serde_json::Value>, guardrail_info: Option<serde_json::Value>, team_id: Option<String>, status: String }`. `ReviewRows` is a trait of async methods in the `impl Future + Send` style B3682 uses: `find_unique(&self, guardrail_id: &str) -> Result<Option<ReviewRow>, ReviewRowsError>` and `set_status(&self, guardrail_id: &str, status: &str, now: DateTime<Utc>) -> Result<(), ReviewRowsError>`, which writes `status`, `reviewed_at` and `updated_at` and nothing else. `PostgresReviewRows` implements it over B726's `litellm_guardrailstable` binding (crates/betterlite-db/src/auxiliary_repository, its `table_binding_guardrailstable` case shows the handle), using the binding's `find_unique` and `update`. Write no SQL. Use the write handle B726 gives for writes so config sync publishes after the update.
+
+  `body.rs` holds the one decoder for outside bytes, `decode_write_request(body: &[u8]) -> Result<WriteRequest, BodyError>`, used by POST and PUT. The body is `{"guardrail": {...}}`. `guardrail_name` is required text, `litellm_params` is required and goes through `decode_litellm_params`, and `guardrail_info` is an optional object or null. `guardrail_id`, `policy_template`, `created_at` and `updated_at` are accepted as `Guardrail` declares them. Unknown keys are ignored. Read it with `serde_path_to_error` over `serde_json::Deserializer::from_slice`. A failure answers 422 in FastAPI's validation shape (`detail` is a list of `{type, loc, msg, input}`); reuse the helper the sibling guardrail routes use for that body, and if none exists build `loc` as `["body", "guardrail", <path>]`. The PATCH body goes through B3662's `decode_patch_request`, with the same 422 shape and `loc` starting at `["body"]`. Add the fuzz target `guardrail_write_body` at crates/betterlite-server/fuzz/fuzz_targets/guardrail_write_body.rs feeding the same bytes to `decode_write_request` and `decode_patch_request`, with a `[[bin]]` entry in crates/betterlite-server/fuzz/Cargo.toml (`test = false`, `doc = false`, `bench = false`). Seed crates/betterlite-server/fuzz/corpus/guardrail_write_body/ with a valid create body, a valid patch body, truncated JSON, a body with a null `litellm_params` and bytes that are not UTF-8. Add `replays_the_guardrail_write_corpus` to tests.rs, shaped like `replays_the_ocr_json_body_corpus` in crates/betterlite-server/src/api/ocr_request/tests.rs. The module path to `decode_write_request` must be `pub` for the fuzz crate.
+
+  Order of every route, which the tests pin: key check (401), then body validation (422, only for POST, PUT and PATCH), then the admin test (403, detail "Admin access required to manage guardrails" for the four guardrail routes and "Admin access required" for approve and reject), then a missing database (500, detail "Prisma client not initialized"), then the work. Every unexpected error inside the work becomes 500 with the error text as `detail`; an HTTP error raised inside passes through unchanged.
+
+  `create.rs`, `POST /guardrails` (create_guardrail, L335-L441). Call `registry.add_guardrail_to_db(&guardrail, now)`. Then take the handler write lock and call `initialize_guardrail(guardrail_with_id, Db)`; never hold the lock across the database call. When initialization fails with a configuration error, delete the row (`registry.delete_guardrail_from_db`), log a warning "Rollback failed for guardrail '{id}': {error}" if that delete fails, and answer 400 with detail "Guardrail configuration error: {error}". The configuration errors are exactly the `RegistryError` variants `Unsupported`, `MissingGuardrailType`, `ScanOnlyUnsupported`, `ScanOnlyWithSkipTool`, `Base` and `InitFailed` (LiteLLM's ValueError and TypeError; the custom code compile error of B3803 joins them if the registry ever returns it, see the notes). Any other initialization error only logs a warning "Immediate sync: Failed to initialize guardrail '{name}' (ID: {id}) in memory: {error}" and the route still answers 200. A success logs at info "Immediate sync: Successfully initialized guardrail '{name}' (ID: {id})". The body of the 200 is the request guardrail plus the new `guardrail_id`: the keys the client sent (`guardrail_name`, `litellm_params`, `guardrail_info` only when sent), and nothing from the row, so no timestamps. A database error is 500 and is logged with "Error adding guardrail to db: {error}".
+
+  `replace.rs`, `PUT /guardrails/{guardrail_id}` (update_guardrail, L444-L565). Read the row with `registry.get_guardrail_by_id_from_db`; none gives 404 with detail "Guardrail with ID {guardrail_id} not found". Call `update_guardrail_in_db(id, request.guardrail, now)`. Then take the write lock and call `sync_guardrail_from_db` with the updated row as a `Guardrail`. A configuration error (the same six variants) writes the previously read guardrail back with `update_guardrail_in_db` and answers 422 with detail "Invalid guardrail configuration, update rejected: {error}". If the write-back itself fails, that error ends in the outer 500. Any other error from the sync logs a warning "Immediate sync: Failed to update '{name}' (ID: {id}) in memory: {error}" and the route answers 200. The 200 body is the updated row as the database returned it: `guardrail_id`, `guardrail_name`, `litellm_params`, `guardrail_info`, `team_id`, `created_at`, `updated_at`, `status`, `submitted_at`, `reviewed_at`. Build it with the `Guardrail` fields B3682 returns plus the extra columns from `ReviewRows::find_unique` read after the update; if that second read makes the route cost two reads, say so in the code comment and keep it.
+
+  `patch.rs`, `PATCH /guardrails/{guardrail_id}` (patch_guardrail, L1129-L1294). Read the row (404 text as above). `guardrail_name` is the request's when sent (not null), else the stored one, and `guardrail_name or ""` when both are missing. The params start as the stored `litellm_params` decoded through `decode_litellm_params`. When the request sent `litellm_params`, merge in only the keys the client sent (`sent_fields()` of B3662, which stands in for pydantic's `exclude_unset`) over the stored keys, then decode again; a decode error answers 422 with detail "Invalid guardrail configuration, update rejected: {error}". `guardrail_info` is the request's when sent (an empty object counts as sent), else the stored one, else `{}`. Write with `update_guardrail_in_db`, then sync with the merged `Guardrail` (not the row), and the rollback on a configuration error writes back the stored name, stored params and stored info and answers 422 with the same detail. The log line on a database error is "Error updating guardrail: {error}". The 200 body is the same row as PUT.
+
+  `delete.rs`, `DELETE /guardrails/{guardrail_id}` (delete_guardrail, L567-L693). Read the row (404 text as above), call `delete_guardrail_from_db`, then `delete_in_memory_guardrail` under the write lock. Rust's removal cannot fail, so the warning branch is not built. The info log is "Immediate sync: Successfully removed guardrail 'Unknown' (ID: {id}) from memory" (LiteLLM logs 'Unknown' because the delete result holds only the message). The body is `{"message": "Guardrail {id} deleted successfully"}`. The by-id read has no status filter, so a `pending_review` or `rejected` row is deleted too.
+
+  `review.rs`, approve (L1004-L1083) and reject (L1085-L1127). Both read `ReviewRows::find_unique`; none gives 404 "Guardrail submission not found", and a status other than `pending_review` gives 400 "Guardrail is not pending review (status={status})". Reject calls `set_status(id, "rejected", now)` and answers `{"guardrail_id", "status": "rejected", "message": "Guardrail rejected"}`; memory is not touched. Approve calls `set_status(id, "active", now)` first. Only then does it read the stored params: `parse_json_object(value)` returns the object for a JSON object or for text that parses to a JSON object, and `None` otherwise (this file keeps its own private copy, since LiteLLM's `_parse_json_field` belongs to B3686's file). An empty or missing params object answers 500 "Guardrail litellm_params is missing or invalid" after the row is already active, and nothing is rolled back. Otherwise build a `Guardrail` from the row (`guardrail_id`, `guardrail_name`, params decoded through `decode_litellm_params`, `guardrail_info` or `{}`, and `team_id` from the row, which B3662's `Guardrail` record carries), take the write lock and call `initialize_guardrail(guardrail, Db)`. Success answers `{"guardrail_id", "status": "active", "message": "Guardrail approved"}` and logs "Approved guardrail {name} (ID: {id}) and initialized in memory". Any initialization error, including a params decode error, logs a warning "Failed to initialize approved guardrail {id} in memory: {error}" and answers 200 with the same three keys plus `warning`: "Guardrail was marked active but failed to initialize in memory: {error}. It will be picked up on the next sync cycle." Logged errors for the outer 500 are "Error approving guardrail submission: {error}" and "Error rejecting guardrail submission: {error}". Error text never holds a parameter value, since the params carry keys: show only B3662's field path.
+
+  Oracle. The HTTP cases boot LiteLLM and betterlite without a database and compare status, headers and body. They cover the key check, body validation and the missing database (the master key counts as `proxy_admin`). Non-admin 403, every database branch, the rollbacks and the memory effects are covered by the named Rust tests with fake `GuardrailRows` and `ReviewRows` implementations and a fake auth context.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/admin_mutations.rs
+    - crates/betterlite-server/src/guardrails/admin_mutations/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/guardrail_write_body.rs
+    - crates/betterlite-server/fuzz/corpus/guardrail_write_body/**
+    - tools/oracle/helpers/b3685.py
+    - tools/oracle/helpers/b3685/**
+    - tools/oracle/src/helpers/server/b3685.rs
+    - tools/oracle/src/helpers/server/b3685/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L330-L441
+    why: CreateGuardrailRequest and POST /guardrails with the immediate init, the rollback and the 400 text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L440-L565
+    why: UpdateGuardrailRequest and PUT /guardrails/{guardrail_id}, with the sync and the 422 rollback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L567-L693
+    why: DELETE /guardrails/{guardrail_id}.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L811-L822
+    why: _parse_json_field, which approve uses on the stored params and info.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1004-L1127
+    why: Approve and reject, with the status check and the 200 warning body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1129-L1294
+    why: PATCH /guardrails/{guardrail_id}, the params merge and the rollback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L259-L415
+    why: The DB methods the routes call and the shape of what they return (create returns the request plus the id; update returns the row).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1291-L1298
+    why: The Guardrail record the create and replace bodies carry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1375-L1378
+    why: PatchGuardrailRequest.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1214-L1229
+    why: The LiteLLM_GuardrailsTable columns, the status default and the submission columns.
+
+dod:
+  - text: A key check failure answers the usual 401 body on all six routes, and a body that fails validation answers 422 in FastAPI's shape only after the key check passes.
+    proof: [write-body-tests]
+  - text: Every route refuses a caller whose role is not exactly proxy_admin with 403 and the right detail text before it looks at the database, and answers 500 "Prisma client not initialized" when there is no database.
+    proof: [write-route-tests, review-route-tests]
+  - text: Create writes the row, starts the guardrail in memory as a db guardrail, answers with the request plus the new id, deletes the row and answers 400 on a configuration error, and still answers 200 on any other start error.
+    proof: [write-route-tests]
+  - text: Replace and patch answer 404 for a missing row, write the row, sync memory, and on a configuration error write the old values back and answer 422. Patch merges only the sent params keys over the stored ones, and an empty guardrail_info object replaces the stored one.
+    proof: [write-route-tests]
+  - text: Delete answers 404 for a missing row, removes the row whatever its status, removes the guardrail from memory and answers the message body.
+    proof: [write-route-tests]
+  - text: Approve and reject answer 404 and 400 with LiteLLM's texts, reject only changes the status, and approve activates the row before reading the params, starts the guardrail in memory, and answers 200 with a warning when the start fails.
+    proof: [review-route-tests]
+  - text: The write and patch body decoders never panic on any bytes and the fuzz corpus replays.
+    proof: [decoder-corpus]
+
+  - text: The handlers are tested with tower's oneshot over the module's own Router and fake ports. B8667 mounts the routes and owns their HTTP oracle cases, so write no HTTP case here.
+    proof: [write-route-tests]
+checks:
+  optional: []
+  commands:
+    - id: write-body-tests
+      why: the body decoders, the 422 shape or the check order are missing or wrong
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^guardrails::admin_mutations::tests::(body_|auth_)/) - test(replays_the_guardrail_write_corpus)'
+    - id: write-route-tests
+      why: a create, replace, patch or delete branch is missing or wrong
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^guardrails::admin_mutations::tests::(create_|replace_|patch_|delete_)/)'
+    - id: review-route-tests
+      why: an approve or reject branch is missing or wrong
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^guardrails::admin_mutations::tests::review_/)'
+    - id: decoder-corpus
+      why: the fuzz target for the write body decoders or its fresh corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/guardrail_write_body.rs &&
+        grep -q 'name = "guardrail_write_body"' crates/betterlite-server/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/guardrail_write_body)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_guardrail_write_corpus)'
+
+oracle_cases: []
+
+deviations:
+  - what: The 200 body of create and replace carries `litellm_params` as B3662 serializes it (the keys set plus the base defaults), where LiteLLM dumps every field of every provider mixin as null.
+    why: B3662's `LitellmParams` serializer deliberately leaves out the mixin fields, and no DB-free oracle case can see the difference. The stored row is identical.
+  - what: A 422 for an invalid patched `litellm_params` carries B3662's error text (field path and reason), not pydantic's multi-line text.
+    why: Pydantic's text is a repr of a Python exception and has no Rust equivalent.
+
+out_of_scope:
+  - "GET /guardrails/list, /v2/guardrails/list, GET /guardrails/{guardrail_id} and its /info alias, the two ui routes and masking: B3684."
+  - "POST /guardrails/register, GET /guardrails/submissions, GET /guardrails/submissions/{guardrail_id}, `_row_to_submission_item`, `_parse_json_field`, `_get_user_team_ids` and the custom-code test route with its helpers (L2038-L2335): B3686."
+  - "category_yaml, major_airlines, validate_blocked_words_file (L1450-L1620) and apply_guardrail (L2337-L2457): B3687."
+  - "The `GUARDRAIL_REGISTRY` module-level object and the `_create_guardrail_row`, `_delete_guardrail_row` and `_find_team_guardrail_rows` helpers: no module state in Rust. This task creates and deletes rows through B3682's registry; `_create_guardrail_row` and `_find_team_guardrail_rows` have no caller here."
+  - "`_as_str_object_mapping` and `_guardrails_table` (L80-L95): typing helpers and the repository handle, replaced by B3682's registry and `ReviewRows`."
+  - "The form-field helpers `_get_field_type_from_annotation` and the rest of L1621-L1908: B6560 to B6562."
+  - "get_guardrail_by_name_from_db: no caller in the routes of this task."
+
+pitfalls:
+  - "PUT and PATCH write the new values to the database before they start them in memory, so a bad configuration is rejected only after the write. The write-back on a 422 is the only repair; keep that order and do not validate first."
+  - "The create rollback deletes the row only for the six configuration variants. Any other start error leaves the new row in place and still answers 200 with the guardrail id."
+  - "PUT syncs memory with the row the update returned, and PATCH syncs with the merged `Guardrail` it built. The two inputs differ in `team_id` and `status`, so do not share one code path for them."
+  - "PATCH treats `guardrail_info: {}` as sent and replaces the stored info with it, while `guardrail_info: null` counts as not sent."
+  - "PATCH merges by the keys the client sent, so `\"default_on\": false` is a sent key and overwrites a stored true, while a key left out keeps the stored value."
+  - "Approve flips the row to `active` before it checks the params, so a row with empty params ends active in the database and the call answers 500."
+  - "Approve calls `initialize_guardrail`, which builds nothing when the id is already held and only rewrites the source to `db`. An approved row whose id equals a config guardrail's id does not replace its live callbacks."
+  - "Delete does not filter on status, and neither does the read before it, so an admin can delete `pending_review` and `rejected` rows by id. Reject only changes the status and leaves the row."
+  - "FastAPI checks the key first, then the body; a missing `guardrail` key is a 422 for an admin, and a non-admin with a bad body also gets 422, not 403."
+  - "The 403 text differs between the routes: 'Admin access required to manage guardrails' for create, replace, patch and delete, and 'Admin access required' for approve and reject."
+  - "The 404 text differs too: 'Guardrail with ID {id} not found' for the guardrail routes and 'Guardrail submission not found' for approve and reject."
+  - "Hold the handler write lock only around the in-memory call. Awaiting the database with the lock held stalls every request that reads a callback."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

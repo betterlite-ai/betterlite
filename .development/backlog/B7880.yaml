@@ -1,0 +1,14 @@
+id: B7880
+milestone: M12 python
+title: Python container create, list, retrieve and delete
+status: todo
+depends_on: [B6040, B158, B167, B3369, B3370]
+file: tasks/B7880-python-container-crud.yaml
+covers:
+  - "litellm/containers/main.py"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

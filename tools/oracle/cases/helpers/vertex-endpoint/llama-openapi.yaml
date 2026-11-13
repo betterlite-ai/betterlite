@@ -1,0 +1,16 @@
+kind: helper
+name: llama-openapi
+call:
+  vertex_endpoint:
+    llama_openapi:
+      complete:
+        - {partner: llama, model: llama-3.3-70b, location: us-central1, project: proj, project_id: defproj, stream: false, api_base: null}
+        - {partner: llama, model: llama-3.3-70b, location: us-central1, project: proj, project_id: defproj, stream: true, api_base: null}
+        - {partner: llama, model: llama-3.3-70b, location: us-central1, project: proj, project_id: defproj, stream: null, api_base: null}
+        - {partner: llama, model: llama-3.3-70b, location: us-central1, project: proj, project_id: defproj, stream: false, api_base: https://proxy.example.com}
+        - {partner: llama, model: llama-3.3-70b, location: us-central1, project: proj, project_id: defproj, stream: true, api_base: https://proxy.example.com/v1}
+        - {partner: llama, model: llama-3.3-70b, location: us-central1, project: proj, project_id: defproj, stream: false, api_base: https://proxy.example.com/foo}
+        - {partner: llama, model: gemini-2.5-flash, location: null, project: null, project_id: defproj, stream: false, api_base: null}
+        - {partner: llama, model: deepseek-ai/deepseek-v3.1-maas, location: europe-west1, project: null, project_id: defproj, stream: true, api_base: null}
+env: {}
+compare: {ignore: []}

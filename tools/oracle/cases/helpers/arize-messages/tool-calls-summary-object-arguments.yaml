@@ -1,0 +1,21 @@
+kind: helper
+name: tool-calls-summary-object-arguments
+call:
+  b3860:
+    function: summarize_tool_calls
+    tool_calls:
+      - id: call_1
+        type: function
+        function:
+          name: lookup
+          arguments: {q: x, limit: 2}
+      - id: call_2
+        function:
+          name: count
+          arguments: [1, 2]
+      - id: call_3
+        function: {name: no_arguments}
+      - id: call_4
+        function: {name: null_arguments, arguments: null}
+env: {}
+compare: {ignore: []}

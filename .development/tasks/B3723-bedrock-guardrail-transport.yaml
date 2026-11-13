@@ -63,7 +63,7 @@ description: >-
   - _GROUNDING_SOURCE_TRUSTED_ROLES = frozenset({"system", "developer"})
 
   Do not build the apply_guardrail, make_bedrock_api_request or any execution hooks in this task;
-  B3724/B3725 own those. Do not implement CustomGuardrail __init__ or update methods; B104 owns
+  B3724/B3725 own those. Do not implement CustomGuardrail __init__ or update methods; B5471 owns
   the guardrail lifecycle and config contracts. BedrockGuardrailStreamingParams.from_extras is
   unresolved (U1); accept it as a call from __init__ and build the _set_streaming_params receiver.
 
@@ -205,8 +205,8 @@ deviations:
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2159-2174"
 
 out_of_scope:
-  - "CustomGuardrail.__init__, update_in_memory_litellm_params (parent contract) are in B104."
-  - "BedrockGuardrailStreamingParams.from_extras is in B104 (guardrail streaming params framework)."
+  - "CustomGuardrail.__init__, update_in_memory_litellm_params (parent contract) are in B5471."
+  - "BedrockGuardrailStreamingParams.from_extras is in B3661 (as BedrockGuardrailStreamParams)."
   - "make_bedrock_api_request and all ApplyGuardrail/InvokeGuardrailChecks execution is in B3724/B3725."
   - "Masking, message selection and response building are in B3721."
   - "Chunk management and content splitting are in B3720."

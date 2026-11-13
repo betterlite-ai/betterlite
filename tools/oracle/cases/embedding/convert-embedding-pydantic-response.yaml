@@ -1,0 +1,17 @@
+kind: helper
+name: convert-embedding-pydantic-response
+call:
+  b4298:
+    convert_to_cached_embedding:
+      shape: pydantic
+      response:
+        embedding: AAAAAA==
+        index: 1
+        object: embedding
+      model: text-embedding-3-small
+      prompt_tokens: 3
+      prompt_tokens_details:
+        cached_tokens: 1
+env: {}
+compare:
+  ignore: []

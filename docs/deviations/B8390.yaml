@@ -1,0 +1,8 @@
+task: B8390
+deviations:
+  - what: Overrides are declared by each callback through HookOverrides instead of being found by reading class dictionaries and signatures.
+    why: Rust has no class dictionary or inspect.signature. The flags carry the same meaning, so what a user sees does not change.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2802-L2860
+  - what: ProxyCallback::pre_call has no DualCache argument. A callback that needs a cache holds it from construction, and the walk that calls the hook passes none.
+    why: Rule inject-dependencies puts a dependency in the value that uses it, and B8393's pre-call walk has no cache value to hand a hook.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1837-L1843

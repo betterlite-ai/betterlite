@@ -1,0 +1,5 @@
+kind: helper
+name: gemini-tool-invokes-corpus-invalid-signature
+call: {gemini_tool_invokes: {operation: convert_to_gemini_tool_call_invoke, model: gemini-3-pro-preview, message: {role: assistant, tool_calls: [{function: {name: broken, arguments: '{"city":'}}]}}}
+env: {}
+compare: {ignore: []}

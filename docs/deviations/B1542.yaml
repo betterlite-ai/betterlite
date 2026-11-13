@@ -1,0 +1,23 @@
+task: B1542
+deviations:
+  - what: A listen base that names its scheme's default port loses the port in the built target, because the url crate drops a default port where httpx keeps it.
+    why: Both URLs address the same endpoint, so a setup that configures the default port still connects to the same host and port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/common_utils.py#L53
+  - what: A listen base that is not an absolute URL is a typed error instead of a relative target string.
+    why: A relative target cannot be dialed, so the configuration is rejected where it enters rather than failing later in the websocket call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/common_utils.py#L53
+  - what: An upstream listen URL that is not an absolute URL is a typed error, while urlparse finds a query in it anyway.
+    why: The URL comes from the passthrough's own target construction, so an invalid one is a bug betterlite reports instead of pricing a request that cannot be routed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/common_utils.py#L65
+  - what: Audio seconds add Results start and duration as decimals, so a sum binary floating point would round stays exact.
+    why: Money is a Decimal in betterlite, and a session's billable seconds are the base of its cost, so the sum is exact and the float artifact never reaches the cost calculator.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/common_utils.py#L161
+  - what: A channels query value counts only when every byte is an ASCII digit, while Python's isdigit also accepts other Unicode digits and raises on some of them.
+    why: A channel count is a small ASCII number in every working setup, and copying Python's Unicode digit handling would port the crash its superscript digits reach.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/common_utils.py#L127-L129
+  - what: A Metadata or Results seconds value that Decimal cannot hold (magnitude at or above 1e29, as a float or an integer) is no candidate, a value below 1e-28 rounds to zero, and a channel count above u64::MAX is no candidate. LiteLLM keeps every finite non-negative number, and raises OverflowError in math.isfinite on an integer duration too large for a float.
+    why: Billable seconds are Decimal and channel counts are u64 in betterlite, and no working session reaches 1e29 seconds or 1.8e19 channels, so these values are corrupt frames that fall through to the next candidate instead of billing an absurd amount or crashing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/common_utils.py#L112-L115
+  - what: The same range limit applies to a Results start or duration, so a frame whose bound is out of Decimal's range adds nothing to the longest end.
+    why: The end of a Results frame is the Decimal sum of its two bounds, so one out of range bound leaves no exact end to compare.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/common_utils.py#L152-L155

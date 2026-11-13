@@ -1,0 +1,6 @@
+kind: helper
+name: logging-pre-post-pre-call-order
+call:
+  logging_pre_post: {"action": "pre", "verbose": true, "log_raw_request_response": true, "messages": [{"role": "user", "content": "hello"}], "litellm_params": {"metadata": {"user": "u1"}}, "input": [{"role": "user", "content": "call input"}], "model": "gpt-4o-mini", "additional_args": {"api_base": "https://api.example.com/v1", "headers": {"Authorization": "Bearer sk-live-abcdef123456", "x-trace": "t1"}, "complete_input_dict": "{\"model\": \"gpt-4o\"}"}}
+env: {}
+compare: {ignore: []}

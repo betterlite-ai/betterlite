@@ -12,11 +12,20 @@ pub fn apply_redaction_mcp_input(
     if let Some(arguments) = sanitized_mcp_arguments {
         set_serializable_field(request_data, "mcp_arguments", arguments);
         set_serializable_field(request_data, "modified_arguments", arguments);
-        if let Json::Object(mut params) = Json::field(request_data, "params") {
+        if let Json::Object(mut params) =
+            Json::parse(request_data.get("params").map_or("null", |raw| raw.get()))
+        {
             set_serializable_field(&mut params, "arguments", arguments);
             set_serializable_field(request_data, "params", &params);
         }
-        if matches!(Json::field(request_data, "arguments"), Json::Object(_)) {
+        if matches!(
+            Json::parse(
+                request_data
+                    .get("arguments")
+                    .map_or("null", |raw| raw.get())
+            ),
+            Json::Object(_)
+        ) {
             set_serializable_field(request_data, "arguments", arguments);
         }
         return true;
@@ -80,7 +89,7 @@ fn rewrite_argument(request_data: &mut Fields, path: ArgumentPath<'_>, text: &st
         ArgumentPath::Field(key) => rewrite_scoped_argument(
             request_data,
             text,
-            |data| match Json::field(data, key) {
+            |data| match Json::parse(data.get(key).map_or("null", |raw| raw.get())) {
                 Json::Object(arguments) => Some(arguments),
                 Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
                     None
@@ -92,20 +101,22 @@ fn rewrite_argument(request_data: &mut Fields, path: ArgumentPath<'_>, text: &st
             request_data,
             text,
             |data| {
-                let Json::Object(params) = Json::field(data, "params") else {
+                let Json::Object(params) =
+                    Json::parse(data.get("params").map_or("null", |raw| raw.get()))
+                else {
                     return None;
                 };
-                match Json::field(&params, key) {
-                    Json::Object(arguments) => Some(arguments),
-                    Json::Null
-                    | Json::Bool(_)
-                    | Json::Number(_)
-                    | Json::Text(_)
-                    | Json::List(_) => None,
-                }
+                let Json::Object(arguments) =
+                    Json::parse(params.get(key).map_or("null", |raw| raw.get()))
+                else {
+                    return None;
+                };
+                Some(arguments)
             },
             |data, arguments| {
-                let Json::Object(mut params) = Json::field(data, "params") else {
+                let Json::Object(mut params) =
+                    Json::parse(data.get("params").map_or("null", |raw| raw.get()))
+                else {
                     return;
                 };
                 set_serializable_field(&mut params, key, arguments);

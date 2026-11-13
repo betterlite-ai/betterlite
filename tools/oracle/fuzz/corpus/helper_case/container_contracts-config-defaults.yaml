@@ -1,0 +1,11 @@
+kind: helper
+name: container-contracts-config-defaults-seed
+call:
+  b3360:
+    operation: config_defaults
+    headers: {X-Seed: one}
+    api_key: null
+    api_bases: [null, https://api.example.test/v1]
+    error: {message: seeded, status_code: 400, headers: {}}
+env: {}
+compare: {ignore: []}

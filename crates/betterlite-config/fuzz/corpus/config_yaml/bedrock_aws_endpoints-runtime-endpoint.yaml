@@ -1,0 +1,2 @@
+# AWS_BEDROCK_RUNTIME_ENDPOINT is read directly from the process environment
+model_list: []

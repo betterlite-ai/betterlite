@@ -1,0 +1,27 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-mcp-call-failure",
+  "call": {
+    "b3844": {
+      "function": "mcp_tool_call",
+      "payload": {
+        "status": "failure",
+        "error_str": "tool exploded",
+        "error_information": {
+          "error_class": "ToolError",
+          "error_code": "502"
+        },
+        "metadata": {
+          "mcp_tool_call_metadata": {
+            "name": "get_weather"
+          }
+        }
+      },
+      "capture_content": false
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -1,0 +1,45 @@
+kind: helper
+name: stream-usage-assembly-usage-detail-copying
+call:
+  stream_usage_assembly:
+    function: batch
+    cases:
+    - function: attach_cache_creation
+      prompt_tokens_details: {cached_tokens: 2}
+      cache_creation_token_details: {ephemeral_1h_input_tokens: 5}
+    - function: attach_cache_creation
+      prompt_tokens_details: {cached_tokens: 2, cache_creation_token_details: {ephemeral_5m_input_tokens: 1}}
+      cache_creation_token_details: {ephemeral_1h_input_tokens: 5}
+    - function: attach_cache_creation
+      prompt_tokens_details: {cached_tokens: 2}
+    - function: attach_cache_creation
+    - function: apply_grounding
+      prompt_tokens_details: {cached_tokens: 2}
+    - function: apply_grounding
+      prompt_tokens_details: {cached_tokens: 2}
+      web_search_requests: 0
+    - function: apply_grounding
+      web_search_requests: 1
+      google_maps_grounding_requests: 2
+    - function: apply_grounding
+    - function: capture_cache_creation
+      prompt_tokens_details: {cached_tokens: 2, cache_creation_token_details: {ephemeral_1h_input_tokens: 5}}
+      current: {ephemeral_5m_input_tokens: 1}
+    - function: capture_cache_creation
+      current: {ephemeral_5m_input_tokens: 1}
+    - function: calculate_usage
+      chunks:
+      - usage:
+          prompt_tokens: 4
+          cache_creation_input_tokens: 3
+          prompt_tokens_details:
+            cached_tokens: 1
+            cache_creation_token_details: {ephemeral_1h_input_tokens: 5}
+          server_tool_use: {web_search_requests: 2}
+          cost: 0.25
+      - usage: {prompt_tokens: 6, cache_read_input_tokens: 7}
+      model: claude-3
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

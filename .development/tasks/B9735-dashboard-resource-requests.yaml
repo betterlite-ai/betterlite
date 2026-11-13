@@ -1,0 +1,202 @@
+id: B9735
+title: Cover the shared catalogs consumed by management-page selectors
+description: >-
+  Verify the lookup requests reached by the key/team/user/organization/access-group forms
+  and permission summaries. The retained selectors come from B9090; this part owns only HTTP
+  cases and focused component contract tests, with no new API, schema registry or decoder.
+  Default authentication is Authorization: Bearer <session key>; the retained client substitutes
+  auth_header_name from discovery. GETs below have no body. Preserve the actual raw response
+  envelope before any networking.tsx adaptation, then test what the selector reads.
+
+  Models and schema. modelAvailableCall always GETs /models?include_model_access_groups=True,
+  even when its similarly named argument is false. fetch_available_models_team_key also sends
+  return_wildcard_routes=True; team-specific callers add team_id; admin expansion adds scope=expand;
+  only_model_access_groups=True is sent only when that argument is true. Read data[].id. B007
+  owns /models and its /v1/models alias, B052 authentication and B842 visibility supply access
+  policy. The existing models/list-shared-name.yaml sends bare /models, so it is not this request.
+  create_key_button mounts SchemaFormFields for GenerateKeyRequest. Its GET /openapi.json is
+  public, consumes components.schemas.GenerateKeyRequest properties,
+  required/default/enum/anyOf fields for supported form fields, and belongs to B123 assembly
+  and B8681 serving. Do not promise every upstream schema exists in its eleven-route subset;
+  missing form schemas are a named backend-owner handoff, not grounds to edit that registry here.
+  For openapi-form-schema-read, use the existing compare.expected_difference assertions with
+  equal reference/rust literals for exercised GenerateKeyRequest property/type/default/enum
+  nodes that exist in the pinned response, before masking the unrelated document under B8681's existing subset/version
+  deviation. That comparer checks contracts before ignores and fails when either pointer is
+  missing. State this limited comparison in the case; do not ignore the document without
+  asserting the form fields or claim whole-document equality. No new oracle comparison mode
+  is required. The component test consumes the actual retained SchemaFormFields implementation.
+  RouterSettingsAccordion's unscoped fallback picker uses GET /model_group/info (B060), no
+  query or body; read data[].model_group,mode,supports_reasoning,supports_fast_mode and
+  supported_reasoning_efforts through fetchAvailableModels. With a team_id it instead calls
+  /models with that team and the unconditional access-group flag. B156's extension case for
+  model-group-info is planned but absent and has a different user-agent; reuse its fixed model
+  metadata configuration if it has landed. Neither B849's search helper nor /v2/model/info
+  builds this endpoint. B060's trace reference currently omits the L16354 decorator.
+  EndUserBudgetSelect GET /budget/list (B829) reads the bare budget array's budget_id,max_budget,
+  budget_duration and limits. It never calls /management/v1/budgets or mutates budgets.
+
+  Resource permissions. GET /v1/mcp/server (B4720 handler, B8625 mount) optionally adds team_id
+  for a scoped selector; these pages do not request connected_app_view. The bare array supplies
+  server_id,server_name,alias,mcp_access_groups,allowed_tools and display/grant metadata.
+  GET /v1/mcp/access_groups (same owners) consumes access_groups[]; these MCP string groups are
+  not the unified /v1/access_group records. GET /v1/mcp/toolset (B4725, mounted by B8701) returns
+  a bare array with toolset_id,toolset_name and tools for inherited-grant display. MCPToolPermissions
+  GET /mcp-rest/tools/list?server_id=<id> (B4727, mounted by B8626) reads tools[].name,description,
+  inputSchema and error/oauth-required information. Its normal form call sends neither custom
+  provider headers nor include_disabled_tools=true. Use a local MCP fixture or the owner's
+  existing fixed tool catalog, never an actual configured remote service.
+
+  GET /v1/agents (B4784, mounted by B8647) has no health_check parameter for these forms. The
+  raw body is an array; getAgentsList wraps it locally as {agents:data}. AgentPermissions and
+  selectors read agent_id,agent_name,agent_card_params and agent_access_groups. GET
+  /vector_store/list (B1070) reads data[].vector_store_id/vector_store_name; the function has
+  page/page_size parameters but sends neither. GET /search_tools/list (B3275, mounted by B8673)
+  supplies search_tools[] with search_tool_id/search_tool_name (the selector also tolerates
+  data[]). GET /claude-code/plugins?enabled_only=false (B993) reads plugins[] names and enabled
+  state through SkillSelector; retain the false query, not an invented enabled-only default.
+
+  Policy and form metadata. getGuardrailsList first GETs /v2/guardrails/list and on failure
+  GETs /guardrails/list (B3684, both mounted by B8667). Read guardrails[].guardrail_name and
+  guardrail_info/global-application fields used to preserve inherited guardrails. GET
+  /policies/list (B3248, mounted by B8669) reads policies[].policy_name. A selected policy
+  triggers GET /policy/info/<name> (B3250 handler, B9321 mount over B9320's shared policy
+  runtime), consuming resolved_guardrails[]. GET /prompts/list with no environment (B4061,
+  mounted by B8672) supplies prompts[].prompt_id for key grants. GET /tag/list with no
+  pagination/date query (B1604) returns a bare array; TagSelector reads name and description.
+  GET /router/settings (B348) supplies fields[].field_name,ui_field_name,field_description,
+  options,link and routing_strategy_descriptions to RouterSettingsAccordion.
+  GET /config/pass_through_endpoint or the team-qualified
+  /config/pass_through_endpoint/team/<id> (B3617 reads, B8640 mount) supplies endpoints[] and
+  their path/id selectors. Both spellings are real paths, not query-based aliases.
+
+  GET /get/ui_settings (B1660) is public, and the retained getUiSettings sends no bearer;
+  key UI reads values.apply_user_budget_to_team_keys,values.enable_projects_ui and
+  values.disable_custom_api_keys. Missing values are false in these components; retain the
+  server's actual settings defaults rather than synthesizing a premium flag.
+  GET /sso/get/ui_settings (B1627 handler, B8770 mount) is authenticated and supplies
+  sso_configured,PROXY_BASE_URL,DEFAULT_TEAM_DISABLED to user/invitation controls. B144 lists
+  these startup calls but its bootstrap oracle list does not cover their management-form
+  consumption. No new runtime settings or renamed LITELLM_* variables are introduced here.
+
+  Audit evidence: none of these exact page requests exists in tools/oracle/cases; the only
+  on-disk /models case is the bare path described above. B8625/B8626/B8701/B8647/B8667/B8669/
+  B8672/B8673/B8640 have future mounting cases, B829/B993/B1070/B1604/B348/B1660/B8681 future
+  route cases, and B3250 planned empty/not-initialized cases. They are not on disk and do not
+  prove a populated set of options under the page's user/team scope. Preserve their ownership.
+  The requests here use fixed model/config resources and B860's minimal user/team/key seed;
+  Toolsets use B4725 POST /v1/mcp/toolset for setup. Populate the database-only plugin catalog
+  through B992 POST /claude-code/plugins and tags through B1603 POST /tag/new, capturing their
+  IDs; these are setup routes, not additional page calls. Other catalogs use accepted owner
+  config keys and the existing local upstream fixture. Keep their normal default settings
+  unless a case explicitly tests a supported override; do not invent extra seed fields.
+  An empty successful catalog is acceptable only alongside a populated case, never as the
+  sole proof that ID/name fields work. Configure safe local provider/MCP endpoints, no health
+  probes, and compare response/error/status/content-type including redaction and forbidden
+  scope. Exercise real v2 and v1 guardrail HTTP independently; the fallback decision is tested
+  with the retained client in the component check. Use exact process-specific captured ids
+  instead of ignoring whole catalogs. About 550 HTTP/config fixture lines and 160 component
+  checks fit one task; every production function remains with an existing owner.
+scope:
+  paths:
+    - ui/dashboard/tests/management-selectors/**
+    - tools/oracle/cases/ui/management-selectors/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L1776-L1805
+    why: Actual model query literals, including the unconditional include_model_access_groups=True.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3677-L3714
+    why: V2 guardrail read and v1 fallback, both retained functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L4758-L4871
+    why: MCP server query, access-group wrapper and bare toolset list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L5102-L5178
+    why: MCP tool request parameters, headers and error projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L6028-L6054
+    why: The agent array is wrapped by the client, not by the server.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11545-L11784
+    why: B007's existing model routes and all optional query fields; trace misses the owner because its covers omit this file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/llm_calls/fetch_models.tsx#L1-L67
+    why: The unscoped router-settings picker calls modelHubCall; this is a live call, unlike fetchAutoRouterModels here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/organisms/create_key_button.tsx#L1793-L1820
+    why: The advanced key form requires the GenerateKeyRequest component in the public document.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16354-L16581
+    why: B060 owns the authenticated model-group route, independently of B849 deployment search.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1018-L1047
+    why: MCP group names are distinct from the unified access-group database entities.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1191-L1300
+    why: Page server-list decorator, team_id filtering and redacted list projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L3326-L3343
+    why: Toolset list decorator beneath the /v1/mcp prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L935-L1157
+    why: Tool-list handler under /mcp-rest, owned by B4727/B8626.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L378-L506
+    why: Raw agent list and access/redaction before client wrapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L344-L450
+    why: Vector-store list envelope and authorization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_management.py#L135-L260
+    why: Search selector's dependency-owned list route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L391-L459
+    why: Skill selector enabled_only=false request and plugin list fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L134-L328
+    why: Both list decorators and different guardrail projections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L74-L150
+    why: Plural policy list consumed by the forms, not the separate singular /policy/list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L491-L545
+    why: Selected policy's resolved guardrails.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L219-L313
+    why: Prompt list request without environment filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tag_management_endpoints.py#L575-L683
+    why: Tag list response used by the key form.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_settings_endpoints.py#L83-L164
+    why: The router settings accordion's existing GET contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3551-L3604
+    why: Both unscoped and path-scoped endpoint catalog decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/budget_management_endpoints.py#L303-L328
+    why: Budget options use the legacy bare array, not the management-v1 page.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1745-L1820
+    why: The public settings read behind user-budget presentation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2669-L2698
+    why: Authenticated SSO settings for invitation/default-team controls.
+dod:
+  - text: Every reachable shared selector receives the expected populated IDs, labels, policy metadata and response envelope through the booted gateway.
+    proof: [selector-cases, oracle, selector-components]
+  - text: Model flags, MCP/team scope, raw agent arrays, guardrail fallback and public versus authenticated settings retain their actual client contracts.
+    proof: [oracle, selector-components]
+checks:
+  optional: []
+  commands:
+    - id: selector-cases
+      why: Page lookups have only helper or empty catalog coverage.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/management-selectors)"
+    - id: selector-components
+      why: The selector cannot consume the real wire envelope despite backend equality.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/management-selectors
+oracle_cases:
+  - tools/oracle/cases/ui/management-selectors/models-ui-flags-and-team-scope.yaml
+  - tools/oracle/cases/ui/management-selectors/model-groups-for-router-fallbacks.yaml
+  - tools/oracle/cases/ui/management-selectors/openapi-form-schema-read.yaml
+  - tools/oracle/cases/ui/management-selectors/budget-options-array.yaml
+  - tools/oracle/cases/ui/management-selectors/mcp-servers-and-group-labels.yaml
+  - tools/oracle/cases/ui/management-selectors/mcp-toolsets-and-tools.yaml
+  - tools/oracle/cases/ui/management-selectors/agents-raw-list.yaml
+  - tools/oracle/cases/ui/management-selectors/vector-store-options-no-page-query.yaml
+  - tools/oracle/cases/ui/management-selectors/search-and-skill-options.yaml
+  - tools/oracle/cases/ui/management-selectors/guardrail-v2-and-v1.yaml
+  - tools/oracle/cases/ui/management-selectors/policy-names-and-resolved-guardrails.yaml
+  - tools/oracle/cases/ui/management-selectors/prompt-and-tag-options.yaml
+  - tools/oracle/cases/ui/management-selectors/router-and-passthrough-options.yaml
+  - tools/oracle/cases/ui/management-selectors/public-ui-and-authenticated-sso-settings.yaml
+deviations: []
+out_of_scope:
+  - B9090 keeps every unchanged permissions component and helper; the named route owners and mount tasks implement all catalogs.
+  - Type-only imports from useBudgets and model/auto-router modules do not make their unused functions page calls; no budget mutation, /v2/model/info or auto-router endpoint is added here. The live /model_group/info request is covered above.
+  - key_team_helpers/filter_helpers.fetchTeamFilterOptions and fetchAllOrganizations have no production caller at the pin; fetchAllTeams is called only by the logs page, whose workflow belongs to B147.
+  - The browser session/bootstrap/static behavior is B144; B145 composes page interactions after this part's selector contracts exist.
+pitfalls:
+  - getAgentsList returns a local agents wrapper around a raw HTTP array.
+  - VectorStoreListCall's unused page parameters must not appear in a supposedly exact page request.
+  - MCP string access groups and unified access-group records have different endpoints and shapes.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

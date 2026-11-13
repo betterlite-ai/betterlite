@@ -1,0 +1,47 @@
+# promptlayer response conversion through pydantic basemodel model_dump and pl_tags metadata extraction
+kind: helper
+name: promptlayer-response-conversion
+call:
+  b3961:
+    function: log
+    scenarios:
+      - logger: promptlayer
+        environment: {PROMPTLAYER_API_KEY: pl-key}
+        kwargs:
+          model: gpt-4o
+          messages: [{role: user, content: Hello}]
+          optional_params: {temperature: 0.2, top_p: 1}
+          litellm_params:
+            metadata: {pl_tags: [prod, chat], user: u1, team: t1}
+        response:
+          id: chatcmpl-1
+          created: 1700000000
+          model: gpt-4o
+          object: chat.completion
+          system_fingerprint: null
+          choices:
+            - finish_reason: stop
+              index: 0
+              message: {content: hi, role: assistant, tool_calls: null, function_call: null}
+          usage:
+            completion_tokens: 2
+            prompt_tokens: 3
+            total_tokens: 5
+            completion_tokens_details: null
+            prompt_tokens_details: null
+        start_time: "2026-01-02T03:00:00Z"
+        end_time: "2026-01-02T03:00:01Z"
+        answers: [{status: 200, body: {success: true}}]
+      - logger: promptlayer
+        environment: {PROMPTLAYER_API_KEY: pl-key}
+        kwargs:
+          model: gpt-4o
+          messages: [{role: user, content: Hello}]
+          optional_params: {temperature: 0.2, top_p: 1}
+          litellm_params:
+            metadata: {pl_tags: [prod, chat], user: u1, team: t1}
+        start_time: "2026-01-02T03:00:00Z"
+        end_time: "2026-01-02T03:00:01Z"
+        answers: [{status: 200, body: {success: true}}]
+env: {}
+compare: {ignore: []}

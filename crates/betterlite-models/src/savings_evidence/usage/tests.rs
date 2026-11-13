@@ -98,6 +98,39 @@ fn usage_from_spend_log_applies_top_level_cache_overrides_without_nested_details
         .expect("the override creates prompt_tokens_details");
     assert_eq!(details.cached_tokens, 5);
     assert_eq!(details.cache_write_tokens, 3);
+    assert_eq!(details.cache_creation_tokens, 3);
+}
+
+#[rstest]
+#[case::write_wins_over_creation(
+    r#"{"prompt_tokens_details": {"cache_write_tokens": 4, "cache_creation_tokens": 9}}"#,
+    4
+)]
+#[case::creation_used_without_write(
+    r#"{"prompt_tokens_details": {"cache_creation_tokens": 9}}"#,
+    9
+)]
+#[case::nested_creation_input_as_last_resort(
+    r#"{"prompt_tokens_details": {"cache_creation_input_tokens": 6}}"#,
+    6
+)]
+#[case::no_source_defaults_to_zero(r#"{"prompt_tokens_details": {}}"#, 0)]
+#[case::explicit_zero_write_beats_nonzero_creation(
+    r#"{"prompt_tokens_details": {"cache_write_tokens": 0, "cache_creation_tokens": 9}}"#,
+    0
+)]
+#[case::nested_non_integer_creation_input_reads_as_zero(
+    r#"{"prompt_tokens_details": {"cache_creation_input_tokens": 6.0}}"#,
+    0
+)]
+fn usage_from_spend_log_mirrors_the_cache_write_count(#[case] text: &str, #[case] expected: i64) {
+    let usage_object = raw_usage(text);
+    let usage = usage_from_spend_log(Some(&usage_object)).expect("a details object rebuilds");
+    let details = usage
+        .prompt_tokens_details
+        .expect("the details object survives");
+    assert_eq!(details.cache_write_tokens, expected);
+    assert_eq!(details.cache_creation_tokens, expected);
 }
 
 #[test]

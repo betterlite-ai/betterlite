@@ -1,0 +1,42 @@
+kind: helper
+name: cache-accounting-carrier-detection
+call:
+  b4123:
+    operation: carrier_detection
+    blocks:
+      - {cache_control: {type: ephemeral}}
+      - {prompt_cache_breakpoint: {mode: explicit}}
+      - {cache_control: false}
+      - {cache_control: {}}
+      - {cache_control: null}
+      - {cache_control: null, prompt_cache_breakpoint: null}
+      - {type: text}
+      - {}
+      - []
+      - cache_control
+      - null
+      - {type: text, text: hi}
+      - {type: image}
+      - {type: image_url}
+      - {type: file}
+      - {type: input_audio}
+      - {type: input_text}
+      - {type: input_image}
+      - {type: input_file}
+      - {type: document}
+      - {type: thinking}
+      - {type: tool_use}
+    tools:
+      - {type: function, cache_control: {type: ephemeral}}
+      - {type: function, function: {cache_control: {}}}
+      - {type: function, function: null}
+      - {type: function, function: x}
+      - {type: function, function: {name: weather}}
+      - []
+      - {type: tool_search_tool_regex_20251119}
+      - {type: tool_search_tool_bm25_20251119}
+      - {type: function}
+      - {}
+      - null
+env: {}
+compare: {ignore: []}

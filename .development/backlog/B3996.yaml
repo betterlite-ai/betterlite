@@ -1,14 +1,14 @@
 id: B3996
 milestone: M7 observability
 title: Supply GCS mock transport and authentication behavior
-status: todo
+status: done
 depends_on: [B002, B173, B191]
 file: tasks/B3996-gcs-mock-transport.yaml
 covers:
   - "litellm/integrations/gcs_bucket/gcs_bucket_mock_client.py"
 parent: B115
 split_from: B115
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 935

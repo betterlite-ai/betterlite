@@ -59,19 +59,16 @@ fn flat_to_nested_grammar(format_obj: &Object) -> Object {
     .collect()
 }
 
-fn nested_to_flat_grammar(grammar: &Object) -> Object {
+#[must_use]
+pub fn nested_to_flat_grammar(grammar: &Object) -> Object {
     let mut shaped = Object::new();
     shaped.insert("type".to_owned(), Json::Text("grammar".to_owned()));
     copy_grammar_fields(grammar, &mut shaped);
     shaped
 }
 
-fn is_flat_custom_grammar(format_obj: &Object) -> bool {
-    let is_grammar = format_obj.get("type").and_then(Json::as_str) == Some("grammar");
-    is_grammar && !format_obj.contains_key("grammar")
-}
-
-fn nested_custom_grammar(format_obj: &Object) -> Option<&Object> {
+#[must_use]
+pub fn nested_custom_grammar(format_obj: &Object) -> Option<&Object> {
     let is_grammar = format_obj.get("type").and_then(Json::as_str) == Some("grammar");
     is_grammar
         .then(|| format_obj.get("grammar").and_then(Json::as_object))
@@ -80,17 +77,12 @@ fn nested_custom_grammar(format_obj: &Object) -> Option<&Object> {
 
 #[must_use]
 pub fn custom_tool_to_chat_shape(format_obj: &Object) -> Object {
-    if is_flat_custom_grammar(format_obj) {
+    let is_grammar = format_obj.get("type").and_then(Json::as_str) == Some("grammar");
+    if is_grammar && !format_obj.contains_key("grammar") {
         flat_to_nested_grammar(format_obj)
     } else {
         format_obj.clone()
     }
-}
-
-#[must_use]
-pub fn custom_tool_to_responses_shape(format_obj: &Object) -> Object {
-    let nested = nested_custom_grammar(format_obj);
-    nested.map_or_else(|| format_obj.clone(), nested_to_flat_grammar)
 }
 
 #[must_use]

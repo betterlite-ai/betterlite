@@ -1,0 +1,123 @@
+id: B8177
+title: GigaChat chat config and stream parser
+description: >-
+  Build gigachat_chat, gigachat_stream and gigachat_utils in crates/betterlite-openai. They cover
+  litellm/llms/gigachat/chat/transformation.py, chat/streaming.py and utils.py. The three __init__.py files (gigachat,
+  gigachat/chat) only re-export. Nothing reads an environment variable. The caller passes each value as a plain argument.
+
+  Token. The chat config gets its bearer token from the GigachatTokens trait that B7325 builds in betterlite-http
+  (gigachat_tokens: async access_token(&GigachatTokenRequest) -> Result<SecretString, GigachatAuthError>). This task does
+  not fetch, cache or refresh tokens and does not copy the OAuth flow. betterlite-openai is a leaf crate, so it must not
+  depend on betterlite-http. Define a small trait GigachatBearer in this crate with one method that returns the token for the
+  credentials. This task only defines the trait: B8312 builds GigachatTokenBearer in betterlite-provider, the adapter that
+  implements GigachatBearer over B7325's GigachatTokens. Credentials are api_key, else the GIGACHAT_CREDENTIALS
+  value, else the GIGACHAT_API_KEY value. Headers are Content-Type application/json and Authorization Bearer {token}, then
+  the caller headers on top.
+
+  Image uploads. The config gets file ids for images from an injected trait GigachatImageUploader with one method that takes
+  an image URL (http or data URL) and returns the file id or none. B8178 builds the real uploader. This task uses a fake in
+  tests.
+
+  gigachat_utils. GIGACHAT_BASE_URL is https://gigachat.devices.sberbank.ru/api/v1. get_api_base(api_base, env_base) is
+  api_base, else env_base (the GIGACHAT_API_BASE value), else the default. convert_usage(usage) gives prompt_tokens =
+  prompt_tokens + precached_prompt_tokens, completion_tokens as is, total_tokens = total_tokens + precached_prompt_tokens,
+  and prompt_tokens_details.cached_tokens = precached_prompt_tokens only when it is above 0.
+
+  gigachat_chat. The URL is {base}/chat/completions. Supported options are stream, temperature, top_p, max_tokens,
+  max_completion_tokens, stop, tools, tool_choice, functions, function_call and response_format. Mapping: temperature 0
+  becomes top_p 0 and temperature is not sent. max_tokens and max_completion_tokens both become max_tokens. stop is accepted
+  and ignored. Each tool becomes a function {name, description, parameters}. tool_choice "none" and "auto" stay. "required"
+  becomes "auto". A forced function becomes {"name": name}. A response_format of type json_schema becomes one function made
+  from the schema, a function_call naming it, and an internal flag `_structured_output` set to true. Messages: name is
+  dropped. developer becomes system. A system message that is not first becomes user. A tool message becomes role function,
+  and its content is JSON-encoded when it is not already valid JSON. Null content becomes "". List content becomes the text
+  parts joined with "\n", and each image part is uploaded through the uploader and its file id added to attachments. The first
+  tool call of an assistant message becomes function_call {name, arguments parsed from JSON}. The request is {model (with a
+  leading "gigachat/" removed), messages} plus temperature, top_p, max_tokens, stream, repetition_penalty, profanity_check,
+  functions and function_call when present. The reply: a choice with finish_reason function_call becomes tool_calls, with a
+  tool call id "call_" plus 24 hex characters, or, when the structured output flag is set, the function arguments become the
+  message content and the finish reason becomes stop. Usage goes through convert_usage. The id is the reply id, else
+  "chatcmpl-" plus 12 hex characters. GigaChatError carries status, message and headers.
+
+  gigachat_stream. chunk_parser(chunk) works on one decoded event. A leading "data: " is removed and "[DONE]" ends the
+  stream. The delta content is kept. A choice that finishes with function_call becomes a tool-use chunk with the same id rule.
+  Usage goes through convert_usage. A chunk that is not JSON gives an empty chunk, not an error. B5653 supplies the chunk
+  shape and B2214 the iterator primitives. The parser gets a fuzz target.
+
+  Size. About 420 nonblank, non-comment LiteLLM lines. Plan 380 production, 400 tests, 90 adapters, 60 fuzz and 25 wiring
+  lines. No split.
+scope:
+  paths:
+    - crates/betterlite-openai/src/gigachat_chat.rs
+    - crates/betterlite-openai/src/gigachat_chat/**
+    - crates/betterlite-openai/src/gigachat_stream.rs
+    - crates/betterlite-openai/src/gigachat_stream/**
+    - crates/betterlite-openai/src/gigachat_utils.rs
+    - crates/betterlite-openai/src/gigachat_utils/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/gigachat_stream_chunk.rs
+    - crates/betterlite-openai/fuzz/corpus/gigachat_stream_chunk/**
+    - tools/oracle/cases/helpers/gigachat-chat/**
+    - tools/oracle/helpers/b8177.py
+    - tools/oracle/helpers/b8177/**
+    - tools/oracle/src/helpers/openai/b8177.rs
+    - tools/oracle/src/helpers/openai/b8177/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/chat/transformation.py
+    why: Options, message rewrite, request and reply conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/chat/streaming.py
+    why: The stream chunk parser.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/utils.py
+    why: Default base, base lookup and usage conversion.
+dod:
+  - text: Option mapping, tool and tool_choice conversion and structured output match LiteLLM.
+    proof: [gigachat-chat-tests, oracle]
+  - text: Message rewriting, request body and reply conversion match LiteLLM, including usage and generated ids.
+    proof: [gigachat-chat-tests, oracle]
+  - text: The token comes only from the injected bearer trait, and no OAuth code exists in this task.
+    proof: [gigachat-chat-tests]
+  - text: A malformed stream chunk gives an empty chunk and does not panic, and the corpus replays.
+    proof: [gigachat-chat-corpus]
+  - text: The new oracle cases exist and call this task's helper.
+    proof: [gigachat-chat-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: gigachat-chat-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^(gigachat_chat|gigachat_stream|gigachat_utils)::/) - test(/replays_the_/)'
+      why: An OpenAI chat config would send tools, tool_choice and tool role messages that GigaChat rejects.
+    - id: gigachat-chat-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/gigachat_stream_chunk.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/gigachat_stream_chunk)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_gigachat_stream_chunk_corpus)'
+      why: Stream chunks come from the network and need a fuzz target with a replayed corpus.
+    - id: gigachat-chat-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/gigachat-chat)" && /usr/bin/grep -rlE '^  b8177:' tools/oracle/cases/helpers/gigachat-chat
+      why: Without cases that call the B8177 helper nothing compares these functions with LiteLLM.
+oracle_cases:
+  - tools/oracle/cases/helpers/gigachat-chat/params-and-tools.yaml
+  - tools/oracle/cases/helpers/gigachat-chat/structured-output.yaml
+  - tools/oracle/cases/helpers/gigachat-chat/messages.yaml
+  - tools/oracle/cases/helpers/gigachat-chat/reply-and-usage.yaml
+  - tools/oracle/cases/helpers/gigachat-chat/stream-chunks.yaml
+deviations:
+  - what: A reply with a missing required field fails with a typed GigaChatError, status 500.
+    why: LiteLLM raises a raw KeyError there. 500 is its generic status for an unclassified exception (to be confirmed by the architect, see notes).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/chat/transformation.py
+  - what: Generated ids (call_ and chatcmpl- plus hex) come from an injected id source, not a global random call.
+    why: Tests and the oracle need fixed ids. The shape (prefix and hex length) stays the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/chat/transformation.py
+out_of_scope:
+  - B7325 owns GigaChat access tokens, their cache and refresh, and the gigachat_auth config section.
+  - B8178 owns the image uploader, the embedding config and the pass-through config.
+  - B668 owns the shared OpenAI chat behavior. B5653 and B2214 own chunk and iterator primitives.
+  - B2230 and B5360 own picking a config from the provider name. B8312 owns wiring and the main.py function _complete_gigachat.
+pitfalls:
+  - Temperature 0 turns into top_p 0, and temperature itself is not sent.
+  - tool_choice "required" is sent as "auto". A forced function is sent as an object with only name.
+  - Only a system message after the first position becomes user. The first system message stays. developer always becomes system.
+  - Tool message content is wrapped as JSON only when it is not valid JSON already.
+  - The structured output path takes the function arguments as the message text and sets the finish reason to stop, not tool_calls.
+  - Usage adds precached_prompt_tokens to both prompt_tokens and total_tokens, and cached_tokens appears only above 0.
+  - An invalid stream chunk is an empty chunk, and "[DONE]" is not parsed as JSON.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

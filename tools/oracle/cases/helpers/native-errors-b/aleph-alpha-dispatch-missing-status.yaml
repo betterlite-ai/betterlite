@@ -1,0 +1,10 @@
+kind: helper
+name: native-errors-b-aleph-alpha-dispatch-missing-status
+call:
+  native_error:
+    kind: raw
+    model: aleph_alpha/luminous-base
+    custom_llm_provider: aleph_alpha
+    error_str: "boom"
+env: {}
+compare: {ignore: []}

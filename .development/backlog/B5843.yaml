@@ -1,0 +1,14 @@
+id: B5843
+milestone: M3 providers
+title: OCI provider
+status: todo
+depends_on: [B5940, B5941, B5942, B2202, B2214, B2232, B2221, B175, B171, B173, B186]
+file: tasks/B5843-oci-chat.yaml
+covers:
+  - "litellm/llms/oci/chat/transformation.py"
+parent: B042
+split_from: B042
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

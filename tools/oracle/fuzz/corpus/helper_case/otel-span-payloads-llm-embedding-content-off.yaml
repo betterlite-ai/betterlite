@@ -1,0 +1,30 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-llm-embedding-content-off",
+  "call": {
+    "b3844": {
+      "function": "llm_call",
+      "payload": {
+        "call_type": "embedding",
+        "model_parameters": {
+          "input": "hi"
+        },
+        "response": {
+          "data": [
+            {
+              "embedding": [
+                1,
+                2
+              ]
+            }
+          ]
+        }
+      },
+      "capture_content": false
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

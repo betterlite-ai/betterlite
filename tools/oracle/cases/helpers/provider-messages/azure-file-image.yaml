@@ -1,0 +1,36 @@
+kind: helper
+name: provider-messages-azure-file-image
+call:
+  provider_messages:
+    operation: convert_to_azure_openai_messages
+    messages:
+      - role: user
+        content:
+          - type: text
+            text: look
+          - type: image_url
+            image_url: https://example.test/a.png
+            detail: high
+          - type: image_url
+            image_url:
+              url: https://example.test/b.png
+              detail: low
+              format: png
+          - type: file
+            file:
+              file_data: data:application/pdf;base64,QQ==
+              format: pdf
+              filename: a.pdf
+          - type: file
+            filename: stray
+          - type: input_audio
+            input_audio:
+              data: QQ==
+              format: wav
+      - role: system
+        content:
+          - type: image_url
+            image_url: https://example.test/c.png
+env: {}
+compare:
+  ignore: []

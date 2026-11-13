@@ -1,0 +1,30 @@
+task: B3933
+deviations:
+  - what: The health check reports unhealthy for any status other than 202, with the response body as the error message.
+    why: >-
+      LiteLLM's async_health_check sends the probe outside its try block, so a 4xx or 5xx from the logging client
+      escapes the method instead of returning unhealthy, and its raise_for_status accepts any 2xx or 3xx as healthy.
+      The Datadog log intake answers 202, so a probe on another status is not a working setup's success answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L823-L839
+  - what: Constructing the logger without a server task tracker starts no periodic flush instead of raising where no event loop runs.
+    why: >-
+      LiteLLM calls asyncio.create_task in its constructor, which fails outside a running loop. Betterlite takes the
+      server's task tracker and starts the timer on it; tests and the oracle drive flushes explicitly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L184
+  - what: Stopping a logger cancels its periodic flush and flushes the pending queue, and closing the server task tracker also ends the timer.
+    why: >-
+      LiteLLM's periodic_flush task runs until the event loop ends, so an evicted team-scoped logger's task keeps
+      holding its queue forever. Betterlite ends the timer and drains what is pending when the logger is evicted or
+      the server shuts down.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L184
+  - what: The log queue keeps at most 50,000 events and drops the oldest past that, with a warning.
+    why: >-
+      LiteLLM's DataDogLogger appends to log_queue without a bound, so an unreachable intake grows memory until the
+      process dies. The base class already names the same cap for the loggers that use its flush path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L19-L24
+  - what: A cancelled batch send requeues its undelivered events and reports the cancellation through the flush report instead of raising asyncio.CancelledError.
+    why: >-
+      LiteLLM raises CancelledError from async_send_batch after re-queueing the undelivered records. Betterlite's
+      batch queue reports the cancellation and the requeued count, so the caller sees the same records kept without
+      an exception crossing the callback boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L399-L401

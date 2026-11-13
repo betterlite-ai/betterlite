@@ -1,4 +1,4 @@
-use crate::schema_baseline::{BASELINE_MIGRATION, MigrationFile};
+use crate::schema_baseline::BASELINE_MIGRATION;
 use crate::schema_daily_usage::MIGRATION_CATALOG;
 use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
 use betterlite_postgres_fixture::error::FixtureError;
@@ -276,6 +276,8 @@ struct ColumnInfo {
     data_type: String,
     is_nullable: bool,
     default: Option<String>,
+    udt_name: String,
+    datetime_precision: Option<i32>,
 }
 
 async fn column(client: &Client, table: &str, name: &str) -> ColumnInfo {
@@ -288,13 +290,16 @@ async fn column(client: &Client, table: &str, name: &str) -> ColumnInfo {
         data_type: row.get(2),
         is_nullable: row.get::<_, String>(3) == "YES",
         default: row.get(4),
+        udt_name: row.get(5),
+        datetime_precision: row.get(6),
     }
 }
 
 async fn columns_in(client: &Client, table: &str) -> Vec<Row> {
     client
         .query(
-            "SELECT ordinal_position, column_name, data_type, is_nullable, column_default \
+            "SELECT ordinal_position, column_name, data_type, is_nullable, column_default, \
+             udt_name, datetime_precision \
              FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 \
              ORDER BY ordinal_position",
             &[&table],

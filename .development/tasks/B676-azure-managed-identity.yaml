@@ -307,7 +307,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_managed_identity)"
       && grep -q 'decode_imds_token' crates/betterlite-azure/fuzz/fuzz_targets/azure_managed_identity.rs && cargo
-      nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_managed_identity_corpus$/)'
+      nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_managed_identity_corpus(::|$)/)'
   - id: config-identity-endpoint
     why: The IDENTITY_ENDPOINT setting is not loaded with its required defaults and precedence.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_identity_endpoint$/)'
@@ -382,6 +382,6 @@ pitfalls:
 - The SDK outer selector tests truthiness, but MSAL protocol selection tests environment-key presence.
 - A configured pod authority skips the availability probe even when its value is empty.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2200
   max_new_expects: 0
 review_level: security

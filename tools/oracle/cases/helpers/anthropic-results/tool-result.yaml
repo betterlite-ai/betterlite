@@ -1,0 +1,26 @@
+kind: helper
+name: anthropic-results-tool-result
+call:
+  anthropic_results:
+    function: tool_result
+    id: fixed-id
+    force_base64: false
+    data_urls: {}
+    message:
+      role: tool
+      tool_call_id: call.123
+      content:
+        - type: text
+          text: hello
+          cache_control: {type: ephemeral}
+        - type: image_url
+          image_url: {url: "data:image/png;base64,AAAA", format: image/png}
+          cache_control: {type: ephemeral}
+        - type: tool_reference
+          tool_name: lookup
+        - type: audio
+          data: skipped
+      cache_control: {type: ephemeral, ttl: 5m}
+env: {}
+compare:
+  ignore: []

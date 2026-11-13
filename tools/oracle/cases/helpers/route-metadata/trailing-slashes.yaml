@@ -1,0 +1,11 @@
+kind: helper
+name: route-metadata-trailing-slashes
+call:
+  route_metadata:
+    {
+      "function": "get_call_types",
+      "route": "/v1/chat/completions/"
+    }
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,176 @@
+id: B5117
+title: Close the B4263 admin UI page audit gaps
+description: >-
+  B4263 built the admin UI setup pages in crates/betterlite-server/src/admin_setup.rs. An Opus review
+  after merge found two places where the page a client gets differs from LiteLLM's, and tests that
+  can't catch either one. This task closes them in the same module. Nothing calls these functions on
+  main yet; B1628, B1625 and B1626 wire them into the login routes later.
+
+
+  The target is LiteLLM's page text, byte for byte, since the HTML body is a value on the wire.
+  LiteLLM's missing_keys_form returns its triple-quoted template through .format()
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/admin_ui_utils.py#L25-L96).
+  That string starts with the newline after the opening quotes, keeps every line at its source
+  indent (8 spaces before <!DOCTYPE html>), and ends with "</html>\n" plus the 4 spaces before the
+  closing quotes. .format() turns each "{{" and "}}" into one brace and puts missing_key_names where
+  "{missing_keys}" stands. show_missing_vars_in_env sends that string in an HTMLResponse with status
+  200
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/admin_ui_utils.py#L4-L22),
+  and Starlette 1.9.0, the version the oracle locks, sets content-type "text/html; charset=utf-8" on it
+  (https://github.com/Kludex/starlette/blob/1.9.0/starlette/responses.py#L78-L82). betterlite's
+  page_shell.html and the two body files re-indent everything from column 0, so the body differs on
+  almost every line.
+
+
+  Gap one is the <pre> block. A browser shows whitespace inside <pre> as written. LiteLLM puts 4
+  spaces before each line of the env-var block and closes it after a line of 16 spaces
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/admin_ui_utils.py#L75-L83,
+  and
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/admin_ui_utils.py#L151-L153
+  on the disabled page). missing_keys_body.html and admin_ui_disabled_body.html start every line at
+  column 0 and close right after the last one, so both pages show the block without its indent and
+  without its last blank line. Matching LiteLLM's bytes fixes this.
+
+
+  Gap two is the disabled page's braces. LiteLLM's admin_ui_disabled returns ui_disabled_html as
+  written and never calls .format()
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/admin_ui_utils.py#L99-L169),
+  so its style block keeps the doubled braces ("body {{ ... }}"). That isn't valid CSS, and a browser
+  shows the page with none of its styles. No working setup relies on an unstyled page, so betterlite
+  keeps single braces: its disabled page is LiteLLM's text with each "{{" and "}}" turned into one
+  brace, and nothing else changed. This is a fix of a LiteLLM bug, so docs/deviations/B4263.yaml gets
+  a second entry for it with the #L99-L169 link. The existing entry's sentence "Output HTML is
+  identical." comes out, since it is wrong for the disabled page.
+
+
+  The tests can't fail on any of this today. body_text in admin_setup/tests.rs throws the headers
+  away, so every test stays green if Html(page) becomes a bare String sent as text/plain. No test
+  reads a <title>, so swapping the two titles stays green. missing_keys_form_is_a_complete_html_page
+  and admin_ui_disabled_returns_a_200_html_page check selector text such as contains("body {"), and
+  that also matches LiteLLM's doubled "body {{" and passes with every rule emptied.
+  lists_the_missing_variables only looks for "<p>{names}</p>". The fix compares whole pages with
+  fixtures copied from LiteLLM, the way jwt_display/tests.rs compares its template with
+  fixtures/litellm_jwt_display.html. fixtures/litellm_missing_keys_form.html under admin_setup/ holds
+  lines 27 to 94 of litellm/proxy/common_utils/admin_ui_utils.py exactly as `sed -n '27,94p'` prints
+  them, and fixtures/litellm_admin_ui_disabled.html holds lines 103 to 163. Both keep the raw Python
+  text, doubled braces and the {missing_keys} placeholder included. A test rebuilds LiteLLM's string
+  from a fixture as "\n", the fixture, then 4 spaces. For the missing-keys page it applies .format()'s
+  rules (each "{{" and "}}" to one brace, then "{missing_keys}" to the names). For the disabled page it
+  applies only the single-brace deviation.
+
+
+  Two tests replace the substring checks. missing_vars_response_matches_litellm is an rstest over
+  the cases both_missing, database_missing and master_key_missing. Each case calls
+  show_missing_vars_in_env and asserts status 200, content-type "text/html; charset=utf-8", and a body
+  equal to the rebuilt page for "DATABASE_URL, LITELLM_MASTER_KEY", "DATABASE_URL" or
+  "LITELLM_MASTER_KEY". It replaces lists_the_missing_variables.
+  admin_ui_disabled_matches_litellm_with_single_braces asserts status 200, the same content type, and
+  a body equal to the rebuilt disabled page. It replaces admin_ui_disabled_returns_a_200_html_page.
+  The other substring tests (missing_keys_form_substitutes_the_placeholder_once,
+  missing_keys_form_is_a_complete_html_page,
+  missing_keys_form_lists_the_master_key_generator_and_database_example and the two
+  ..._links_to_discord_and_docs_in_new_tabs tests) check pieces the full-page tests now cover, and
+  their starts_with("<!DOCTYPE html>") checks are wrong once the page keeps LiteLLM's leading newline,
+  so they fold into the two new tests. returns_none_when_master_key_and_database_are_both_present
+  stays as it is.
+
+
+  The template files may stay as page_shell.html plus two body files, or become two whole-page
+  templates, as long as the bytes match. ProxyAvailability, the function names and their return types
+  don't change.
+scope:
+  paths:
+    - crates/betterlite-server/src/admin_setup.rs
+    - crates/betterlite-server/src/admin_setup/**
+    - docs/deviations/B4263.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/admin_ui_utils.py#L25-L96
+    why: missing_keys_form's template and its .format() call. Lines 27 to 94 are the fixture, and lines 75 to 83 are the <pre> block with its 4-space lines and 16-space closing line.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/admin_ui_utils.py#L99-L169
+    why: admin_ui_disabled returns ui_disabled_html without .format(), so LiteLLM's page keeps "{{" and "}}". Lines 103 to 163 are the fixture, and lines 151 to 153 are its <pre> block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/admin_ui_utils.py#L4-L22
+    why: show_missing_vars_in_env picks the name list and wraps the page in an HTMLResponse with status 200.
+  - url: https://github.com/Kludex/starlette/blob/1.9.0/starlette/responses.py#L78-L82
+    why: Starlette adds "; charset=utf-8" to a text/ media type, so HTMLResponse sends content-type "text/html; charset=utf-8".
+  - url: https://github.com/Kludex/starlette/blob/1.9.0/starlette/responses.py#L178-L179
+    why: HTMLResponse sets media_type "text/html".
+dod:
+  - text: >-
+      show_missing_vars_in_env returns status 200, content-type "text/html; charset=utf-8" and a body
+      equal byte for byte to LiteLLM's missing_keys_form output for each of the three name lists:
+      a leading newline, 8 spaces before <!DOCTYPE html>, 4 spaces before each env-var line inside
+      <pre>, 16 spaces before </pre>, and "</html>\n" plus 4 spaces at the end. The rstest
+      missing_vars_response_matches_litellm with cases both_missing, database_missing and
+      master_key_missing proves it against fixtures/litellm_missing_keys_form.html. It fails on
+      today's main, where the body starts with "<!DOCTYPE html>" at column 0 and the <pre> lines have
+      no indent, and passes once the page keeps LiteLLM's bytes.
+    proof: [missing-keys-page, admin-setup-tests]
+  - text: >-
+      admin_ui_disabled returns status 200, content-type "text/html; charset=utf-8" and a body equal to
+      LiteLLM's ui_disabled_html with each "{{" and "}}" turned into one brace and no other change, so
+      its <pre> keeps the 4-space line and the 16-space closing line.
+      admin_ui_disabled_matches_litellm_with_single_braces proves it against
+      fixtures/litellm_admin_ui_disabled.html. That fixture keeps LiteLLM's doubled braces. It fails on
+      today's main and passes once the page keeps LiteLLM's bytes.
+    proof: [disabled-page, admin-setup-tests]
+  - text: >-
+      docs/deviations/B4263.yaml lists the single-brace disabled page as its own entry, linking
+      admin_ui_utils.py#L99-L169, and the first entry no longer says "Output HTML is identical."
+    proof: [deviation-log]
+  - text: >-
+      Both full-page tests read the response headers and assert content-type "text/html; charset=utf-8".
+      axum's Html already sends that value, so the assertion passes on today's code; the worker shows
+      it red once by returning the page as a bare String, and from then on it fails whenever the page
+      leaves Html.
+    proof: [content-type]
+  - text: >-
+      tests.rs keeps no substring check of the page: no contains("body {"), no
+      starts_with("<!DOCTYPE html>"). lists_the_missing_variables and
+      admin_ui_disabled_returns_a_200_html_page are replaced by the two full-page tests, and the other
+      substring tests fold into them. returns_none_when_master_key_and_database_are_both_present stays.
+    proof: [substring-checks-replaced, admin-setup-tests]
+checks:
+  optional: []
+  commands:
+    - id: missing-keys-page
+      why: the missing-keys response has no full-page test against LiteLLM's own text, so its <pre> indent, title, styles and content type can drift unseen
+      run: grep -q '<p>{missing_keys}</p>' crates/betterlite-server/src/admin_setup/fixtures/litellm_missing_keys_form.html && grep -q 'body {{$' crates/betterlite-server/src/admin_setup/fixtures/litellm_missing_keys_form.html && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^admin_setup::tests::missing_vars_response_matches_litellm::/)'
+    - id: disabled-page
+      why: the disabled page has no full-page test, and nothing pins betterlite's single braces against LiteLLM's doubled ones
+      run: grep -q 'body {{$' crates/betterlite-server/src/admin_setup/fixtures/litellm_admin_ui_disabled.html && grep -q '<title>Admin UI Disabled</title>' crates/betterlite-server/src/admin_setup/fixtures/litellm_admin_ui_disabled.html && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(=admin_setup::tests::admin_ui_disabled_matches_litellm_with_single_braces)'
+    - id: deviation-log
+      why: docs/deviations/B4263.yaml claims identical HTML and doesn't list the single-brace fix
+      run: '! grep -q "Output HTML is identical" docs/deviations/B4263.yaml && grep -q "admin_ui_utils.py#L99-L169" docs/deviations/B4263.yaml && test "$(grep -c "^  - what:" docs/deviations/B4263.yaml)" = "2"'
+    - id: content-type
+      why: no test reads the response headers, so a page sent as text/plain passes
+      run: grep -q 'text/html; charset=utf-8' crates/betterlite-server/src/admin_setup/tests.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^admin_setup::tests::missing_vars_response_matches_litellm::/) | test(=admin_setup::tests::admin_ui_disabled_matches_litellm_with_single_braces)'
+    - id: substring-checks-replaced
+      why: contains("body {") matches LiteLLM's doubled braces too, and starts_with("<!DOCTYPE html>") contradicts LiteLLM's leading newline
+      run: '! grep -qF ''contains("body {")'' crates/betterlite-server/src/admin_setup/tests.rs && ! grep -qF ''starts_with("<!DOCTYPE html>")'' crates/betterlite-server/src/admin_setup/tests.rs'
+    - id: admin-setup-tests
+      why: the whole admin_setup module must pass once the substring tests are replaced and the fixtures land
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/src/admin_setup/fixtures)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^admin_setup::/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      admin_ui_disabled's page has single braces in its style block, so a browser applies its styles.
+      LiteLLM's page keeps "{{" and "}}" because admin_ui_disabled never calls .format() on its
+      template. Every other byte matches LiteLLM's page.
+    why: The doubled braces are a LiteLLM bug that leaves the page unstyled, and no working setup relies on an unstyled page.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/admin_ui_utils.py#L99-L169
+out_of_scope:
+  - Padded one-line functions in admin_setup.rs belong to B5094. It clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task doesn't touch .ast-grep/rules/.
+  - Calling these helpers from GET /sso/key/generate, GET /sso/saml/login and POST /sso/saml/callback, where DISABLE_ADMIN_UI and the master key and database checks decide. B1628, B1625 and B1626 own those routes and their HTTP oracle cases.
+  - The fixed status per error class is B5102's and already merged; these pages always answer 200.
+pitfalls:
+  - The prek hooks end-of-file-fixer and trailing-whitespace in .pre-commit-config.yaml rewrite .html files, and the gate's whitespace check (git diff --check) rejects trailing spaces, so no template or fixture file can end with the 4 spaces LiteLLM's string closes with; the code and the test add those spaces, and the code says why in one comment line.
+  - Make the fixtures with `sed -n '27,94p'` and `sed -n '103,163p'` on ../litellm/litellm/proxy/common_utils/admin_ui_utils.py, never from betterlite's own output, or the test compares the code with itself.
+  - Only the missing-keys page goes through .format(); in LiteLLM's disabled page "{{" stays "{{", so the disabled test applies the single-brace deviation and no placeholder rule.
+  - The 16-space line before </pre> is what shows as the last blank line of the block, so it stays even though it looks like stray indentation.
+  - Whitespace before <!DOCTYPE html> doesn't change how a browser parses the page, so keep LiteLLM's leading newline and 8 spaces rather than trimming them.
+  - The two pages differ in <title> ("Environment Setup Instructions" and "Admin UI Disabled") and the disabled page's heading reads "Admin UI is Disabled"; a full-page compare catches a swap that the old tests missed.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

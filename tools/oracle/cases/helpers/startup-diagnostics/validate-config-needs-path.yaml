@@ -1,0 +1,5 @@
+kind: helper
+name: validate-config-needs-path
+call: {"b4175": {"operation": "validate_config_needs_path"}}
+env: {}
+compare: {ignore: []}

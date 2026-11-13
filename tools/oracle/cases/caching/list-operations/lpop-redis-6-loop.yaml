@@ -1,0 +1,13 @@
+kind: helper
+name: caching-list-operations-lpop-redis-6-loop
+call:
+  b4329:
+    operation: lpop
+    namespace: ns
+    redis_version: "6.2.0"
+    lists:
+      "ns:queue": ["a", "b", "c"]
+    key: queue
+    count: 2
+env: {}
+compare: {ignore: []}

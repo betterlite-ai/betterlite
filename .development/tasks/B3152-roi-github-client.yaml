@@ -143,7 +143,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::helper_adapters_behavior($|::)/) - test(/replays_the_/)'
     - id: behavior-tests
       why: the required behavior tests fail or the filter selects no tests
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github_behavior($|::)/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_github::(.*::)?roi_github_behavior($|::)/) - test(/replays_the_/)'
 
 oracle_cases:
   - tools/oracle/cases/roi-github/init-timeout.yaml

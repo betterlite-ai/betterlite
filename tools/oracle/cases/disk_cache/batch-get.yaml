@@ -1,0 +1,21 @@
+kind: helper
+name: disk-batch-get
+call:
+  b4291:
+    disk_batch_get:
+      entries:
+        - key: first
+          value:
+            model: gpt-4o
+        - key: third
+          value:
+            - 1
+            - 2
+            - 3
+      keys:
+        - first
+        - missing
+        - third
+env: {}
+compare:
+  ignore: []

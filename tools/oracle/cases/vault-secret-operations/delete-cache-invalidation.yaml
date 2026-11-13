@@ -1,0 +1,20 @@
+kind: helper
+name: vault-secret-operations-delete-cache-invalidation
+env: {}
+compare: {ignore: []}
+call:
+  b4417:
+    env:
+      HCP_VAULT_TOKEN: token
+    routes:
+      - route: "GET http://127.0.0.1:8200/v1/secret/data/APP_KEY"
+        replies:
+          - {status: 200, body: '{"data":{"data":{"key":"sk-from-vault","password":"pw-from-vault"},"metadata":{"version":1}}}'}
+          - {status: 200, body: '{"data":{"data":{"key":"other-secret"}}}'}
+      - route: "DELETE http://127.0.0.1:8200/v1/secret/data/APP_KEY"
+        replies:
+          - {status: 204, body: ''}
+    steps:
+      - {op: read, name: APP_KEY}
+      - {op: delete, name: APP_KEY}
+      - {op: read, name: APP_KEY}

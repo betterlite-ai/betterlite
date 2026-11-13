@@ -1,0 +1,12 @@
+kind: helper
+name: version-three-estimated-reads-savings
+call:
+  savings_evidence:
+    operation: autorouter
+    metadata:
+      autorouter_savings_estimate:
+        version: 3
+        status: estimated
+      autorouter_savings: 2.5
+compare: {ignore: []}
+env: {}

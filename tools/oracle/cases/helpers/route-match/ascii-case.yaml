@@ -1,0 +1,11 @@
+kind: helper
+name: ascii-case
+call:
+  route_match:
+    function: check_route_access
+    route: "/models/K"
+    allowed_routes:
+      - "/models/(?ai:k)"
+env: {}
+compare:
+  ignore: []

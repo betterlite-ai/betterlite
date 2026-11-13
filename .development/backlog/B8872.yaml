@@ -1,0 +1,14 @@
+id: B8872
+milestone: M8 platform
+title: Install audit callbacks during config load and warn when auditing is disabled
+status: todo
+depends_on: [B065, B165]
+file: tasks/B8872-audit-callback-startup.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

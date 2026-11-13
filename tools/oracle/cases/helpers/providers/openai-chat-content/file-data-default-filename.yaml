@@ -1,0 +1,28 @@
+kind: helper
+name: openai-chat-content-file-data-default-filename
+call:
+  openai_chat_content:
+    transform_requests:
+      requests:
+        - model: gpt-4o
+          provider: openai
+          messages:
+            - role: user
+              content:
+                - type: file
+                  file:
+                    file_data: data:application/pdf;base64,JVBERi0=
+                - type: file
+                  file:
+                    file_data: data:text/plain;base64,aGk=
+                    filename: ""
+                - type: file
+                  file:
+                    file_data: data:text/plain;base64,aGk=
+                    filename: report.txt
+                - type: file
+                  file:
+                    file_data: data:text/plain;base64,aGk=
+                    filename: missing/on/disk.txt
+env: {}
+compare: {ignore: []}

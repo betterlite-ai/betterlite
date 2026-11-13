@@ -1,0 +1,19 @@
+kind: helper
+name: cohere-v1-chat-seed-reply
+call:
+  cohere_v1_chat:
+    function: reply
+    requests:
+      - body: '{"text":"seed","meta":{"billed_units":{"input_tokens":1,"output_tokens":2}}}'
+        status: 200
+        model: command-r
+        created: 1
+        id: seed-template
+      - body: '{"tool_calls":[{"name":"seed_tool","generation_id":"seed","parameters":{}}]}'
+        status: 200
+        model: command-r
+        created: 2
+        id: seed-template
+        finish_reason: COMPLETE
+compare: {ignore: []}
+env: {}

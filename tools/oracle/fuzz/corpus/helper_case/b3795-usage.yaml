@@ -1,0 +1,10 @@
+# straiker_webhook_records: usage counts fall back to Anthropic keys
+kind: helper
+name: b3795-usage-seed
+call:
+  b3795:
+    usage:
+      response:
+        usage: {input_tokens: 3, output_tokens: 2}
+env: {}
+compare: {ignore: []}

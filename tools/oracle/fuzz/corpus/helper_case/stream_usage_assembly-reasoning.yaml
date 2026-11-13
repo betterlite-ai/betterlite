@@ -1,0 +1,11 @@
+kind: helper
+name: stream-usage-assembly-reasoning
+call:
+  stream_usage_assembly:
+    function: count_reasoning_tokens
+    choices:
+    - message: {reasoning_content: abc}
+    - message: {reasoning_content: ""}
+    counter: {text: 3}
+env: {}
+compare: {ignore: []}

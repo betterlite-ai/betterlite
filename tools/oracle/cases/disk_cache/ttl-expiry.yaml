@@ -1,0 +1,17 @@
+kind: helper
+name: disk-ttl-expiry
+call:
+  b4291:
+    disk_ttl:
+      entries:
+        - key: expired
+          value:
+            model: gpt-4o
+          ttl: -1.0
+        - key: fresh
+          value:
+            model: gpt-4o
+          ttl: 1000.0
+env: {}
+compare:
+  ignore: []

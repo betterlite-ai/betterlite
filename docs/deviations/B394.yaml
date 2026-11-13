@@ -1,0 +1,14 @@
+task: B394
+deviations:
+  - what: "The cap_reply byte parser rejects a classifier reply over 1048576 bytes before decoding it, with a typed invalid-input outcome; LiteLLM's str parser has no equivalent byte bound."
+    why: "bounded-inputs requires a finite limit at every parser boundary, and the task pins this one; the classifier consumer keeps its pinned fail-closed fallback on the typed outcome."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/capability_classifier.py#L208-L227
+  - what: "capability_classifier_config defaults efficient_tier to SIMPLE and capable_tier to REASONING when the keys are absent, where the pinned LiteLLM declares both fields required."
+    why: "The task pins these declaration defaults, which match LLMV2Config in the same module; a configuration that sets both tiers, as every working LiteLLM setup does, resolves identically on both sides."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L623-L640
+  - what: "A verdict object with a duplicated key is refused, where Python's json decoder keeps the last value and pydantic then accepts the verdict."
+    why: "The typed decoder refuses duplicate struct fields; a duplicated judge reply is malformed output, and refusing it fails closed to the capable tier."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/capability_classifier.py#L216-L227
+  - what: "A reply whose failed object starts decode more than 16 times 1048576 bytes in total stops scanning and is refused with the no-verdict outcome."
+    why: "LiteLLM retries the decode from every { with no limit, so a reply of repeated {\"a\": takes minutes of CPU and still ends in a parse error; each failed start is charged the bytes its decode read, so an ordinary reply finds the same object as before."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/capability_classifier.py#L216-L222

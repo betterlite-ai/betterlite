@@ -1,0 +1,17 @@
+task: B5640
+deviations:
+  - what: "The guarded methods take no `parent_otel_span`, the hooks get no `caller` text and no start or end time, and the hooks run inline. LiteLLM sends them through `asyncio.create_task` with a span, a stack string and two timestamps."
+    why: "B4325's `ServiceEvent` holds the call type, the duration and the key. Rust has no frame names to walk, and the hook implementer spawns when it has to."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1442-L1452
+  - what: "`async_batch_get_cache` returns an empty map when decoding fails. LiteLLM returns the raw, undecoded values it had mapped so far."
+    why: "A raw bytes value has no place in the typed result, and B4327's sync read makes the same choice."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1750-L1768
+  - what: "A failure writes a plain `tracing::error!` line. LiteLLM's `log_redis_failure` throttles timeout lines."
+    why: "The throttle sits in betterlite-router, out of this crate's reach, and B5630's gate carries the failure there."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L479-L504
+  - what: "`ttl` is `Option<i64>`. LiteLLM's `get_ttl` also takes text and floats, cuts with `int()`, and falls back to the default on text it can't read."
+    why: "Callers here are typed Rust, so no such value reaches the method."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L26-L33
+  - what: "A `socket_timeout` set to null in config gets the 5.0 default. LiteLLM skips the key for an explicit `None`, and the client then has no timeout."
+    why: "`RedisOverrides` can't tell null from a missing key, and a client with no timeout can hang a request forever."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L607-L674

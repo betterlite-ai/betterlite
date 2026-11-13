@@ -1,0 +1,5 @@
+kind: helper
+name: openai-assistants-seed-delete-assistant
+call: {openai_assistants: {delete_assistant: {options: {api_key: sk-seed, api_base: 'https://example.test/v1'}, assistant_id: asst_1, flag: true}}}
+env: {}
+compare: {ignore: []}

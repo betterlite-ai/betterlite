@@ -1,0 +1,17 @@
+kind: helper
+name: response-structured-empty-message-content
+call:
+  b3860:
+    function: set_response
+    response:
+      output:
+        - type: message
+          content: []
+        - type: message
+          role: user
+          content:
+            - {type: output_text}
+        - type: message
+          role: assistant
+env: {}
+compare: {ignore: []}

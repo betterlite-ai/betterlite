@@ -91,8 +91,9 @@ out_of_scope:
   This task implements the base legacy callbacks that run ahead of or beneath vendor overrides.
 - >-
   The _get_span_context helper used for span resolution is owned by B3854. The exception/team/status
-  writers (_record_exception_on_span, _set_team_attributes_on_span, set_response_status_code_attribute,
+  writers (_record_exception_on_span, _set_team_attributes_on_span,
   set_preprocessing_duration_attribute) are owned by B3854 and are called, not re-implemented.
+  set_response_status_code_attribute (opentelemetry.py L3543) is owned by B8910 and is called the same way.
 pitfalls:
 - 'Service span names must match the pinned code: a Postgres call becomes a Postgres service span named by db_system from B3848, not a generic SERVICE span. db_span_attributes returns empty for non-datastore services, and the span kind becomes INTERNAL.'
 - 'The async_post_call_failure_hook stamps error attributes on the SERVER (root) span BEFORE creating the exception child span, so the root is team-filterable on failure. The child comes second and gets the exception message.'

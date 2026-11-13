@@ -7,7 +7,7 @@ description: >-
   effective store_model_in_db=true, in that order. Read/write row id ui_settings through B726.
   GET decodes the object or JSON-string row with B1659, filters its allowlist, applies its
   runtime policy projection, then refreshes ui_settings:settings_dict for 600 seconds. Overlay
-  every allowlisted key present in B120's effective SettingsStore before asking B1656 for
+  every allowlisted key present in B4140's effective SettingsStore (carried by B8380) before asking B1656 for
   values and schema. Add the two read-only derived values and their source labels through
   B1659; a persisted value not present in SettingsStore reports db. Failed schema construction
   can therefore follow already-applied runtime/cache changes.
@@ -23,7 +23,7 @@ description: >-
   merge incoming fields over it and upsert the whole JSON-string row. Existing unknown keys
   survive this write and appear in PATCH's returned settings even though GET hides them.
   Apply runtime flags after DB persistence, set the sanitized cache, and only then submit the
-  B124 audit record through B065. Do not reject config-owned fields here: the DB write can
+  B8594 audit record through B065. Do not reject config-owned fields here: the DB write can
   succeed while the configured effective value still wins on GET. Cache/application failures
   after upsert do not roll the row back. Native tests exercise those boundaries and GET's
   refresh side effects; multi-step HTTP oracle cases prove partial patches, unchanged derived

@@ -1,0 +1,21 @@
+kind: helper
+name: list-config-policies-snapshot
+call:
+  b3241:
+    policy_memory_matching_registry:
+      action: scenario
+      policies:
+        baseline:
+          guardrails:
+            add: [pii-blocker]
+        shared:
+          guardrails:
+            add: [config-version]
+      add:
+        - name: shared
+          policy:
+            guardrails:
+              add: [db-version]
+          source: db
+env: {}
+compare: {ignore: []}

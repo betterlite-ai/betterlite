@@ -1,0 +1,11 @@
+kind: helper
+name: openai-moderation-upstream-500
+call:
+  b3731:
+    apply:
+      settings: {api_key: test-key}
+      inputs: {texts: [hello]}
+      request_data: {model: gpt-4o}
+      answer: {status: 500, headers: {}, body: {error: {message: boom}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+kind: helper
+name: messages-name-and-tool-call-id
+call:
+  b3860:
+    function: set_messages
+    messages:
+      - {role: user, content: hello, name: "", tool_call_id: ""}
+      - role: tool
+        content: sunny
+        name: get_weather
+        tool_call_id: call_1
+      - {role: user, content: thanks}
+env: {}
+compare: {ignore: []}

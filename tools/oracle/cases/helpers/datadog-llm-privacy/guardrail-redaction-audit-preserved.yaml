@@ -1,0 +1,20 @@
+kind: helper
+name: datadog-llm-privacy-guardrail-redaction-audit-preserved
+call:
+  b3936:
+    function: guardrail_redaction
+    guardrail_information:
+      - guardrail_name: "pii-guard"
+        guardrail_provider: "presidio"
+        guardrail_mode: {default: "pre_call"}
+        guardrail_status: "guardrail_flagged"
+        duration: 0.25
+        masked_entity_count: {EMAIL: 2}
+        guardrail_request: {messages: [{role: user, content: "my email"}]}
+        guardrail_response: {flagged: true}
+        match_details: ["email"]
+        classification: {type: "pii"}
+        custom_unknown_field: "leak"
+      - guardrail_name: "second"
+env: {}
+compare: {ignore: []}

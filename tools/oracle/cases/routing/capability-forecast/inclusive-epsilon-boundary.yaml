@@ -1,0 +1,25 @@
+kind: probe
+name: inclusive-epsilon-boundary
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5000000000000002", threshold_step: "0.0"}
+        reply: {kind: text, content: '{"crux":"one epsilon below","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":0.5}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5000000000000004", threshold_step: "0.0"}
+        reply: {kind: text, content: '{"crux":"two epsilons below","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":0.5}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.0"}
+        reply: {kind: text, content: '{"crux":"exactly at the threshold","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":0.5}'}
+compare: {ignore: []}

@@ -3,6 +3,10 @@ name = "betterlite-logging-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
@@ -12,6 +16,13 @@ betterlite-logging = { path = ".." }
 chrono = "0.4.45"
 libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.154", features = ["raw_value"] }
+
+[[bin]]
+name = "callback_config"
+path = "fuzz_targets/callback_config.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "otlp_decode"
@@ -27,11 +38,107 @@ test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "phoenix_response"
+path = "fuzz_targets/phoenix_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "langfuse_response"
+path = "fuzz_targets/langfuse_response.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "s3_v2"
 path = "fuzz_targets/s3_v2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "s3_error_classifier"
+path = "fuzz_targets/s3_error_classifier.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prometheus_query"
+path = "fuzz_targets/prometheus_query.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_headers"
+path = "fuzz_targets/parse_headers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_database_endpoint"
+path = "fuzz_targets/parse_database_endpoint.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "legacy_headers_dictionary"
+path = "fuzz_targets/legacy_headers_dictionary.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "spend_error_text"
+path = "fuzz_targets/spend_error_text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "private_json"
+path = "fuzz_targets/private_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zerobus_token_response"
+path = "fuzz_targets/zerobus_token_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "classifier_snapshot"
+path = "fuzz_targets/classifier_snapshot.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "passthrough_upstream_usage"
+path = "fuzz_targets/passthrough_upstream_usage.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "passthrough_stream_lines"
+path = "fuzz_targets/passthrough_stream_lines.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "legacy_raw_response"
+path = "fuzz_targets/legacy_raw_response.rs"
 test = false
 doc = false
 bench = false

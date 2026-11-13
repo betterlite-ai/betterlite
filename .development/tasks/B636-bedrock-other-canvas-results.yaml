@@ -171,7 +171,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_malformed_reply$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_canvas_results.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_canvas_results.py tools/oracle/helpers/bedrock_other_canvas_results)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -184,7 +184,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_canvas_results)"
       && grep -q 'decode_canvas_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_canvas_results.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_canvas_results_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_canvas_results_corpus(::|$)/)'
   - id: case-canvas-response-cost
     why: B068 looks up get_model_info(model,custom_llm_provider=bedrock), defaults absent output_cost_per_image
       to 0, skips None, and sets llm_provider-x-litellm-response-cost to the price times the retained image count.

@@ -1,0 +1,13 @@
+kind: helper
+name: attributes-stream-flag-text
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      optional_params:
+        stream: null
+      standard_logging_object:
+        call_type: acompletion
+    response: null
+env: {}
+compare: {ignore: []}

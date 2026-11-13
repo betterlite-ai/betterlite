@@ -1,0 +1,17 @@
+kind: helper
+name: missing_cache_rates_remain_at_batch_input
+call:
+  batch_token_cost:
+    kind: calculator
+    model: gpt-4o
+    custom_llm_provider: openai
+    usage:
+      prompt_tokens: 1000
+      completion_tokens: 40
+      cache_read_tokens: 200
+    prompt_extras: {cache_creation_tokens: 100}
+    model_info:
+      input_cost_per_token_batches: 0.5
+      output_cost_per_token_batches: 1
+env: {}
+compare: {ignore: []}

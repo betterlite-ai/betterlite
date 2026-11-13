@@ -2,8 +2,8 @@ id: B3684
 milestone: M6 guardrails
 title: Guardrail list projections and provider form fields
 status: todo
-depends_on: [B3660, B3661, B3662, B3682, B3683, B188, B726, B732, B736]
-file: null
+depends_on: [B3660, B3662, B3682, B3683, B3513, B3691, B732, B736, B6560, B6561, B6562]
+file: tasks/B3684-guardrail-list-projections.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_endpoints.py"
 parent: B104

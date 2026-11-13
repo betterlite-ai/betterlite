@@ -1,0 +1,19 @@
+id: B8931
+milestone: M5 api families
+title: Assemble the shared pass-through logging runtime
+status: todo
+depends_on: [B068, B173, B190, B191, B193, B198, B205, B247, B594, B595, B844, B979, B1717, B1719, B3602, B3605, B3606, B3607, B3608, B3609, B3625, B3630, B3632, B3633, B3634, B3637, B3638, B3639, B3640, B3641, B3642, B3643, B3644, B3645, B3646, B3647, B3648, B3649, B3650, B8611, B8930]
+file: tasks/B8931-passthrough-logging-runtime.yaml
+covers:
+  - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
+  - "litellm/proxy/pass_through_endpoints/success_handler.py"
+  - "litellm/proxy/pass_through_endpoints/streaming_handler.py"
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py"
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py"
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py"
+parent: B102
+split_from: B102
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

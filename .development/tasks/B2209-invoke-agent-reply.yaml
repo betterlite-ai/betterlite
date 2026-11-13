@@ -4,7 +4,7 @@ budget:
 checks:
   commands:
   - id: helper-python
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/invoke_agent_reply.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/invoke_agent_reply.py tools/oracle/helpers/invoke_agent_reply)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
     why: The operation adapter is absent, unchanged or fails strict Python checks.
@@ -17,7 +17,7 @@ checks:
   - id: parser-corpus
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/invoke_agent_reply)"
       && grep -q 'decode_agent_trace' crates/betterlite-bedrock/fuzz/fuzz_targets/invoke_agent_reply.rs && cargo
-      nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_invoke_agent_reply_corpus$/)'
+      nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_invoke_agent_reply_corpus(::|$)/)'
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
   - id: case-agent-event-stream-content
     why: 'Consume the complete response through B599 EventStreamBuffer-compatible framing and EventStreamJSONParser

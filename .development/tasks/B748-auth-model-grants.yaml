@@ -17,10 +17,10 @@ description: >-
   propagate; no broad fallback silently widens the caller's model grant.
 
   Own an AgentAccessSource port with managed policy, managed/unmanaged ceilings, caller auth and
-  caller team/user reads corresponding to those six MIT collaborators in B141's agent auth module.
-  B141 installs its implementation when agent routes are composed; B732 supplies it to these checks.
+  caller team/user reads corresponding to those six MIT collaborators in B4772 and B4773's agent identity modules.
+  B8646 installs its implementation in state/auth_model_grants.rs; B732 supplies it to these checks.
   A configured agent without that service is an initialization error, not an empty ceiling. Native
-  recording-port tests prove lookup order; actual agent registry storage remains B141's responsibility.
+  recording-port tests prove lookup order; actual agent registry storage remains B4776 and B4777's responsibility.
 
   general_settings.enforce_fallback_model_access defaults false. Disabled enforcement returns True
   without extracting a token; enabled internal requests with no auth context also return True.
@@ -90,6 +90,7 @@ description: >-
   and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
   stage; the failure test asserts its public error translation and that the downstream handler was not
   called. These tests are part of the behavior-test allowance already budgeted above.
+  B1100 registers state/auth_model_grants.rs as a stub slot, so fill only crates/betterlite-server/src/state/auth_model_grants.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_model_grants.rs
@@ -104,10 +105,8 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/auth-model-grants-*
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
+    - crates/betterlite-server/src/state/auth_model_grants.rs
+    - crates/betterlite-server/src/state/auth_model_grants/**
     - tools/oracle/cases/auth/auth-model-grants/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-model-grants-*
@@ -337,7 +336,7 @@ pitfalls:
   - 'The oracle helper for this task is pre-registered as auth_model_grants in the server group. Replace the stub Op in tools/oracle/src/helpers/server/auth_model_grants.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_model_grants.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - enforce_fallback_model_access defaults false and must be wired in config before its enabled tests
     run.
-  - Agent registry and managed identity are B141 contracts, not B142.
+  - Agent registry (B4776, B4777) and managed identity (B4772, B4773) are their contracts, not B142.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

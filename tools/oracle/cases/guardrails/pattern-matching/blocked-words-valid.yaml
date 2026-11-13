@@ -1,0 +1,1 @@
+{"kind":"helper","name":"blocked-words-valid","call":{"b3693":{"function":"words","content":"blocked_words:\n- {keyword: SECRET, action: MASK, description: hidden}\n- {keyword: missing}\n- scalar\n- 42\n- {action: BLOCK}\n- {keyword: secret, action: BLOCK}"}},"env":{},"compare":{"ignore":[]}}

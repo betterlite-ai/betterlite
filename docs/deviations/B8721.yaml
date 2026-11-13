@@ -1,0 +1,17 @@
+task: B8721
+deviations:
+  - what: A GET that carries Last-Event-ID on a transport with no event store opens the normal standalone stream, where the Python SDK returns from the replay branch without sending any response.
+    why: With event_store None the SDK never mints an event id, so no working client sends Last-Event-ID; the SDK's branch would leave an axum handler with no response to return, and rule bounded-inputs forbids the hang.
+    link: ""
+  - what: In stateless mode a handler's server-to-client request (sampling, elicitation) is streamed on the request's SSE response and cannot be answered, where the SDK's stateless dispatcher refuses it with NoBackChannelError before it reaches the wire.
+    why: rmcp's serve_directly has no can_send_request switch, and the SDK's per-POST service cannot receive the client's answer POST either way; LiteLLM's own handlers send no server-to-client request from a stateless POST.
+    link: ""
+  - what: The detail after the SDK's parse error and validation error prefixes is serde_json's message, not pydantic_core's and pydantic's.
+    why: betterlite decodes with serde_json, so the parser's own detail follows the copied prefix; clients branch on the HTTP status and the JSON-RPC code, which match.
+    link: ""
+  - what: A request body larger than 4 MiB is refused with the SDK's 413 only after the Accept and Content-Type checks, where the SDK's body-limit middleware answers it first.
+    why: betterlite reads the body after the header checks so an unstorable request never allocates; the status and body text match the middleware's.
+    link: ""
+  - what: A session whose rmcp service ended, such as one opened by a malformed initialize, is removed from the live map once the service or the message router stops, where the SDK keeps its transport until a DELETE, an idle timeout or a shutdown.
+    why: The rmcp service owns the only channel a client's later request could reach, so a session without it can never answer; keeping it would report a dead session as live and leak one map entry per failed initialize.
+    link: ""

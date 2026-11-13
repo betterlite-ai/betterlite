@@ -31,8 +31,6 @@ description: >-
   230 implementation/config, 220 tests and 100 adapter/wiring lines; maximum 650.
 scope:
   paths:
-    - crates/betterlite-core/src/api/bfl.rs
-    - crates/betterlite-core/src/api/bfl/**
     - crates/betterlite-core/src/api/bfl/edit.rs
     - crates/betterlite-core/src/api/bfl/edit/**
     - crates/betterlite-config/src/providers/bfl.rs

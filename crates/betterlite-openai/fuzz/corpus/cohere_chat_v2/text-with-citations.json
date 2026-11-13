@@ -1,0 +1,1 @@
+{"id":"x","finish_reason":"COMPLETE","message":{"role":"assistant","content":[{"type":"text","text":"hello "},{"type":"text","text":"world"}],"citations":[{"start":1,"end":3,"sources":[{"type":"document","document":{"title":"Doc"},"id":"s1"},{"type":"other","document":{}}]}]},"usage":{"tokens":{"input_tokens":3,"output_tokens":4}}}

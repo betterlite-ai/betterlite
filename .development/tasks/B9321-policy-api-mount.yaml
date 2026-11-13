@@ -1,0 +1,119 @@
+id: B9321
+title: Mount policy inspection and enrichment with their production collaborators
+description: >-
+  B8669 mounts policy CRUD and versions, and B8790 mounts pipeline testing, attachment impact, template preview,
+  compliance and the template catalog. Neither mounts B3250's policy_inspect_routes nor B3252's
+  policy_template_routes. Fill this gap in app::guardrails::policy_api, without registering any handler again.
+  The architect adds one call policy_api::mount(router, state, &route_state) to B8667's authenticated mount after
+  its existing four sub-mounts. Keep app/guardrails.rs, the route registry and the other mount modules out of scope.
+
+  Build both route states once in mount and merge each exported router once. B3250's state receives the two
+  registry handles from shared.policies (B9320's PolicyRuntime), its validator backed by the existing guardrail
+  handler and optional database but no router, and the runtime's optional B3243 sync service. It must not create
+  another policy registry or persistence service. The seven paths are POST /policy/validate, GET /policy/list,
+  GET /policy/info/{policy_name}, POST /policy/test, POST /policies/resolve, POST /policy/templates/enrich and
+  POST /policy/templates/enrich/stream. There are no /v1, /openai/v1 or provider-prefixed aliases for these routes.
+  Preserve the management wrapper B3250/B3252 put on their handlers; do not wrap /policies/resolve or the enrichment
+  stream a second time. Every route remains inside user_api_key_auth, and static paths must keep working beside
+  /policies/{policy_id}. No fallback router is installed here.
+
+  Supply B3252's CompetitorModelClient with RouterCompetitorClient in policy_api/model.rs. It holds B8630's
+  router completion service and the current RouterHandle; complete and stream_text call that service with the
+  requested model, one user message containing the supplied prompt, and the supplied temperature. Only stream_text
+  sets stream true. The complete result is the first choice's message content, empty when absent; streaming
+  yields each first choice's content delta, treating absent content as empty. Reuse the existing typed chat/stream
+  records and transport, never decode SSE again or send an HTTP request back to this gateway. Check current router
+  availability per call so a reload is observed. No router returns B3252's ModelClientError with message
+  LLM router not initialized and without a provider
+  request; the handlers retain their different recovery paths (empty discovery/variations for ordinary responses,
+  an error event with no done for streamed discovery/refinement). Keep the source cause in the adapter's own
+  PolicyApiError until conversion at the existing route port boundary. No new retry/fallback loop is added.
+
+  Enrichment state gets max names and temperature from config.sections.policy_engine (B9320), including
+  MAX_COMPETITOR_NAMES default 100 and COMPETITOR_LLM_TEMPERATURE default 0.3; B3252 keeps gpt-4o-mini as the model
+  default. Reuse B3252's keep-alive input and B005's wrapper; the existing litellm_settings.sse_keepalive_ping_interval_seconds
+  default is null. Mounting must succeed without a router, since policy inspection and supplied-competitor
+  enrichment remain usable in that setup. Do not replace router completion with B8665's SdkSuggestModel: suggestions
+  use the direct SDK but enrichment uses configured deployments.
+
+  B9324 receives the fourteen policies/inspect cases and twelve policies/templates-enrich cases originally listed
+  by B3250/B3252, whose handler tests and pure helpers stay there. This mount task adds four focused production
+  collaborator cases. They use the booted HTTP driver (kind absent), never helper calls to FastAPI handlers.
+  Use general_settings.master_key oracle-master, no database, and an openai deployment with api_base {{upstream}}
+  and an inert api_key when a model is needed. Set model oracle-model in enrichment requests using that deployment,
+  or name the deployment gpt-4o-mini to test the absent-model default. Script discovery and variation replies in
+  order; upstream path, model, messages, temperature and stream remain compared, with router retry settings zero
+  for deliberate provider errors. Compare application/json or text/event-stream as appropriate, and stream
+  Cache-Control no-cache and X-Accel-Buffering no. Compare every SSE JSON event and its order; idle comments are
+  already tested by B005. Ignore only prose error leaves, not statuses, error type/param/code or event types.
+
+  Add four new cases in policy-api-wiring: default-discovery-model.yaml proves an omitted request model reaches
+  the configured gpt-4o-mini deployment; competitor-environment.yaml sets MAX_COMPETITOR_NAMES=2 and
+  COMPETITOR_LLM_TEMPERATURE=0.7, streams three names and proves only two reach the done event and the variations
+  prompt while both provider calls carry 0.7; stream-validation-before-headers.yaml submits an unknown template
+  and gets the JSON 404 before any SSE headers or provider request; inspect-and-crud-static-paths.yaml boots the
+  complete area and checks /policy/list and /policies/resolve do not hit a parameterized CRUD handler. Unit tests
+  in policy_api/tests.rs are mounted_paths_require_auth, inspection_uses_shared_runtime,
+  enrichment_uses_deployment, router_reload_is_observed and no_router_still_mounts. Drive the composed area
+  with tower and a local provider, not route functions called directly. This task adds no byte parser or fuzz target.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/guardrails/policy_api.rs
+    - crates/betterlite-server/src/app/guardrails/policy_api/**
+    - tools/oracle/cases/policies/policy-api-wiring/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/__init__.py#L1-L20
+    why: The lazy package exposes the management router; compose the two missing native route modules only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L75-L90
+    why: Policy management, CRUD and resolver path families, without invented aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L383-L604
+    why: Four inspection routes from their decorators; B3250 owns handlers and this task their mount and HTTP reachability.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolve_endpoints.py#L215-L315
+    why: Resolver decorator, database presence and force_sync ordering kept by B3250.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L714-L753
+    why: Enrichment route decorator and the nonstream model-client composition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L773-L867
+    why: Router streaming call and the error-event boundary reused from B3252.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L870-L898
+    why: Stream route from its decorator, with validation before response creation and its three response headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L907-L980
+    why: The router completion calls whose model, prompt, temperature and first-choice projection the adapter supplies.
+dod:
+  - text: All seven paths are mounted once behind auth and use the existing handler wrappers and shared policy state, including when the router and database are absent.
+    proof: [mount-tests, new-http-cases, oracle]
+  - text: Enrichment uses the configured router deployment and the environment settings, observes router changes and preserves nonstream recovery versus terminal streamed errors.
+    proof: [mount-tests, new-http-cases, oracle]
+  - text: Four new composition cases compare request captures, statuses, error envelopes, SSE order and response headers against the booted pinned proxy.
+    proof: [new-http-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: mount-tests
+      why: a router is omitted or duplicated, auth is bypassed, state diverges or the model adapter ignores the live router
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::guardrails::policy_api::/)'
+    - id: new-http-cases
+      why: the production model/settings path has no newly added HTTP proof
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/policies/policy-api-wiring)"
+oracle_cases:
+  - tools/oracle/cases/policies/policy-api-wiring/default-discovery-model.yaml
+  - tools/oracle/cases/policies/policy-api-wiring/competitor-environment.yaml
+  - tools/oracle/cases/policies/policy-api-wiring/stream-validation-before-headers.yaml
+  - tools/oracle/cases/policies/policy-api-wiring/inspect-and-crud-static-paths.yaml
+deviations: []
+out_of_scope:
+  - "management_endpoints/policy_endpoints/__init__.py has no function definitions; its endpoint functions and private re-exports are B3249, B3250, B3251, B3252 and B3253, whose covers include endpoints.py."
+  - "B3250 owns inspection/resolve handlers and decoders; B3252 owns enrichment parsing, competitors, prompts, stream buffering and guardrail-definition builders."
+  - "B8669 already mounts CRUD/version routes and B8790 already mounts pipeline, impact, preview, compliance and catalog/suggestion routes; do not merge any of their routers here."
+  - "B9320 supplies policy state/config; B8630 supplies router completion; B005 supplies SSE keep-alive."
+  - "The shared app/guardrails.rs call is an architect edit to B8667; this worker only fills policy_api.rs and its children."
+  - "B9324 owns the inherited unloaded inspection/enrichment HTTP matrix; B9322 owns loaded-policy inspection and B079 database interactions."
+pitfalls:
+  - "The /policy/ lazy prefix includes its trailing slash to distinguish it from /policies."
+  - "Returning an error from mount when llm_router is absent would remove working supplied-competitor and inspection routes."
+  - "An enrichment model named only in model_list works through llm_router.acompletion, whereas the direct SDK suggestion adapter cannot select it."
+  - "Stream request validation runs before StreamingResponse, so an unknown template must not become an HTTP 200 error event."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

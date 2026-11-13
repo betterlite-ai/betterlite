@@ -1,0 +1,25 @@
+kind: helper
+name: openai-workload-identity-token-refresh-and-error
+env: {}
+compare: {ignore: []}
+call:
+  openai_workload_identity:
+    flow:
+      files:
+        refresh: "subject"
+      replies:
+        - {status: 200, body: '{"access_token":"first","expires_in":3600}'}
+        - {status: 500, body: ''}
+        - {status: 200, body: '{"access_token":"second","expires_in":3600}'}
+        - {failure: true}
+        - {status: 200, body: '{"access_token":"third","expires_in":100}'}
+      steps:
+        - {op: token, identity: {name: refresh}}
+        - {op: advance, ms: 2399000}
+        - {op: token, identity: {name: refresh}}
+        - {op: advance, ms: 1000}
+        - {op: token, identity: {name: refresh}}
+        - {op: token, identity: {name: refresh}}
+        - {op: advance, ms: 3600000}
+        - {op: token, identity: {name: refresh}}
+        - {op: token, identity: {name: refresh}}

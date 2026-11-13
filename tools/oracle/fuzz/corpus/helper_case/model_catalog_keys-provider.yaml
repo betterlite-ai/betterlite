@@ -1,0 +1,31 @@
+kind: helper
+name: model-catalog-keys-seed-provider
+call:
+  model_catalog_keys:
+    model_cost: [gpt-4o]
+    steps:
+      - {op: check_provider_match, litellm_provider: openai, custom_llm_provider: null}
+      - {op: check_provider_match, custom_llm_provider: openai}
+      - {op: check_provider_match, litellm_provider: openai, custom_llm_provider: openai}
+      - {op: check_provider_match, litellm_provider: openai, custom_llm_provider: azure}
+      - {op: check_provider_match, litellm_provider: vertex_ai-language-models, custom_llm_provider: vertex_ai}
+      - {op: check_provider_match, litellm_provider: gemini, custom_llm_provider: vertex_ai}
+      - {op: check_provider_match, litellm_provider: fireworks_ai-embedding-models, custom_llm_provider: fireworks_ai}
+      - {op: check_provider_match, litellm_provider: openai, custom_llm_provider: fireworks_ai}
+      - {op: check_provider_match, litellm_provider: bedrock_converse, custom_llm_provider: bedrock}
+      - {op: check_provider_match, litellm_provider: bedrock, custom_llm_provider: bedrock_converse}
+      - {op: check_provider_match, litellm_provider: openai, custom_llm_provider: bedrock}
+      - {op: check_provider_match, litellm_provider: anthropic, custom_llm_provider: litellm_proxy}
+      - {op: check_provider_match, litellm_provider: anthropic, custom_llm_provider: github}
+      - {op: check_provider_match, litellm_provider: anthropic, custom_llm_provider: nadir}
+      - {op: check_provider_match, litellm_provider: openai, custom_llm_provider: azure_ai}
+      - {op: check_provider_match, litellm_provider: azure, custom_llm_provider: azure_ai}
+      - {op: check_provider_match, litellm_provider: anthropic, custom_llm_provider: azure_ai}
+      - {op: check_provider_match, litellm_provider: 7, custom_llm_provider: vertex_ai}
+      - {op: check_provider_match, litellm_provider: 7, custom_llm_provider: fireworks_ai}
+      - {op: check_provider_match, litellm_provider: 7, custom_llm_provider: bedrock}
+      - {op: check_provider_match, litellm_provider: 7, custom_llm_provider: litellm_proxy}
+      - {op: check_provider_match, litellm_provider: [a], custom_llm_provider: azure_ai}
+      - {op: check_provider_match, litellm_provider: 7, custom_llm_provider: openai}
+env: {}
+compare: {ignore: []}

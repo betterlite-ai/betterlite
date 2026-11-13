@@ -1,0 +1,11 @@
+kind: helper
+name: count-model-missing
+call:
+  bedrock_other_count_tokens:
+    count_model_missing:
+      request:
+        messages:
+          - role: user
+            content: hi
+env: {}
+compare: {ignore: []}

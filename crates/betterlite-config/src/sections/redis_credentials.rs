@@ -102,15 +102,15 @@ fn resolve_connection<L>(
 where
     L: EnvironmentLookup,
 {
-    let configured_url = resolve_secret_opt(
+    let configured_url = resolve_secret(
         settings
             .url
             .as_ref()
             .map(|secret| secret.expose_secret().to_owned()),
         "litellm_settings.cache_params.url",
         lookup,
-        "REDIS_URL",
-    )?;
+    )?
+    .or_else(|| lookup.lookup("REDIS_URL").map(SecretString::from));
     Ok(match provider {
         Some(Provider::Azure(azure)) => {
             (stripped_url(configured_url)?, azure.username.clone(), None)
@@ -123,31 +123,18 @@ where
                 lookup,
             )?
             .or_else(|| lookup.lookup("REDIS_USERNAME"));
-            let password = resolve_secret_opt(
+            let password = resolve_secret(
                 settings
                     .password
                     .as_ref()
                     .map(|secret| secret.expose_secret().to_owned()),
                 "litellm_settings.cache_params.password",
                 lookup,
-                "REDIS_PASSWORD",
-            )?;
+            )?
+            .or_else(|| lookup.lookup("REDIS_PASSWORD").map(SecretString::from));
             (configured_url, username, password)
         }
     })
-}
-
-pub(super) fn resolve_secret_opt<L>(
-    configured: Option<String>,
-    path: &str,
-    lookup: &L,
-    env_name: &str,
-) -> Result<Option<SecretString>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let resolved = resolve_secret(configured, path, lookup)?;
-    Ok(resolved.or_else(|| lookup.lookup(env_name).map(SecretString::from)))
 }
 
 fn resolve_string_opt<L>(
@@ -206,30 +193,23 @@ where
     L: EnvironmentLookup,
 {
     let Some(value) = configured else {
-        return Ok(lookup
-            .lookup(variable)
-            .is_some_and(|value| coerces_to_true(&ScalarBool::Text(value))));
+        let text = lookup.lookup(variable).unwrap_or_default();
+        return Ok(betterlite_env::flag(variable, &text)?.unwrap_or(false));
     };
-    let resolved = match value {
-        ScalarBool::Boolean(boolean) => ScalarBool::Boolean(*boolean),
-        ScalarBool::Text(text) => ScalarBool::Text(resolve_string(text.clone(), path, lookup)?),
-    };
-    Ok(coerces_to_true(&resolved))
+    match value {
+        ScalarBool::Boolean(boolean) => Ok(*boolean),
+        ScalarBool::Text(text) => {
+            let name = text.strip_prefix("os.environ/").unwrap_or(variable);
+            let resolved = resolve_string(text.clone(), path, lookup)?;
+            Ok(betterlite_env::flag(name, &resolved)?.unwrap_or(false))
+        }
+    }
 }
 
 fn non_empty(value: Option<String>) -> Option<String> {
     match value {
         Some(text) if !text.is_empty() => Some(text),
         _ => None,
-    }
-}
-
-fn coerces_to_true(setting: &ScalarBool) -> bool {
-    match setting {
-        ScalarBool::Boolean(boolean) => *boolean,
-        ScalarBool::Text(text) => {
-            matches!(text.to_ascii_lowercase().as_str(), "true" | "1" | "yes")
-        }
     }
 }
 

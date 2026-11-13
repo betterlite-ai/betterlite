@@ -1,0 +1,8 @@
+task: B3006
+deviations:
+  - what: Spend counters are read, summed and incremented as exact decimals, so a legacy-carry sum is exact; LiteLLM adds Python floats and can land on either side of a cap in the last bits.
+    why: betterlite keeps money as rust_decimal::Decimal from the moment it is read, as the money-is-decimal rule requires, so a budget check cannot drift by a cent across many small costs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L441-L469
+  - what: A cached spend that holds the text nan, inf or -inf reads as zero spend here and in the usage report; LiteLLM turns it into that float, whose comparisons against the cap are all false, so the counter bypasses the cap until it is rewritten.
+    why: A decimal cannot hold a non-finite value, and a counter holding one is corrupt. Reading it as zero blocks a zero-dollar cap instead of letting it through.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L268-L274

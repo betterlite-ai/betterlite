@@ -1,0 +1,11 @@
+kind: helper
+name: watsonx-fake-streaming-multibyte-text
+call:
+  b4807:
+    operation: stream
+    request_id: req-1
+    text: "café 日本語 \U0001F980\U0001F980 naïve"
+    chunk_size: 4
+    delay_ms: 5
+env: {}
+compare: {ignore: []}

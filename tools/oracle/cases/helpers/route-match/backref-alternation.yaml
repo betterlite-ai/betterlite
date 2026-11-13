@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-alternation",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/z",
+      "pattern": "/(?i:(x)\\1)|/z"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

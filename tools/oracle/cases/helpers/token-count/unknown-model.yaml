@@ -1,0 +1,9 @@
+kind: helper
+name: token-count-unknown-model
+call:
+  token_count:
+    function: token_counter
+    model: totally-unknown-model
+    text: "hello world 世界"
+env: {}
+compare: {ignore: []}

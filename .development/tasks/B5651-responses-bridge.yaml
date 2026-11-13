@@ -1,0 +1,125 @@
+id: B5651
+title: Responses API bridge check
+description: >-
+  `completion` sends some chat requests through the Responses API because Chat Completions would reject them. The rule is
+  `responses_api_bridge_check` (main.py L1083-L1194). Build it as one policy function in betterlite-core so the SDK's
+  completion path and the core routes that also ask the question share it. It lives in a new module `responses_bridge`.
+
+
+  The module owns the trait `ResponsesBridgeCapabilities`, the only way the policy learns anything outside its arguments:
+  `model_info(model, custom_llm_provider)` gives a `serde_json::Map` or a typed lookup failure,
+  `resolved_openai_api_base(api_base)` gives the effective OpenAI base after argument, global, env and default,
+  `foundry_supports_native_responses(model, api_base)`, `foundry_chat_rejects_function_tools(model, reasoning_effort)`,
+  `is_gpt_5_model(model)`, `is_gpt_5_4_plus_model(model)` and `is_gpt_5_search_model(model)`. The real implementation is
+  B5656's. Keeping the facts behind a trait lets this task land before model metadata, and it lets a route task test its
+  own branch with a fake.
+
+
+  `BridgeRequest` carries `model`, `custom_llm_provider`, `web_search_options` (present or not), `tools` as
+  `&[serde_json::Value]`, `reasoning_effort` as a small enum over text and object, `reasoning_summary` (present or not),
+  `api_base`, and `route_all_chat_openai_to_responses`, the value of the LiteLLM setting of that name.
+  `responses_api_bridge_check(request, capabilities)` returns `BridgeCheck { model_info, model }`, and callers read
+  `model_info["mode"]`.
+
+
+  Follow the branches in order. With the setting on and provider `openai`, strip `responses/` from the model, set mode to
+  `responses` and return at once with no other model info. Otherwise look up model info. When the lookup works and the mode
+  is missing and the model starts with `responses/`, strip it and set the mode. When the lookup fails, log at debug level
+  and do the same prefix check with empty model info. Then provider `xai` with web search options sets the mode and strips
+  the prefix.
+
+
+  The GPT-5 rule comes last. A tool counts as a function tool when `type` is `function` and either `function` is an object
+  or the tool has a `name` key. Reasoning is active when an object effort has `effort` other than `none` or a non-null
+  `summary`, and when a text or missing effort is anything but `none`. So a missing effort counts as active. The endpoint
+  enforces the rule when the provider is `azure`, the resolved base is empty after trimming, or B500's OpenAI-backed host
+  check in crates/betterlite-openai/src/credentials.rs says yes. On a Foundry endpoint (provider `azure_ai` and
+  `foundry_supports_native_responses`) the capability decides. Elsewhere chat rejects function tools for a GPT-5.4 or
+  later model when the effort was given or the endpoint enforces the rule. The mode becomes `responses` and the prefix goes
+  when the provider is `openai` or `azure` or the endpoint is Foundry, the mode isn't already `responses`, the model is
+  GPT-5 and not a search model, and either both effort and summary are given or chat rejects the tools.
+
+
+  Test names sit in `responses_bridge::tests` and start with `route_all_`, `prefix_`, `web_search_`, `gpt5_` and `foundry_`.
+scope:
+  paths:
+  - crates/betterlite-core/src/responses_bridge.rs
+  - crates/betterlite-core/src/responses_bridge/**
+  - tools/oracle/cases/helpers/responses-bridge/**
+  - "tools/oracle/fuzz/corpus/helper_case/responses_bridge-*"
+  - tools/oracle/helpers/b5651.py
+  - tools/oracle/helpers/b5651/**
+  - tools/oracle/src/helpers/core_ops/b5651.rs
+  - tools/oracle/src/helpers/core_ops/b5651/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1083-L1194
+  why: The whole policy, and its comments explain each endpoint rule.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5495-L5501
+  why: The early call, with no tools and no effort.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5772-L5786
+  why: The late call, with tools, effort and summary.
+dod:
+- text: The global setting routes every OpenAI request to the Responses API with minimal model info, and other providers ignore it.
+  proof: [route-all, oracle, helper-python]
+- text: A `responses/` model prefix sets the mode only when model info has none, and a failed lookup still honors the prefix.
+  proof: [prefix-handling, oracle, helper-python]
+- text: xAI web search options set the mode.
+  proof: [web-search, oracle, helper-python]
+- text: GPT-5 requests bridge for summary with effort, and GPT-5.4 or later bridge for function tools with active reasoning on an enforcing endpoint.
+  proof: [gpt5-rule, oracle, helper-python]
+- text: Custom tools alone, an effort of none and chat-only OpenAI-compatible bases stay on chat.
+  proof: [gpt5-rule, oracle, helper-python]
+- text: Foundry endpoints follow the capability answer in place of the GPT-5.4 rule.
+  proof: [foundry-rule, oracle, helper-python]
+- text: Bridge seeds added to the helper corpus parse and replay.
+  proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+  - id: route-all
+    why: The global setting leaks to other providers or returns extra info.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^responses_bridge::tests::route_all_/)'
+  - id: prefix-handling
+    why: A deployment named with the prefix goes to chat, or keeps the prefix.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^responses_bridge::tests::prefix_/)'
+  - id: web-search
+    why: xAI web search stays on chat.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^responses_bridge::tests::web_search_/)'
+  - id: gpt5-rule
+    why: A request the provider rejects stays on chat, or a chat-only backend gets a route it lacks.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^responses_bridge::tests::gpt5_/)'
+  - id: foundry-rule
+    why: Foundry follows the OpenAI boundary and bridges too early.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^responses_bridge::tests::foundry_/)'
+  - id: helper-python
+    why: This proves a real b5651 adapter exists and type checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5651)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5651 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5651/pyrightconfig.json
+  - id: helper-case-corpus
+    why: Parsing seeds for b5651 have to replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/responses_bridge-*")" && grep -lE '^[[:space:]]+b5651:' tools/oracle/fuzz/corpus/helper_case/responses_bridge-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/responses-bridge/route-all.yaml
+- tools/oracle/cases/helpers/responses-bridge/prefix.yaml
+- tools/oracle/cases/helpers/responses-bridge/web-search.yaml
+- tools/oracle/cases/helpers/responses-bridge/gpt5-summary.yaml
+- tools/oracle/cases/helpers/responses-bridge/gpt5-tools.yaml
+- tools/oracle/cases/helpers/responses-bridge/foundry.yaml
+deviations:
+- what: The check takes tools and reasoning effort as JSON values, so the `getattr(tool, "type")` branch for tool objects has no Rust form.
+  why: The Python layer turns tool objects into plain JSON before the native call, so the same tool arrives as a dict and gets the dict branch.
+out_of_scope:
+- The real `ResponsesBridgeCapabilities` over model metadata and Foundry rules, and both calls inside `completion`, are B5655 and B5656.
+- The OpenAI base resolution and host check at main.py L1060-L1081 are B500.
+- The Foundry rules are B549 and the GPT-5 name checks are B502.
+- The Responses API call itself is the bridge in litellm/completion_extras, and this task only points to it through the mode.
+pitfalls:
+- Python `str.replace` strips every `responses/` in the model and not only a leading one, so use Rust's `replace` and not `strip_prefix`.
+- The prefix check after a successful lookup only runs when `mode` is missing, so a model whose info already says `chat` keeps its prefix until a later rule strips it.
+- The base is trimmed after resolving, so a whitespace-only base counts as the default.
+- The unset-effort arm applies only on an enforcing endpoint, while an explicit effort applies on any endpoint.
+- A custom tool has `type` `custom`, so custom-only requests stay on chat with reasoning on.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

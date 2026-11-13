@@ -1,0 +1,8 @@
+kind: helper
+name: watsonx-text-extract-a2a-params-multiple
+call:
+  b4807:
+    operation: params_text
+    params: {message: {parts: [{kind: text, text: first}, {text: second}, {kind: "", text: third}, {kind: file, text: skipped}, {kind: text, text: ""}, {kind: text, text: "last é"}]}}
+env: {}
+compare: {ignore: []}

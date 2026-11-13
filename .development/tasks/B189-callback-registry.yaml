@@ -24,7 +24,10 @@ scope:
   - crates/betterlite-logging/src/registry/**
   - crates/betterlite-logging/fuzz/**
   - crates/betterlite-logging/tests/fixtures/**
-  - crates/betterlite-config/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/sections/callback_settings.rs
+  - crates/betterlite-config/src/sections/callback_settings/**
+  - "crates/betterlite-config/fuzz/corpus/config_yaml/callback-settings-*"
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/logging/callback_registry.rs
   - tools/oracle/src/helpers/logging/callback_registry/**

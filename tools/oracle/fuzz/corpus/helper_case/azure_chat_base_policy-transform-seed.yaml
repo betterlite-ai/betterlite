@@ -1,0 +1,11 @@
+kind: helper
+name: azure-chat-base-policy-transform-seed
+call:
+  azure_chat_base_policy:
+    action: azure_tool_choice_without_tools
+    settings: {}
+    steps:
+      - messages: [{role: user, content: hi}]
+        optional: {tool_choice: auto}
+env: {}
+compare: {ignore: []}

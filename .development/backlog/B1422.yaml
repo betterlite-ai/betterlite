@@ -1,7 +1,7 @@
 id: B1422
 milestone: M3 providers
 title: Jina mixed-media embeddings and Infinity embedding replies
-status: todo
+status: done
 depends_on: [B002, B006, B183, B249, B171]
 file: tasks/B1422-jina-infinity-embedding.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/llms/infinity/embedding/**"
 parent: B037
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1083

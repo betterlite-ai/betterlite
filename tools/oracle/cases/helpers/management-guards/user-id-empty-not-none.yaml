@@ -1,0 +1,9 @@
+kind: helper
+name: user-id-empty-not-none
+call:
+  management_guards:
+    calls:
+      - {function: caller_user_id_for_non_admin, user_id: ""}
+      - {function: caller_user_id_for_non_admin, user_id: "u1", user_role: proxy_admin}
+env: {}
+compare: {ignore: []}

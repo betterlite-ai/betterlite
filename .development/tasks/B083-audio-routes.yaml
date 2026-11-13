@@ -5,7 +5,7 @@ description: >-
   betterlite-server::api::audio_routes. Own audio_speech,audio_transcriptions and the complete
   _audio_speech_chunk_generator immediately before their decorators. B014 dispatches aspeech/atranscription
   to B1083/B1082. B756 authenticates, B1103 enriches request data and supplies shared error helpers, B004
-  resolves/logs call ids and custom response headers, B124 executes hooks and schedules status updates.
+  resolves/logs call ids and custom response headers, B8399 executes hooks and schedules status updates.
 
   Speech parses JSON and merges the trusted x-litellm-call-id over any body id. Transcription gets B1101's
   ordered form data, removes file, then merges the trusted id. Both fill user from authenticated user_id only
@@ -16,7 +16,7 @@ description: >-
 
   Speech pre-call type is aspeech; transcription is transcription, with route_type=atranscription. Neither
   handler invokes post_call_success_hook. Both run response-header hooks after custom headers and permit callback
-  overwrites. Speech MIME comes from B1003 using upstream content-type when the response is binary, otherwise
+  overwrites. Custom headers include B8994's logging_caching_headers, called from that utility and not copied. Speech MIME comes from B1003 using upstream content-type when the response is binary, otherwise
   requested string response_format or audio/mpeg; an explicit callback content-type still wins in StreamingResponse.
   Chunk iteration passes AUDIO_SPEECH_CHUNK_SIZE, integer default 8192. The source may already have buffered the
   provider response: test downstream delivery/cancellation, not an invented live upstream streaming contract.
@@ -33,19 +33,15 @@ description: >-
   are rejected at startup under bounded-inputs as recorded below. Count 243 nonblank/non-comment lines for
   the three methods/decorators; budget 230 implementation,180 tests,210 HTTP fixtures,65 fuzz/config and 45 wiring,
   730 total. Cases boot both gateways with master_key=sk-test and isolated B1139/B856 virtual-key fixtures.
+  B1100 registers routes/audio.rs as a stub, so fill only crates/betterlite-server/src/routes/audio.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/audio_routes.rs
   - crates/betterlite-server/src/api/audio_routes/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
-  - crates/betterlite-server/src/error.rs
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
+  - crates/betterlite-server/src/routes/audio.rs
+  - crates/betterlite-server/src/routes/audio/**
   - crates/betterlite-core/src/api/audio_routes.rs
   - crates/betterlite-core/src/api/audio_routes/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/audio-routes-*
@@ -154,8 +150,8 @@ deviations:
   why: A positive finite chunk size is required by bounded-inputs and avoids an unbounded or invalid chunk iterator.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L557-L559
 out_of_scope:
-- B1101 owns get_form_data/check_file_size_under_limit; B1102 owns resolve_inference_model; B1103 request enrichment/error header helpers; B004 common processing/logging headers and B124 proxy hooks.
-- B1083/B1084 own SDK speech, B1082 SDK transcription, B1003 MIME and B004 binary response iteration; other proxy_server.py functions stay with their route/service owners under B124's coverage.
+- B1101 owns get_form_data/check_file_size_under_limit; B1102 owns resolve_inference_model; B1103 request enrichment/error header helpers; B004 common processing/logging headers and B8399 proxy hooks.
+- B1083/B1084 own SDK speech, B1082 SDK transcription, B1003 MIME and B004 binary response iteration; other proxy_server.py functions stay with their route/service owners.
 - B1122 owns every base transcription contract function; none is part of route registration here.
 pitfalls:
 - Transcription uses moderation_model precedence, not completion_model, despite being an audio route.

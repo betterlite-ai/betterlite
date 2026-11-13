@@ -62,7 +62,9 @@ where
     let Some(present_response) = response else {
         return false;
     };
-    let Json::List(raw_items) = Json::field(present_response, field) else {
+    let Json::List(raw_items) =
+        Json::parse(present_response.get(field).map_or("null", |raw| raw.get()))
+    else {
         return false;
     };
     let Some(text) = compute_replacement(source) else {
@@ -81,7 +83,7 @@ pub(crate) fn redact_field_when_present<Value>(
 where
     Value: Serialize + ?Sized,
 {
-    let applied = Json::field(fields, key).truthy();
+    let applied = Json::parse(fields.get(key).map_or("null", |raw| raw.get())).truthy();
     if applied {
         set_serializable_field(fields, key, replacement);
     }
@@ -97,12 +99,12 @@ fn explicit_replacement(sanitized_text: Option<&str>) -> Option<String> {
 fn text_completion_replacement(
     (sanitized_text, sanitized_messages): RedactionSource<'_>,
 ) -> Option<String> {
-    if let Some(text) = explicit_replacement(sanitized_text) {
-        return Some(text);
-    }
-    sanitized_messages?.iter().find_map(|message| {
-        let text = normalize_content(&Json::field(message, "content"));
-        (!text.is_empty()).then_some(text)
+    explicit_replacement(sanitized_text).or_else(|| {
+        sanitized_messages?.iter().find_map(|message| {
+            let raw = message.get("content")?;
+            let text = normalize_content(&Json::parse(raw.get()));
+            (!text.is_empty()).then_some(text)
+        })
     })
 }
 
@@ -114,7 +116,11 @@ fn responses_replacement_text(
     }
     let joined = sanitized_messages?
         .iter()
-        .map(|message| normalize_content(&Json::field(message, "content")))
+        .map(|message| {
+            normalize_content(&Json::parse(
+                message.get("content").map_or("null", |raw| raw.get()),
+            ))
+        })
         .collect::<Vec<_>>()
         .join(" ");
     let trimmed = joined.trim().to_owned();
@@ -144,7 +150,7 @@ where
 }
 
 fn redact_output_item_content(item: &mut Fields, replacement_text: &str) -> bool {
-    let Json::List(parts) = Json::field(item, "content") else {
+    let Json::List(parts) = Json::parse(item.get("content").map_or("null", |raw| raw.get())) else {
         return false;
     };
     let mut applied = false;
@@ -167,7 +173,7 @@ fn redact_output_item_content(item: &mut Fields, replacement_text: &str) -> bool
 }
 
 fn clear_output_item_arguments(item: &mut Fields) -> bool {
-    match Json::field(item, "arguments") {
+    match Json::parse(item.get("arguments").map_or("null", |raw| raw.get())) {
         Json::Text(text) if !text.is_empty() => {
             set_serializable_field(item, "arguments", "{}");
             true
@@ -182,7 +188,7 @@ fn clear_output_item_arguments(item: &mut Fields) -> bool {
 }
 
 fn is_text_part(part: &Fields) -> bool {
-    match Json::field(part, "type") {
+    match Json::parse(part.get("type").map_or("null", |raw| raw.get())) {
         Json::Text(kind) => TEXT_PART_TYPES.contains(&kind.as_str()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => false,
     }

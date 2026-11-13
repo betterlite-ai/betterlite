@@ -1,0 +1,1 @@
+{"kind":"helper","name":"custom-negated-case-range","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"[^h-j]","action":"MASK"}],"text":"\u0131"}},"env":{},"compare":{"ignore":[]}}

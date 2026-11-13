@@ -3,17 +3,39 @@ name = "betterlite-db-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
 
 [dependencies]
 betterlite-db = { path = ".." }
+betterlite-openai = { path = "../../betterlite-openai" }
+betterlite-secrets = { path = "../../betterlite-secrets" }
 libfuzzer-sys = "0.4.9"
+secrecy.workspace = true
+uuid.workspace = true
+
+[[bin]]
+name = "database_token_expiry"
+path = "fuzz_targets/database_token_expiry.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "database_urls"
 path = "fuzz_targets/database_urls.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "refresh_password"
+path = "fuzz_targets/refresh_password.rs"
 test = false
 doc = false
 bench = false
@@ -74,4 +96,9 @@ test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "managed_resource_rows"
+path = "fuzz_targets/managed_resource_rows.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-files-object-seed
+call:
+  anthropic_files:
+    native_file_object:
+      now: 1700000000
+      bodies:
+        - {}
+env: {}
+compare: {ignore: []}

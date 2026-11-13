@@ -42,3 +42,4 @@ CREATE INDEX IF NOT EXISTS "LiteLLM_DailyTagSpend_model_idx" ON "LiteLLM_DailyTa
 
 -- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "LiteLLM_DailyTagSpend_tag_date_api_key_model_custom_llm_pro_key" ON "LiteLLM_DailyTagSpend"("tag", "date", "api_key", "model", "custom_llm_provider");
+

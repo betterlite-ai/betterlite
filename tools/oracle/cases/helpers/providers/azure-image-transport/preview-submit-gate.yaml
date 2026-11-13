@@ -1,0 +1,34 @@
+kind: helper
+name: preview-submit-gate
+call:
+  azure_image_transport:
+    steps:
+      - api_base: 'https://example.test/openai/deployments/dall-e-2/images/generations?api-version=2023-06-01-preview&tag=a%20b#keep'
+        api_version: '2023-06-01-preview'
+        deployment_name: dall-e-2
+        headers: {api-key: fixture-secret-key, content-type: application/json}
+        data: {model: dall-e-2, prompt: a cat, n: 1}
+        is_async: true
+        environment: {}
+        replies:
+          - {status: 202, headers: {operation-location: 'https://example.test/openai/operations/op-1'}, body: '{"id":"op-1"}'}
+          - {status: 200, body: '{"status":"succeeded","result":{"data":[{"url":"https://example.test/image.png"}]}}'}
+      - api_base: 'https://example.test/openai/deployments/dall-e-2/images/generations?api-version=2024-02-01'
+        api_version: '2024-02-01'
+        deployment_name: dall-e-2
+        headers: {api-key: fixture-secret-key, content-type: application/json}
+        data: {model: dall-e-2, prompt: a cat, n: 1}
+        is_async: true
+        environment: {}
+        replies:
+          - {status: 200, body: '{"created":1,"data":[{"url":"https://example.test/image.png"}]}'}
+      - api_base: 'https://example.test/openai/v1/chat/completions'
+        api_version: '2023-06-01-preview'
+        headers: {api-key: fixture-secret-key, content-type: application/json}
+        data: {model: dall-e-2, prompt: a cat, n: 1}
+        is_async: true
+        environment: {}
+        replies:
+          - {status: 200, body: '{"created":1,"data":[{"url":"https://example.test/image.png"}]}'}
+env: {}
+compare: {ignore: []}

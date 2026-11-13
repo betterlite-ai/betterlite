@@ -1,0 +1,2 @@
+# BEDROCK_MANTLE_API_KEY is read directly from the process environment
+model_list: []

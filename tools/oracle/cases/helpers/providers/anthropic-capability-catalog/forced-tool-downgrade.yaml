@@ -1,0 +1,48 @@
+kind: helper
+name: forced-tool-downgrade
+call:
+  anthropic_capability_catalog:
+    fixture:
+      model_cost:
+        claude-fable-5-1: {litellm_provider: anthropic, supports_forced_tool_use: false}
+        claude-sonnet-4-5: {litellm_provider: anthropic}
+      packaged: {}
+      thresholds: {medium: 2048, high: 4096, xhigh: 8192}
+    steps:
+      - function: forced_tool_downgrade
+        model: claude-fable-5-1
+        tool_choice: {type: any}
+        drop_params: false
+        global_drop_params: false
+      - function: forced_tool_downgrade
+        model: claude-fable-5-1
+        tool_choice: {type: tool, name: lookup, disable_parallel_tool_use: false}
+        drop_params: true
+        global_drop_params: false
+      - function: forced_tool_downgrade
+        model: claude-fable-5-1
+        tool_choice: {type: any, disable_parallel_tool_use: null}
+        drop_params: false
+        global_drop_params: true
+      - function: forced_tool_downgrade
+        model: claude-sonnet-4-5
+        tool_choice: {type: any}
+        drop_params: false
+        global_drop_params: false
+      - function: forced_tool_downgrade
+        model: claude-fable-5-1
+        tool_choice: {type: none}
+        drop_params: false
+        global_drop_params: false
+      - function: forced_tool_downgrade
+        model: claude-fable-5-1
+        tool_choice: {name: lookup}
+        drop_params: false
+        global_drop_params: false
+      - function: forced_tool_downgrade
+        model: claude-fable-5-1
+        tool_choice: auto
+        drop_params: false
+        global_drop_params: false
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-endpoint-ai21-stream-seed
+call:
+  vertex_endpoint:
+    ai21_stream:
+      complete:
+        - {partner: ai21, model: jamba-1.5-large, location: us-central1, project: proj, project_id: defproj, stream: true, api_base: null}
+      create:
+        - {partner: claude, model: claude-3-5-sonnet, location: us-central1, project: proj, stream: true, api_base: null}
+env: {}
+compare: {ignore: []}

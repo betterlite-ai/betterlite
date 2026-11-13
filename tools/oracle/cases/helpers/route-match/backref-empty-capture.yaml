@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-empty-capture",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/",
+      "pattern": "/(?i:(a*)\\1)"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -1,0 +1,41 @@
+kind: helper
+name: oauth-failure
+call:
+  azure_client_secret:
+    action: oauth_failure
+    steps:
+      - environment: {}
+        tenant_id: tenant
+        client_id: client
+        client_secret: secret
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+          - url_contains: /oauth2/v2.0/token
+            status: 400
+            body: '{"error":"invalid_client","error_description":"the client secret is not valid"}'
+      - environment: {}
+        tenant_id: tenant
+        client_id: client
+        client_secret: secret
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+          - url_contains: /oauth2/v2.0/token
+            status: 400
+            body: not json
+      - environment: {}
+        tenant_id: tenant
+        client_id: client
+        client_secret: secret
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/tenant/oauth2/v2.0/token"}'
+          - url_contains: /oauth2/v2.0/token
+            status: 500
+            body: unexpected
+env: {}
+compare: {ignore: []}

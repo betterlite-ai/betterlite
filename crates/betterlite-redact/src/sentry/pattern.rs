@@ -27,7 +27,7 @@ struct PiiPatterns {
     sha256: Regex,
 }
 
-pub(super) struct Patterns {
+pub struct Patterns {
     field: Regex,
     key: Regex,
     pii: Option<PiiPatterns>,
@@ -65,7 +65,7 @@ fn key_pattern_source(custom_key_minimum: usize, generated_key_bytes: usize) -> 
     format!("{KEY_PREFIX}[A-Za-z0-9_-]{{{floor},}}")
 }
 
-pub(super) fn build(
+pub fn build(
     send_default_pii: bool,
     custom_key_minimum: usize,
     generated_key_bytes: usize,
@@ -128,11 +128,6 @@ fn push_filtered_field(output: &mut String, field: &str, value_starts_with_quote
     output.push(quote);
 }
 
-fn advance_past_char(text: &str, start: usize) -> usize {
-    let next = text.get(start..).and_then(|rest| rest.chars().next());
-    next.map_or(text.len(), |ch| start.saturating_add(ch.len_utf8()))
-}
-
 fn scan_and_filter<M, Find, Push>(
     text: &str,
     mut next_match: Find,
@@ -150,7 +145,11 @@ where
             break;
         };
         if rejected {
-            scan_from = advance_past_char(text, whole.start).max(scan_from.saturating_add(1));
+            let next = text
+                .get(whole.start..)
+                .and_then(|rest| rest.chars().next())
+                .map_or(text.len(), |ch| whole.start.saturating_add(ch.len_utf8()));
+            scan_from = next.max(scan_from.saturating_add(1));
             continue;
         }
         output.push_str(text.get(copied_until..whole.start).unwrap_or_default());
@@ -222,16 +221,6 @@ pub fn scrub(text: &str, send_default_pii: bool) -> Result<String, PatternError>
         fixture::MINIMUM_CUSTOM_KEY_LENGTH,
         fixture::GENERATED_KEY_LENGTH,
     )?;
-    Ok(apply(&patterns, text))
-}
-
-pub fn scrub_with_key_lengths(
-    text: &str,
-    send_default_pii: bool,
-    custom_key_minimum: usize,
-    generated_key_bytes: usize,
-) -> Result<String, PatternError> {
-    let patterns = build(send_default_pii, custom_key_minimum, generated_key_bytes)?;
     Ok(apply(&patterns, text))
 }
 

@@ -1,0 +1,10 @@
+kind: helper
+name: realtime-cost-events-unrelated-malformed-ws-event-still-validates
+call:
+  realtime_cost_events:
+    function: collect
+    events:
+      - {type: response.completed, response: {usage: {input_tokens: 2, output_tokens: 1}}}
+      - {type: rate_limits.updated, response: {usage: 5}}
+env: {}
+compare: {ignore: []}

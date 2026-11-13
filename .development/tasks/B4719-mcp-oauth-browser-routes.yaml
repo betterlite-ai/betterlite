@@ -1,0 +1,170 @@
+id: B4719
+title: MCP management OAuth browser navigation routes
+description: >-
+  Build the three routes the admin UI "Authorize and fetch token" flow calls from the browser, and the auth dependency that two of them use: GET /v1/mcp/server/oauth/{server_id}/authorize, POST /v1/mcp/server/oauth/{server_id}/token and POST /v1/mcp/server/oauth/{server_id}/register. LiteLLM mounts this router with the /v1/mcp prefix only, so there is no /mcp/... or /openai/v1/... alias. All three are include_in_schema=False, so they stay out of the OpenAPI document. The {server_id} is either a saved server (id or name), a config-declared server, or a temporary session made by POST /v1/mcp/server/oauth/session (B4718). The routes only choose the server, check OAuth rules that belong to the route and pick the arguments; the OAuth work itself (building the redirect, exchanging the code, registering a client) is done by the flow functions listed under Ports below.
+
+
+  Code goes in betterlite-server, module mcp::oauth_routes: crates/betterlite-server/src/mcp/oauth_routes.rs (the router builder, the shared wire constants and the OauthRouteError enum with its status mapping), oauth_routes/ports.rs, oauth_routes/cookie_auth.rs, oauth_routes/route_auth.rs, oauth_routes/authorize_route.rs, oauth_routes/token_route.rs, oauth_routes/register_route.rs, oauth_routes/oauth2_gate.rs and a tests.rs beside each file. The worker of this task edits the manifests itself: it adds the jsonwebtoken dependency (for the cookie) and the form feature of axum to crates/betterlite-server/Cargo.toml, adds a [[bin]] entry for fuzz_targets/mcp_session_cookie.rs to crates/betterlite-server/fuzz/Cargo.toml, and lets Cargo.lock follow (jsonwebtoken is not pinned in Cargo.lock yet, so pick the current release and keep the lock change to that crate and its new dependencies). Nothing here keeps global state: the master key, the registry, B4718's SessionStore, the flow port, the auth port and the clock are fields of one struct, OauthRoutes, built by the wave 17 part B8623.
+
+
+  Ports (traits in ports.rs, native async fn in the trait, taken as generics). LiteLLM imports these functions from discoverable_endpoints.py and _user_api_key_auth_builder from user_api_key_auth.py. B7321 implements the OauthFlows port with the discoverable_endpoints.py functions, so this task declares the trait and a fake, and B8702 wires B7321's implementation.
+
+  1. OauthFlows has: `resolve_ephemeral_dcr_client(&self, request: &RequestParts, server: &MCPServer, code_challenge: Option<&str>, code_challenge_method: Option<&str>, redirect_uri: &str) -> Result<Option<EphemeralDcrClient>, FlowError>`; `authorize_with_server(&self, AuthorizeArgs) -> Result<FlowReply, FlowError>`; `exchange_token_with_server(&self, TokenArgs) -> Result<FlowReply, FlowError>`; `register_client_with_server(&self, RegisterArgs) -> Result<FlowReply, FlowError>`; the sync `redeem_passthrough_code(&self, code: Option<&str>, server: &MCPServer, code_verifier: Option<&str>) -> Result<Option<SealedCode>, FlowError>`; the sync `client_supplied_redirect_uris(&self, value: Option<&serde_json::Value>) -> Option<Vec<String>>`; and the sync `request_base_url(&self, request: &RequestParts) -> String` (B4654's get_request_base_url). The argument structs carry the same named fields as the Python keyword arguments (authorize: client_id, redirect_uri, state, code_challenge, code_challenge_method, response_type, scope, ephemeral_dcr_client; token: grant_type, code, redirect_uri, client_id, client_secret, code_verifier, refresh_token, scope, client_token_endpoint_auth_method; register: client_name, grant_types, response_types, token_endpoint_auth_method, fallback_client_id, persist_credentials, client_redirect_uris), each with the server and the request. RequestParts is the method, uri, headers and client address of the request. EphemeralDcrClient has client_id: String and nothing else this task reads. SealedCode has upstream_code: String, client_id: Option<String>, client_secret: Option<SecretString> and token_endpoint_auth_method: Option<String>. FlowReply is a status, headers and a JSON or redirect body, returned to the client as is. FlowError is a status plus a JSON `detail` (string or object) and is returned as {"detail": <detail>} with that status.
+
+  2. RouteAuth has `authenticate(&self, request: &RequestParts, api_key: &str, request_data: &serde_json::Map<String, serde_json::Value>) -> Result<UserApiKeyAuth, AuthFailure>` and is B8702's handle on _user_api_key_auth_builder (B855 and the auth builders it composes, azure/anthropic/google/apim header arguments all empty or None, so only api_key and request_data matter). AuthFailure maps to the status and body the auth builder already defines; this task passes it through.
+
+  The routes also call these existing pieces: B4718's SessionStore::cached_temporary_server_or_404 (`_get_cached_temporary_mcp_server_or_404`, signature: server_id, the caller's auth, the optional request; it returns the runtime MCPServer or a SessionError that already maps to 404 {"detail": {"error": "MCP server <id> not found"}} or 403 {"detail": {"error": "Access denied to MCP server <id>"}}); B4717's user_is_full_admin (`_user_is_full_admin`, true only for PROXY_ADMIN); B4731's server_by_id and server_by_name; B1100's request body reader (`_read_request_body`: it caches the parsed body, an empty body gives an empty object and a urlencoded or multipart form is parsed into an object); B1102's populate_request_with_path_params; B741's get_request_route; B6590's MCPServer with its methods has_client_credentials and the fields auth_type, client_id, delegate_auth_to_upstream, server_name and name.
+
+
+  Build, in this order.
+
+  A. cookie_auth.rs, `decode_session_cookie(token: &str, master_key: &SecretString, now: DateTime<Utc>) -> Option<String>` (the cookie part of `_mcp_oauth_user_api_key_auth`). This reads bytes from outside, so it is the fuzzed decoder. Decode token as an HS256 JWT signed with the master key, with exp not required and not checked and aud not checked. Return the claim `key` when the claim `login_method` is "sso" or "username_password" and `key` is a non-empty string. Every other outcome is None: bad signature, wrong algorithm, malformed token, missing or other login_method, missing, empty or non-string key. PyJWT still checks nbf and iat when present, so a token whose nbf or iat lies after `now` is also None (jsonwebtoken checks nbf only when asked; set validate_nbf true and compare iat by hand). A decode failure never raises, it is just None.
+
+  B. route_auth.rs, `route_auth` (`_mcp_oauth_user_api_key_auth`), inputs: the request parts, the path params and the cookies. Steps in this order. (1) api_key is the raw Authorization header value, or "" when the header is missing. LiteLLM passes the whole value and the auth builder strips "Bearer "; do the same. (2) When api_key is empty, the master key is configured and the "token" cookie is present and non-empty, decode_session_cookie gives the user's key and api_key becomes "Bearer <key>"; None changes nothing. (3) When api_key is still empty and the path has a non-empty server_id: look the server up in the registry with server_by_id(server_id, None), and only when that finds nothing server_by_name(server_id, None) (the registry is the global manager; B4718 sessions are not consulted here). When a server is found and ALL of these hold: auth_type is exactly oauth2 (not true_passthrough or oauth_delegate), delegate_auth_to_upstream is true, and has_client_credentials is false, then: if the lowercase request route (B741 get_request_route) with trailing "/" removed ends with "/token", read the body with B1100; when body.grant_type equals "authorization_code" return UserApiKeyAuth::default() (an anonymous principal with no role and no key) and for any other grant_type, or none, fall through to step 4 so a refresh_token grant needs a normal key; when the route does not end with "/token" (the authorize route) return UserApiKeyAuth::default(). (4) Read the body (B1100), add the path params (B1102 populate_request_with_path_params) and call RouteAuth::authenticate with api_key and that data. Its error is returned unchanged, so no credentials gives the auth builder's 401.
+
+  C. oauth2_gate.rs, `ensure_oauth2` (`_raise_if_not_oauth2`, discoverable_endpoints.py L697-L722), input: the server. Returns Ok for auth_type oauth2, true_passthrough and oauth_delegate (B6760's UPSTREAM_OAUTH_DISCOVERY_AUTH_TYPES). Any other type is 400 with {"detail": {"error": "server_not_oauth2", "message": "MCP server '<server_name or name>' does not use OAuth (auth_type=<auth_type>). This server does not support the authorization-code flow; it has no client_id, authorize, token, or registration endpoint. Access is controlled by the server's configured auth_type and access groups"}}. It is also called inside each flow function in LiteLLM; the routes call it first, so a flow implementation may call it again. It is written here because all three routes need it and no task owns it; the architect may move it (see notes). The text of <auth_type> is the string form LiteLLM prints for the enum value; confirm it with an oracle case run against the real proxy and match it, and use the plain value (api_key) only if LiteLLM prints that.
+
+  D. authorize_route.rs, `mcp_authorize` for GET /v1/mcp/server/oauth/{server_id}/authorize, dependency route_auth (it runs before query validation, so a missing key is 401 even when redirect_uri is missing). Query: client_id, state (default ""), code_challenge, code_challenge_method, response_type, scope, all optional, and redirect_uri required; a missing redirect_uri is 422 in FastAPI's error shape {"detail": [{"type": "missing", "loc": ["query", "redirect_uri"], "msg": "Field required", "input": null}]}. Steps: (1) cached_temporary_server_or_404(server_id, auth, request); (2) ensure_oauth2; (3) stored_or_supplied is server.client_id, else the query client_id, else "" (an empty string counts as unset, like Python's `or`); (4) only when stored_or_supplied is empty, call resolve_ephemeral_dcr_client(request, server, code_challenge, code_challenge_method, redirect_uri), else the minted client is None; (5) resolved_client_id is stored_or_supplied, else the minted client's client_id, else ""; (6) an empty resolved_client_id is 400 {"detail": {"error": "missing_client_id", "message": "No client_id available for this MCP server. Either configure the server with a client_id or supply one in the request."}}; (7) return authorize_with_server with the resolved client_id, redirect_uri, state, code_challenge, code_challenge_method, response_type, scope and the minted client. The reply is returned as the flow gave it (a redirect or JSON).
+
+  E. token_route.rs, `mcp_token` for POST /v1/mcp/server/oauth/{server_id}/token, dependency route_auth. Body is application/x-www-form-urlencoded with grant_type required and code, redirect_uri, client_id, client_secret, code_verifier, refresh_token, scope optional; a missing grant_type is 422 {"detail": [{"type": "missing", "loc": ["body", "grant_type"], "msg": "Field required", "input": null}]}. Steps: (1) cached_temporary_server_or_404; (2) ensure_oauth2; (3) only when grant_type == "authorization_code", sealed = redeem_passthrough_code(code, server, code_verifier) (its error is returned as is), otherwise sealed is None, so a refresh_token grant never opens a sealed code; (4) resolved_code is sealed.upstream_code when sealed, else code; (5) resolved_redirect_uri is "<request_base_url>/callback" when sealed, else the form redirect_uri; (6) the caller's client_id and client_secret are the sealed ones when sealed, else the form ones; (7) resolved_client_id is server.client_id, else the caller's client_id, else ""; empty gives the same 400 missing_client_id body as in D; (8) return exchange_token_with_server with grant_type, resolved_code, resolved_redirect_uri, resolved_client_id, the caller's client_secret, code_verifier, refresh_token, scope and client_token_endpoint_auth_method set to sealed's value or None.
+
+  F. register_route.rs, `mcp_register` for POST /v1/mcp/server/oauth/{server_id}/register, dependency is the plain user_api_key_auth (Authorization and the other key headers, no cookie fallback and no anonymous PKCE bypass; this differs from authorize and token). Steps: (1) cached_temporary_server_or_404; (2) read the body with B1100 (an empty body gives {}); (3) client_redirect_uris is client_supplied_redirect_uris(body.redirect_uris); (4) return register_client_with_server with client_name body.client_name or "", grant_types body.grant_types or an empty list, response_types body.response_types or an empty list, token_endpoint_auth_method body.token_endpoint_auth_method or "", fallback_client_id the server_id from the path, persist_credentials true only when user_is_full_admin, and client_redirect_uris. Missing keys use .get defaults (""/[]) but an explicit JSON null stays null, since Python's .get returns the null; pass it through as the Option the port declares. Unlike authorize and token, register does not call ensure_oauth2 itself; the flow does. The register route does not use a cookie, so a browser needs the key in the header.
+
+  Errors: OauthRouteError (thiserror) wraps SessionError (#[from]) and FlowError and AuthFailure with the status mapping above, and has a variant for the 400 bodies built here. All error bodies are {"detail": ...} and none is the OpenAI error shape.
+
+  Tests use synthetic servers (ids test-oauth-1, urls https://mcp.example.test/sse), fakes for OauthFlows (records every argument it is called with and returns a fixed FlowReply), RouteAuth (records api_key and request_data) and the SessionStore lookup, and a fixed clock. B8702 mounts these routes and runs their HTTP oracle cases through the booted proxy (master key, no database: auth, 404 and 422 only); here the handlers are tested with tower's oneshot.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/oauth_routes.rs
+    - crates/betterlite-server/src/mcp/oauth_routes/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/fuzz/fuzz_targets/mcp_session_cookie.rs
+    - crates/betterlite-server/fuzz/corpus/mcp_session_cookie/**
+    - tools/oracle/helpers/b4719.py
+    - tools/oracle/helpers/b4719/**
+    - tools/oracle/src/helpers/server/b4719.rs
+    - tools/oracle/src/helpers/server/b4719/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L87-L92
+    why: Router prefix /v1/mcp, the only mount point of these routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2080-L2178
+    why: The auth dependency, with the Authorization header, the "token" cookie decode, the delegate_auth_to_upstream anonymous arm and its refresh_token exclusion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2180-L2205
+    why: The shared 404/403 lookup all three routes call (B4718 owns it; read for its arguments).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2208-L2264
+    why: GET /server/oauth/{server_id}/authorize from its decorator, client_id resolution, the minted client and the missing_client_id body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2267-L2324
+    why: POST /server/oauth/{server_id}/token, the sealed code handling and the form fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2327-L2351
+    why: POST /server/oauth/{server_id}/register with its plain user_api_key_auth dependency and persist_credentials.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L394-L420
+    why: redeem_passthrough_authorization_code, the contract the token route relies on (port, not built here).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L697-L722
+    why: _raise_if_not_oauth2 and its server_not_oauth2 body, built in oauth2_gate.rs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1675-L1684
+    why: client_supplied_redirect_uris (port; a non-list, an empty list or a list with a non-string or empty element gives None).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L175-L280
+    why: _read_request_body, which the dependency calls (B1100 owns it).
+  - url: https://pyjwt.readthedocs.io/en/stable/api.html#jwt.decode
+    why: PyJWT still verifies nbf and iat when exp checking is off, which decode_session_cookie must match.
+  - url: https://docs.rs/jsonwebtoken/latest/jsonwebtoken/struct.Validation.html
+    why: Validation flags for exp, aud and nbf that decode_session_cookie sets.
+
+dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports; B8702 mounts the routes and proves the items below over HTTP with the cases that moved there.
+    proof: [route-tests]
+  - text: >-
+      The three routes are registered at GET /v1/mcp/server/oauth/{server_id}/authorize, POST /v1/mcp/server/oauth/{server_id}/token and
+      POST /v1/mcp/server/oauth/{server_id}/register, are left out of the OpenAPI document, and have no other alias.
+    proof: [route-tests]
+  - text: >-
+      decode_session_cookie returns the key only for a valid HS256 token signed with the master key whose login_method is sso or
+      username_password and whose key is a non-empty string, ignores exp and aud, and returns None for a bad signature, another
+      algorithm, a malformed token, another login_method, a missing or empty key, and an nbf or iat in the future.
+    proof: [route-tests, cookie-corpus]
+  - text: >-
+      route_auth uses the Authorization header first, then the cookie key as "Bearer <key>" only when the header is empty and a
+      master key is set, and passes api_key and the body with path params to the auth port.
+    proof: [route-tests]
+  - text: >-
+      route_auth returns the anonymous principal without a key only for an oauth2 server with delegate_auth_to_upstream true and no client
+      credentials: on authorize always, on token only for grant_type authorization_code. A refresh_token grant, a missing grant_type,
+      a true_passthrough or oauth_delegate server, a client_credentials server, a non-delegating server and an unknown server all fall
+      through to normal authentication. A server found by name works the same as one found by id.
+    proof: [route-tests]
+  - text: >-
+      authorize answers 401 for no credentials before query validation, 422 for a missing redirect_uri, 404 and 403 from the shared
+      lookup, 400 server_not_oauth2 for a non-OAuth server, and 400 missing_client_id when neither the server, the query nor a minted
+      client gives an id. It calls the client minting only when the stored and supplied ids are both empty.
+    proof: [route-tests]
+  - text: >-
+      authorize passes the resolved client_id, redirect_uri, state (default empty), code_challenge, code_challenge_method,
+      response_type, scope and the minted client to the flow, preferring the server's client_id over the query's.
+    proof: [route-tests]
+  - text: >-
+      token answers 422 for a missing grant_type, redeems a sealed code only for the authorization_code grant, then uses the sealed
+      upstream code, the sealed client id and secret, the "<base>/callback" redirect and the sealed auth method; without a sealed code it
+      forwards the form values. The server's client_id wins over the caller's, and no id at all is 400 missing_client_id.
+    proof: [route-tests]
+  - text: >-
+      register uses the plain key dependency (no cookie, no anonymous arm), reads the body with empty defaults, passes
+      fallback_client_id as the path server_id, sets persist_credentials only for PROXY_ADMIN (not PROXY_ADMIN_VIEW_ONLY) and passes
+      the validated redirect_uris.
+    proof: [route-tests]
+  - text: >-
+      The cookie decoder is shared by production, the fuzz target and the committed corpus replay.
+    proof: [cookie-corpus]
+
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: route-tests
+      why: the route module's auth dependency, the cookie decoder, the three routes or the argument mapping have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_routes::/) - test(/::replays_cookie_corpus$/)'
+    - id: cookie-corpus
+      why: the cookie decoder has no fuzz target or no new seed, or its replay fails
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/mcp_session_cookie)" && test -f crates/betterlite-server/fuzz/fuzz_targets/mcp_session_cookie.rs && grep -qF "decode_session_cookie" crates/betterlite-server/fuzz/fuzz_targets/mcp_session_cookie.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_routes::cookie_auth::tests::replays_cookie_corpus$/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The token route accepts application/x-www-form-urlencoded bodies; a multipart/form-data body is not parsed as the token form.
+    why: The browser flow and OAuth clients send urlencoded forms (RFC 6749). FastAPI also accepts multipart here; a multipart body answers 422 for the missing grant_type instead.
+  - what: The OAuth flow functions (authorize_with_server, exchange_token_with_server, register_client_with_server, resolve_ephemeral_dcr_client, redeem_passthrough_code, client_supplied_redirect_uris) are ports in this task, not built here.
+    why: They belong to discoverable_endpoints.py, which no task owns at this commit. The routes are complete and tested against fakes, and the HTTP oracle cases stop at the checks before the flow.
+  - what: A resolution without a runtime server is the 500 B4718 returns as a typed error, where LiteLLM's assert raises AssertionError.
+    why: Production code carries no assert, and the case cannot occur with a temp lookup and a registry as the only sources.
+
+out_of_scope:
+  - "B4718 owns _get_cached_temporary_mcp_server_or_404, get_cached_temporary_mcp_server and the session store; this task calls cached_temporary_server_or_404."
+  - "B4717 owns _user_is_full_admin; B2314 owns user_api_key_has_admin_view (B4718 calls it); B4731 owns resolve_mcp_server, authorize_mcp_server, get_mcp_server_by_id and get_mcp_server_by_name."
+  - "B1100 owns _read_request_body, B1102 owns populate_request_with_path_params, B741 owns get_request_route, and B4654 owns get_request_base_url."
+  - "_user_api_key_auth_builder and user_api_key_auth: owned by the auth admission tasks (B855, B875, B876 and the tasks they compose); this task calls them through the RouteAuth port."
+  - "authorize_with_server, exchange_token_with_server, register_client_with_server, resolve_ephemeral_dcr_client, redeem_passthrough_code and client_supplied_redirect_uris (discoverable_endpoints.py): no owner found, declared as the OauthFlows port here and implemented by B7321."
+  - "The other routes of mcp_management_endpoints.py (create, update, delete, health, credentials, toolsets, preview): owned by B4710 to B4730; the session route /server/oauth/session is B4718."
+
+pitfalls:
+  - Only the authorize and token routes use the cookie-and-anonymous dependency; register depends on plain user_api_key_auth, so a browser cookie alone gets 401 there.
+  - The anonymous arm needs auth_type exactly oauth2; true_passthrough and oauth_delegate servers pass ensure_oauth2 but never get anonymous access.
+  - A refresh_token grant on a delegating server must fall through to normal auth, because the token route attaches the stored client_secret to the upstream request.
+  - The registry lookup in route_auth tries the id first and the name only when the id finds nothing, and it never reads B4718 temporary sessions, so an unsaved session always needs a real key.
+  - The token path test is on the lowercased route with a trailing "/" removed, so /TOKEN/ also reads the body for grant_type.
+  - Python `or` makes an empty string client_id on the server or the query count as missing, and an empty body field become the default.
+  - The cookie claim is `key`, not `token` or `api_key`, and the new api_key is "Bearer <key>" with the prefix added here, while the header value is passed on untouched.
+  - PyJWT with verify_exp false still rejects a token whose nbf or iat is in the future; a decoder that skips those lets a token through that LiteLLM refuses.
+  - authorize calls resolve_ephemeral_dcr_client only when no client id exists; calling it always would mint a client for servers that already have one.
+  - The sealed code applies to the authorization_code grant only, and with a sealed code the redirect_uri sent upstream is "<base_url>/callback", never the form value.
+  - fallback_client_id for register is the path server_id (which may be a name), not the resolved server's server_id.
+  - Errors from this router carry a detail field holding an object or a string, so the 404, 403 and 400 bodies are not the OpenAI error shape.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

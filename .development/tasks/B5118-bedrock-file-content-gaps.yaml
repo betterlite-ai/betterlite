@@ -1,0 +1,166 @@
+id: B5118
+title: Close the B646 Bedrock file content audit gaps
+description: >-
+  B646 built transform_file_response in crates/betterlite-bedrock/src/file_content.rs, the transform
+  for a Bedrock file-content reply. An Opus review after merge found three tests that can't fail on the
+  behavior they name. Checking them against LiteLLM turned up one field that differs as well. This task
+  closes all four in the same crate, the same test module
+  (crates/betterlite-bedrock/src/file_content/tests/file_content_cases.rs), the same oracle helper
+  operation bedrock_services_file_content and the same case folder
+  tools/oracle/cases/helpers/providers/bedrock-services-file-content/. No route calls the transform yet.
+  LiteLLM's generic transport raises its own error for a status of 400 or more before it ever calls the
+  transform (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5050-L5061),
+  so every case here stays a helper case.
+
+
+  Gap one is the status boundary. LiteLLM raises BedrockError when raw_response.status_code >= 400 and
+  wraps every lower status as HttpxBinaryResponseContent
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1496).
+  Every error test and oracle case on main uses 500, and the highest wrapped status is 302. So changing
+  `>= 400` at file_content.rs line 90 to `> 400` or `>= 500` keeps all of them green, while a Bedrock 400,
+  403 or 404 would come back as file content. failed_binary_reply takes the status as its first case
+  parameter and asserts the returned status against it instead of the literal 500. Its text, empty and
+  invalid_utf8 cases keep 500, and two new cases join them: bad_request with status 400 and body
+  "bad request", and not_found with status 404 and S3's body `<Error><Code>NoSuchKey</Code></Error>`.
+  non_error_statuses gets a highest_non_error case with status 399. New oracle cases
+  failed-binary-reply-bad-request.yaml (400), failed-binary-reply-not-found.yaml (404) and
+  highest-non-error-status.yaml (399) pin the same boundary against LiteLLM.
+
+
+  Gap two is the exception's own fields. LiteLLM builds BedrockError with headers=raw_response.headers
+  and response=raw_response and passes no request
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1497-L1502).
+  Since a response is present, BedrockError hands both on unchanged
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L78-L102).
+  BaseLLMException then keeps headers as given, sets request to its default POST
+  https://docs.litellm.ai/docs, and keeps raw_response as response with that response's own GET request
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L52-L63).
+  betterlite passes request: Some(response.request.clone()) at file_content.rs line 103, so
+  error.cause.error.request carries the file's GET URL instead of LiteLLM's default. The fix passes
+  request: None, and ProviderError::from fills the same default. The test side is weak too.
+  failed_binary_reply only checks response_headers and the response text, so setting headers: None at
+  line 106 or putting a wrong status in the ErrorResponse at lines 96-99 also stays green. A new rstest
+  function failed_binary_reply_keeps_exception_fields in file_content_cases.rs covers this. Its cases
+  are server_error (500), bad_request (400) and not_found (404), and each sends a header list with one
+  name repeated. It asserts that error.cause.error equals a whole ProviderError: the case's status,
+  status_code_is_synthesized false, the decoded message, headers Some of the reply's pairs in order,
+  request POST https://docs.litellm.ai/docs, response with the case's status and the GET fixture
+  request, and body None. It also asserts that error.cause.headers equals
+  Some(ErrorHeaders::Http(the reply's pairs)). On today's main it fails on the request field.
+
+
+  Gap three is the oracle adapters. The Rust adapter tools/oracle/src/helpers/bedrock/services_file_content.rs
+  reports error.cause.response_headers as error.headers (line 30). It fills error.response.status_code
+  (line 32) and error.response.request (line 35) from the exception's own status and request, not from
+  the preserved response. The Python adapter tools/oracle/helpers/bedrock_services_file_content.py reads
+  error.response.headers for error.headers (line 49). So failed-binary-reply.yaml can't fail when the
+  exception drops its own headers or the preserved response carries a wrong status or request. After
+  the fix the Rust adapter emits error.cause.error.headers as error.headers and
+  error.cause.error.request as a new error.request field. Inside error.response it emits
+  error.cause.error.response.status_code and error.cause.error.response.request; error.response.headers
+  keeps error.cause.response_headers and error.response.body keeps the raw bytes. The Python adapter
+  emits the caught BedrockError's own headers as error.headers: LiteLLM passes an httpx.Headers there,
+  written as its multi_items() pairs, or null when it is None. It also emits error.request as method and
+  url, the way it already writes the preserved response's request. Once both adapters compare
+  error.request, failed-binary-reply.yaml and the two new 4xx cases fail on today's main until gap
+  two's fix lands.
+scope:
+  paths:
+  - crates/betterlite-bedrock/src/file_content.rs
+  - crates/betterlite-bedrock/src/file_content/tests/file_content_cases.rs
+  - tools/oracle/src/helpers/bedrock/services_file_content.rs
+  - tools/oracle/helpers/bedrock_services_file_content.py
+  - tools/oracle/cases/helpers/providers/bedrock-services-file-content/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1490-L1503
+  why: The owned transform. The >= 400 test is on L1496, and the BedrockError it raises takes the reply's status, text, headers and the reply itself, with no request.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L78-L102
+  why: BedrockError synthesizes a response only when none is given, so here it passes headers, request None and the raw response straight on.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L65
+  why: BaseLLMException keeps headers as given, defaults request to POST https://docs.litellm.ai/docs and keeps the given response.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5050-L5061
+  why: The generic transport raises its own error class for 400 and above before calling the transform, so no route reaches this error branch and the cases stay helper cases.
+dod:
+- text: >-
+    A reply with status 400 or 404 raises FileContentError::Bedrock carrying that status. The new
+    failed_binary_reply cases bad_request (400) and not_found (404) and the new oracle cases
+    failed-binary-reply-bad-request.yaml and failed-binary-reply-not-found.yaml fail if file_content.rs
+    line 90 tests `> 400` or `>= 500`. On main every error case uses 500 and none of them can fail that
+    way.
+  proof:
+  - case-client-error-statuses
+  - oracle
+- text: >-
+    A reply with status 399 is wrapped as file content. The new non_error_statuses case
+    highest_non_error and the new oracle case highest-non-error-status.yaml fail if the boundary moves
+    below 400. On main the highest wrapped status is 302.
+  proof:
+  - case-highest-non-error-status
+  - oracle
+- text: >-
+    The raised error carries LiteLLM's fields: request POST https://docs.litellm.ai/docs, the reply's
+    header pairs as its own headers, and a response with the reply's status and GET request.
+    file_content.rs passes request None to ErrorInput. The new rstest function
+    failed_binary_reply_keeps_exception_fields asserts the whole ProviderError and
+    error.cause.headers for 500, 400 and 404 replies with a repeated header name. It fails on today's
+    main on the request field, and it would fail on headers None at line 106 or a wrong ErrorResponse
+    status at lines 96-99. Every other test in the file_content module, including the
+    case_1_failed_binary_reply wrapper, still passes.
+  proof:
+  - case-exception-fields
+  - oracle
+- text: >-
+    Both oracle adapters report the exception's own headers and request at error.headers and
+    error.request, and the preserved response's status and request inside error.response. Neither
+    adapter reports the reply's headers as the exception's headers any more. failed-binary-reply.yaml
+    then fails on today's main and passes once the request fix lands.
+  proof:
+  - adapter-exception-fields
+  - helper-python
+  - oracle
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-client-error-statuses
+    why: A 400 or 404 Bedrock reply has no test or oracle case, so a moved error boundary stays green.
+    run: test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/bedrock-services-file-content/failed-binary-reply-bad-request.yaml tools/oracle/cases/helpers/providers/bedrock-services-file-content/failed-binary-reply-not-found.yaml | wc -l)" -eq 2 && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::file_content_cases::failed_binary_reply::case_[0-9]+_bad_request$/)' && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::file_content_cases::failed_binary_reply::case_[0-9]+_not_found$/)'
+  - id: case-highest-non-error-status
+    why: Status 399 has no test or oracle case, so a boundary moved below 400 stays green.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/bedrock-services-file-content/highest-non-error-status.yaml)" && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::file_content_cases::non_error_statuses::case_[0-9]+_highest_non_error$/)'
+  - id: case-exception-fields
+    why: The raised error's own headers, request and preserved response are unchecked, and its request differs from LiteLLM's default.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::file_content_cases::failed_binary_reply_keeps_exception_fields::/)' && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^file_content::/)'
+  - id: adapter-exception-fields
+    why: The oracle adapters still compare the reply's headers and the exception's own status and request where the exception's headers and the preserved response belong.
+    run: grep -q 'error\.headers' tools/oracle/src/helpers/bedrock/services_file_content.rs && grep -q 'error\.response\.status_code' tools/oracle/src/helpers/bedrock/services_file_content.rs && grep -q 'error\.response\.request' tools/oracle/src/helpers/bedrock/services_file_content.rs && test "$(grep -c 'cause\.response_headers' tools/oracle/src/helpers/bedrock/services_file_content.rs)" -le 1 && test "$(grep -c 'error_response\.headers' tools/oracle/helpers/bedrock_services_file_content.py)" -le 1
+  - id: helper-python
+    why: The Python adapter is unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_file_content.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-services-file-content/raw-binary-reply.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-file-content/empty-binary-reply.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-file-content/failed-binary-reply.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-file-content/non-error-statuses.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-file-content/failed-binary-reply-bad-request.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-file-content/failed-binary-reply-not-found.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-file-content/highest-non-error-status.yaml
+deviations: []
+out_of_scope:
+- Padded one-line functions belong to B5094. It clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task does not touch .ast-grep/rules/.
+- tools/oracle/src/helpers/bedrock/services_file_content/tests.rs and the bedrock_services_file_content seed are in B5094's scope and have no finding here, so this task leaves them alone.
+- The fixed status per error class is B5102's and already merged.
+- The generic transport's own raise for 400 and above before the transform (llm_http_handler.py L5050-L5055) is B2463's. No route calls transform_file_response yet, so this task adds no HTTP case.
+- decode_response_text, the charset cases and the success path have no finding and stay as B646 built them.
+pitfalls:
+- httpx.Response adds a Content-Length header when the case's list has none and the body is not empty, so every new case with a body lists content-length equal to its byte count, as failed-binary-reply.yaml does with '11' (37 for the NoSuchKey body).
+- httpx's Headers.multi_items() returns lowercased names, so the new cases use lowercase header names, and the repeated name in failed-binary-reply-not-found.yaml is a lowercase one such as x-amz-request-id with two values.
+- BaseLLMException.headers is typed dict | httpx.Headers | None, so under basedpyright strict the Python adapter reads it through a typed view, the way the ErrorView Protocol in tools/oracle/helpers/bedrock_settings.py reads the same BedrockError.
+- Only error.response.request is the file's GET request. error.request is LiteLLM's default POST https://docs.litellm.ai/docs, and request None in ErrorInput is all it takes to get it.
+- The case_1_failed_binary_reply wrapper calls failed_binary_reply directly, so it passes 500 once the status becomes the first parameter, or the crate's tests stop compiling.
+- BedrockError's Debug prints only a redacted header flag, so assert error.cause.error (ProviderError derives Debug) and error.cause.headers on their own rather than the whole BedrockError, or a failure shows nothing useful.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

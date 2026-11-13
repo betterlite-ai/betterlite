@@ -1,0 +1,96 @@
+id: B6045
+title: Python transcription and speech
+description: >-
+  Add `betterlite.transcription`, `atranscription`, `speech` and `aspeech` so they work where LiteLLM's do (main.py L7871-L8260).
+  They use B6040's call path. The transcription result is B5658's `TranscriptionResponse`.
+
+
+  Native side, `src/audio.rs` with `pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()>`. It adds
+  `NativeAudioSession` and `NativeAudioError`. The architect writes the `mod` line, the call line and the `.pyi` import. Do
+  not edit `lib.rs`. Methods `transcription`, `atranscription`, `speech` and `aspeech` take `(payload_text, blobs)`.
+  Transcription returns JSON text. Speech returns the audio as `bytes` plus a JSON header text (a tuple), so the audio is never
+  base64 text. Sync uses `block_on` inside `py.detach`, async uses `future_into_py`. Rust rebuilds the file with
+  `files_from_payload` (B6040). Conversion code is in `src/audio/convert.rs`, tests start with `request_` and `error_`.
+
+
+  Python side, the package `python/betterlite/_audio/` with an explicit `__all__`, one star line by the architect, and
+  `main.py` re-exports. Signatures keep LiteLLM's. `transcription(model, file, language=None, prompt=None, response_format=None,
+  timestamp_granularities=None, temperature=None, **kwargs)` takes any file value from B6040, and a file without a name gets
+  "audio.wav". The response is a `TranscriptionResponse` with `text`, and `duration`, `language`, `segments`, `words` and
+  `_response_ms` when given. `_transcription_response_from_cached_dict` (main.py L753) is ported here: it builds the object
+  from a cached dict and sets the attributes LiteLLM sets, and the caching layer of B158 calls it. `speech(model, input, voice,
+  instructions=None, api_key=None, api_base=None, api_version=None, organization=None, project=None, max_retries=None,
+  timeout=None, response_format=None, speed=None, client=None, headers=None, custom_llm_provider=None, aspeech=None,
+  **kwargs)` returns `HttpxBinaryResponseContent`: a plain class here with `content` (bytes), `status_code`, `headers`,
+  `text`, `read()`, `iter_bytes(chunk_size)`, `stream_to_file(path)` and `json()`. `speech` with `aspeech=True` returns a
+  coroutine, and `aspeech` reads the model from `args[0]` or `kwargs["model"]` first. `client` raises
+  `UnsupportedCallArgument` through B6040.
+scope:
+  paths:
+  - crates/betterlite-python/src/audio.rs
+  - crates/betterlite-python/src/audio/**
+  - crates/betterlite-python/python/betterlite/_native_audio.pyi
+  - crates/betterlite-python/python/betterlite/_audio/**
+  - crates/betterlite-python/python/betterlite/main.py
+  - crates/betterlite-python/tests/test_audio.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7871-L8000
+  why: atranscription and transcription.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8199-L8330
+  why: aspeech and speech.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L753-L790
+  why: The cached transcription converter.
+dod:
+- text: The four functions keep LiteLLM's signatures.
+  proof: [audio-signature]
+- text: A file value (bytes, path, file object, tuple) reaches the server as multipart with name and content type.
+  proof: [audio-upload]
+- text: Transcription returns a TranscriptionResponse, sync and async, and the cached dict converter rebuilds one.
+  proof: [audio-transcription]
+- text: Speech returns bytes, status and headers, with the binary methods, and does not make base64 text.
+  proof: [audio-speech]
+- text: A provider error raises the matching class, and `client` raises UnsupportedCallArgument.
+  proof: [audio-error]
+- text: The native register function adds the session and error class, and conversion has tests without an interpreter.
+  proof: [audio-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: audio-signature
+    why: A changed order breaks positional callers.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_audio.py -k signature
+  - id: audio-upload
+    why: The file arrives without a name or as text.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_audio.py -k upload
+  - id: audio-transcription
+    why: The response loses segments or the cached dict gives a plain dict.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_audio.py -k transcription
+  - id: audio-speech
+    why: Audio bytes are altered in transit.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_audio.py -k speech
+  - id: audio-error
+    why: A provider error shows up as a generic exception.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_audio.py -k error
+  - id: audio-native
+    why: The native conversion loses a request field or an error field.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^audio::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Untyped dicts creep in at the native boundary.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`HttpxBinaryResponseContent` is a plain class and not the openai one."
+  why: The wheel has no openai or httpx dependency. It keeps the methods callers use.
+out_of_scope:
+- The shared helpers are B6040. Caching is B158's call into the converter.
+- Provider audio request code is in the provider tasks and the SDK audio entries.
+pitfalls:
+- A 25 MB file must cross once as bytes. A test checks the request body length.
+- Speech `content` is bytes, so tests compare bytes and never decode them.
+review_level: standard
+budget:
+  max_changed_lines: 1300
+  max_new_expects: 0

@@ -16,8 +16,6 @@ description: >-
   allow 150 implementation, 120 tests, 105 fixtures, 90 adapters and 30 wiring, 495 total.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_reasoning_route.rs
   - crates/betterlite-core/src/api/messages_reasoning_route/**
   - tools/oracle/src/helpers/core_ops/messages_reasoning_route.rs

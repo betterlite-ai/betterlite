@@ -1,0 +1,9 @@
+kind: helper
+name: rerank-whole-score
+call:
+  b5240:
+    function: "output_choices"
+    response: {"results": [{"index": 0, "relevance_score": 1.0}]}
+env: {}
+compare:
+  ignore: []

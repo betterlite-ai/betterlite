@@ -23,8 +23,6 @@ description: >-
   lines; budget 145 implementation,125 tests,95 fixtures,80 adapters,60 fuzz/replay and 25 wiring =530 lines.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/realtime_ephemeral_ids.rs
   - crates/betterlite-core/src/api/realtime_ephemeral_ids/**
   - crates/betterlite-core/fuzz/Cargo.toml

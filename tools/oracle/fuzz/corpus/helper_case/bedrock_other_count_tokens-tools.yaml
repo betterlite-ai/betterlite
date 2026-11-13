@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock-other-count-tokens-tools
+call:
+  bedrock_other_count_tokens:
+    tool_name_schema:
+      request:
+        model: anthropic.claude-3-5-sonnet-20241022-v2:0
+        messages:
+          - role: user
+            content: hi
+        tools:
+          - name: 'sp ace/name'
+            description: d
+            input_schema: {type: object, properties: {x: {type: string}}}
+          - name: ''
+          - name: 7
+          - not-an-object
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,252 @@
+id: B097
+title: Mount the RAG routes with production services and prove ingest and query over HTTP
+description: >-
+  B3465 writes LiteLLM's four RAG routes, POST /v1/rag/ingest, /rag/ingest, /v1/rag/query and /rag/query, in
+  crates/betterlite-server/src/api/rag_routes.rs, and nothing mounts them: no B1100 routes entry names them and no
+  area part merges them, so all four answer the 404 fallback. LiteLLM includes the router with
+  `app.include_router(rag_router)` (proxy_server.py L19955) next to the rerank and OCR routers, and each route checks
+  the key through `Depends(user_api_key_auth)`. B3465's `RagRoutes` also takes every service by constructor, and no
+  task builds the production values: B3460 says its `RagIngestDeps` is built once at startup by the server, B3461
+  leaves `NativeQuerySteps` to its caller, and B3464's `RagIngestStore` needs the Postgres-backed `VectorStoreRows`
+  on the shared database. This task builds those values from the shared server state, mounts the router once, and
+  takes B3465's HTTP cases, since B3465 cannot run them at its own gate before the mount exists.
+
+
+  Where. Module `app::inference::rag` (crates/betterlite-server/src/app/inference/rag.rs and the rag/ folder beside
+  it, tests in rag/tests.rs). In app/inference.rs add the `pub mod rag;` line beside the other submodules if the
+  skeleton has not, and in `app::inference::mount` one line that calls `rag::mount(router, state)`, after the line
+  B8775 wrote. Change nothing else in that file. `rag::mount(router: Router, state: &Arc<ServerState>) -> Router` builds every value below once and merges
+  `api::rag_routes::routes(..)` once. Register no path here, since B3465's router already has all four and a second
+  merge of the same method and path panics at startup. app::mount runs inside the two auth layers (B8610), so the
+  routes get B003's key check like every other keyed route; add no auth layer of your own.
+
+
+  What to build. Read each merged constructor first and use its real names; the names here come from the task
+  files. When a constructor asks for a value the shared state does not hold, stop and say so in the report instead
+  of building a second instance of it.
+
+  1. Ingest ports. B3460's `RagIngestDeps` from B7170's `OpenAiStorePort`, `OpenAiFilePort` and `OpenAiUploadPort`,
+  `GeminiHttp` with `GeminiDefaults` (B1331's Studio key and base rules), `VertexTokenSource` and `VertexRagHttp`;
+  B7171's `OcrCall`, `UrlFetch`, `CredentialLookup` and `ListEmbedder`; B3457's `HttpRagTransport` for Bedrock and
+  S3 Vectors; and B3460's production `IdSource` (uuid v4). Every HTTP port gets `state.shared.http`, the one
+  `ProxiedClient`, never a new reqwest client: LiteLLM's ingestion takes its pooled client from
+  `get_async_httpx_client(llm_provider=httpxSpecialProvider.RAG)` too. `CredentialLookup` reads the one
+  `CredentialRegistry` B1601 loads from the config's top-level `credential_list` and edits through /credentials, so
+  a credential added at runtime reaches the next ingest. LiteLLM resolves `litellm_credential_name` from that list
+  in the ingestion constructor (base_ingestion.py L69-L94).
+
+  2. Query steps. B3461's `NativeQuerySteps` with the shared values its constructor takes, such as the HTTP client
+  and the vector store registry in `state.shared.vector_stores`.
+
+  3. Persistence. When `state.shared.db` is Some, B3464's `RagIngestStore` over `PostgresVectorStoreRows` on that
+  database with the system clock B198 provides. When it is None, hand B3465 None, and its ingest handler logs
+  LiteLLM's warning "Skipping database save: prisma_client=%s, response=%s" (endpoints.py L683-L685) and still
+  answers 200.
+
+  4. Router and settings. Pass `state.shared.router`, the `Arc<RouterHandle>` itself, so a config reload or a
+  database sync that swaps the router reaches the next request. Pass `state.shared.general_settings`,
+  `state.shared.proxy_config` and the crate version for B1103's `add_litellm_data_to_request`. These are the
+  globals LiteLLM's handlers import: general_settings, llm_router, prisma_client, proxy_config and version
+  (endpoints.py L577-L584 and L762-L769).
+
+
+  Tests in `app::inference::rag::tests` build a ServerState from a config.yaml string, put `mount` on an empty
+  Router behind the same auth layers router() uses (or go through application()), and send requests with tower's
+  oneshot. The upstream is a local axum server bound to 127.0.0.1:0 that records every request and answers from a
+  script. One named test per item:
+
+  `four_paths_need_a_key`: each of the four paths without a key gets B003's 401, and with the master key a query
+  body without `model` and an ingest body without a source each reach the handler's 400, not the 404 fallback.
+
+  `ingest_uses_registry_store_credentials`: a `vector_store_registry` entry with vector_store_id vs_rag_test,
+  custom_llm_provider openai, api_base the upstream's /v1 and api_key rag-store-key. A JSON ingest with that
+  vector_store_id and file_id file-rag-1 sends exactly one POST /v1/vector_stores/vs_rag_test/files with
+  `Authorization: Bearer rag-store-key` and answers 200 with status "completed".
+
+  `ingest_resolves_config_credential`: a `credential_list` entry rag-openai whose credential_values hold api_base
+  and api_key. An ingest whose vector_store names `litellm_credential_name: rag-openai`, a vector_store_id outside
+  the registry and a file_id sends its attach call to the credential's base with the credential's key.
+
+  `query_uses_shared_router`: a model_list deployment rag-chat (model openai/gpt-4o-mini, api_base the upstream)
+  plus the registry store. A query for model rag-chat sends the search to POST /v1/vector_stores/vs_rag_test/search
+  with the store's key, then a chat completion whose body names gpt-4o-mini, which only the router branch sends.
+
+  `query_streams_with_production_generator`: the same query with stream true answers text/event-stream with the
+  upstream's chunks.
+
+  `no_database_skips_the_save`: without a database the registry ingest still answers 200, and the upstream sees no
+  request after the attach call.
+
+
+  HTTP oracle cases through the booted proxy. The sixteen cases B3465 lists move here under
+  tools/oracle/cases/rag/routes/ with the same file names. Write each from B3465's description and DoD. When one
+  shows a product bug, the fix goes to the owning task's module in a follow-up, not into this module.
+
+  New cases under tools/oracle/cases/rag/wiring/ prove the production values. Each config that needs a store uses
+  `vector_store_registry: [{vector_store_name: oracle-docs, litellm_params: {vector_store_id: vs_oracle_docs,
+  custom_llm_provider: openai, api_base: "{{upstream}}/v1", api_key: oracle-store-key}}]`, and `upstream_headers`
+  compares authorization. ingest-registry-existing-file.yaml: JSON ingest with that vector_store_id and file_id
+  file-oracle-1, the mock answers the attach call with a vector_store.file object, compare the 200 body with `/id`
+  ignored (LiteLLM makes it from uuid4). ingest-credential-existing-file.yaml: the same through a `credential_list`
+  entry named rag-openai (credential_values api_base "{{upstream}}/v1" and api_key oracle-cred-key) and
+  `litellm_credential_name: rag-openai` in the request's vector_store with vector_store_id vs_unmanaged.
+  ingest-file-url-private-address.yaml: file_url http://127.0.0.1:9/notes.txt with an openai vector_store; LiteLLM's
+  safe fetch refuses the blocked address (url_utils.py L331-L339) and the handler answers 500 with the mapped text,
+  with no upstream request. ingest-multipart-shebang-rejected.yaml: a multipart body (`body_kind: multipart`) with a
+  part named `request` holding {"ingest_options": {"vector_store": {"custom_llm_provider": "openai"}}} and a part
+  named `file` (filename run.txt, content_type text/plain, text "#!/bin/sh\necho hi\n"); LiteLLM answers 400
+  {"detail": {"error": "Executable uploads are not allowed.", "reason": "executable_not_allowed"}}.
+  ingest-multipart-upload.yaml: the same multipart shape with a `request` part holding {"ingest_options":
+  {"vector_store": {"custom_llm_provider": "openai", "vector_store_id": "vs_oracle_docs"}}} and a `file` part
+  (filename notes.md, content_type text/markdown, text "betterlite oracle notes\n"). LiteLLM renames the upload to
+  `uuid4().hex` plus ".txt" with content type text/plain (upload_security.py L205-L206, the format its inspection
+  detects), posts it to /v1/files with purpose assistants, then attaches the returned id
+  (openai_ingestion.py L115-L140). The mock answers a file object with id file-oracle-upload, then a
+  vector_store.file object. Compare the 200 body with `/id` ignored, authorization in upstream_headers, and one
+  B9850 filename selector, `/upstream/0/parts/1/filename` (the file part follows the purpose part; check the index
+  against the --self-check artifacts), with the why "LiteLLM names every accepted upload uuid4().hex plus the
+  detected extension". Nothing else is ignored: the purpose part, the part's content type and bytes, the extension
+  and the attach body stay compared.
+  query-registry-router-model.yaml: a model_list deployment rag-chat (openai/gpt-4o-mini, api_base
+  "{{upstream}}/v1", api_key oracle-chat-key) and a query for rag-chat on vs_oracle_docs with top_k 2; the mock
+  answers a vector_store.search_results.page with one hit, then a chat completion; compare the body and
+  content-type, x-litellm-call-id present. query-registry-rerank.yaml: the same with rerank {enabled: true, model:
+  cohere/rerank-english-v3.0, top_n: 1}, env COHERE_API_BASE "{{upstream}}" and COHERE_API_KEY oracle-cohere-key,
+  and three mock answers (search, rerank, chat). query-registry-stream.yaml: the router query with stream true and
+  an event-stream chat answer; ignore each chunk's id and created as the chat stream cases do.
+
+
+  Size. The task reimplements no LiteLLM function body; the owned behavior is the include_router line and the
+  globals the two handlers read. Allow about 160 lines for the mount and builders, 280 test lines and 24 cases of
+  about 30 lines each.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference.rs
+    - crates/betterlite-server/src/app/inference/rag.rs
+    - crates/betterlite-server/src/app/inference/rag/**
+    - tools/oracle/cases/rag/routes/**
+    - tools/oracle/cases/rag/wiring/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19949-L19958
+    why: The RAG router is included with the other API routers, after the rerank and OCR routers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L528-L544
+    why: The two ingest paths, each with the user_api_key_auth dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L699-L715
+    why: The two query paths, each with the user_api_key_auth dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L577-L584
+    why: The proxy globals the ingest handler reads, which this task hands over by constructor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L762-L769
+    why: The proxy globals the query handler reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L664-L685
+    why: The save runs only with a database attached; without one LiteLLM logs a warning and still answers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L431-L447
+    why: The multipart form reads the parts `file` and `request`, not the `ingest_options` part the docstring shows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L497-L523
+    why: api_key and api_base in ingest_options.vector_store are refused, so cases get the mock base from config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L620-L628
+    why: A registry store's litellm_params override the caller's vector_store record before ingest.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/upload_security.py#L186-L206
+    why: The shebang rejection the multipart case uses, and the random uuid4 filename every accepted upload gets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/openai_ingestion.py#L115-L140
+    why: An uploaded file goes to /v1/files with purpose assistants under the store's credentials, then its id is attached to the store.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L69-L94
+    why: litellm_credential_name resolves from litellm.credential_list, the registry the credential port reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L101-L134
+    why: file_url goes through async_safe_get on the RAG pooled client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L331-L339
+    why: The blocked-address error the private file_url case gets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L54-L71
+    why: Caller api_base and api_key never reach the search; only the managed store's params do.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L254-L330
+    why: Search with the store's params and the router, rerank through litellm.arerank, completion through the router.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L399-L429
+    why: The vector_store_registry config shape the cases use.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L209-L220
+    why: Cohere rerank takes its base from COHERE_API_BASE when the call gives none.
+
+dod:
+  - text: >-
+      The four RAG paths answer through the application router, each registered once inside the auth layers: no key
+      gives B003's 401 and the master key reaches B3465's handlers.
+    proof: [rag-mount-tests, rag-cases, oracle]
+  - text: >-
+      Ingest runs on the production ports over the shared client, with a registry store's credentials and with a
+      credential_list credential, uploads a file under LiteLLM's generated name and content type, and refuses a
+      private file_url and a shebang upload as LiteLLM does.
+    proof: [rag-mount-tests, rag-cases, oracle]
+  - text: >-
+      Query searches with the registry store's credentials, completes through the shared router, reranks through
+      Cohere and streams through the production generator, as LiteLLM does.
+    proof: [rag-mount-tests, rag-cases, oracle]
+  - text: >-
+      Without a database the ingest store is absent, the save is skipped and the ingest still answers 200.
+    proof: [rag-mount-tests]
+  - text: >-
+      B3465's sixteen route cases pass over HTTP through the booted proxy.
+    proof: [rag-cases, oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: rag-mount-tests
+      why: the RAG router is not mounted, mounted outside the key check, or built with a stand-in service, client, router or store
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::rag::/)'
+    - id: rag-cases
+      why: the RAG routes or their production services have no booted-proxy case on this branch
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/rag/routes)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/rag/wiring)"
+
+oracle_cases:
+  - tools/oracle/cases/rag/routes/ingest-v1-missing-source.yaml
+  - tools/oracle/cases/rag/routes/ingest-plain-missing-source.yaml
+  - tools/oracle/cases/rag/routes/ingest-unauthenticated.yaml
+  - tools/oracle/cases/rag/routes/ingest-blocked-credential.yaml
+  - tools/oracle/cases/rag/routes/ingest-empty-nested-store-id.yaml
+  - tools/oracle/cases/rag/routes/ingest-unsupported-provider.yaml
+  - tools/oracle/cases/rag/routes/ingest-openai-existing-file.yaml
+  - tools/oracle/cases/rag/routes/query-v1-missing-model.yaml
+  - tools/oracle/cases/rag/routes/query-plain-missing-messages.yaml
+  - tools/oracle/cases/rag/routes/query-empty-retrieval-config.yaml
+  - tools/oracle/cases/rag/routes/query-retrieval-config-not-object.yaml
+  - tools/oracle/cases/rag/routes/query-missing-store-id.yaml
+  - tools/oracle/cases/rag/routes/query-embedding-selection.yaml
+  - tools/oracle/cases/rag/routes/query-unauthenticated.yaml
+  - tools/oracle/cases/rag/routes/query-openai-success.yaml
+  - tools/oracle/cases/rag/routes/query-upstream-429.yaml
+  - tools/oracle/cases/rag/wiring/ingest-registry-existing-file.yaml
+  - tools/oracle/cases/rag/wiring/ingest-credential-existing-file.yaml
+  - tools/oracle/cases/rag/wiring/ingest-file-url-private-address.yaml
+  - tools/oracle/cases/rag/wiring/ingest-multipart-shebang-rejected.yaml
+  - tools/oracle/cases/rag/wiring/ingest-multipart-upload.yaml
+  - tools/oracle/cases/rag/wiring/query-registry-router-model.yaml
+  - tools/oracle/cases/rag/wiring/query-registry-rerank.yaml
+  - tools/oracle/cases/rag/wiring/query-registry-stream.yaml
+
+deviations: []
+
+out_of_scope:
+  - "The handlers and the four routes: B3465. aingest and the ingest pipeline: B3460. aquery, retrieval, rerank and billing: B3461. parse_rag_ingest_request and _secure_uploaded_file: B3462. The store-id scan, authorization, option merge and provider check: B3463. _build_file_metadata_entry and _save_vector_store_to_db_from_rag_ingest: B3464. This task only builds their inputs and mounts the router."
+  - "The port implementations: B7170 (OpenAI, Gemini, Vertex), B7171 (OCR, URL fetch, credential, embedding) and B3457 (HttpRagTransport). The upload scanner: B3452."
+  - "_as_string_keyed_mapping and _response_attr (endpoints.py L63-L70) are Python typing helpers with nothing to port, as B3464 and B3465 record; _upstream_status_code (L73-L75) is B3465's."
+  - "rag_endpoints/__init__.py only re-exports the router; B3465's routes function stands for it."
+  - "rag/__init__.py (aingest, aquery, ingest, query, arag_ingest, rag_ingest) and rag/utils.py (get_rag_ingestion_class, get_rag_transformation_class): B7888 builds the Python facade. Nothing in the proxy calls the two utils getters at the pin, and B3460's registry replaces get_rag_ingestion_class."
+  - "The route lists that put /rag/ingest and /rag/query among LiteLLM's native routes for key permissions: B868."
+  - "Shared, its fields and the area aggregator: B8610. The vector store registry loaded from vector_store_registry: B8614. The credential_list loader and registry: B1601."
+
+pitfalls:
+  - "LiteLLM's own docstring shows `-F 'ingest_options=...'` (endpoints.py L555), but parse_rag_ingest_request reads a part named `request` holding the whole JSON body (L442-L447), so a case with an `ingest_options` part gets \"ingest_options must contain 'vector_store' configuration\"."
+  - "Every accepted upload is renamed to `uuid4().hex` plus the detected extension (upload_security.py L205-L206), so the upload case names that one filename with B9850's `/upstream/0/parts/1/filename` selector; a `/upstream/0/body` selector there would also hide the bytes and the content type, and a case that sends file bytes upstream without the selector fails on every run."
+  - "The upload's extension and content type come from content inspection, not from the client: notes.md sent as text/markdown reaches the provider as `.txt` with text/plain."
+  - "`api_key` and `api_base` in ingest_options.vector_store are refused with 400, and retrieval_config's own api_base never reaches the search, so a case points the store at the mock only through a `vector_store_registry` entry or a `credential_list` entry."
+  - "Rerank calls `litellm.arerank` directly, never the router (main.py L298), so the rerank case points `COHERE_API_BASE` at the mock; a model_list entry for the rerank model is never used."
+  - "Hand B3465 the `Arc<RouterHandle>`, never the router it holds at mount time, or a router swapped by a reload or a database sync never reaches RAG queries."
+  - "A second `CredentialRegistry` built from config.yaml would miss credentials added through POST /credentials, so the credential port takes B1601's one registry."
+  - "Merging the RAG router anywhere but app::inference::mount (for example after the auth layers through mount_public) serves ingest and query without a key."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

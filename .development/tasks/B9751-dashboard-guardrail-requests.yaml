@@ -1,0 +1,177 @@
+id: B9751
+title: Exercise the retained guardrail forms and team review requests over HTTP
+description: >-
+  Add only missing HTTP contracts for the guardrails page retained by B9090. No React
+  source, guardrail implementation or route registration is ported here. Use B9750's
+  database.seed.dashboard: {} plus dashboard_governance: {} and the separate proxy databases, ordinary
+  auth principals and HTTP steps/captures. Every request below uses the discovered
+  auth_header_name (Authorization by default), Bearer session key and JSON content type.
+  GETs and DELETEs have no body; all successful form writes are followed by the page's
+  actual list/info read, not a product-repository assertion.
+
+  Read inventory. GuardrailsPanel, GuardrailSelector and the policy picker call
+  getGuardrailsList: GET /v2/guardrails/list with no query, falling back to GET
+  /guardrails/list on any failed request. B3684 builds both; B8667 mounts them.
+  guardrail_info GETs /guardrails/<id>/info, the alias of GET /guardrails/<id>, also B3684.
+  Read guardrails[] or the unwrapped info record: guardrail_id,guardrail_name,
+  litellm_params,guardrail_info,guardrail_definition_location,created_at,updated_at.
+  Nested params drive mode,default_on, provider and editable fields. AddGuardrailForm,
+  GuardrailProviderFields and detail GET /guardrails/ui/add_guardrail_settings and
+  /guardrails/ui/provider_specific_params (B3684/B8667). They read supported_entities,
+  supported_actions,supported_modes,supported_modes_by_provider,pii_entity_categories,
+  decision_model_providers and content_filter_settings.prebuilt_patterns,
+  pattern_categories,supported_actions,content_categories; the provider map consumes
+  param,description,required,default_value,options,type,fields,dict_key_options and
+  dict_value_type, including optional_params.fields.
+
+  ContentCategoryConfiguration GET /guardrails/ui/category_yaml/<encoded-category>
+  reads yaml_content and file_type. CompetitorIntentConfiguration GET
+  /guardrails/ui/major_airlines reads airlines[] and displays string names.
+  ContentFilterConfiguration POST /guardrails/validate_blocked_words_file sends
+  {file_content:<uploaded YAML text>}, not multipart, and reads valid,message,error,errors.
+  These three are B3687 handlers mounted by B8668. Reuse B8667's add-settings-body,
+  provider-params-body and info-alias-found cases and B8668's category-yaml-found,
+  category-json-found, major-airlines and blocked-words-valid cases below. Their planned
+  no-query/body shapes already match these reads; do not copy those cases into ui/.
+
+  Write inventory. AddGuardrailForm and CustomCodeModal POST /guardrails (B3685/B8667)
+  with {guardrail:{guardrail_name,litellm_params,guardrail_info}}. Ordinary form defaults
+  are mode pre_call and default_on false; custom-code mode is an array. Params include
+  guardrail plus selected provider fields, optional skip_system_message_in_guardrail and
+  skip_tool_message_in_guardrail, PII entity-action maps, content patterns/blocked_words/
+  categories/competitor_intent_config, judge_model/criteria/overall_threshold/on_failure,
+  decision_model/checks or tool-permission rules/default_action/on_disallowed_action.
+  Build cases from the retained form transformations, including one combined content-filter
+  payload, one decision-model payload and one tool-permission payload. Use only the actual
+  built-in provider names and valid options; provider execution is tested by its own task.
+  The form ignores create's response body and refreshes the list; capture guardrail_id only
+  to follow the real detail route. Guardrail detail PATCH /guardrails/<id> sends changed
+  top-level guardrail_name/guardrail_info and nested litellm_params, with default_on inside
+  litellm_params. Clearing optional values sends null; inherit skip-message choices send
+  null; clearing filter collections sends empty arrays. CustomCodeModal PATCH sends
+  custom_code and only changed name/mode/default_on. B3685 owns PATCH and DELETE
+  /guardrails/<id>; deletion also ignores the body and refreshes the list. The page never
+  uses PUT /guardrails/<id>, which B104's live-registry case exercises instead.
+
+  Playground POST /guardrails/apply_guardrail (B3687/B8668; server alias /apply_guardrail)
+  sends {guardrail_name,text,metadata?}; null language/entities arguments are omitted from
+  the body, as is input_type. Read response_text; elapsed time is measured in the browser. Test an explicit
+  metadata object as well as omission. CustomCodeModal POST /guardrails/test_custom_code
+  (B6670/B8668) sends custom_code,test_input, input_type request or response inferred from
+  selected modes, and request_data:{model:"test-model",metadata:{}}. Read success,result
+  action/reason/texts/warning/detection_info or error/error_type. Cover a valid local allow
+  snippet and compilation failure, then save/read/update it through the actual form paths.
+  DecisionTestSection POST /v1/decisions (B8276, mounted by B8634; alias /decisions) sends
+  {model,input,questions:[{type:"predicate",name,instructions}]} and reads
+  answers[].name,type,probability. Configure an OpenAI decision deployment with a deterministic
+  mock reply, including a refusal. B060 GET /model_group/info supplies data[].model_group,
+  providers,mode, with evaluation groups used by the decision selector. No query is sent.
+  modelAvailableCall GET /models?include_model_access_groups=True reads data[].id; reuse
+  B9735's exact selector case rather than adding a second one. B007 owns /models.
+
+  TeamGuardrailsTab GET /guardrails/submissions (B3686/B8668) sends no query for All, or
+  status=pending_review|active|rejected and a trimmed search; it never sends team_guardrail
+  or team_id filters. Read submissions[] with guardrail_id/name,team_id,status,
+  submitted_at,submitted_by_user_id/email,litellm_params and guardrail_info, and summary
+  total,active,pending_review,rejected. POST /guardrails/register, also B3686/B8668, sends
+  {team_id,guardrail_name,litellm_params:{...extra,guardrail:"generic_guardrail_api",mode,
+  api_base},guardrail_info?}, without the create route's guardrail wrapper. It refreshes
+  submissions on success. Admin approve/reject POSTs /guardrails/submissions/<encoded-id>/
+  approve or /reject with no body (B3685/B8667); status and message are not read before
+  refresh. Header controls PATCH /guardrails/<id> separately with litellm_params.
+  forward_api_key, headers as an object, or extra_headers as an array. Prove approved and
+  rejected submissions, filtered summary counts, masking, and an unrelated team's view.
+  TeamDropdown uses B813 GET /v2/team/list?page=1&page_size=20, with team_alias search and
+  non-admin user_id when present, reading teams[].team_id/team_alias,page,total_pages.
+
+  At planning time no on-disk HTTP case sent any guardrail, submission, decision or
+  model-group request above. B8667/B8668 plan the reused read/catalog cases but only
+  database-free mutation/review errors; B8634 plans auth/invalid decision requests.
+  B104's planned mutation uses PUT, not the page's PATCH. Missing success transcripts
+  live only in this task's directory. Reuse a dependency case if it has materialized with
+  the identical request before work starts, reporting the evidence. Assert statuses,
+  content-type, complete stable responses and error type/param/code; ignore only message
+  wording and individually identified generated IDs/timestamps. Add no helper or decoder.
+  Allow roughly 700 case lines; B9090's retained component functions contribute no ported logic.
+scope:
+  paths:
+    - tools/oracle/cases/ui/guardrail-forms/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/add_guardrail_form.tsx#L478-L734
+    why: The create wrapper and provider-specific form serialization tested here, not reimplemented.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/guardrail_info.tsx#L280-L470
+    why: PATCH nests changed parameters and distinguishes null clears from omissions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/TeamGuardrailsTab.tsx#L840-L976
+    why: Actual submission filters, register body and three independent header PATCHes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/guardrails/_components/custom_code/CustomCodeModal.tsx#L380-L485
+    why: Array-valued modes, draft custom code and the sandbox test request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3677-L3782
+    why: V2-to-V1 fallback and bodyless approve/reject calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L5888-L6371
+    why: The page's catalog, PATCH, direct-apply, decision and custom-code wire requests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L134-L639
+    why: Dependency-owned list/create/delete handlers and aliases; no server code is assigned here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L696-L1293
+    why: Register, submissions, bodyless review decisions and PATCH from their decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1296-L1618
+    why: Both info aliases and the UI settings/category/airline/file-validation routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1910-L2003
+    why: The provider field metadata route consumed without a query.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2038-L2221
+    why: B6670's custom-code test response, including HTTP 200 compilation failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L2337-L2453
+    why: Both direct-apply aliases, default request input type and response_text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/decisions_endpoints/endpoints.py#L216-L256
+    why: B8276 owns the two Decisions aliases used by the inline form test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16354-L16581
+    why: B060's no-query model-group metadata response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5591-L5780
+    why: B813's paged team selector, including role-scoped user_id.
+dod:
+  - text: Real form creates, nested PATCH clears and deletion round-trip through the retained list and info response shapes.
+    proof: [new-form-cases, oracle]
+  - text: Team submission, search, review and header controls retain authentication, team visibility and secret masking.
+    proof: [new-form-cases, oracle]
+  - text: Catalog reads, direct apply, custom-code testing and inline decision questions use the exact page requests and consumed fields.
+    proof: [new-form-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: new-form-cases
+      why: Existing catalog cases pass without the new page mutation and submission transcripts.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/guardrail-forms)"
+oracle_cases:
+  - tools/oracle/cases/ui/guardrail-forms/create-content-and-patch-clears.yaml
+  - tools/oracle/cases/ui/guardrail-forms/create-decision-and-tool-permission.yaml
+  - tools/oracle/cases/ui/guardrail-forms/custom-code-test-save-edit.yaml
+  - tools/oracle/cases/ui/guardrail-forms/playground-optional-metadata.yaml
+  - tools/oracle/cases/ui/guardrail-forms/decision-questions-and-model-groups.yaml
+  - tools/oracle/cases/ui/guardrail-forms/register-approve-and-list.yaml
+  - tools/oracle/cases/ui/guardrail-forms/register-reject-and-filter-summary.yaml
+  - tools/oracle/cases/ui/guardrail-forms/submission-header-patches.yaml
+  - tools/oracle/cases/ui/guardrail-forms/team-dropdown-and-visibility.yaml
+  - tools/oracle/cases/ui/guardrail-forms/delete-and-refetch.yaml
+  - tools/oracle/cases/guardrails/admin-reads/add-settings-body.yaml
+  - tools/oracle/cases/guardrails/admin-reads/provider-params-body.yaml
+  - tools/oracle/cases/guardrails/admin-reads/info-alias-found.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/category-yaml-found.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/category-json-found.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/major-airlines.yaml
+  - tools/oracle/cases/guardrails/catalog-apply/blocked-words-valid.yaml
+  - tools/oracle/cases/ui/management-selectors/models-ui-flags-and-team-scope.yaml
+  - tools/oracle/cases/ui/management-selectors/guardrail-v2-and-v1.yaml
+deviations: []
+out_of_scope:
+  - Every unchanged component, helper, test and static garden asset is retained by B9090's verified archive intake; B148 exercises the resulting browser page.
+  - B3684/B3685/B3686/B3687/B6670 own all guardrail handler functions; B8667/B8668 own their mounts and the reused HTTP cases. No endpoint is registered here.
+  - B8276/B8634 own Decisions, B060 model groups, B007 model listing, B813 teams and B9735 common selector cases.
+  - GuardrailSettingsView only renders caller-supplied props; it has no request to implement. Its team/key callers remain B145's.
+pitfalls:
+  - The guardrail editor uses PATCH, while B104's registry integration uses PUT with a guardrail wrapper.
+  - A failed V2 list triggers V1 even for auth failures; test the fallback in the retained browser client without changing the server's successful V2 response.
+  - An approve or reject fetch has no JSON body, so adding an empty guardrail object would test a different client request.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

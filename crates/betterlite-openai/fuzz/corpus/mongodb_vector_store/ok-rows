@@ -1,0 +1,1 @@
+{"object":"vector_store.search_results.page","search_query":"find me","data":[{"score":0.25,"content":[{"type":"text","text":"hello"}],"file_id":"file_a","filename":"a.txt"},{"score":7,"content":[],"file_id":null,"filename":null}]}

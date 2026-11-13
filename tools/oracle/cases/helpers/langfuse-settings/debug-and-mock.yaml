@@ -1,0 +1,28 @@
+kind: helper
+name: langfuse-settings-debug-and-mock
+call:
+  b3900:
+    function: read
+    reading: debug_and_mock
+    steps:
+      - environment:
+          LANGFUSE_DEBUG: "true"
+          LANGFUSE_MOCK: "true"
+          UPSTREAM_LANGFUSE_SECRET_KEY: upstream
+      - environment:
+          LANGFUSE_DEBUG: "1"
+          LANGFUSE_MOCK: " TRUE "
+      - environment:
+          LANGFUSE_DEBUG: "false"
+          LANGFUSE_MOCK: "off"
+      - environment:
+          LANGFUSE_DEBUG: "0"
+          LANGFUSE_MOCK: "false"
+      - environment:
+          LANGFUSE_DEBUG: ""
+          LANGFUSE_MOCK: ""
+      - environment: {}
+      - environment:
+          UPSTREAM_LANGFUSE_SECRET_KEY: ""
+env: {}
+compare: {ignore: []}

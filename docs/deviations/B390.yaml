@@ -1,0 +1,20 @@
+task: B390
+deviations:
+  - what: >-
+      Routing state keys are capped at 1024 bytes and typed route values at 1 MiB of serialized JSON. A value past
+      that cap is refused before it is encoded, so unlike InMemoryCache's object-size check (dict and set __sizeof__
+      are small) it never reaches the cache.
+    why: >-
+      The pin bounds a Python object's layout but neither its key bytes nor its serialized bytes; bounded-inputs
+      requires explicit byte limits for Redis decoding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L32-L91
+  - what: The route value byte parser rejects input past 1048576 bytes before decoding it.
+    why: The source has no byte bound at this parser boundary; bounded-inputs requires a finite limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L211-L221
+  - what: >-
+      Counter and spend increments that overflow i64 or Decimal return a typed StoreError instead of growing
+      without bound the way Python integers and floats do.
+    why: >-
+      Rust arithmetic is checked, and an unrepresentable counter is a caller-visible failure rather than a silent
+      wrap or an infinity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L230-L236

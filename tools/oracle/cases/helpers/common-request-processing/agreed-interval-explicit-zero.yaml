@@ -1,0 +1,18 @@
+kind: helper
+name: common-request-processing-agreed-interval-explicit-zero
+call:
+  b7324:
+    function: agreed
+    groups:
+      - deployments:
+          - {litellm_params: {keepalive_seconds: 0}}
+          - {litellm_params: {keepalive_seconds: 0}}
+        global_interval: 7
+      - deployments:
+          - {litellm_params: {keepalive_seconds: "0"}}
+        global_interval: "7"
+      - deployments:
+          - {litellm_params: {keepalive_seconds: 0}}
+        global_interval: null
+env: {}
+compare: {ignore: []}

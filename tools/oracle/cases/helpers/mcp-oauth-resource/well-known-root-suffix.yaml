@@ -1,0 +1,5 @@
+kind: helper
+name: "well-known-root-suffix"
+call: {"b4654":{"function":"well_known_root_suffix","server_root_path":"/litellm"}}
+env: {"SERVER_ROOT_PATH":"/litellm"}
+compare: {"ignore":[]}

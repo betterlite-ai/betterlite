@@ -21,7 +21,6 @@ description: >-
   implementation, 165 tests, 120 oracle and 90 fuzz lines, limit 675.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,vertex_gemini_transcription}.rs
     - crates/betterlite-vertex/src/vertex_gemini_transcription.rs
     - crates/betterlite-vertex/src/vertex_gemini_transcription/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

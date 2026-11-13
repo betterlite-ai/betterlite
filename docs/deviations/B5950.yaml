@@ -1,0 +1,23 @@
+task: B5950
+deviations:
+  - what: A PEM certificate and key given as strings reach the HTTP client in memory, with no temporary directory and files.
+    why: The Rust client takes a PEM identity directly, and writing a private key to disk adds nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L463-L479
+  - what: A listing with no orchestrable deployment is a typed NoOrchestrationDeployment error instead of Python's IndexError; a malformed listing or resource is NoOrchestrationDeployment or DeploymentEntry instead of KeyError, TypeError, AttributeError or IndexError.
+    why: Those texts are Python runtime details, and typed errors let the caller report the failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L176-L185
+  - what: The token request carries no timeout; the caller's transport owns it and uses 30 seconds.
+    why: This module does no I/O, so a timeout value would be a constant nothing here reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L403
+  - what: A config file whose JSON is not an object, or that exists but cannot be read, provides no values with a warning or a typed ConfigRead error.
+    why: LiteLLM calls .get on the loaded JSON and lets OSError escape, so those files raise AttributeError or an OS error a caller cannot match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L144-L149
+  - what: A VCAP_SERVICES value whose top level is not a JSON object, or whose service lists or entries are not arrays of objects, is treated as absent or skipped with a warning.
+    why: LiteLLM iterates the parsed value with .values() and .get(), so those shapes raise AttributeError or TypeError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L75-L84
+  - what: A credential value that is a JSON array or object is skipped with a warning, and the document-root path is still tried; LiteLLM turns the value into Python's str() of it.
+    why: LiteLLM writes Python repr text into a client id or URL, and betterlite does not port repr text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L68-L72
+  - what: A token response whose body holds a string access_token has the exact bytes that value has in the body replaced by "<redacted>", whatever spelling the body uses; a body that does not parse and names access_token is reported with the fixed text "token response names access_token but is not valid JSON, body withheld"; a body that does not name access_token keeps its text as it is.
+    why: LiteLLM builds the RuntimeError from the whole response text, so a valid access token ends up in the error message, and a body that does not parse cannot be redacted value by value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/credentials.py#L394-L396

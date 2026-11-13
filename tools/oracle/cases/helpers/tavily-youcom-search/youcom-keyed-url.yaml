@@ -1,0 +1,18 @@
+kind: helper
+name: youcom-keyed-url
+call:
+  b8021:
+    provider: you_com
+    calls:
+      - operation: complete_url
+        api_base: null
+        environment:
+          YOUCOM_API_KEY: sk-env
+      - operation: complete_url
+        api_base: null
+        environment:
+          YOUCOM_API_KEY: sk-env
+          YOUCOM_API_BASE: https://proxy.test
+env: {}
+compare:
+  ignore: []

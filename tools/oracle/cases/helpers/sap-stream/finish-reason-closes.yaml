@@ -1,0 +1,15 @@
+kind: helper
+name: sap-stream-finish-reason-closes
+call:
+  b5952:
+    operation: lines
+    params:
+      lines:
+        - 'data: {"orchestration_result": {"id": "first", "choices": [{"delta": {"content": "a"}, "finish_reason": null}]}}'
+        - 'data: {"orchestration_result": {"id": "last", "choices": [{"delta": {}, "finish_reason": "stop"}]}}'
+        - 'data: {"error": "never read"}'
+        - 'data: {"orchestration_result": {"id": "usage-only", "choices": []}}'
+      modes: [sync, async]
+      now: 1700000000
+env: {}
+compare: {ignore: []}

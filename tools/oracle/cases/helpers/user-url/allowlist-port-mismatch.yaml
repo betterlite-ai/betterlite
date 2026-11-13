@@ -1,0 +1,11 @@
+kind: helper
+name: user-url-allowlist-port-mismatch
+call:
+  b5082:
+    call: validate_url
+    url: "http://10.0.0.5:9090/x"
+    user_url_allowed_hosts: ["10.0.0.5:8080"]
+    ssl_verify: true
+env: {}
+compare:
+  ignore: []

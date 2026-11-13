@@ -6,7 +6,7 @@ use betterlite_mcp::tools::pagination::{Timeouts, ToolFormat, load_mcp_tools};
 use betterlite_mcp::tools::schemas::{
     McpTool, mcp_tool_to_anthropic, mcp_tool_to_openai, mcp_tool_to_responses_api,
 };
-use betterlite_mcp::tools::tool_calls::{OpenAiToolCall, call_openai_tool};
+use betterlite_mcp::tools::tool_calls::{OpenAiToolCall, call_mcp_tool, openai_tool_call_to_mcp};
 use serde::Deserialize;
 use std::time::Duration;
 
@@ -106,7 +106,7 @@ async fn invoke_call(call: &OpenAiToolCall) -> HelperResult {
         listing_deadline: None,
     };
     serde_json::to_value(
-        call_openai_tool(&mut session, call, timeouts)
+        call_mcp_tool(&mut session, openai_tool_call_to_mcp(call), timeouts)
             .await
             .map_err(failure)?,
     )

@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock-web-identity-jwt-audience-hint
+call:
+  bedrock_web_identity:
+    jwt_audience_hint:
+      tokens:
+        - header.eyJhdWQiOiJsaXRlbGxtIn0.signature
+        - header.eyJhdWQiOlsiYSIsImIiXX0.signature
+        - header.eyJpc3MiOiJodHRwczovL2lzc3Vlci5leGFtcGxlIn0.signature
+        - header.eyJhdWQiOiIiLCJpc3MiOiIifQ.signature
+        - header.e30.signature
+        - header.eyJhdWQiOjV9.signature
+        - header.eyJhdWQiOlsImEiLDVdfQ.signature
+        - header.eyJhdWQiOiJow6lsbG8g8J-YgCJ9.signature
+        - a.b
+        - a.b.c.d
+        - h.!!!!.c
+env: {}
+compare: {ignore: []}

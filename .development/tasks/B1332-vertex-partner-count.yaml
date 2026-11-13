@@ -23,7 +23,6 @@ description: >-
   credential immutability. Budget 230 implementation, 170 tests, 110 adapters and 110 config/fuzz.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,partner_count}.rs
     - crates/betterlite-vertex/src/partner_count.rs
     - crates/betterlite-vertex/src/partner_count/**
     - crates/betterlite-config/src/providers/vertex.rs

@@ -1,0 +1,11 @@
+kind: helper
+name: phoenix-project-headers-override-wins
+call:
+  b3850:
+    function: phoenix_project_headers
+    metadata:
+      phoenix_project_name_override: override
+      phoenix_project_name: named
+env: {}
+compare:
+  ignore: []

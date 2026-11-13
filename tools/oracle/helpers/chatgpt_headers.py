@@ -1,5 +1,7 @@
 import os
+import platform
 from typing import TypedDict
+from unittest.mock import patch
 
 from litellm.llms.chatgpt import common_utils
 
@@ -28,6 +30,7 @@ ENVIRONMENT_NAMES = (
 
 
 class Input(TypedDict):
+    platform: dict[str, str]
     environment: dict[str, str]
     access_token: str
     account_id: str | None
@@ -85,16 +88,22 @@ def litellm_params_value(spec: Json) -> object:
 
 def run(input_value: Input) -> Json:
     check_environment(input_value["environment"])
-    originator = common_utils.get_chatgpt_originator()
-    user_agent = common_utils.get_chatgpt_user_agent(originator)
-    headers: dict[str, Json] = common_utils.get_chatgpt_default_headers(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-        input_value["access_token"],
-        input_value["account_id"],
-        input_value["session_id"],
-    )
-    instructions = common_utils.get_chatgpt_default_instructions()
-    litellm_params = litellm_params_value(input_value["litellm_params"])
-    session_id = common_utils.get_chatgpt_session_id(litellm_params)
+    pinned = input_value["platform"]
+    with (
+        patch.object(platform, "system", return_value=pinned["system"]),
+        patch.object(platform, "release", return_value=pinned["release"]),
+        patch.object(platform, "machine", return_value=pinned["machine"]),
+    ):
+        originator = common_utils.get_chatgpt_originator()
+        user_agent = common_utils.get_chatgpt_user_agent(originator)
+        headers: dict[str, Json] = common_utils.get_chatgpt_default_headers(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+            input_value["access_token"],
+            input_value["account_id"],
+            input_value["session_id"],
+        )
+        instructions = common_utils.get_chatgpt_default_instructions()
+        litellm_params = litellm_params_value(input_value["litellm_params"])
+        session_id = common_utils.get_chatgpt_session_id(litellm_params)
     return {
         "originator": originator,
         "user_agent": user_agent,

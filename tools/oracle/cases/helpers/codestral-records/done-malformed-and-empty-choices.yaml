@@ -1,0 +1,14 @@
+kind: helper
+name: done-malformed-and-empty-choices
+call:
+  codestral_records:
+    steps:
+      - {kind: chunk, line: ""}
+      - {kind: chunk, line: "   "}
+      - {kind: chunk, line: "[DONE]"}
+      - {kind: chunk, line: "data: [DONE]"}
+      - {kind: chunk, line: not json}
+      - {kind: chunk, line: '{"choices": []}'}
+      - {kind: chunk, line: 'data: {"choices": []}'}
+env: {}
+compare: {ignore: []}

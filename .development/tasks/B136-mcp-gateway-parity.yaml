@@ -1,0 +1,226 @@
+id: B136
+title: MCP gateway composition parity through the booted proxy
+description: >-
+  Finish the MCP umbrella with integration evidence, not a second router. B8728 already mounts
+  /mcp, /mcp/, /mcp/proxy, /mcp/{server}, /{server}/mcp, /toolset/{toolset}/mcp, /mcp/enabled
+  and the SSE paths /mcp/sse, /mcp/sse/, /mcp/sse/messages and /mcp/sse/messages/.
+  B8626 owns GET /mcp-rest/tools/list and POST /mcp-rest/tools/call and the two preview routes;
+  B8701 owns the toolset routes and B9950 GET/DELETE /v1/mcp/sessions. Keep every mount and production port
+  with those tasks. The missing HTTP cases are the successful upstream conversations,
+  permission and header composition, prompt/resource discovery and live session handoff
+  that B8461-B8465 and the operations parts previously tested only through helpers.
+
+  B8970 supplies the previously unowned managed OpenAPI invocation and separator warning;
+  B8971 supplies the per-message tracing bridge. Their existing callers must already use
+  them when this final task runs. Add native boot tests in mcp::gateway_parity, with tests.rs
+  and tests/ beside the module, and HTTP oracle cases in http/mcp-gateway-parity. The server
+  module contains only the test-module declaration. Boot B8610's real application with its
+  production MCP area, shared registry and transport; do not assemble a router of fake MCP
+  handlers. Inject only outside dependencies such as the upstream peer and recording exporter.
+
+  One small oracle facility is needed. tools/oracle/src/mock/mcp_reply.rs transforms an
+  already parsed mock reply for a request whose path starts with /__mcp_fixture/. Extract
+  only its JSON-RPC string or integer id into an owned correlation value. When an Answer's
+  JSON object has jsonrpc "2.0" and top-level id equal to the string "$mcp_request_id",
+  replace that one value with the incoming id. A marker without a valid correlation fails
+  the fixture instead of sending a mismatched response. Do not touch another field, SSE
+  event text, non-JSON answer, unmarked id or request on another path. This is a reply
+  transformer, not a JSON parser, MCP SDK implementation or new case format. Existing body
+  limits, timeout, script exhaustion and capture redaction remain B001's. The architect
+  connects it to mock.rs after capture and before the admitted ticket's Answer is played;
+  no shared runner, parser or registry file is in this task's scope. Unit tests cover
+  integer_id, string_id, no_marker, wrong_path, nested_marker_unchanged, missing_id,
+  invalid_id, notification_without_marker and error_reply. A loopback fixture test sends
+  initialize, initialized notification and tools/list with deliberately different ids and
+  proves the actual mock answers correlate without losing its ordered request recording.
+
+  Upstream fixture setup. Use an operator-configured mcp_servers entry named alpha, fixed
+  server_id test-alpha, transport http, protocol_version 2025-03-26, auth_type none and
+  url "{{upstream}}/__mcp_fixture/alpha" unless a case names a different auth mode. Use
+  the existing script replies for every initialize, notification and operation. Initialize
+  returns the requested legacy revision, serverInfo {name: test-upstream, version: "1"},
+  tools/prompts/resources capabilities and no mcp-session-id, so each upstream operation is
+  stateless; notifications return 202 with events: [] for an empty body. Application replies
+  use the id marker above. Keep the script strict: an unexpected discovery, handshake,
+  permission-denied call or extra request must fail instead of getting a generic success.
+  LITELLM_MCP_CLIENT_TIMEOUT stays 60 seconds and LITELLM_MCP_TOOL_LISTING_TIMEOUT 30;
+  cases do not wait for either timeout. Use only localhost mock destinations, a fixed dummy
+  master key and no database unless explicitly required.
+
+  HTTP cases are kind: http. The MCP request envelope uses jsonrpc "2.0", fixed client ids,
+  Content-Type application/json, Accept "application/json, text/event-stream" and
+  MCP-Protocol-Version 2025-03-26. The existing oracle compares finite SSE data payloads as
+  JSON arrays. Do not replace the real MCP request with a helper call. tools-list-prefix
+  returns alpha-echo and its exact inputSchema and metadata from a catalog containing echo.
+  tools-call-cold invokes alpha-echo before any listing and proves the warm-up catalog fills
+  the same mapping the execution path reads. tools-call-after-list lists then calls in one
+  transcript and proves arguments and result content survive the registry handoff.
+  denied-parameter sends an argument excluded by allowed_params {echo: [text]} and compares
+  the protocol's completed isError result; its native companion asserts that no upstream
+  tools/call was sent. static-header-wins configures extra_headers [X-Test-Route] and
+  static_headers {X-Test-Route: configured}; the captured request must carry configured.
+  blocked-stdio-list configures a stdio server with the default disabled gate and verifies
+  the listing makes no subprocess or upstream request. debug-on and debug-off run the same
+  tool listing with and without x-litellm-mcp-debug: true; compare masked inbound-auth,
+  oauth2-token and auth-resolution headers and assert no complete key escapes in native tests.
+
+  prompts-roundtrip lists a named prompt then gets alpha-greet with string arguments;
+  upstream receives greet. resources-roundtrip lists resources and resource templates,
+  then reads the original resource URI: only names are prefixed, never uri or uriTemplate.
+  discovery-cache-repeat lists prompts twice under one caller and, with the default
+  LITELLM_MCP_DISCOVERY_CACHE_TTL of 60, observes one upstream fetch and no doubled prefix.
+  discovery-cache-disabled sets that variable to 0 and provides two different replies,
+  both of which must be fetched. discovery-failure returns an upstream error after
+  initialize and verifies the empty list fallback on prompts/list. resources-multiple
+  configures two allowed servers and checks the resources/read error before either is read.
+
+  Managed OpenAPI coverage uses a local JSON spec fixture under the case directory with
+  operationId echo and a config url pointing to the normal mock HTTP endpoint. Use the
+  repository-root-relative spec_path so both gateway processes load the same file; give
+  the worker a test fixture check that proves that path exists before running the oracle.
+  managed-openapi-rest calls POST /mcp-rest/tools/call with name echo and server_id test-alpha,
+  deliberately using the bare name to reach B8970 through the manager. The upstream returns
+  an object, which remains structuredContent. managed-openapi-protocol calls alpha-echo
+  through POST /mcp/ and verifies the registered local-tool path agrees on the result.
+  managed-auth-rest and managed-auth-protocol configure true_passthrough with Authorization
+  in extra_headers, send the gateway key in x-litellm-api-key and a different dummy bearer
+  upstream, and return upstream 401 with WWW-Authenticate. REST must retain the real 401 and
+  challenge, whereas the protocol completes with isError naming the upstream status.
+  Reuse B4683's registered HTTP handler; no Python tool or new registry is created here.
+
+  session-report-terminate uses HTTP steps: initialize with clientInfo test-gateway-client,
+  capture mcp-session-id from the response header, send notifications/initialized, read the
+  live report, terminate by the captured full id as session_id_prefix, replay that id and
+  check the admin-terminated 404, then confirm an empty report. Capture the id independently
+  for each peer. Ignore only worker_pid, idle_seconds and generated session-id prefix values,
+  never counts, client metadata, selector behavior or the terminal status. The existing
+  B9950 empty-report case and B8728 unknown-session DELETE case are not repeated.
+
+  Native boot tests under gateway_parity::tests::composition named shared_registry,
+  startup_warning_once, trace_current_request and trace_response_interleave prove the shared registry identity
+  and B8971 handoff with B8680's real HTTP span layer and B3852 callbacks into B3848's
+  recording exporter; startup_warning_once builds the area with MCP_TOOL_PREFIX_SEPARATOR
+  set to an invalid separator and confirms one warning across its mount/start calls without
+  failing startup. Two stateful tools/list or tools/call POSTs have distinct HTTP roots;
+  each MCP span uses its own root and links its own params._meta traceparent. A concurrent
+  response POST cannot change the awaiting call's destinations or parent, and error and
+  cancellation leave no message state behind. trace-http-response also checks through
+  the oracle that configured otel with LITELLM_OTEL_V2=true changes neither the tool result
+  nor forwarded headers. Native sse_session_lifetime opens the real SSE route, posts
+  initialize and a tool call to its emitted endpoint, reads the finite result frames,
+  disconnects and verifies shutdown drains the session. The current sequential HTTP oracle
+  cannot keep that GET open while posting, so it does not pretend this native test is an
+  HTTP equality case. Existing B8728 SSE refusal cases remain the wire oracle for that surface.
+
+  Every HTTP comparison checks status and content-type, and any WWW-Authenticate header.
+  Keep error type, param and code where the surface supplies them; MCP JSON-RPC errors and
+  completed isError results do not acquire OpenAI error fields. Ignore only error wording
+  at its actual pointer, including /error/message for OpenAI envelopes and the individual
+  text block for a completed error result, with the repository's wording reason. Generated
+  upstream JSON-RPC ids may be ignored individually after the mock proves correlation,
+  not by ignoring the whole request. Add HTTP-case corpus seeds and replay the existing
+  decoder; no new production decoder or fuzz target is introduced. The new executable
+  code here is only the small mock transformer; the previously owned logic remains with
+  its parts, so the integration references are not another 750-line implementation claim.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/gateway_parity.rs
+    - crates/betterlite-server/src/mcp/gateway_parity/**
+    - tools/oracle/src/mock/mcp_reply.rs
+    - tools/oracle/src/mock/mcp_reply/**
+    - tools/oracle/cases/http/mcp-gateway-parity/**
+    - tools/oracle/fuzz/corpus/http_case/mcp-gateway-parity-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L1237-L1420
+    why: Integration of B8197 aggregation with B8463 discovery and prefixing; no function is reimplemented here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2432-L2540
+    why: Prompt lookup and single-server resource-read composition through B8199.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2664-L2882
+    why: Protocol tool dispatch, outcome metadata and completed error results from the existing operations parts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4426-L4609
+    why: Existing B8461/B8462 client-header and tool-listing decisions composed by the cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L5548-L5635
+    why: Existing tool, prompt, resource and template naming without URI rewriting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_debug.py#L250-L329
+    why: B8194 debug opt-in and masked response headers now exercised through HTTP.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1159-L1366
+    why: Existing REST tools/call decorator, manager invocation and 401 challenge boundary mounted by B8626.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1260-L1377
+    why: Existing session reporting and termination composed with the live transport by B9950/B8728.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1427-L1519
+    why: Admin-terminated session replay and stale-id responses exercised after the management action.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/mcp_tools.py#L1-L35
+    why: Audit-only sample functions; no caller at the pin and no runtime implementation requested.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/mcp_servers.json#L1-L23
+    why: Audit-only root sample catalog, with no reader at the pin; the served registry is a different file.
+dod:
+  - text: The oracle's reserved MCP fixture path correlates scripted replies with real upstream request ids while preserving ordinary mock behavior, ordered captures and bounded input handling.
+    proof: [mock-tests]
+  - text: Tools reach configured upstreams through the production registry and ports with the pinned naming, warm-up, authorization, credential precedence, debug headers and managed OpenAPI result/error boundaries, and the separator startup diagnostic runs once without rejecting config.
+    proof: [composition-tests, case-files, oracle]
+  - text: Prompt and resource round trips preserve their names, URIs, arguments, cached copies and failure shapes through HTTP, and cache disablement causes another fetch.
+    proof: [case-files, oracle]
+  - text: A live MCP session appears in the management report and admin termination makes its next request fail, while the SSE lifetime test drains after disconnect.
+    proof: [composition-tests, case-files, oracle]
+  - text: Stateful messages reach the tracing callbacks with their own transport parent and destinations, retain remote trace links only, and restore context after failure or cancellation without changing the HTTP result.
+    proof: [composition-tests, case-files, oracle]
+  - text: The newly added HTTP transcripts parse and replay through the existing HTTP-case decoder.
+    proof: [http-corpus]
+checks:
+  optional: []
+  commands:
+    - id: mock-tests
+      why: The id transformer or the real mock handoff is absent, or other mock traffic is changed.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^mock::mcp_reply::/)'
+    - id: composition-tests
+      why: Registry sharing, authorization-before-egress, tracing handoff or SSE shutdown is not exercised through the actual application.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::gateway_parity::/)'
+    - id: case-files
+      why: There are no newly added MCP integration cases or the shared OpenAPI fixture is absent.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/mcp-gateway-parity)" && test -f tools/oracle/cases/http/mcp-gateway-parity/fixtures/openapi.json
+    - id: http-corpus
+      why: The HTTP transcripts never reach the production case parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/mcp-gateway-parity-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/mcp-gateway-parity/tools-list-prefix.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/tools-call-cold.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/tools-call-after-list.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/denied-parameter.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/static-header-wins.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/blocked-stdio-list.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/debug-on.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/debug-off.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/prompts-roundtrip.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/resources-roundtrip.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/discovery-cache-repeat.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/discovery-cache-disabled.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/discovery-failure.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/resources-multiple.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/managed-openapi-rest.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/managed-openapi-protocol.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/managed-auth-rest.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/managed-auth-protocol.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/session-report-terminate.yaml
+  - tools/oracle/cases/http/mcp-gateway-parity/trace-http-response.yaml
+deviations: []
+out_of_scope:
+  - "No new mount: B8610 composes areas, B8626 owns REST/preview, B8728 owns MCP transports, B8701 owns toolsets, B9950 owns sessions, B8624/B8702 own OAuth, B8625 owns catalog views and B8627/B8700 own server and per-user mutations."
+  - "operations.py functions remain assigned to B8195 scoping/display-name/cache invalidation (including _resolved_to_server), B8196 header/BYOK/OAuth preparation, B8197 listings and nested _fetch_and_filter_server_tools, B8198 execution/logging/local tools and B8199 gateway dispatch/prompt get/resource read/prepare_context."
+  - "B8970 owns the remaining manager invocation and separator probe; B8971 owns the missing server.py trace bridge; other manager functions remain B6760-B6765, B4731, B6591-B6592, B4682 and B8460-B8465."
+  - "All functions in contracts.py, capabilities.py, tool_outcome.py, result_conversion.py and exceptions.py are B8190; mcp_context.py, client_allowlist.py, elicitation_handler.py and legacy_callbacks.py are B8191; sampling_handler.py is B8192 conversion/preferences and B8193 access/budgets/completion; mcp_debug.py is B8194; cost_calculator.py is B1689; sse_transport.py is B8726; server_resolution.py is B4731; stdio_gate.py is B4716, including the warning caller used by B3211."
+  - "utils.py belongs to B6594 naming/env/merge/synthetic request, B4716 validators, B4682 prefix splitting and credential-header sanitization, B4726 header lookup, and B3818 result-content traversal including _flatten_leaf_groups; its identity env values are loaded by B8620 and served by B8720."
+  - "discoverable_endpoints.py belongs to B6595 DCR hydration, B7530-B7532 OAuth state/registration/token flow, B7321 root OAuth routes, B7971 browser routes and B7972 discovery metadata; all faults/** functions belong to B7970."
+  - "types/mcp.py and types/mcp_server/mcp_server_manager.py contracts are B2305, B6590 and B7943. normalize_upstream_header_name is B4650/B4716 validation; same_header, has_header and without_header are the case-insensitive operations implemented by B4741 credentials; custom_credential_slot is B4683's resolved-header selection; crosses_origin and credential_redirect_hook are the implemented B4744 RedirectGuard reused by B4683. B7943 owns the Python exports."
+  - "litellm/proxy/mcp_tools.py get_current_time and get_current_date: no caller at the pin; root mcp_servers.json: no reader at the pin; AGENTS.md contains contributor instructions, not runtime logic. The served litellm/proxy/mcp_registry.json is already B4720, mounted by B8625."
+  - "Configured Python local tools and their HTTP cases are B8871/B124, not the unused sample functions; no enterprise-only behavior is implemented."
+pitfalls:
+  - A successful prefixed OpenAPI protocol call can take the local registry shortcut, so only a bare REST name with server_id proves the manager leaf is connected.
+  - The request-id marker is fixture syntax only and must never escape to an upstream client or alter an unmarked response.
+  - Prompt and resource caches return copies, so a second HTTP read must not accumulate another alpha- prefix.
+  - The existing HTTP oracle reads a response to EOF, so a live SSE GET requires the native concurrent-client test rather than a hanging sequential transcript.
+  - A protocol isError result remains an HTTP success and must not be compared as the REST endpoint's 401 challenge.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,52 @@
+kind: helper
+name: anthropic-invokes-tool-result-order
+call:
+  anthropic_invokes:
+    function: convert_to_anthropic_tool_invoke
+    tool_calls:
+      - id: call_1
+        type: function
+        function:
+          name: first
+          arguments: '{}'
+      - id: srvtoolu_web
+        type: function
+        function:
+          name: web_search
+          arguments: '{"q": "a"}'
+      - id: srvtoolu_shared
+        type: function
+        function:
+          name: web_search
+          arguments: '{"q": "b"}'
+      - id: srvtoolu_missing
+        type: function
+        function:
+          name: web_search
+          arguments: '{"q": "c"}'
+      - id: srvtoolu_tool
+        type: function
+        function:
+          name: code_execution
+          arguments: '{"x": 1}'
+      - id: call_6
+        type: function
+        function:
+          name: last
+          arguments: '{}'
+    web_search_results:
+      - tool_use_id: srvtoolu_web
+        type: web_search_tool_result
+        content:
+          - type: text
+            text: web
+      - tool_use_id: srvtoolu_shared
+        source: web
+    tool_results:
+      - tool_use_id: srvtoolu_shared
+        source: tool
+      - tool_use_id: srvtoolu_tool
+        type: code_execution_tool_result
+env: {}
+compare:
+  ignore: []

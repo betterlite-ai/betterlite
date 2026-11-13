@@ -1,0 +1,11 @@
+kind: helper
+name: database-availability-seed
+call:
+  database_availability:
+    scenarios:
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused, cause: 1}
+          - {kind: database, error_type: prisma, message: query engine crashed}
+        allow_requests: true
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+task: B5088
+deviations:
+  - what: The OIDC token exchange and the GitHub Actions ID token request use the Hub download timeout.
+    why: huggingface_hub's shared session is built with timeout=None, so those two requests have no timeout at all and a stalled exchange holds the token lookup forever. The download timeout is the setting the refresh request already uses, and it keeps the exchange bounded.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_http.py#L331-L339
+  - what: The OIDC requests and the refresh request go through the pooled client, which does not follow redirects, and an OIDC response outside 2xx is an error.
+    why: The pooled client is the only outbound path betterlite allows. huggingface_hub's session follows redirects, and following one here would send the ID token or the refresh token to a host the operator never configured.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_http.py#L331-L339
+  - what: A stored expires_at with underscores or non-ASCII digits counts as corrupt metadata, so the token is returned unrefreshed.
+    why: Python's int() accepts those spellings. No tool writes them, and the Rust integer parser rejects them. A custom parser would exist only to accept them.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_auth.py#L350-L355
+  - what: The lock file uses flock only. There is no fallback to a soft lock when the filesystem refuses flock.
+    why: The fallback is a file-existence lock that a crashed process leaves behind. A refresh that cannot take the lock logs a warning and returns the stored token, the same result the 30 second timeout gives.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_fixes.py#L77-L124

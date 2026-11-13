@@ -30,14 +30,18 @@ where
 
 // Shared by chat-input and chat-output redaction to clear tool/function-call arguments the same way.
 fn clear_tool_call_arguments(message: &mut Fields) {
-    if let Json::List(tool_calls) = Json::field(message, "tool_calls") {
+    if let Json::List(tool_calls) =
+        Json::parse(message.get("tool_calls").map_or("null", |raw| raw.get()))
+    {
         let cleared: Vec<Box<RawValue>> = tool_calls
             .iter()
             .map(|call| clear_call_arguments(call))
             .collect();
         set_serializable_field(message, "tool_calls", &cleared);
     }
-    if let Json::Object(mut function_call) = Json::field(message, "function_call") {
+    if let Json::Object(mut function_call) =
+        Json::parse(message.get("function_call").map_or("null", |raw| raw.get()))
+    {
         set_serializable_field(&mut function_call, "arguments", &"{}");
         set_serializable_field(message, "function_call", &function_call);
     }
@@ -47,7 +51,9 @@ fn clear_call_arguments(raw_call: &RawValue) -> Box<RawValue> {
     let Json::Object(mut call) = Json::parse(raw_call.get()) else {
         return raw_call.to_owned();
     };
-    if let Json::Object(mut function) = Json::field(&call, "function") {
+    if let Json::Object(mut function) =
+        Json::parse(call.get("function").map_or("null", |raw| raw.get()))
+    {
         set_serializable_field(&mut function, "arguments", &"{}");
         set_serializable_field(&mut call, "function", &function);
     }

@@ -1,0 +1,14 @@
+kind: helper
+name: xai-identity-key-modes
+call:
+  xai_identity:
+    calls:
+      - {model: grok-4, api_key: explicit, xai_key: module, generic_key: generic, api_base: null, env: {XAI_API_KEY: environment}}
+      - {model: grok-4, api_key: null, xai_key: module, generic_key: generic, api_base: null, env: {XAI_API_KEY: environment}}
+      - {model: grok-4, api_key: null, xai_key: null, generic_key: generic, api_base: null, env: {XAI_API_KEY: environment}}
+      - {model: grok-4, api_key: null, xai_key: null, generic_key: null, api_base: null, env: {XAI_API_KEY: environment}}
+      - {model: grok-4, api_key: null, xai_key: null, generic_key: null, api_base: null, env: {}}
+      - {model: grok-4, api_key: null, xai_key: null, generic_key: null, api_base: null, env: {XAI_API_BASE: "https://proxy.example"}}
+      - {model: grok-4, api_key: null, xai_key: null, generic_key: null, api_base: "https://explicit.example", env: {XAI_API_BASE: "https://proxy.example"}}
+env: {}
+compare: {ignore: []}

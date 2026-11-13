@@ -35,7 +35,7 @@ description: >-
   jobs have exactly one router in their scope, and forward jobs skip traffic any candidate
   router served. Team-scoped targeting supports JWT-authenticated traffic without keys.
   Load all active jobs in one read, validate each with Pydantic to reject invalid rows,
-  group by target key, and cache the grouped result. Attempt insertion names every cost
+  group by target key, and cache the grouped result. The loader reports when a read refilled the cache (LiteLLM resets _job_starts on every fill, shadow_eval_logger.py L899), so B118 can clear its per-job starts. Attempt insertion names every cost
   type the eval pipeline bills (call costs, classifier costs, judge costs).
 scope:
   paths:
@@ -115,7 +115,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/shadow_eval.*admission|shadow_eval.*scope/)'
     - id: spend-write-ordering-tests
       why: Spend counter increment before attempt insert does not happen or is not verified.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(shadow_eval.*spend.*write.*order)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/shadow_eval.*spend.*write.*order/)'
 oracle_cases:
   - tools/oracle/cases/helpers/server/shadow-job-loading/active-jobs-forward.yaml
   - tools/oracle/cases/helpers/server/shadow-job-loading/active-jobs-reverse.yaml
@@ -153,8 +153,8 @@ out_of_scope:
   - Shadow evaluation execution (B4084), spending logic (B4081/B4085), verdict parsing and judging (B4080).
   - Snapshot capture and request normalization (B4082).
   - Virtual key and team budget checks; injection of those checks into the spend gate is B4085.
-  - "get_current_spend production implementation: owned by B2321 (betterlite-auth::current_spend); this task receives it as an injected callable."
-  - "increment_spend_counter production implementation: owned by B3015 (betterlite-auth::spend_writes); this task receives it as an injected callable."
+  - "get_current_spend production implementation: owned by B2321 (betterlite-auth::current_spend); this task receives it as an injected callable. B8660 builds the production adapter over the shared spend counter cache."
+  - "increment_spend_counter production implementation: owned by B3015 (betterlite-auth::spend_writes); this task receives it as an injected callable. B8660 builds the production adapter over the shared spend counter cache."
 pitfalls:
   - Reverse jobs validate to exactly one router via the arm_router_names property, which merges router_name and router_names fields.
   - The cache is typed as InMemoryCache with hardcoded capacity four and TTL ten seconds; do not parameterize these.

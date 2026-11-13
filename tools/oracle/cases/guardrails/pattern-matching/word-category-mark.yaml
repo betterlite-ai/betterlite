@@ -1,0 +1,1 @@
+{"kind":"helper","name":"word-category-mark","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"\\w","action":"MASK"}],"text":"\u0345"}},"env":{},"compare":{"ignore":[]}}

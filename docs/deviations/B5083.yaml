@@ -1,0 +1,33 @@
+task: B5083
+deviations:
+  - what: >-
+      A body that grows past the limit fails as soon as the count passes it, with the size text. A body that never
+      ends, or drips slower than the read timeout allows, fails the same way once it passes the limit, where LiteLLM
+      keeps reading until the read timeout and then answers "after 3 attempts".
+    why: >-
+      LiteLLM's safe_get reads the whole body into memory before _process_image_response counts it, so an endless or
+      huge body uses unbounded memory. Stopping at the limit keeps memory bounded and gives the same text for every
+      body LiteLLM can finish reading.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L745
+  - what: >-
+      Each try also has a total deadline equal to the request timeout (6000 seconds unless request_timeout or
+      REQUEST_TIMEOUT sets it); a try that passes it counts as a failed try.
+    why: >-
+      LiteLLM's module-level clients give connect and every read the request timeout but have no total limit, so a
+      server that sends one byte just inside each read timeout holds the request without end. B173's transport always
+      takes a total deadline, and the request timeout is the largest one LiteLLM ever waits on a single read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_lazy_imports.py#L425-L452
+  - what: >-
+      A retryable fetch failure is logged at error level, where async_convert_url_to_base64 drops it without a log;
+      the synchronous convert_url_to_base64 logs it the same way through verbose_logger.exception.
+    why: >-
+      betterlite has one async fetcher for both traversals, and an attempt that fails for a reason the caller never
+      sees (a connect error, a timeout) would otherwise leave no trace before the "after 3 attempts" text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L84-L136
+  - what: >-
+      A URL longer than 1024 bytes is not cached, so a repeated fetch of it downloads again. LiteLLM's InMemoryCache
+      has no key length limit and returns the cached data URL.
+    why: >-
+      B2226's LocalTtlCache skips a key longer than 1024 bytes, and the task fixes this cache as the one
+      InMemoryCache(max_size_in_memory=10) is built as.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L32-L91

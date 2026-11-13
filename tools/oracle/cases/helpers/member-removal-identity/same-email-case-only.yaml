@@ -1,0 +1,11 @@
+kind: helper
+name: same_email_case_only_difference_does_not_match
+call:
+  member_removal_identity:
+    operation: same_email
+    candidate_email: "Alice@example.com"
+    user_id: "u1"
+    user_email: "alice@example.com"
+env: {}
+compare:
+  ignore: []

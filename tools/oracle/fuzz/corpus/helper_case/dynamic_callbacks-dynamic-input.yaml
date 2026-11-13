@@ -1,0 +1,6 @@
+kind: helper
+name: dynamic-callbacks-dynamic-input
+call:
+  dynamic_callbacks: {"action": "add_process", "lists": {"input": ["langfuse", "helicone", {"logger": "otel"}]}, "process": true, "known": ["langfuse"], "resolver": {"langfuse": {"label": "langfuse"}}}
+env: {}
+compare: {ignore: []}

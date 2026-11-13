@@ -1,0 +1,15 @@
+kind: helper
+name: media_tokens-modified-seed
+call:
+  media_tokens:
+    calls:
+      - function: modified_max_tokens
+        model: gpt-4
+        base_model: gpt-4
+        messages:
+          - role: user
+            content: hello
+        user_max_tokens: 8000
+        buffer_perc: 0.1
+env: {}
+compare: {ignore: []}

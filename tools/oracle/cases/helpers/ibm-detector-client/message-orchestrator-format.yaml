@@ -1,0 +1,12 @@
+kind: helper
+name: message-orchestrator-format
+call:
+  b3736:
+    message_orchestrator:
+      settings: {auth_token: test-token, base_url: "https://ibm.test", detector_id: jailbreak-detector}
+      environment: {}
+      detections:
+        - {detection_type: pii, score: 0.85, text: email, detector_id: email-detector}
+        - {detection_type: toxic, score: 1.0, text: bad}
+env: {}
+compare: {ignore: []}

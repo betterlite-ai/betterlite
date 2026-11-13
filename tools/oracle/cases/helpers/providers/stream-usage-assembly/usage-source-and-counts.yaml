@@ -1,0 +1,107 @@
+kind: helper
+name: stream-usage-assembly-usage-source-and-counts
+call:
+  stream_usage_assembly:
+    function: batch
+    cases:
+    - function: calculate_usage
+      chunks:
+      - usage: {prompt_tokens: 0, completion_tokens: 2}
+      - usage: {prompt_tokens: 5, completion_tokens: 0}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage: {prompt_tokens: -2, completion_tokens: 4}
+      - usage: {prompt_tokens: 0, completion_tokens: -1}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - choices: []
+      - usage: {completion_tokens: -1}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage: {}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - choices: []
+      messages:
+      - {role: user, content: hello}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - form: model_response_stream
+        choices: []
+        usage: {prompt_tokens: 5, completion_tokens: 3}
+        _hidden_params: {usage: {prompt_tokens: 9, completion_tokens: 9}}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - form: model_response
+        choices: []
+        _hidden_params: {usage: {prompt_tokens: 4, completion_tokens: 3}}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - form: model_response_stream
+        choices: []
+        _hidden_params: {usage: {prompt_tokens: 2, completion_tokens: 1}}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - choices: []
+        _hidden_params: {usage: {prompt_tokens: 4, completion_tokens: 3}}
+      messages:
+      - {role: user, content: hello}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage: null
+        choices: []
+        _hidden_params: {usage: {prompt_tokens: 4, completion_tokens: 3}}
+      messages:
+      - {role: user, content: hello}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - form: model_response_stream
+        choices: []
+        usage: null
+        _hidden_params: {usage: {prompt_tokens: 4, completion_tokens: 3}}
+      messages:
+      - {role: user, content: hello}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - form: model_response_stream
+        choices: []
+        usage: {prompt_tokens: 6}
+        _hidden_params: {usage: {prompt_tokens: 9}}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

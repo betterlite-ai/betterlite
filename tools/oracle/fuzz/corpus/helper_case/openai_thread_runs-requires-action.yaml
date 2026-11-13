@@ -1,0 +1,5 @@
+kind: helper
+name: openai-thread-runs-seed-requires-action
+call: {openai_thread_runs: {requires_action: {options: {api_key: sk-seed}, rounds: []}}}
+env: {}
+compare: {ignore: []}

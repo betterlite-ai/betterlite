@@ -1,0 +1,15 @@
+kind: helper
+name: typed-block-invoke-model
+call:
+  bedrock_other_count_tokens:
+    typed_block_invoke_model:
+      request:
+        model: anthropic.claude-3-5-sonnet-20241022-v2:0
+        max_tokens: 256
+        messages:
+          - role: user
+            content:
+              - type: text
+                text: Hello!
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: galileo-admission-buffer-exceeded-drops-oldest
+call: {"b3965":{"environment":{"GALILEO_API_KEY":"key-0123456789abcdef","GALILEO_PROJECT_ID":"project-1"},"batch_size":2000,"actions":[{"do":"prefill","count":1000},{"do":"success","kwargs":{"standard_logging_object":{"call_type":"acompletion","model":"gpt-5.2","prompt_tokens":3,"completion_tokens":4,"total_tokens":7,"response_cost":0.001,"startTime":1779710400.0,"endTime":1779710401.5},"call_type":"acompletion","model":"gpt-4o","messages":[{"role":"user","content":"new"}]},"response":{"family":"chat","message":{"role":"assistant","content":"Hi"}}}]}}
+env: {}
+compare: {ignore: []}

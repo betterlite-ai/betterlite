@@ -1,0 +1,18 @@
+kind: helper
+name: opensandbox-delete-404
+call:
+  b3518:
+    operation: delete
+    container:
+      id: sbx_1
+      provider: opensandbox
+      domain: http://stored.example
+      hidden_params:
+        api_base: http://stored.example
+        api_key: stored-key
+    responses:
+      - status: 404
+        body: '{"code":404,"message":"gone"}'
+env: {}
+compare:
+  ignore: []

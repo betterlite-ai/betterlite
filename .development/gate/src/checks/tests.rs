@@ -1,13 +1,16 @@
 #![cfg(test)]
 
+use std::fs;
 use std::path::Path;
 
-use crate::checks::{Outcome, Selection, render, run};
+use crate::checks::{Outcome, Selection, history, render, run, selection};
 use crate::development::Development;
+use crate::facts::Facts;
 use crate::git::git;
+use crate::journal::journal_dir;
 use crate::spec::backlog::Backlog;
 use crate::spec::catalog::Catalog;
-use crate::spec::command::Command;
+use crate::spec::command::{Command, Turn};
 use crate::spec::task::Task;
 use crate::yaml::read_yaml;
 
@@ -50,7 +53,7 @@ fn command(id: &str, script: &str) -> Command {
         run: script.to_owned(),
         when_exists: None,
         after_green: false,
-        one_at_a_time: false,
+        turn: Turn::Build,
     }
 }
 
@@ -65,13 +68,103 @@ fn unknown_selected_and_skipped_checks_are_errors() {
     let selected = Selection {
         only: vec!["typo".to_owned()],
         skip: Vec::new(),
+        beside: Vec::new(),
     };
     let skipped = Selection {
         only: Vec::new(),
         skip: vec!["typo".to_owned()],
+        beside: Vec::new(),
     };
     assert!(run(&development, &task, &selected).is_err());
     assert!(run(&development, &task, &skipped).is_err());
+}
+
+#[test]
+fn a_beside_check_runs_while_the_checks_in_order_run() {
+    let (_folder, mut development, task) = fixture();
+    development.catalog.base.commands.extend([
+        command(
+            "hooks",
+            "touch main; for _ in $(seq 100); do [[ -e side ]] && exit 0; sleep 0.1; done; exit 1",
+        ),
+        command(
+            "clippy",
+            "touch side; for _ in $(seq 100); do [[ -e main ]] && exit 0; sleep 0.1; done; exit 1",
+        ),
+    ]);
+    let together = Selection {
+        only: Vec::new(),
+        skip: Vec::new(),
+        beside: vec!["clippy".to_owned()],
+    };
+    let verdict = run(&development, &task, &together).unwrap();
+    assert!(verdict.passed);
+    assert!(verdict.lines[1].starts_with("PASS clippy ("));
+    assert!(verdict.lines[2].starts_with("PASS hooks ("));
+}
+
+#[test]
+fn a_beside_check_starts_before_the_prerequisites_are_known() {
+    let (folder, mut development, task) = fixture();
+    development.catalog.base.commands.extend([
+        command("hooks", "false"),
+        command("clippy", "touch linted"),
+        command("tests", "touch expensive"),
+    ]);
+    let together = Selection {
+        only: Vec::new(),
+        skip: Vec::new(),
+        beside: vec!["clippy".to_owned()],
+    };
+    let verdict = run(&development, &task, &together).unwrap();
+    assert_eq!(verdict.failed, ["hooks"]);
+    assert!(folder.path().join("linted").exists());
+    assert!(!folder.path().join("expensive").exists());
+}
+
+#[test]
+fn a_failed_beside_check_holds_back_only_the_checks_that_wait_for_green() {
+    let (folder, mut development, task) = fixture();
+    let mut coverage = command("coverage", "touch later");
+    coverage.after_green = true;
+    development.catalog.base.commands.extend([
+        command("clippy", "false"),
+        command("tests", "touch expensive"),
+        coverage,
+    ]);
+    let together = Selection {
+        only: Vec::new(),
+        skip: Vec::new(),
+        beside: vec!["clippy".to_owned()],
+    };
+    let verdict = run(&development, &task, &together).unwrap();
+    assert_eq!(verdict.failed, ["clippy"]);
+    assert!(folder.path().join("expensive").exists());
+    assert!(!folder.path().join("later").exists());
+}
+
+#[test]
+fn a_beside_check_is_a_command_that_does_not_wait_for_green() {
+    let (_folder, mut development, task) = fixture();
+    let mut coverage = command("coverage", "true");
+    coverage.after_green = true;
+    development
+        .catalog
+        .base
+        .commands
+        .extend([command("fmt", "true"), coverage]);
+    let unknown = Selection {
+        only: Vec::new(),
+        skip: Vec::new(),
+        beside: vec!["typo".to_owned()],
+    };
+    let waiting = Selection {
+        only: Vec::new(),
+        skip: Vec::new(),
+        beside: vec!["coverage".to_owned()],
+    };
+    assert!(run(&development, &task, &unknown).is_err());
+    assert!(run(&development, &task, &waiting).is_err());
 }
 
 #[test]
@@ -88,6 +181,7 @@ fn prerequisite_failure_prevents_expensive_work_but_focused_checks_still_run() {
     let focused = Selection {
         only: vec!["tests".to_owned()],
         skip: Vec::new(),
+        beside: Vec::new(),
     };
     assert!(run(&development, &task, &focused).unwrap().passed);
     assert!(folder.path().join("expensive").exists());
@@ -122,4 +216,138 @@ fn a_failed_prerequisite_keeps_the_gate_red_when_work_is_skipped() {
         ),
     ];
     assert!(!render(&task, "base", Path::new("logs"), outcomes).passed);
+}
+
+#[test]
+fn a_new_run_without_a_result_or_an_error_is_unfinished() {
+    let folder = tempfile::tempdir().unwrap();
+    assert!(history::runs(folder.path()).unwrap().is_empty());
+    let runs = folder.path().join("runs");
+    fs::create_dir_all(runs.join("run-old")).unwrap();
+    let earlier = history::runs(folder.path()).unwrap();
+    for marker in ["result.json", "error.txt"] {
+        let run = runs.join(format!("run-{marker}"));
+        fs::create_dir_all(&run).unwrap();
+        fs::write(run.join(marker), "{}").unwrap();
+    }
+    assert!(!history::unfinished(folder.path(), &earlier).unwrap());
+    fs::create_dir_all(runs.join("run-cut")).unwrap();
+    assert!(history::unfinished(folder.path(), &earlier).unwrap());
+}
+
+#[test]
+fn the_local_gate_builds_nothing_and_leaves_clippy_and_tests_to_ci() {
+    let (_folder, mut development, mut task) = fixture();
+    development.catalog.base.commands.extend([
+        command("fmt", "true"),
+        command("clippy", "true"),
+        command("deny", "true"),
+        command("mutants", "true"),
+    ]);
+    task.checks.commands.extend([
+        command("route-tests", "true"),
+        command("helper-python", "true"),
+    ]);
+    let selection = selection::builtins_and(&development, &task, selection::lint).unwrap();
+    assert_eq!(selection.only, ["fmt", "deny"]);
+}
+
+fn count_runs(root: &Path) -> usize {
+    fs::read_to_string(root.join(".git/fmt-runs"))
+        .unwrap()
+        .lines()
+        .count()
+}
+
+fn counted_fmt() -> (tempfile::TempDir, Development, Task) {
+    let (folder, mut development, task) = fixture();
+    development
+        .catalog
+        .base
+        .commands
+        .push(command("fmt", "echo run >> .git/fmt-runs"));
+    assert!(
+        run(&development, &task, &Selection::default())
+            .unwrap()
+            .passed
+    );
+    (folder, development, task)
+}
+
+#[test]
+fn a_check_that_passed_on_the_same_clean_commit_and_base_is_not_run_again() {
+    let (folder, development, task) = counted_fmt();
+    let again = run(&development, &task, &Selection::default()).unwrap();
+    assert!(again.passed);
+    assert_eq!(count_runs(folder.path()), 1);
+    assert!(
+        again
+            .lines
+            .iter()
+            .any(|line| line.starts_with("PASS fmt: passed on this commit and base in run-"))
+    );
+    let log_dir = journal_dir(folder.path(), &task.id).unwrap().join("gate");
+    let mut facts = Facts::collect(folder.path()).unwrap();
+    assert!(
+        history::passed(&log_dir, &facts)
+            .unwrap()
+            .contains_key("fmt")
+    );
+    facts.base = "another-base".to_owned();
+    assert!(history::passed(&log_dir, &facts).unwrap().is_empty());
+}
+
+#[test]
+fn a_dirty_tree_or_a_new_commit_runs_the_check_again() {
+    let (folder, development, task) = counted_fmt();
+    let root = folder.path();
+    fs::write(root.join("notes.txt"), "draft").unwrap();
+    assert!(
+        run(&development, &task, &Selection::default())
+            .unwrap()
+            .passed
+    );
+    assert_eq!(count_runs(root), 2);
+    fs::remove_file(root.join("notes.txt")).unwrap();
+    git(
+        root,
+        &[
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "next",
+        ],
+    )
+    .unwrap();
+    assert!(
+        run(&development, &task, &Selection::default())
+            .unwrap()
+            .passed
+    );
+    assert_eq!(count_runs(root), 3);
+}
+
+#[test]
+fn a_failed_check_runs_again_on_the_same_commit() {
+    let (folder, mut development, task) = fixture();
+    development
+        .catalog
+        .base
+        .commands
+        .push(command("fmt", "echo run >> .git/fmt-runs; false"));
+    assert!(
+        !run(&development, &task, &Selection::default())
+            .unwrap()
+            .passed
+    );
+    assert!(
+        !run(&development, &task, &Selection::default())
+            .unwrap()
+            .passed
+    );
+    assert_eq!(count_runs(folder.path()), 2);
 }

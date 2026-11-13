@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-converse-content-reverse-tool-names
+call:
+  bedrock_converse_content:
+    reverse_tool_names:
+      tools:
+        - toolSpec: {name: alpha}
+        - function: {name: beta}
+        - toolSpec: {name: alpha}
+          function: {name: gamma}
+        - toolSpec: {name: ""}
+        - toolSpec: {description: no name}
+        - function: {name: beta, parameters: {type: object}}
+        - toolSpec: null
+        - type: function
+          function: {name: delta, description: described}
+env: {}
+compare: {ignore: []}

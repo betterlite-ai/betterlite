@@ -1,0 +1,16 @@
+kind: helper
+name: auth-selector-presence
+call:
+  bedrock_aws_settings:
+    operation: auth_selector
+    params:
+      aws_web_identity_token: 'oidc/env/BEDROCK_ORACLE_TOKEN'
+      aws_role_name: 'arn:aws:iam::123:role/demo'
+      aws_session_name: 'session'
+      environment:
+        BEDROCK_ORACLE_TOKEN: 'fixture-token'
+        AWS_ACCESS_KEY_ID: 'signer'
+        AWS_SECRET_ACCESS_KEY: 'signer-secret'
+env:
+  BEDROCK_ORACLE_TOKEN: 'fixture-token'
+compare: {ignore: []}

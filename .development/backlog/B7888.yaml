@@ -1,0 +1,14 @@
+id: B7888
+milestone: M12 python
+title: Python RAG ingest and query
+status: todo
+depends_on: [B6040, B158, B167, B3460, B3461]
+file: tasks/B7888-python-rag.yaml
+covers:
+  - "litellm/rag/**"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

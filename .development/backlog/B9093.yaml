@@ -1,0 +1,14 @@
+id: B9093
+milestone: M10 admin ui
+title: Complete static dashboard serving with typed asset settings and HTTP parity
+status: todo
+depends_on: [B001, B002, B003, B4260, B4200, B8591, B8680]
+file: tasks/B9093-dashboard-static-http.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"
+parent: B144
+split_from: B144
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

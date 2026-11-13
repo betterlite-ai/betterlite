@@ -1,0 +1,111 @@
+id: B8134
+title: Component chart Deployments, Services and migrations Job
+description: >-
+  Add the workload templates of the component chart packaging/helm/betterlite (B8133 wrote values.yaml and the helpers): templates/gateway/deployment.yaml, templates/backend/deployment.yaml, templates/ui/deployment.yaml, templates/gateway/service.yaml, templates/backend/service.yaml, templates/ui/service.yaml, templates/gateway/service-metrics.yaml and templates/migrations-job.yaml. Use the helpers from B8133 and do not edit them or values.yaml.
+  Gateway Deployment (when gateway.enabled): name from betterlite.gateway.fullname, replicas written only when gateway.hpa.enabled is false and replicaCount is set, strategy, selector with betterlite.gateway.selectorLabels, a checksum/config annotation (sha256 of gateway/configmap.yaml when gateway.config.create), pod labels checked by betterlite.podLabels, serviceAccountName and automountServiceAccountToken from serviceAccounts.gateway, imagePullSecrets, podSecurityContext. Container "gateway" listens on 4000 (port name http), env from betterlite.serverEnv, CONFIG_FILE_PATH=/etc/betterlite/config.yaml when gateway.config.create, NUM_WORKERS from gateway.numWorkers, the pool variables when database.connectionPool.enabled, PROMETHEUS_MULTIPROC_DIR when gateway.metricsServer.enabled (fail with "gateway.metricsServer.port must differ from the gateway port 4000" when the port is 4000), the collector variables when gateway.collector.enabled, envFrom from envConfigMaps and envSecrets, the config volume mount at /etc/betterlite/config.yaml, the multiproc and collector-socket volumes, user volumes and mounts, the three probes and lifecycle from values, resources, and nodeSelector, affinity, tolerations, topologySpreadConstraints and terminationGracePeriodSeconds only when set (an empty string or unset leaves it out). A "metrics" container (gateway.metricsServer.enabled) and a "collector" container (gateway.collector.enabled, with LITELLM_JOB_ROLE=collector) use the same image; their commands come from gateway.metricsServer.command and gateway.collector.command (B8133 values define them, with the defaults ["betterlite", "metrics-server", "--port", "<port>"] built in the template and ["betterlite", "collector"]). extraContainers pass through tpl.
+  Backend Deployment (backend.enabled) is the same shape on port 4001 with container "backend", serverEnv and no config, collector or metrics parts; the config volume is the gateway ConfigMap only when gateway.config.create, mounted the same way. UI Deployment (ui.enabled) runs container "ui" on port 3000 with LITELLM_LOG, LITELLM_BACKEND_URL when ui.backendUrl is set, user env, probes, resources and scheduling from the ui block, and no database or master key variables.
+  Services: <component fullname> of type service.type on the component port, targetPort http, selector from the component labels. service-metrics.yaml renders <gateway fullname>-metrics (ClusterIP, port gateway.metricsServer.port, targetPort metrics) only when the metrics server is on.
+  migrations-job.yaml (migrationJob.enabled): a Job <fullname>-migrations with the Helm pre-install and pre-upgrade hook annotations when hooks.helm.enabled (delete policy before-hook-creation, weight default "0") and ArgoCD PreSync annotations when hooks.argocd.enabled, backoffLimit, ttlSecondsAfterFinished, optional activeDeadlineSeconds, restartPolicy Never, the service account from betterlite.migrations.serviceAccountName, pod labels merged over the chart labels plus app.kubernetes.io/component migrations, and one container "db-migrations" with the migrationJob image, env from betterlite.serverEnv (component migrationJob) and the command ["betterlite-db-admin", "migrate"].
+scope:
+  paths:
+    - packaging/helm/betterlite/templates/gateway/deployment.yaml
+    - packaging/helm/betterlite/templates/gateway/service.yaml
+    - packaging/helm/betterlite/templates/gateway/service-metrics.yaml
+    - packaging/helm/betterlite/templates/backend/deployment.yaml
+    - packaging/helm/betterlite/templates/backend/service.yaml
+    - packaging/helm/betterlite/templates/ui/deployment.yaml
+    - packaging/helm/betterlite/templates/ui/service.yaml
+    - packaging/helm/betterlite/templates/migrations-job.yaml
+    - packaging/helm/betterlite/tests/database_auth_tests.yaml
+    - packaging/helm/betterlite/tests/redis_env_tests.yaml
+    - packaging/helm/betterlite/tests/connection_pool_tests.yaml
+    - packaging/helm/betterlite/tests/probe_tests.yaml
+    - packaging/helm/betterlite/tests/deployment_volumes_tests.yaml
+    - packaging/helm/betterlite/tests/collector_tests.yaml
+    - packaging/helm/betterlite/tests/metrics_server_tests.yaml
+    - packaging/helm/betterlite/tests/pod_hardening_tests.yaml
+    - packaging/helm/betterlite/tests/replica_count_tests.yaml
+    - packaging/helm/betterlite/tests/rollout_strategy_tests.yaml
+    - packaging/helm/betterlite/tests/migration_job_tests.yaml
+    - packaging/helm/betterlite/tests/migration_job_hooks_tests.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/deployment.yaml#L1-L247
+    why: Gateway pod, metrics and collector containers, volumes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/backend/deployment.yaml#L1-L138
+    why: Backend pod.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/ui/deployment.yaml#L1-L116
+    why: UI pod.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/migrations-job.yaml#L1-L92
+    why: Job hooks, labels and environment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/service.yaml
+    why: Service shape shared by the three components.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/service-metrics.yaml
+    why: Metrics Service.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/tests/database_auth_tests.yaml#L1-L193
+    why: Writer, reader and token-auth behaviors of serverEnv.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/tests/redis_env_tests.yaml#L1-L109
+    why: Redis variable behaviors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/tests/pod_hardening_tests.yaml#L1-L298
+    why: Pod and container security settings per component.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/tests/migration_job_tests.yaml#L1-L256
+    why: Job behaviors.
+dod:
+  - text: serverEnv variables (writer, reader, token modes, conflicts, Redis, cluster mode, pool) render in the gateway, backend and Job as described.
+    proof: [env-suites]
+  - text: The probes, volumes, replica rule, strategy and security settings render for each component.
+    proof: [pod-suites]
+  - text: The metrics and collector containers render only when enabled, with the port guard.
+    proof: [sidecar-suites]
+  - text: The migrations Job runs betterlite-db-admin migrate with both hook styles, the service account rule and the deadline.
+    proof: [job-suites]
+  - text: The chart lints and renders with the minimum values.
+    proof: [chart-lint]
+checks:
+  optional: []
+  commands:
+    - id: env-suites
+      why: an environment behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite tests/database_auth_tests.yaml tests/redis_env_tests.yaml tests/connection_pool_tests.yaml
+    - id: pod-suites
+      why: a pod behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite tests/probe_tests.yaml tests/deployment_volumes_tests.yaml tests/pod_hardening_tests.yaml tests/replica_count_tests.yaml tests/rollout_strategy_tests.yaml
+    - id: sidecar-suites
+      why: a sidecar behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite tests/collector_tests.yaml tests/metrics_server_tests.yaml
+    - id: job-suites
+      why: a migrations Job behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite tests/migration_job_tests.yaml tests/migration_job_hooks_tests.yaml
+    - id: chart-lint
+      why: the chart does not lint or render
+      run: test -f packaging/helm/betterlite/templates/gateway/deployment.yaml && sh packaging/helm/tests/helm_checks.sh lint packaging/helm/betterlite packaging/helm/betterlite/tests/values/required.yaml
+oracle_cases: []
+deviations:
+  - what: The Job and pods run the betterlite image and the Job command is betterlite-db-admin migrate, not python migrations/run.py in a separate migrations image.
+    why: B1232 owns the native migration command.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/migrations-job.yaml#L50-L60
+  - what: The config file is mounted at /etc/betterlite/config.yaml instead of /app/config/config.yaml.
+    why: The native image has no /app folder.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/deployment.yaml#L58-L62
+  - what: The metrics and collector containers run betterlite subcommands from values instead of python -m litellm.proxy.prometheus_metrics_server and litellm.proxy.collector.
+    why: No Python in the image; the commands are overridable values because no task builds those entrypoints yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/deployment.yaml#L125-L175
+out_of_scope:
+  - Values, helpers, ServiceAccounts and the gateway ConfigMap belong to B8133.
+  - Ingress, HPAs, PDBs and the ServiceMonitor belong to B8135.
+  - The database admin binary (B1232) and the collector program (B1708) are not built here.
+pitfalls:
+  - >-
+    The Job selector is generated by the controller, so podLabels may override a chart label there (use merge); a Deployment selector is fixed, so betterlite.podLabels rejects those keys.
+  - >-
+    The Deployment leaves replicas out when hpa.enabled is true, and an unset (null) replicaCount also leaves it out; a replicaCount of 0 is written.
+  - >-
+    The collector and metrics containers get the same securityContext as the gateway container, but the metrics container takes no database variables.
+  - >-
+    The migrations Job sets restartPolicy Never here, while the single-deployment chart uses OnFailure.
+  - >-
+    The backend mounts the gateway's ConfigMap, so its volume name must differ from the gateway's only if the pod needs both; each pod mounts only its own copy.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

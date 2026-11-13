@@ -1,0 +1,62 @@
+id: B8631
+title: Router generic, single, batch and call type ports
+description: >-
+  Four betterlite-sdk tasks finish the Rust Router next to B6020's RouterCompletion and, like it, reach the router through small traits because betterlite-sdk may not depend on betterlite-router: B6021's `RouterGeneric` (crates/betterlite-sdk/src/router_generic.rs, the generic call with fallbacks and the Anthropic messages entry), B8352's `RouterSingleCalls` (router_single_calls.rs), B8353's batch calls (router_batch_calls.rs) and B8354's call type table (router_call_types.rs). This task implements their traits over the startup router and builds one `RouterCalls` bundle that routes use to call the router. Code goes in crates/betterlite-server, module `app::inference::router_calls` (crates/betterlite-server/src/app/inference/router_calls.rs and router_calls/), with tests in router_calls/tests.rs. Every name stays at 30 characters or fewer.
+
+
+  Read the merged sdk modules first: each worker chose its own trait names, and this task writes one adapter per trait, a plain struct that holds `state.shared.router` (an `Arc<RouterHandle>`) and reads the current router on every call. Map every router error into the error the trait declares. The router code behind each port (all in crates/betterlite-router):
+  B6021: the Anthropic messages attempt and entry are _ageneric_api_call_with_fallbacks_anthropic_messages_attempt and _aanthropic_messages_with_streaming_fallbacks, B312's native_stream_fallback.rs; the per-request fallback controls are per_request_fallback_controls (B398's fallback_observations.rs names B309 as its owner, so call it where it was merged); the endpoint step is _add_deployment_model_to_endpoint_for_llm_passthrough_route, B401's deployment_identity.rs; the refusal check is _should_raise_anthropic_refusal_error, B399's fallback_categories.rs.
+  B8352: the blocking fallback executor is Router.function_with_fallbacks, B306's retry_policy.rs, and the routing strategy pre-call check is routing_strategy_pre_call_checks, B364's static_eligibility.rs.
+  B8353: the model list is Router.get_model_list (B844's model_catalog_lookup.rs), the credential lookup is get_deployment_credentials_with_provider (B303's deployment_clients.rs), and the healthy deployment list is async_get_healthy_deployments (B016's router_core.rs).
+  B8354: update-before-fallbacks (B310), the model list (B844), selection (B016) and the request update (B303) reuse the adapters of this task and of B8630 when B8354 takes B6020's traits, and get their own adapter when B8354 declares a local trait. The branch traits it declares for B2489, B3273, B7430, B6460 and B370 get the implementation each of those tasks merged; where one merged only an entry function, the adapter calls that function.
+
+
+  Assembly. `RouterCalls` holds `completion: Arc<RouterCompletion>`, `generic: Arc<RouterGeneric>`, `single: Arc<RouterSingleCalls>`, `batch` (B8353's object) and `call_types` (B8354's table), and `router_calls(state: &ServerState) -> Result<RouterCalls, RouterPortError>` builds them once. The completion comes from B8630's `router_completion`. RouterGeneric is built with B6020's services from B8630's adapters, B6021's ports from this task, and the call type executor list: B7430's `container_executors(...)`, then B6460's `video_executors(...)`, then B8691's `passthrough_executors(...)`, so the container and video routes reach the router (B7430 and B6460 leave that list to the wiring). RouterSingleCalls and the batch object are built from the same RouterCompletionParts and executor list, and the call type table from RouterGeneric plus the branch adapters. Reuse B8630's `RouterPortError` and add variants for these steps.
+
+
+  Router embedder. `RouterEmbedder` sits next to RouterCalls in router_calls/embedder.rs and is LiteLLM's router_embedder (litellm/proxy/common_utils/semantic_text_index.py L75-L98), the one embedder every semantic search over the router uses. It holds `state.shared.proxy_logging` and the RouterCalls. `embedder(&self, embedding_model: &str, caller: Key) -> RouterModelEmbedder`, where Key is the authenticated caller type ProxyLogging's pre_call_hook takes and RouterModelEmbedder implements betterlite-semantic's `Embedder` trait (crates/betterlite-semantic/src/lib.rs). Its embed(texts) builds the request with `model` the embedding model, `input` the texts and `metadata` from B4261's port of embedding_spend_metadata(caller) (find it by that LiteLLM name), runs ProxyLogging's pre_call_hook on it with call type "aembedding", calls the router's aembedding (B8352's entry on `RouterCalls.single`) with the model, input and metadata the hook returned, and returns each data item's embedding in order. A hook or router error that carries an HTTP status becomes `EmbedError::Http { status_code, detail }`, any other error `EmbedError::Other`. `router_embedder(state: &ServerState) -> Result<RouterEmbedder, RouterPortError>` builds it once, and app::inference exposes both as pub, since B8647 (agents), B4684 and B1505 read it there; Shared has no field for it.
+
+
+  Tests build a real Router from a two-deployment config.yaml against a local mock upstream, build RouterCalls, and check: a generic call through RouterGeneric reaches the upstream and falls back to the second deployment on a 500; the Anthropic messages entry answers a /v1/messages shaped request; the batch model list returns both deployments in config order; the healthy list drops a deployment the router has cooled down; each call type in B8354's table reaches its branch adapter (fakes for branches whose provider needs a network). No route calls RouterCalls in this task, so there are no HTTP oracle cases; the search, decisions and container mounts (B8634, B8635) prove it over HTTP.
+scope:
+  paths:
+  - crates/betterlite-server/src/app/inference/router_calls.rs
+  - crates/betterlite-server/src/app/inference/router_calls/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/semantic_text_index.py#L75-L98
+  why: router_embedder, the pre-call hook then router.aembedding that RouterEmbedder ports.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3837-L3860
+  why: _update_kwargs_before_fallbacks, which B8354 calls through the update-before-fallbacks port.
+- url: https://docs.litellm.ai/docs/routing
+  why: How fallbacks, retries and cooldowns combine for the generic and messages calls.
+dod:
+- text: Every trait that B6021, B8352, B8353 and B8354 declare has one adapter in this module that forwards to the router code named in the description.
+  proof: [router-call-tests]
+- text: router_calls builds RouterCalls from the startup router, with RouterGeneric holding the container executors and then the video executors.
+  proof: [router-call-tests]
+- text: A generic call and an Anthropic messages call reach the mock upstream and fall back on a 500; the batch model list and the healthy list match the router.
+  proof: [router-call-tests]
+- text: The router embedder runs the aembedding pre-call hook and then the router's aembedding, returns one vector per text in order, and maps hook and router errors to EmbedError.
+  proof: [router-call-tests]
+checks:
+  optional: []
+  commands:
+  - id: router-call-tests
+    why: an adapter is missing or forwards to the wrong router call, or RouterCalls cannot be assembled
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::router_calls::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- "The call logic of RouterGeneric, RouterSingleCalls, the batch calls and the call type table: B6021, B8352, B8353 and B8354. The container and video executors themselves: B7430 and B6460."
+- "The RouterCompletion ports: B8630. The startup router: B8611."
+- "betterlite-python's NativeRouter (B6022, B8355) cannot depend on betterlite-server, so it cannot reuse these adapters; see the B8631 notes."
+pitfalls:
+- 'per_request_fallback_controls is listed by B398 as B309''s; look for it in fallback_plans.rs before fallback_observations.rs.'
+- 'The executor list order matters for name lookups: containers first, then videos, and a duplicate call type name must fail the assembly with an error instead of shadowing the first one.'
+- 'B8353''s credential lookup lets the deployment''s own custom_llm_provider win over the inferred one; keep the provider the router returns.'
+- 'The healthy list must come from the async router call, which applies cooldowns; the plain model list does not.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

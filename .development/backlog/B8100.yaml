@@ -1,0 +1,18 @@
+id: B8100
+milestone: M3 providers
+title: A2A chat provider config and stream chunks
+status: todo
+depends_on: [B004, B010, B171, B196, B2202, B2210, B2214, B2230, B549, B4776]
+file: tasks/B8100-a2a-chat-config.yaml
+covers:
+  - "litellm/llms/a2a/chat/transformation.py"
+  - "litellm/llms/a2a/chat/streaming_iterator.py"
+  - "litellm/llms/a2a/__init__.py"
+  - "litellm/llms/a2a/common_utils.py"
+  - "litellm/llms/a2a/chat/__init__.py"
+parent: B050
+split_from: B050
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

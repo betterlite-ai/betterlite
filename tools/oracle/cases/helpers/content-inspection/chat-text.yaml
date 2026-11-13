@@ -1,0 +1,22 @@
+kind: helper
+name: content-inspection-chat-text
+call:
+  b5470:
+    function: iter_message_text
+    data:
+      messages:
+        - role: system
+          content: "You are helpful."
+        - role: user
+          content:
+            - {type: text, text: "Hello"}
+            - bare string part
+            - {type: image_url, image_url: {url: "https://host/x.png"}}
+            - {type: image_url, text: "caption"}
+        - role: user
+          content: {type: text, text: "object content is not a list"}
+        - not an object
+      input: {type: reasoning, content: "object input is not a list"}
+env: {}
+compare:
+  ignore: []

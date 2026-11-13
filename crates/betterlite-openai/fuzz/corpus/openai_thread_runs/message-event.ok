@@ -1,0 +1,3 @@
+event: thread.message.completed
+data: {"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","content":[],"status":"completed"}
+

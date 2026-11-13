@@ -1,15 +1,14 @@
 id: B336
 title: Complexity routing through context compaction
-description: 'Integrate B100 compaction with B385 typed summary inputs and B386 context-fit checks. Own
+description: 'Integrate B3545 native compaction with B385 typed summary inputs and B386 context-fit checks. Own
   pending state, recursion protection, native/client-managed routing, authorized summary calls and post-summary
   revalidation. Adapt through server services for B080/B081, charge B068/B012 caller cost and preserve
   cancellation. Keep the integration adapter in betterlite-server in this task module; consume predecessor
   public interfaces without editing their implementation crates. Configuration boundary keys introduced
   or consumed here: context_compaction. Pinned declaration defaults: context_compaction=ContextCompactionConfig.
   Resolve env values once in betterlite-config, never in router code. Implement the owned native service
-  in crates/betterlite-router/src/router_compaction.rs. Add ProbeOperation::RouterCompaction in tools/oracle/src/router_probes/mod.rs
-  and the corresponding B336 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
-  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  in crates/betterlite-router/src/router_compaction.rs. B301 registers ProbeOperation::RouterCompaction and its Python entry as stubs, so fill only tools/oracle/src/router_probes/router_compaction.rs and tools/oracle/litellm/probes/router_compaction.py and leave mod.rs and registry.py as they are; the adapters only call
+  production services. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
   lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
   services instead of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/context_compaction.py:
@@ -19,32 +18,23 @@ description: 'Integrate B100 compaction with B385 typed summary inputs and B386 
   (L157-L159), compaction_pending (L162-L164), _reject (L167-L170), _generate_summary (L317-L336), compact_to_fit
   (L360-L371), _check_client_managed_admission (L374-L387), _compact_to_fit (L416-L515). Implement these
   behaviors through the typed Rust services above; synchronous facades and structural accessors reuse
-  the same primitive instead of separate ports.'
+  the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B366 composes this service.'
 scope:
   paths:
   - crates/betterlite-router/src/router_compaction.rs
   - crates/betterlite-router/src/router_compaction/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/router_compaction.rs
   - crates/betterlite-server/src/routing/router_compaction/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/router_compaction.rs
   - tools/oracle/src/router_probes/router_compaction/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/router_compaction.py
   - tools/oracle/cases/routing/router-compaction/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/router-compaction-*
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-config/src/sections/router_compaction.rs
   - crates/betterlite-config/src/sections/router_compaction/**
+  - crates/betterlite-router/Cargo.toml
   - tools/oracle/helpers/b336.py
   - tools/oracle/helpers/b336/**
   - tools/oracle/src/helpers/router/b336.rs
@@ -63,6 +53,16 @@ references:
   why: Previously uncovered helper owned by this task.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1342-L1343
   why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L486-L499
+  why: The privacy flag is decided over the parent payload right before the summary task starts, and the summary runs inside it.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/context_compaction.py#L465-L475
+  why: The summary request keeps user_api_key_auth in its metadata only when no executor is installed.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L15-L21
+  why: inherit_message_logging_privacy ORs the new flag into the inherited one.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L167-L210
+  why: initialize_standard_callback_dynamic_params, the dynamic params the flag is read from, forced private when the call inherited privacy.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/native_compaction.py#L39-L42
+  why: The executor reads the flag from that inherited scope when it is called, which is the value this task now passes as an argument.
 dod:
 - text: Write tests named router_compaction_behaviors and router_compaction_boundaries under router_compaction::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
@@ -90,6 +90,10 @@ dod:
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
+- text: compact_to_fit takes the executor per call, the summary call hands it the privacy flag decided over the parent payload
+    as its fourth argument, and the summary metadata drops user_api_key_auth only when an executor is given.
+  proof:
+  - router-compaction-behaviors
 checks:
   optional:
   - mutants
@@ -124,7 +128,7 @@ oracle_cases:
 - tools/oracle/cases/routing/router-compaction/caller-cost-attribution.yaml
 deviations: []
 out_of_scope:
-- B100's general compression API.
+- The general compression API of B3540 to B3544.
 - Changing the user's tool outputs beyond the pinned compaction contract.
 - B385 owns compaction history partition and fit inputs; consume its tested public interface.
 - 'litellm/router_strategy/complexity_router/context_compaction.py: B385 owns: _unavailable (L173-L176),
@@ -138,6 +142,10 @@ pitfalls:
   a hard request error.
 - The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
   at the repository 300-line limit.
+- "The entry that asks for a summary receives B8291's compaction loopback executor as an argument, typed by the CompactionExecutor trait this task defines. B8291 depends on this task, so this task never builds or imports it."
+- "compact_to_fit takes the executor as `Option<&dyn CompactionExecutor>` on every call, standing in for LiteLLM's compaction_executor context variable: None is the direct router dispatch of L317-L336. B9810 passes the loopback executor on the gateway routes, and B8630's adapter for B6020's and B6021's compaction port passes None."
+- "CompactionExecutor's call takes four arguments, `protocol`, `payload`, `parent_model` and `logging_disabled: bool`. Decide the flag right before the summary starts, as L486-L499 does: betterlite_logging::spend_bodies::redaction::should_redact_message_logging with the parent payload as litellm_params, the dynamic callback params B188's logging_privacy::request builds from that payload, and litellm_settings.turn_off_message_logging (default false) taken in the service's constructor, then OR it with the PrivacyContext the call already carries (B188). Pass that one value to the executor, and run the direct dispatch under the same PrivacyContext. Add betterlite-logging to crates/betterlite-router/Cargo.toml if it is not there yet."
+- "The summary request's metadata keeps user_api_key_auth only when no executor is given (L465-L475): the loopback child authenticates again from the parent's headers."
 review_level: standard
 budget:
   max_changed_lines: 1500

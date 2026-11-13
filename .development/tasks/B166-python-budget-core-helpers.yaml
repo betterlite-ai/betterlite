@@ -1,0 +1,105 @@
+id: B166
+title: Python budget manager, core helpers and the utils module
+description: >-
+  Last part of the Python helper split. Parts B8060 to B8066 built the token, model info, provider lookup, cost and cache
+  families. This task adds what is left in plain Python: `BudgetManager`, the Python-object helpers of core_helpers.py,
+  and the `betterlite.utils` module that gathers the names users import from `litellm.utils`. It calls no new native code.
+  Read B157 (settings at call time) and B158 (how the package reaches Rust and maps native errors) first.
+
+
+  `python/betterlite/budget_manager.py` holds `BudgetManager`, copied from budget_manager.py L26-L216 in behaviour.
+  `BudgetManager(project_name, client_type="local", api_base=None)`: `local` loads `user_cost.json` from the working
+  directory if it exists (else an empty dict), `hosted` posts `{"project_name": ...}` to `api_base + "/get_budget"` with
+  `betterlite.module_level_client.post` and takes `data`, or `{}` when the response status is `"error"`. Methods:
+  `create_budget(total_budget, user, duration=None, created_at=time.time())`, `projected_cost(model, messages, user)`,
+  `get_total_budget`, `update_cost(user, completion_obj=None, model=None, input_text=None, output_text=None)`,
+  `get_current_cost`, `get_model_cost`, `is_valid_user`, `get_users`, `reset_cost`, `reset_on_duration`,
+  `update_budget_all_users`, `save_data` and `_save_data_thread` (a started `threading.Thread`). Durations map to 1, 7,
+  30 and 365 days (use LiteLLM's constants from the constants module of the Python package, B157). A bad duration raises
+  `ValueError` with LiteLLM's text. It calls `betterlite.token_counter`, `betterlite.cost_per_token` and
+  `betterlite.completion_cost` (B8060, B8063), so a test can patch them on the `betterlite` module.
+
+
+  `python/betterlite/_core_helpers/` (explicit `__all__`, files under 300 lines) implements these functions of
+  litellm_core_utils/core_helpers.py with LiteLLM's signatures and return values: `is_codex_user_agent`, `safe_divide`,
+  `safe_divide_seconds`, `normalize_drop_params`, `drop_params_flag`, `drop_params_env_flag`, `map_finish_reason`,
+  `remove_index_from_tool_calls`, `remove_items_at_indices`, `get_metadata_variable_name_from_kwargs`,
+  `get_litellm_metadata_from_kwargs`, `get_or_create_metadata_bucket`, `reconstruct_model_name`,
+  `process_response_headers`, `preserve_upstream_non_openai_attributes`, `safe_deep_copy`, `independent_snapshot`,
+  `filter_exceptions_from_params`, `filter_internal_params`, `set_response_cost_in_hidden_params`,
+  `set_provider_response_headers_in_hidden_params` and `get_provider_response_headers_from_hidden_params`. They work on
+  live Python objects (dicts that hold exceptions, model responses, `datetime`), which is why they are Python and not a
+  bridge: the Rust copies (B206, B2204, B1717) work on JSON values. `python/betterlite/litellm_core_utils/core_helpers.py`
+  is a one-line-per-name re-export so `from betterlite.litellm_core_utils.core_helpers import safe_deep_copy` works.
+
+
+  `python/betterlite/utils.py` re-exports by name, from the parts, what users import from `litellm.utils`:
+  `token_counter`, `encode`, `decode`, `create_pretrained_tokenizer`, `create_tokenizer` (B8060), `get_model_info`,
+  `get_max_tokens`, `get_provider_info`, `get_model_cost_mutation_generation` (B8061), `get_llm_provider` (B8062),
+  `cost_per_token`, `completion_cost`, `response_cost_calculator` (B8063). No star imports; one explicit list.
+
+
+  Tests (`tests/test_budget_helpers.py`) run the same calls on `litellm` and `betterlite`: a budget life cycle in a temp
+  working directory (create, update_cost with text, update_cost with a response object, projected cost, reset, duration
+  reset with a patched clock, the json file content), the hosted client against a local HTTP server, every core helper
+  with plain, nested, exception-bearing and cyclic inputs, and the `utils` names being the same objects as the parts.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/budget_manager.py
+  - crates/betterlite-python/python/betterlite/_core_helpers/**
+  - crates/betterlite-python/python/betterlite/litellm_core_utils/core_helpers.py
+  - crates/betterlite-python/python/betterlite/utils.py
+  - crates/betterlite-python/tests/test_budget_helpers.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/budget_manager.py#L26-L216
+  why: BudgetManager in full.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L29-L194
+  why: Flag, divide and drop_params helpers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L253-L425
+  why: Finish reason, tool call index and metadata helpers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L453-L712
+  why: Header, copy and filter helpers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L758-L799
+  why: Hidden params cost and header helpers.
+dod:
+- text: "`BudgetManager` local and hosted flows give LiteLLM's return values, write the same `user_cost.json`, and raise the same errors."
+  proof: [budget-manager]
+- text: "Every listed core helper returns what LiteLLM's returns on plain, nested, exception-bearing and cyclic inputs, and changes its input the same way."
+  proof: [core-helpers]
+- text: "`betterlite.utils` names are the same objects as in the parts, and `betterlite.litellm_core_utils.core_helpers` re-exports the helpers."
+  proof: [utils-names]
+- text: The new modules pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: budget-manager
+    why: A budget total, saved file or error differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_budget_helpers.py -k "budget"
+  - id: core-helpers
+    why: A core helper returns or mutates differently.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_budget_helpers.py -k "helper"
+  - id: utils-names
+    why: A utils name is missing or a copy.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_budget_helpers.py -k "utils"
+  - id: python-lint
+    why: A strict type error in the new modules.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`BudgetManager.create_budget` default `created_at` is read when the class body runs, as in LiteLLM."
+  why: Same behaviour, kept on purpose so tests that freeze the clock match.
+out_of_scope:
+- "The Rust copies of the core helpers belong to B206, B2204 (done), B1717, B1719, B3688 and B3847, and B017 and B024 for their call sites. This task does not call them."
+- "`budget_reservation_from_metadata`, `bind_budget_reservation_to_callbacks`, `unbind_budget_reservation_from_callbacks` (B1719), `redact_nested_match_and_regex_keys` (B3688) and `_get_parent_otel_span_from_kwargs` (B3847) are not exposed here."
+- "Proxy budget limits, `litellm.budget_manager` wiring in the proxy and the rest of utils.py belong to their own entries."
+pitfalls:
+- "`user_dict` is saved by a background thread, so tests must join it before reading the file."
+- "`created_at=time.time()` as a default is fixed at import time in LiteLLM, and copying that is intended."
+- "`safe_deep_copy` has a depth limit and handles exceptions and `datetime`; read L514-L563 before writing it."
+- "`filter_exceptions_from_params` stops at `max_depth=20` and must not loop on a cycle."
+budget:
+  max_changed_lines: 1400
+  max_new_expects: 0
+review_level: standard

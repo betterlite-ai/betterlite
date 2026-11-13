@@ -1,0 +1,11 @@
+kind: helper
+name: message_utilities-validators-seed
+call:
+  b5366:
+    calls:
+      - {function: validate_tool_choice, tool_choice: auto}
+      - {function: fix_openai_messages, messages: [{content: seeded}]}
+      - {function: validate_optional_params, stop: [a, b, c, d, e]}
+      - {function: is_cached_message, message: {role: user, content: seeded}}
+env: {}
+compare: {ignore: []}

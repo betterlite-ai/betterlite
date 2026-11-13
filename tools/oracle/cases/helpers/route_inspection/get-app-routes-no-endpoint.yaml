@@ -1,0 +1,7 @@
+kind: helper
+name: get-app-routes-no-endpoint
+call:
+  b4262: {"function":"get_app_routes","route":{"path":"/health"},"endpoint_name":"handler"}
+env: {}
+compare:
+  ignore: []

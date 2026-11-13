@@ -1,0 +1,5 @@
+kind: helper
+name: guardrail-params-apply-seed
+call: {b3662: {function: apply_request, body: {guardrail_name: g, text: hello, entities: [EMAIL_ADDRESS], input_type: response}}}
+env: {}
+compare: {ignore: []}

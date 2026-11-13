@@ -1,0 +1,11 @@
+task: B231
+deviations:
+  - what: Tool names are sanitized to Bedrock's ASCII pattern [a-zA-Z][a-zA-Z0-9_-]*; LiteLLM's str.isalnum keeps non-ASCII letters and digits, so a name like "café" reaches Bedrock unchanged.
+    why: The function's own docstring and Bedrock's Converse API both require the ASCII pattern, and Bedrock rejects a non-ASCII tool name, so no request that worked against LiteLLM could rely on the Unicode behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L4970
+  - what: The parameter schemas of all tools in one call share a 10 MB expansion budget, and every schema still expands only as far as the bytes left; LiteLLM calls unpack_defs with no byte budget.
+    why: The expansion walks schema text from an untrusted request and allocates in proportion to it, so betterlite applies the crate's shared DEFS_MAX_INLINED_BYTES limit once per tools list; a per-tool cap would let a long list multiply it, and no real tools list expands past 10 MB.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5139
+  - what: The reverse tool-name map lives for one call; LiteLLM stores it in a process-global InMemoryCache capped at 50 entries with a 600 second TTL.
+    why: A global map renames tools in a later request with an earlier request's original name and evicts the 51st rename, so betterlite keeps the map on the call that built it, as B181 requires.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L51

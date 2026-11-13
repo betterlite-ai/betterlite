@@ -1,0 +1,14 @@
+id: B7972
+milestone: M9 agents and mcp
+title: "MCP OAuth protected-resource routes: fetch_upstream_oauth_protected_resource, protected-resource documents and aggregate authorization-server discovery"
+status: todo
+depends_on: [B4654, B6595, B6590, B4731, B4719, B4663, B4674]
+file: tasks/B7972-mcp-oauth-protected-resource.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py"
+parent: B136
+split_from: B7321
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

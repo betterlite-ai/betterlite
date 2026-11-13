@@ -1,0 +1,156 @@
+id: B3878
+title: Prometheus latency and guardrail observations
+description: >-
+  Port the PrometheusLogger code that turns one finished request into latency histogram samples, and the code that records guardrail time and counts.
+  Everything goes in crates/betterlite-logging/src/prometheus_latency.rs. It takes typed inputs and writes through the collector handles B3874 builds, the label factory B3873 supplies and the end-user series cap B3876 supplies. It reads no config itself.
+
+  Request latency, from _set_latency_metrics. The inputs are the request start_time, end_time, api_call_start_time and completion_start_time (each optional), the stream flag, the optional queue_time_seconds from litellm_params.metadata, and an optional input_sequence_length bucket string.
+  A timestamp that is missing gives no duration. safe_duration_seconds(start, end) returns Some(seconds) only when both exist, and may be negative.
+  When end_time is absent, use the current time from the injected clock. Never read the system clock inside the module.
+  Four histograms follow. litellm_llm_api_time_to_first_token_metric gets api_call_start_time to completion_start_time, only when the stream flag is exactly true. For a non-stream request write one debug log line instead.
+  litellm_llm_api_latency_metric gets api_call_start_time to end_time.
+  litellm_request_total_latency_metric gets start_time to end_time, plus queue_time_seconds when it is present and 0 or more.
+  litellm_request_queue_time_seconds gets queue_time_seconds when it is present and 0 or more.
+  Each sample goes through prometheus_label_factory with the metric's own label list from get_labels_for_metric, then through the end-user series cap (B3876) with the same labels.
+  When an input_sequence_length is given, the first three histograms use a copy of the label values with input_sequence_length set, and a fresh label context built from that copy, so the end-user cache is not shared. The queue time histogram always uses the original values and the original context.
+
+  Input length bucket, from _get_input_sequence_length. It returns one of the bucket strings of B3870's get_input_sequence_length_bucket ("0-1k", "1k-4k", "4k-16k", "16k-64k", "64k+", "unknown"). Take typed inputs: the payload prompt_tokens, whether a combined usage object exists, the total_tokens of the upstream reported usage object, whether the response carries a usage value, the usage_object mapping from payload metadata (absent or a mapping with an optional prompt_tokens), and, for a response given as a JSON object, the prompt_tokens of its usage after B254's get_usage_as_dict normalization. Apply these steps in this order and stop at the first that returns.
+  1. prompt_tokens is nonzero: bucket of prompt_tokens.
+  2. A combined usage object exists and the upstream reported usage has a total_tokens: "unknown".
+  3. The response has no usage value and there is no combined usage object: "unknown".
+  4. The metadata usage_object is a mapping: bucket of its prompt_tokens.
+  5. No combined usage object and the response is a JSON object: bucket of the normalized usage prompt_tokens.
+  6. Otherwise bucket of prompt_tokens (0 gives "0-1k", absent gives "unknown").
+
+  Guardrail overhead, from _guardrail_is_additive, _get_guardrail_overhead_seconds and _set_overhead_with_guardrails_metric. The additive modes are pre_call and post_call only. A guardrail counts when it has at least one mode and every mode it carries is pre_call or post_call. The mode field is one value or a list. Items that are not plain mode names (a GuardrailMode object with tags) are ignored, so a record whose only mode is such an object is not additive, and a list of pre_call plus such an object is additive. during_call, logging_only and the MCP modes never count.
+  The overhead is the sum of duration over additive records, with a missing duration as 0. A payload may carry guardrail_information as a list or as a single record; a single record counts as a list of one.
+  litellm_overhead_with_guardrails_latency_metric gets (litellm_overhead_time_ms / 1000) + guardrail seconds, with a missing overhead as 0. Skip the sample only when the overhead is absent and the guardrail seconds are 0 or less. An overhead of exactly 0 with guardrail time still records.
+
+  Guardrail series, from _record_guardrail_metrics. Take guardrail_name, latency_seconds, status ("success", "error" or "intervened"), optional error_type and hook_type. Observe litellm_guardrail_latency_seconds with labels guardrail_name, status, error_type (the text "none" when error_type is absent or empty) and hook_type. Increment litellm_guardrail_requests_total with guardrail_name, status, hook_type. Only when status is "error" and error_type is nonempty, increment litellm_guardrail_errors_total with guardrail_name, error_type, hook_type. These three use fixed label lists and bypass the label factory and the end-user cap. Any failure inside (for example a collector that rejects labels) is caught, logged at debug as "Error recording guardrail metrics", and never returned to the caller. The first failure skips the metrics after it.
+
+  Tests live under prometheus_latency/tests/ with the module names guardrail_overhead, input_sequence_length, latency_histograms and guardrail_series. Add oracle helper cases for the pure functions: guardrail overhead seconds, the input length bucket, and safe_duration_seconds.
+scope:
+  paths:
+    - crates/betterlite-logging/src/prometheus_latency.rs
+    - crates/betterlite-logging/src/prometheus_latency/**
+    - tools/oracle/cases/prometheus/latency-guardrail-overhead-modes.yaml
+    - tools/oracle/cases/prometheus/latency-guardrail-overhead-single-record.yaml
+    - tools/oracle/cases/prometheus/latency-input-length-prompt-tokens.yaml
+    - tools/oracle/cases/prometheus/latency-input-length-combined-usage.yaml
+    - tools/oracle/cases/prometheus/latency-input-length-metadata-usage.yaml
+    - tools/oracle/cases/prometheus/latency-safe-duration.yaml
+    - tools/oracle/helpers/b3878.py
+    - tools/oracle/helpers/b3878/**
+    - tools/oracle/src/helpers/logging/b3878.rs
+    - tools/oracle/src/helpers/logging/b3878/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L252-L256
+    why: The class-level _ADDITIVE_GUARDRAIL_MODES set (pre_call, post_call).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1234-L1293
+    why: _guardrail_is_additive, _get_guardrail_overhead_seconds and _set_overhead_with_guardrails_metric.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2223-L2252
+    why: _get_input_sequence_length, the six-step bucket choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2253-L2363
+    why: _set_latency_metrics, the four histograms and the label context switch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3211-L3256
+    why: _record_guardrail_metrics with its catch-all and debug log.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4521-L4534
+    why: _safe_duration_seconds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1486-L1507
+    why: The call site in async_log_success_event that gates input_sequence_length on prometheus_emit_input_sequence_length_label.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3112-L3130
+    why: The call site of _set_overhead_with_guardrails_metric, which sits after the plain overhead histogram.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L599-L634
+    why: Histogram and counter definitions for the overhead-with-guardrails and guardrail series, with their label lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/prometheus.py#L168-L171
+    why: get_input_sequence_length_bucket, owned by B3870 and only called here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3350-L3372
+    why: StandardLoggingGuardrailInformation, the record whose guardrail_mode and duration fields are read.
+dod:
+  - text: safe_duration_seconds returns Some only when both timestamps exist, returns a negative value unchanged, and returns None when either is missing.
+    proof: [latency-histogram-tests, latency-oracle-cases]
+  - text: A streaming request with api_call_start_time and completion_start_time observes litellm_llm_api_time_to_first_token_metric once; a request whose stream flag is not true, or that lacks either timestamp, observes nothing there.
+    proof: [latency-histogram-tests]
+  - text: litellm_llm_api_latency_metric is observed with end_time minus api_call_start_time, and not observed when api_call_start_time is missing.
+    proof: [latency-histogram-tests]
+  - text: litellm_request_total_latency_metric is observed with end_time minus start_time, plus queue_time_seconds when it is 0 or more, and queue_time_seconds below 0 is left out of both the total and the queue histogram.
+    proof: [latency-histogram-tests]
+  - text: litellm_request_queue_time_seconds is observed with queue_time_seconds when it is present and 0 or more.
+    proof: [latency-histogram-tests]
+  - text: With an input_sequence_length, the first three histograms carry that label value and the queue time histogram uses the original label values; without one, none of them is changed.
+    proof: [latency-histogram-tests]
+  - text: When end_time is absent the injected clock supplies it, and a test with a fixed clock sees the result.
+    proof: [latency-histogram-tests]
+  - text: Each latency sample calls the end-user series cap after observing, with the labels used for the sample.
+    proof: [latency-histogram-tests]
+  - text: The input length bucket follows the six steps in order, including nonzero prompt_tokens first, "unknown" for a combined usage with upstream total_tokens, and prompt_tokens 0 falling to "0-1k".
+    proof: [input-length-tests, latency-oracle-cases]
+  - text: A guardrail with modes pre_call and post_call is additive; one with during_call, logging_only or an MCP mode, or a mixed list such as pre_call plus during_call, is not; a record with no mode is not.
+    proof: [guardrail-overhead-tests, latency-oracle-cases]
+  - text: A GuardrailMode-style mode item is ignored, so a record whose only mode is such an item is not additive and a list of pre_call plus such an item is additive.
+    proof: [guardrail-overhead-tests, latency-oracle-cases]
+  - text: Guardrail overhead sums duration over additive records only, treats a missing duration as 0, and accepts a single record as a list of one.
+    proof: [guardrail-overhead-tests, latency-oracle-cases]
+  - text: litellm_overhead_with_guardrails_latency_metric observes overhead_ms / 1000 plus guardrail seconds, records for an overhead of 0 with guardrail time, and records nothing when the overhead is absent and guardrail seconds are 0 or less.
+    proof: [guardrail-overhead-tests]
+  - text: record_guardrail_metrics observes the latency histogram, increments the request counter, and increments the error counter only for status "error" with a nonempty error_type; an absent or empty error_type labels the histogram with "none".
+    proof: [guardrail-series-tests]
+  - text: record_guardrail_metrics never returns an error when a collector rejects the labels, logs at debug, and does not touch the metrics after the failing one.
+    proof: [guardrail-series-tests]
+  - text: Oracle helper cases for the overhead, the input length bucket and the duration run against LiteLLM and betterlite with equal output.
+    proof: [latency-oracle-cases]
+checks:
+  optional: []
+  commands:
+    - id: latency-histogram-tests
+      why: the four latency histograms, label switch or clock fallback are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_latency::latency_histograms::/)'
+    - id: input-length-tests
+      why: the input length bucket choice is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_latency::input_sequence_length::/)'
+    - id: guardrail-overhead-tests
+      why: the guardrail overhead sum or the overhead-with-guardrails histogram is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_latency::guardrail_overhead::/)'
+    - id: guardrail-series-tests
+      why: the guardrail latency, request and error series are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_latency::guardrail_series::/)'
+    - id: latency-oracle-cases
+      why: the oracle helper cases for the pure functions are missing or differ from LiteLLM
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/prometheus/latency-guardrail-overhead-modes.yaml tools/oracle/cases/prometheus/latency-input-length-prompt-tokens.yaml)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/prometheus
+oracle_cases:
+  - tools/oracle/cases/prometheus/latency-guardrail-overhead-modes.yaml
+  - tools/oracle/cases/prometheus/latency-guardrail-overhead-single-record.yaml
+  - tools/oracle/cases/prometheus/latency-input-length-prompt-tokens.yaml
+  - tools/oracle/cases/prometheus/latency-input-length-combined-usage.yaml
+  - tools/oracle/cases/prometheus/latency-input-length-metadata-usage.yaml
+  - tools/oracle/cases/prometheus/latency-safe-duration.yaml
+deviations:
+  - what: Timestamps are one typed instant, so LiteLLM's mixed naive and timezone-aware datetime subtraction (a TypeError that the whole success hook swallows) cannot occur.
+    why: Python only fails there because datetimes carry two kinds; the typed payload from B254 has one.
+  - what: The current time used when end_time is absent comes from an injected clock.
+    why: Tests need a fixed time and the project forbids hidden clock reads.
+out_of_scope:
+  - "async_log_success_event and the order in which it calls these functions, and the output-token, spend and cache counters; B3877 owns them."
+  - "The plain litellm_overhead_latency_metric observation and the call to set_overhead_with_guardrails_metric inside set_llm_deployment_success_metrics; B3881 owns that method and calls this task's function."
+  - "ProxyLogging._emit_guardrail_metrics and _run_guardrail_with_metrics in litellm/proxy/utils.py, which call record_guardrail_metrics and decide status, error_type and hook_type; B786 owns them."
+  - "Creating the latency, overhead and guardrail histograms and counters with their buckets and label lists, and the _ExcludedLabelMetric wrapper; B3874 and B3875."
+  - "prometheus_label_factory, PrometheusLabelFactoryContext and the end-user series cap; B3873 and B3876."
+  - "get_input_sequence_length_bucket and the bucket table; B3870. get_usage_as_dict and the guardrail_information record type; B254."
+  - "The budget reset hours helper _get_remaining_hours_for_budget_reset; B3882 and B3884 own it, it is not a latency function."
+  - "Reading prometheus_emit_input_sequence_length_label; B3874 owns the setting and B3877 decides when to pass the bucket in."
+pitfalls:
+  - "The queue time histogram is built from the original label values, not the copy with input_sequence_length, so it never carries that label even when the others do."
+  - "total latency adds queue_time_seconds to start_time-to-end_time because the request clock starts after auth; a negative queue time is dropped from both the total and the queue histogram, not clamped to 0."
+  - "Time to first token needs stream to be exactly true; a stream flag of null or a missing key takes the debug-log branch."
+  - "A GuardrailMode object in guardrail_mode is not a string, so it is skipped when collecting modes; an all-skipped list leaves an empty set, which is not additive."
+  - "A mixed mode list such as [pre_call, during_call] is not additive because every mode must be in the allowed set."
+  - "The overhead-with-guardrails sample is skipped only when the overhead is absent and guardrail seconds are not above 0; an overhead of 0.0 is present and still records."
+  - "Step 1 of the bucket choice tests prompt_tokens for being nonzero, so 0 does not return there and can reach step 6 as the \"0-1k\" bucket."
+  - "The guardrail latency histogram labels error_type with the text \"none\" for absent or empty, but the error counter is incremented only for a nonempty error_type."
+  - "The three guardrail series use their own fixed label lists, so excluding a label with prometheus_exclude_labels must not change the labels passed here; a rejected label set is the failure the debug log hides."
+  - "record_guardrail_metrics is the only function here that swallows errors; the latency functions return their errors to the caller, which is the success hook that already catches them."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

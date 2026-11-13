@@ -1,0 +1,5 @@
+kind: helper
+name: openai-thread-runs-seed-instructions-tools-overrides
+call: {openai_thread_runs: {instructions_tools_overrides: {options: {api_key: sk-seed}, rounds: []}}}
+env: {}
+compare: {ignore: []}

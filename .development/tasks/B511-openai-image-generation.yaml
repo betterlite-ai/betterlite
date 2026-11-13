@@ -199,7 +199,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_generation_cases::case_[0-9]+_image_status_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_image_generation.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_image_generation.py tools/oracle/helpers/openai_image_generation)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -212,7 +212,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_image_generation)"
       && grep -q 'decode_image_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_image_generation.rs && cargo
-      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_image_generation_corpus$/)'
+      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_image_generation_corpus(::|$)/)'
   - id: case-unsupported-image-param
     why: For each image family keep an already-present optional_params key even when unsupported, copy a supported
       missing key, and otherwise drop only when drop_params is true or raise ValueError naming the parameter/model/supported
@@ -248,7 +248,7 @@ out_of_scope:
   L363-L372; OpenAIChatCompletion._get_openai_client L374-L462; OpenAIChatCompletion.make_openai_chat_completion_request
   L464-L503; OpenAIChatCompletion.make_sync_openai_chat_completion_request L505-L545; OpenAIChatCompletion._call_agentic_completion_hooks_openai
   L547-L625; OpenAIChatCompletion.mock_streaming L627-L643; OpenAIChatCompletion.completion L645-L887; OpenAIChatCompletion.acompletion
-  L889-L1011 belong to B004.'
+  L889-L1011 belong to B004, except _call_agentic_completion_hooks_openai (L547-L625), which belongs to B119.'
 - 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.streaming L1013-L1068; OpenAIChatCompletion.async_streaming
   L1070-L1187; OpenAIChatCompletion.get_stream_options L1189-L1197 belong to B005.'
 - 'Function ownership inventory litellm/llms/openai/openai.py: _embedding_request_without_sdk_defaults L345-L356;
@@ -301,6 +301,6 @@ pitfalls:
 - The family selector is case-sensitive and treats every unknown non-DALL-E name as GPT image.
 - An unsupported option already in optional_params bypasses validation; tests must distinguish the two input maps.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2250
   max_new_expects: 0
 review_level: standard

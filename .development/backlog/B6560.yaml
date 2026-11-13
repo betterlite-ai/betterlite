@@ -1,0 +1,14 @@
+id: B6560
+milestone: M6 guardrails
+title: Guardrail form field projection and core provider forms
+status: todo
+depends_on: [B3660, B3662, B5471, B732]
+file: tasks/B6560-guardrail-form-fields.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_endpoints.py"
+parent: B104
+split_from: B3684
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

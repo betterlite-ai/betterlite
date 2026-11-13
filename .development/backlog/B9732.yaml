@@ -1,0 +1,16 @@
+id: B9732
+milestone: M10 admin ui
+title: Cover user administration forms and bulk workflows over HTTP
+status: todo
+depends_on: [B9090, B9091, B9730, B860, B5076, B1644, B056, B790, B791, B792, B795, B796, B797, B1203, B1657, B810, B8599, B8670, B826, B828]
+file: tasks/B9732-dashboard-user-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/users/**"
+  - "ui/litellm-dashboard/src/components/{CreateUserButton,bulk_create_users_button}.*"
+  - "ui/litellm-dashboard/src/components/{CreateUserButton,bulk_create_users_button}.test.*"
+parent: B145
+split_from: B145
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

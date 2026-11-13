@@ -81,7 +81,9 @@
         "diff-budget",
         "expect-budget",
         "file-size",
-        "crates"
+        "crates",
+        "module-tree",
+        "case-ignores"
       ]
     },
     "Command": {
@@ -97,14 +99,13 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$"
         },
-        "one_at_a_time": {
-          "description": "Run while holding a lock in the git common directory, so gates in other worktrees of this clone wait their turn instead of running it at the same time. For tools such as cargo deny that lock a cache in the home directory and give up after a short wait.",
-          "type": "boolean",
-          "default": false
-        },
         "run": {
           "type": "string",
           "minLength": 1
+        },
+        "turn": {
+          "description": "When the command starts. build, the default, makes a cargo command wait for one of the GATE_BUILD_SLOTS build slots and starts any other command at once. now starts it at once, for cargo commands that compile nothing, such as cargo fmt and cargo shear. alone waits for a lock in the git common directory instead of a build slot, so gates in other worktrees of this clone take turns, for tools such as cargo deny that lock a cache in the home directory and give up after a short wait.",
+          "$ref": "#/$defs/Turn"
         },
         "when_exists": {
           "description": "Path from the repository root. When it does not exist the check is skipped.",
@@ -175,6 +176,13 @@
         "file_size": {
           "$ref": "#/$defs/FileSize"
         },
+        "overlap_allowed": {
+          "description": "Globs two running tasks may both have in scope. Only the overlap check reads this, so each task's own scope still decides who may write them.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "scope_roots": {
           "description": "Top-level folders a task scope may write under. Any other scope path must start with a folder or file that already exists at the repository root.",
           "type": "array",
@@ -186,6 +194,7 @@
       "additionalProperties": false,
       "required": [
         "always_in_scope",
+        "overlap_allowed",
         "budget_excludes",
         "scope_roots",
         "file_size"
@@ -213,6 +222,14 @@
         "name",
         "version_command",
         "expect"
+      ]
+    },
+    "Turn": {
+      "type": "string",
+      "enum": [
+        "build",
+        "now",
+        "alone"
       ]
     }
   }

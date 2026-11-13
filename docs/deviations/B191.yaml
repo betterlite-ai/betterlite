@@ -1,0 +1,17 @@
+task: B191
+deviations:
+  - what: A full logging-worker queue rejects the new callback with a typed admission outcome, increments a counter, logs a sanitized warning and drops only that callback; LiteLLM schedules a delayed retry or an aggressive queue clear and can drop or reorder other queued callbacks.
+    why: Bounded ownership and explicit loss accounting replace the delayed retry and aggressive-clear tasks, which spawn unbounded background work on the hot path and make the dropped set depend on timing. A working setup loses only the rejected observability callback either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L249-L418
+  - what: stop closes admission idempotently, drains every accepted event until the shutdown-drain deadline, then cancels the runner which shuts its callback tasks down and emits the pending timeout window before returning; LiteLLM stop cancels the running callbacks immediately and then runs the queued coroutines through clear_queue under its own 5-second and 200-iteration cap.
+    why: The native design has one explicit owner whose stop returns a report with every accepted event accounted for. A working setup loses no callback it would have kept under LiteLLM, since LiteLLM's own cancellation drops running callbacks without running them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L455-L531
+  - what: The atexit flush (_flush_on_exit) and the handler-inspection logging helper (_safe_log) are replaced by the explicit stop report and typed tracing lines; nothing runs when the process exits.
+    why: A library has no atexit hook in the Rust design, and B012 drains the worker during graceful shutdown through stop. Typed tracing fields replace the Python logging-handler inspection, which exists to survive closed Python log handlers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L533-L653
+  - what: A zero queue size or a zero concurrency is a typed construction error; LiteLLM treats asyncio.Queue(maxsize=0) as unbounded and Semaphore(0) as a worker that never runs a callback.
+    why: async-hygiene allows only bounded channels, so an unbounded queue cannot be built, and a zero-permit semaphore deadlocks the worker. A configuration asking for either cannot deliver callbacks, so it fails at construction instead of at the first event.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L50-L56
+  - what: Constructing LoggingWorker starts its task in the caller's runtime, so enqueue never has to start it; LiteLLM lazily binds the queue on the first ensure_initialized_and_enqueue, and a bare enqueue before start silently drops the coroutine.
+    why: The worker is bound to one runtime when it is built, so there is no loop to discover later. All LiteLLM callers use ensure_initialized_and_enqueue, so no working setup relies on the silent pre-start drop, and betterlite has no start-or-drop window.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L448-L454

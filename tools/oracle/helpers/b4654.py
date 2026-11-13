@@ -1,0 +1,255 @@
+from collections.abc import Callable
+from types import SimpleNamespace
+from typing import TypeAlias, cast
+from unittest.mock import patch
+
+from litellm.proxy import proxy_server
+from litellm.proxy._experimental.mcp_server import oauth_utils
+from litellm.proxy._experimental.mcp_server.auth.user_api_key_auth_mcp import (
+    MCPRequestHandler,
+    _parse_mcp_server_names_from_path,  # pyright: ignore[reportPrivateUsage]
+)
+from litellm.types.mcp_server.mcp_server_manager import MCPServer
+from starlette.datastructures import Headers
+from starlette.requests import Request
+from starlette.types import Scope
+
+Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+
+
+def _string(data: dict[str, Json], name: str) -> str:
+    value = data.get(name)
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a string")
+    return value
+
+
+def _optional_string(data: dict[str, Json], name: str) -> str | None:
+    value = data.get(name)
+    if value is None or isinstance(value, str):
+        return value
+    raise ValueError(f"{name} must be a string or null")
+
+
+def _boolean(data: dict[str, Json], name: str) -> bool:
+    value = data.get(name)
+    if not isinstance(value, bool):
+        raise ValueError(f"{name} must be a boolean")
+    return value
+
+
+def _headers(data: dict[str, Json]) -> Headers:
+    raw = data.get("raw")
+    if not isinstance(raw, list):
+        raise ValueError("raw must be a list of [name, value] pairs")
+    pairs = [
+        (cast(list[str], entry)[0].encode("latin-1"), cast(list[str], entry)[1].encode("latin-1"))
+        for entry in raw
+    ]
+    scope: dict[str, object] = {"type": "http", "headers": pairs}
+    return MCPRequestHandler._safe_get_headers_from_scope(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        cast(Scope, scope)
+    )
+
+
+def _scope(data: dict[str, Json], path_name: str) -> Scope:
+    scope: dict[str, object] = {"type": "http", "path": _string(data, path_name)}
+    for key in ("original_path", "app_root_path", "root_path"):
+        value = _optional_string(data, key)
+        if value is not None:
+            scope["_original_path" if key == "original_path" else key] = value
+    return cast(Scope, scope)
+
+
+def _server(data: dict[str, Json]) -> MCPServer:
+    fields = SimpleNamespace(
+        upstream_resource=_optional_string(data, "upstream_resource"),
+        url=_optional_string(data, "url"),
+        server_id=_string(data, "server_id"),
+    )
+    return cast(MCPServer, fields)
+
+
+def _simple(data: dict[str, Json]) -> object:
+    function = data.get("function")
+    if function == "strip_default_port":
+        netloc = oauth_utils._strip_default_port(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+            _string(data, "scheme"), _string(data, "netloc")
+        )
+        return {"netloc": netloc}
+    if function == "proxy_base_url":
+        return {"value": oauth_utils._resolve_proxy_base_url_env()}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    if function == "well_known_root_suffix":
+        return {"value": oauth_utils.well_known_root_suffix()}
+    if function == "route_relative_path":
+        return {"value": oauth_utils.get_route_relative_request_path(_scope(data, "path"))}
+    if function == "redact_url":
+        return {"value": oauth_utils._redact_mcp_resource_url(_optional_string(data, "url"))}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    if function == "resolve_resource":
+        return {"value": oauth_utils.resolve_upstream_resource(_server(data))}
+    raise ValueError(f"unknown simple b4654 function: {function}")
+
+
+def _request_base_url(data: dict[str, Json]) -> object:
+    header_keys = (
+        ("X-Forwarded-Proto", "x_forwarded_proto"),
+        ("X-Forwarded-Host", "x_forwarded_host"),
+        ("X-Forwarded-Port", "x_forwarded_port"),
+    )
+    headers = {
+        name: value
+        for name, key in header_keys
+        if (value := _optional_string(data, key)) is not None
+    }
+    request = cast(Request, SimpleNamespace(base_url=_string(data, "base_url"), headers=headers))
+    with patch.object(
+        oauth_utils.IPAddressUtils,
+        "is_request_from_trusted_proxy",
+        return_value=_boolean(data, "from_trusted_proxy"),
+    ):
+        return {"base_url": oauth_utils.get_request_base_url(request)}
+
+
+def _challenge(data: dict[str, Json]) -> object:
+    base_url = _string(data, "base_url")
+    invalid = data.get("invalid_token")
+    with patch.object(
+        oauth_utils,
+        "get_request_base_url",
+        lambda _request: base_url,  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    ):
+        scope = _scope(data, "route_path")
+        name = _string(data, "server_name")
+        if invalid is None:
+            value = oauth_utils.get_passthrough_resource_metadata_url(scope, name)
+        else:
+            value = oauth_utils.get_passthrough_www_authenticate(
+                scope, name, _boolean(data, "invalid_token")
+            )
+    return {"value": value}
+
+
+def _byok_authenticate(data: dict[str, Json]) -> object:
+    root_path = _string(data, "request_root_path")
+    with patch.object(
+        oauth_utils,
+        "get_request_root_path",
+        lambda: root_path,  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    ):
+        return {"value": oauth_utils.get_byok_www_authenticate()}
+
+
+def _canonicalize(data: dict[str, Json]) -> object:
+    url = _string(data, "url")
+    if data.get("resource_only"):
+        return {"value": oauth_utils.canonical_resource_uri(url)}
+    return {"value": oauth_utils.canonicalize_url_identity(url)}
+
+
+def _token_request(data: dict[str, Json]) -> object:
+    built = oauth_utils.build_upstream_oauth2_token_request(
+        _server(data),
+        auth_method=_optional_string(data, "auth_method"),
+        client_id=_optional_string(data, "client_id"),
+        client_secret=_optional_string(data, "client_secret"),
+    )
+    return {"headers": built.headers, "body": built.body}
+
+
+def _header_probe(data: dict[str, Json]) -> object:
+    headers = _headers(data)
+    function = data.get("function")
+    if function == "mcp_auth_header":
+        general = _optional_string(data, "general_settings")
+        settings = {} if general is None else {"mcp_client_side_auth_header_name": general}
+        with patch.object(proxy_server, "general_settings", settings):
+            header_name = MCPRequestHandler.get_mcp_client_side_auth_header_name()
+            value = MCPRequestHandler._get_mcp_auth_header_from_headers(headers)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        return {"header_name": header_name, "value": value}
+    if function == "litellm_key":
+        present = headers.get(MCPRequestHandler.LITELLM_API_KEY_HEADER_NAME_PRIMARY) is not None
+        value = MCPRequestHandler.get_litellm_api_key_from_headers(headers)
+        return {"value": value, "explicit_header_present": present}
+    if function == "server_auth":
+        return {"value": MCPRequestHandler._get_mcp_server_auth_headers_from_headers(headers)}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    if function == "oauth2":
+        return {"value": MCPRequestHandler._get_oauth2_headers_from_headers(headers)}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    raw_lookups = data.get("lookups") or []
+    if not isinstance(raw_lookups, list):
+        raise ValueError("lookups must be a list of strings")
+    lookups: dict[str, Json] = {}
+    for entry in raw_lookups:
+        if not isinstance(entry, str):
+            raise ValueError("every lookup is a string")
+        lookups[entry] = headers.get(entry)
+    return {"items": [[name, value] for name, value in headers.items()], "lookups": lookups}
+
+
+def _list_header(data: dict[str, Json]) -> object:
+    headers = _headers(data)
+    if data.get("header") == "access_groups":
+        return {"value": MCPRequestHandler.get_mcp_access_groups_from_headers(headers)}
+    header = headers.get(MCPRequestHandler.LITELLM_MCP_SERVERS_HEADER_NAME)
+    if header is None:
+        return {"value": None}
+    return {"value": [s.strip() for s in header.split(",") if s.strip()]}
+
+
+def _targets(data: dict[str, Json]) -> object:
+    if data.get("function") == "target_names":
+        raw_paths = data.get("paths")
+        if not isinstance(raw_paths, list):
+            raise ValueError("paths must be a list of strings")
+        values: list[list[str]] = []
+        for entry in raw_paths:
+            if not isinstance(entry, str):
+                raise ValueError("every path is a string")
+            values.append(MCPRequestHandler.extract_target_server_names_from_path(entry))
+        return {"values": values}
+    path = _string(data, "path")
+    raw = data.get("header_servers")
+    malformed = raw is not None and (
+        not isinstance(raw, list) or any(not isinstance(entry, str) for entry in raw)
+    )
+    if malformed:
+        raise ValueError("header_servers must be a list of strings or null")
+    servers = None if raw is None else cast(list[str], raw)
+    if data.get("mode") == "cold_start":
+        value = _parse_mcp_server_names_from_path(path, servers)  # pyright: ignore[reportPrivateUsage]
+    else:
+        value = MCPRequestHandler._resolve_target_server_names(path, servers)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    return {"value": value}
+
+
+_HANDLERS: dict[str, Callable[[dict[str, Json]], object]] = {
+    "strip_default_port": _simple,
+    "proxy_base_url": _simple,
+    "request_base_url": _request_base_url,
+    "well_known_root_suffix": _simple,
+    "route_relative_path": _simple,
+    "metadata_url": _challenge,
+    "www_authenticate": _challenge,
+    "byok_authenticate": _byok_authenticate,
+    "canonicalize": _canonicalize,
+    "redact_url": _simple,
+    "resolve_resource": _simple,
+    "token_request": _token_request,
+    "safe_headers": _header_probe,
+    "litellm_key": _header_probe,
+    "mcp_auth_header": _header_probe,
+    "server_auth": _header_probe,
+    "oauth2": _header_probe,
+    "list_header": _list_header,
+    "target_names": _targets,
+    "target_selection": _targets,
+}
+
+
+def run(data: dict[str, Json]) -> object:
+    function = data.get("function")
+    if not isinstance(function, str):
+        raise ValueError("every b4654 call names a function")
+    handler = _HANDLERS.get(function)
+    if handler is None:
+        raise ValueError(f"unknown b4654 function: {function}")
+    return handler(data)

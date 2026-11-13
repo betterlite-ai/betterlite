@@ -1,0 +1,10 @@
+kind: helper
+name: redis-cache-batch-read-corpus-seed
+call:
+  b5640:
+    function: batch_read
+    namespace: seeded
+    keys: [seeded, null]
+    replies: [null, "1"]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+kind: helper
+name: header-override
+call:
+  vertex_endpoint:
+    header_override:
+      headers:
+        - {auth: null, extras: {}}
+        - {auth: tok, extras: {}}
+        - {auth: "", extras: {}}
+        - {auth: null, extras: {Content-Type: text/plain}}
+        - {auth: tok, extras: {Authorization: "Custom x"}}
+        - {auth: tok, extras: {X-Extra: "1"}}
+        - {auth: tok, extras: {content-type: text/plain}}
+        - {auth: null, extras: {Content-Type: "", Authorization: ""}}
+        - {auth: "", extras: {Authorization: "Basic abc", X-Trace: "", X-Count: "0"}}
+env: {}
+compare: {ignore: []}

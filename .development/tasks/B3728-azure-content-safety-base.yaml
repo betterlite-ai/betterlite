@@ -12,8 +12,8 @@ description: >-
   one chunk even for text longer than the limit, and preserves whitespace within chunks.
 scope:
   paths:
-    - crates/betterlite-guardrails/src/azure_*.rs
-    - crates/betterlite-guardrails/src/azure_*/**
+    - crates/betterlite-guardrails/src/azure_content_safety.rs
+    - crates/betterlite-guardrails/src/azure_content_safety/**
     - tools/oracle/cases/guardrails/azure/**
   lint_tables: false
 references:
@@ -65,34 +65,34 @@ checks:
   commands:
     - id: split-text-cases
       why: split_text_by_words does not implement lossless word-boundary splitting or tests are missing
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_text_splitting::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_text_splitting::/)'
     - id: api-version-cases
       why: resolve_content_safety_api_version does not resolve versions correctly or tests are missing
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_api_version::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_api_version::/)'
     - id: base-init-cases
       why: AzureGuardrailBase initialization tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_base_initialization::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_base_initialization::/)'
     - id: post-transport-cases
       why: _post_to_content_safety HTTP transport tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_transport::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_transport::/)'
     - id: user-prompt-cases
       why: get_user_prompt_from_request text extraction tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_user_prompt::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_user_prompt::/)'
     - id: legacy-init-cases
       why: Legacy _PROXY_AzureContentSafety initialization tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_legacy_initialization::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_legacy_initialization::/)'
     - id: threshold-cases
       why: _configure_thresholds with default severity four tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_threshold_configuration::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_threshold_configuration::/)'
     - id: violation-cases
       why: test_violation severity checking tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_violation_detection::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_violation_detection::/)'
     - id: legacy-pre-call-cases
       why: Legacy pre-call hook tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_legacy_pre_call::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_legacy_pre_call::/)'
     - id: legacy-post-call-cases
       why: Legacy post-call hook tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_legacy_post_call::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_content_safety::(.*::)?azure_legacy_post_call::/)'
 oracle_cases: []
 deviations:
   - what: The legacy _PROXY_AzureContentSafety hook configures a default severity threshold of four per category, while the modern AzureGuardrailBase does not configure thresholds (B3730 owns threshold logic).
@@ -102,10 +102,10 @@ deviations:
   - what: API version defaults to 2024-09-01; the legacy Javelin v1 stored by older releases resolves to this modern default.
     why: LiteLLM handles the migration from older releases that stored "v1" as the Javelin API version. betterlite performs the same resolution.
 out_of_scope:
-  - Modern guardrail initialization, configuration updates and logging are owned by B104 (CustomGuardrail framework).
+  - Modern guardrail construction and configuration updates are owned by B5471, and invocation logging by B3664.
   - Threshold evaluation, category filtering and the complete moderation guardrail hook are owned by B3730 (text moderation).
   - Prompt Shield-specific scans and billing are owned by B3729.
-  - The legacy callback registration caller at litellm/proxy/common_utils/callback_utils.py:356 is owned by U3 (callback helpers).
+  - The legacy callback registration caller at litellm/proxy/common_utils/callback_utils.py:356 is owned by B106.
   - Text content type checking (is_text_content_call_type) and message text iteration (iter_message_text) are owned by U1 (framework utilities).
 pitfalls:
   - "split_text_by_words always returns at least one chunk even if the input is longer than max_length; a caller cannot rely on len(chunks) > 1 to know if splitting occurred."

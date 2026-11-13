@@ -1,0 +1,66 @@
+task: B3848
+deviations:
+  - what: >-
+      An unrecognized span exporter kind (for example "jaeger" or a typo such as "otlp_htp")
+      makes exporter_from_spec return ExporterError::UnknownKind instead of building a console exporter.
+      Metric and log sinks keep LiteLLM's console fallback for the same kinds.
+    why: >-
+      The task's definition of done requires the factory to raise on unrecognized kinds. A typo that
+      silently prints spans to stdout while the operator believes they reach a collector is a bug no
+      working setup can rely on. exporter_transport still reports such a kind as headerless, as LiteLLM does.
+      Proven by exporter_unrecognized_kind_is_rejected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L220
+  - what: >-
+      The registered exporter factories, the HTTP clients and the existing meter and logger providers are
+      values the caller passes in (ExporterFactories, HttpClients, ProviderState) instead of a module-level
+      dict, the requests session and the OpenTelemetry global provider. resolve_meter_provider and
+      resolve_logger_provider return Resolved::Publish for a provider they built and leave installing it as
+      the process default to the caller.
+    why: >-
+      betterlite forbids global and module-level state. The observable resolution order is unchanged:
+      an injected provider wins, then the operator's, an explicit opt-out yields no provider, and only
+      an unset process gets one built from the config. Proven by
+      exporter_provider_resolution_prefers_injected_then_existing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L1026-L1050
+  - what: >-
+      The TLS policy for OTLP HTTP (certificate file, verify flag) is carried by the HttpClients the caller
+      injects. The exporter factories do not read the certificate environment variables or build a session.
+    why: >-
+      The OpenTelemetry Rust OTLP exporter takes a shared HTTP client, and the TLS decision is made once per
+      signal by the code that builds that client (B3842 decides the precedence). Proven by the codec_ and
+      otlp_ tests, which run the real exporters against a recording client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L195-L200
+  - what: >-
+      The default baggage prefix allowlist is "litellm.metadata." (LiteLLM.METADATA_PREFIX), not "litellm.*".
+      Header values are percent-decoded once by parse_headers and re-escaped before they reach the SDK
+      exporter, so a value such as "50%2525" arrives on the wire as "50%25".
+    why: >-
+      The first half follows LiteLLM's constant rather than the task text. The second half only keeps the
+      Rust SDK from decoding the value a second time, which would change what LiteLLM sends. Proven by
+      baggage_allowlist_matches_a_key_or_a_prefix and otlp_headers_reach_the_request_decoded_once.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L101
+  - what: >-
+      GenAIEventRecorder has no resource field and takes its fields as an OperationException struct. An explicit
+      timestamp of 0 is used as given and only an absent timestamp means the current time.
+    why: >-
+      The Rust logger provider owns the resource, so a per-record override has nothing to attach to.
+      A zero timestamp being replaced by the clock is Python truthiness, which docs/compatibility.md says
+      betterlite does not port. Proven by event_operation_exception_uses_the_given_timestamp.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/events.py#L54
+  - what: >-
+      A header entry that fails both OTLP header patterns is logged by its position only. The OTel
+      Python parser logs the raw entry text, which can carry a credential.
+    why: >-
+      A malformed header is often a mistyped authorization value, and naming the text in a log line
+      would leak the secret the entry was meant to send. Proven by
+      exporter_headers_warn_when_an_entry_is_dropped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L159
+  - what: >-
+      An empty endpoint or traces_endpoint string is treated as unset, so the exporter falls back to the
+      SDK default endpoint for the signal. A header name or value that parse_headers keeps but either
+      transport cannot carry (for example a percent-decoded newline) is an ExporterError instead of a
+      deferred failure.
+    why: >-
+      docs/compatibility.md reads an empty string as unset for env-backed fields. Failing at build time names the
+      bad header instead of dropping spans later. Proven by exporter_grpc_rejects_an_invalid_header_value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L1001

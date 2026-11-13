@@ -1,0 +1,82 @@
+id: B9232
+title: Compare generated upload filenames and prove GigaChat image chat over HTTP
+description: >-
+  Close the successful-image path left by B8178's pure uploader tests. GigaChat sends
+  a fresh uuid.uuid4() filename to /files before referring to the returned id in its
+  chat body. B900's multipart comparator correctly treats filenames as significant,
+  so today's oracle cannot compare two successful uploads. B9850 adds the opt-in
+  for such generated values, so this task writes no comparator code: it uses B9850's
+  compare.ignore pointer /upstream/{request_index}/parts/{part_index}/filename on
+  the observed file part, then exercises the real uploader through chat. The
+  gateway uploader and its cache stay with B8178; B8312 already injects them. Plan
+  about 250 changed lines across three HTTP fixtures, with zero newly implemented
+  LiteLLM production lines.
+
+  Add data-url, cached-data-url and upload-rejected fixtures below
+  providers/gigachat-upload. Use an untagged HTTP case, model alias upload-model for
+  gigachat/GigaChat-2, fixed model_info.id, general_settings.master_key=sk-test,
+  router_settings.num_retries=0 and GIGACHAT_ACCESS_TOKEN with a dummy token. Set
+  deployment api_base via os.environ/UPLOAD_BASE and UPLOAD_BASE={{upstream}}/api/v1,
+  avoiding OAuth in this suite. No additional application setting or default is
+  introduced. Send POST /v1/chat/completions with a text part and a valid base64
+  data:image/png URL. Script a /files reply with a fixed id, followed by a native
+  chat reply with fixed usage. Compare the multipart purpose=general, file bytes,
+  MIME type and extension, and the chat message's attachments containing that id.
+  The filename selector names the observed file part, not the purpose part.
+
+  cached-data-url is a kind: http_scenario case (browser step flows take no selector) with two requests of exactly the same image
+  URL and a different text message. Script upload plus chat for the first step and
+  chat alone for the second: the cached attachment id is reused without a second
+  upload. Use a distinct image payload from data-url to avoid cross-case cache hits.
+  upload-rejected uses another image payload and scripts an upstream 500 from
+  /files followed by a successful chat. The source logs the upload failure, omits
+  attachments and keeps the text; the HTTP case compares the latter two effects.
+  All three fixtures use the exact filename selector on their upload step and compare stable
+  authorization/content-type headers, status, reply body and supplied usage. Ignore
+  only genuinely generated response fields, never attachment ids or request counts.
+  Run against the built gateway and LiteLLM; --self-check is not this task's proof.
+scope:
+  paths:
+    - tools/oracle/cases/providers/gigachat-upload/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L25-L50
+    why: Existing URL-hash cache and data-URL decoding exercised without a remote image fetch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/file_handler.py#L88-L151
+    why: UUID filename, multipart upload, returned-id cache and swallowed failure already implemented by B8178.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/chat/transformation.py#L274-L325
+    why: The live synchronous uploader call and attachment collection need HTTP integration proof.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/chat/transformation.py#L362-L389
+    why: The selected file id appears in the outgoing GigaChat messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11958
+    why: Existing chat decorators; B9230 checks all four aliases while this task drives the v1 upload flow.
+  - url: https://docs.rs/uuid/1.28.0/uuid/struct.Uuid.html
+    why: Reuse the installed crate's parsing, version, variant and canonical formatting instead of a custom UUID grammar.
+dod:
+  - text: A successful GigaChat image call uploads the file and forwards its id, a repeated image reuses the cache, and upload rejection leaves successful text-only chat.
+    proof: [upload-http-fixtures, oracle]
+checks:
+  optional: []
+  commands:
+    - id: upload-http-fixtures
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/providers/gigachat-upload)"
+        && for case in data-url cached-data-url upload-rejected; do
+        test -f "tools/oracle/cases/providers/gigachat-upload/$case.yaml" || exit 1; done
+      why: The live upload, cache hit and swallowed provider failure each require their own new HTTP proof.
+oracle_cases:
+  - tools/oracle/cases/providers/gigachat-upload/data-url.yaml
+  - tools/oracle/cases/providers/gigachat-upload/cached-data-url.yaml
+  - tools/oracle/cases/providers/gigachat-upload/upload-rejected.yaml
+deviations: []
+out_of_scope:
+  - B8178 owns every function in file_handler.py; upload_file_async and its async downloader have no live caller at the pin. B8177 owns the chat transform and B8312 supplies the uploader binding.
+  - B900's multipart encoding/capture and B171's HTTP runner remain in place. The filename selector and its comparator code are B9850's; this task only uses it.
+  - B004 owns the chat endpoint and B8633 connects its production generator. B9230 supplies OAuth, streaming, invalid-image and alias cases, and B043 consumes this task's three fixtures in its final suite.
+pitfalls:
+  - GigaChat caches by the original URL string; reusing a payload across independent cases can consume the wrong scripted upstream answer.
+  - The purpose part and file part have different metadata; only the part carrying the generated filename receives a selector.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

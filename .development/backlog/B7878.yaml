@@ -1,0 +1,14 @@
+id: B7878
+milestone: M12 python
+title: Python assistant and thread functions
+status: todo
+depends_on: [B6040, B158, B167, B1055, B1056, B1130]
+file: tasks/B7878-python-assistants-threads.yaml
+covers:
+  - "litellm/assistants/main.py"
+parent: B161
+split_from: B161
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

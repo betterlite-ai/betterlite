@@ -1,0 +1,12 @@
+kind: helper
+name: response-usage-chat
+call:
+  b3860:
+    function: set_response
+    response:
+      usage:
+        total_tokens: 30
+        completion_tokens: 20
+        prompt_tokens: 10
+env: {}
+compare: {ignore: []}

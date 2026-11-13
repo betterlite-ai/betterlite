@@ -1,0 +1,22 @@
+kind: helper
+name: gemini-tool-results-corpus-parallel-results
+call:
+  gemini_tool_results:
+    message:
+      role: tool
+      tool_call_id: call_b
+      content: '{"ok":true}'
+    last_message_with_tool_calls:
+      tool_calls:
+        - id: call_a
+          function:
+            name: first
+            arguments: '{}'
+        - id: call_b
+          function:
+            name: second
+            arguments: '{}'
+    forward_function_call_id: true
+env: {}
+compare:
+  ignore: []

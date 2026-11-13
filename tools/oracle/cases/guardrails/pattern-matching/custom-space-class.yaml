@@ -1,0 +1,1 @@
+{"kind":"helper","name":"custom-space-class","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"regex","pattern":"[\\s]","action":"MASK"}],"text":"\u001c"}},"env":{},"compare":{"ignore":[]}}

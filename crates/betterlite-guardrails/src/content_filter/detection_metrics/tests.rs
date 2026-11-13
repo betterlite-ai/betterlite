@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::content_filter_records::{
-    CategoryKeywordDetection, ContentFilterDetection, PatternDetection,
+    BlockedWordDetection, CategoryKeywordDetection, ContentFilterDetection, PatternDetection,
 };
 
 use super::{
@@ -37,6 +37,37 @@ fn counts_only_masked_entity_types() {
     assert_eq!(counts.get("email"), Some(&1));
     assert_eq!(counts.get("pii"), Some(&1));
     assert!(!counts.contains_key("secret"));
+}
+
+#[rstest::rstest]
+#[case::mask("MASK", 3, Some(1))]
+#[case::block("BLOCK", 2, None)]
+#[case::allow("ALLOW", 2, None)]
+fn blocked_words_and_categories_count_only_mask_actions(
+    #[case] action: &str,
+    #[case] word_count: usize,
+    #[case] category_count: Option<usize>,
+) {
+    let detections = vec![
+        ContentFilterDetection::BlockedWord(BlockedWordDetection {
+            r#type: "blocked_word".to_owned(),
+            keyword: "secret".to_owned(),
+            action: action.to_owned(),
+            description: None,
+        }),
+        ContentFilterDetection::CategoryKeyword(CategoryKeywordDetection {
+            r#type: "category_keyword".to_owned(),
+            category: "pii".to_owned(),
+            keyword: "address".to_owned(),
+            severity: "high".to_owned(),
+            action: action.to_owned(),
+        }),
+    ];
+    let mut counts = BTreeMap::from([("blocked_word".to_owned(), 2)]);
+    count_masked_entities(&detections, &mut counts);
+    assert_eq!(counts.get("blocked_word"), Some(&word_count));
+    assert_eq!(counts.get("pii"), category_count.as_ref());
+    assert_eq!(counts.len(), category_count.map_or(1, |_| 2));
 }
 
 #[test]

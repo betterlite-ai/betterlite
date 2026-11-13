@@ -1,0 +1,15 @@
+id: B7430
+milestone: M5 api families
+title: Container router wrappers and route choice
+status: todo
+depends_on: [B016, B6021, B014, B903, B3360, B3363, B3366, B3367, B3368, B3369, B3370]
+file: tasks/B7430-container-router-calls.yaml
+covers:
+  - "litellm/router.py"
+  - "litellm/proxy/route_llm_request.py"
+parent: B094
+split_from: B3372
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

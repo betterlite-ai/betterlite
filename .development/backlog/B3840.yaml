@@ -5,6 +5,7 @@ status: done
 depends_on: []
 file: tasks/B3840-otel-semantic-vocabulary.yaml
 covers:
+  - "litellm/integrations/otel/model/__init__.py"
   - "litellm/integrations/otel/model/{semconv,spans}.py"
   - "litellm/integrations/opentelemetry_utils/gen_ai_semconv.py"
 parent: B110

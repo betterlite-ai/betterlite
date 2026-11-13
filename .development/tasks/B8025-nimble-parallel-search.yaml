@@ -1,0 +1,127 @@
+id: B8025
+title: Map Nimble and Parallel AI search requests, replies and usage
+description: >-
+  Add api::search_providers::nimble and api::search_providers::parallel_ai to betterlite-core on the B3270 base
+  hooks. betterlite-config gets nimble_search_settings (NIMBLE_API_KEY unset, NIMBLE_API_BASE default
+  https://sdk.nimbleway.com/v2) and parallel_ai_search_settings (PARALLEL_AI_API_KEY and PARALLEL_API_KEY both
+  unset, PARALLEL_AI_API_BASE default https://api.parallel.ai). Display names are "Nimble" and "Parallel AI".
+  Both are POST.
+
+  Nimble. validate_environment returns a new header map: the incoming headers plus Authorization Bearer,
+  Content-Type application/json and X-Client-Source "litellm". A missing key fails with "NIMBLE_API_KEY is not
+  set. Set `NIMBLE_API_KEY` environment variable." The URL trims trailing slashes from caller base, env base or
+  default, then appends /search unless present. Request body, in this order: include_domains and
+  exclude_domains from search_domain_filter (an entry starting with "-" goes to exclude without the dash, empty
+  entries and a bare "-" are dropped, an empty list is left out), every option whose name is not unified, query
+  (a list joined with a space), max_results as given, and country uppercased. Because the options come before
+  the derived keys, a caller include_domains or exclude_domains beats the derived one, but a caller query does
+  not beat query. Reply: the body must be a JSON object with a results array. Each result keeps title, url, and
+  snippet from content else description else "" (null counts as absent). date is publish_date inside
+  additional_data when that is a string, otherwise null. The full additional_data rides along as an extra
+  field when it is not null. Order is kept. A body that does not match, including a missing or null results
+  and invalid JSON, raises through get_error_class with the response status. get_error_class builds "Nimble
+  Search: {detail}. See https://docs.nimbleway.com/api-reference/search/search for details." where detail is
+  the envelope's detail, else message, else the raw text, with trailing dots and spaces removed.
+
+  Parallel AI. supports_rich_search_input is true. The key comes from PARALLEL_AI_API_KEY, then
+  PARALLEL_API_KEY, with a trust check against the default or PARALLEL_AI_API_BASE; header x-api-key; the
+  missing-key text names PARALLEL_API_KEY. The URL trims trailing slashes; a base ending in /v1/search stays;
+  otherwise a trailing /v1 is removed and /v1/search is appended. Request (port the source pop order): a
+  string query gives search_queries [query] and objective query, a list gives only search_queries. mode is
+  the option, else processor mapped (base to basic, pro to advanced, other values kept), else "basic"; an empty
+  mode also becomes "basic". advanced_settings collects max_results, country then location (location wins),
+  max_chars_per_result as excerpt_settings, fetch_policy, and source_policy from search_domain_filter then
+  include_domains (include_domains wins), exclude_domains and after_date; a caller advanced_settings object is
+  then merged over the top-level keys. max_tokens_per_page and _parallel_ai_usage are removed. Remaining
+  options are merged last and can override search_queries or objective. Reply: results with title, url,
+  snippet as excerpts joined by " ... ", date from publish_date, and the raw excerpts as an extra. search_id,
+  session_id, warnings and usage (exposed as parallel_usage) become response extras only when not null. The
+  merged hook is `fn transform_search_response(&self, response: &ProviderResponse<'_>) -> Result<SearchResponse, Self::Error>`
+  in crates/betterlite-openai/src/search/provider.rs. It takes no optional-params argument and only a shared self, so it
+  cannot write the optional params. Instead the reply step sets the key _parallel_ai_usage (PARALLEL_AI_USAGE_PARAM, which
+  B3274 prices from) in `SearchResponse.hidden_params`, the Object that is never serialized, to the usage value even when
+  usage is null. The code that calls the hook and owns the optional params copies that key over any caller value. No global
+  and no extra argument.
+
+  Add fuzz targets nimble_reply and parallel_ai_reply with replays_the_nimble_corpus and
+  replays_the_parallel_ai_corpus. The two transformation files hold 422 nonblank lines (cost_calculator.py
+  belongs to B3274); plan 330 production and config lines, 250 test lines and 180 oracle and fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/search_providers/nimble.rs
+    - crates/betterlite-core/src/api/search_providers/nimble/**
+    - crates/betterlite-core/src/api/search_providers/parallel_ai.rs
+    - crates/betterlite-core/src/api/search_providers/parallel_ai/**
+    - crates/betterlite-config/src/providers/nimble.rs
+    - crates/betterlite-config/src/providers/nimble/**
+    - crates/betterlite-config/src/providers/parallel_ai.rs
+    - crates/betterlite-config/src/providers/parallel_ai/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/nimble_reply.rs
+    - crates/betterlite-core/fuzz/fuzz_targets/parallel_ai_reply.rs
+    - crates/betterlite-core/fuzz/corpus/nimble_reply/**
+    - crates/betterlite-core/fuzz/corpus/parallel_ai_reply/**
+    - tools/oracle/cases/helpers/nimble-parallel-search/**
+    - tools/oracle/helpers/b8025.py
+    - tools/oracle/helpers/b8025/**
+    - tools/oracle/src/helpers/core_ops/b8025.rs
+    - tools/oracle/src/helpers/core_ops/b8025/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nimble/search/transformation.py#L1-L264
+    why: Strict reply models, domain split, body key order, error envelope unwrap and the error message shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/parallel_ai/search/transformation.py#L1-L285
+    why: The v1 request builder with pop order, processor mapping, URL rule and reply extras.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/parallel_ai/search/cost_calculator.py#L1-L71
+    why: Where PARALLEL_AI_USAGE_PARAM is defined and read; owned by B3274, used here only for the key name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L137-L189
+    why: The shared host check, here with two key variables for Parallel AI.
+dod:
+  - text: Nimble headers, URL, body key order and domain split match the source.
+    proof: [nimble-parallel-tests, oracle]
+  - text: Nimble replies and error envelopes match the source, including strict schema failures.
+    proof: [nimble-parallel-tests, nimble-parallel-corpus, oracle]
+  - text: Parallel AI request building (mode, advanced_settings, source_policy, merge order) and URL rule match the source.
+    proof: [nimble-parallel-tests, oracle]
+  - text: Parallel AI replies carry excerpts, extras and the stored usage value that B3274 reads.
+    proof: [nimble-parallel-tests, nimble-parallel-corpus, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: nimble-parallel-tests
+      why: Nimble or Parallel AI mapping, reply projection, error shaping or settings loading is missing
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::search_providers::(nimble|parallel_ai)::/) - test(replays_the_nimble_corpus) - test(replays_the_parallel_ai_corpus) | test(nimble_search_settings) | test(parallel_ai_search_settings)'
+    - id: nimble-parallel-corpus
+      why: The Nimble or Parallel AI reply decoder has no new corpus inputs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/nimble_reply)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/parallel_ai_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_nimble_corpus) | test(replays_the_parallel_ai_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/nimble-parallel-search/nimble-domain-split.yaml
+  - tools/oracle/cases/helpers/nimble-parallel-search/nimble-caller-domains-win.yaml
+  - tools/oracle/cases/helpers/nimble-parallel-search/nimble-snippet-fallback.yaml
+  - tools/oracle/cases/helpers/nimble-parallel-search/nimble-error-envelope.yaml
+  - tools/oracle/cases/helpers/nimble-parallel-search/parallel-string-query.yaml
+  - tools/oracle/cases/helpers/nimble-parallel-search/parallel-processor-mapping.yaml
+  - tools/oracle/cases/helpers/nimble-parallel-search/parallel-location-and-domain-precedence.yaml
+  - tools/oracle/cases/helpers/nimble-parallel-search/parallel-url-v1-suffix.yaml
+  - tools/oracle/cases/helpers/nimble-parallel-search/parallel-reply-extras.yaml
+  - tools/oracle/cases/helpers/nimble-parallel-search/parallel-usage-param-replaced.yaml
+deviations:
+  - what: When Nimble's reply fails the schema, the error text carries betterlite's decoder message in place of pydantic's validation text.
+    why: The wording of a parser error is library specific. Status code, the "Nimble Search:" prefix and the docs link stay the same.
+out_of_scope:
+  - B3274 owns parallel_ai/search/cost_calculator.py, including PARALLEL_AI_USAGE_PARAM and the pricing from usage. This task only writes the usage value under that key.
+  - B3270 owns SearchResult, SearchResponse and the host check.
+  - Package initializers only re-export the config classes.
+  - B048 registers both configs, and B3272 runs them.
+pitfalls:
+  - Nimble puts caller options before the derived keys, so a caller include_domains replaces the one built from search_domain_filter, while query, max_results and country always win.
+  - Nimble sends max_results unclamped on purpose, so a value of 0 or 500 reaches Nimble, which reports the error.
+  - Nimble treats null title, url, content and description as absent, but a wrong type such as a number title is a schema failure.
+  - Nimble date comes only from additional_data.publish_date, and publish_date_raw such as "1 day ago" is not used.
+  - Parallel AI list queries produce no objective, and a caller objective in the options is merged back at the end.
+  - Parallel AI processor values other than base and pro are used as the mode text unchanged.
+  - The usage value is stored in hidden_params even when null, because skipping it would let a caller supply a priced usage of its own.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,1 @@
+{"texts":["instructions","old","think"],"structured_messages":[{"role":"system","content":"instructions"},{"role":"user","content":"old"},{"role":"user","content":"think"}],"tool_calls":[{"function":{"name":"lookup","arguments":"{\"id\":1}"}}]}

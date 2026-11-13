@@ -1,0 +1,13 @@
+kind: helper
+name: unknown_unit_midnight
+call:
+  duration:
+    calls:
+      - {function: reset, duration: "5x", now: "2024-01-01T10:00:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "5mox", now: "2024-01-01T10:00:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "2hours", now: "2024-01-01T10:00:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "999999999999999999999999x", now: "2024-01-01T10:00:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "5x!", now: "2024-01-01T10:00:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "5mo ", now: "2024-01-15T10:00:00Z", timezone: "America/New_York"}
+env: {}
+compare: {ignore: []}

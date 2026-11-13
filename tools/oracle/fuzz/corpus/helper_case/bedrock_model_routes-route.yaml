@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock-model-routes-seed-route
+call:
+  bedrock_model_routes:
+    price_map:
+      openai.gpt-5.6:
+        supported_endpoints: ["/v1/chat/completions"]
+    converse_models: [amazon.nova-lite-v1:0]
+    request_metadata_fields: []
+    tool_names: {}
+    step:
+      routes:
+        models: [converse/nova/custom, xopenai.gpt-4o]
+        requests:
+          - model: chat_completions/openai.gpt-4o
+            request_params: {stop: []}
+            additional_drop_params: [stop]
+env: {}
+compare: {ignore: []}

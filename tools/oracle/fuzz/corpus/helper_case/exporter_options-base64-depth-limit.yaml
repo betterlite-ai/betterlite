@@ -1,0 +1,32 @@
+kind: helper
+name: exporter-options-base64-depth-limit
+call:
+  b3931:
+    operation: base64
+    max_depth: 1
+    payload:
+      id: "chatcmpl-1"
+      trace_id: "trace-1"
+      session_id: "session-1"
+      call_type: "completion"
+      response_cost: 0.5
+      status: "success"
+      status_fields: {"llm_api_status": "success", "guardrail_status": "not_run"}
+      total_tokens: 5
+      prompt_tokens: 2
+      completion_tokens: 3
+      startTime: 1704067200.0
+      endTime: 1704067201.5
+      completionStartTime: 1704067200.5
+      response_time: 1.0
+      model_map_information: {"model_map_key": "", "model_map_value": null}
+      model: "gpt-4o"
+      api_base: "https://api.openai.com"
+      metadata: {"user_api_key_hash": "abc"}
+      saved_cache_cost: 0.0
+      request_tags: []
+      model_parameters: {}
+      hidden_params: {}
+      messages: [{"role": "user", "content": [[["data:image/png;base64,AAAA"]]]}]
+env: {}
+compare: {ignore: []}

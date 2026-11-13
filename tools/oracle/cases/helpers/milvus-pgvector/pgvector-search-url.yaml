@@ -1,0 +1,28 @@
+kind: helper
+name: pgvector-search-url
+call:
+  b7810:
+    calls:
+      - {call: pg_vector_validate_environment, input: {headers: {X-Trace: t}, api_key: pg-key, env: {PG_VECTOR_API_KEY: env-key}}}
+      - {call: pg_vector_validate_environment, input: {headers: {}, api_key: null, env: {PG_VECTOR_API_KEY: env-key}}}
+      - {call: pg_vector_validate_environment, input: {headers: {}, api_key: "", env: {}}}
+      - call: pg_vector_search_request
+        input:
+          vector_store_id: "vs/a b"
+          query: [one, two]
+          params: {filters: {type: eq}, max_num_results: 5, ranking_options: {ranker: auto}, rewrite_query: false}
+          api_base: "https://pg.example.test/v1/vector_stores"
+      - call: pg_vector_search_request
+        input:
+          vector_store_id: vs_1
+          query: hello
+          params: {}
+          api_base: "https://pg.example.test/v1/vector_stores?api-version=1"
+      - call: pg_vector_search_request
+        input:
+          vector_store_id: ".."
+          query: hello
+          params: {}
+          api_base: "https://pg.example.test/v1/vector_stores"
+env: {}
+compare: {ignore: []}

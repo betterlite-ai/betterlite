@@ -1,0 +1,276 @@
+id: B3461
+title: RAG retrieval, reranking and query billing
+description: >-
+  Build LiteLLM's RAG query path: `aquery` and `_execute_query_pipeline` from rag/main.py, the
+  `_suppressed_sub_call_billing` guard, and the `RAGQuery` helper class from rag/rag_query.py. A query takes the
+  last user message, searches one vector store, optionally reranks the hits, puts the hits into a "Context:"
+  message in front of the last message, calls the chat model, attaches the hits to the answer and adds the
+  search and rerank cost to the answer's cost. Put it in a new module `rag_query_call` of betterlite-sdk
+  (crates/betterlite-sdk/src/rag_query_call.rs and the folder beside it). The sdk crate already holds the
+  completion calls this one needs, B5656 (`AsyncCompletionTarget`) and B6020 (`RouterCompletion::acompletion`),
+  and betterlite-core holds search, rerank and pricing (B1064, B1014, B1686). This task registers no route.
+  B3465 owns the HTTP routes and will call `aquery` from its /rag/query handler (that handler also reads the
+  body, authorizes the stores and merges the managed store's settings, none of which is built here).
+
+  Read first: the merged code of B1064 (`vector_store_search` in betterlite-core api), B1014 (`rerank_call`),
+  B1686 (`cost::call_price`), B5656 (`completion_call`), B6020 (`router_completion`), B198 (call context in
+  betterlite-context), B247 (the per-call log) and B1058 (the vector store search result types). Names below
+  come from the task files and may differ in the merged code. Use the merged names. If an item this task needs is
+  missing or private, stop and say so in the report instead of copying it.
+
+  Four submodules. `chunks` is RAGQuery. `params` builds the search arguments. `pipeline` is
+  _execute_query_pipeline. `entry` is aquery.
+
+  Submodule `chunks` (rag_query.py L40-L148). Five pure functions with LiteLLM's names. 1.
+  `extract_query_from_messages(messages)` returns None for an empty list. It looks only at the last message: None
+  when it has no content, the text when content is a string (an empty string is returned as is), and for a list of
+  parts the `text` of the first part whose type is "text". Anything else is None. 2. `build_context_message(chunks)`
+  starts from "Context:\n\n" and returns a message with role "user" and that text as content. A chunk is a
+  `ContextChunk`, an enum with `Result { content: Option<Vec<ContentItem>>, text: Option<String> }` and
+  `Text(String)`. For a Result with a non-empty `content` list, add every item's text that is non-empty, each
+  followed by "\n\n"; items without text add nothing, and then the Result's own `text` is not used. Only when
+  `content` is None or empty does a Result with `text` present add that text and "\n\n" (an empty `text` still
+  adds "\n\n"). A Text chunk adds its string and "\n\n". 3. `extract_documents_from_search(response)` walks the
+  response `data` list and each result's `content` list and collects the text of every item whose type is "text"
+  and whose text is non-empty. 4. `get_top_chunks_from_rerank(search, rerank)` walks the rerank `results`, and for
+  each result with an index less than the number of search hits returns that hit, in rerank order, repeats included.
+  A result without an index is skipped. A negative index counts from the end like Python's list indexing, and an
+  index below minus the length is the typed error `RagQueryError::RerankIndex` (Python's IndexError). 5.
+  `add_search_results_to_response(response, search, rerank)` sets `provider_specific_fields.search_results` on the
+  message of every choice that has a message, keeping the other fields already there, and sets
+  `rerank_results` only when a rerank response was given. Use B1058's typed search result and B1014's typed rerank
+  response. The typed search result has no `text` field, so the pipeline always builds `ContextChunk::Result` with
+  `text: None`; the `text` and `Text` forms exist because the function takes any list of chunks, and the helper cases
+  exercise them.
+
+  Submodule `params` (main.py L45-L71 and L243-L270). Constants `FORWARDABLE_KEYS` (aws_region_name,
+  vector_bucket_name, embedding_model, litellm_embedding_model, litellm_embedding_config, litellm_credential_name)
+  and `PIPELINE_SET_KEYS` (vector_store_id, query, max_num_results, custom_llm_provider, router). A typed
+  `RetrievalConfig` holds vector_store_id (required), custom_llm_provider, top_k, retrieval_filter, filters, the six
+  forwardable keys as named optional fields, and the merged managed-store settings the route adds. A typed
+  `SearchParams` is what the search call receives besides its own named arguments. `build_search_params(config,
+  top_level_filters, caller_extras, store_params)` merges four layers in this order, the later one winning on the
+  same key: the forwardable keys present in the config, then the caller extras (every request field left over after
+  the pipeline took `router` and `filters`), then `{filters}`, then the store params with PIPELINE_SET_KEYS
+  removed. `filters` is the first truthy of config.retrieval_filter, config.filters and the top-level filters (an
+  empty object is falsy), and the layer is empty when none is truthy. The config's own `api_base`, `api_key` and
+  any other key outside the allowlist never reach the search: this keeps a caller from sending the store's
+  credentials to another host. A caller extra whose name is one of PIPELINE_SET_KEYS makes Python's call fail
+  with TypeError "asearch() got multiple values for keyword argument '<name>'"; return
+  `RagQueryError::DuplicateArgument(name)` with that text.
+
+  Submodule `pipeline` (main.py L226-L350). `QuerySteps` is an async trait the pipeline calls, so tests run it
+  against a scripted fake: `search`, `search_cost`, `rerank`, `complete` and `add_extra_cost`. The production
+  `NativeQuerySteps` implements it over B1064's asearch, B1686's vector store cost, B1014's arerank,
+  B6020's `RouterCompletion::acompletion` when the request carries a router and B5656's `AsyncCompletionTarget`
+  when it does not, and B247's call log. `run_query(steps, ctx, request)` does this in order. 1. Take the
+  query with `extract_query_from_messages`; if it is None or empty, fail with
+  `RagQueryError::NoQuery`, message "No query found in messages for RAG query" (a ValueError in Python). 2. Build
+  the search params. 3. Search: vector_store_id from the config, `query`, `max_num_results` = config.top_k,
+  default 10 only when the key is absent (an explicit null stays null), and `custom_llm_provider` =
+  config.custom_llm_provider, default "openai" only when absent. 4. Price the search with B1686's vector store
+  cost, sum its two numbers, and use 0.0 on any error. Python passes provider = config provider (default
+  "openai") and gives a model only when that provider string has a "/" in it. When the config holds an explicit
+  null provider, Python's `"/" in None` raises inside the same try block, so the cost is 0.0. Keep that. 5.
+  Rerank only when `rerank` is present and `enabled` is true and the extracted documents are non-empty: call arerank
+  with `rerank.model` (required, a missing model is `RagQueryError::MissingField("model")`), the query, the documents
+  and `top_n` (default 5). The rerank cost is the response's hidden `response_cost`, or 0.0 when absent or null. The
+  context chunks become `get_top_chunks_from_rerank`. When rerank is off or there are no documents, the context
+  chunks are the whole search `data` list. A null `data` or null rerank `results` is the typed error
+  `RagQueryError::NullList` (Python iterates None and raises TypeError). 6. Build the context message and the new
+  message list: all messages but the last, the context message, then the last message. 7. Call chat completion with
+  the model, those messages, `stream` and the leftover request fields. Use the router when the request has one, the
+  direct call otherwise. 8. Attach and bill. When `stream` is false and the answer is a finished model response:
+  attach search and rerank results with `add_search_results_to_response`, and when the summed sub-call cost is
+  above zero and the response's hidden `response_cost` is present, add the cost to it (a missing hidden cost stays
+  missing and the sub-call cost is lost). In every other case (a stream, or any answer that is not a finished
+  model response) with a summed cost above zero, call `add_extra_cost` with the cost, which sets
+  `additional_response_cost` on the call log when the request carries one and does nothing otherwise. A stream gets
+  no search results attached.
+
+  The three sub-calls (search, rerank, completion) run under an internal context: derive a child of `ctx` with
+  B198's internal-call provenance and pass that child to `search`, `rerank` and `complete`, not to `search_cost`
+  or `add_extra_cost`. This is `_suppressed_sub_call_billing`: Python sets a context variable around the call and
+  resets it to the previous value afterward, even on error. In Rust the child value dies with the call, so there
+  is nothing to reset. Do not add a context variable or a static.
+
+  Submodule `entry`. `aquery(request, call)` is aquery (L353-L399) as one async function. Call `run_query`; on an
+  error map it through betterlite-error's dispatch (crates/betterlite-error/src/dispatch.rs, B185 and B186) with
+  `model` = the request model and `custom_llm_provider` = the config's raw provider (None when absent, even though
+  the search used "openai"). LiteLLM maps twice, in query and in aquery, and its second pass returns an already
+  mapped exception unchanged (exception_mapping_utils.py L2366-L2367), so map once. Errors from the search,
+  rerank and completion steps are already LiteLLM-style errors and pass through unchanged.
+
+  Oracle helper. Helper cases run the five RAGQuery functions in Python and in Rust and compare results. One
+  helper operation named after this task id, with a variant tag per function under `call`: `extract_query`,
+  `context_message`, `documents`, `top_chunks`, `attach_results`. The skeleton creates the operation and the
+  worker writes its adapter files. The Python side builds a `ModelResponse` with choices for `attach_results`
+  and projects each choice's `provider_specific_fields`. No HTTP case belongs here, because no route reaches
+  `aquery` until B3465 registers the query route; B3465 adds those. The pipeline is covered by Rust tests with a
+  scripted `QuerySteps`, since a helper adapter cannot run it without the proxy's globals.
+
+  Size. The owned LiteLLM code is about 190 nonblank, non-comment lines. Allow 330 implementation, 300 tests,
+  100 adapters and 80 case lines.
+
+scope:
+  paths:
+    - crates/betterlite-sdk/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-sdk/src/rag_query_call.rs
+    - crates/betterlite-sdk/src/rag_query_call/**
+    - tools/oracle/cases/helpers/rag-query-call/**
+    - "tools/oracle/fuzz/corpus/helper_case/rag_query_call-*"
+    - tools/oracle/helpers/b3461.py
+    - tools/oracle/helpers/b3461/**
+    - tools/oracle/src/helpers/sdk/b3461.rs
+    - tools/oracle/src/helpers/sdk/b3461/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/rag_query.py#L40-L148
+    why: The five RAGQuery functions, with their string, list and missing-key cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L45-L71
+    why: The forwardable retrieval_config keys and the keys the pipeline sets itself.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L207-L223
+    why: _suppressed_sub_call_billing, the internal-call guard around each sub-call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L226-L350
+    why: The whole query pipeline, from the query text to the cost folding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/main.py#L353-L399
+    why: aquery and its exception_type wrap with the raw custom_llm_provider.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/endpoints.py#L836-L856
+    why: The one caller, shows which arguments the route passes (store params, router, leftover request fields).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2337-L2362
+    why: vector_store_search_cost, the function the pipeline prices the search with (B1686 builds it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1927-L1930
+    why: Where additional_response_cost is read back and added to the streamed response cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2358-L2369
+    why: exception_type returns an already mapped LiteLLM exception unchanged, so mapping once is the same.
+
+dod:
+  - text: extract_query_from_messages reads only the last message, returns a string content as is and the first text part of a list, and returns None for everything else.
+    proof: [chunks-query, oracle, helper-python]
+  - text: build_context_message starts with "Context:\n\n", skips items without text, uses a Result's own text only when its content is None or empty, and adds Text chunks.
+    proof: [chunks-context, oracle]
+  - text: extract_documents_from_search and get_top_chunks_from_rerank pick the text items, keep rerank order, skip results without an index and read a negative index from the end.
+    proof: [chunks-documents, oracle]
+  - text: add_search_results_to_response sets search_results on every choice message, keeps other provider_specific_fields, and sets rerank_results only when given.
+    proof: [chunks-attach, oracle]
+  - text: build_search_params applies the four layers in order, takes filters from retrieval_filter before filters before the top-level value, drops keys outside the allowlist and refuses a caller extra that clashes with a pipeline key.
+    proof: [params-merge]
+  - text: run_query fails with the NoQuery message for a missing or empty query and does not search.
+    proof: [pipeline-query]
+  - text: run_query searches with top_k 10 and provider "openai" only when those keys are absent, and passes an explicit null through.
+    proof: [pipeline-search]
+  - text: The search cost is the sum of both numbers of the vector store cost, and is 0.0 on an error or an explicit null provider.
+    proof: [pipeline-cost]
+  - text: Rerank runs only when enabled with documents, uses top_n 5 by default, reads the cost from the response's hidden response_cost, and replaces the context chunks with the reranked hits.
+    proof: [pipeline-rerank]
+  - text: The message list sent to the model is the earlier messages, the context message, then the last message.
+    proof: [pipeline-messages]
+  - text: A finished non-stream answer gets the search and rerank results and the summed cost added to its hidden response_cost, and a stream or other answer sends the cost to add_extra_cost and gets no results.
+    proof: [pipeline-billing]
+  - text: Search, rerank and completion receive an internal child context, and cost pricing does not.
+    proof: [pipeline-internal]
+  - text: aquery maps any pipeline error once, with the request model and the config's raw custom_llm_provider.
+    proof: [entry-error-map]
+  - text: Helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: chunks-query
+      why: the query text rules are missing
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^rag_query_call::chunks::tests::query_text_/)'
+    - id: chunks-context
+      why: the context message text rules are missing
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^rag_query_call::chunks::tests::context_message_/)'
+    - id: chunks-documents
+      why: document extraction or the rerank index mapping is missing
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^rag_query_call::chunks::tests::(documents|top_chunks)_/)'
+    - id: chunks-attach
+      why: the results are not attached to the choices
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^rag_query_call::chunks::tests::attach_/)'
+    - id: params-merge
+      why: the search argument layers, the filters choice or the allowlist is missing
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^rag_query_call::params::tests::/)'
+    - id: pipeline-query
+      why: a missing query still searches or the error text is wrong
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^rag_query_call::pipeline::tests::query_/)'
+    - id: pipeline-search
+      why: the search defaults or the explicit null pass-through are missing
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^rag_query_call::pipeline::tests::search_/)'
+    - id: pipeline-cost
+      why: the search cost sum or its zero fallbacks are missing
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^rag_query_call::pipeline::tests::cost_/)'
+    - id: pipeline-rerank
+      why: the rerank step, its defaults or its cost are missing
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^rag_query_call::pipeline::tests::rerank_/)'
+    - id: pipeline-messages
+      why: the context message is in the wrong place in the message list
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^rag_query_call::pipeline::tests::messages_/)'
+    - id: pipeline-billing
+      why: the cost folding or the stream path is missing
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^rag_query_call::pipeline::tests::billing_/)'
+    - id: pipeline-internal
+      why: a sub-call runs without the internal child context, or the pricing gets it
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^rag_query_call::pipeline::tests::internal_/)'
+    - id: entry-error-map
+      why: errors are not mapped, are mapped twice, or lose the raw provider
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^rag_query_call::entry::tests::mapped_error_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3461)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3461 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3461/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added rag query cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/rag_query_call-*")" &&
+        grep -lE '^[[:space:]]+b3461:' tools/oracle/fuzz/corpus/helper_case/rag_query_call-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/rag-query-call/extract-query.yaml
+  - tools/oracle/cases/helpers/rag-query-call/context-message.yaml
+  - tools/oracle/cases/helpers/rag-query-call/documents-and-top-chunks.yaml
+  - tools/oracle/cases/helpers/rag-query-call/attach-results.yaml
+
+deviations:
+  - what: Only the async entry exists. LiteLLM's sync `query`, and aquery's executor and contextvars hand-off, are not built.
+    why: The only caller is the async /rag/query handler. The sync path exists only to run the coroutine on an event loop, which Rust has no use for.
+  - what: A list that Python would iterate as None (a null search `data`, a null rerank `results`) is the typed error `RagQueryError::NullList`, and a rerank index below minus the hit count is `RagQueryError::RerankIndex`.
+    why: Python raises TypeError and IndexError there. Both reach the client through the error mapping, so the call still fails, with a message that names the cause instead of Python's.
+  - what: A caller extra named vector_store_id, query, max_num_results, custom_llm_provider or router fails with the same "got multiple values" text, as `RagQueryError::DuplicateArgument`.
+    why: Python fails at the call site with TypeError. The typed version keeps the failure and the words.
+  - what: The error is mapped once at aquery, not in query and again in aquery.
+    why: exception_type returns an already mapped LiteLLM exception unchanged, so the client sees the same error.
+
+out_of_scope:
+  - The /rag/query and /v1/rag/query routes, request body reading, required-field 400s, embedding-selection rejection, nested store authorization, the managed store merge, response headers and the stream wrapper. B3465 and B3463 own them (endpoints.py).
+  - The @client decorator on aquery and query (call ids, logging object, callbacks). B012 owns the logging pipeline and B3465 attaches it.
+  - litellm.vector_stores.asearch, arerank and acompletion, and Router.acompletion themselves. B1064, B1014, B5656 and B6020 own them.
+  - vector_store_search_cost. B1686 owns it. This task only calls it.
+  - The sync `query` function. See deviations.
+  - RAGQueryRequest, RAGQueryResponse, RAGRetrievalConfig and RAGRerankConfig as Python model classes. B3450 left them out; this task defines the typed config and rerank settings the pipeline reads.
+  - The ingest side of rag/main.py (aingest, ingest, _execute_ingest_pipeline, the registry). B3450 and B3460 own them.
+  - litellm/rag/utils.py and litellm/rag/__init__.py. Nothing in the query path calls them.
+
+pitfalls:
+  - The empty-query check is falsy, so a last message with an empty string as content fails with "No query found in messages for RAG query" just like a missing one.
+  - '`top_k` and `custom_llm_provider` use `.get(key, default)`, so the defaults 10 and "openai" apply only when the key is absent, and an explicit null goes to the search as null.'
+  - The cost call computes `"/" in search_provider` inside the try block, so a null provider turns into a 0.0 cost, not an error.
+  - A hit whose `content` is a non-empty list with no text items adds nothing, and its `text` field is not used as a fallback.
+  - When the non-stream answer has no hidden `response_cost` (null), the sub-call cost is dropped and `add_extra_cost` is not called, because the `elif` is only reached for streams and non-model answers.
+  - A stream never gets `search_results` or `rerank_results`, only the extra cost on the call log.
+  - '`rerank_results` is set only when a rerank response exists, so a rerank that was enabled but had no documents leaves the key out.'
+  - The leftover request fields go to the search call and to the completion call, but `filters` and `router` are taken out first, so neither is forwarded to the model.
+  - The store params win last in the search arguments, so a caller cannot override the store's provider or credentials through the request.
+  - Rerank is called with no `custom_llm_provider`; the provider comes from the model name.
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

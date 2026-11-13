@@ -1,0 +1,22 @@
+kind: helper
+name: model-metadata-resolution-potential-names
+call:
+  model_metadata_resolution:
+    scenario: potential_names
+    fixture:
+      model_cost:
+        gpt-4o: {litellm_provider: openai, mode: chat}
+      fallback_generalizations:
+        - {pattern: "^brand-new-", model_info: {litellm_provider: anthropic}}
+    queries:
+      - {model: gpt-4o}
+      - {model: not-anywhere-xyz-99}
+      - {model: groq/llama3-8b, custom_llm_provider: groq}
+      - {model: llama3-8b-2024-01-01, custom_llm_provider: groq}
+      - {model: converse/anthropic.claude-3-sonnet, custom_llm_provider: bedrock}
+      - {model: us-east-1/some-model, custom_llm_provider: bedrock_mantle}
+      - {model: llama-v3p1-8b-instruct, custom_llm_provider: fireworks_ai}
+      - {model: openai/gpt-4o, custom_llm_provider: openai}
+      - {model: brand-new-model-7}
+env: {}
+compare: {ignore: []}

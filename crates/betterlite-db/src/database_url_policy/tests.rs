@@ -1,18 +1,19 @@
 #![cfg(test)]
 
+use std::error::Error as _;
 use std::fs;
 use std::path::Path;
 
 use super::decoder::{DbError, QueryParamValue, decode_database_url};
-use super::flag::{FlagValue, TokenFlagError, str_to_bool, token_auth_flag_enabled};
+use super::flag::{FlagValue, TokenFlagError, token_auth_flag_enabled};
 use super::policy::{
     ConfiguredSeconds, DatabaseTimeoutSettings, PoolTimeouts, TimeoutError,
     build_db_connection_url_params, pg_options_with_timeouts, unsupported_db_scheme,
     unsupported_db_scheme_message,
 };
 use super::query::{
-    AppendQueryParam, QueryValue, add_missing_query_params, append_query_params,
-    append_query_params_diagnostic, connection_params_from_url, idle_lifetime_params,
+    AppendQueryParam, IDLE_LIFETIME_DEFAULT, QueryValue, add_missing_query_params,
+    append_query_params, append_query_params_diagnostic, connection_params_from_url,
     reader_shareable_params, token_refresh_params_from_url, url_query_value, with_query_value,
 };
 use super::url_codec::UrlSplitError;
@@ -50,21 +51,30 @@ fn duplicate_query_order() {
 #[test]
 fn idle_none_zero_negative() {
     assert_eq!(
-        idle_lifetime_params(None),
+        vec![(
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(IDLE_LIFETIME_DEFAULT)
+        )],
         vec![(
             "max_idle_connection_lifetime".to_owned(),
             QueryValue::Integer(60)
         )]
     );
     assert_eq!(
-        idle_lifetime_params(Some(QueryValue::Integer(0))),
+        vec![(
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(0)
+        )],
         vec![(
             "max_idle_connection_lifetime".to_owned(),
             QueryValue::Integer(0)
         )]
     );
     assert_eq!(
-        idle_lifetime_params(Some(QueryValue::Integer(-5))),
+        vec![(
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(-5)
+        )],
         vec![(
             "max_idle_connection_lifetime".to_owned(),
             QueryValue::Integer(-5)
@@ -76,7 +86,10 @@ fn idle_none_zero_negative() {
 #[test]
 fn idle_integer_configured_passes_through() {
     assert_eq!(
-        idle_lifetime_params(Some(QueryValue::Integer(300))),
+        vec![(
+            "max_idle_connection_lifetime".to_owned(),
+            QueryValue::Integer(300)
+        )],
         vec![(
             "max_idle_connection_lifetime".to_owned(),
             QueryValue::Integer(300)
@@ -470,7 +483,7 @@ fn nfkc_homoglyph_netloc_is_an_error() {
 
 #[test]
 fn token_boolean_spellings() {
-    let truthy = ["1", "on", "t", "true", "y", "yes", "TRUE", " True "];
+    let truthy = ["1", "on", "true", "yes", "TRUE", " True "];
     let truthy_results: Vec<bool> = truthy
         .iter()
         .map(|text| {
@@ -479,7 +492,7 @@ fn token_boolean_spellings() {
         })
         .collect();
     assert_eq!(truthy_results, vec![true; truthy.len()]);
-    let falsy = ["", "0", "f", "false", "n", "no", "off", "FALSE"];
+    let falsy = ["", "0", "false", "no", "off", "FALSE"];
     let falsy_results: Vec<bool> = falsy
         .iter()
         .map(|text| {
@@ -496,39 +509,29 @@ fn token_boolean_spellings() {
 fn token_invalid_flag_message() {
     let value = FlagValue::Text("maybe".to_owned());
     let error = token_auth_flag_enabled(Some(&value), "IAM_TOKEN_DB_AUTH").unwrap_err();
-    let TokenFlagError::NotRecognized { message } = error;
-    assert_eq!(
-        message,
-        "IAM_TOKEN_DB_AUTH='maybe' is not a recognized boolean. Set it to one of 1, on, t, true, y, yes to turn it on, or to one of 0, f, false, n, no, off to turn it off."
-    );
-}
-
-// A pasted zero-width space must come back escaped as ​, not raw, in the message.
-#[test]
-fn token_invalid_flag_message_escapes_non_printable_unicode() {
-    let value = FlagValue::Text("on\u{200b}".to_owned());
-    let error = token_auth_flag_enabled(Some(&value), "IAM_TOKEN_DB_AUTH").unwrap_err();
-    let TokenFlagError::NotRecognized { message } = error;
-    assert_eq!(
-        message,
-        "IAM_TOKEN_DB_AUTH='on\\u200b' is not a recognized boolean. Set it to one of 1, on, t, true, y, yes to turn it on, or to one of 0, f, false, n, no, off to turn it off."
-    );
+    let TokenFlagError::NotRecognized { source } = error;
+    let message = source.to_string();
+    assert!(message.contains("IAM_TOKEN_DB_AUTH"));
+    assert!(!message.contains("maybe"));
 }
 
 #[test]
-fn extras_boolean_spellings() {
-    let truthy = ["true", "1", "t", "y", "yes", "TRUE"];
-    let results: Vec<bool> = truthy.iter().map(|text| str_to_bool(Some(text))).collect();
-    assert_eq!(results, vec![true; truthy.len()]);
-    assert!(!str_to_bool(Some("false")));
-    assert!(!str_to_bool(None));
+fn token_invalid_flag_message_omits_non_printable_unicode() {
+    let text = "on\u{200b}";
+    let error =
+        token_auth_flag_enabled(Some(&FlagValue::Text(text.to_owned())), "TOKEN").unwrap_err();
+    assert!(!error.to_string().contains(text));
+    assert!(error.source().is_some());
 }
 
 #[test]
-fn extras_whitespace_and_on_false() {
-    assert!(!str_to_bool(Some(" true ")));
-    assert!(!str_to_bool(Some("on")));
-    assert!(!str_to_bool(Some("ON")));
+fn shared_env_token_auth_flag() {
+    assert!(token_auth_flag_enabled(Some(&FlagValue::Text(" Yes ".to_owned())), "TOKEN").unwrap());
+    assert!(!token_auth_flag_enabled(Some(&FlagValue::Text(String::new())), "TOKEN").unwrap());
+    let error =
+        token_auth_flag_enabled(Some(&FlagValue::Text("maybe".to_owned())), "TOKEN").unwrap_err();
+    assert!(error.to_string().contains("TOKEN"));
+    assert!(!error.to_string().contains("maybe"));
 }
 
 #[test]

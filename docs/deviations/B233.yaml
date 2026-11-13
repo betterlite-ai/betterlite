@@ -1,0 +1,19 @@
+task: B233
+deviations:
+  - what: >-
+      A tool result content list holding more than 256 parts is refused with
+      GeminiToolResultsError::TooManyParts before any part is converted; LiteLLM walks every
+      element of the list it is given.
+    why: >-
+      The bounded-inputs rule forbids work proportional to untrusted input without a cap. The 256
+      part ceiling is the one the media module and B222's tool result conversion already put on a
+      message's content list, and every list within it converts exactly as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1400-L1405
+  - what: >-
+      A previous assistant message carrying more than 1024 tool calls is refused with
+      GeminiToolResultsError::TooManyToolCalls before the name lookup starts; LiteLLM scans any
+      length of tool_calls list.
+    why: >-
+      Bounded conversion: the cap is the 1024 tool calls per message the message history already
+      allows, and it keeps the name lookup from growing with an unbounded request list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1464-L1470

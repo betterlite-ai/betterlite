@@ -1,0 +1,8 @@
+kind: helper
+name: upload-security-mach64
+call:
+  b3452:
+    content_hex: 'feedfacf'
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,5 @@
+kind: helper
+name: message-normalization-empty-conversation
+call: {message_normalization: {operation: get_completion_messages, messages: [], ensure_alternating_roles: true}}
+env: {}
+compare: {ignore: []}

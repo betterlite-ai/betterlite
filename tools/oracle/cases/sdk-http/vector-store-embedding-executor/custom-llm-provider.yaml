@@ -1,0 +1,16 @@
+kind: sdk_http
+name: vector-store-embedding-executor-custom-llm-provider
+env: {OPENAI_API_KEY: sk-env}
+call:
+  vector_store_embedding_executor:
+    model: some-model
+    query: hello
+    configuration: {custom_llm_provider: openai, api_key: sk-direct, timeout: 20}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{object: embedding, index: 0, embedding: [0.25, 0.5]}], model: some-model, usage: {prompt_tokens: 1, total_tokens: 1}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{object: embedding, index: 0, embedding: [0.25, 0.5]}], model: some-model, usage: {prompt_tokens: 1, total_tokens: 1}}
+compare: {headers: [], headers_present: [], upstream_headers: [authorization], ignore: []}

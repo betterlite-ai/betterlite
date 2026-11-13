@@ -29,8 +29,8 @@ description: >-
   version gate.
 scope:
   paths:
-    - tools/management-cli/src/codex_settings.rs
-    - tools/management-cli/src/codex_settings/**
+    - crates/betterlite-cli/src/codex_settings.rs
+    - crates/betterlite-cli/src/codex_settings/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_settings.py#L58-L79
@@ -100,19 +100,19 @@ checks:
   commands:
     - id: codex-settings-fingerprinting
       why: Receipt path derivation, snapshot extraction, or fingerprint determinism is missing or incorrect.
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:receipt_path_deterministic|snapshot_missing_sentinel|fingerprint_determinism|snapshot_extracted_correct|snapshot_restored_modified|snapshot_missing_returns_none)/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:receipt_path_deterministic|snapshot_missing_sentinel|fingerprint_determinism|snapshot_extracted_correct|snapshot_restored_modified|snapshot_missing_returns_none)/)'
     - id: codex-settings-version-check
       why: Version check against 0.129.0 or version command parsing is missing or incorrect.
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:version_gate_met|version_gate_old_rejected|version_not_installed)/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:version_gate_met|version_gate_old_rejected|version_not_installed)/)'
     - id: codex-settings-configure-flow
       why: Receipt staging order, settings commit failure handling, or Authorization header building is incorrect.
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:configure_receipt_staged_first|configure_settings_failure_discards_settings_keeps_receipt|configure_settings_rollback_restores_receipt|configure_builds_authorization_header|configure_selects_model_and_provider)/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:configure_receipt_staged_first|configure_settings_failure_discards_settings_keeps_receipt|configure_settings_rollback_restores_receipt|configure_builds_authorization_header|configure_selects_model_and_provider)/)'
     - id: codex-settings-unconfigure-outcome
       why: Unconfigure does not correctly classify restored, kept or file_removed fields.
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:unconfigure_restored_classification|unconfigure_kept_classification|unconfigure_file_removed_classification)/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:unconfigure_restored_classification|unconfigure_kept_classification|unconfigure_file_removed_classification)/)'
     - id: codex-settings-preflight
       why: Preflight validation for version, TOML structure or receipt is missing or does not fail correctly on invalid input.
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:preflight_codex_validates_version|preflight_codex_validates_toml|preflight_codex_validates_receipt)/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^codex_settings::tests::(?:preflight_codex_validates_version|preflight_codex_validates_toml|preflight_codex_validates_receipt)/)'
 oracle_cases: []
 deviations: []
 out_of_scope:

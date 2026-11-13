@@ -1,0 +1,113 @@
+id: B169
+title: Python client for the proxy's management API
+description: >-
+  Finish `betterlite.proxy.client`, the Python library that scripts use to call a proxy's management API. B7790, B7791 and
+  B7792 built every resource client. This task adds the `Client` class that holds them, the package exports, and the README.
+
+
+  `python/betterlite/proxy/client/client.py` has `Client(base_url, api_key=None, timeout=30)`. It stores `base_url` without
+  trailing slashes. The key is `api_key` when given, else B7790's bridge `get_gateway_api_key(expected_base_url=<stripped
+  base_url>)`, so a stored login is only used for the server it was issued for. It then builds these attributes and no
+  others: `http` (`HTTPClient`, given the base URL as it came in), `models`, `model_groups`, `keys`, `credentials` and `teams`
+  (each with base URL, key and `timeout`), and `chat` (`ChatClient`, with base URL and key only, so it keeps its 600 second
+  timeout). There is no `users` or `health` attribute: LiteLLM's `Client` leaves them out, and so does this one, while
+  `UsersManagementClient` and `HealthManagementClient` stay importable.
+
+
+  `python/betterlite/proxy/client/__init__.py` imports and lists in `__all__`, in this order: `ChatClient`, `Client`,
+  `HealthManagementClient`, `ModelGroupsManagementClient`, `ModelsManagementClient`, `UnauthorizedError`,
+  `UsersManagementClient`. Keys, credentials and teams clients, `NotFoundError` and the transport errors are not exported
+  from the package, only from their modules, as in LiteLLM. B7790 also exports `HTTPError` and `RequestError` from
+  `_transport`; this task adds them to `__all__` after `UnauthorizedError`, since scripts need them to catch failures (see the
+  deviation).
+
+
+  `crates/betterlite-python/python/betterlite/proxy/client/README.md` is a port of LiteLLM's client README (403 lines).
+  Keep its headings and prose, rename the package to `betterlite.proxy.client`, install with `pip install betterlite` /
+  `uv add betterlite`, and fix the examples to methods that exist. LiteLLM's README shows `client.chat.completions.create(...)`,
+  `client.models.add(...)`, `client.models.delete(model_name=...)`, `client.model_groups.create(...)` and similar that its code
+  does not have. Replace them with `client.chat.completions(...)`, `client.chat.completions_stream(...)`,
+  `client.models.new(...)`, `client.models.delete(model_id=...)` and `client.model_groups.info()`, and drop any example whose
+  method has no counterpart. Read the rest of the README against the clients, and fix each remaining example by the same rule.
+
+
+  Tests: `crates/betterlite-python/tests/test_proxy_client.py`, using B7790's `proxy_client_support` server. Test functions start
+  with `client_`, `exports_` or `readme_`. `client_` cases build LiteLLM's `Client` and betterlite's against one server and
+  compare the attribute set, the timeout each resource got, and the Authorization header each one sends, with an explicit key
+  and with `HOME` set to an empty temp folder (no stored login). `exports_` compares `__all__` and the names that import
+  from the package. `readme_` parses every fenced `python` block in the README with `ast`, finds each call of the form
+  `client.<resource>.<method>(...)`, and fails when betterlite's `Client` has no such resource or method, or when the call
+  uses a keyword argument the method does not accept (checked with `inspect.signature`).
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/proxy/client/client.py
+  - crates/betterlite-python/python/betterlite/proxy/client/__init__.py
+  - crates/betterlite-python/python/betterlite/proxy/client/README.md
+  - crates/betterlite-python/tests/test_proxy_client.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/client.py#L12-L42
+  why: Client, its key lookup and the one resource that gets no timeout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/__init__.py#L1-L17
+  why: The exports and their order.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/README.md#L1-L403
+  why: The README to port, with its examples to check against the real methods.
+dod:
+- text: >-
+    Client has exactly the attributes http, models, model_groups, chat, keys, credentials and teams, passes timeout to all but chat,
+    and uses the given key or else the stored login only for a matching base URL.
+  proof: [client]
+- text: The package exports the same names as LiteLLM's, in the same order, plus HTTPError and RequestError.
+  proof: [exports]
+- text: >-
+    The README exists, names betterlite.proxy.client, and every client.<resource>.<method>(...) example in it calls a method that
+    exists with keyword arguments it accepts.
+  proof: [readme]
+- text: Python files pass ruff and basedpyright in strict mode.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: client
+    why: Client builds a different set of resources, or gives one the wrong timeout or key.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client.py -k client_
+  - id: exports
+    why: The package exports differ from LiteLLM's.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client.py -k exports_
+  - id: readme
+    why: An example in the README calls a method or argument that does not exist.
+    run: >-
+      test -f crates/betterlite-python/python/betterlite/proxy/client/README.md && uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client.py -k readme_
+  - id: python-lint
+    why: Strict typing has to hold for every new module.
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The README examples call the methods that exist (`completions`, `completions_stream`, `models.new`, `model_groups.info`), and the package also exports `HTTPError` and `RequestError`.
+  why: LiteLLM's README names methods its code does not have. The wheel has no `requests`, so scripts need the exported error classes to catch failures.
+- what: This task has no helper oracle cases.
+  why: The pytest file compares the two packages directly.
+out_of_scope:
+- Every resource client, the transport, the exceptions and the native bridge are B7790, B7791 and B7792.
+- >-
+  The `lite` command line tool that calls these clients is B134 and its parts. The Rust command modules there send requests
+  through betterlite-http and do not import this Python package.
+pitfalls:
+- >-
+  `Client` hands `HTTPClient` the raw `base_url` but every other client the stripped one. Both strip in the end, so a test
+  with `http://x/` sees one URL either way, but keep the call shape.
+- >-
+  The stored-login lookup runs only when `api_key` is None or empty (`api_key or lookup`). An empty string key triggers it.
+- >-
+  The stored login is read from the user's home folder, so every test that builds a `Client` without a key must point `HOME`
+  at a temp folder first, or the result depends on the machine.
+- >-
+  `ChatClient` is built without `timeout` on purpose. Passing `timeout=30` would cut completions that LiteLLM lets run 600
+  seconds.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

@@ -3,7 +3,7 @@ title: Per-request callback selection
 description: >-
   Implement add_dynamic_callback, _with_dynamic_callback, process_dynamic_callbacks, _process_dynamic_callback_list,
   _resolve_dynamic_callback_string and initialize_standard_callback_dynamic_params; also get_combined_callback_list
-  and the callback-name/internal-callback helpers (4037-4106). Resolve only installed B189 enum variants, preserve
+  and the callback-name/internal-callback helpers (4037-4106). Resolve callback strings through the injected B8740 LoggerResolver (B8742's slot in the server), preserve
   dynamic/global selection and B188 privacy/provenance, and reject unavailable callbacks explicitly. No Python import
   machinery. Budget 280 logic/types, 120 Rust/Python adapters, 300 tests and 60 wiring (760 total). Write the behavior
   rstest functions dynamic_callbacks_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior
@@ -49,6 +49,9 @@ references:
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4037-L4040
   why: get_combined_callback_list
 dod:
+- text: "_resolve_dynamic_callback_string asks the injected LoggerResolver with only the trusted dd_ or newrelic_ variables; for newrelic with a team key it also resolves without them and keeps both loggers when they differ; Ok(None) adds nothing and an error names the callback."
+  proof:
+  - behavior-tests
 - text: >-
     Each listed helper case compares its named production function with the pinned Python function, including precedence,
     omissions and error facts.
@@ -97,7 +100,7 @@ out_of_scope:
   The remaining functions in the shared covered paths belong to B190 and its explicitly named sibling parts; this
   part implements only the functions/ranges listed above.
 - >-
-  Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B117; MCP hooks 1633-1709 B140;
+  Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B8560; MCP hooks 1633-1709 B140;
   cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B098; native response logging
   4147-4320 B080/B081/B098; A2A response conversion 4322-4343 B142.
 - >-

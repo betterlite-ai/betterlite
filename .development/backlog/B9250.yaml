@@ -1,0 +1,17 @@
+id: B9250
+milestone: M4 keys, spend and management
+title: Legacy dynamic and session limiter HTTP parity
+status: todo
+depends_on: [B055, B804, B8399, B8610, B8749, B8803]
+file: tasks/B9250-legacy-dynamic-limit-http.yaml
+covers:
+  - "litellm/proxy/hooks/parallel_request_limiter.py"
+  - "litellm/proxy/hooks/dynamic_rate_limiter.py"
+  - "litellm/proxy/hooks/dynamic_rate_limiter_v3.py"
+  - "litellm/proxy/hooks/max_iterations_limiter.py"
+parent: B072
+split_from: B072
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

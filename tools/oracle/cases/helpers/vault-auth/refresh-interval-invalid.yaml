@@ -1,0 +1,12 @@
+kind: helper
+name: vault-auth-refresh-interval-invalid
+env: {}
+compare: {ignore: []}
+call:
+  b4416:
+    env:
+      HCP_VAULT_TOKEN: token-1
+      HCP_VAULT_REFRESH_INTERVAL: not-a-number
+    routes: []
+    steps:
+      - {op: token}

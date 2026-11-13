@@ -1,0 +1,11 @@
+kind: helper
+name: call-surface-logging-obj
+call:
+  b3795:
+    call_surface:
+      request_data:
+        call_type: completion
+        litellm_call_type: text_completion
+      logging_obj: {call_type: acompletion}
+env: {}
+compare: {ignore: []}

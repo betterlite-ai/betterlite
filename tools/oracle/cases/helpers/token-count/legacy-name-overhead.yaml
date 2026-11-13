@@ -1,0 +1,12 @@
+kind: helper
+name: token-count-legacy-name-overhead
+call:
+  token_count:
+    function: token_counter
+    model: gpt-3.5-turbo-0301
+    messages:
+      - role: user
+        content: hello world
+        name: bob
+env: {}
+compare: {ignore: []}

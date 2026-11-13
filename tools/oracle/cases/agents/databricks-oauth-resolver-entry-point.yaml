@@ -1,0 +1,5 @@
+kind: helper
+name: databricks-oauth-resolver-entry-point
+call: {"b4782": {"operation": "header", "upstream": {"status": 200, "body": "{\"access_token\":\"tok\",\"expires_in\":3600}"}, "rounds": [{"params": {"model": "agent"}}, {"params": {"databricks_oauth": {"client_id": "id", "client_secret": "s3cret", "workspace_url": "UPSTREAM"}}}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,79 @@
+kind: helper
+name: window-shapes-and-clock
+call:
+  budget_primitives:
+    calls:
+      - function: coerce_window
+        value: {window: {value: {budget_duration: 1h, max_budget: 5.5}}}
+      - function: coerce_window
+        value: {window: {value: '{"budget_duration":"2h"}'}}
+      - function: coerce_window
+        value: {window: {value: '42'}}
+      - function: coerce_window
+        value: {window: {value: '{"budget_duration":'}}
+      - function: coerce_window
+        value: {window: {value: 7}}
+      - function: coerce_window
+        value: {window: {value: [1, 2]}}
+      - function: coerce_window
+        value: {window: {value: null}}
+      - function: coerce_window
+        value: {window: {model: {budget_duration: 3h}}}
+      - function: coerce_window
+        value: {window: {model: true}}
+      - function: coerce_window
+        value: {window: raising_model}
+      - function: window_start
+        value:
+          window: {value: {budget_duration: 1h, reset_at: "2026-06-01T00:00:00Z"}}
+          now: "2026-06-01T12:00:00Z"
+      - function: window_start
+        value:
+          window: {value: {budget_duration: 1h, reset_at: "2026-06-01T00:00:00+05:30"}}
+          now: "2026-06-01T12:00:00Z"
+      - function: window_start
+        value:
+          window: {value: {budget_duration: 2h, reset_at: "2026-06-01T00:00:00.500Z"}}
+          now: "2026-06-01T12:00:00Z"
+      - function: window_start
+        value:
+          window: {value: {budget_duration: 1h, reset_at: "2026-06-01T00:00:00"}}
+          now: "2026-06-01T12:00:00Z"
+      - function: window_start
+        value:
+          window: {value: {budget_duration: 1d, reset_at: "2026-06-01"}}
+          now: "2026-06-01T12:00:00Z"
+      - function: window_start
+        value:
+          window: {value: {budget_duration: 1h}}
+          now: "2026-06-01T12:00:00Z"
+      - function: window_start
+        value:
+          window: {value: {budget_duration: 1h, reset_at: not-a-date}}
+          now: "2026-06-01T12:00:00Z"
+      - function: window_start
+        value:
+          window: {value: {budget_duration: 1h, reset_at: 1700000000}}
+          now: "2026-06-01T12:00:00Z"
+      - function: window_start
+        value:
+          window: {value: {budget_duration: bogus, reset_at: "2026-06-01T00:00:00Z"}}
+          now: "2026-06-01T12:00:00Z"
+      - function: window_start
+        value:
+          window: {value: {reset_at: "2026-06-01T00:00:00Z"}}
+          now: "2026-06-01T12:00:00Z"
+      - function: window_start
+        value:
+          window: {value: {budget_duration: 1h, reset_at: "2026-06-01T00:00:00Z", budget_duration_extra: x}}
+          now: "2026-06-01T12:00:00Z"
+      - function: window_start
+        value:
+          window: {model: {budget_duration: 1h, reset_at: "2026-06-01T00:00:00Z"}}
+          now: "2026-06-01T12:00:00Z"
+      - function: window_start
+        value:
+          window: raising_model
+          now: "2026-06-01T12:00:00Z"
+env: {}
+compare: {ignore: []}

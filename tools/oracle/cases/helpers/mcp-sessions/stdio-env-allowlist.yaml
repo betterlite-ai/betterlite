@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b4744_stdio_env_allowlist","call":{"b4744":{"operation":"stdio_env","provided":null,"environment":{"PATH":"/usr/bin","HOME":"/home/user","SECRET_KEY":"sk-secret","LANG":"C.UTF-8"},"npm_cache_dir":"/cache"}},"env":{},"compare":{"ignore":[]}}

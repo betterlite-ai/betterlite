@@ -2,12 +2,10 @@ id: B040
 milestone: M3 providers
 title: Self-hosted inference servers
 status: todo
-depends_on: [B024, B186, B2223, B2224, B2220, B1440]
-file: null
+depends_on: [B001, B024, B080, B082, B083, B085, B900, B3343, B8157, B8634, B8636]
+file: tasks/B040-self-hosted-http.yaml
 covers:
-  - "litellm/llms/{hosted_vllm,vllm,ollama,oobabooga,lm_studio,llamafile,lemonade,docker_model_runner,xinference,triton,petals}/**"
-  - "litellm/types/llms/{ollama,triton}.py"
-  - "litellm/main.py"
+  - "litellm/llms/hosted_vllm/embedding/README.md"
 parent: null
 split_from: null
 resolution: null

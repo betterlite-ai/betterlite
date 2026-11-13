@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-boundary",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/éÉ",
+      "pattern": "/(?i:(\\w)\\1)\\b"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

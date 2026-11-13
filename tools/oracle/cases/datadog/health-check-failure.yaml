@@ -1,0 +1,38 @@
+{
+  "kind": "helper",
+  "name": "datadog-health-check-failure",
+  "call": {
+    "b3933": {
+      "scenarios": [
+        {
+          "name": "unhealthy",
+          "init": {
+            "dd_api_key": "key-1",
+            "dd_site": "us5.datadoghq.com"
+          },
+          "replies": [
+            {
+              "status": 400,
+              "body": "bad request",
+              "raise_status": false
+            }
+          ],
+          "actions": [
+            {
+              "do": "health_check"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": [
+      {
+        "pointer": "/value/scenarios/0/calls/0/body/0/message",
+        "why": "the dummy payload content belongs to the payload builders"
+      }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+kind: helper
+name: provider-resolution-explicit-openai
+call:
+  provider_resolution:
+    model: openai/gpt-4o
+    api_base: https://upstream.example/v1
+    api_key: sk-config
+    catalog:
+      gpt-4o: {litellm_provider: openai, mode: chat}
+env: {}
+compare: {ignore: []}

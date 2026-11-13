@@ -1,0 +1,13 @@
+kind: helper
+name: generalization-malformed-price-block
+call:
+  model_catalog:
+    operation: generalizations_excluded
+    source:
+      fallback_generalizations:
+        rules:
+          - {name: tiers, pattern: '^x', model_info: {tiered_pricing: {}}}
+          - {name: windows, pattern: '^y', model_info: {off_peak_pricing: {windows: null}}}
+      gpt-test: {litellm_provider: openai}
+env: {}
+compare: {ignore: []}

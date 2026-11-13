@@ -1,0 +1,9 @@
+kind: helper
+name: sink-key-without-endpoint
+call:
+  b3849:
+    function: sink_key
+    endpoint: null
+    headers: {x-api-key: k}
+env: {}
+compare: {ignore: []}

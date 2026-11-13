@@ -1,0 +1,28 @@
+kind: helper
+name: image-token-geometry-png-gif-jpeg
+call:
+  image_tokens:
+    calls:
+      - function: calculate_img_tokens
+        data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAEAAAABAACAYAAAA="
+        mode: high
+      - function: calculate_img_tokens
+        data: "data:image/gif;base64,R0lGODlhBwAJAA=="
+        mode: high
+      - function: calculate_img_tokens
+        data: "data:image/jpeg;base64,/9j/4AAHSkZJRgD/wAARCAANAAs="
+        mode: high
+      - function: get_image_type
+        data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAEAAAABAACAYAAAA="
+      - function: get_image_type
+        data: "data:image/gif;base64,R0lGODlhBwAJAA=="
+      - function: get_image_type
+        data: "data:image/jpeg;base64,/9j/4AAHSkZJRgD/wAARCAANAAs="
+      - function: get_image_dimensions
+        data: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAEAAAABAACAYAAAA="
+      - function: get_image_dimensions
+        data: "data:image/gif;base64,R0lGODlhBwAJAA=="
+      - function: get_image_dimensions
+        data: "data:image/jpeg;base64,/9j/4AAHSkZJRgD/wAARCAANAAs="
+env: {}
+compare: {ignore: []}

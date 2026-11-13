@@ -1,0 +1,150 @@
+id: B9030
+title: Lens database fixtures and administration HTTP parity
+description: >-
+  Close the database-backed HTTP coverage gap left when B4503 and B4505 were planned without
+  a usable Postgres oracle. B8682 already builds production ports and mounts their routers;
+  this task registers no route and changes no handler. B860 supplies independent fixture
+  databases, B1630 supplies kind: http cases with steps and per-proxy captures, and B5076
+  supplies the Prisma installation needed to boot LiteLLM with those databases. The fixture's
+  2025 baseline lacks the Lens tables. Add only their pinned final schema and use the real
+  administration endpoints to create records, rather than teaching a helper to invoke handlers.
+
+  Add tools/postgres-fixture/fixtures/lens.sql and append it to the existing BASELINE constant
+  in tools/postgres-fixture/src/sql.rs with concat!/include_str!, leaving baseline.sql byte
+  for byte unchanged. This is test database initialization, not a product migration. The
+  supplement creates LiteLLM_Lens (id TEXT primary key, version INTEGER NOT NULL DEFAULT 0,
+  data JSONB NOT NULL), LiteLLM_LensWorker (id TEXT primary key, token_hash TEXT NOT NULL
+  UNIQUE, data JSONB NOT NULL), and LiteLLM_LensRun (id TEXT primary key, lens_id TEXT NOT NULL,
+  created_at TIMESTAMP(3) NOT NULL, data JSONB NOT NULL), with the pinned index on
+  (lens_id, created_at). Use the final Lens names from schema.prisma and the rename migration;
+  do not add foreign keys or run the product migrator. Preserve the independently provisioned
+  database and cleanup lifecycle. No fixture seed fields or case decoder changes are needed.
+
+  Tests under sql/tests.rs provision real fixtures through PostgresFixture using
+  POSTGRES_TEST_URL when set, otherwise the existing testcontainers selection. Name the tests
+  lens_tables_match_pin, lens_token_hash_is_unique, lens_history_keeps_milliseconds and
+  lens_databases_are_independent. Check the columns, nullability, version default and composite
+  index through PostgreSQL catalogs; prove duplicate token_hash insertion fails, millisecond
+  timestamps round-trip, and a Lens write in one fixture is absent from the other. Close
+  connections before fixtures. A missing server is a setup failure, never a skipped test.
+  The schema is static SQL; this task introduces no decoder of outside bytes or fuzz target.
+
+  Write three HTTP cases in tools/oracle/cases/http/lens-postgres/. Each uses database.seed
+  with distinct users and raw fixture keys, general_settings.master_key, no tracing, and a
+  configured model alias lens-review backed by openai/gpt-4o at the mock upstream. Give each
+  case a different master_key value so the runner's config-based grouping cannot share a
+  database between these flows. Leave
+  database_url and disable_prisma_schema_update to the runner. Seed an ordinary billing key
+  and a replacement key; their analysis_key_id values are the lowercase SHA-256 hashes of
+  the raw fixture tokens, calculated when writing the cases. An administrator uses the
+  master key; viewer and internal callers use seeded proxy_admin_viewer and internal_user
+  roles on separate users. No key-generation management endpoint is required.
+
+  admin-records-history.yaml starts with GET /lens returning empty lenses/workers and
+  tracing_enabled false. POST /lens creates a lens with name, model, nonempty context and
+  enabled false; creation still queues one job. Capture /id and /jobs/0/id. PUT /lens/{lens_id}
+  changes the saved name and concurrency while the queued job retains its original settings
+  and revision. POST /lens/{lens_id}/runs with an empty RunRequest returns the same active
+  job, not a second one. POST /lens/{lens_id}/cancel then POST runs again archives the first
+  job. GET /lens/{lens_id}, GET /lens/{lens_id}/runs?offset=0 and GET
+  /lens/{lens_id}/runs/{job_id} prove the saved revision, new active job, archived cancelled
+  job, and both history access paths. Read a missing run for 404 and PATCH
+  /lens/{lens_id}/findings/missing with status dismissed and a reason for the unchanged 200.
+
+  credentials-protocol.yaml registers a worker through POST /lens/workers/register with
+  analysis_key_id and no name, capturing /worker/id and the secret /token. The name defaults
+  to Lens worker. Claiming through POST /lens/worker/claim with no protocol_version gets 409;
+  protocol_version=2 gets 200 null when no lens exists. PUT /lens/workers/{worker_id}/billing-key
+  assigns the replacement key. GET /lens exposes the worker and its billing hash but no token.
+  DELETE /lens/workers/{worker_id} returns true; the same worker credential then gets 401 on
+  claim, and attempting to replace its billing key gets 409. An unknown worker bearer and
+  the proxy master key also get 401 from worker_auth with the database available.
+
+  access-roles.yaml proves GET /lens works for the viewer and returns 403 for the internal
+  user, while valid POST /lens and POST /lens/workers/register bodies return 403 for the
+  viewer. Include viewer GET /lens/activity/available and GET /lens/agents, with false flags
+  and an empty list, and viewer POST /lens/preview/sample returning 501 without tracing.
+  These are role and database cases, not duplicates of B8682's missing-key/missing-database
+  suite. None of these routes has a /v1, /openai/v1 or provider-prefixed alias.
+
+  Use B1630's steps schema: captures come from the same proxy's response, path placeholders
+  use {{capture:name:query}}, and Authorization uses {{capture:token:raw}} with secret true
+  on that capture. Compare status and content-type at every step, plus WWW-Authenticate
+  wherever present. Lens HTTPException bodies have detail, not invented OpenAI type/param/code
+  members; ignore /detail only for error wording. Auth-layer errors retain their actual
+  envelope, comparing type/param/code and ignoring only /error/message. Exclude only individual
+  generated UUID, token and timestamp pointers with reasons, never whole jobs, workers,
+  settings or responses. All three cases have no model calls and an empty upstream transcript.
+  Keep the fixture implementation and compact cases within roughly 800 changed lines, excluding
+  the Rust tests; B132 adds worker execution/billing cases and the operating guide separately.
+scope:
+  paths:
+    - tools/postgres-fixture/src/sql.rs
+    - tools/postgres-fixture/src/sql/**
+    - tools/postgres-fixture/fixtures/lens.sql
+    - tools/oracle/cases/http/lens-postgres/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1898-L1917
+    why: Final Lens table definitions for the independent test fixture; B709 owns product schema support.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20261001000000_lens_run_history/migration.sql#L1-L7
+    why: TIMESTAMP(3) precision and the two-column history index before the rename.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20261001100000_rename_lens/migration.sql#L1-L18
+    why: Final table, column and index names; this task does not port the migration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L146-L294
+    why: Administration routes exercised through their decorators and public HTTP lifecycle; B4503 retains implementation ownership.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L305-L362
+    why: Registration, billing assignment, revocation and worker protocol HTTP contracts; implementations stay B4503/B4505.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L74-L93
+    why: Viewer/internal access and hashed worker authentication reached by the cases, owned by B4503/B4505.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/repository.py#L57-L114
+    why: Versioned writes and archived run reads whose composition the HTTP cases exercise, owned by B4501.
+dod:
+  - text: Ordinary independent Postgres fixtures include the three final Lens tables with the pinned constraints, precision and history index, without changing the baseline or sharing records between gateways.
+    proof: [lens-schema-tests, fixture-regression]
+  - text: The mounted administration lifecycle preserves queued settings, returns an existing active run, and retrieves archived cancellation history through both booted proxies.
+    proof: [case-files, oracle]
+  - text: Worker registration, billing replacement, protocol negotiation and revocation match LiteLLM with real persisted credentials and no credential reuse between proxy executions.
+    proof: [case-files, oracle]
+  - text: Viewer reads, viewer write refusal and internal-user refusal reach Lens role checks after database authentication and match the pinned response envelopes.
+    proof: [case-files, oracle]
+checks:
+  optional: []
+  commands:
+    - id: lens-schema-tests
+      why: The new Lens schema is missing, differs from the pin or leaks state across fixture databases.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^sql::tests::lens_/)'
+    - id: fixture-regression
+      why: Appending Lens fixture SQL broke existing fixture setup, seeding or cleanup.
+      run: >-
+        test -f tools/postgres-fixture/fixtures/lens.sql &&
+        cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^tests::/)'
+    - id: case-files
+      why: A planned administration flow is missing or no new HTTP cases were added.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/lens-postgres)" &&
+        test -f tools/oracle/cases/http/lens-postgres/admin-records-history.yaml &&
+        test -f tools/oracle/cases/http/lens-postgres/credentials-protocol.yaml &&
+        test -f tools/oracle/cases/http/lens-postgres/access-roles.yaml
+oracle_cases:
+  - tools/oracle/cases/http/lens-postgres/admin-records-history.yaml
+  - tools/oracle/cases/http/lens-postgres/credentials-protocol.yaml
+  - tools/oracle/cases/http/lens-postgres/access-roles.yaml
+deviations: []
+out_of_scope:
+  - B4500 owns Lens records and state transitions; B4501 owns every repository method; B4502 owns SourceReader; B4503/B4505 own every endpoint and its nested transforms; this task owns their missing database-backed HTTP proof only.
+  - B8682 constructs and mounts both Lens routers; B8610 calls the area aggregator, and neither mount is repeated here.
+  - B860 owns fixture provisioning and typed principal seeds, B1630 owns multi-request HTTP capture, and B5076 owns the oracle Prisma installation; no new fixture seed format, helper operation or HTTP runner is introduced.
+  - B709 owns product schema/migrations, including the Lens rename; fixture DDL must not call that implementation to generate its expected schema.
+  - B132 owns worker execution/billing HTTP cases and packaging/lens/README.md; B8232 owns the executable and image files.
+  - Native ClickHouse Lens queries remain an unassigned dependency outside this split; B3867 owns provide_storage and B110 owns the tracing receiver composition, while B8682 explicitly supplies no Lens storage.
+pitfalls:
+  - Set enabled false in the lifecycle case because creation still queues a job, while background scheduling would make later claims depend on wall-clock timing.
+  - analysis_key_id is a SHA-256 key identifier, whereas Authorization carries the raw worker token and never that hash.
+  - A viewer's valid body must reach the role check; a malformed LensSettings body would test 422 instead of the intended 403.
+  - Keep baseline.sql unchanged because other fixture checks rely on its pinned contents, and append the Lens tables only in sql.rs.
+  - Capture each generated id from its own proxy and ignore only its exact response pointers, since sharing the first proxy's id makes the second proxy return 404.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

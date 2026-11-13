@@ -1,0 +1,19 @@
+kind: helper
+name: resource-config-passthrough
+call:
+  b5360:
+    requests:
+      - selector: passthrough
+        calls:
+          - {provider: bedrock, model: m}
+          - {provider: bedrock_mantle, model: m}
+          - {provider: vllm, model: m}
+          - {provider: hosted_vllm, model: m}
+          - {provider: azure, model: m}
+          - {provider: azure_ai, model: m}
+          - {provider: gigachat, model: m}
+          - {provider: watsonx, model: m}
+          - {provider: nvidia_nim, model: m}
+          - {provider: openai, model: m}
+env: {}
+compare: {ignore: []}

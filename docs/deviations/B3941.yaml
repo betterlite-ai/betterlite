@@ -1,0 +1,5 @@
+task: B3941
+deviations:
+  - what: The fallback trace_id and completion_id are drawn from an injected UuidSource instead of calling uuid.uuid4() inside each extraction helper.
+    why: The random source is injected so a test can pin the value the way LiteLLM's uuid.uuid4() result cannot be pinned; LiteLLM generates the same random identifiers at the same points and no setup relies on their values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/newrelic/newrelic.py#L303-L304

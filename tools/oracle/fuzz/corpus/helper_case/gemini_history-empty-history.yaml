@@ -1,0 +1,17 @@
+kind: helper
+name: gemini-history-empty-history
+call:
+  gemini_history:
+    cases:
+      - messages: []
+      - messages:
+          - {role: user, content: null}
+      - messages:
+          - {role: user, content: [{type: text, text: ""}]}
+      - messages:
+          - {role: assistant, content: "a"}
+      - messages:
+          - {role: user, content: [{type: video_url, video_url: {url: "x"}}]}
+env: {}
+compare:
+  ignore: []

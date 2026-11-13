@@ -1,0 +1,194 @@
+id: B5841
+title: Databricks chat completions request, response and stream transforms
+description: >-
+  Build the Databricks chat transforms in betterlite-provider as one module, databricks_chat
+  (litellm/llms/databricks/chat/transformation.py), with pure functions and no network call. The module needs
+  betterlite-provider to depend on betterlite-anthropic for the Claude tool and thinking mapping (betterlite-anthropic
+  depends on betterlite-openai, not on provider, so this forms no cycle). Credentials and the base URL are plain
+  arguments. Auth, embeddings, Responses and pricing are B5980 and chat calls its databricks_auth module.
+
+  Request URL and headers. get_complete_url(api_base, model, ...) sets use_ai_gateway when the model, after removing a
+  leading "databricks/", contains two or more "." characters. It takes the base through get_api_base (B5980) with that
+  flag, trims trailing slashes only when the gateway is on, and appends "/chat/completions". validate_environment pops
+  user_agent from optional_params; when that value is empty or absent it pops databricks_user_agent (the Python "or"
+  short-circuits, so a non-empty user_agent leaves databricks_user_agent in place), then the user_agent in
+  litellm_params, then the env override. It calls databricks_validate_environment with chat_completions and
+  custom_endpoint false (the URL it returns is discarded) and sets Content-Type to application/json.
+
+  Supported params: stream, stop, temperature, top_p, max_tokens, max_completion_tokens, n, response_format, tools,
+  tool_choice, reasoning_effort, thinking. get_required_params and get_config follow L194-L209 and L160-L192.
+
+  map_openai_params(non_default_params, optional_params, model, drop_params). Step 1: compute is_thinking_enabled
+  (B2202) on the incoming params. Step 2: run the OpenAI-like parent mapping, which is the OpenAI base policy (B668)
+  followed by swapping max_completion_tokens for max_tokens (B1425). Step 3: for a model whose name contains "claude"
+  (case-sensitive), run translate_legacy_thinking_for_adaptive_model (B569) with provider databricks. Step 4: map tools
+  through _map_openai_to_dbrx_tool: a non-claude model passes the tools through; a claude model maps them with the
+  Anthropic _map_tools (B575) and converts each result back with convert_anthropic_tool_to_databricks_tool (L284-L302).
+  Step 5: response_format on a claude model builds a json tool with map_response_format_to_anthropic_tool (B574),
+  merges it into optional_params tools (_add_tools_to_optional_params, B2202), sets json_mode true and, when thinking is
+  off, tool_choice to the function json_tool_call (the name RESPONSE_FORMAT_TOOL_NAME). response_format is popped from
+  optional_params in every case. Step 6: reasoning_effort on a model where _uses_anthropic_thinking_param is true
+  (lowercase the model, replace "." with "-"; true when it contains "claude" or supports_anthropic_thinking_payload,
+  B2221, says so) goes through _map_reasoning_effort (B569): a result sets thinking; None pops thinking and
+  output_config. For an adaptive model it also sets output_config.effort from REASONING_EFFORT_TO_OUTPUT_CONFIG_EFFORT
+  or raises through _raise_invalid_reasoning_effort. reasoning_effort is popped. Step 7: finish with
+  update_optional_params_with_thinking_tokens (B2202). should_fake_stream returns true whenever response_format is not
+  None, on any model.
+
+  Messages. transform_messages(messages, model) dumps every message without None fields, strips name from every role
+  except user (B218), strips LiteLLM internal fields (B219), moves a message-level cache_control into a text content
+  block when the content is a string (L477-L500), runs _sanitize_empty_content (L71-L96), drops assistant messages that
+  have no content, tool_calls or function_call, and for a model without "claude" in its name runs
+  merge_consecutive_system_messages (B179) and then _split_parallel_tool_calls (L99-L148). It ends by calling the OpenAI
+  base _transform_messages (B668). _split_parallel_tool_calls looks at an assistant message with two or more
+  tool_calls and the run of tool messages right after it. When the tool message count equals the call count and the
+  tool_call_id set equals the call id set, it emits one assistant message per call, each followed by its tool message;
+  the first keeps the original assistant fields, later ones are exactly {role: assistant, tool_calls: [call]}. Any other
+  shape is left untouched.
+
+  Response. transform_response parses the body into a Databricks response type. A parse failure becomes
+  DatabricksError with the response status, the response headers and the message "Unable to get json response - {error},
+  Original Response: {text}". The model name becomes "{custom_llm_provider or "databricks"}/{response model or ""}",
+  and id, created and usage come from the body. The request data is logged through redact_sensitive_data (B5980) with
+  api_key set to "[REDACTED]". Each choice goes through _transform_dbrx_choices (L580-L641): first
+  _handle_invalid_parallel_tool_calls replaces a "multi_tool_use.parallel" call by its inner tool calls with ids
+  "{id}_{index}" and returns the originals when the arguments are not valid JSON; then, when json_mode is on and the
+  message has exactly one tool call named json_tool_call, the arguments string becomes the content, tool_calls is
+  empty and finish_reason is "stop" (_should_convert_tool_call_to_json_mode, L533-L542 of convert_dict_to_response.py).
+  Otherwise the content is split with extract_content_str (L502-L518) and extract_reasoning_content (L520-L551): items
+  of type "reasoning" with summary[].text become thinking_blocks (signature defaults to ""), text items form the
+  content, and extract_citations (L566-L578) puts citations in provider_specific_fields.citations.
+  resolve_reasoning_and_content (L557-L564) falls back to _extract_reasoning_content (B220) when the blocks give none.
+
+  Stream. get_model_response_iterator builds DatabricksChatResponseIterator with the sync flag and json_mode.
+  chunk_parser(chunk) (L706-L806) works as follows. With json_mode on and a tool_calls delta, it remembers the last
+  function name seen; when that name is json_tool_call it converts through _convert_tool_response_to_message (B2214),
+  puts the arguments in delta.content (an empty "{}" becomes "") and sets tool_calls to None. Without json_mode, a
+  tool-call arguments value of exactly "{}" becomes "". A list content yields the text, reasoning_content from the
+  blocks (or the top-level field) and thinking_blocks; the first citation goes to delta.provider_specific_fields.citation.
+  service_tier is copied only when it is a non-empty string. A missing key becomes DatabricksError 400 with
+  "KeyError: {error}, Got unexpected response from Databricks: {chunk}". The base iterator and line splitting are B2214
+  and B1427 and are not rebuilt.
+
+  The response body and stream chunk come from the network, so add a cargo-fuzz target named databricks_chat_reply in
+  crates/betterlite-provider/fuzz that feeds arbitrary bytes to the response decoder and the chunk parser, plus a check
+  that replays its corpus.
+
+  Sizing: about 500 logic lines in chat/transformation.py plus about 60 for the two convert_dict_to_response.py helpers
+  built here. Plan 560 transform lines, 450 tests, 130 for the fuzz target and exports and 200 for helper adapters.
+scope:
+  paths:
+    - crates/betterlite-provider/src/databricks_chat.rs
+    - crates/betterlite-provider/src/databricks_chat/**
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/databricks_chat_reply.rs
+    - crates/betterlite-provider/fuzz/corpus/databricks_chat_reply/**
+    - tools/oracle/cases/helpers/databricks-chat/**
+    - "tools/oracle/fuzz/corpus/helper_case/databricks_chat-*"
+    - tools/oracle/helpers/b5841.py
+    - tools/oracle/helpers/b5841/**
+    - tools/oracle/src/helpers/provider/b5841.rs
+    - tools/oracle/src/helpers/provider/b5841/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/chat/transformation.py#L63-L148
+    why: Bare assistant check, empty content cleanup and the parallel tool call split.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/chat/transformation.py#L160-L282
+    why: Config, required params, validate_environment, the gateway URL rule, supported params and the thinking param test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/chat/transformation.py#L284-L428
+    why: Tool conversion, response_format and reasoning_effort mapping, and the fake stream rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/chat/transformation.py#L430-L500
+    why: Message transform order and cache_control move.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/chat/transformation.py#L502-L703
+    why: Content, reasoning and citation extraction, choice transform and transform_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/chat/transformation.py#L706-L806
+    why: Stream iterator and chunk_parser.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L374-L416
+    why: _handle_invalid_parallel_tool_calls, which has no other owner.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L533-L542
+    why: _should_convert_tool_call_to_json_mode, which has no other owner.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/transformation.py#L154-L168
+    why: The parent map_openai_params that swaps max_completion_tokens for max_tokens.
+dod:
+  - text: get_complete_url, validate_environment and the supported params match LiteLLM, including the two-dot gateway test and the user agent pop order.
+    proof: [request-tests, helper-python, oracle]
+  - text: map_openai_params matches LiteLLM for claude and non-claude models across tools, response_format, reasoning_effort, thinking and max_completion_tokens.
+    proof: [request-tests, helper-python, oracle]
+  - text: transform_messages matches LiteLLM, including the parallel tool call split, empty content cleanup and the claude-only skips.
+    proof: [message-tests, helper-python, oracle]
+  - text: Response and choice transforms match LiteLLM for JSON mode, parallel tool call repair, reasoning blocks, citations and the parse error text.
+    proof: [response-tests, reply-corpus, helper-python, oracle]
+  - text: The stream chunk parser matches LiteLLM for JSON mode tool calls, the "{}" arguments rule, citations, service_tier and the KeyError message.
+    proof: [stream-tests, reply-corpus, helper-python, oracle]
+  - text: New helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: request-tests
+      why: the URL, headers, supported params or map_openai_params tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^databricks_chat::request::/)'
+    - id: message-tests
+      why: the message transform or tool call split tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^databricks_chat::messages::/)'
+    - id: response-tests
+      why: the response or choice transform tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^databricks_chat::response::/) - test(replays_the_databricks_chat_reply_corpus)'
+    - id: stream-tests
+      why: the stream chunk parser tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^databricks_chat::stream::/)'
+    - id: reply-corpus
+      why: the chat reply fuzz target or its fresh replay corpus is missing
+      run: >-
+        test -f crates/betterlite-provider/fuzz/fuzz_targets/databricks_chat_reply.rs &&
+        grep -q 'name = "databricks_chat_reply"' crates/betterlite-provider/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/databricks_chat_reply)" &&
+        cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_databricks_chat_reply_corpus)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5841)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5841 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5841/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added Databricks chat helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/databricks_chat-*")" &&
+        grep -lE '^[[:space:]]+b5841:' tools/oracle/fuzz/corpus/helper_case/databricks_chat-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/databricks-chat/url-and-headers.yaml
+  - tools/oracle/cases/helpers/databricks-chat/map-params-claude.yaml
+  - tools/oracle/cases/helpers/databricks-chat/map-params-other-models.yaml
+  - tools/oracle/cases/helpers/databricks-chat/messages-and-tool-split.yaml
+  - tools/oracle/cases/helpers/databricks-chat/response-json-mode-and-parallel-calls.yaml
+  - tools/oracle/cases/helpers/databricks-chat/response-reasoning-and-citations.yaml
+  - tools/oracle/cases/helpers/databricks-chat/stream-chunks.yaml
+deviations:
+  - what: A tool message without tool_call_id next to a multi-call assistant message leaves the whole group untouched.
+    why: LiteLLM raises a raw KeyError on that history inside _split_parallel_tool_calls, which the proxy turns into a generic 500. Malformed history is better sent on unchanged.
+  - what: _handle_invalid_parallel_tool_calls and _should_convert_tool_call_to_json_mode are built privately in databricks_chat.
+    why: No backlog entry owns convert_dict_to_response.py, and Databricks is the only caller in this folder. They keep LiteLLM's exact behavior.
+out_of_scope:
+  - B5980 owns databricks_auth (get_api_base, databricks_validate_environment, redaction), embeddings, Responses and pricing.
+  - B1427 already built databricks/streaming_utils.py. Chat does not use the legacy OpenAI-like iterator.
+  - B1428 owns the OpenAI-like chat execution and the fake-stream handling that reads should_fake_stream. B2214 owns BaseModelResponseIterator.
+  - B8330 owns the call to this module (the _complete_databricks route, the HTTP handler, DATABRICKS_* environment reads), provider registration in dispatch and the HTTP oracle cases.
+  - The Anthropic helpers named above stay with B575, B574, B569 and B2221. Only their calls are made here.
+pitfalls:
+  - The claude test is a case-sensitive substring on the model name, while _uses_anthropic_thinking_param lowercases and swaps "." for "-" first. "Claude-3" is not claude in one and is in the other.
+  - The AI gateway test counts dots in the model after removing "databricks/", so "databricks-meta-llama-3.1" has one dot and stays off, and a name like "a.b.c" turns it on.
+  - The base is trimmed of trailing slashes only when the gateway is on. A plain base keeps its slash and gets "//chat/completions".
+  - should_fake_stream is true for any non-None response_format, claude or not, even though only claude models build the json tool.
+  - response_format is popped from optional_params in all cases, so a non-claude model silently loses it.
+  - A tool-call arguments value of exactly "{}" becomes "" in the stream only when json_mode is off. In json mode the conversion path handles it.
+  - The json-mode stream state is the last function name seen, so a chunk with arguments but no name relies on the earlier chunk.
+  - service_tier is skipped when it is "" or not a string, not only when it is missing.
+  - The split keeps original assistant fields on the first expanded message only. Later ones carry just role and tool_calls.
+  - max_completion_tokens always wins over a max_tokens in the same call. Its value is written to max_tokens and the old key is removed.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

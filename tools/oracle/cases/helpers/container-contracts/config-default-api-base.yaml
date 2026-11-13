@@ -1,0 +1,11 @@
+kind: helper
+name: config-default-api-base
+call:
+  b3360:
+    operation: config_defaults
+    headers: {X-Test: one}
+    api_key: key
+    api_bases: [null, "", https://api.example.test/v1, https://api.example.test/v1/]
+    error: {message: bad request, status_code: 400, headers: {Retry-After: "3"}}
+env: {}
+compare: {ignore: []}

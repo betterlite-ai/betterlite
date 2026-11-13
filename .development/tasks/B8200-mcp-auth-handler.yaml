@@ -1,0 +1,59 @@
+id: B8200
+title: MCP authenticated user and LiteLLM auth handler
+description: >-
+  Port MCPAuthenticatedUser from auth/litellm_auth_handler.py. It is the value the MCP server
+  layer attaches to a request after authentication. It holds the LiteLLM key auth (may be absent),
+  the deprecated mcp auth header, the list of server names the request is limited to, the
+  per-server auth headers (default empty map), the OAuth2 headers, the MCP protocol version, the
+  raw headers an admin allows forwarding, and the client IP.
+
+  In Rust it is a plain struct with those eight fields and one constructor, built by the transport
+  layer and read by the operations code. The Python base class AuthenticatedUser comes from the
+  mcp SDK. Use the Rust mcp crate's own type for it if the crate has one, and hold it as a field if
+  not. Do not copy the SDK type.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/auth_user.rs
+    - crates/betterlite-server/src/mcp/auth_user/**
+    - crates/betterlite-server/Cargo.toml
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/litellm_auth_handler.py#L1-L37
+    why: The whole class and its defaults.
+
+dod:
+  - text: >-
+      The struct has the eight fields, per-server auth headers default to an empty map, and
+      every other optional field defaults to none.
+    proof: [auth-user-tests]
+  - text: Debug output of the struct never prints a header value or the mcp auth header.
+    proof: [auth-user-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: auth-user-tests
+      why: A field, default or the redacted Debug output is wrong.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::auth_user::/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - Building this value from request headers (the MCP auth task, B4726).
+  - Using it to scope servers (B8195) or prepare headers (B8196).
+
+pitfalls:
+  - >-
+    The struct carries credentials. Implement Debug by hand so a log line of the struct is safe.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

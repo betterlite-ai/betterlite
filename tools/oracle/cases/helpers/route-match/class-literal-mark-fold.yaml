@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "class-literal-mark-fold",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/models/ͅ",
+      "allowed_routes": [
+        "/models/(?i:[ι\\d])"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

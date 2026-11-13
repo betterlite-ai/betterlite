@@ -1,0 +1,15 @@
+kind: helper
+name: passthrough-choices-override-content
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: llm_passthrough_route
+    response:
+      content:
+        - {type: text, text: anthropic text}
+      choices:
+        - message: {role: assistant, content: openai text}
+env: {}
+compare: {ignore: []}

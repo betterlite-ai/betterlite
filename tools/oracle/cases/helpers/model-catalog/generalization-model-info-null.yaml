@@ -1,0 +1,13 @@
+kind: helper
+name: generalization-model-info-null
+call:
+  model_catalog:
+    operation: generalizations_excluded
+    source:
+      fallback_generalizations:
+        rules:
+          - {name: bad, pattern: '^x', model_info: null}
+          - {name: text, pattern: '^y', model_info: openai}
+      gpt-test: {litellm_provider: openai}
+env: {}
+compare: {ignore: []}

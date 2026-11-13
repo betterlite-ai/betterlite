@@ -1,0 +1,20 @@
+kind: helper
+name: header-precedence-and-body-fallback
+call:
+  b3892:
+    function: trace
+    litellm_params:
+      metadata:
+        trace_name: body-name
+        trace_user_id: body-user
+      litellm_metadata:
+        trace_name: secondary-name
+        session_id: body-session
+      proxy_server_request:
+        headers:
+          langfuse_trace_name: header-name
+          langfuse_trace_user_id: header-user
+          langfuse_session_id: header-session
+env: {}
+compare:
+  ignore: []

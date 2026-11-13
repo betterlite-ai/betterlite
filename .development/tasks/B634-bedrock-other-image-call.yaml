@@ -111,6 +111,10 @@ description: >-
   wiring lines; 705 planned, 725 maximum changed lines.
 scope:
   paths:
+  - "tools/oracle/helpers/pyrightconfig.json"
+  - "tools/oracle/helpers/b4002.py"
+  - "tools/oracle/helpers/b3937.py"
+  - "tools/oracle/helpers"
   - crates/betterlite-bedrock/Cargo.toml
   - crates/betterlite-bedrock/src/image_call.rs
   - crates/betterlite-bedrock/src/image_call/**
@@ -250,7 +254,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_image_http_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_image_call.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_image_call.py tools/oracle/helpers/bedrock_other_image_call)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -269,7 +273,7 @@ checks:
     why: Outside bytes lack replay through the actual decoder.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_image_reply)"
       && grep -q 'decode_bedrock_image_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_image_reply.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_image_reply_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_image_reply_corpus(::|$)/)'
   - id: credential-identity-isolation
     why: Distinct configured identities cannot share credentials, headers or cache entries.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_credential_identity_isolation$/)'

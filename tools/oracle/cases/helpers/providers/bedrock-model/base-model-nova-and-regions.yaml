@@ -1,0 +1,5 @@
+kind: helper
+name: base-model-nova-and-regions
+call: {bedrock_model: {model: 'bedrock/nova-2/arn:aws:sagemaker:us-east-1:1:endpoint/x'}}
+env: {}
+compare: {ignore: []}

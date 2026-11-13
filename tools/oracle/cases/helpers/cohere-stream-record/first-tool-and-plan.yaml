@@ -1,0 +1,8 @@
+kind: helper
+name: cohere-stream-record-first-tool-and-plan
+call:
+  cohere_stream_record:
+    version: v2
+    record: '{"type":"tool-call-delta","event":"tool-plan-delta","delta":{"tool_calls":[{"id":"call1","name":"lookup","arguments":"{}"},{"id":"call2","name":"ignored"}]},"data":{"delta":{"message":{"tool_plan":"plan"}}}}'
+compare: {ignore: []}
+env: {}

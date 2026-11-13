@@ -70,8 +70,6 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/request_setup_options.rs
   - crates/betterlite-core/src/api/request_setup_options/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml
@@ -163,7 +161,10 @@ oracle_cases:
 - tools/oracle/cases/helpers/request-setup-options/metadata-slot-selection.yaml
 - tools/oracle/cases/helpers/request-setup-options/dynamic-callback-disabling.yaml
 - tools/oracle/cases/helpers/request-setup-options/missing-session-policy.yaml
-deviations: []
+deviations:
+  - what: _dynamically_disabled_backends checks only litellm_settings.allow_dynamic_callback_disabling and has no premium_user gate, so the header and the key's stored list apply without a license. B8870 and the callback dispatch use the same policy.
+    why: The README removes paid-tier checks for code present in the open-source tree. The oracle case must set premium_user true on the LiteLLM side.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1047-L1072
 out_of_scope:
 - 'litellm/proxy/litellm_pre_call_utils.py: B1104 owns _trace_id_from_traceparent L101-L110, _trace_id_from_otel_span
   L113-L124, add_otel_trace_id_to_request L127-L141, _session_id_from_baggage L144-L151, parse_cache_control L225-L236,

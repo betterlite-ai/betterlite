@@ -1,0 +1,152 @@
+id: B5364
+title: Environment validation, key checks and retry timing
+description: >-
+  `validate_environment` answers "which env names does this model still need?". A Python user calls it before a request,
+  and the proxy uses it for setup pages. Build it in `crates/betterlite-core/src/environment_validation.rs` with the small
+  helpers around it, and put the retry timing helpers in `crates/betterlite-core/src/retry_after.rs`.
+
+
+  `validate_environment` (L6709-L7128) takes the model, `api_key` and `api_base` as LiteLLM does, plus two injected
+  values: the set of env names that exist, as `&BTreeSet<String>`, and B5361's `ProviderModelSets`. It never reads the
+  process environment and never sees a value. It returns a struct with `keys_in_environment` and `missing_keys`. No model
+  gives false and an empty list. A failing `get_llm_provider` (B174) leaves the provider unset and the function moves to
+  the model-set chain. With a provider it walks the provider rows; each row is a list of required names, and some rows
+  accept any one of several names (ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN; the AWS rows also accept AWS_PROFILE or
+  AWS_CONTAINER_CREDENTIALS_FULL_URI). Keep the rows in a table of a closed `RequiredEnv` enum. When `api_key`, `api_base`
+  or an API version argument was passed, the matching names are removed from the missing list by a case-insensitive
+  substring test on "api_key", "api_base" and "api_version". An empty missing list gives `keys_in_environment` true.
+
+
+  `get_provider_fields` (L6668-L6681) returns a closed tag for databricks, ollama and azure_ai and `None` for other
+  providers, because the field lists live in provider crates above this one.
+
+
+  `valid_model` (L7135-L7144) and `check_valid_key` (L7147-L7165) make a live call. Put that behind a trait
+  `ModelProbe` with a method for the OpenAI model lookup and one for a completion, so B158 can wire the real call later.
+  `valid_model` looks up OpenAI chat and text models and sends "Hello World" for others, and any failure becomes
+  BadRequestError with an empty message and provider. `check_valid_key` sends "Hey, how's it going?" with `max_tokens` 10
+  and returns false on any failure. The key is a `SecretString`.
+
+
+  `read_config_args` (L7477-L7488) reads a JSON file and returns its object. It's called from `litellm/main.py`.
+
+
+  `retry_after` holds `_should_retry` (L7168-L7194: 408, 409, 429 and 500 and up),
+  `_get_retry_after_from_exception_header` (L7197-L7228: an integer or an HTTP date, -1 otherwise) and
+  `_calculate_retry_after` (L7231-L7254). A header wait above 0 and up to 60 wins, with jitter added. Otherwise the wait is
+  `INITIAL_RETRY_DELAY * 2^(max_retries - remaining_retries)`, raised to `min_timeout`, capped at `MAX_RETRY_DELAY`, plus
+  jitter. Pass the three constants (defaults 0.5, 8.0 and 0.75 at litellm/constants.py L495-L497) in a `RetryTiming`
+  struct, and pass the random number in the unit range as an argument, so a test and the oracle can pin it.
+
+
+  The oracle operation is `b5364`. Its Python adapter patches `os.environ` to the fixture names with `clear=True`, patches
+  `litellm.completion` for the key checks and patches `random.random` for backoff.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/environment_validation.rs
+  - crates/betterlite-core/src/environment_validation/**
+  - crates/betterlite-core/src/retry_after.rs
+  - crates/betterlite-core/src/retry_after/**
+  - tools/oracle/cases/helpers/environment-validation/**
+  - "tools/oracle/fuzz/corpus/helper_case/environment_validation-*"
+  - tools/oracle/helpers/b5364.py
+  - tools/oracle/helpers/b5364/**
+  - tools/oracle/src/helpers/core_ops/b5364.rs
+  - tools/oracle/src/helpers/core_ops/b5364/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L6668-L6681
+  why: Provider field selection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L6709-L7128
+  why: The provider rows, the model-set chain and the missing-key filter.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7135-L7165
+  why: The two live checks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7168-L7254
+  why: Retry status, header parsing and backoff.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7477-L7488
+  why: The config file read.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L495-L497
+  why: Default retry constants.
+dod:
+- text: >-
+    Every provider row of `validate_environment` gives LiteLLM's `keys_in_environment` and `missing_keys` with its names
+    present and absent, including rows where one of several names is enough.
+  proof: [provider-rows, oracle, helper-python]
+- text: >-
+    A model with no resolved provider goes through the model-set chain and gets LiteLLM's answer, and no model gives false
+    and an empty list.
+  proof: [model-set-rows, oracle, helper-python]
+- text: Passing `api_key` or `api_base` removes the matching missing names as LiteLLM does.
+  proof: [missing-key-filter, oracle, helper-python]
+- text: >-
+    `valid_model` and `check_valid_key` send LiteLLM's calls through `ModelProbe`, `check_valid_key` returns false on any
+    failure, and `valid_model` gives BadRequestError with an empty message.
+  proof: [key-probes, oracle, helper-python]
+- text: '`get_provider_fields` tags and `read_config_args` errors behave as in the source.'
+  proof: [provider-fields-config]
+- text: >-
+    `_should_retry`, header parsing and `_calculate_retry_after` match LiteLLM for fixed inputs, including a header of 0,
+    a header of 61, an HTTP date and a missing header.
+  proof: [retry-timing, oracle, helper-python]
+- text: New helper corpus seeds call `b5364` and replay through the shared parser.
+  proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+  - id: provider-rows
+    why: A provider row is missing or asks for the wrong names.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^environment_validation::.*provider_row/)'
+  - id: model-set-rows
+    why: The chain for models with no provider differs.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^environment_validation::.*model_set/)'
+  - id: missing-key-filter
+    why: Passed arguments don't clear the matching names.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^environment_validation::.*missing_filter/)'
+  - id: key-probes
+    why: A probe failure leaks through or the call differs.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^environment_validation::.*probe/)'
+  - id: provider-fields-config
+    why: The field tags or the file read are wrong.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^environment_validation::.*(provider_fields|config_args)/)'
+  - id: retry-timing
+    why: A retry status, the header limit or the backoff box is wrong.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^retry_after::/)'
+  - id: helper-python
+    why: Strict Python checks must pass on a real b5364 adapter.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5364)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers/b5364 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5364/pyrightconfig.json
+  - id: helper-case-corpus
+    why: The operation needs at least one parsing seed.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/environment_validation-*")"
+      && grep -lE '^[[:space:]]+b5364:' tools/oracle/fuzz/corpus/helper_case/environment_validation-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/environment-validation/provider-rows.yaml
+- tools/oracle/cases/helpers/environment-validation/model-set-rows.yaml
+- tools/oracle/cases/helpers/environment-validation/missing-key-filter.yaml
+- tools/oracle/cases/helpers/environment-validation/key-probes.yaml
+- tools/oracle/cases/helpers/environment-validation/retry-status.yaml
+- tools/oracle/cases/helpers/environment-validation/retry-after-header.yaml
+- tools/oracle/cases/helpers/environment-validation/backoff.yaml
+deviations:
+- what: Env names, model sets, the retry constants and the random number come in as arguments.
+  why: The inject-dependencies rule keeps env reads in the config crate and bars globals, and a fixed random number makes the backoff testable.
+out_of_scope:
+- >-
+  `load_test_model` L6625-L6665 and `create_proxy_transport_and_mounts` L6684-L6706 are not built: no caller at the pin.
+- >-
+  Wiring `ModelProbe` to a real completion and the Python names for these functions are B158 and B166. The field lists
+  behind `get_provider_fields` belong to the Databricks, Ollama and Foundry provider tasks.
+- Retry loops that call `_calculate_retry_after` are the router's and B5368's. The rest of litellm/utils.py is in the B157 inventory.
+pitfalls:
+- >-
+  Python tests `"NAME" in os.environ`, so a name set to an empty string counts as present. Don't add an emptiness check,
+  and don't read values at all.
+- The model-set chain is an if and elif ladder with an order. A model in two sets takes the first row.
+- '`retry_after` of 0 and of -1 both fall through to backoff: the test is `0 < retry_after <= 60`.'
+- A wait comes back as int or float in Python. Return `f64` and compare with a small tolerance in the helper.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

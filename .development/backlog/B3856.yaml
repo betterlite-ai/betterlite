@@ -1,14 +1,14 @@
 id: B3856
 milestone: M7 observability
 title: Legacy OTel inference and raw-request attributes
-status: todo
-depends_on: [B188, B192, B212, B3841, B3844, B3845, B3846, B3854, B3861]
-file: null
+status: done
+depends_on: [B188, B192, B3840, B3844, B3845, B3846, B3854, B3861, B3909]
+file: tasks/B3856-otel-legacy-inference-attributes.yaml
 covers:
   - "litellm/integrations/opentelemetry.py"
 parent: B110
 split_from: B110
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1176

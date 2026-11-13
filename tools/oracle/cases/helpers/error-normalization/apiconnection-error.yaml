@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-apiconnection-error
+call: {"error_normalization": {"message": "ordinary", "class": "APIConnectionError", "status_code": 418}}
+env: {}
+compare: {ignore: []}

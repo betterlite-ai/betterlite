@@ -1,0 +1,32 @@
+{
+  "kind": "helper",
+  "name": "genai-mapping-guardrail-attributes",
+  "call": {
+    "b3845": {
+      "function": "genai_guardrail",
+      "entry": {
+        "guardrail_name": "pii-guard",
+        "guardrail_mode": "pre_call",
+        "guardrail_status": "guardrail_intervened",
+        "masked_entity_count": { "EMAIL": 2, "PHONE": 1 },
+        "guardrail_provider": "presidio",
+        "guardrail_action": "block",
+        "guardrail_response": { "verdict": "blocked", "reason": "email" },
+        "violation_categories": ["pii", "email"],
+        "confidence_score": 0.91,
+        "risk_score": 0.4,
+        "duration": 0.25,
+        "guardrail_id": "g-1",
+        "policy_template": "default",
+        "detection_method": "regex",
+        "guardrail_usage": { "scanned": 3 },
+        "guardrail_cost": 0.012,
+        "guardrail_cost_in_spend": false
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

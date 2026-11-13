@@ -1,0 +1,123 @@
+id: B5361
+title: Provider model sets and the remaining capability flags
+description: >-
+  LiteLLM keeps one Python set of model names per provider, filled from the cost map, and a map from provider name to
+  those sets. `validate_environment`, `register_model` and the Python module all read them. Build them in
+  `crates/betterlite-models/src/provider_model_sets.rs` as a `ProviderModelSets` struct the caller owns. No static, no
+  global.
+
+
+  `ProviderModelSet` is a closed enum with one variant per set declared at litellm/__init__.py L602-L718. A table maps
+  each `litellm_provider` value to its variant, replacing the if and elif chain of `_populate_provider_model_sets`
+  (L753-L1006). The branches that do more than add the key stay as code: openai skips fine-tune keys
+  (`is_openai_finetune_model`, L740-L751), bedrock skips `mode` "guardrail" and pricing-only keys
+  (`is_bedrock_pricing_only_model`, L720-L738), eleven Vertex branches strip "vertex_ai/" from the key, one branch splits
+  on `mode` "chat", and two branches skip names holding "-to-". `add_known_models`
+  (L1009-L1017) folds a cost map into the sets and rebuilds the by-provider map, so it becomes a method taking a
+  `ModelCatalog`. `_build_models_by_provider` (L1144-L1257) becomes a method returning
+  `BTreeMap<String, BTreeSet<String>>`, with unions such as "openai" built from the chat and text sets.
+
+
+  Also build the capability flags no task owns yet, in `crates/betterlite-models/src/model_capability_flags.rs`. At the
+  pin each is one call to `_supports_factory` with a key, so don't write eleven one-line functions. Make a closed enum
+  `ModelCapabilityFlag` whose variants name the keys, and one function taking the model, the provider and the flag that
+  calls B2221's Rust form of `_supports_factory` in `model_capability_predicates`. The keys are `supports_web_search`,
+  `supports_url_context`, `supports_audio_input`, `supports_pdf_input`, `supports_audio_output`,
+  `supports_prompt_cache_breakpoint`, `supports_thinking_cache_preservation`, `supports_computer_use`, `supports_vision`,
+  `supports_anthropic_thinking_payload` and `supports_embedding_image_input`. `is_vision_explicitly_disabled` is the same
+  idea over `is_explicitly_disabled_factory` with the key `supports_vision`.
+
+
+  The oracle operation is `b5361`. For sets its Python adapter calls `litellm.add_known_models(fixture_map)` after
+  clearing the sets and reports them sorted. For flags it calls the `litellm.utils` function on a fixture model.
+scope:
+  paths:
+  - crates/betterlite-models/src/provider_model_sets.rs
+  - crates/betterlite-models/src/provider_model_sets/**
+  - crates/betterlite-models/src/model_capability_flags.rs
+  - crates/betterlite-models/src/model_capability_flags/**
+  - tools/oracle/cases/helpers/provider-model-sets/**
+  - "tools/oracle/fuzz/corpus/helper_case/provider_model_sets-*"
+  - tools/oracle/helpers/b5361.py
+  - tools/oracle/helpers/b5361/**
+  - tools/oracle/src/helpers/models/b5361.rs
+  - tools/oracle/src/helpers/models/b5361/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L602-L718
+  why: The set declarations, for the enum variants.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L720-L1017
+  why: The skip predicates, the population chain and add_known_models.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1144-L1257
+  why: The provider to set map, with its unions.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2622-L2661
+  why: Web search and URL context flags.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2941-L3051
+  why: Audio, PDF, cache, computer use, vision and thinking payload flags. Skip the prompt caching and reasoning functions at L2956-L2974 and L3041-L3045, since B2221 builds them.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3124-L3132
+  why: The embedding image input flag.
+dod:
+- text: >-
+    Filling the sets from a fixture cost map gives the same names per set as LiteLLM, with Bedrock pricing-only keys and
+    OpenAI fine-tune keys treated as `_populate_provider_model_sets` treats them.
+  proof: [model-sets, oracle, helper-python]
+- text: The by-provider map has the same keys and the same names per key as `_build_models_by_provider`.
+  proof: [models-by-provider, oracle, helper-python]
+- text: >-
+    The eleven flags and `is_vision_explicitly_disabled` give LiteLLM's answer for a model that declares the flag, one that declares it
+    false and one with no catalog entry.
+  proof: [capability-flags, oracle, helper-python]
+- text: New helper corpus seeds call `b5361` and replay through the shared parser.
+  proof: [helper-case-corpus]
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: model-sets
+    why: A provider value lands in the wrong set, or a skip rule is lost.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^provider_model_sets::.*fill/)'
+  - id: models-by-provider
+    why: A union or a key of the by-provider map is wrong.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^provider_model_sets::.*by_provider/)'
+  - id: capability-flags
+    why: A flag is absent or disagrees with the source on a false or missing declaration.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^model_capability_flags::/)'
+  - id: helper-python
+    why: The b5361 adapter is absent or does not pass ruff and basedpyright.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5361)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers/b5361 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5361/pyrightconfig.json
+  - id: helper-case-corpus
+    why: No new b5361 seed exists, or a seed does not parse.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/provider_model_sets-*")"
+      && grep -lE '^[[:space:]]+b5361:' tools/oracle/fuzz/corpus/helper_case/provider_model_sets-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/provider-model-sets/fill-from-cost-map.yaml
+- tools/oracle/cases/helpers/provider-model-sets/skip-rules.yaml
+- tools/oracle/cases/helpers/provider-model-sets/by-provider-unions.yaml
+- tools/oracle/cases/helpers/provider-model-sets/capability-flags.yaml
+- tools/oracle/cases/helpers/provider-model-sets/vision-disabled.yaml
+deviations:
+- what: The sets live in a struct the caller holds, where LiteLLM has module globals.
+  why: >-
+    The inject-dependencies rule bars globals. The Python package in B157 still shows them as module attributes through
+    the native call B5369 adds.
+out_of_scope:
+- Exposing the sets as Python attributes is B157, and the native call behind it is B5369.
+- Adding one registered model to the sets happens inside `register_model` in B5365, through a method here.
+- >-
+  `get_supported_regions` L3081-L3121 has no caller at the pin, so it isn't built. The capability functions listed in
+  B2221's description stay there. The rest of litellm/__init__.py is B157, and the owner of anything else in
+  litellm/utils.py is in the B157 inventory.
+pitfalls:
+- >-
+  The chain is one if and elif ladder, so a key lands in one set at most and the first match wins. The bedrock guardrail
+  branch runs before the pricing-only branch. Keep that order when you fold the rows into the table.
+- Keep the set order out of any output. Sets in Python have no order, and the helper sorts before comparing.
+- >-
+  `is_vision_explicitly_disabled` is not the inverse of `supports_vision`: a missing declaration reads as not disabled
+  and also as not supported.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

@@ -35,7 +35,13 @@ impl crate::helpers::Helper for Op {
                 tools,
                 supported_types,
             } => drop_unsupported(tools, supported_types),
-            Input::HoistAdditionalTools { items, tools } => hoist(items, tools.as_deref()),
+            Input::HoistAdditionalTools { items, tools } => {
+                let result = betterlite_core::api::codex_history_tools::hoist_additional_tools(
+                    items,
+                    tools.as_deref(),
+                );
+                serde_json::json!({"input": result.input, "tools": result.tools, "hoisted": result.hoisted})
+            }
         };
         Ok(output)
     }
@@ -74,9 +80,4 @@ fn drop_unsupported(tools: &[Value], supported_types: &BTreeSet<String>) -> Valu
     let (kept, dropped_types) =
         betterlite_core::api::codex_history_tools::drop_unsupported_tools(tools, supported_types);
     serde_json::json!({"tools": kept, "dropped_types": dropped_types})
-}
-
-fn hoist(value: &Value, tools: Option<&[Value]>) -> Value {
-    let result = betterlite_core::api::codex_history_tools::hoist_additional_tools(value, tools);
-    serde_json::json!({"input": result.input, "tools": result.tools, "hoisted": result.hoisted})
 }

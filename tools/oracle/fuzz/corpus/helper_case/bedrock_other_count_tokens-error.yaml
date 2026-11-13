@@ -1,0 +1,9 @@
+kind: helper
+name: bedrock-other-count-tokens-error
+call:
+  bedrock_other_count_tokens:
+    count_invoke_model_only:
+      request:
+        model: anthropic.claude-3-5-sonnet-20241022-v2:0
+env: {}
+compare: {ignore: []}

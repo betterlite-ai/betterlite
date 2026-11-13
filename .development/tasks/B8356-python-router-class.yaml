@@ -1,0 +1,92 @@
+id: B8356
+title: Python Router class and constructor
+description: >-
+  `from litellm import Router` is how most SDK users meet the router. B5078 and B8355 wrote the call methods as mixins and B6022 the native router, but nothing builds the `Router` class itself, its constructor, or the modules `betterlite.router` and `betterlite.types.router` that B165 waits on. Build them here.
+
+
+  Files. `python/betterlite/_router/__init__.py` defines `class Router(RouterCalls, RouterEndpoints)` (B5078, B8355) with `__all__ = ["Router"]`. `python/betterlite/_router/settings.py` turns the constructor arguments into the settings JSON text that B6022's `NativeRouter` reads. `python/betterlite/router.py` re-exports `Router` and, from `betterlite._custom_routing`, `CustomRoutingStrategyBase` (B165). `python/betterlite/types/router.py` re-exports every name of B8584's `betterlite._router_types` with one star import and `CustomRoutingStrategyBase` from the same B165 module, and `_router/settings.py` takes `RetryPolicy`, `AllowedFailsPolicy`, `AlertingConfig`, `RouterGeneralSettings` and `RoutingStrategy` from `betterlite._router_types`. Each has an explicit `__all__`. The top-level export follows B5369's rule for Python modules: `betterlite/__init__.py` holds a `from betterlite._router import *` star line and `_router/__init__.py` starts as an empty stub, both written by B5369 (or by the architect when B5369 has merged first), and this task fills the stub, so `__all__ = ["Router"]` makes `from betterlite import Router` work. Never edit `betterlite/__init__.py`, `src/lib.rs` or `_native.pyi`.
+
+
+  `Router.__init__` (router.py L772-L1237) takes every parameter LiteLLM's takes, with the same names, kinds, order and defaults, from `model_list` to `auto_router_capability_limit`; the test compares `inspect.signature` with LiteLLM's. Mutable defaults (`cache_kwargs={}`, `fallbacks=[]`, `model_group_alias={}` and the like) are copied, never shared. It keeps `model_list`, `num_retries`, `retry_policy`, `fallbacks`, `context_window_fallbacks`, `content_policy_fallbacks`, `default_litellm_params`, `cache_responses`, `routing_strategy` and `model_names` (the set of `model_name` values) as attributes, builds the settings text, creates the `NativeRouter` and the `NativeRouterEndpoints`, then calls `apply_default_settings()` as the last step. The settings text carries a key only when the caller's value differs from LiteLLM's default, so an unsupported argument left at its default never reaches the native check, and one set to another value is refused by B6022 with `ValueError` naming the key. `routing_strategy` accepts the `RoutingStrategy` enum or a string and sends the string value, as `Router._normalize_strategy` (L1325-L1332) does. A `RetryPolicy`, `AllowedFailsPolicy` or `AlertingConfig` model is sent as its `model_dump(exclude_none=True)`. `default_litellm_params` defaults to an empty dict when None.
+
+
+  Small methods. `get_valid_args()` (L1240-L1248) is a static method that returns the parameter names of `Router.__init__` without `self`, read with `inspect.getfullargspec`. `apply_default_settings()` (L1250-L1256) adds the default optional pre-call checks, an empty list, so it changes nothing and returns None. `discard()` (L1258-L1279), `flush_cache()` (L14745-L14750) and `reset()` (L14752-L14759) exist with LiteLLM's names: `reset` sets `retry_policy` to None and calls `flush_cache`, and `discard` and `flush_cache` return None, because the wheel keeps no global callback lists and the router caches live in Rust. `print_deployment(deployment)` (L2440-L2459) returns a deep copy where `litellm_params.api_key`, when present, keeps its first two characters followed by ten `*`.
+
+
+  Tests go in `tests/test_router_class.py`: the signature matches LiteLLM's, `get_valid_args()` equals LiteLLM's list, a router built with a model list and fallbacks answers `acompletion` against a local mock server, an unsupported argument set to a non-default value raises `ValueError` naming it, `print_deployment` masks the key and does not change the input, and `from betterlite.router import CustomRoutingStrategyBase` and `from betterlite.types.router import CustomRoutingStrategyBase` give B165's class.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/_router/__init__.py
+  - crates/betterlite-python/python/betterlite/_router/settings.py
+  - crates/betterlite-python/python/betterlite/router.py
+  - crates/betterlite-python/python/betterlite/types/router.py
+  - crates/betterlite-python/tests/test_router_class.py
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L772-L1279
+    why: The constructor signature and defaults, get_valid_args, apply_default_settings and discard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1325-L1332
+    why: The strategy name normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2440-L2459
+    why: The api key mask.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L14745-L14759
+    why: flush_cache and reset.
+  - url: https://docs.litellm.ai/docs/routing
+    why: How users build a Router.
+dod:
+  - text: "`Router.__init__` has LiteLLM's signature, and `get_valid_args()` returns LiteLLM's names."
+    proof: [router-class-signature]
+  - text: A router built from a model list answers a completion through the native router, with mutable defaults not shared between instances.
+    proof: [router-class-build]
+  - text: An argument the native router does not support is sent only when it differs from the default, and then raises `ValueError` naming it.
+    proof: [router-class-settings]
+  - text: "`enable_weighted_failover=True` reaches the settings text as `enable_weighted_failover`, the `router_settings` key B8440's `config.sections.weighted_failover` reads, and the default False is left out."
+    proof: [router-class-settings]
+  - text: "`print_deployment` masks the key on a copy, and `reset` clears the retry policy."
+    proof: [router-class-methods]
+  - text: "`betterlite.router` and `betterlite.types.router` export `CustomRoutingStrategyBase`, and `betterlite.router` exports `Router`."
+    proof: [router-class-exports]
+  - text: The files pass strict basedpyright and ruff.
+    proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: router-class-signature
+    why: A parameter name, kind or default differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_class.py -k signature
+  - id: router-class-build
+    why: The router cannot be built or called, or two routers share a default list.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_class.py -k build
+  - id: router-class-settings
+    why: A default value is refused, or a changed unsupported value is ignored.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_class.py -k settings
+  - id: router-class-methods
+    why: The key is shown, the input is changed, or reset keeps the policy.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_class.py -k methods
+  - id: router-class-exports
+    why: An import LiteLLM users write fails.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_router_class.py -k exports
+  - id: python-lint
+    why: Type drift against the mixins and stubs.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+  - what: A constructor argument the native router does not read yet (for example `redis_host`, `plugins` or `fallback_access_check`) raises `ValueError` naming it when set to a non-default value.
+    why: LiteLLM would use it; silently ignoring it would change routing without a sign.
+  - what: "`print_deployment` masks only `api_key`, also when `redact_user_api_key_info` is set."
+    why: LiteLLM's masker for that flag is part of its logging code, which the wheel does not carry.
+  - what: "`discard` and `flush_cache` do nothing, and `reset` only clears `retry_policy`."
+    why: The wheel has no global callback lists, and the router caches live in Rust with no flush method yet.
+out_of_scope:
+  - "B5078 owns the chat methods, B8355 the other call methods, B6022 the native router and its settings keys, B165 CustomRoutingStrategyBase."
+  - "B8584 ports the pydantic models of litellm/types/router.py into `betterlite._router_types`; this task only re-exports them."
+  - "Router._remove_optional_callbacks_of_type and the callback registration in __init__ manage LiteLLM's global callback lists, which the wheel does not have."
+pitfalls:
+  - "`model_group_alias` defaults to `{}` but `default_fallbacks` to None; compare each argument with its own default, not with a falsy check."
+  - "`router_general_settings` defaults to an instance, `RouterGeneralSettings()`, so compare by value, not identity."
+  - "`get_valid_args` reads the betterlite constructor, so it stays equal to LiteLLM's only while the signature does; the signature test guards both."
+  - "`apply_default_settings` runs last in `__init__`, after the native router exists."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

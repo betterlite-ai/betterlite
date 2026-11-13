@@ -25,7 +25,6 @@ description: >-
   execution/projection, 190 tests, 120 adapters and 90 decoding/fuzz lines.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,legacy_prediction}.rs
     - crates/betterlite-vertex/src/legacy_prediction.rs
     - crates/betterlite-vertex/src/legacy_prediction/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

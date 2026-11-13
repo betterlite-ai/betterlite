@@ -1,0 +1,10 @@
+kind: helper
+name: cost-per-request-zero
+call:
+  b3605:
+    operation: set_cost_per_request
+    state: {}
+    kwargs_response_cost: null
+    cost_per_request: 0.0
+env: {}
+compare: {ignore: []}

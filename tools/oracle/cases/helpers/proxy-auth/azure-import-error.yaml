@@ -1,0 +1,11 @@
+kind: helper
+name: proxy-auth-azure-import-error
+call:
+  proxy_auth:
+    operation: azure
+    params:
+      installed: false
+      injected: false
+      scopes: ['api://one/.default', 'api://one/.default']
+env: {}
+compare: {ignore: []}

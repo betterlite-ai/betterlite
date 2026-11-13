@@ -1,0 +1,13 @@
+id: B9823
+milestone: M5 api families
+title: Register websearch_interception in the SDK callback list
+status: todo
+depends_on: [B9821, B9825, B9820, B4113, B4115, B4116, B4117, B4118, B4119, B1118, B5367, B8383]
+file: tasks/B9823-websearch-callback.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

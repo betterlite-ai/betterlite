@@ -1,0 +1,14 @@
+kind: helper
+name: coerce-text-parts
+call:
+  b3860:
+    function: coerce_text
+    value:
+      - first
+      - {type: text, text: second}
+      - {type: input_text, text: third}
+      - {type: text, text: "", input_text: fourth}
+      - {type: image_url, image_url: {url: "https://example.com/ignored.png"}}
+      - 7
+env: {}
+compare: {ignore: []}

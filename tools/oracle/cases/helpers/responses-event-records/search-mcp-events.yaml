@@ -1,0 +1,22 @@
+kind: helper
+name: responses-event-records-search-mcp-events
+call:
+  responses_event_records:
+    events:
+      - {"type":"response.file_search_call.in_progress","output_index":2,"item_id":"tool_a"}
+      - {"type":"response.file_search_call.searching","output_index":2,"item_id":"tool_a"}
+      - {"type":"response.file_search_call.completed","output_index":2,"item_id":"tool_a"}
+      - {"type":"response.web_search_call.in_progress","output_index":2,"item_id":"tool_a"}
+      - {"type":"response.web_search_call.searching","output_index":2,"item_id":"tool_a"}
+      - {"type":"response.web_search_call.completed","output_index":2,"item_id":"tool_a"}
+      - {"type":"response.mcp_list_tools.in_progress","output_index":2,"item_id":"tool_a","sequence_number":4}
+      - {"type":"response.mcp_list_tools.completed","output_index":2,"item_id":"tool_a","sequence_number":4}
+      - {"type":"response.mcp_list_tools.failed","output_index":2,"item_id":"tool_a","sequence_number":4}
+      - {"type":"response.mcp_call.in_progress","output_index":2,"item_id":"tool_a","sequence_number":4}
+      - {"type":"response.mcp_call.completed","output_index":2,"item_id":"tool_a","sequence_number":4}
+      - {"type":"response.mcp_call.failed","output_index":2,"item_id":"tool_a","sequence_number":4}
+      - {"type":"response.mcp_call_arguments.delta","output_index":2,"item_id":"tool_a","sequence_number":4,"delta":"{"}
+      - {"type":"response.mcp_call_arguments.done","output_index":2,"item_id":"tool_a","sequence_number":4,"arguments":"{}"}
+      - {"type":"image_generation.partial_image","partial_image_index":1,"b64_json":"YQ=="}
+env: {}
+compare: {ignore: []}

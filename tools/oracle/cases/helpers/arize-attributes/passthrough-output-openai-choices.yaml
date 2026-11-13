@@ -1,0 +1,13 @@
+kind: helper
+name: passthrough-output-openai-choices
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: llm_passthrough_route
+    response:
+      choices:
+        - message: {role: assistant, content: choice text}
+env: {}
+compare: {ignore: []}

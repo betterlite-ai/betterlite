@@ -1,0 +1,14 @@
+kind: helper
+name: vault-secret-operations-delete-basic
+env: {}
+compare: {ignore: []}
+call:
+  b4417:
+    env:
+      HCP_VAULT_TOKEN: token
+    routes:
+      - route: "DELETE http://127.0.0.1:8200/v1/secret/data/APP_KEY"
+        replies:
+          - {status: 204, body: ''}
+    steps:
+      - {op: delete, name: APP_KEY}

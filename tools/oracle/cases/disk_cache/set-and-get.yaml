@@ -1,0 +1,12 @@
+kind: helper
+name: disk-set-and-get
+call:
+  b4291:
+    disk_set_and_get:
+      key: cache-key
+      value:
+        model: gpt-4o
+        count: 2
+env: {}
+compare:
+  ignore: []

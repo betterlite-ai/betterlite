@@ -1,0 +1,10 @@
+kind: helper
+name: provider-defaults-a-nvidia-riva
+call:
+  provider_defaults_a:
+    provider: nvidia_riva
+    model: any-model
+    environment:
+      NVIDIA_NIM_API_KEY: nim-key
+env: {}
+compare: {ignore: []}

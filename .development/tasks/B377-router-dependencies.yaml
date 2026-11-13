@@ -4,9 +4,8 @@ description: 'Implement StrategyRouterKind, RouterDependencies and configuration
   for semantic, complexity, quality and adaptive marker deployments. Enumerate classifier, embedding,
   evaluation and tier model dependencies using exact config keys, including custom tiers and prompts.
   Licensing capability-count/tuning helpers have no runtime equivalent under the accepted product decision.
-  Implement the owned native service in crates/betterlite-server/src/router_dependencies.rs. Add ProbeOperation::RouterDependencies
-  in tools/oracle/src/router_probes/mod.rs and the corresponding B377 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Implement the owned native service in crates/betterlite-server/src/router_dependencies.rs. B301 registers ProbeOperation::RouterDependencies and its Python entry as stubs, so fill only tools/oracle/src/router_probes/router_dependencies.rs and tools/oracle/litellm/probes/router_dependencies.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_utils/auto_router_model_naming.py:
@@ -16,23 +15,15 @@ description: 'Implement StrategyRouterKind, RouterDependencies and configuration
   (L224-L226), validate_complexity_router_config_write (L347-L372), carries_complexity_router_settings
   (L380-L389), validate_complexity_router_config_placement (L392-L411), validate_strategy_router_model_write
   (L414-L453). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports. This task adds no route or server state, so leave routes.rs and state.rs to B1100.'
 scope:
   paths:
   - crates/betterlite-server/src/router_dependencies.rs
   - crates/betterlite-server/src/router_dependencies/**
-  - crates/betterlite-server/src/error.rs
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/router_dependencies.rs
   - crates/betterlite-server/src/routing/router_dependencies/**
   - tools/oracle/src/router_probes/router_dependencies.rs
   - tools/oracle/src/router_probes/router_dependencies/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/router_dependencies.py
   - tools/oracle/cases/routing/router-dependencies/**
   - tools/oracle/helpers/b377.py

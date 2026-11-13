@@ -1,0 +1,27 @@
+task: B320
+deviations:
+  - what: A configured tag pattern longer than 2048 bytes, or a match that passes 100000 backtracking steps, is skipped with a named warning instead of being run.
+    why: The pinned code compiles and searches any pattern with no execution bound, and bounded-inputs requires a finite one. Supported Python syntax and first-match semantics stay inside that bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L87-L107
+  - what: A tag match document over 1048576 bytes is rejected with TagMatcherError::TooLarge before it is decoded.
+    why: The pinned code has no byte bound at this parser boundary, and bounded-inputs requires a finite limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L87-L277
+  - what: >-
+      Tag patterns run on fancy-regex with seek disabled instead of Python's re. Constructs Python and the
+      engine read differently are warned about as unsupported_pattern and skipped: \N{...} named escapes,
+      \Z (the absolute end in Python), \< and \> (literal brackets in Python, word boundaries here), any
+      unescaped [ inside a character class (POSIX classes such as [[:digit:]], nested classes such as
+      [a[bc]] and [[ab]], and the [[.a.]] and [[=a=]] forms), a leading ] that starts a range such as
+      []-x] (Python reads ]-x as a range while the engine reads the three literals), the &&, ~~ and --
+      set operators inside a class, leading-zero and three-digit octal escapes such as \0, \012 and \101,
+      conditional groups such as
+      (?(name)yes|no), patterns that turn on verbose mode with the x flag or use an inline (?#...) comment
+      because their comment text can hide later constructs from the scan, and any pattern fancy-regex's
+      compiler refuses. Other patterns the engine's parser rejects are warned about as invalid_pattern and
+      skipped. The engine accepts constructs Python 3.13
+      rejects, such as \G, \N without a brace and stacked repeats, and without MULTILINE $ matches only at the very end rather
+      than before one trailing newline; character classes, case folding and word boundaries follow the
+      engine's Unicode tables, which can differ from Python's for a few characters. Build warnings are
+      logged once when the server builds the matcher, and a selection carries only match-time warnings.
+    why: Python's re is not available in Rust; fancy-regex is the maintained engine already in the lock that runs lookahead, backreferences and named groups with an explicit backtrack limit. A construct the engine reads differently is skipped with a named warning rather than selecting different traffic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/tag_based_routing.py#L100-L105

@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "class-negated-lone-hyphen",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/models/-",
+      "allowed_routes": [
+        "/models/[^-]"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -1,0 +1,13 @@
+kind: helper
+name: span-plan-config-override
+call:
+  b3855:
+    function: span_processor_plan
+    config:
+      exporter: console
+      headers: x-base=1
+    config_override:
+      exporter: grpc
+      endpoint: http://collector:4317
+env: {}
+compare: {ignore: []}

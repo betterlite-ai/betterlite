@@ -1,0 +1,14 @@
+task: B3738
+deviations:
+  - what: The token and scope caches sit behind one std Mutex and nothing awaits while it is held, instead of a threading.Lock around OrderedDict operations.
+    why: A std Mutex works from any runtime, so the proxy loop and the logging hook fallback loop share the same caches. A poisoned lock is recovered because the caches only hold plain values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L76-L83
+  - what: Graph response bodies are read in chunks and refused above 16 MiB.
+    why: LiteLLM reads the whole body with no limit, so a misbehaving endpoint could exhaust memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L149-L151
+  - what: A non-success Graph answer becomes a typed error that carries the status code and the Retry-After header value.
+    why: LiteLLM raises the raw httpx status error. The retry layer built on top of this task needs the status and the delay without parsing text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L126-L158
+  - what: The If-None-Match value is checked as a header value before the request is sent, and an invalid one is an error naming the header.
+    why: LiteLLM passes the string to httpx, which fails later with a less specific message. A cached ETag from Graph is always valid, so this only matters for a corrupted value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L207-L270

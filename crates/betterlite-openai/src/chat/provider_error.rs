@@ -1,18 +1,11 @@
+use betterlite_error::dispatch::{DispatchInput, RawException, RawExceptionBody, dispatch};
+use betterlite_error::envelope::WireField;
+use betterlite_error::error::ErrorClass;
+use betterlite_http::proxy::UpstreamResponse;
+use betterlite_redact::secret::Redactor;
 use serde_json::Value;
 
 use crate::chat::execution::ChatError;
-
-const CONTEXT_WINDOW_PHRASES: [&str; 9] = [
-    "exceed context limit",
-    "this model's maximum context length is",
-    "string too long. expected a string with maximum length",
-    "model's maximum context limit",
-    "is longer than the model's context length",
-    "input tokens exceed the configured limit",
-    "`inputs` tokens + `max_new_tokens` must be",
-    "exceeds the available context size",
-    "exceeds the maximum number of tokens allowed",
-];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderFailure {
@@ -27,107 +20,64 @@ pub enum ErrorBodyKind {
     MessageOnly,
 }
 
-#[derive(Clone, Copy)]
-enum Fields {
-    FromBody,
-    Fixed(&'static str),
-    Fallback,
-}
-
 impl ChatError {
+    // the client status, type and param of any variant; Provider runs the same dispatch the gateway bodies use
     #[must_use]
-    pub fn failure(&self) -> ProviderFailure {
-        match self {
-            Self::UnknownModel { .. } | Self::Request { .. } => {
-                failure(400, Fields::Fallback, None)
-            }
-            Self::UnsupportedProvider { .. } | Self::Streaming => {
-                failure(501, Fields::Fallback, None)
-            }
-            Self::MissingApiKey => failure(401, Fields::Fallback, None),
-            Self::Timeout { .. } => failure(408, Fields::Fallback, None),
+    pub fn failure(&self, redactor: &Redactor) -> ProviderFailure {
+        let status = match self {
+            Self::UnknownModel { .. } | Self::Request { .. } => 400,
+            Self::UnsupportedProvider { .. } | Self::Streaming => 501,
+            Self::MissingApiKey => 401,
+            Self::Timeout { .. } => 408,
             Self::Provider { response } => {
-                classify(response.status, &response.body, ErrorBodyKind::Structured)
+                return provider_failure(response, redactor, ErrorBodyKind::Structured);
             }
-            Self::Http { .. } | Self::Encode { .. } | Self::Decode { .. } | Self::TooLarge => {
-                failure(500, Fields::Fallback, None)
-            }
+            Self::Http { .. } | Self::Encode { .. } | Self::Decode { .. } | Self::TooLarge => 500,
+        };
+        ProviderFailure {
+            status,
+            error_type: fallback_type(status).to_owned(),
+            param: None,
         }
     }
 }
 
 #[must_use]
-pub fn classify(status: u16, body: &[u8], error_body: ErrorBodyKind) -> ProviderFailure {
-    let decoded_body = str::from_utf8(body).unwrap_or_default();
-    let (code, fields, keeps_param) =
-        text_rule(status, decoded_body).unwrap_or_else(|| status_rule(status));
-    let structured = match error_body {
-        ErrorBodyKind::Structured => keeps_param.then_some(decoded_body),
-        // LiteLLM's embedding wrapper preserves error text but omits the SDK's structured body.
-        ErrorBodyKind::MessageOnly => None,
-    };
-    failure(code, fields, structured)
+pub fn provider_failure(
+    response: &UpstreamResponse,
+    redactor: &Redactor,
+    error_body: ErrorBodyKind,
+) -> ProviderFailure {
+    rendered(&dispatch(
+        &DispatchInput::Raw(Box::new(raw_exception(response, error_body))),
+        redactor,
+    ))
 }
 
-// LiteLLM checks the provider's error text before its status, in this order, so every 429 is a throttling_error
-fn text_rule(status: u16, body: &str) -> Option<(u16, Fields, bool)> {
-    let lower = body.to_lowercase();
-    let invalid_request = body.contains("invalid_request_error");
-    if status == 429 || mentions_rate_limit(&lower) {
-        Some((429, Fields::Fixed("throttling_error"), true))
-    } else if context_window_exceeded(&lower) {
-        Some((status, Fields::Fallback, false))
-    } else if invalid_request && body.contains("model_not_found") {
-        Some((404, Fields::Fallback, false))
-    } else if body.contains("A timeout occurred") {
-        Some((408, Fields::Fallback, false))
-    } else if content_policy_violation(body, &lower)
-        || body.contains("invalid_encrypted_content")
-        || body.contains("could not be verified")
-        || (invalid_request && !body.contains("Incorrect API key provided"))
-    {
-        Some((status, Fields::FromBody, true))
-    } else if body.contains("Web server is returning an unknown error")
-        || body.contains("The server had an error processing your request.")
-    {
-        Some((500, Fields::Fixed("internal_server_error"), true))
-    } else if body.contains("Request too large") {
-        Some((429, Fields::Fixed("throttling_error"), true))
+// LiteLLM's openai_error_type: the exception's own type unless it is the string "None", else the client type from the status
+#[must_use]
+pub fn rendered(class: &ErrorClass) -> ProviderFailure {
+    let metadata = class.metadata();
+    // _handle_llm_api_exception keeps a provider status only in 400..=599 and answers 500 for every other one
+    let status = if (400..=599).contains(&metadata.status_code) {
+        metadata.status_code
     } else {
-        None
-    }
-}
-
-const fn status_rule(status: u16) -> (u16, Fields, bool) {
-    match status {
-        400 | 422 => (status, Fields::FromBody, true),
-        500 => (500, Fields::Fixed("internal_server_error"), true),
-        _ => (status, Fields::Fallback, false),
-    }
-}
-
-fn failure(status: u16, fields: Fields, body: Option<&str>) -> ProviderFailure {
-    let parsed = body.and_then(|text| serde_json::from_str::<Value>(text).ok());
-    // the OpenAI SDK reads type and param from the error object, or from the whole body without one
-    let error = parsed
-        .as_ref()
-        .map(|data| data.get("error").unwrap_or(data));
-    let text_field = |name: &str| {
-        error
-            .and_then(|object| object.get(name))
-            .and_then(Value::as_str)
-            .filter(|text| *text != "None")
-            .map(str::to_owned)
+        500
     };
-    let error_type = match fields {
-        Fields::Fixed(name) => Some(name.to_owned()),
-        Fields::FromBody => text_field("type"),
-        Fields::Fallback => None,
+    let error_type = match metadata.error_type {
+        WireField::Text(text) if text != "None" => text,
+        WireField::Text(_) | WireField::Missing(_) | WireField::Null => {
+            fallback_type(status).to_owned()
+        }
+    };
+    let param = match metadata.param {
+        WireField::Text(text) if text != "None" => Some(text),
+        WireField::Text(_) | WireField::Missing(_) | WireField::Null => None,
     };
     ProviderFailure {
         status,
-        error_type: error_type.unwrap_or_else(|| fallback_type(status).to_owned()),
-        param: text_field("param"),
+        error_type,
+        param,
     }
 }
 
@@ -135,47 +85,46 @@ const fn fallback_type(status: u16) -> &'static str {
     match status {
         401 => "authentication_error",
         403 => "permission_error",
+        429 => "rate_limit_error",
         0..500 => "invalid_request_error",
         _ => "internal_server_error",
     }
 }
 
-fn mentions_rate_limit(lower: &str) -> bool {
-    if lower.contains("service tier capacity exceeded") {
-        true
-    } else {
-        lower.match_indices("rate").any(|(start, word)| {
-            let rest = lower
-                .get(start.saturating_add(word.len())..)
-                .unwrap_or_default();
-            rest.trim_start_matches(|letter: char| {
-                letter.is_whitespace() || letter == '_' || letter == '-'
-            })
-            .starts_with("limit")
-        })
+// the openai SDK's APIStatusError: str(e) is "Error code: {status} - {body}" and e.body is the error object, or the whole body without one
+fn raw_exception(response: &UpstreamResponse, error_body: ErrorBodyKind) -> RawException {
+    let body = match error_body {
+        // LiteLLM's embedding wrapper preserves error text but omits the SDK's structured body.
+        ErrorBodyKind::MessageOnly => None,
+        ErrorBodyKind::Structured => sdk_body(&response.body),
+    };
+    RawException {
+        model: String::new(),
+        custom_llm_provider: "openai".to_owned(),
+        error_str: format!(
+            "Error code: {} - {}",
+            response.status,
+            str::from_utf8(&response.body).unwrap_or_default()
+        ),
+        status_code: Some(response.status),
+        status_code_is_synthesized: false,
+        message: None,
+        body,
+        exception_type: String::new(),
     }
 }
 
-fn context_window_exceeded(lower: &str) -> bool {
-    if lower.contains("string_above_max_length")
-        || (lower.contains("invalid 'user'") && lower.contains("string too long"))
-    {
-        return false;
-    }
-    CONTEXT_WINDOW_PHRASES
-        .iter()
-        .any(|phrase| lower.contains(phrase))
-        || (lower.contains("current length is") && lower.contains("while limit is"))
-        || (lower.contains("maximum input length is") && lower.contains("tokens"))
-}
-
-fn content_policy_violation(body: &str, lower: &str) -> bool {
-    if body.contains("invalid_request_error") && body.contains("content_policy_violation") {
-        true
-    } else {
-        (body.contains("Invalid prompt") && body.contains("violating our usage policy"))
-            || lower.contains("request was rejected as a result of the safety system")
-    }
+fn sdk_body(bytes: &[u8]) -> Option<RawExceptionBody> {
+    let data = serde_json::from_slice::<Value>(bytes).ok()?;
+    let error = data.get("error").unwrap_or(&data).as_object()?;
+    let text = |name: &str| error.get(name).and_then(Value::as_str).map(str::to_owned);
+    Some(RawExceptionBody {
+        kind: text("type"),
+        param: text("param"),
+        code: text("code"),
+        message: text("message"),
+        error: None,
+    })
 }
 
 mod tests;

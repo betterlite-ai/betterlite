@@ -1,0 +1,5 @@
+kind: helper
+name: openai-threads-seed-get-messages
+call: {openai_threads: {get_messages: {options: {api_key: sk-seed, api_base: 'https://example.test/v1'}, thread_id: thread_1, aget_messages: false, reply: {status: 200, body: '{"object":"list","data":[],"first_id":null,"last_id":null,"has_more":false}'}}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,7 @@
+kind: helper
+name: cooldown_observes_other_login
+call:
+  chatgpt_token_store: {"record": "{\"device_code_requested_at\": \"900\"}", "replacement": "{\"access_token\": \"new\", \"expires_at\": 2000, \"id_token\": \"h.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOiB7ImNoYXRncHRfYWNjb3VudF9pZCI6ICJhY2N0LWlkIn19.unverified\"}", "now": 1000.125, "fail_write": false, "actions": ["cooldown", {"wait": 12.25}, "account", "record"]}
+env: {}
+compare:
+  ignore: []

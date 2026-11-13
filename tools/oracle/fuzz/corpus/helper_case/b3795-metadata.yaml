@@ -1,0 +1,11 @@
+# straiker_webhook_records: opaque metadata filtering with configured defaults
+kind: helper
+name: b3795-metadata-seed
+call:
+  b3795:
+    webhook_metadata:
+      request_data:
+        metadata: {agent_id: agent-1, session_id: session-1, region: eu-west, score: 0.5, active: true, nested: {a: 1}}
+      default_metadata: {tenant: acme}
+env: {}
+compare: {ignore: []}

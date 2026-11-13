@@ -1,0 +1,1 @@
+{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"hello","cache_control":{"type":"ephemeral"}}],"model":"claude-sonnet-4-5","llm_provider":"anthropic"}

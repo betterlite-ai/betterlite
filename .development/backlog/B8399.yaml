@@ -1,0 +1,15 @@
+id: B8399
+milestone: M8 platform
+title: Assemble ProxyLogging and wire its hooks into the proxy
+status: todo
+depends_on: [B8390, B8391, B8392, B8393, B8394, B8395, B8396, B8398, B8401, B6370, B189, B3771, B4021, B4058, B8464, B3680, B3705, B8611, B8740, B3055, B9320, B3704, B8890, B3031, B3046, B3047, B3048, B3049, B3054, B3122]
+file: tasks/B8399-proxy-logging-wiring.yaml
+covers:
+  - "litellm/proxy/utils.py"
+  - "litellm/proxy/hooks/__init__.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,395 @@
+id: B4581
+title: CLI interactive chat and HTTP request commands
+description: >-
+  Build the chat command and the http command group of betterlite-cli in Rust, ported from
+  LiteLLM's litellm/proxy/client/cli/commands/chat.py and http.py. chat lives in
+  crates/betterlite-cli/src/commands/chat.rs and chat/**, http in
+  crates/betterlite-cli/src/commands/http.rs and http/**. chat is a single clap::Args struct
+  (model as an optional positional argument, --temperature/-t a float defaulting to 0.7,
+  --max-tokens an optional integer, --system/-s an optional string) and a
+  run_chat_command(args, cli_context, client, terminal, conversation_store) -> Result<(), ChatError>
+  function; http is a clap::Subcommand enum with one Request variant (method and uri as
+  positional arguments, --data/-d and --json/-j as optional strings, --header/-H repeatable)
+  and a run_http_command(command, cli_context, client, stdout, stderr) -> Result<(), HttpError>
+  function. Both take B4560's CliContext (base_url, api_key) and the shared client B4580's
+  commands.rs builds around betterlite-http's ProxiedClient; neither opens its own client or re-reads base_url/api_key from anywhere
+  else. chat takes two more injected ports instead of touching a real terminal or the
+  filesystem directly: one for reading a line of input and writing output (a read that signals
+  end of input the way EOF does, a write for a full line, and a write for a fragment with no
+  trailing newline, for the streamed content), and one for saving and loading a conversation
+  file. Tests inject fakes for both, so none of chat's tests open a real terminal or write to
+  the real filesystem.
+
+  LiteLLM's Client, ChatClient, HTTPClient and ModelsManagementClient
+  (litellm/proxy/client/__init__.py, chat.py, http_client.py, models.py) are B169's Python
+  client package; this task ports only the requests chat.py and http.py actually send, built on
+  B4580's shared client, not those classes' full surface. ChatClient always sends
+  Content-Type: application/json (set as a header next to the serde_json body bytes, since
+  betterlite-http builds reqwest without its json feature) and Bearer
+  only when a key is given; its completions_stream POSTs {base}/chat/completions with model,
+  messages and stream: true, plus temperature whenever chat.py has a value (it always does,
+  since --temperature defaults to 0.7) and max_tokens only when --max-tokens is given.
+  top_p, n, presence_penalty, frequency_penalty and user are declared by ChatClient but chat.py
+  never supplies them, so this task never sends them. The response body is read as a byte
+  stream, not buffered into one Vec: the response ProxiedClient::execute returns goes into
+  betterlite-http's StreamResponse, and StreamResponse::body_stream yields each chunk as it's
+  read (betterlite-http already builds reqwest with its stream feature, so this task changes no
+  reqwest feature). ChatClient's timeout is 600 seconds, and requests applies it to the connect
+  and to each read, not to the whole reply, so the stream request carries no whole-request
+  timeout; tokio::time::timeout bounds the wait for the response head and for each next chunk
+  at 600 seconds instead. GET /models and http request use B4580's 30-second request timeout.
+  A chunk of bytes from the stream can split a line, or even the "data: " prefix, in half, so
+  the port buffers a partial line in memory until a newline completes it before handing that
+  complete line to the per-line decoder; requests' iter_lines() does this invisibly to chat.py.
+  For each complete line: an empty line is skipped, a line that doesn't start with "data: " is
+  skipped, the literal payload "[DONE]" (after trimming it) ends the stream, and any other
+  payload is parsed as JSON; a payload that isn't valid JSON is skipped, not an error (chat.py
+  silently continues past a JSON decode failure). A parsed chunk's first choice's delta content,
+  when present and non-empty, is appended to the turn's reply and written immediately as a
+  fragment with no trailing newline, the way console.print(content, end="") plus a flush does;
+  nothing else in the chunk is read. This per-line decode is a parser of bytes from outside
+  (a provider's or a gateway's streamed response reaches it unchanged), so it needs its own
+  cargo-fuzz target: a new fuzz_targets/stream_line.rs and [[bin]] entry in the existing
+  crates/betterlite-cli/fuzz/Cargo.toml (already a cargo-fuzz package with two targets from
+  B4573 and B4590), feeding arbitrary bytes to the public decode function, with a committed
+  seed corpus under crates/betterlite-cli/fuzz/corpus/stream_line/ and a test named
+  replays_the_stream_line_corpus that replays every file in it.
+
+  chat() resolves a model before building the chat client: with no MODEL argument, it sends
+  GET {base}/models through the shared client (Bearer when a key is given, no body) and reads
+  the typed response the way ModelsManagementClient.list() declares it, a JSON object with a
+  "data" array of model objects carrying an id and an owned_by string. Any failure reaching
+  that point (a non-2xx status, a transport error, or a response with no "data" field at all)
+  prints "Warning: Could not fetch models list: {error}" to stderr, with betterlite's own
+  error text, and falls back to an empty list; a response whose "data" parses but isn't a JSON
+  array (an object, a string, a number, a bool or null) falls back to an empty list too, but
+  prints nothing at all, since _get_available_models's own isinstance check for that case sits
+  outside its try/except. With models available, chat shows a comfy-table "Available Models"
+  table (Index, Model ID, Owned By columns, at most the first 200 rows, with a line noting how
+  many more there are past that) and prompts to pick one by index or type a model name; leaving
+  the prompt blank picks index 1 (_select_model's Prompt.ask default), an out-of-range index
+  re-prompts with a message naming the valid range, and reaching end of input cancels the pick
+  (prints a cancelled message, returns no model). With no models available, it prompts for a
+  model name directly instead; an empty answer there also counts as no model picked. When the
+  initial pick comes back empty, chat prints "No models available or could not fetch models
+  list." or "No model selected. Exiting." as chat.py does and the whole command returns without
+  entering its loop. Mid-session, the "/model" command repeats the same picker but reacts
+  differently to an empty pick: it just stays on the current model with no message at all,
+  where the startup picker exits the whole command.
+
+  The welcome message, help text and conversation history print as plain lines, not rich's
+  colored, boxed panels: the wording, the listed commands and their order stay chat.py's, only
+  the color, the box border and the markup are gone. The welcome line states the model, the
+  temperature and the max-tokens value (or "unlimited" when none was given); help lists every
+  "/" command; history numbers each turn and labels it System, You or Assistant, truncating an
+  assistant turn past 100 characters with a trailing "...". The main loop reads one line at a
+  time through the injected terminal port; reaching end of input there prints "Chat session
+  ended." and ends the loop the same way chat.py's except (EOFError, KeyboardInterrupt) at that
+  one read does. Special commands: "/quit", "/exit" and "/q" end the session with "Chat session
+  ended."; "/help" shows help; "/clear" empties the history (keeping the system message, when
+  one was given, as the sole entry); "/history" shows it; "/save <name>" and "/load <name>"
+  save and load the history as JSON through the injected conversation-file port, appending
+  ".json" to a name that doesn't already end with it; "/model" offers the picker. _save_conversation
+  and _load_conversation only ever look at the first two whitespace-split words of the input
+  line, so "/save a b c" still saves to "a.json"; a line that's just "/save" or "/load" with no
+  second word prints "Usage: /save <filename>" or "Usage: /load <filename>" and does nothing
+  else; a load whose file doesn't exist prints "File not found: {filename}" and otherwise
+  returns the system message alone (or an empty history, with no system message) rather than
+  touching the current history; any other load or save failure prints "Error saving
+  conversation: {error}" or "Error loading conversation: {error}". Separately, before any of
+  this special-command handling decides whether to run it, chat() also checks whether the raw
+  input text starts with one of nine prefixes ("/quit", "/exit", "/q", "/help", "/clear",
+  "/history", "/save", "/load", "/model") or is empty, and when it does, skips adding that line
+  to the conversation and skips sending it, regardless of whether the dispatch above actually
+  recognized it as one of its own commands. A normal line (one that isn't empty and doesn't
+  start with any of those nine prefixes) is appended to the history as a user turn and sent.
+
+  Any error inside the stream read (an HTTP error status or anything else, including a
+  transport failure) ends that one turn without ending the session: an HTTP error prints
+  "Error: HTTP {status}" to stderr, then the body's error.message field when the body parses
+  as JSON and has one (defaulting to "Unknown error" when it parses but that field is missing),
+  or the raw body text when it doesn't parse as JSON at all; any other error prints
+  "Error: {error}". Either way the turn produces no reply, so the main loop's own check for an
+  empty reply then prints "Error: No content received from the model" and goes on to the next
+  prompt. This error-printing belongs to chat.rs alone: it reads a narrower shape than the
+  shared HTTP-error printer commands.rs exposes for the other command modules (just
+  error.message, not the whole body), so chat.rs does not call that shared printer.
+
+  Ctrl+C gets no handling anywhere in this task: reaching end of input (handled above) still
+  ends the session the documented way, but an interrupt at the input prompt or during a
+  streamed reply just lets the process end through the OS's default SIGINT action, instead of
+  printing "Chat session ended." or "Chat session interrupted." the way Python's default signal
+  handler (turned into a raised exception console.input() and the outer loop already catch)
+  lets chat.py do. See deviations.
+
+  http is a group with one subcommand, request METHOD URI. Headers from repeated -H
+  "key:value" entries split on the first colon and trim both sides; an entry with no colon is a
+  usage error naming it. --json, when given, must parse as JSON (any JSON value, not only an
+  object) or it's a usage error naming the parse failure; that parsed value becomes the request
+  body. --data, when given and --json wasn't, is tried as JSON first (again, any JSON value)
+  and sent as that value when it parses, or sent as the original string when it doesn't; this
+  never errors. When both --data and --json are given, --json's value is sent and --data is
+  ignored (see deviations). The request body is genuinely unmodeled JSON, not a shape this
+  command can declare, so it is the one typed-wire passthrough field this task needs, with an
+  #[expect] that says why; the response body (parsed JSON, printed back pretty, two-space
+  indent, trailing newline, matching the convention B4579 already set for this family) is the
+  second. method is parsed into http::Method, the type reqwest re-exports; uri joins onto the shared client's
+  already-stripped base_url the way HTTPClient.request builds its URL: base_url + "/" + uri
+  with every leading "/" on uri removed, not just one (Python's str.lstrip('/') strips all of
+  them). The shared client, per B4580, already adds Authorization: Bearer {api_key} when a key
+  is given; it does this after any headers this command passes in for the request, so a
+  user-supplied "-H Authorization:..." header is silently overwritten by the real key whenever
+  one is configured, matching HTTPClient.request's own header-then-Bearer order. A successful
+  request prints the parsed response body as pretty JSON to stdout. An HTTP error status calls
+  the same shared HTTP-error-printing function commands.rs exposes for the rest of this crate
+  ("Error: HTTP {status}" to stderr, then the body as JSON when it parses or the raw text when
+  it doesn't) and returns the Aborted error variant; any other error (a bad method token, a
+  transport failure) returns a variant whose text the root prints as one line on stderr with
+  exit 1, the way an uncaught Python exception would already exit 1 with a traceback.
+scope:
+  paths:
+    - crates/betterlite-cli/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-cli/src/commands/chat.rs
+    - crates/betterlite-cli/src/commands/chat/**
+    - crates/betterlite-cli/src/commands/http.rs
+    - crates/betterlite-cli/src/commands/http/**
+    - crates/betterlite-cli/fuzz/Cargo.toml
+    - crates/betterlite-cli/fuzz/fuzz_targets/stream_line.rs
+    - crates/betterlite-cli/fuzz/corpus/stream_line/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L43-L56
+    why: _get_available_models, its broad catch, the Warning text and the list/dict filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L59-L109
+    why: _select_model, the empty-list text prompt, the table, the index/name loop and the KeyboardInterrupt cancel.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L112-L184
+    why: chat()'s options, the initial model resolution and exit path, client construction and the welcome panel's content.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L186-L245
+    why: The main loop, its EOF/KeyboardInterrupt catch, the special-command dispatch and its separate nine-prefix skip gate, and the outer KeyboardInterrupt catch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L248-L267
+    why: _show_help's listed commands and tips.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L270-L289
+    why: _show_history's per-role formatting and the 100-character assistant truncation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L292-L335
+    why: _save_conversation and _load_conversation, their usage messages, the .json suffix rule and the load failure fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L338-L376
+    why: _handle_special_commands, its exact-match and prefix-match dispatch and the /model switch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L379-L418
+    why: _stream_response, the body fields it sends, the SSE-style line loop, the content accumulation/printing and the two error branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/http.py#L1-L99
+    why: The whole http group and its one request command, option parsing, the client call, success and error output.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/chat.py#L10-L35
+    why: ChatClient's base URL strip and headers (Content-Type always, Bearer when a key is given), the reference for the requests chat.rs sends.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/chat.py#L110-L184
+    why: completions_stream's URL and body fields and the SSE line loop (the "data" prefix, the "[DONE]" sentinel, parse-or-skip).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/http_client.py#L9-L97
+    why: HTTPClient, the reference for http.rs's requests, the URL join (lstrip on uri), the header-then-Bearer order and raise_for_status plus json().
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/models.py#L35-L68
+    why: ModelsManagementClient.list, the reference for the GET /models request chat's model picker sends and its 401 mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/__init__.py#L1-L17
+    why: Confirms ChatClient and ModelsManagementClient are the two B169 pieces chat.py touches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/_cli_context.py#L1-L19
+    why: CliContextValues and cli_context_values; B4560 owns the Rust equivalent this task reads.
+  - url: https://github.com/betterlite-ai/betterlite/blob/a1684ff3e/crates/betterlite-http/src/proxy.rs#L141-L180
+    why: StreamResponse and its body_stream, the chunk stream chat reads the streamed reply from.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/chat.py#L11-L23
+    why: ChatClient's 600-second default timeout, which requests applies per connect and per read.
+dod:
+  - text: >-
+      chat resolves a model before opening a session: a GET /models failure (a non-2xx status,
+      a transport error, or a body with no "data" field) prints "Warning: Could not fetch
+      models list: {error}" and falls back to an empty list; a "data" that parses but isn't an
+      array falls back to an empty list with no message at all; either way the picker still
+      offers a plain-text prompt for a model name. With models, the picker shows a comfy-table
+      "Available Models" table capped at 200 rows, accepts an index or a name, defaults a blank
+      answer to index 1, re-prompts on an out-of-range index and cancels on end of input. An
+      empty pick exits the whole command at startup but is a silent no-op from "/model".
+    proof: [chat-models]
+  - text: >-
+      The main loop dispatches "/help", "/clear", "/history", "/save <name>", "/load <name>",
+      "/quit", "/exit" and "/q" the way chat.py's dispatcher does (exact match for most, prefix
+      match only for /save and /load), while a separate nine-prefix-or-empty check decides
+      whether a line reaches the conversation at all; a line that matches the outer check but
+      not the dispatcher (for example one starting with "/quitnow") is silently dropped instead
+      of becoming a chat message.
+    proof: [chat-commands]
+  - text: >-
+      /save and /load go through the injected conversation-file port, append ".json" to a name
+      that doesn't already end with it, print "Usage: /save <filename>" or "Usage: /load
+      <filename>" with no second word, "File not found: {filename}" for a missing load target,
+      and fall back to the system message alone (or an empty history) on any other load
+      failure, never touching the current history on a usage error.
+    proof: [chat-commands]
+  - text: >-
+      The chat completions request carries model, messages and stream: true, plus temperature
+      always and max_tokens only when given, and never top_p, n, presence_penalty,
+      frequency_penalty or user. Its response is read as a byte stream, buffers a line split
+      across two reads before decoding it, skips an empty or non-"data:" line, ends the stream
+      on a trimmed "[DONE]" payload, skips a payload that fails to parse as JSON, and otherwise
+      writes a non-empty delta content fragment immediately with no trailing newline.
+    proof: [chat-stream, chat-stream-corpus]
+  - text: >-
+      An HTTP error during the stream prints "Error: HTTP {status}" then the body's
+      error.message (or "Unknown error" when the body parses but lacks it) or the raw body
+      text when it doesn't parse as JSON; any other error prints "Error: {error}"; either way
+      the turn ends with no reply and the main loop prints "Error: No content received from the
+      model", never ending the session.
+    proof: [chat-stream]
+  - text: >-
+      The welcome line, help text and history view keep chat.py's wording, listed commands and
+      order as plain lines with no color, box border or markup; the welcome line shows
+      "unlimited" only when --max-tokens was not given.
+    proof: [chat-session]
+  - text: >-
+      Reaching end of input at the per-turn prompt prints "Chat session ended." and ends the
+      session normally; Ctrl+C there or during a streamed reply has no handling at all and lets
+      the process end through the OS default action instead of printing a message.
+    proof: [chat-session]
+  - text: >-
+      http request parses -H "key:value" headers (a usage error naming any entry with no
+      colon), tries --json first when given (a usage error naming any parse failure), falls
+      back to trying --data as JSON and then as a raw string when --json was not given, and
+      sends --json's value over --data's when both are given.
+    proof: [http-request-build]
+  - text: >-
+      http request's method is parsed into http::Method, and its uri joins onto the
+      shared client's stripped base_url with every leading "/" removed, not just one; a
+      user-supplied -H "Authorization:..." header is overwritten by the shared client's own
+      Bearer header whenever a key is configured.
+    proof: [http-request-build]
+  - text: >-
+      A successful http request prints the parsed response as pretty JSON; an HTTP error calls
+      commands.rs's shared error printer and returns Aborted; any other error returns a variant
+      whose text the root prints as one stderr line with exit 1.
+    proof: [http-request-errors]
+checks:
+  optional: []
+  commands:
+    - id: chat-models
+      why: the model-fetch and picker tests are missing or a fetch failure, an empty list, the table or the index/name/default/cancel behavior differs from the description
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::chat::.*tests::models_/)'
+    - id: chat-commands
+      why: the special-command tests are missing or a dispatch, the nine-prefix skip gate, or /save, /load or /model differs from the description
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::chat::.*tests::commands_/)'
+    - id: chat-stream
+      why: the streaming tests are missing or the request body, the line buffering, the per-line decode or either error path differs from the description
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::chat::.*tests::stream_/) - test(replays_the_stream_line_corpus)'
+    - id: chat-stream-corpus
+      why: the stream_line fuzz target or its corpus is missing, so the per-line decoder has no fuzz coverage
+      run: >-
+        test -f crates/betterlite-cli/fuzz/fuzz_targets/stream_line.rs && test -n
+        "$(ls -A crates/betterlite-cli/fuzz/corpus/stream_line)" && cargo nextest run --locked
+        -p betterlite-cli --no-tests=fail -E 'test(replays_the_stream_line_corpus)'
+    - id: chat-session
+      why: the welcome line, help, history or the end-of-input and Ctrl+C behavior differs from the description
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::chat::.*tests::session_/)'
+    - id: http-request-build
+      why: header, --json/--data or method/uri handling is missing or differs from the description
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::http::.*tests::request_build_/)'
+    - id: http-request-errors
+      why: the success or error output path is missing or differs from the description
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^commands::http::.*tests::request_error_/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      When both --data and --json are given to http request, betterlite always sends --json's
+      value and ignores --data, instead of requests' own rule (a truthy data value wins over
+      json, but an empty-string data value doesn't, since requests checks "if not data").
+    why: >-
+      That precedence is an accident of the requests library's own body-encoding branch, not
+      something LiteLLM declares, and nothing sends both flags on one call on purpose; one
+      deterministic rule beats porting a Python truthiness check docs/compatibility.md already
+      puts outside the contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/http_client.py#L76-L91
+  - what: >-
+      chat's welcome message, help text and history view print as plain lines: the wording, the
+      listed commands and the order stay chat.py's, but the color, the box border around the
+      welcome and help panels, and rich's inline markup are gone, and the Available Models
+      table is drawn with comfy-table instead of rich's Table.
+    why: >-
+      Matches the plain, uncolored convention this family's other tables already use (B4579,
+      B4580); nothing a person reads depends on color or a box border, and chat has no
+      --format json escape hatch the way the table commands do, so the content itself is
+      unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L174-L184
+  - what: >-
+      Ctrl+C has no handling anywhere in chat: it ends the process through the OS's default
+      SIGINT action at the per-turn prompt and during a streamed reply alike, instead of
+      printing "Chat session ended." or "Chat session interrupted." and returning normally.
+      Reaching end of input still ends the session with "Chat session ended." and a normal
+      exit, since that needs no signal handling.
+    why: >-
+      Both of chat.py's Ctrl+C messages exist only because Python's default signal handler
+      turns SIGINT into a raised exception that console.input() and the chat loop already
+      catch; Rust installs no such handler by default. Trapping a real OS signal around an
+      interactive-only command isn't wire format, a header, a status code or a config default
+      a script depends on, and the injected terminal port already covers the one case that
+      doesn't need a signal (end of input) through its own return value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L189-L193
+out_of_scope:
+  - >-
+    Client, ChatClient, HTTPClient and ModelsManagementClient as importable Python classes stay
+    B169's reference (the M12 Python package); this task builds the Rust equivalent of only the
+    requests chat.py and http.py send, on the shared client B4580 builds.
+  - >-
+    UnauthorizedError's 401-specific text and redaction (exceptions.py) is not built: chat.py's
+    model fetch and stream calls catch it through the same broad except branch as every other
+    error, with no 401-specific message of its own.
+  - The CLI context values base_url and api_key and the config file they come from are B4560's.
+  - >-
+    crates/betterlite-cli/src/commands.rs declares the chat and http modules and holds the
+    shared client and shared HTTP-error printer this task's requests go through; B4580 owns
+    that file.
+  - The main CLI entry point and command registration are B134's.
+  - >-
+    commands::models (the "models" command group) is a different concern from chat's own
+    internal GET /models call for its picker, and stays B4578's.
+pitfalls:
+  - >-
+    The outer loop's skip gate checks startswith against all nine command prefixes, but the
+    dispatcher only matches most of them exactly and only /save and /load by prefix, so
+    "/quitnow" or "/modeling" matches the outer gate, dispatches to nothing, and is silently
+    dropped instead of being sent as a chat message.
+  - >-
+    A /models response whose call succeeds but whose "data" field isn't a JSON array prints no
+    warning at all and just falls back to an empty list; only a transport failure, a non-2xx
+    status, or a response with no "data" field at all prints the "Warning: Could not fetch
+    models list" line.
+  - >-
+    /model mid-session stays on the current model with no message at all on a blank or
+    cancelled pick, while the same blank-or-cancelled pick at startup exits the whole command;
+    both share the same picker and only differ in how the caller reacts to no pick.
+  - >-
+    chat's own stream-error printer reads only the body's error.message field (with an
+    "Unknown error" default), not the whole body the way commands.rs's shared HTTP-error
+    printer does for every other command module; don't reuse that shared printer here.
+  - >-
+    A streamed reply's HTTP error or any other error during the read ends only that one turn;
+    the main loop then prints "Error: No content received from the model" next and keeps the
+    session going, so neither error path ever ends the chat session.
+  - >-
+    StreamResponse::body_stream can split a line, or even the "data: " prefix, across two chunks;
+    buffer a partial line until a newline completes it before handing it to the per-line
+    decoder, which the fuzz target and corpus exercise but line-reassembly across chunk
+    boundaries does not, so a hand-written test must cover a line split across two feeds.
+  - >-
+    A user-supplied -H "Authorization:..." header on http request is overwritten by the shared
+    client's own Bearer header whenever an api_key is configured, because HTTPClient applies
+    the caller's headers first and sets Authorization afterward only when a key is present.
+  - >-
+    http's uri joins onto base_url with every leading "/" stripped, not just one:
+    str.lstrip("/") removes all of them, so "//foo" joins as "{base}/foo", not "{base}//foo".
+  - >-
+    --json's parse accepts any JSON value, not only an object: --json "123" sends the request
+    body as the bare number 123, and the same is true of --data once it falls through to being
+    parsed as JSON.
+  - >-
+    deny.toml lets only betterlite-http, betterlite-oracle and betterlite-guardrails depend on
+    reqwest, so this task's Cargo.toml change never adds reqwest. The client, StreamResponse and
+    http::Method all come through B4580's shared client, betterlite-http and the http crate
+    B4580 adds.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 2

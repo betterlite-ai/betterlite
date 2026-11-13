@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-ai-failed-task
+call: {b4806: {mode: non_streaming, request_id: req-5, api_base: "http://agent.test", params: {message: {role: user, parts: []}}, kwargs: {}, responses: [{body: {result: {id: task-9, status: {state: submitted}}}}, {body: {result: {id: task-9, status: {state: canceled}}}}]}}
+env: {}
+compare: {ignore: []}

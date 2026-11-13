@@ -1,0 +1,9 @@
+kind: helper
+name: tpm-limit-per-model-float-error
+call:
+  resolved_key:
+    function: auth
+    value:       {tpm_limit_per_model: {gpt-4: 1.5}}
+env: {}
+compare:
+  ignore: []

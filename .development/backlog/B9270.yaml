@@ -1,0 +1,13 @@
+id: B9270
+milestone: M4 keys, spend and management
+title: Daily spend rows for independent HTTP oracle databases
+status: done
+depends_on: [B001, B860]
+file: tasks/B9270-daily-usage-fixtures.yaml
+covers: []
+parent: B074
+split_from: B074
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 1254

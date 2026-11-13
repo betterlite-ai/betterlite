@@ -1,0 +1,49 @@
+kind: helper
+name: count-endpoint
+call:
+  anthropic_count_tokens:
+    function: handle
+    cases:
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          api_key: sk-count-endpoint
+          api_base: null
+          timeout: null
+          environment:
+            ANTHROPIC_API_BASE: http://env.example/count
+            ANTHROPIC_BASE_URL: http://env.example/count
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          api_key: sk-count-endpoint
+          api_base: ''
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          api_key: sk-count-endpoint
+          api_base: https://proxy.example/v1/messages/count_tokens?beta=1
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          api_key: sk-count-endpoint
+          api_base: http://custom.example
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          api_key: sk-count-endpoint
+          timeout: 0
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          api_key: sk-count-endpoint
+          request_timeout: 17
+          timeout: null
+          reply: {status: 200, body: '{"input_tokens":5}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          api_key: sk-count-endpoint
+          request_timeout: 17
+          timeout: 2
+          reply: {status: 200, body: '{"input_tokens":5}'}
+env: {}
+compare: {ignore: []}

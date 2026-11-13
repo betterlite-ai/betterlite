@@ -114,7 +114,7 @@ pub fn build_chat_payload(inputs: ChatPayloadInputs) -> ChatPayload {
 pub fn normalize_rule(rule: &Rule) -> WireRule {
     let entity_types = (!rule.entity_types.is_empty()).then(|| rule.entity_types.clone());
     WireRule {
-        rule_name: Some(rule.rule_name.clone()),
+        rule_name: rule.rule_name.clone(),
         entity_types,
         rule_id: rule.rule_id.clone(),
         classification: rule.classification.clone(),

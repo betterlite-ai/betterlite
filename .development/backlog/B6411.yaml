@@ -1,0 +1,14 @@
+id: B6411
+milestone: M3 providers
+title: Sail chat and Responses requests with completion windows
+status: todo
+depends_on: [B668, B503, B504, B506, B507, B508, B1424, B1426, B184, B171]
+file: tasks/B6411-sail-chat-responses.yaml
+covers:
+  - "litellm/llms/sail/**"
+parent: B039
+split_from: B039
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

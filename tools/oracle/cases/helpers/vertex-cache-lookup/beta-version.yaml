@@ -1,0 +1,9 @@
+kind: helper
+name: vertex-cache-lookup-beta-version
+call:
+  vertex_cache_lookup:
+    targets:
+      - {provider: vertex_ai_beta, api_base: null, project: proj, location: us-central1, auth: token-beta, gemini_api_key: null, model: gemini-2.5-flash}
+      - {provider: vertex_ai_beta, api_base: null, project: proj, location: europe-west1, auth: null, gemini_api_key: null, model: gemini-2.5-flash}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: core-tools-first
+call: {"mcp_search_primitives": {"core": {"core_tools": ["second", "second"], "tools": [{"name": "first", "inputSchema": {}}, {"name": "second", "inputSchema": {}}, {"name": "third", "inputSchema": {}}]}}}
+env: {}
+compare: {ignore: []}

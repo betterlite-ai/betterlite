@@ -97,8 +97,8 @@ oracle_cases:
   - tools/oracle/cases/helpers/pass-through-registry/method-and-order.yaml
 deviations: []
 out_of_scope:
-  - B102 owns all other pass_through_endpoints.py functions and installs the registered HTTP handlers.
-  - B124 owns other utils.py functions except the explicitly assigned database/auth helpers; its root
+  - B3600 and B3607 to B3617 own the other pass_through_endpoints.py functions, B8520 the config write routes; B3615 and B3616 build and install the registered HTTP handlers.
+  - The other utils.py functions belong to the tasks that cover proxy/utils.py (B7323, B2320, B2362, B2400 and B8390 to B8401), not B124; their root
     path callers consume this task's normalization rather than owning another implementation.
   - B883 owns route-grant enforcement and the auth=true decision after metadata lookup.
 pitfalls:

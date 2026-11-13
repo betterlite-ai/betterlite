@@ -1,0 +1,269 @@
+id: B040
+title: Compatible self-hosted inference and hosted-vLLM media HTTP parity
+description: >-
+  Finish the self-hosted umbrella with HTTP verification of its existing components.
+  B8150 to B8157 planned helper cases, leaving the booted proxy untested for these
+  providers. Their transforms and dispatch already have owners. The only exclusively
+  claimed source left here is hosted_vllm/embedding/README.md, whose important contract
+  is that hosted_vllm embeddings do not apply the OpenAI encoding-format default.
+  Add cases for that distinction, compatible server chat/embedding calls and the
+  hosted-vLLM media configurations. B9200 independently covers native Ollama, Triton,
+  Petals and dynamic model metadata. No route, provider registry or production module
+  is added here; report a failing implementation to its named owner.
+
+  All cases are kind: http and run against the booted betterlite binary and pinned
+  LiteLLM using the existing oracle, never --self-check as the task's parity proof.
+  Use general_settings.master_key=sk-test, router_settings.num_retries=0, explicit
+  model_info.id values, a fixed x-litellm-call-id and model_list deployment aliases.
+  Provider URLs come from litellm_params.api_base or a named environment variable set
+  to {{upstream}}. Disable background health checks. The cases compare upstream
+  method/path/body, Authorization and content-type where applicable, the response
+  status/body/content-type and stable x-litellm-* headers. Keep error type, param and
+  code; ignore /error/message with the reason that betterlite writes its own prose.
+  Generated request ids, timing fields and timestamps use only narrow documented
+  ignores. Keep response usage, provider model names and upstream paths visible.
+
+  Compatible chat. hosted-chat uses hosted_vllm/test-chat with a named custom tool,
+  strict/additionalProperties in its schema and a user file content item whose format
+  is video/mp4 and file_data is a data URI. Compare the upstream function tool and
+  video_url item, and exercise thinking with an explicit reasoning_effort so the
+  explicit choice wins. Include an assistant text/tool_use content list and an
+  existing tool-call id to prove the actual B8150 message conversion runs.
+  docker-chat uses docker_model_runner/ai/test, a content list and
+  max_completion_tokens=7: the configured base ends /engines/llama.cpp/ and the target
+  is /engines/llama.cpp/v1/chat/completions with max_tokens=7 and string content.
+  llamafile-chat checks the configured key and /v1/chat/completions path.
+  lm-studio-chat uses response_format={type: json_schema, schema: {type: object}}
+  and checks wrapping under json_schema.schema. oobabooga-chat sets an explicit key
+  but verifies that _complete_oobabooga's api_key=None prevents a Token header on
+  chat; the base has no /v1 suffix because that handler appends /v1/chat/completions.
+  lemonade-chat compares the response model lemonade/test-chat, even when the mock's
+  OpenAI-shaped reply names a different model. These calls also prove B2230's selected
+  configurations reach B8157 instead of falling through to plain OpenAI execution.
+
+  The existing chat aliases are POST /v1/chat/completions, /chat/completions,
+  /engines/{model:path}/chat/completions and
+  /openai/deployments/{model:path}/chat/completions. Distribute the six chat cases
+  across all four, with path models naming configured public aliases. This task never
+  registers any alias again. Defaults exercised by these calls remain in their
+  existing configuration owners: HOSTED_VLLM_API_BASE has no default and
+  HOSTED_VLLM_API_KEY falls back to fake-api-key; Docker uses
+  http://localhost:22088/engines/llama.cpp and dummy-key; llamafile uses
+  http://127.0.0.1:8080/v1 and fake-api-key; LM_STUDIO_API_BASE is unset and its key
+  falls back to fake-api-key. Lemonade's base defaults to http://localhost:8000/api/v1
+  and its metadata sentinel key is lemonade. Explicit mock bases prevent connections
+  to any of those default services. The cases consume existing loaders, not new keys.
+
+  Embedding cases use POST /v1/embeddings, /embeddings,
+  /engines/{model:path}/embeddings and /openai/deployments/{model:path}/embeddings.
+  hosted-embedding configures a base ending /v1/embeddings/ and no provider key,
+  sends a string input and sets LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT=base64.
+  The outbound URL has only one embeddings suffix, input is a list, the provider
+  prefix is removed and neither encoding_format nor Authorization is injected.
+  A second step explicitly sets encoding_format=float and dimensions=2 and verifies
+  those fields survive. compatible-embeddings exercises separate llamafile and
+  lm_studio deployments through B1440's shared embedding call with model/input,
+  explicit deployment keys and extra_headers; compare the actual missing-only
+  credential and header forwarding without applying their chat defaults to embeddings.
+  xinference-embedding omits its provider key and checks stub-xinference-key at the
+  configured base. oobabooga-embedding uses a key, receives Token rather than Bearer,
+  forwards input without a model field, and returns two upstream embeddings: the
+  response uses only the first vector and computes usage from its length.
+
+  The README matrix uses openai/test-embed with the mock serving the compatible
+  embedding endpoint. encoding-request sets request=float, deployment=base64 and
+  environment=base64; encoding-config omits the request value and sets
+  litellm_params.encoding_format=float with environment=base64; encoding-env has
+  only LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT=float; encoding-omitted leaves all
+  three absent; encoding-none uses the literal none as the winning deployment value
+  over environment=base64. The first three forward float, and the last two omit the
+  field, including the SDK's implicit base64 default. Compare outbound bodies, not
+  just the returned vectors. Source ownership stays B024's OpenAI embedding composition
+  and B006's transport; B8157/B8150 own the separate hosted path. No default is
+  invented for LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT, which is unset by default.
+
+  Media cases use B8151 via the already selected API families. rerank sends query,
+  documents, top_n and valid truncation fields to hosted_vllm/test-rerank, with a
+  configured base ending /v1/rerank. Check rewriting to /rerank, no null options in
+  the body, and usage.total_tokens becoming both billed_units.total_tokens and
+  tokens.input_tokens. Set a caller-supplied provider Authorization header and verify
+  it takes precedence. rerank-invalid uses an invalid truncation_side and compares
+  the 400 error with no provider request. responses uses hosted_vllm/test-responses
+  and a base ending /v1/: the provider receives /v1/responses and Bearer fake-api-key
+  when no key is set, unlike keyless hosted embeddings. Return a valid fixed Responses
+  object, preserving its output, status and usage rather than a chat-shaped reply.
+
+  image-edit uses B900 multipart input with a tiny valid PNG, prompt, model and size;
+  the target is /v1/images/edits with a configured bearer key. A second step requests
+  quality with drop_params=false and checks the unsupported-param result before any
+  provider request. transcription uploads a tiny valid WAV with language and prompt,
+  configured base={{upstream}} rather than {{upstream}}/v1, and compares the multipart
+  request at /v1/audio/transcriptions and the returned text. video sends prompt,
+  width, height, num_frames, generate_sound=false and structured extra_params to
+  /v1/videos and checks form serialization, including the literal false string and
+  structured JSON field; no input_reference is required. video-unsafe sends a
+  structured image_reference containing image_url=http://127.0.0.1/private and
+  requires the same rejection as the pinned provider with no media fetch or video
+  request. This tests an existing B8151 validation rule, not a new permission policy.
+  decisions makes both OpenAI-format and SystemOne-format requests to hosted_vllm
+  with a named choice question, uses B3510's declared request/response records and
+  verifies B3513/B3514's selected config, upstream /v1/systemone URL and absent
+  Authorization when the placeholder key resolves to None. xinference-image sends prompt, n, size and
+  response_format through the generation route and compares the existing selected
+  XInferenceImageGenerationConfig's options and returned image data.
+
+  Use steps for media aliases under the same config: rerank is POST /v2/rerank,
+  /v1/rerank and /rerank; Responses is POST /v1/responses, /responses and
+  /openai/v1/responses; image edits is POST /v1/images/edits, /images/edits and
+  /openai/deployments/{model:path}/images/edits; generation has the same three forms
+  ending /images/generations. Transcription is POST /v1/audio/transcriptions and
+  /audio/transcriptions; video create is POST /v1/videos and /videos; decisions is
+  POST /v1/decisions and /decisions; SystemOne is POST /v1/systemone and /systemone.
+  Route owners already supply their other verbs and resource routes. The media-auth
+  case repeats these representative family calls without a key and compares 401
+  without an upstream call. upstream-error supplies a hosted-vLLM 429 with a fixed
+  provider request-id header and checks the public error and retry/header projection
+  with retries disabled. These are real HTTP errors, not helper exception classes.
+
+  Keep the PNG/WAV fixtures in
+  tools/oracle/fixtures/multipart-oracle/self-hosted-compatible; fixture names are
+  relative to multipart-oracle, such as self-hosted-compatible/image.png. Existing multipart
+  and case decoders suffice, so there is no new byte parser or fuzz target. There
+  are zero new LiteLLM implementation lines; roughly 750 lines of compact fixtures
+  and alias steps fit this part. The independent native-protocol fixture work is
+  split into B9200 to keep either worker below the fixture budget.
+scope:
+  paths:
+    - tools/oracle/cases/self-hosted-compatible/**
+    - tools/oracle/fixtures/multipart-oracle/self-hosted-compatible/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/embedding/README.md#L1-L15
+    why: The umbrella's remaining exclusively claimed file specifies the OpenAI encoding-format precedence and the separate hosted-vLLM behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6504-L6596
+    why: Existing OpenAI embedding encoding resolution and separate hosted-vLLM dispatch, exercised without taking their implementation ownership.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6613-L6644
+    why: B1440's shared llamafile/lm_studio embedding call, selected by B8157.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7093-L7112
+    why: Xinference embedding's configured base and stub-xinference-key fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/chat/transformation.py#L31-L239
+    why: B8150 tools, thinking and message conversion reached by the chat case.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/embedding/transformation.py#L40-L176
+    why: Keyless embedding headers, URL suffix and request fields owned by B8150.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/docker_model_runner/chat/transformation.py#L40-L136
+    why: B8152 Docker content, URL and token-parameter mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/llamafile/chat/transformation.py#L8-L43
+    why: Llamafile configured credentials and defaults, already assigned to B8152.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lm_studio/chat/transformation.py#L12-L49
+    why: LM Studio schema wrapping and provider settings implemented by B8152.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oobabooga/chat/oobabooga.py#L18-L160
+    why: Chat and embedding use different URL, auth and response projections under B8152/B8157.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/oobabooga/chat/transformation.py#L31-L98
+    why: Oobabooga reply usage and Token authentication, rather than Bearer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lemonade/chat/transformation.py#L208-L255
+    why: Existing Lemonade configuration and prefixed reply model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/rerank/transformation.py#L41-L244
+    why: Truncation validation, rerank URL, header precedence and response usage from B8151.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/responses/transformation.py#L17-L73
+    why: Hosted Responses uses a placeholder bearer and its own URL convention.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/image_edit/transformation.py#L6-L43
+    why: B8151 removes quality, mask and input_fidelity from supported edit parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/transcriptions/transformation.py#L29-L65
+    why: Full transcription URL suffix and file/data forwarding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/videos/transformation.py#L69-L204
+    why: Form value serialization, media URL validation, auth and video creation already owned by B8151.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/decisions/transformation.py#L8-L26
+    why: Optional hosted decision credentials turn the placeholder key into None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L300-L342
+    why: B3511's inherited /v1/systemone URL and conditional bearer header, used by both public formats.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xinference/image_generation/transformation.py#L9-L38
+    why: B8152's image generation configuration preserves supported options and rejects unsupported ones.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L12102
+    why: Existing chat route decorators and aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12275-L12395
+    why: Existing embedding route decorators and aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rerank_endpoints/endpoints.py#L27-L136
+    why: B085 owns all three rerank paths; B8636 supplies its production router port.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L194-L458
+    why: B080 owns the three Responses creation paths and composition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L67-L353
+    why: B082 generation and edit route decorators, including deployment aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12655-L12803
+    why: B083 transcription decorators and multipart boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L33-L119
+    why: B3343 owns both video creation paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/decisions_endpoints/endpoints.py#L173-L256
+    why: B8276 owns Decisions/SystemOne decorators and B8634 mounts them.
+dod:
+  - text: Compatible chat calls select the self-hosted transforms through the existing aliases and preserve tool, schema, URL, credential and response-model behavior.
+    proof: [chat-cases, oracle]
+  - text: Hosted, llamafile, LM Studio, Xinference and Oobabooga embedding requests reach their actual handlers, including their different authorization and usage rules.
+    proof: [embedding-cases, oracle]
+  - text: The README encoding-format precedence is observable on the OpenAI-compatible upstream request while hosted_vllm does not inject the environment default.
+    proof: [encoding-cases, embedding-cases, oracle]
+  - text: All hosted-vLLM media configurations and Xinference image generation work through the already registered public route aliases and preserve validation failures before upstream traffic.
+    proof: [media-cases, oracle]
+  - text: Proxy authentication and a provider 429 retain status, error type, param, code and stable headers without exposing configured credentials.
+    proof: [error-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: chat-cases
+      why: The compatible chat adapters need new booted-proxy proof beyond their helper corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/self-hosted-compatible/chat)"
+    - id: embedding-cases
+      why: An OpenAI-only embedding case cannot establish the self-hosted handlers' distinct auth and response shaping.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/self-hosted-compatible/embedding)"
+    - id: encoding-cases
+      why: The remaining README contract needs requests proving the precedence and omission rules.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/self-hosted-compatible/encoding)"
+    - id: media-cases
+      why: Provider helper transforms must be exercised behind the public API-family routes.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/self-hosted-compatible/media)"
+    - id: error-cases
+      why: Successful requests alone do not prove authentication or provider error projection.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/self-hosted-compatible/errors)"
+oracle_cases:
+  - tools/oracle/cases/self-hosted-compatible/chat/hosted-chat.yaml
+  - tools/oracle/cases/self-hosted-compatible/chat/docker-chat.yaml
+  - tools/oracle/cases/self-hosted-compatible/chat/llamafile-chat.yaml
+  - tools/oracle/cases/self-hosted-compatible/chat/lm-studio-chat.yaml
+  - tools/oracle/cases/self-hosted-compatible/chat/oobabooga-chat.yaml
+  - tools/oracle/cases/self-hosted-compatible/chat/lemonade-chat.yaml
+  - tools/oracle/cases/self-hosted-compatible/embedding/hosted-embedding.yaml
+  - tools/oracle/cases/self-hosted-compatible/embedding/compatible-embeddings.yaml
+  - tools/oracle/cases/self-hosted-compatible/embedding/xinference-embedding.yaml
+  - tools/oracle/cases/self-hosted-compatible/embedding/oobabooga-embedding.yaml
+  - tools/oracle/cases/self-hosted-compatible/encoding/encoding-request.yaml
+  - tools/oracle/cases/self-hosted-compatible/encoding/encoding-config.yaml
+  - tools/oracle/cases/self-hosted-compatible/encoding/encoding-env.yaml
+  - tools/oracle/cases/self-hosted-compatible/encoding/encoding-omitted.yaml
+  - tools/oracle/cases/self-hosted-compatible/encoding/encoding-none.yaml
+  - tools/oracle/cases/self-hosted-compatible/media/rerank.yaml
+  - tools/oracle/cases/self-hosted-compatible/media/rerank-invalid.yaml
+  - tools/oracle/cases/self-hosted-compatible/media/responses.yaml
+  - tools/oracle/cases/self-hosted-compatible/media/image-edit.yaml
+  - tools/oracle/cases/self-hosted-compatible/media/transcription.yaml
+  - tools/oracle/cases/self-hosted-compatible/media/video.yaml
+  - tools/oracle/cases/self-hosted-compatible/media/video-unsafe.yaml
+  - tools/oracle/cases/self-hosted-compatible/media/decisions.yaml
+  - tools/oracle/cases/self-hosted-compatible/media/xinference-image.yaml
+  - tools/oracle/cases/self-hosted-compatible/errors/media-auth.yaml
+  - tools/oracle/cases/self-hosted-compatible/errors/upstream-error.yaml
+deviations: []
+out_of_scope:
+  - "The README contains no functions. Implementation of hosted chat/embedding belongs to B8150; hosted rerank, Responses, image edit, transcription, video and decisions to B8151; Docker, llamafile, LM Studio, Oobabooga, Xinference and Lemonade cost to B8152. References to those files are HTTP test context, not another implementation claim."
+  - "The three initializer factories get_hosted_vllm_image_edit_config, get_hosted_vllm_video_config and get_xinference_image_generation_config construct B8151/B8152 configs at the B5360/B3332 selector seams. Retain those concrete constructions; a one-line Python factory needs no new Rust wrapper."
+  - "B8157 owns the eight self-hosted _complete_* functions and embedding dispatch arms in main.py, Lemonade custom_llm_provider/get_config/get_models/transform_response and Ollama listing. B1440 owns the shared llamafile/lm_studio embedding branch. The OpenAI encoding resolution is B024 composition over B006; B044 applies the same main.py branch to litellm_proxy. B2220/B2224 retain Lemonade constructors/metadata."
+  - "B010 owns the closed executable provider/operation registries. Preregistering B8157's missing self_hosted_dispatch seam is an architect correction recorded in the planner report; neither HTTP fixture task edits those shared files."
+  - "All other main.py functions retain their existing owners, enumerated in B024's function inventory; this task's covers no longer claim main.py. utils.py parameter dispatch remains B5363/B175 and selection remains B2230/B5360/B3332/B3513. B1686 owns calling Lemonade cost_per_token."
+  - "B004/B005/B006, B080, B082, B083, B085 and B3343 own the inference route families. B8610 owns root composition, B8634 Decisions/SystemOne mounting and B8636 production rerank/Responses ports. B8626/B8701/B8728 mount MCP, not self-hosted provider routes. B8609 with B8640/B8690 already owns the VLLM passthrough route and its HTTP cases."
+  - "B9200 owns native Ollama/Triton/Petals and dynamic metadata HTTP cases; B8153/B8154/B8155/B8156 and B2223 implement them. vllm in-process and Petals local inference retain B8153's existing unapproved error-policy question, not a new deviation here. Python provider type exports remain B7929."
+pitfalls:
+  - "The README's encoding-format environment fallback belongs to the OpenAI embedding branch; applying it to hosted_vllm would break servers that reject the field."
+  - "Hosted-vLLM embeddings omit the fake-api-key bearer while Responses and rerank send it; a shared fake-key rule would erase this difference."
+  - "The hosted transcription URL always appends /v1/audio/transcriptions unless already complete, so a base ending /v1 would produce /v1/v1/audio/transcriptions."
+  - "Oobabooga's chat dispatch deliberately passes no key, but its embedding dispatch forwards the key as Token; the two cases must not share an expected header."
+  - "The video reference rejection must occur before any upstream call; a returned 4xx from a mock video service would not prove that check."
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

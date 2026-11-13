@@ -1,0 +1,12 @@
+kind: helper
+name: passthrough-metadata-denied
+call:
+  management_guards:
+    calls:
+      - {function: check_passthrough_routes, user_role: internal_user, metadata: {allowed_passthrough_routes: ["/v1/files"]}}
+      - {function: check_passthrough_routes, user_role: proxy_admin, metadata: {allowed_passthrough_routes: ["/v1/files"]}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/0/detail
+      why: betterlite writes its own message

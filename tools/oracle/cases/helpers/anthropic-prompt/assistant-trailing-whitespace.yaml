@@ -1,0 +1,15 @@
+kind: helper
+name: anthropic-prompt-assistant-trailing-whitespace
+call:
+  anthropic_prompt:
+    messages:
+      - {role: user, content: hi}
+      - {role: assistant, content: "first  "}
+      - {role: user, content: again}
+      - {role: assistant, content: "answer  \n\u001f"}
+    model: claude-sonnet-4-5
+    llm_provider: anthropic
+    modify_params: false
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,86 @@
+id: B8231
+title: Registry read-through and JSON merge patch
+description: >-
+  Build two small modules of betterlite-server: `registry_read_through` (litellm/proxy/common_utils/registry_read_through.py) and `json_merge_patch` (litellm/proxy/common_utils/json_merge_patch.py).
+
+  Why read-through exists. A management write (create model, guardrail or agent) lands on one replica and reaches Postgres, but sibling replicas only refresh their in-memory registries on the periodic reload. A request that uses the new object at once can reach a sibling that has never heard of it. On a registry miss the caller asks `RegistryReadThrough::attempt(key)`, which loads the one missing row from the database into the local registry, and the caller then looks again.
+
+  RegistryReadThrough. Generic over a port `trait Resync { async fn resync(&self, key: &str) -> Result<bool, ResyncError>; }` (native async fn in trait, no boxing; true means the object was found and loaded). Fields: the resync, miss_ttl (default 2 s), max_resyncs_per_window (default 20), window (default 5 s), a `tokio::sync::Mutex<State>` and in the state a map key to expiry for recent misses plus window_started_at and window_resyncs. Constants READ_THROUGH_MISS_TTL = 2 s, READ_THROUGH_RESYNC_WINDOW = 5 s, READ_THROUGH_MAX_RESYNCS = 20. Use tokio::time::Instant so tests run with a paused clock (enable tokio's `time` and `test-util` features for tests if they are missing).
+  `attempt(&self, key) -> bool`, in this order: (1) key has an unexpired recent-miss entry: false, without taking the lock for the resync. (2) Take the lock, check the recent-miss entry again (another task may have stored it while this one waited): false. (3) Consume the budget: when now minus window_started_at is at least the window, start a new window (window_started_at = now, count 0); if the count already equals the max, log a warning that names the key, the max and the window and return false (the miss is NOT remembered); else count += 1. (4) Run the resync while holding the lock, so one resync runs at a time per RegistryReadThrough. On Err: log a warning with the key and the error and return false, do not remember the miss, do not return the error. On Ok(false): remember the miss for miss_ttl and return false. On Ok(true): return true. The recent-miss map holds at most 1000 keys: when full, drop expired entries first, then the entry with the earliest expiry. The window starts as "never" (a value that makes the first call open a new window).
+
+  Three instances, built in state at startup (no statics): models, guardrails, agents, each with its own Resync. Define the ports the resyncs need and build the three resyncs over them in `registry_read_through/resyncs.rs`, so the real database and registry adapters from other tasks plug in:
+  `trait DbObjects { fn enabled(&self, object_type: ObjectType) -> bool; }` is `_db_backed_registries_enabled`: true only when a database client exists, store_model_in_db is exactly true, and the existing "should load this object type" rule from the proxy config allows `ObjectType::{Models, Guardrails, Agents}` (find that rule in the config task that owns should_load_db_object; if it has no Rust owner yet, take a plain `fn should_load(&self, ObjectType) -> bool` on the port and say so in your final note).
+  ModelResync: if not enabled, false. Find rows by `model_name == key`; when there are none, find by `model_id == key`; still none: false. When the router does not exist yet, call the port `add_deployments_from_db()` and return whether a router exists now. Otherwise, under the model reconcile lock, refresh the credentials from the database, add the found rows to the router and replace the cached model list with the router's list; return true. Port: `trait ModelSync { async fn find_rows(&self, by: ModelKey<'_>) -> Result<Vec<ModelRow>, ResyncError>; async fn router_exists(&self) -> bool; async fn add_deployments_from_db(&self) -> Result<bool, ResyncError>; async fn add_rows_to_router(&self, rows: Vec<ModelRow>) -> Result<(), ResyncError>; }` where the last one owns the lock, the credential refresh and the list swap. Use the existing model row type from the model-repository task; do not define a second one.
+  GuardrailResync: if not enabled, false. Find the one row with guardrail_name == key and status "active"; none: false. Under the guardrail reconcile lock, load the row into the in-memory guardrail registry; return whether an initialized guardrail named key exists afterwards. Port `trait GuardrailSync { async fn find_active(&self, name: &str) -> Result<Option<GuardrailRow>, ResyncError>; async fn load_row(&self, row: GuardrailRow) -> bool; }` (load_row owns the lock, the sync and the lookup, and returns the lookup answer).
+  AgentResync: if not enabled, false. If the agent is already in the local registry (looked up by id, then by name): true. Under the agent reconcile lock, look again (true if found now); else find the row by agent_id == key, then by agent_name == key, including its object permission and identity; none: false; else register it and return true. Port `trait AgentSync { async fn cached(&self, key: &str) -> bool; async fn load_locked(&self, key: &str) -> Result<bool, ResyncError>; }`. `cached` looks the registry up by id, then by name. `load_locked` holds the agent reconcile lock, checks the cache again, finds the row (by agent_id, then agent_name, with object permission and identity), registers it and returns whether it did. Agent types come from B4776.
+  Lookup helpers: `get_agent_with_read_through(agent_id_or_name)` returns the registry hit if there is one; else if `agents.attempt(key)` is false returns None; else looks the registry up once more. `get_guardrail_with_read_through(name)` does the same for the initialized-guardrail lookup. Both live in `registry_read_through/lookup.rs` and take the registry as a port (`trait AgentLookup { fn by_id_or_name(&self, key: &str) -> Option<AgentHandle>; }` and `trait GuardrailLookup { fn initialized(&self, name: &str) -> Option<GuardrailHandle>; }`, the handle types being the ones B4776 and B3683 define). There is no model helper: the router callers use `models.attempt(name)` directly.
+
+  json_merge_patch. `apply_json_merge_patch(target: &serde_json::Value, patch: &serde_json::Value) -> Result<Value, MergePatchError>` is RFC 7386. If patch is not an object, the result is a clone of patch (this includes null and arrays, replacing the target whole). If patch is an object: base = target when it is an object, else an empty object; the result holds first every key of base that is not in patch (base order), then, in patch order, every patch entry whose value is not null, each as apply(base.get(key) or null, value) at depth + 1. A null patch value removes the key and writes nothing. Never mutate target. Depth starts at 0 and the call fails with `MergePatchError::TooDeep { max: 64 }` ("JSON merge patch nesting exceeds the maximum depth of 64") when an OBJECT patch is reached at depth 64 or more (so 64 nested objects pass and the 65th fails); a non-object leaf at any depth never fails. Order of keys in the result is not observable in JSON, so use serde_json::Map as it is configured in the workspace.
+scope:
+  paths:
+    - crates/betterlite-server/src/registry_read_through.rs
+    - crates/betterlite-server/src/registry_read_through/**
+    - crates/betterlite-server/src/json_merge_patch.rs
+    - crates/betterlite-server/src/json_merge_patch/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L1-L98
+    why: Purpose, constants and the attempt algorithm with its budget and negative cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L101-L196
+    why: The three resyncs, the lookup helpers and the three instances.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/json_merge_patch.py#L1-L35
+    why: The whole merge patch function and its depth cap.
+  - url: https://www.rfc-editor.org/rfc/rfc7386
+    why: The merge patch rules.
+dod:
+  - text: A recent miss is answered false with no resync, a found object is not remembered, a miss is remembered for the ttl and a resync error returns false without remembering it.
+    proof: [attempt-tests]
+  - text: At most 20 resyncs run per 5 second window, the 21st call logs a warning and returns false without remembering the miss, and a new window restores the budget.
+    proof: [budget-tests]
+  - text: Two tasks that ask for the same missing key at once run the resync once.
+    proof: [attempt-tests]
+  - text: The model, guardrail and agent resyncs follow the stated order of lookups and return false when db-backed registries are disabled.
+    proof: [resync-tests]
+  - text: The two lookup helpers return the registry hit without calling attempt, and look again after a true attempt.
+    proof: [lookup-tests]
+  - text: The merge patch follows RFC 7386 for the cases in the task, never mutates the target, and fails at the 65th nested object.
+    proof: [patch-tests]
+checks:
+  optional: []
+  commands:
+    - id: attempt-tests
+      why: the read-through attempt or its negative cache is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^registry_read_through::attempt::/)'
+    - id: budget-tests
+      why: the resync budget window is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^registry_read_through::budget::/)'
+    - id: resync-tests
+      why: the model, guardrail or agent resync is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^registry_read_through::resyncs::/)'
+    - id: lookup-tests
+      why: the lookup helpers are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^registry_read_through::lookup::/)'
+    - id: patch-tests
+      why: the JSON merge patch is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^json_merge_patch::/)'
+oracle_cases: []
+deviations:
+  - what: The recent-miss map is a plain map of key to expiry capped at 1000 keys, and not LiteLLM's InMemoryCache.
+    why: The cache class is a Python helper; the observable rule (a miss is remembered for the ttl, at most 1000 keys) is the same.
+  - what: A resync error is a typed ResyncError that is logged and turned into false, as in LiteLLM, but the log line carries the error's Display text and not a Python exception repr.
+    why: The line is a log, not a wire contract.
+out_of_scope:
+  - "The real database adapters behind the ports (ModelSync, GuardrailSync, AgentSync) and the callers that pass a missing model, guardrail or agent name into attempt: the model, guardrail and agent registry tasks (B4776, B3683) and the router lookup tasks."
+  - "Who owns proxy_config.add_deployment and the model reconcile lock: the proxy_config part of B124 (named in the final note)."
+  - "The callers of apply_json_merge_patch (team metadata update): the team route tasks."
+pitfalls:
+  - A resync runs while the lock is held, so a slow database call blocks other keys of the same instance. That is LiteLLM's behavior and keeps the load on the database low; do not release the lock around the call.
+  - The budget is consumed before the resync runs, so a resync that fails still used one slot.
+  - A budget refusal does not remember the miss, so the next call after the window opens may retry. A resync that returns false does remember it.
+  - 'In the merge patch, a nested null for a key the target does not have still creates the empty object for the parent: patch {"a": {"b": null}} on {} gives {"a": {}}.'
+  - A patch that is an array or a scalar replaces the target whole, and a target that is not an object is treated as {} only when the patch is an object.
+  - The depth check runs only for object patches, so a deep array or scalar leaf is fine.
+review_level: standard
+budget:
+  max_changed_lines: 1300
+  max_new_expects: 0

@@ -1,0 +1,18 @@
+kind: helper
+name: proxy-exception-provider-fields
+call:
+  b8410:
+    kind: exception
+    message: upstream rejected the request
+    type: bad_request_error
+    param: null
+    code: upstream_rejected
+    openai_code: ""
+    headers:
+      x-request-id: abc123
+    provider_specific_fields:
+      provider: azure
+      region: eastus
+env: {}
+compare:
+  ignore: []

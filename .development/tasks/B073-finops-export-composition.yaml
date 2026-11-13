@@ -1,0 +1,287 @@
+id: B073
+title: Complete Vantage export routes and compose FinOps HTTP behavior
+description: >-
+  Finish the billing umbrella with the remainder of vantage_endpoints.py: the registered
+  logger lookup at L56-L63, POST /vantage/dry-run at L357-L445, including its nested JSON
+  projection, and POST /vantage/export at L448-L518. These contain 120 nonblank,
+  non-comment lines after removing docstrings. B3077 already registers the four Vantage
+  settings routes and B3076 the six CloudZero routes. This task supplies the two missing
+  handlers in betterlite-server::finops::vantage_exports, with VantageExportError in that
+  module, and composes all three routers in app::spend::finops. Reuse B3079's
+  vantage_endpoints request/response models, B3060's FOCUS query, B3061's transformer,
+  B3065's summary operations, B3066/B3067's export service and B3075's settings access.
+  Do not build an OpenAI billing client; every organization_costs.py function belongs to
+  B1712 and these endpoints never call it.
+
+  The architect installs the shared call sites and contracts recorded in the planner
+  report before dispatch. B3067 supplies a live VantageLoggers view of registered concrete
+  exporter instances, shared by the startup scheduler, settings deletion and this task;
+  B8610 exposes that same Arc as shared.vantage_loggers. It preserves B189's callback-list
+  order and de-duplication, including instances in success/failure lists. Its snapshot is
+  not B8749's BaseLogger named vantage: that object intentionally has no export method.
+  The handler clones the first registered VantageLogger from the view on each request,
+  releases the view's lock before awaiting, and returns None when the view is empty.
+  Do not construct a substitute logger on lookup, cache a stale first instance in route
+  state, register a temporary export logger, or create a second scheduler. If the agreed
+  shared contract is absent, report the missing prerequisite instead of editing its owner.
+
+  Both handlers take the caller from the existing B052 authentication layer and require
+  exactly PROXY_ADMIN; PROXY_ADMIN_VIEW_ONLY may read settings but may not preview or
+  export. Preserve the source's 403 detail object for a denied role and its order before
+  any settings, database or delivery work. Body decoding uses B3079's declared types:
+  VantageDryRunRequest.limit defaults to 500 and accepts explicit null; that default is
+  not a maximum. VantageExportRequest defaults limit, start_time_utc and end_time_utc to
+  None. No export config key or environment variable is introduced here. Implement
+  decode_vantage_export_body(operation, bytes) over the existing serde models, with a
+  closed operation enum for preview/export; the actual handlers and the fuzz target call
+  this same decoder. Retain the server's body/header bounds and deadlines and the normal
+  validation error shape rather than axum's default text rejection. Fuzz arbitrary bytes
+  for both operations, including truncated JSON, invalid UTF-8, nested input, absent/null
+  limits, invalid dates and a one-sided valid date. A one-sided date is a valid decoded
+  request whose export service rejects it, not a JSON validation failure.
+
+  Dry-run goes directly to get_usage_data(limit), then transform, without constructing an
+  export engine or destination, reading Vantage settings or requiring either credential.
+  Return at most the first 50 raw rows and first 50 normalized rows, in the query's order;
+  summary covers the whole limited query, not the samples. Its fields are total_records
+  from normalized length, total_spend from raw spend, total_tokens from raw total_tokens,
+  and unique_teams/unique_models from raw team_id/model. Reuse B3065's missing-column and
+  null handling, including null as a distinct value in a present unique-count column.
+  The real FOCUS SELECT does not include total_tokens, so that summary is zero even when
+  prompt_tokens and completion_tokens are positive. Do not synthesize a new column.
+  Both samples are [] for an empty result and all summary counts/totals are zero. Keep
+  money as Decimal, emit JSON numbers rather than decimal strings, and preserve the
+  child transform's nullable fields, tag strings and timestamps without adding floats.
+  Return message "Vantage dry run export completed successfully.", status "success",
+  dry_run_data containing usage_data, normalized_data and summary, and the same summary
+  again at the response top level.
+
+  Actual export prefers the first registered logger even when stored settings are absent,
+  stale or unreadable. Only when no instance exists, await B3075's decrypted settings;
+  an empty settings object gives 404, while database absence or decryption failure keeps
+  the settings service's 500. Construct a request-local B3067 logger with api_key,
+  integration_token and base_url from the settings and its existing environment fallback:
+  VANTAGE_API_KEY and VANTAGE_INTEGRATION_TOKEN have no default, VANTAGE_BASE_URL defaults
+  to https://api.vantage.sh, VANTAGE_EXPORT_FREQUENCY to hourly, and an absent interval
+  remains unset. These values come from the child's config view, never a server env read.
+  Await export_usage_data with the three request fields unchanged. No bounds means the
+  all-data path; both bounds use the explicit inclusive query window; one bound alone
+  raises the service error. Do not apply the scheduled hourly window to a manual export.
+  Successful completion, including no rows to upload, returns message "Vantage export
+  completed successfully", status "success", dry_run_data null and summary null. Re-emit
+  service HTTP errors unchanged; convert other export/query/transform failures to the
+  source's handled 500 detail object, with betterlite's own wording. This includes a
+  negative limit and one-sided time window after their earlier prerequisites succeed.
+
+  In app/spend/finops.rs expose mount(router, state). Build the route inputs over
+  shared.db, shared.http, shared.vantage_loggers and the existing resolved config, and
+  merge B3076's router, B3077's router and vantage_exports::routes once each inside the
+  normal key-auth layers. The complete paths are GET/PUT /cloudzero/settings,
+  POST /cloudzero/init, POST /cloudzero/dry-run, POST /cloudzero/export,
+  DELETE /cloudzero/delete, GET/PUT /vantage/settings, POST /vantage/init,
+  POST /vantage/dry-run, POST /vantage/export and DELETE /vantage/delete. There are no
+  /v1, /openai/v1 or provider-prefixed aliases. Neither B8610's area aggregator nor the
+  existing MCP mounts registers these paths; B8662's spend-area hook calls this mount.
+  Register only the two new routes in vantage_exports::routes, never repeat a child's
+  .route call in mount. The skeleton declares the two modules; parent module files and
+  the area hook are not this task's scope.
+
+  Add kind: http oracle cases through the actual booted proxy. Use B860's independent
+  Postgres databases, seeded roles and B9260's typed daily-spend fixtures
+  for populated previews; keep fixture data identical on both sides. Include default,
+  null, zero and negative limits; more than 50 rows with totals beyond the sample;
+  nullable team/model values; positive token columns with total_tokens absent; and an
+  organization/key-alias join. Assert the two summary copies are equal. Exercise preview
+  without Vantage credentials, registered-logger precedence over conflicting DB settings,
+  missing settings, missing database, stored-secret decryption failure, empty export,
+  explicit inclusive bounds and upstream delivery failure. Vantage destination config
+  points only to the local fixture server; record the multipart CSV request, integration
+  token and filename for the bounded-window success. Compare multipart fields and file
+  bytes without treating its generated MIME boundary as semantic. Build settings
+  transcripts that initialize, view as admin/viewer, partially update, export and delete;
+  verify new exports re-read the live registration view after deletion while an already
+  bound scheduled job retains its handle. Re-run B3076/B3077's existing route tests too.
+
+  CloudZero composition cases drive its six existing methods with the proper roles,
+  no-field update, missing settings and missing database, plus empty preview/export and
+  init-update-delete transcripts; keep its environment-based preview construction and
+  stored-credential manual export distinct. Native mount tests verify twelve method/path
+  registrations without collisions against the real application and rejection of the
+  invented aliases. Error comparisons keep HTTP status, content-type and the actual
+  envelope: these handlers emit {detail:{error:...}}, with no invented type/param/code.
+  Ignore only /detail/error for their wording. Authentication ProxyExceptions retain
+  /error/type, /error/param and /error/code and ignore only /error/message. Preserve
+  validation detail locations and codes, ignoring only individually unstable wording.
+
+  The metering children had no booted HTTP coverage. Add chat-completion cases for the
+  existing lago, openmeter and pointfive callback names through B8742/B8745/B3074, using
+  openai/gpt-4o behind an alias finops-chat. Include success, streaming completion and
+  provider failure, and prove a refused exporter connection does not change the client
+  result. Use fixed dummy credentials and loopback exporter URLs, never real vendors.
+  Lago uses LAGO_API_BASE, LAGO_API_KEY, LAGO_API_EVENT_CODE and LAGO_API_CHARGE_BY
+  (default end_user_id); OpenMeter uses OPENMETER_API_KEY, OPENMETER_API_ENDPOINT
+  (default https://openmeter.cloud), OPENMETER_EVENT_TYPE (default litellm_tokens) and
+  OPENMETER_TRUST_REQUEST_USER (default true). Case fixtures override those endpoints;
+  these are existing keys, not new settings. For PointFive use POINTFIVE_API_KEY and
+  POINTFIVE_API_URL and the existing litellm_settings.pointfive_params view; its pinned
+  defaults are batch_size 1000, flush_interval 300, max_batch_bytes 8388608 and
+  max_upload_retries 3. Explicitly set batch_size 1 in the flush case.
+
+  Native application tests under app::spend::finops::tests drive real HTTP requests with
+  recording outbound transports because the HTTP oracle's inference upstream is not a
+  second asynchronous callback collector. Assert Lago end-user/team/key-user attribution,
+  OpenMeter trusted-request versus key-bound subject, and PointFive success/failure
+  redaction and asynchronous batch delivery without holding the response open. Observe
+  production dispatch and the catalog's retained instances, not hand-made callback
+  events. Close the application and drain the owned tasks before inspecting delivery;
+  a timeout or missing delivery fails the test. The HTTP cases prove the client contract,
+  while these native tests prove callbacks are actually invoked. Export scheduling,
+  S3/GCS/Mavvrik delivery and billing-recorder middleware remain with their existing
+  owners; there is no new HTTP endpoint for a scheduler tick. Allow roughly 450-650
+  production/decoder/composition lines plus adjacent tests and case files, within the
+  fixed 1500-line source budget. No oracle helper may call these global-state handlers.
+scope:
+  paths:
+    - crates/betterlite-server/src/finops/vantage_exports.rs
+    - crates/betterlite-server/src/finops/vantage_exports/**
+    - crates/betterlite-server/src/app/spend/finops.rs
+    - crates/betterlite-server/src/app/spend/finops/**
+    - crates/betterlite-server/fuzz/fuzz_targets/vantage_export_body.rs
+    - crates/betterlite-server/fuzz/corpus/vantage_export_body/**
+    - tools/oracle/cases/http/finops-composition/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L56-L63
+    why: Owned lookup of the first already-registered VantageLogger.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L357-L445
+    why: Owned preview route, role guard, JSON-safe samples, summary and exception boundaries, starting at its decorator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L448-L518
+    why: Owned manual export route, registered-instance precedence, request-local fallback and response, starting at its decorator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/vantage_endpoints.py#L36-L61
+    why: B3079's existing body/response contracts, consumed without changing their defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/database.py#L24-L113
+    why: B3060 context for query order, inclusive bounds, missing total_tokens and joined metadata in HTTP fixtures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/export_engine.py#L137-L153
+    why: B3065 owns the missing-column sum and unique-count helpers the preview calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L79-L105
+    why: B3066's called export method selects all-data or explicit window and rejects one-sided bounds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vantage/vantage_logger.py#L36-L83
+    why: B3067 constructor context for stored-value/environment precedence and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L344-L355
+    why: B189's five-list order must survive the typed registered-exporter handoff.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L389-L399
+    why: B189 filters actual instances and removes duplicates before the route selects the first.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L287-L296
+    why: Composition context only; this excluded Python import table activates both routers with no additional aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1913-L1919
+    why: Ordinary HTTPException detail objects are not converted into OpenAI error envelopes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11011-L11059
+    why: B8372 owns exporter startup and the DB-only Vantage registration; the route shares those instances.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/vantage_endpoints.py#L521-L578
+    why: B3077's existing delete route removes the database row before removing general-list logger instances.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/cloudzero_endpoints.py#L395-L515
+    why: B3076's preview and export routes supply the HTTP composition cases; no handler is reimplemented here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lago.py#L63-L191
+    why: B3072/B8745 context for proving real request attribution and delivery through their existing callback adapter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/openmeter.py#L51-L149
+    why: B3072/B8745 context for trusted request users, key-user fallback and client isolation from delivery errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L166-L216
+    why: B3074's success/failure enqueue and redaction path must be reached by the booted application.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/pointfive/logger.py#L133-L146
+    why: B3074's full batch flush is asynchronous and must not delay the client response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/pointfive.py#L24-L29
+    why: Pinned defaults for the callback integration fixtures, already owned by B3073.
+dod:
+  - text: Credential-free preview, full-query summaries, first-50 samples and Decimal JSON match the booted LiteLLM routes.
+    proof: [preview-tests, new-http-cases, oracle]
+  - text: Manual export selects the live first registered instance or a request-local stored-settings logger, preserves validation and service-error boundaries, and reaches delivery.
+    proof: [export-tests, new-http-cases, oracle]
+  - text: The application composes all twelve FinOps methods once under key auth, preserves role distinctions and child settings behavior, and creates no aliases or scheduler.
+    proof: [composition-tests, existing-route-tests, new-http-cases, oracle]
+  - text: Real inference requests invoke the existing Lago, OpenMeter and PointFive adapters with correct attribution/redaction while exporter failures preserve the client response.
+    proof: [callback-integration-tests, new-http-cases, oracle]
+  - text: The production preview/export body decoder rejects malformed bytes without panics and replays newly committed valid and invalid inputs.
+    proof: [decoder-tests, export-body-corpus]
+checks:
+  optional: []
+  commands:
+    - id: preview-tests
+      why: A preview queries settings, totals only its sample, invents total_tokens or loses numeric and nullable fields.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage_exports::tests::preview_/)'
+    - id: export-tests
+      why: Export chooses a new or stale logger, changes the window or limit, loses an error, or returns before delivery finishes.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage_exports::tests::export_/)'
+    - id: composition-tests
+      why: The real application omits or duplicates a route, bypasses key auth, grants viewers export permission or splits the live logger state.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::spend::finops::tests::mount_/)'
+    - id: callback-integration-tests
+      why: A configured metering callback is a no-op, receives the wrong identity or redaction, or holds the HTTP response while flushing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::spend::finops::tests::callback_/)'
+    - id: existing-route-tests
+      why: Composition changes the existing settings handlers or their use of the shared registration view.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-server/src/app/spend/finops.rs crates/betterlite-server/src/app/spend/finops)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::cloudzero_routes::/) + test(/^finops::vantage_routes::/)'
+    - id: decoder-tests
+      why: The handler decoder changes defaults, conflates null with omission or rejects a well-typed service-level error case during parsing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage_exports::tests::decode_/)'
+    - id: export-body-corpus
+      why: The production request decoder has no fuzz target, no new seed, or a failing corpus replay.
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/vantage_export_body.rs &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/vantage_export_body)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^finops::vantage_exports::tests::replays_the_vantage_export_body_corpus$/)'
+    - id: new-http-cases
+      why: No new booted-proxy FinOps case was added or a mutable handler was tested through a helper adapter.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/finops-composition)" &&
+        grep -rlq '^kind: http$' tools/oracle/cases/http/finops-composition &&
+        ! grep -rlq '^kind: helper$' tools/oracle/cases/http/finops-composition
+oracle_cases:
+  - tools/oracle/cases/http/finops-composition/vantage-role-and-missing-key.yaml
+  - tools/oracle/cases/http/finops-composition/vantage-body-validation.yaml
+  - tools/oracle/cases/http/finops-composition/vantage-empty-preview-without-credentials.yaml
+  - tools/oracle/cases/http/finops-composition/vantage-preview-default-null-zero-limits.yaml
+  - tools/oracle/cases/http/finops-composition/vantage-preview-fifty-samples-full-summary.yaml
+  - tools/oracle/cases/http/finops-composition/vantage-preview-null-groups-and-key-organization-joins.yaml
+  - tools/oracle/cases/http/finops-composition/vantage-preview-token-columns-without-total-tokens.yaml
+  - tools/oracle/cases/http/finops-composition/vantage-negative-limit-and-missing-database.yaml
+  - tools/oracle/cases/http/finops-composition/vantage-registered-logger-precedes-database.yaml
+  - tools/oracle/cases/http/finops-composition/vantage-stored-settings-empty-export.yaml
+  - tools/oracle/cases/http/finops-composition/vantage-missing-settings-and-decryption-failure.yaml
+  - tools/oracle/cases/http/finops-composition/vantage-manual-all-data-and-inclusive-window.yaml
+  - tools/oracle/cases/http/finops-composition/vantage-one-sided-window-and-delivery-failure.yaml
+  - tools/oracle/cases/http/finops-composition/vantage-settings-update-delete-transcript.yaml
+  - tools/oracle/cases/http/finops-composition/cloudzero-methods-roles-and-validation.yaml
+  - tools/oracle/cases/http/finops-composition/cloudzero-settings-empty-export-delete-transcript.yaml
+  - tools/oracle/cases/http/finops-composition/cloudzero-preview-and-missing-database.yaml
+  - tools/oracle/cases/http/finops-composition/finops-aliases-remain-absent.yaml
+  - tools/oracle/cases/http/finops-composition/lago-success-and-delivery-failure.yaml
+  - tools/oracle/cases/http/finops-composition/openmeter-subject-and-streaming.yaml
+  - tools/oracle/cases/http/finops-composition/pointfive-success-failure-and-background-flush.yaml
+deviations: []
+out_of_scope:
+  - "vantage_endpoints.py _VantageConfigRow.param_value, _config_table, _set_vantage_settings, _get_vantage_settings, is_vantage_setup_in_db, is_vantage_setup_in_config and is_vantage_setup are B3075; that entry covers this file."
+  - "vantage_endpoints.py get_vantage_settings, update_vantage_settings, init_vantage_settings and delete_vantage_settings are B3077; their registration and mutation order are reused, not rewritten."
+  - "organization_costs.py provider_billing_get, _utc_midnight, _bucket_day, fetch_openai_daily_costs and its nested fetch_from, with all response records, are B1712; B073 has no caller of that client."
+  - "FocusLogger.dry_run_export_usage_data (focus_logger.py L107-L110) has no caller at the pin; its only call to FocusExportEngine.dry_run_export_usage_data (export_engine.py L47-L66) is consequently unreachable, so neither wrapper is built."
+  - "FOCUS query/transform/summary/export services stay with B3060, B3061, B3065 and B3066; VantageLogger construction, typed registration storage and scheduling methods stay with B3067; credential persistence and encryption stay with B3075/B1600."
+  - "All cloudzero_endpoints.py route functions are B3076 and settings/setup helpers are B3075; CloudZero transformation, delivery and scheduling remain B3069, B3070 and B3071."
+  - "Vantage/CloudZero request and response classes are B3079; caller authentication is B052 and callback-list filtering/removal is B189, each retaining its own covered source files."
+  - "S3/GCS delivery is B3062, Mavvrik delivery/catch-up is B3063/B3068, Vantage batching is B3064, and startup's scheduler registrations are B8372; do not start these jobs again from the mount."
+  - "Lago/OpenMeter logger functions are B3072 with catalog adapters B8745; PointFive payload/upload functions are B3073 and logger/catalog functions B3074; this task adds HTTP composition evidence only."
+  - "BillingMetricsRecorder is B3078; B8680 owns the edge middleware and gateway accumulator handoff, and B8374 owns recorder shutdown; no enterprise-package branch or paid-license mechanism is added here."
+  - "B8610 owns Shared and the area aggregator, B8662 owns app/spend.rs, and B9260 owns the daily-spend fixture extension; the architect installs shared field/call-site glue, module declarations and fuzz-target registration recorded in the planner report."
+pitfalls:
+  - "The real FOCUS SELECT omits total_tokens, so adding prompt_tokens and completion_tokens would silently change /vantage/dry-run's total_tokens from zero."
+  - "Vantage preview never calls FocusLogger.dry_run_export_usage_data or FocusExportEngine.dry_run_export_usage_data and must work without VANTAGE_API_KEY or VANTAGE_INTEGRATION_TOKEN."
+  - "The 500 preview limit is a default query limit, the 50 sample size is a response bound, and neither caps an explicitly supplied positive limit."
+  - "A first registered VantageLogger takes precedence over unreadable or changed stored settings, and a temporary fallback logger must never become registered."
+  - "DELETE /vantage/delete removes instances only from litellm.callbacks, so an instance remaining in another callback list can still be selected and an already-bound job is not cancelled."
+  - "The preview success message ends in a period while the actual-export success message does not."
+  - "An unsupported /v1/vantage/export alias must remain absent even though the underlying API otherwise uses OpenAI-style authentication."
+  - "B8749's BaseLogger proves the vantage callback name is accepted but cannot stand in for the concrete export instance shared with B8372."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

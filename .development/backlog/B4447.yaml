@@ -2,8 +2,8 @@ id: B4447
 milestone: M8 platform
 title: Exercise configured health service integrations
 status: todo
-depends_on: [B002, B052, B173, B189, B4446, B4448]
-file: null
+depends_on: [B002, B052, B189, B882, B3931, B4020, B4446, B4448]
+file: tasks/B4447-health-service-tests.yaml
 covers:
   - "litellm/proxy/health_endpoints/_health_endpoints.py"
 parent: B130

@@ -1,0 +1,22 @@
+kind: helper
+name: body-scalar-priority
+call:
+  b3892:
+    function: trace
+    litellm_params:
+      metadata:
+        trace_name: primary-name
+        trace_user_id: primary-user
+        session_id: primary-session
+      litellm_metadata:
+        trace_name: secondary-name
+        trace_user_id: secondary-user
+        session_id: secondary-session
+      proxy_server_request:
+        headers:
+          langfuse_trace_name: ""
+          langfuse_trace_user_id: ""
+          langfuse_session_id: ""
+env: {}
+compare:
+  ignore: []

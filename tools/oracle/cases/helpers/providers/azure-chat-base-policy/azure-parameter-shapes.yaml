@@ -1,0 +1,90 @@
+kind: helper
+name: azure-parameter-shapes
+call:
+  azure_chat_base_policy:
+    action: azure_parameter_shapes
+    settings: {}
+    steps:
+      - model: gpt-4o
+        non_default:
+          tools:
+            - {type: function, function: {name: b}}
+        optional:
+          tools:
+            - {type: function, function: {name: a}}
+      - model: gpt-4o
+        non_default:
+          tools:
+            - {type: function, function: {name: b}}
+        optional: {tools: 'x'}
+      - model: gpt-4o
+        non_default:
+          tools:
+            - {type: function, function: {name: b}}
+        optional: {tools: null}
+      - model: gpt-4o
+        non_default: {tools: {a: 1}}
+      - model: gpt-4o
+        non_default: {tools: {a: 1}}
+        optional: {tools: []}
+      - model: gpt-3.5-turbo
+        api_version: '2024-08-01'
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema: {name: n, schema: {type: object}}
+        optional:
+          tools:
+            - {type: function, function: {name: a}}
+      - model: gpt-3.5-turbo
+        api_version: '2024-08-01'
+        non_default:
+          response_format:
+            response_schema: {type: object, properties: {a: {type: string}}}
+            json_schema: {name: n, schema: {type: string}}
+      - model: gpt-3.5-turbo
+        api_version: '2024-08-01'
+        non_default:
+          response_format:
+            json_schema: {name: n}
+      - model: gpt-3.5-turbo
+        api_version: '2024-08-01'
+        non_default:
+          response_format:
+            json_schema: 'x'
+      - model: gpt-4o
+        api_version: '2024-08-01'
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema: {name: n, schema: {}}
+      - model: gpt-3.5-turbo
+        api_version: '2024-08-01'
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema: {name: n, schema: {type: object}}
+        optional: {tools: 'x'}
+      - model: gpt-4o
+        api_version: '2024-08-01'
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema: {name: n, schema: {type: object}}
+        optional: {tools: 'x'}
+      - model: gpt-3.5-turbo
+        api_version: '2024-08-01'
+        non_default: {response_format: json_object}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/steps/1/status
+      why: betterlite returns 400 for a non-list tools value where LiteLLM's AttributeError carries no status (docs/deviations/B684.yaml)
+    - pointer: /value/steps/2/status
+      why: betterlite returns 400 for a null tools value where LiteLLM's AttributeError carries no status (docs/deviations/B684.yaml)
+    - pointer: /value/steps/7/status
+      why: betterlite returns 400 for a json_schema without schema where LiteLLM's KeyError carries no status (docs/deviations/B684.yaml)
+    - pointer: /value/steps/8/status
+      why: betterlite returns 400 for a non-object json_schema where LiteLLM's TypeError carries no status (docs/deviations/B684.yaml)
+    - pointer: /value/steps/10/status
+      why: betterlite returns 400 for a non-list tools value where LiteLLM's AttributeError carries no status (docs/deviations/B684.yaml)

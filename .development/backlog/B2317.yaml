@@ -1,14 +1,14 @@
 id: B2317
 milestone: M4 keys, spend and management
 title: Budget reset clock settings and persistable durations
-status: todo
+status: done
 depends_on: [B002, B171, B199, B856]
 file: tasks/B2317-budget-reset-settings.yaml
 covers:
   - "litellm/proxy/common_utils/timezone_utils.py"
 parent: B124
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 819

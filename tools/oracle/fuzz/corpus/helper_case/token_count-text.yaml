@@ -1,0 +1,9 @@
+kind: helper
+name: token_count-text-seed
+call:
+  token_count:
+    function: token_counter
+    model: gpt-3.5-turbo
+    text: hello world
+env: {}
+compare: {ignore: []}

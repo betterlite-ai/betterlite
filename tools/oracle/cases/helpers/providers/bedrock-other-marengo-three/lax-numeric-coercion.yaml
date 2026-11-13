@@ -1,0 +1,18 @@
+kind: helper
+name: lax-numeric-coercion
+call:
+  bedrock_other_marengo_three:
+    text_versus_timed_options:
+      model: marengo-embed-3-0-v1:0
+      input: AAA
+      inference_params:
+        inputType: video
+        startSec: "1.5"
+        endSec: " 2.5 "
+        segmentation:
+          method: fixed
+          fixed:
+            durationSec: "4"
+env: {}
+compare:
+  ignore: []

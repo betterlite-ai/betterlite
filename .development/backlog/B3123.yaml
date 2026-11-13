@@ -2,7 +2,7 @@ id: B3123
 milestone: M4 keys, spend and management
 title: Price cache scenarios and expose native routing predictions
 status: todo
-depends_on: [B3120, B3121, B3122, B004, B189, B193, B198, B247, B1682, B2225]
+depends_on: [B3120, B3121, B3122, B5366, B004, B189, B193, B198, B247, B1682, B2225]
 file: tasks/B3123-prompt-cache-scenarios.yaml
 covers:
   - "litellm/llms/anthropic/cache_aware_routing.py"

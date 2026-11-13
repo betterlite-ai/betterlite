@@ -1,0 +1,21 @@
+{
+  "kind": "helper",
+  "name": "vendor-mapping-mapper-registry-resolve-and-budget",
+  "call": {
+    "b3846": {
+      "function": "mapper_registry",
+      "names": [
+        "genai",
+        "openinference",
+        "genai",
+        "weave",
+        "langtrace",
+        "langfuse"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -1,0 +1,30 @@
+kind: helper
+name: bedrock-prompt-tool-name-roundtrip-seed
+call:
+  bedrock_prompt:
+    messages:
+      - {role: user, content: "weather?"}
+      - role: assistant
+        content: null
+        tool_calls:
+          - {id: call.1, type: function, function: {name: "get weather", arguments: '{"city":"Paris"}'}}
+          - {id: call.2, type: function, function: {name: "other tool", arguments: '{}'}}
+      - {role: user, content: again}
+      - {role: assistant, content: ""}
+    tools:
+      - type: function
+        function:
+          name: get weather
+          description: Get the weather
+          parameters:
+            type: object
+            properties: {city: {type: string}}
+    assistant_continue_message:
+      role: assistant
+      content: go on
+      tool_calls:
+        - {id: call.3, type: function, function: {name: "get weather", arguments: '{}'}}
+        - {id: call.4, type: function, function: {name: "third tool", arguments: '{}'}}
+    model: anthropic.claude-sonnet-4-5-20250929-v1:0
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: token-count-text-and-messages-error
+call:
+  token_count:
+    function: token_counter
+    model: gpt-3.5-turbo
+    text: hello
+    messages:
+      - role: user
+        content: hi
+env: {}
+compare: {ignore: []}

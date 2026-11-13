@@ -1,0 +1,31 @@
+kind: helper
+name: database-availability-outage-policy-off
+call:
+  database_availability:
+    scenarios:
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused}
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused}
+        allow_requests: false
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused}
+        allow_requests: "false"
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused}
+        allow_requests: "maybe"
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused}
+        allow_requests: null
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused}
+        allow_requests: " FALSE "
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/0/error/message, why: betterlite writes its own message}
+    - {pointer: /value/1/error/message, why: betterlite writes its own message}
+    - {pointer: /value/2/error/message, why: betterlite writes its own message}
+    - {pointer: /value/3/error/message, why: betterlite writes its own message}
+    - {pointer: /value/4/error/message, why: betterlite writes its own message}
+    - {pointer: /value/5/error/message, why: betterlite writes its own message}

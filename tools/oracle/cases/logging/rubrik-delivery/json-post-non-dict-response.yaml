@@ -1,0 +1,13 @@
+kind: helper
+name: rubrik-delivery-json-post-non-dict-response
+call:
+  b3976:
+    environment: {}
+    init: {api_base: "https://rubrik.test", api_key: test-key}
+    replies:
+      - {status: 200, body: "[1, 2]"}
+    actions:
+      - do: post_prompt
+        payload: {model: gpt-4o}
+env: {}
+compare: {ignore: []}

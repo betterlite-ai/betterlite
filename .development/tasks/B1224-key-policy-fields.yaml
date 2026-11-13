@@ -30,7 +30,7 @@ description: >-
   Failure is ProxyException 400/bad_request_error, param key_alias, with the stable-secret-name explanation.
 
 
-  Alias None is accepted. Always call B129 raise_if_unsafe_secret_name before optional format checking;
+  Alias None is accepted. Always call B4410 raise_if_unsafe_secret_name before optional format checking;
   traversal/control-character failures become 400/bad_request_error, param key_alias, message Invalid
   key_alias. key_alias_pattern, including an empty string, overrides enable_key_alias_format_validation.
   Its config parser accepts None or a compilable string, otherwise raises ValueError; invalid regex does
@@ -78,7 +78,7 @@ description: >-
   general_settings.key_management_settings is the config key, not litellm_settings.key_management_settings.
   When omitted, the process already has KeyManagementSettings() with store_virtual_keys=false. The loader
   replaces it when the general_settings record is non-null. This component reads only store_virtual_keys;
-  B129 owns the remaining secret-manager fields and their consumers. A runtime None settings object also
+  B4410 parses the remaining key_management_settings fields, and B4413 to B4421 and B8500 consume them. A runtime None settings object also
   skips the stored-key alias requirement, but it is not the normal default.
 
 
@@ -250,7 +250,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7817-L7838
 out_of_scope:
   - B2304 owns encrypt_callback_vars; generated policy metadata uses its real encryption service, not a plaintext substitute.
-  - B129 owns unsafe secret-name validation and key-management configuration types.
+  - B4410 owns raise_if_unsafe_secret_name and the key_management_settings section types.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),

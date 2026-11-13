@@ -1,0 +1,20 @@
+kind: helper
+name: caching-request-batch-nested-scopes-share-outer-batches
+call:
+  b4331:
+    caches:
+      - {setting: one, namespace: ns}
+    deadline_millis: 1000
+    in_scope: true
+    replies:
+      one:
+        MGET:
+          - {array: [{bulk: "1"}]}
+    steps:
+      - {kind: nested, cache: 0}
+      - {kind: nested, cache: 0}
+      - {kind: batch, cache: 0, keys: [a]}
+      - {kind: await, handle: 0}
+      - {kind: snapshot}
+env: {}
+compare: {ignore: []}

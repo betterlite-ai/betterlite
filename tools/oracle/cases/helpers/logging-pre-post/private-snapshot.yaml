@@ -1,0 +1,13 @@
+kind: helper
+name: logging-pre-post-private-snapshot
+call:
+  logging_pre_post: {"action": "pre", "turn_off_message_logging": true, "log_raw_request_response": true, "messages": [{"role": "user", "content": "hidden question"}], "litellm_params": {"metadata": {"user": "u1"}}, "input": [{"role": "user", "content": "hidden question"}], "additional_args": {"api_base": "https://api.example.com/v1", "headers": {"x-trace": "t1"}, "complete_input_dict": "{\"model\": \"gpt-4o\", \"prompt\": \"hidden question\"}"}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/events/0/input
+      why: betterlite hands the logger_fn a redacted snapshot while LiteLLM passes the live details
+    - pointer: /value/events/1/messages
+      why: betterlite hands callbacks redacted messages while LiteLLM passes the live ones
+    - pointer: /value/details/raw_request_typed_dict/raw_request_body
+      why: betterlite stores the redacted text when content logging is off and LiteLLM stores the body

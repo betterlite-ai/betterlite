@@ -1,0 +1,8 @@
+kind: helper
+name: static-key-pair
+call:
+  bedrock_aws_settings:
+    operation: static_key_pair
+    params: {'s3_access_key_id': 'access', 's3_secret_access_key': 'secret'}
+env: {}
+compare: {ignore: []}

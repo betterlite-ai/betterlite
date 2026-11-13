@@ -1,0 +1,11 @@
+task: B5124
+deviations:
+  - what: >-
+      A recorded savings figure, a snapshot amount or a recorded cost component with more than 28 decimal
+      places is rounded half away from zero to 28 places, and one below that resolution reads as 0.
+      LiteLLM keeps the float, so -2.7755575615628914e-17 reads as -0.000000000000000027755575615628914
+      there and -0.0000000000000000277555756156 here.
+    why: >-
+      rust_decimal holds at most 28 decimal places. Rounding keeps the estimate and the snapshot that a
+      strict parse drops as unknown.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L473-L477

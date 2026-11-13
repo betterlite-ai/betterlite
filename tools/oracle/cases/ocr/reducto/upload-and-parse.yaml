@@ -1,0 +1,31 @@
+kind: helper
+name: upload-and-parse
+call:
+  b6806:
+    model: reducto/parse-v3
+    document:
+      type: document_url
+      document_url: "data:application/pdf;base64,YWJj"
+    api_key: case-key
+    optional_params:
+      formatting: {table_output_format: html}
+      retrieval: {chunk_mode: section}
+      settings: {ocr_system: standard}
+    upload:
+      status: 200
+      body: {file_id: "reducto://uploaded.pdf"}
+    parse:
+      status: 200
+      body:
+        usage: {num_pages: 2, credits: 3}
+        job_id: job_123
+        result:
+          chunks:
+            - content: "Page one"
+              blocks:
+                - {content: "Page one", bbox: {page: 1}, type: Text}
+            - content: "Page two table"
+              blocks:
+                - {content: "Page two table", bbox: {page: 2, original_page: 2}, type: Table}
+compare: {ignore: []}
+env: {}

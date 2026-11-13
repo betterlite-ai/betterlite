@@ -1,7 +1,9 @@
 use axum::http::StatusCode;
 use axum::http::request::Parts;
 use std::collections::BTreeMap;
+use std::future::IntoFuture as _;
 use std::io::{Error, Write as _};
+use std::mem;
 use std::net::TcpListener;
 use std::str;
 use std::sync::{Arc, Mutex};
@@ -13,6 +15,7 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::{Request, State};
 use axum::http::Response;
+use futures_util::future::{Either, select};
 use futures_util::stream;
 use serde::Serialize;
 use serde_json::Value;
@@ -25,6 +28,9 @@ use crate::multipart_oracle::request::answer_body;
 use crate::routing_mock_scripts::{
     CallGuard, CallOutcome, MockScript, Outcome, ProviderCall, Recording, Ticket, redact,
 };
+
+pub mod mcp_reply;
+mod upstream_address;
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub(crate) struct ProviderRequest {
@@ -41,13 +47,37 @@ pub(crate) struct MockProvider {
     pub(crate) thread: Option<JoinHandle<Result<(), Error>>>,
 }
 
+// a scripted reply can still be held when the client stops, so shutdown drops the connection instead of waiting it out
+async fn serve_until_stopped(
+    listener: TcpListener,
+    router: Router,
+    stopped: oneshot::Receiver<()>,
+) -> Result<(), Error> {
+    let socket = net::TcpListener::from_std(listener)?;
+    let closing = async move {
+        let _stopped = stopped.await;
+    };
+    let served = Box::pin(axum::serve(socket, router).into_future());
+    let stopping = Box::pin(closing);
+    match select(served, stopping).await {
+        Either::Left((finished, _)) => finished,
+        Either::Right(((), _)) => Ok(()),
+    }
+}
+
 impl MockProvider {
-    pub(crate) fn start(script: MockScript) -> Result<Self, OracleError> {
+    pub(crate) fn start(mut script: MockScript) -> Result<Self, OracleError> {
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(OracleError::MockIo)?;
         listener
             .set_nonblocking(true)
             .map_err(OracleError::MockIo)?;
         let address = listener.local_addr().map_err(OracleError::MockIo)?;
+        let base_url = format!("http://{address}");
+        for reply in &mut script.replies {
+            if let Outcome::Answer(answer) = &mut reply.then {
+                upstream_address::fill(answer, &base_url);
+            }
+        }
         let runtime = runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -63,21 +93,11 @@ impl MockProvider {
             .fallback(handle)
             .with_state(Arc::clone(&recording));
         let (stop, stopped) = oneshot::channel();
-        let shutdown = async {
-            let _stopped = stopped.await;
-        };
         let thread = thread::Builder::new()
-            .spawn(move || {
-                runtime.block_on(async move {
-                    let socket = net::TcpListener::from_std(listener)?;
-                    axum::serve(socket, router)
-                        .with_graceful_shutdown(shutdown)
-                        .await
-                })
-            })
+            .spawn(move || runtime.block_on(serve_until_stopped(listener, router, stopped)))
             .map_err(OracleError::MockIo)?;
         Ok(Self {
-            base_url: format!("http://{address}"),
+            base_url,
             recording,
             stop: Some(stop),
             thread: Some(thread),
@@ -95,6 +115,18 @@ impl MockProvider {
     pub(crate) fn finish(mut self) -> Result<Vec<ProviderCall>, OracleError> {
         self.shutdown()?;
         self.finish_run()
+    }
+
+    pub(crate) fn finish_recording(
+        mut self,
+    ) -> Result<(Vec<ProviderCall>, Option<Error>), OracleError> {
+        self.shutdown()?;
+        let mut recorded = self
+            .recording
+            .lock()
+            .map_err(|error| OracleError::MockIo(Error::other(error.to_string())))?;
+        let failure = recorded.failure.take();
+        Ok((mem::take(&mut recorded.trace), failure))
     }
 
     fn shutdown(&mut self) -> Result<(), OracleError> {

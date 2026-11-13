@@ -1,0 +1,14 @@
+id: B5651
+milestone: M12 python
+title: Responses API bridge check
+status: done
+depends_on: [B500]
+file: tasks/B5651-responses-bridge.yaml
+covers:
+  - "litellm/main.py"
+parent: B158
+split_from: B158
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 875

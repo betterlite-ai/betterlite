@@ -1,14 +1,14 @@
 id: B390
 milestone: M2 routing
 title: Typed routing values and bounded local store
-status: todo
+status: done
 depends_on: [B002, B301, B361, B2226]
 file: tasks/B390-routing-value-store.yaml
 covers:
   - "litellm/caching/in_memory_cache.py"
 parent: B125
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 910

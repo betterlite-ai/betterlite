@@ -1,6 +1,7 @@
 #![cfg(test)]
 
-use super::flatten_and_drop;
+use crate::schema::{drop_non_python_regex_patterns, flatten::flatten_top_level};
+
 use crate::arguments::json::{Json, Object};
 use rstest::rstest;
 use std::iter::once;
@@ -100,7 +101,10 @@ fn object(text: &str) -> Object {
     object(r#"{"type":"string","pattern":"a{word}"}"#)
 )]
 fn tool_schemas_tool_schema_tests_behavior(#[case] schema: Object, #[case] expected: Object) {
-    assert_eq!(flatten_and_drop(&schema), expected);
+    assert_eq!(
+        flatten_top_level(&flatten_top_level(&drop_non_python_regex_patterns(&schema))),
+        expected
+    );
 }
 
 #[rstest]
@@ -117,7 +121,9 @@ fn tool_schemas_tool_schema_tests_depth(#[case] count: usize, #[case] accepted: 
         )))
         .collect::<String>();
     let input = format!(r##"{{"$defs":{{{definitions}}},"anyOf":[{{"$ref":"#/$defs/d0"}}]}}"##);
-    let flattened = flatten_and_drop(&object(&input));
+    let flattened = flatten_top_level(&flatten_top_level(&drop_non_python_regex_patterns(
+        &object(&input),
+    )));
     assert_eq!(
         flattened.get("type").and_then(Json::as_str) == Some("object"),
         accepted

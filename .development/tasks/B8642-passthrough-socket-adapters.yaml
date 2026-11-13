@@ -1,0 +1,78 @@
+id: B8642
+title: Pass-through WebSocket socket adapters
+description: >-
+  B3612 declares the socket seams of the pass-through WebSocket relay (`ClientSocket`, `UpstreamConnector`, `UpstreamSocket`) and B3628 adds `RouteSocket` on top of ClientSocket. Both tasks test with fakes and leave the real sockets out. This task builds the production adapters in crates/betterlite-server/src/app/pass_through/sockets.rs and sockets/ (client.rs, upstream.rs, tests.rs). B8640 hands them to the WebSocket routes of B3628 and B3629.
+  The architect adds axum's `ws` feature and the tokio-tungstenite crate to the manifests before this task runs; do not edit a Cargo.toml.
+
+  Client side. LiteLLM uses Starlette's WebSocket. Its handler runs route code first and calls accept later, and a close before accept turns into a plain HTTP 403 answer to the upgrade request. axum is the other way round: the 101 answer is the handler's return value, and the socket exists only inside the `on_upgrade` callback. `AxumClientSocket` bridges the two.
+  `serve_client_socket(upgrade, parts, route)` is the one entry point B8640 calls from a GET handler. `upgrade` is axum's WebSocketUpgrade, `parts` the request parts (path, query, headers) and `route` a `'static + Send` closure that takes `Arc<AxumClientSocket>` and returns the route future. Steps:
+  1. Build the socket in the pending state with a oneshot pair for the accept signal and one for the upgraded socket. Start the route future.
+  2. Poll the route future and the accept signal together. When the route future ends before any accept, answer 403 with an empty body. This covers a close before accept, which is what B3628 does when the provider key is missing and what B052's WebSocket auth does on a bad key. The close code and reason are dropped, as uvicorn drops them.
+  3. When accept arrives first, answer with the upgrade response. Pass the subprotocol it carries to `WebSocketUpgrade::protocols` so the 101 answer names it, or name none when it is None. The `on_upgrade` callback hands the socket to the waiting accept call and then keeps awaiting the same route future, so the route runs to its end inside that callback. Do not spawn a task.
+  4. When the client never completes the upgrade, the accept call returns an error and the route future sees it as B3612's accept error.
+  Methods. `accept` and `accept_with_protocol(subprotocol)` follow step 3; a second accept is an error. `receive` maps axum messages: Text to Text, Binary to Binary, Close or the end of the stream to Disconnect (and marks the client side disconnected), Ping and Pong to Other. `send_text`, `send_bytes` and `close(code, reason)` write to the socket; close marks the application side disconnected. `headers()` returns the request headers, `path()` the request path and `query()` the raw query or an empty string. The two state reads return the client side and the application side as B3611's client_socket_is_open expects. Read B3611's and B3612's merged trait names and implement them; do not declare a second trait.
+
+  Upstream side. `TungsteniteConnector` implements B3612's `UpstreamConnector` with tokio-tungstenite over TLS with the platform roots (the same TLS stack betterlite-http already uses). It must keep what websockets 15.0.1 does at the pin, as B3612 lists it:
+  - The open handshake has 10 seconds. A timeout, DNS, TLS, scheme or URL failure is `ConnectError::Failed` with the error text. A non 101 answer is `ConnectError::Rejected { status }`.
+  - The headers B3612 passes are added to the handshake request in their order. Never log their values: they carry the provider key.
+  - The largest incoming message is 1048576 bytes. A larger one makes the adapter close the upstream with code 1009, and `recv` returns `Closed(None)`.
+  - A keepalive ping goes out every 20 seconds. When no pong arrives within 20 seconds, the adapter closes the upstream with code 1011 and reason `keepalive ping timeout` and `recv` returns an Err.
+  - A close frame from the peer gives `Closed(Some(CloseFrame))` with its code and reason; a close without a frame gives `Closed(None)`.
+  `TungsteniteSocket` implements `UpstreamSocket`. It splits the stream so sends and receives do not wait on each other. A `std::sync::Mutex` is never held across an await; use a tokio mutex for the sink.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/pass_through/sockets.rs
+    - crates/betterlite-server/src/app/pass_through/sockets/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2159-L2207
+    why: create_websocket_passthrough_route, which shows how LiteLLM opens the upstream socket with websockets.connect and its limits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3105-L3180
+    why: The OpenAI WebSocket route, which closes before accept on a missing key and accepts with a negotiated subprotocol.
+  - url: https://websockets.readthedocs.io/en/15.0.1/reference/asyncio/client.html
+    why: open_timeout, ping_interval, ping_timeout and max_size defaults of the client LiteLLM uses.
+  - url: https://www.starlette.io/websockets/
+    why: Starlette's accept, receive, close and the client_state and application_state reads.
+  - url: https://docs.rs/axum/0.8.9/axum/extract/ws/struct.WebSocketUpgrade.html
+    why: on_upgrade and protocols, the two calls the bridge is built on.
+  - url: https://docs.rs/tokio-tungstenite/latest/tokio_tungstenite/
+    why: connect_async_tls_with_config and WebSocketConfig max_message_size.
+dod:
+  - text: A route that closes before accept makes the upgrade request answer 403 with no body, and a route that accepts gets a 101 that names the chosen subprotocol.
+    proof: [client-tests]
+  - text: Client frames map to Text, Binary, Disconnect and Other, and the two state reads change on a client close and on a server close.
+    proof: [client-tests]
+  - text: The connector sends the given headers in order, maps a non 101 answer to Rejected with its status and every other failure to Failed.
+    proof: [upstream-tests]
+  - text: A message over 1048576 bytes closes the upstream with 1009 and recv gives Closed(None); a missing pong after a ping closes with 1011.
+    proof: [upstream-tests]
+  - text: No log line or error text holds a header value passed to the connector.
+    proof: [upstream-tests]
+checks:
+  optional: []
+  commands:
+    - id: client-tests
+      why: the axum bridge answers the upgrade wrongly or maps frames and state wrongly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::sockets::tests::client(::|$)/)'
+    - id: upstream-tests
+      why: the tungstenite connector breaks the websockets 15.0.1 limits or leaks a header value
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::pass_through::sockets::tests::upstream(::|$)/)'
+oracle_cases: []
+deviations:
+  - what: The upstream socket is opened without permessage-deflate when tokio-tungstenite has no deflate support.
+    why: Compression only changes bytes between the gateway and the provider. The client sees the same frames.
+  - what: A close before accept answers 403 with an empty body and no close code.
+    why: uvicorn does the same for a websocket.close before accept, so this matches LiteLLM as deployed.
+out_of_scope:
+  - "The relay loops and the frame handling: B3612. The route functions: B3628 and B3629. The mount and the WebSocket auth call before the route: B8640."
+  - "B3611's client_socket_is_open and close helpers: this task only implements the state reads they need."
+pitfalls:
+  - "The route future must keep running inside on_upgrade after accept; dropping it there ends the session at once."
+  - "axum answers the upgrade only after the handler returns, so accept cannot return until the 101 is written and on_upgrade hands the socket over."
+  - "A subprotocol the client did not offer must not appear in the 101 answer; pass exactly the one B3628 negotiated."
+  - "tungstenite answers pings on its own, but it never sends them; the 20 second keepalive and its timeout are this adapter's job."
+  - "The provider key rides in the Authorization header of the handshake; keep it out of the Failed text, which tungstenite builds from the request in some errors."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

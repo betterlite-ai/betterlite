@@ -1,0 +1,10 @@
+kind: helper
+name: redis-cache-batch-read-python-literal
+call:
+  b5640:
+    function: batch_read
+    namespace: ns
+    keys: [alpha]
+    replies: ["{'answer': 42, 'ok': True}"]
+env: {}
+compare: {ignore: []}

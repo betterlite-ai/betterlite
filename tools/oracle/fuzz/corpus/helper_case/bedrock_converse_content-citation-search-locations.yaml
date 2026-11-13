@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-converse-content-citation-search-locations-seed
+call:
+  bedrock_converse_content:
+    citation_search_locations:
+      citations_content_blocks:
+        - content: [{text: abc}, bad, {text: de}]
+          citations:
+            - location: {searchResultLocation: {start: 1, end: true}}
+              source: "https://a.test"
+              title: A
+        - content: []
+          citations:
+            - location: {searchResultLocation: {start: 0, end: 1}}
+env: {}
+compare: {ignore: []}

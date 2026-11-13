@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-files-list-seed
+call:
+  anthropic_files:
+    file_list_pagination:
+      now: 1700000000
+      purposes: [messages, "", null]
+      body: {data: []}
+env: {}
+compare: {ignore: []}

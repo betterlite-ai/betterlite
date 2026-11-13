@@ -1,0 +1,20 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-service-error",
+  "call": {
+    "b3843": {
+      "function": "service",
+      "value": {
+        "service": "postgres",
+        "call_type": "query",
+        "caller": "worker",
+        "error": "failed",
+        "event_metadata": {}
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

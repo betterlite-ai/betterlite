@@ -1,0 +1,122 @@
+id: B5820
+title: Text completion and embeddings guardrail translation
+description: >-
+  Build the handlers that apply a guardrail to a text completion request and response and to an embeddings request.
+  Each handler turns the text in the request body into the `texts` of a `GuardrailApiInputs`, calls the guardrail once, and writes the returned texts back into the body.
+  The modules sit in crates/betterlite-server/src/guardrails/ and are plain async functions, not trait impls. The dispatcher (B3679, B3680) picks the function by call type, so nothing here knows about call types or routes.
+  Request bodies are `BTreeMap<String, GuardrailValue>` and responses are `GuardrailValue`, both from `betterlite_config::sections::guardrail_identity::item`.
+  `GuardrailApiInputs` (LiteLLM's `GenericGuardrailAPIInputs`), `GuardrailContract`, `GuardrailFailure` and `GuardrailLogTarget` come from B5471's `guardrail_base`. The guardrail is a generic `G: GuardrailContract`, because the trait's `apply_guardrail` returns `impl Future` and cannot be a trait object.
+  `input_type` is `GuardrailInputType::Request` for input and `GuardrailInputType::Response` for output.
+
+  Module `completion_translation` has `process_input_messages(data: &mut BTreeMap<String, GuardrailValue>, guardrail: &G, logging_obj: Option<&mut GuardrailLogTarget>) -> Result<(), CompletionTranslationError>`, LiteLLM's `OpenAITextCompletionHandler.process_input_messages`.
+  A missing or null `prompt` logs at debug and returns. A text `prompt` calls the guardrail once with `texts: [prompt]` and sets `model` in the inputs only when `data["model"]` is a non-empty text. The call passes `data` itself as `request_data`. The returned `texts[0]` replaces `data["prompt"]`; an absent or empty returned list leaves the prompt as it was. An array `prompt` collects the elements that are text, keeping their positions, and skips every other element (token ids, nested id arrays). No text elements means no guardrail call. Otherwise it makes one call with the collected texts and writes returned text number `i` back to the position of collected text `i` for every `i` below the returned length, so a shorter reply rewrites only the first positions and a longer reply drops its extra texts. Any other `prompt` type logs at warn level with the type name and returns.
+  Keep every debug line LiteLLM logs, for example `OpenAI Text Completion: Applied guardrail to string prompt. Original length: {}, New length: {}`, lengths counted in characters.
+
+  `completion_translation::process_output_response(response: &mut GuardrailValue, guardrail: &G, logging_obj: Option<&mut GuardrailLogTarget>, user_api_key_dict: Option<&BTreeMap<String, GuardrailValue>>, request_data: Option<&mut BTreeMap<String, GuardrailValue>>) -> Result<(), CompletionTranslationError>` is `process_output_response`.
+  An absent, null or empty `choices` array logs at debug and returns. It collects `choices[i].text` for every choice whose `text` is text, keeping the choice index. No collected text means no call, and `request_data` is left alone. Otherwise it prepares the request data (see `response_context`), builds inputs with `texts` and `model` set from `response["model"]` when that is a non-empty text, calls the guardrail with `Response`, and writes returned text `i` into the `text` of the `i`-th collected choice for every `i` below the returned length. The response is changed in place.
+
+  Module `response_context` has `add_response_context(request_data: &mut BTreeMap<String, GuardrailValue>, response: &GuardrailValue, user_api_key_dict: Option<&BTreeMap<String, GuardrailValue>>)`. LiteLLM repeats these lines in each output handler, so this one function serves them all, including B3677's transcription handler. It inserts `response` under the key `response` when the key is missing (an existing value stays, even null). Then, when the key `litellm_metadata` is missing, it computes the user metadata with B3661's `transform_user_api_key_dict_to_metadata` and inserts it as an object under `litellm_metadata` only when the result is not empty. An output handler that gets `request_data: None` starts from an empty map, calls this function on it, and passes that map to the guardrail. The key is looked at, not its value, so `"litellm_metadata": null` blocks the insert. Read B3661's function in crates/betterlite-guardrails/src/guardrail_translation.rs for its exact signature and adapt the call.
+
+  Module `embeddings_translation` has `process_input_messages(data, guardrail, logging_obj) -> Result<(), EmbeddingsTranslationError>` with the same arguments as the completion one. A missing or null `input` logs at debug and returns. A text `input` calls the guardrail with `texts: [input]` and `model` when `data["model"]` is a non-empty text, and when the returned `texts` is present and not empty, sets `data["input"]` to `texts[0]`. An array `input` is handled like this, in order. An empty array returns. If the first element is a number or an array (token ids, one list per input), log at debug `OpenAI Embeddings: Input is token IDs, skipping guardrail processing` and return without a call. If the first element is not text, log a warning with `Unexpected input list item type` and return. Otherwise send the whole array as `texts`, call the guardrail, and when the returned `texts` is present and not empty, replace `data["input"]` with the returned array whole. Its length may differ from the input's length, and nothing is paired by position. Any other `input` type logs at warn level and returns.
+  `process_output_response(response: &GuardrailValue) -> ()` logs the debug line `OpenAI Embeddings: Output response processing skipped - embeddings contain vectors, not text` and changes nothing. It exists so the dispatcher can call every endpoint the same way, and it takes no guardrail.
+
+  Each of the two handler modules owns its error enum (`CompletionTranslationError`, `EmbeddingsTranslationError`) with one variant holding the `GuardrailFailure` the guardrail returned, and a second variant on the embeddings enum for an array whose first element is text but a later element is not (see deviations). Box the failure if `clippy::result_large_err` fires. No handler catches, logs or rewrites a guardrail failure. It goes straight to the caller, because LiteLLM lets the exception pass.
+
+  Tests use a small fake guardrail defined in each module's tests, a struct that records the `GuardrailApiInputs`, `input_type` and a copy of the request data it was called with and returns a scripted `texts` list. They live in `<module>::tests` with the name prefixes the checks use. The handlers are not reachable from a route yet, so HTTP cases come with the dispatcher umbrella (B3680) and there are no oracle cases here.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/completion_translation.rs
+    - crates/betterlite-server/src/guardrails/completion_translation/**
+    - crates/betterlite-server/src/guardrails/embeddings_translation.rs
+    - crates/betterlite-server/src/guardrails/embeddings_translation/**
+    - crates/betterlite-server/src/guardrails/response_context.rs
+    - crates/betterlite-server/src/guardrails/response_context/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/guardrail_translation/handler.py#L33-L118
+    why: Text completion process_input_messages with the string and array prompt branches and the position-preserving write-back.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/guardrail_translation/handler.py#L120-L195
+    why: Text completion process_output_response, the response and litellm_metadata insertion, and the per-choice write-back.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/embeddings/guardrail_translation/handler.py#L35-L67
+    why: Embeddings process_input_messages type dispatch between text, array and other.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/embeddings/guardrail_translation/handler.py#L69-L142
+    why: _process_string_input and _process_list_input, including the token id skip and the whole-list replace.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/embeddings/guardrail_translation/handler.py#L144-L171
+    why: Embeddings process_output_response, a logged no-op.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/base_translation.py#L82-L120
+    why: transform_user_api_key_dict_to_metadata, called by the response context (B3661 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/guardrail_translation/__init__.py#L1-L15
+    why: The call types that use the completion handler, text_completion and atext_completion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/embeddings/guardrail_translation/__init__.py#L1-L15
+    why: The call types that use the embeddings handler, embedding and aembedding.
+dod:
+  - text: A text completion `prompt` that is text reaches the guardrail as one text, with `model` set only when the body's model is a non-empty text, and the first returned text replaces the prompt. An empty reply keeps the prompt.
+    proof: [completion-input-tests]
+  - text: An array `prompt` sends only its text elements, writes returned texts back to the same positions, leaves non-text elements in place, makes no call when it has no text element, and handles a reply shorter or longer than the request without an error.
+    proof: [completion-input-tests]
+  - text: A missing or null `prompt` makes no guardrail call and leaves the body alone, and a `prompt` that is a number or an object also makes no call and leaves the body alone.
+    proof: [completion-input-tests]
+  - text: Completion output sends every text-valued `choices[].text` with input type `Response`, rewrites those choices by position, and leaves a choice with a null or missing `text` untouched. A response with no choices, or choices without text, makes no call and leaves the request data without a `response` key.
+    proof: [completion-output-tests]
+  - text: Completion output adds `response` and a non-empty `litellm_metadata` to the request data before the call, builds a fresh map when none was given, and does not replace an existing `response` or an existing `litellm_metadata` key.
+    proof: [completion-output-tests, response-context-tests]
+  - text: Output inputs carry `model` from the response only when it is a non-empty text.
+    proof: [completion-output-tests]
+  - text: The user metadata keys get the `user_api_key_` prefix, keys that already have it are kept, null values and keys starting with an underscore are dropped, and an empty result adds no `litellm_metadata`.
+    proof: [response-context-tests]
+  - text: A guardrail failure from any handler is returned as the module's error with the failure intact and the body is not rewritten.
+    proof: [completion-input-tests, completion-output-tests, embeddings-input-tests]
+  - text: A text embeddings `input` and an array of text both go to the guardrail, and a non-empty reply replaces the input, a text for the text form and the whole returned array for the array form, even when its length differs. An absent or empty reply keeps the input.
+    proof: [embeddings-input-tests]
+  - text: Embeddings input that is an empty array, an array of numbers, an array of number arrays, or an array whose first element is neither text nor number nor array makes no guardrail call and leaves the body unchanged. A missing, null or other-typed input does the same.
+    proof: [embeddings-input-tests]
+  - text: An embeddings array that starts with text and has a later element that is not text returns the module's error without a guardrail call.
+    proof: [embeddings-input-tests]
+  - text: Embeddings output processing changes nothing and needs no guardrail.
+    proof: [embeddings-output-tests]
+checks:
+  optional: []
+  commands:
+    - id: completion-input-tests
+      why: the completion request handler tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::completion_translation::tests::input_/)'
+    - id: completion-output-tests
+      why: the completion response handler tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::completion_translation::tests::output_/)'
+    - id: response-context-tests
+      why: the shared response request-data preparation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::response_context::tests::/)'
+    - id: embeddings-input-tests
+      why: the embeddings request handler tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::embeddings_translation::tests::input_/)'
+    - id: embeddings-output-tests
+      why: the embeddings response no-op test is missing or fails
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::embeddings_translation::tests::output_/)'
+oracle_cases: []
+deviations:
+  - what: An embeddings `input` array that starts with text but has a later element that is not text is rejected with `EmbeddingsTranslationError` before any guardrail call. The route maps it to a 400.
+    why: LiteLLM passes the mixed list to the guardrail as `texts`. `GuardrailApiInputs.texts` is a `Vec<String>`, and skipping the scan would let an unscanned input through, so betterlite refuses the request. The declared type `str | int | list[int]` list is meant to hold one kind.
+  - what: The `response` value placed in the request data is a copy of the response taken before the rewrite. LiteLLM stores the live object, so a guardrail that reads `request_data["response"]` after the rewrite sees the new text there.
+    why: Rust cannot hold a shared reference into the response while the handler writes to it, and the guardrail only reads the response during its own call.
+out_of_scope:
+  - "B3661 owns BaseTranslation, transform_user_api_key_dict_to_metadata and merge_user_api_key_metadata_into_request. This task calls the first and does not touch the others."
+  - "B5471 owns GenericGuardrailAPIInputs as GuardrailApiInputs, GuardrailContract, GuardrailFailure and GuardrailLogTarget. This task only builds and reads them."
+  - "The guardrail_translation_mappings tables in the six __init__.py files (call type to handler class) belong to the dispatcher, B3679 and B3680. The dispatcher also registers the functions here by call type: text_completion, atext_completion, embedding and aembedding."
+  - "B3677 owns the image generation, speech, transcription and video handlers and uses response_context from this task."
+  - "B3668 owns the chat handler and B3671 to B3676 own the Responses and Anthropic handlers. They keep their own copies of the output request-data lines."
+  - "Turning a GuardrailFailure into an HTTP error body, and the proxy route that calls these handlers, belong to the dispatcher and route tasks."
+pitfalls:
+  - "`model` is added to the inputs only when it is a non-empty text (LiteLLM tests truthiness), so a body with `\"model\": \"\"` sends inputs without a model."
+  - An array `prompt` pairs returned texts with positions by index and stops at the shorter list, so a guardrail that returns fewer texts leaves the later prompts as they were, with no error.
+  - "A text prompt takes `texts[0]` only when the returned list is non-empty. An empty list keeps the original prompt, but a list holding one empty text sets the prompt to an empty string."
+  - A `prompt` array of token ids (numbers or arrays of numbers) has no text element, so it is never scanned and never rewritten, and that is not a warning.
+  - "The embeddings array form replaces `input` with the whole returned list, so a guardrail that adds or drops texts changes how many vectors the provider returns."
+  - "The embeddings forms keep the input when the reply has no `texts` key, a null `texts` or an empty list, all three the same."
+  - "An array `input` is classified by its first element alone: a leading number or array skips the whole input even if later elements are text. The later-element rejection above applies only to an array that starts with text."
+  - "The `response` key and `litellm_metadata` are tested with key presence. A request body whose `litellm_metadata` is null keeps the null and gets no user metadata."
+  - "Output processing builds the request data only after it finds at least one text, so a response with no text leaves `request_data` untouched and unadded."
+  - The warn lines for an unexpected `prompt` or `input` type are LiteLLM's only signal for a bad type. They must stay warn level, since the other endpoints in B3677 log the same case at debug.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

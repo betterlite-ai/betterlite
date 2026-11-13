@@ -1,0 +1,127 @@
+id: B8064
+title: Python OCR, rerank, media, batch and realtime cost functions
+description: >-
+  Give `betterlite` the specialised cost functions of cost_calculator.py: `ocr_cost`, `ocr_batch_cost`,
+  `vector_store_search_cost`, `rerank_cost`, `transcription_cost`, `default_image_cost_calculator`,
+  `default_video_cost_calculator`, `batch_cost_calculator`, the three token usage processors and the two realtime
+  handlers. The price rules are Rust (B1678 OCR, B1679 batch, B1680 usage aggregation, B1681 realtime sessions, B1674 images,
+  B1676 audio and video, B1689 early-return charges). This task extends the native family `cost` that B8063 created with
+  more methods and adds the Python functions. It builds on B8063's `NativeCost` and does not make a second one.
+
+
+  Because B8063 owns `src/cost.rs`, this task owns a second native file set: `src/cost_extra.rs`, `src/cost_extra/**` and
+  `python/betterlite/_native_cost_extra.pyi`, registered as the family `cost_extra`. Its functions take the same settings
+  text as `NativeCost` and share nothing but that text. Methods: `ocr_cost`, `ocr_batch_cost`, `vector_store_cost`,
+  `rerank_cost`, `transcription_cost`, `image_cost`, `video_cost`, `batch_cost`, `combine_usage`, `realtime_cost` and
+  `realtime_transcription_cost`, each taking and returning JSON text. Conversions sit in `src/cost_extra/convert.rs` with
+  tests named `cost_extra_request_` and `cost_extra_result_`. B5369 declares the `cost_extra` family in `lib.rs` and `_native.pyi` with a stub `register` that this task fills.
+
+
+  Python lives in `python/betterlite/_cost_extra/` with an explicit `__all__`, and this task also writes
+  `python/betterlite/cost_calculator.py`, which re-exports by name everything B8063's `_cost` and this package export, so
+  `from betterlite.cost_calculator import completion_cost, ocr_cost` works. Signatures and returns follow LiteLLM exactly:
+  `ocr_cost(model, custom_llm_provider, response=None, model_info=None) -> tuple[float, float]` (L2174), `ocr_batch_cost(model,
+  custom_llm_provider, usage_info, model_info=None)` (L2260), `vector_store_search_cost(model, custom_llm_provider, response)`
+  (L2337), `rerank_cost(model, custom_llm_provider, billed_units=None)` (L2369), `transcription_cost(model,
+  custom_llm_provider, duration)` (L2403), `default_image_cost_calculator(model, custom_llm_provider=None, quality=None, n=1,
+  size="1024-x-1024", optional_params=None, model_info=None) -> float` (L2407), `default_video_cost_calculator(model,
+  duration_seconds, custom_llm_provider=None, model_info=None, video_resolution=None) -> float` (L2499) and
+  `batch_cost_calculator(usage, model, custom_llm_provider=None, model_info=None, data_residency=None)` (L2591). A
+  `model_info` argument is a plain dict and goes to Rust as JSON.
+
+
+  The usage processors are Python classes over Python `Usage` objects. `BaseTokenUsageProcessor.combine_usage_objects` builds the
+  merged `Usage` from Rust's JSON result, keeping the cached-token aliases the way L2713-L2762 does.
+  `RealtimeAPITokenUsageProcessor.collect_usage_from_realtime_stream_results` and
+  `ResponsesWebSocketTokenUsageProcessor.collect_usage_from_responses_ws_results` read events and call the usage
+  transformer of B5658 for each billable event (the filter at L2862-L2882 is a Rust rule, sent as the list of events).
+  `handle_realtime_stream_cost_calculation` (L2984) and `handle_realtime_transcription_cost_calculation` (L3045) return
+  floats.
+
+
+  Tests compare each function with LiteLLM on the local map: a Mistral OCR page count, a batch OCR usage, a vector store
+  response with a priced query, a Cohere rerank unit count, a Whisper duration, `dall-e-3` and `gpt-image-1` sizes, a
+  Veo duration, an OpenAI batch usage with `data_residency="eu"`, and a realtime event list with cached audio.
+scope:
+  paths:
+  - crates/betterlite-python/src/cost_extra.rs
+  - crates/betterlite-python/src/cost_extra/**
+  - crates/betterlite-python/python/betterlite/_native_cost_extra.pyi
+  - crates/betterlite-python/Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-python/python/betterlite/_cost_extra/**
+  - crates/betterlite-python/python/betterlite/cost_calculator.py
+  - crates/betterlite-python/tests/test_cost_extra.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2174-L2318
+  why: OCR cost and OCR batch cost.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2337-L2406
+  why: Vector store, rerank and transcription cost.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2407-L2577
+  why: Image and video default calculators.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2591-L2711
+  why: batch_cost_calculator and its prompt cost.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2713-L2917
+  why: Usage combination and the realtime and websocket processors.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2984-L3098
+  why: The two realtime cost handlers.
+dod:
+- text: "`ocr_cost`, `ocr_batch_cost`, `vector_store_search_cost`, `rerank_cost` and `transcription_cost` give LiteLLM's pair of floats for the fixed inputs."
+  proof: [cost-extra-calls]
+- text: "`default_image_cost_calculator` and `default_video_cost_calculator` give LiteLLM's float for the image and video cases."
+  proof: [cost-extra-media]
+- text: "`batch_cost_calculator` gives LiteLLM's pair, including the half-rate fallback and the data residency uplift."
+  proof: [cost-extra-media]
+- text: The three processors combine and collect usage like LiteLLM, including cached-token aliases.
+  proof: [cost-extra-realtime]
+- text: "Both realtime handlers give LiteLLM's float, and `from betterlite.cost_calculator import completion_cost, ocr_cost` works."
+  proof: [cost-extra-realtime]
+- text: Each function's signature equals LiteLLM's.
+  proof: [cost-extra-calls]
+- text: JSON conversions for every native method parse without an interpreter, and malformed text gives an error, not a panic.
+  proof: [cost-extra-native]
+- text: The `_cost_extra` package and `cost_calculator.py` pass ruff and strict basedpyright.
+  proof: [python-lint]
+- text: >-
+    This task adds every Cargo.toml dependency it uses and no unused ones.
+  proof: [cost-extra-calls]
+checks:
+  optional: []
+  commands:
+  - id: cost-extra-calls
+    why: A specialised call or signature differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cost_extra.py -k "ocr or rerank or vector or transcription or signature"
+  - id: cost-extra-media
+    why: An image, video or batch price differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cost_extra.py -k "image or video or batch"
+  - id: cost-extra-realtime
+    why: A usage processor or realtime price differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_cost_extra.py -k "processor or realtime or module"
+  - id: cost-extra-native
+    why: A conversion breaks or panics.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^cost_extra::/)'
+  - id: python-lint
+    why: A strict type error in the extra cost package.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Returned floats come from Rust's exact decimal result.
+  why: Same reason as B8063. The tests allow a relative difference of 1e-12 and name the cases where it shows.
+- what: This task has no helper oracle cases.
+  why: The pytest file compares both packages, and the pricing cases belong to the Rust tasks named above.
+out_of_scope:
+- "`cost_per_token`, `completion_cost`, `response_cost_calculator` and the small helpers around them are B8063."
+- "Rust pricing for each call type is B1674, B1676, B1678, B1679, B1680, B1681 and B1689."
+- "`OCRPricing` (L323) is a TypedDict, and it is declared with the OCR types of B5658."
+- "`_ResponsesWsEvent` and `_ResponsesWsEventResponse` (L2862-L2870) are private pydantic models of the Rust filter."
+pitfalls:
+- "Several of these functions return `tuple[float, float]` as (prompt, completion), and `default_image_cost_calculator` returns one float."
+- "`default_image_cost_calculator` defaults `size` to the text `1024-x-1024` with dashes, not `1024x1024`."
+- "`batch_cost_calculator` falls back to half the normal rate only when no batch rate exists, so a test needs both kinds of model."
+- "`combine_usage_objects` of an empty list is an error in LiteLLM, and Rust must report the same class."
+- "A realtime event with no `response.usage` is skipped, not counted as zero."
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

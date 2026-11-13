@@ -17,9 +17,8 @@ description: >-
   DB tables: LiteLLM_VerificationToken (keys), LiteLLM_TeamTable (teams).
 scope:
   paths:
-    - crates/betterlite-db/**
-    - crates/betterlite-auth/**
-    - crates/betterlite-config/**
+    - crates/betterlite-db/src/team_window_reset.rs
+    - crates/betterlite-db/src/team_window_reset/**
     - tools/oracle/cases/team-window-reset/**
   lint_tables: false
 references:

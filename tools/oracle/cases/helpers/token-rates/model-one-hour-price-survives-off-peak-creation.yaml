@@ -1,0 +1,18 @@
+kind: helper
+name: model-one-hour-price-survives-off-peak-creation
+call:
+  token_rates:
+    operation: base
+    model_info:
+      cache_creation_input_token_cost: "0.000002"
+      cache_creation_input_token_cost_above_1hr: "0.000006"
+    usage:
+      prompt_tokens: 1
+    service_tier: null
+    provider: null
+    off_peak_pricing:
+      hours_utc: "00:00-00:00"
+      cache_creation_input_token_cost: "0.0000001"
+    moment: "2024-06-16T10:30:00Z"
+compare: {ignore: []}
+env: {}

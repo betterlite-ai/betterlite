@@ -1,0 +1,35 @@
+kind: helper
+name: oci-chat-wire-cohere-response-tool-calls-and-usage
+call:
+  b5942:
+    function: cohere_response
+    model: cohere.command-r
+    created: 1700000000
+    status: 200
+    body:
+      modelId: cohere.command-r
+      modelVersion: "1.0"
+      chatResponse:
+        text: "hello"
+        apiFormat: COHERE
+        finishReason: COMPLETE
+        toolCalls:
+          - name: lookup
+            parameters:
+              b: 2
+              a: 1
+        usage:
+          promptTokens: 2
+          completionTokens: 3
+          totalTokens: 5
+compare:
+  ignore:
+    - pointer: /value/choices/0/message/tool_calls/0/id
+      why: "LiteLLM hashes Python's spaced json.dumps text and betterlite hashes compact JSON; oci-wire-tests proves the id"
+    - pointer: /value/choices/0/message/tool_calls/0/function/arguments
+      why: "LiteLLM emits Python's spaced json.dumps text and betterlite emits compact JSON; docs/compatibility.md excludes json.dumps formatting"
+    - pointer: /value/choices/0/message/provider_specific_fields
+      why: "betterlite's shared AssistantMessage always serializes this object; LiteLLM's Message drops it when unset"
+    - pointer: /value/choices/0/provider_specific_fields
+      why: "betterlite's shared ChatChoice always serializes this object; LiteLLM's Choices drops it when unset"
+env: {}

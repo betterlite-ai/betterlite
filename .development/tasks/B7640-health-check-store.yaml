@@ -1,0 +1,243 @@
+id: B7640
+title: Health check table store and changed-result persistence
+description: >-
+  Build the database half of LiteLLM's model health history and the logic that decides which cycle results get written.
+  Two modules: `health_check_rows` in betterlite-db (the table store) and `health_persistence` in betterlite-server
+  (aggregate, compare, write). B4445 builds the routes and the live /health writer on top of both. Nothing here
+  registers a route.
+
+  Store, `health_check_rows` in betterlite-db. It wraps B700's `PostgresStore` and reads and writes the table
+  "LiteLLM_HealthCheckTable" (B703 created it, B706 added the per-model index). `HealthCheckRow` holds the 13 columns:
+  health_check_id String, model_name String, model_id Option<String>, status String, healthy_count i32, unhealthy_count i32,
+  error_message Option<String>, response_time_ms Option<f64>, details Option<serde_json::Value>, checked_by Option<String>,
+  checked_at, created_at and updated_at as chrono DateTime<Utc>. The columns are `timestamp without time zone`, so read them
+  as naive values and treat them as UTC (LiteLLM's `_assume_utc`). If `details` comes back as a JSON string, parse that
+  string as JSON and use the result (LiteLLM's `_decode_json_text`); a string that is not valid JSON fails the whole read.
+  `HealthCheckRowsError` is the module's error enum and keeps the driver error as its source. `HealthCheckRows` is built
+  with a `PostgresStore`. Its methods:
+  `query_latest() -> Result<Vec<HealthCheckRow>, HealthCheckRowsError>` runs LATEST_HEALTH_CHECKS_SQL and returns the error.
+  `fetch_latest() -> Vec<HealthCheckRow>` calls it and, on any error, logs at error level "Error getting all latest health
+  checks: {err}" and returns an empty list. `fetch_latest_for_models(model_names: &[String]) -> Vec<HealthCheckRow>` returns an
+  empty list at once for an empty slice, otherwise runs LATEST_HEALTH_CHECKS_FOR_MODELS_SQL with the names bound as one text
+  array and on error logs "Error getting latest health checks for models: {err}" and returns an empty list. Copy both SQL
+  strings from health_check_latest.py exactly: `SELECT DISTINCT ON ("model_id", "model_name")` ordered by model_id ASC,
+  model_name ASC, checked_at DESC, the second with `WHERE "model_name" = ANY($1)`. The result order is the SQL order.
+  `history(model_name: Option<&str>, status_filter: Option<&str>, limit: i64, offset: i64) -> Vec<HealthCheckRow>` is
+  PrismaClient.get_health_check_history: a falsy (None or empty) filter is dropped, the rest are equality filters on
+  model_name and status joined with AND, ordered by checked_at DESC, with LIMIT and OFFSET. On any error it logs "Error getting
+  health check history: {err}" and returns an empty list. `save_result(NewHealthCheck) -> Option<HealthCheckRow>` is
+  PrismaClient.save_health_check_result: it inserts one row and returns it, and on any error logs "Error saving health check
+  result for model {model_name}: {err}" at error level and returns None. `NewHealthCheck` has model_name, status,
+  healthy_count, unhealthy_count, error_message, response_time_ms, checked_by and model_id. The row id is a fresh UUID v4 string
+  made by the caller side of the store (an injected id source, not a global). error_message is stored only when non-empty and is
+  cut to its first 500 characters. checked_by and model_id are stored only when non-empty. response_time_ms is stored only when
+  it is a finite number (NaN and infinity become NULL, with no warning). `details` is never written: both callers in LiteLLM
+  pass None, so the column stays NULL and `_clean_details` is not built.
+
+  Persistence, `health_persistence` in betterlite-server. Inputs are the deployment list the cycle ran on and the cycle's
+  endpoint results. Read crates/betterlite-server/src/health_cycle.rs (B4443) for the healthy and unhealthy endpoint record
+  types and use them; this task adds no second endpoint type. It only reads two things from an endpoint: `model` (the
+  litellm_params.model string, may be absent) and, for unhealthy ones, `error` (any value, stringified). Deployments come from
+  B401's Deployment type: model_name, model_info.id and litellm_params.model.
+  `model_param_index(deployments) -> ModelParamIndex` is `_build_model_param_to_info_mapping`: a map from the litellm_params.model
+  string to a list of (model_name, model_id) in list order. A deployment with an empty or missing model string or an empty
+  model_name is skipped. model_id is None when model_info has no id.
+  `aggregate_results(index, healthy, unhealthy) -> Vec<AggregatedHealthResult>` is `_aggregate_health_check_results`. The key is
+  (model_id, model_name). For each healthy endpoint whose `model` is in the index, every (model_name, model_id) listed for that
+  string gets healthy_count + 1. Then, for each unhealthy endpoint whose `model` is in the index, every listed model gets
+  unhealthy_count + 1, and error_message is set to the first non-empty error seen for that key, stringified and cut to 500
+  characters. The result keeps first-insertion order (healthy pass first, then new keys from the unhealthy pass). An endpoint
+  with no `model`, or a model not in the index, counts for nobody. Entries start at 0, 0 and no error.
+  `new_status(result)` is "healthy" when healthy_count > 0 else "unhealthy".
+  `should_persist(result, latest_by_key, now) -> bool` is `_should_persist_health_check_result`. The lookup key is model_id when
+  it is non-empty, else model_name. It is true when there is no previous row, when the previous row's status differs from
+  `new_status`, or when `now - checked_at` is 3600 seconds or more (the comparison is >=). `now` comes from an injected clock.
+  `save_changed(rows, results, latest_by_key, start_time, checked_by) -> bool` is `_save_health_check_results_if_changed`. It
+  first picks the results that need writing, then builds one `save_result` call per pick (response_time_ms is the clock now minus
+  `start_time`, in milliseconds, taken once per pick as the calls are built), then awaits all of them together. It returns true
+  when every call returned a row, and also true when nothing needed writing; one None makes it false. The other writes still
+  happen.
+  `save_background(rows: Option<&HealthCheckRows>, deployments, healthy, unhealthy, start_time, checked_by) -> bool` is
+  `_save_background_health_checks_to_db`. With no store it returns false. Otherwise: build the index, aggregate, call
+  `query_latest` (the erroring form, not `fetch_latest`), build the latest map (key = model_id if non-empty else model_name; the
+  first row for a key wins), then `save_changed`. Any error in those steps logs at warning level "Failed to save background
+  health checks to database: {err}" and returns false; it never fails the caller.
+  `save_single(rows, model_name, healthy, unhealthy, start_time, user_id, model_id)` is `_save_health_check_to_db`, used by
+  B4445's /health route: status is "healthy" when the healthy list is non-empty, counts are the list lengths, error_message is the
+  stringified `error` of the first unhealthy endpoint when it has a non-empty one (cut to 500 characters), response_time_ms is
+  clock now minus start_time in milliseconds, checked_by is user_id. It calls `save_result` once and ignores the returned row.
+
+  The caller that runs `save_background` after a cycle (the window gate and the pod lock in proxy_server.py) is not part of this
+  task. The functions take their clock and id source by constructor injection and read no environment variable.
+
+  Tests. Store tests live in `health_check_rows::tests` and use B860's Postgres fixture (POSTGRES_TEST_URL, else testcontainers)
+  in a unique schema with the real table DDL from B703 and B706. Name prefixes: `latest_` (one row per model_id and model_name
+  pair, newest wins, model_id NULL pairs, naive timestamps read as UTC, details string decoded), `models_` (the name filter and the
+  empty slice), `save_` (truncation, empty-string fields stored as NULL, non-finite time stored as NULL, failure returns None),
+  `history_` (filters, order, limit, offset). Persistence tests live in `health_persistence::tests` with prefixes `index_`,
+  `aggregate_`, `decision_` (should_persist), `changed_` (save_changed with a recording fake store) and `background_`
+  (save_background with a fake store, including the failure paths). The oracle helper cases drive Python's pure functions
+  (`_build_model_param_to_info_mapping`, `_aggregate_health_check_results`, `_new_health_status`,
+  `_should_persist_health_check_result`, `PrismaClient._validate_response_time`) with fixed inputs. The Python adapter replaces
+  the `datetime` name in _health_endpoints.py with a subclass whose `now` returns the case's fixed time.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/health_persistence.rs
+    - crates/betterlite-server/src/health_persistence/**
+    - crates/betterlite-db/src/health_check_rows.rs
+    - crates/betterlite-db/src/health_check_rows/**
+    - tools/oracle/cases/helpers/health-persistence/**
+    - "tools/oracle/fuzz/corpus/helper_case/health_persistence-*"
+    - tools/oracle/helpers/b7640.py
+    - tools/oracle/helpers/b7640/**
+    - tools/oracle/src/helpers/server/b7640.rs
+    - tools/oracle/src/helpers/server/b7640/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/health_check_latest.py#L24-L43
+    why: The two DISTINCT ON statements, copied exactly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/health_check_latest.py#L46-L99
+    why: The row model (JSON-text details, UTC assumption), query_latest_health_checks and the two fetch functions that log and return nothing on error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6893-L6954
+    why: _validate_response_time, _clean_details and save_health_check_result with its field rules and its swallow-to-None error path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6956-L6990
+    why: get_health_check_history and the two latest-check wrappers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L645-L676
+    why: _save_health_check_to_db, the single-model writer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L679-L787
+    why: The model-param index, the per-model aggregation and the status rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L784-L848
+    why: The persist decision (status change or one hour) and the awaited, gathered writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L851-L904
+    why: The background entry point, its latest-map key rule and its never-raise wrapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4335-L4362
+    why: The only caller of the background save and the checked_by value it passes (B4444 owns the caller).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1377-L1396
+    why: Column types, defaults and the four indexes of the table.
+
+dod:
+  - text: query_latest and fetch_latest return one row per (model_id, model_name) pair with the newest checked_at, in the SQL order, with naive timestamps read as UTC and a JSON-string details column decoded.
+    proof: [latest-tests]
+  - text: fetch_latest and fetch_latest_for_models return an empty list and log the exact message on a driver error, and the for-models form returns an empty list for an empty slice and filters by name otherwise.
+    proof: [latest-tests, models-tests]
+  - text: save_result stores the 500-character error cut, stores empty strings and non-finite times as NULL, leaves details NULL, sets updated_at, and returns None with the logged message when the insert fails.
+    proof: [save-tests]
+  - text: history filters by non-empty model_name and status, orders newest first and honours limit and offset.
+    proof: [history-tests]
+  - text: The model index skips deployments without a model string or model_name, and aggregation counts each endpoint for every model listed under its model string, in the LiteLLM insertion order, with the first non-empty error cut to 500 characters.
+    proof: [index-tests, aggregate-tests, oracle, helper-python]
+  - text: should_persist is true for no previous row, a changed status, or an age of 3600 seconds or more, and false otherwise, using model_id before model_name as the lookup key.
+    proof: [decision-tests, oracle, helper-python]
+  - text: save_changed writes only the picked results, awaits them together, and returns false when any write returns nothing while the other writes still happen.
+    proof: [changed-tests]
+  - text: save_background returns false without a store, reads the erroring latest query, uses the first row per key, and returns false with the warning instead of failing when any step errors.
+    proof: [background-tests]
+  - text: save_single derives status, counts and the first error from the endpoint lists and writes one row.
+    proof: [single-tests]
+  - text: Helper corpus cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: latest-tests
+      why: the latest-per-model read, UTC handling, details decoding or the error-to-empty result is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-db --no-tests=fail
+        -E 'test(/^health_check_rows::tests::latest_/)'
+    - id: models-tests
+      why: the name-filtered latest read or its empty-slice shortcut is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-db --no-tests=fail
+        -E 'test(/^health_check_rows::tests::models_/)'
+    - id: save-tests
+      why: the row insert, its field rules or its failure result is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-db --no-tests=fail
+        -E 'test(/^health_check_rows::tests::save_/)'
+    - id: history-tests
+      why: history filters, order or paging are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-db --no-tests=fail
+        -E 'test(/^health_check_rows::tests::history_/)'
+    - id: index-tests
+      why: the model-param index is missing or keeps skipped deployments
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_persistence::tests::index_/)'
+    - id: aggregate-tests
+      why: per-model counts, key order or the error rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_persistence::tests::aggregate_/)'
+    - id: decision-tests
+      why: the status-change or one-hour persist rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_persistence::tests::decision_/)'
+    - id: changed-tests
+      why: the picked writes, the joint await or the all-succeeded result is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_persistence::tests::changed_/)'
+    - id: background-tests
+      why: the background entry point, its latest map or its never-raise handling is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_persistence::tests::background_/)'
+    - id: single-tests
+      why: the single-model writer is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_persistence::tests::single_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b7640)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b7640 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b7640/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added persistence cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/health_persistence-*")" &&
+        grep -lE '^[[:space:]]+b7640:' tools/oracle/fuzz/corpus/helper_case/health_persistence-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/health-persistence/model-param-index.yaml
+  - tools/oracle/cases/helpers/health-persistence/aggregate-results.yaml
+  - tools/oracle/cases/helpers/health-persistence/persist-decision.yaml
+  - tools/oracle/cases/helpers/health-persistence/response-time.yaml
+
+deviations:
+  - what: The `details` argument of save_health_check_result and _clean_details are not built.
+    why: Both callers pass details=None, so the column is always NULL and the code has no caller at the pin.
+  - what: Timestamps come back as UTC values from naive columns, with no Prisma client in between.
+    why: The native driver has no Prisma adapter; the stored values and the UTC rule are the same as LiteLLM's.
+  - what: The aggregate and persist functions take typed endpoint records and deployments, not Python dicts.
+    why: Rust has no untyped dict; the fields read are the same ones LiteLLM reads.
+
+out_of_scope:
+  - "The routes /health, /health/history and /health/latest, _perform_health_check_and_save, _convert_health_check_to_dict, _check_prisma_client and _health_endpoint_resolve_target_model_name: B4445."
+  - "perform_health_check and the endpoint record types: B4443. The window gate, pod lock and fire-and-forget scheduling in _schedule_background_health_check_db_save: B4444."
+  - "The HealthCheckRepository table binding in table_repositories.py: B726. This task writes plain statements through PostgresStore."
+  - "Prisma client lifecycle, reconnect and every other PrismaClient method in utils.py: B124 parts. The health methods L6893-L6990 are built here, since nothing else calls them; B124 must not plan them again."
+
+pitfalls:
+  - "`updated_at` has no database default (Prisma fills it on create), so the insert must set it, or it fails with a NOT NULL error."
+  - "The persist decision compares >= 3600 seconds, not > 3600, and a status change writes at once however young the previous row is."
+  - "The lookup key is model_id only when it is non-empty; a row or result with model_id \"\" falls back to model_name."
+  - "One endpoint can feed several models: a litellm_params.model string shared by two deployments counts for both, with each model's own name and id."
+  - "save_background must use the erroring query_latest. The fetch_latest form hides the error and the 'Failed to save background health checks' warning would never fire."
+  - "error_message in aggregation takes the first non-empty error for the key, but unhealthy_count still goes up for every unhealthy endpoint."
+  - "A model_id that is absent and a model_id that is None are the same key part; (None, name) and (id, name) are different keys."
+  - "Writes in save_changed are built before any is awaited, so every response_time_ms measures from start_time to the build moment, not to its own finish."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,2 @@
+general_settings:
+  include_call_id_in_error_body: true

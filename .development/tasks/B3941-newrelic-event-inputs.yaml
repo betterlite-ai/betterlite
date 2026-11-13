@@ -26,6 +26,9 @@ description: >-
   role defaulting to "user"/"assistant", response.model and vendor fields on every message, and optional timestamp
   (converted to milliseconds). Gate message content on self.record_content AND not should_redact_message_logging(kwargs),
   so async streaming never bypasses redaction even when content recording is on.
+
+  Functions of litellm/integrations/newrelic/newrelic.py this task builds, and no others: record_content, _parse_bool_env, _get_trace_context, _extract_completion_id, _get_vendor, _get_model_names, _extract_usage, _get_finish_reason, _to_epoch_ms, _get_duration, _get_request_params, _extract_message_content and _extract_all_messages. B3942 builds the rest of the file.
+
 scope:
   paths:
     - crates/betterlite-logging/src/newrelic_extraction.rs

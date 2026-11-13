@@ -1,0 +1,12 @@
+kind: helper
+name: oci-common-invalid-region
+call:
+  b5940:
+    function: base_url
+    explicit:
+      oci_region: US_ASHBURN
+    env: {}
+    api_bases:
+      - null
+env: {}
+compare: {ignore: []}

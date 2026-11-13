@@ -1,0 +1,1 @@
+{"kind":"helper","name":"a2a_stream_accounting_agent_id","call":{"b4810":{"function":"set_agent_id","instances":[{"agent_id":"agent-9","details":{}},{"agent_id":null,"details":{"agent_id":"keep-me"}},{"agent_id":"other","logging":false,"details":{}}]}},"env":{},"compare":{"ignore":[]}}

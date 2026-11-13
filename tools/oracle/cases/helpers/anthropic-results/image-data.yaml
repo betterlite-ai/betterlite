@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-results-image-data
+call:
+  anthropic_results:
+    function: image_param
+    image_url_input: {url: "data:image/png;base64,QUJD", format: image/webp}
+    data_urls: {}
+env: {}
+compare:
+  ignore: []

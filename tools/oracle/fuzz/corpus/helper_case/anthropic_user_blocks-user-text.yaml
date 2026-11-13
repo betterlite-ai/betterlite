@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-user-blocks-corpus-user-text
+call: {anthropic_user_blocks: {function: user_blocks, model: claude-sonnet-4-5, llm_provider: anthropic, modify_params: false, messages: [{role: user, content: seed}]}}
+env: {}
+compare: {ignore: []}

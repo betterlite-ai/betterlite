@@ -1,0 +1,19 @@
+kind: helper
+name: rubrik-moderation-apply-guardrail-request-type
+call:
+  b3978:
+    environment: {}
+    init: {api_base: "https://rubrik.test", api_key: test-key, guardrail_name: safety}
+    clock: []
+    replies:
+      - status: 200
+        body: "{}"
+    logging_obj: null
+    request_data: null
+    input_type: request
+    inputs:
+      structured_messages:
+        - {role: user, content: "hello"}
+      model: gpt-4o
+env: {}
+compare: {ignore: []}

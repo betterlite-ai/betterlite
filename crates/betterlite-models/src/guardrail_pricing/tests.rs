@@ -5,13 +5,23 @@ use super::entries::{
     guardrail_information_cost,
 };
 use super::{
-    GuardrailPriceLookup, GuardrailPricingError, azure_prompt_shield_cost,
-    bedrock_guardrail_cost_by_unit, guardrail_cost_total,
+    GuardrailPricingError, azure_prompt_shield_cost, bedrock_guardrail_cost_by_unit,
+    guardrail_cost_total,
 };
+use crate::catalog::{ModelCatalog, UnknownFields};
 use rstest::rstest;
 use rust_decimal::Decimal;
+use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 use std::str::FromStr as _;
+
+#[derive(serde::Serialize)]
+struct CatalogFixture<'price> {
+    litellm_provider: &'static str,
+    mode: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    guardrail_cost_per_unit: Option<&'price RawValue>,
+}
 
 fn decimal(text: &str) -> Decimal {
     Decimal::from_str(text).expect("a fixture decimal parses")
@@ -24,13 +34,27 @@ fn usage(pairs: &[(&str, i64)]) -> BTreeMap<String, i64> {
         .collect()
 }
 
-fn usable(pairs: &[(&str, &str)]) -> GuardrailPriceLookup {
-    GuardrailPriceLookup::Usable(
-        pairs
-            .iter()
-            .map(|(key, rate)| ((*key).to_owned(), decimal(rate)))
-            .collect(),
-    )
+fn catalog(prices: &[(&str, &str)]) -> ModelCatalog {
+    let entries = prices
+        .iter()
+        .map(|(name, cost)| {
+            let guardrail_cost_per_unit = if *cost == "__missing" {
+                None
+            } else {
+                Some(serde_json::from_str(cost).expect("price map parses"))
+            };
+            (
+                *name,
+                CatalogFixture {
+                    litellm_provider: "bedrock",
+                    mode: "guardrail",
+                    guardrail_cost_per_unit,
+                },
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let source = serde_json::to_string(&entries).expect("fixture catalog serializes");
+    ModelCatalog::parse(source.as_bytes(), UnknownFields::Warn).expect("fixture catalog parses")
 }
 
 fn information(text: &str) -> GuardrailInformation {
@@ -43,81 +67,101 @@ fn entry(text: &str) -> GuardrailInformationEntry {
 
 #[test]
 fn bedrock_guardrail_cost_by_unit_prefers_the_regional_key_when_the_region_is_truthy() {
-    let lookup = |key: &str| match key {
-        "bedrock/us-east-1/guardrails" => Some(usable(&[("contentPolicyUnits", "2")])),
-        "bedrock/guardrails" => Some(usable(&[("contentPolicyUnits", "9")])),
-        _ => None,
-    };
+    let catalog = catalog(&[
+        (
+            "bedrock/us-east-1/guardrails",
+            r#"{"contentPolicyUnits":2}"#,
+        ),
+        ("bedrock/guardrails", r#"{"contentPolicyUnits":9}"#),
+    ]);
     let costs = bedrock_guardrail_cost_by_unit(
-        lookup,
+        &catalog,
         Some("us-east-1"),
         &usage(&[("contentPolicyUnits", 3)]),
     )
     .expect("pricing resolves")
-    .expect("a usable map was found");
+    .expect("regional map found");
     assert_eq!(costs["contentPolicyUnits"], Some(decimal("6")));
 }
 
 #[test]
-fn bedrock_guardrail_cost_by_unit_falls_through_a_malformed_regional_entry_to_global() {
-    let lookup = |key: &str| match key {
-        "bedrock/us-east-1/guardrails" => Some(GuardrailPriceLookup::Malformed),
-        "bedrock/guardrails" => Some(usable(&[("contentPolicyUnits", "5")])),
-        _ => None,
-    };
+fn bedrock_guardrail_cost_by_unit_falls_through_a_regional_entry_without_unit_prices() {
+    let catalog = catalog(&[
+        ("bedrock/us-east-1/guardrails", "__missing"),
+        ("bedrock/guardrails", r#"{"contentPolicyUnits":5}"#),
+    ]);
     let costs = bedrock_guardrail_cost_by_unit(
-        lookup,
+        &catalog,
         Some("us-east-1"),
         &usage(&[("contentPolicyUnits", 2)]),
     )
     .expect("pricing resolves")
-    .expect("the global entry is used");
+    .expect("global map found");
     assert_eq!(costs["contentPolicyUnits"], Some(decimal("10")));
 }
 
 #[test]
-fn bedrock_guardrail_cost_by_unit_lets_a_valid_empty_regional_map_block_global_fallback() {
-    let lookup = |key: &str| match key {
-        "bedrock/us-east-1/guardrails" => Some(GuardrailPriceLookup::Usable(BTreeMap::new())),
-        "bedrock/guardrails" => Some(usable(&[("contentPolicyUnits", "5")])),
-        _ => None,
-    };
+fn bedrock_guardrail_cost_by_unit_falls_through_a_regional_entry_with_null_unit_prices() {
+    let catalog = catalog(&[
+        ("bedrock/us-east-1/guardrails", "null"),
+        ("bedrock/guardrails", r#"{"contentPolicyUnits":5}"#),
+    ]);
     let costs = bedrock_guardrail_cost_by_unit(
-        lookup,
+        &catalog,
         Some("us-east-1"),
         &usage(&[("contentPolicyUnits", 2)]),
     )
     .expect("pricing resolves")
-    .expect("the empty regional map still wins");
-    assert_eq!(costs["contentPolicyUnits"], None);
+    .expect("global map found");
+    assert_eq!(costs["contentPolicyUnits"], Some(decimal("10")));
 }
 
 #[test]
-fn bedrock_guardrail_cost_by_unit_ignores_the_regional_key_for_a_falsy_region() {
-    let lookup = |key: &str| match key {
-        "bedrock/guardrails" => Some(usable(&[("contentPolicyUnits", "5")])),
-        _ => Some(GuardrailPriceLookup::Malformed),
-    };
+fn bedrock_guardrail_cost_by_unit_skips_a_priced_regional_key_for_an_empty_region() {
+    let catalog = catalog(&[
+        ("bedrock//guardrails", r#"{"contentPolicyUnits":9}"#),
+        ("bedrock/guardrails", r#"{"contentPolicyUnits":5}"#),
+    ]);
     let costs =
-        bedrock_guardrail_cost_by_unit(lookup, Some(""), &usage(&[("contentPolicyUnits", 1)]))
+        bedrock_guardrail_cost_by_unit(&catalog, Some(""), &usage(&[("contentPolicyUnits", 1)]))
             .expect("pricing resolves")
-            .expect("the global entry is used directly");
+            .expect("global map found");
     assert_eq!(costs["contentPolicyUnits"], Some(decimal("5")));
 }
 
 #[test]
+fn bedrock_guardrail_cost_by_unit_lets_a_valid_empty_regional_map_block_global_fallback() {
+    let catalog = catalog(&[
+        ("bedrock/us-east-1/guardrails", "{}"),
+        ("bedrock/guardrails", r#"{"contentPolicyUnits":5}"#),
+    ]);
+    let costs = bedrock_guardrail_cost_by_unit(
+        &catalog,
+        Some("us-east-1"),
+        &usage(&[("contentPolicyUnits", 2)]),
+    )
+    .expect("pricing resolves")
+    .expect("empty regional map found");
+    assert_eq!(costs["contentPolicyUnits"], None);
+}
+
+#[test]
 fn bedrock_guardrail_cost_by_unit_returns_none_when_no_entry_is_usable_anywhere() {
-    let lookup = |_key: &str| Some(GuardrailPriceLookup::Malformed);
-    let costs = bedrock_guardrail_cost_by_unit(lookup, None, &usage(&[("contentPolicyUnits", 1)]))
-        .expect("pricing resolves");
+    let catalog = catalog(&[("bedrock/guardrails", "__missing")]);
+    let costs =
+        bedrock_guardrail_cost_by_unit(&catalog, None, &usage(&[("contentPolicyUnits", 1)]))
+            .expect("pricing resolves");
     assert!(costs.is_none());
 }
 
 #[test]
 fn bedrock_guardrail_cost_by_unit_distinguishes_an_explicit_zero_rate_from_an_unpriced_counter() {
-    let lookup = |_key: &str| Some(usable(&[("sensitiveInformationPolicyFreeUnits", "0")]));
+    let catalog = catalog(&[(
+        "bedrock/guardrails",
+        r#"{"sensitiveInformationPolicyFreeUnits":0}"#,
+    )]);
     let costs = bedrock_guardrail_cost_by_unit(
-        lookup,
+        &catalog,
         None,
         &usage(&[
             ("sensitiveInformationPolicyFreeUnits", 5),
@@ -125,7 +169,7 @@ fn bedrock_guardrail_cost_by_unit_distinguishes_an_explicit_zero_rate_from_an_un
         ]),
     )
     .expect("pricing resolves")
-    .expect("a usable map was found");
+    .expect("global map found");
     assert_eq!(
         costs["sensitiveInformationPolicyFreeUnits"],
         Some(Decimal::ZERO)
@@ -135,15 +179,51 @@ fn bedrock_guardrail_cost_by_unit_distinguishes_an_explicit_zero_rate_from_an_un
 
 #[test]
 fn bedrock_guardrail_cost_by_unit_propagates_a_multiplication_overflow() {
-    let lookup = |_key: &str| {
-        Some(usable(&[(
-            "contentPolicyUnits",
-            "79228162514264337593543950335",
-        )]))
-    };
-    let error = bedrock_guardrail_cost_by_unit(lookup, None, &usage(&[("contentPolicyUnits", 2)]))
-        .expect_err("the product overflows Decimal");
+    let catalog = catalog(&[(
+        "bedrock/guardrails",
+        r#"{"contentPolicyUnits":79228162514264337593543950335}"#,
+    )]);
+    let error =
+        bedrock_guardrail_cost_by_unit(&catalog, None, &usage(&[("contentPolicyUnits", 2)]))
+            .expect_err("the product overflows Decimal");
     assert!(matches!(error, GuardrailPricingError::CostOverflow));
+}
+
+#[test]
+fn bedrock_guardrail_cost_by_unit_resolves_a_regional_catalog_alias() {
+    let source = br#"{
+        "bedrock/custom-guardrails": {
+            "litellm_provider": "bedrock", "mode": "guardrail",
+            "aliases": ["bedrock/us-east-1/guardrails"],
+            "guardrail_cost_per_unit": {"contentPolicyUnits": 2}
+        },
+        "bedrock/guardrails": {
+            "litellm_provider": "bedrock", "mode": "guardrail",
+            "guardrail_cost_per_unit": {"contentPolicyUnits": 9}
+        }
+    }"#;
+    let catalog = ModelCatalog::parse(source, UnknownFields::Warn).expect("fixture catalog parses");
+    let costs = bedrock_guardrail_cost_by_unit(
+        &catalog,
+        Some("us-east-1"),
+        &usage(&[("contentPolicyUnits", 3)]),
+    )
+    .expect("pricing resolves")
+    .expect("regional alias found");
+    assert_eq!(costs["contentPolicyUnits"], Some(decimal("6")));
+}
+
+#[test]
+fn bedrock_guardrail_cost_by_unit_skips_a_missing_regional_entry() {
+    let catalog = catalog(&[("bedrock/guardrails", r#"{"contentPolicyUnits":5}"#)]);
+    let costs = bedrock_guardrail_cost_by_unit(
+        &catalog,
+        Some("us-east-1"),
+        &usage(&[("contentPolicyUnits", 2)]),
+    )
+    .expect("pricing resolves")
+    .expect("global map found");
+    assert_eq!(costs["contentPolicyUnits"], Some(decimal("10")));
 }
 
 #[rstest]
@@ -226,7 +306,7 @@ fn azure_prompt_shield_guardrail_cost_treats_a_missing_count_as_zero_records() {
     r#"[{"guardrail_cost": 2, "guardrail_cost_in_spend": "yes"}]"#,
     "2"
 )]
-#[case::a_malformed_shape_zeros_only_that_entry(r#"[{"guardrail_cost": 5}, [1, 2, 3]]"#, "5")]
+#[case::a_list_shaped_entry_bills_nothing(r#"[{"guardrail_cost": 2}, [5], [5, true]]"#, "2")]
 #[case::an_uncoercible_in_spend_zeros_the_whole_entry(
     r#"[{"guardrail_cost": 5, "guardrail_cost_in_spend": "maybe"}]"#,
     "0"
@@ -275,7 +355,8 @@ fn guardrail_information_cost_propagates_a_sum_overflow_across_entries() {
     r#"{"guardrail_cost_by_unit": {"a": "nan"}}"#,
     None
 )]
-#[case::an_uncoercible_shape_is_malformed("[1, 2]", None)]
+#[case::a_list_shaped_entry_has_no_rollup(r#"[null, null, {"a": 1}]"#, None)]
+#[case::a_bare_number_is_not_a_counter_map(r#"{"guardrail_cost_by_unit": 2.5}"#, None)]
 #[case::a_forged_scalar_field_does_not_change_the_rollup(
     r#"{"guardrail_cost_by_unit": {"a": 1}, "guardrail_cost": "not-a-number"}"#,
     Some(vec![("a", Some("1"))])

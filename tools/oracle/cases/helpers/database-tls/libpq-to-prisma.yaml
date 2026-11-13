@@ -1,0 +1,38 @@
+kind: helper
+name: database-tls-libpq-to-prisma
+call:
+  database_tls:
+    function: batch
+    calls:
+      - function: translate_libpq_ssl_params
+        url: "postgresql://u:p@h:5432/db?sslmode=require&application_name=app"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://u:p@host:6543/db?sslmode=verify-ca&application_name=app"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://h/db?sslmode=verify-full&sslmode=require"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://u@host/db?sslrootcert=ca.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://u@host/db?sslrootcert=root.pem&sslcert=pinned.pem&sslmode=verify-full"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://user@DB.Example:6543/db?sslrootcert=/ca.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql:///db?sslrootcert=ca"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://h:0/db?sslrootcert=ca"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://host:notaport/db?sslrootcert=ca.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://host:99999/db?sslrootcert=ca.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://host: 5432/db?sslrootcert=ca.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://host:+5432/db?sslrootcert=ca.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://host:5_432/db?sslrootcert=ca.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://host:-0/db?sslrootcert=ca.pem"
+      - function: translate_libpq_ssl_params
+        url: "postgresql://host:notaport/db?sslmode=verify-full"
+env: {}
+compare: {ignore: []}

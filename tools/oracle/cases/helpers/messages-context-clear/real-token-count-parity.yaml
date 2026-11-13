@@ -1,0 +1,14 @@
+kind: helper
+name: messages-context-clear-real-token-count-parity
+call:
+  messages_context_clear:
+    action: editor
+    model: gpt-3.5-turbo
+    messages:
+      - {role: user, content: hello world}
+    tools: null
+    system: a system prompt
+    edit_spec: {}
+    counter: {mode: real}
+env: {}
+compare: {ignore: []}

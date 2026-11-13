@@ -84,7 +84,7 @@ checks:
   - id: admission-control-tests
     why: callback record construction, queue admission, buffering or batch triggering logic fails or is
       absent
-    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^galileo_admission::/)
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^galileo::admission::(.*::)?galileo_admission::/)
       - test(/replays_the_/)'
   - id: galileo-admission-cases
     why: no success/failure callback scenarios or buffer/batch cases were added

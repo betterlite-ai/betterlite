@@ -1,0 +1,19 @@
+kind: helper
+name: inference-identity-order
+call:
+  b3854:
+    function: identity
+    payload:
+      metadata:
+        user_api_key_request_route: /v1/chat/completions
+        requester_metadata: {user_id: u1}
+      model_group: public-model
+      model: fallback/model
+      hidden_params: {litellm_model_name: dispatched-model}
+    litellm_params:
+      metadata:
+        user_api_key_team_metadata: {region: west, secret: hidden}
+    baggage_team_metadata_keys: [region]
+    baggage_metadata_keys: [requester_metadata.user_id]
+env: {}
+compare: {ignore: []}

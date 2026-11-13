@@ -1,0 +1,9 @@
+kind: helper
+name: usage-parse-absent
+call:
+  b3605:
+    operation: parse_usage
+    headers:
+      - [x-other-header, "1"]
+env: {}
+compare: {ignore: []}

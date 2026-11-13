@@ -1,0 +1,80 @@
+kind: helper
+name: root-registry
+call:
+  model_capabilities:
+    operation: root_registry
+    source:
+      _comment: This file defines which endpoints are supported by each LiteLLM provider
+      _schema:
+        provider_slug:
+          display_name: Display name shown in README (e.g., 'OpenAI (`openai`)')
+          url: Link to provider documentation
+          endpoints:
+            a2a_(Agent Gateway): Supports /a2a/{agent}/message/send endpoint (A2A Protocol)
+            container_file: Supports OpenAI's /containers/{id}/files endpoint
+      providers:
+        a2a:
+          display_name: A2A (Agent-to-Agent) (`a2a`)
+          url: https://docs.litellm.ai/docs/providers/a2a
+          endpoints:
+            a2a: false
+            audio_speech: false
+            audio_transcriptions: false
+            batches: false
+            chat_completions: true
+            embeddings: false
+            image_generations: false
+            messages: false
+            moderations: false
+            rerank: false
+            responses: false
+        apiserpent:
+          display_name: APISerpent (`apiserpent`)
+          url: https://docs.litellm.ai/docs/search/apiserpent
+          endpoints:
+            search: true
+        bedrock_mantle:
+          display_name: Bedrock Mantle (`bedrock_mantle`)
+          url: https://docs.litellm.ai/docs/providers/bedrock
+          endpoints:
+            a2a: false
+            chat_completions: true
+            embeddings: false
+            messages: true
+            responses: true
+        e2b:
+          display_name: E2B (`e2b`)
+          endpoints:
+            a2a: false
+            audio_speech: false
+            audio_transcriptions: false
+            batches: false
+            chat_completions: false
+            embeddings: false
+            image_generations: false
+            messages: false
+            moderations: false
+            rerank: false
+            responses: false
+            sandbox: true
+        tinyfish:
+          display_name: TinyFish (`tinyfish`)
+          url: https://docs.tinyfish.ai/search-api
+          endpoints:
+            search: true
+      endpoints:
+        a2a:
+          docs_label: a2a
+          display_name: A2A (Agent-to-Agent) protocol for agent communication
+          leftnav_label: /a2a
+          provider_json_field: a2a
+          url: https://docs.litellm.ai/docs/a2a
+          bridges_to_chat_completion: true
+        sandbox:
+          docs_label: sandbox
+          display_name: Sandbox
+          leftnav_label: /sandbox
+          provider_json_field: sandbox
+          url: https://docs.litellm.ai/docs/sandbox
+env: {}
+compare: {ignore: []}

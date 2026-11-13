@@ -1,0 +1,5 @@
+kind: helper
+name: dated-removal
+call: {anthropic_catalog_lookup: {function: candidates, model: claude-sonnet-4.6-20260219}}
+env: {}
+compare: {ignore: []}

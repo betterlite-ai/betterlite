@@ -1,0 +1,103 @@
+id: B7810
+title: Milvus and PG Vector search providers
+description: >-
+  Build two vector store providers as pure typed functions in betterlite-openai, using B1131 wire records. The caller (B1064
+  and B2484) reads the environment, embeds the query and sends the HTTP request, so nothing here reads process state or does
+  I/O. Milvus is the module milvus_vector_store and PG Vector is pg_vector_store.
+
+  Milvus (milvus/vector_stores/transformation.py). The caller passes a MilvusEnv with api_key (MILVUS_API_KEY) and api_base
+  (MILVUS_API_BASE). Headers: the explicit key, else the env key, else a missing-key error (also when no params exist), then
+  Authorization "Bearer <key>" is added to the given headers. get_auth_credentials(litellm_params, no env) uses only the explicit litellm_params
+  api_key, never the env, and fails on an empty one, with the text "MILVUS_API_KEY is not set. Either set it in the litellm_params or set the MILVUS_API_KEY environment variable." and returns the one Authorization "Bearer <key>" header. get_complete_url(api_base, env_base) is the explicit base, else the env base, else the error "Milvus API base URL is required. Set MILVUS_API_BASE environment variable or pass api_base in litellm_params.", with
+  trailing slashes removed (an empty string counts as missing). B7892 calls both functions and does not rebuild them. Endpoints: read POST /v2/vectordb/entities/search, /get and /query; write POST /upsert and
+  /insert under the same prefix. map_openai_params copies a non-default param only when its name is one of annsField, limit,
+  filter, offset, groupingField, outputFields, searchParams, consistencyLevel. Search takes the already joined query text
+  (B1059 owns the join) and the query vector, and builds POST {base}/v2/vectordb/entities/search with the body keys in this
+  order: collectionName (the store id), data ([vector]), annsField "book_intro_vector", then every mapped optional param (so
+  a caller annsField replaces the default), then dbName from milvus_db_name and partitionNames from milvus_partition_names,
+  each only when truthy and each replacing an earlier key. It also returns the query text and litellm_embedding_model so the
+  caller can log them. decode_milvus_search takes the response bytes, the search query text and the text field name (the
+  caller resolves it as milvus_text_field in optional params, else in litellm_params, else ""). It reads data (default
+  empty). For each row: one text content from row[text_field] (default ""), score from distance (default 0.0), file_id and
+  filename null, attributes every other key except id, content, distance and the text field. A row that is not an object or
+  a body that is not JSON becomes a provider error carrying the response status and headers. Create-store is unsupported.
+
+  PG Vector (pg_vector/vector_stores/transformation.py). Headers: explicit key, else PG_VECTOR_API_KEY, else an error; set
+  Authorization "Bearer <key>" and Content-Type application/json. The URL is the explicit base, else PG_VECTOR_API_BASE, else
+  an error, trailing slashes removed, plus /v1/vector_stores. Search builds the URL {base}/{id}/search with the store id
+  percent-encoded by B171's encode_url_path_segment (field name "vector_store_id"), and takes the request body from B527's
+  OpenAI search transform and drops that transform's own URL. Everything else in PGVectorStoreConfig is inherited from
+  B527 and is not rebuilt here.
+
+  Add fuzz targets milvus_vector_store (decode_milvus_search) with a replay test replays_the_milvus_vector_store_corpus.
+  Helper cases compare both projections. About 310 LiteLLM lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/milvus_vector_store.rs
+    - crates/betterlite-openai/src/milvus_vector_store/**
+    - crates/betterlite-openai/src/pg_vector_store.rs
+    - crates/betterlite-openai/src/pg_vector_store/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/milvus_vector_store.rs
+    - crates/betterlite-openai/fuzz/corpus/milvus_vector_store/**
+    - tools/oracle/cases/helpers/milvus-pgvector/**
+    - tools/oracle/helpers/b7810.py
+    - tools/oracle/helpers/b7810/**
+    - tools/oracle/src/helpers/openai/b7810.rs
+    - tools/oracle/src/helpers/openai/b7810/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/milvus/vector_stores/transformation.py#L32-L120
+    why: Optional param names, key and base resolution, endpoints and param mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/milvus/vector_stores/transformation.py#L122-L194
+    why: Search request body order, the default annsField and the dbName and partitionNames overrides.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/milvus/vector_stores/transformation.py#L196-L283
+    why: Search response projection, text field lookup, attributes and the unsupported create calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pg_vector/vector_stores/transformation.py#L1-L95
+    why: PG Vector headers, base URL, and the search URL with an encoded store id over the OpenAI body.
+dod:
+  - text: Milvus headers, credentials, base URL, endpoints and param mapping follow LiteLLM, including the env fallbacks and the error when no key exists.
+    proof: [milvus-tests, oracle]
+  - text: The Milvus search body keeps its key order, the default annsField and the truthy-only scope overrides.
+    proof: [milvus-tests, oracle]
+  - text: The Milvus response projection keeps the default score 0.0, the attribute exclusions and the text field lookup.
+    proof: [milvus-tests, oracle]
+  - text: PG Vector builds its headers, base URL and encoded search URL, and reuses the OpenAI request body.
+    proof: [pg-vector-tests, oracle]
+  - text: Milvus response bytes replay through decode_milvus_search without a panic.
+    proof: [milvus-corpus]
+checks:
+  optional: []
+  commands:
+    - id: milvus-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^milvus_vector_store::/) - test(replays_the_milvus_vector_store_corpus)'
+      why: Fixtures cover credentials, URL, request order and response projection.
+    - id: pg-vector-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^pg_vector_store::/)'
+      why: Fixtures cover the key error, the base URL and an id that needs percent-encoding.
+    - id: milvus-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/milvus_vector_store.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/milvus_vector_store)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_milvus_vector_store_corpus)'
+      why: Added corpus files replay through the Milvus response decoder.
+oracle_cases:
+  - tools/oracle/cases/helpers/milvus-pgvector/milvus-missing-key.yaml
+  - tools/oracle/cases/helpers/milvus-pgvector/milvus-base-trailing-slash.yaml
+  - tools/oracle/cases/helpers/milvus-pgvector/milvus-search-body-order.yaml
+  - tools/oracle/cases/helpers/milvus-pgvector/milvus-scope-overrides.yaml
+  - tools/oracle/cases/helpers/milvus-pgvector/milvus-response-attributes.yaml
+  - tools/oracle/cases/helpers/milvus-pgvector/milvus-param-mapping.yaml
+  - tools/oracle/cases/helpers/milvus-pgvector/pgvector-search-url.yaml
+  - tools/oracle/cases/helpers/milvus-pgvector/pgvector-missing-base.yaml
+deviations: []
+out_of_scope:
+  - B1064 and B2484 read MILVUS_API_KEY, MILVUS_API_BASE, PG_VECTOR_API_KEY and PG_VECTOR_API_BASE, embed the query and send the request. This task takes them as input.
+  - The embedding of the query, the join of a list query and the "Failed to generate embedding" errors belong to B1059.
+  - Registering both providers by name in get_provider_vector_stores_config has no owner yet (see the notes to the architect).
+  - OpenAI vector store behavior that PG Vector inherits (create, list, delete, files) is B527.
+pitfalls:
+  - A caller annsField from the optional params replaces the default "book_intro_vector" because the optional params are spread after it.
+  - dbName and partitionNames are added after the optional params, so they win over an optional param with the same name, and a falsy value adds no key.
+  - get_auth_credentials ignores MILVUS_API_KEY while validate_environment reads it.
+  - An empty text field name makes the row lookup use the key "" and the attribute filter also drops a key named "".
+  - PG Vector keeps B527's request body but not its URL.
+budget: {max_changed_lines: 1500, max_new_expects: 1}
+review_level: standard

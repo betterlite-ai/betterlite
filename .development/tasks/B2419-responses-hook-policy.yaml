@@ -6,13 +6,14 @@ description: >-
   _get_agentic_loop_settings, _has_agentic_completion_hook, _check_agentic_loop_safety,
   _fingerprint_agentic_tools, _refused_agentic_tool_identifiers, _is_refused_tool_use_block and
   _can_replace_turn_with_terminal_response as whole functions. Also own the complete shared
-  agentic_followup_kwargs.py and agentic_loop_settings.py helpers below the future B119 interception
-  integration. B189 supplies callback/plan types, B248 string callback resolution, B247 logging
+  agentic_followup_kwargs.py and agentic_loop_settings.py helpers below the future B9823 and B9824 interception
+  integration. B189 supplies callback types, B4119 supplies the plan types (AgenticLoopPlan, AgenticLoopRequestPatch), B248 string callback resolution, B247 logging
   records, B010 generic parameters and B902 Responses option names. Inject B157's deployment-hook
   dispatcher as a typed port; this task owns its invocation and merge, not Python import machinery.
 
   Detect inherited hook overrides by callable identity, including string callbacks resolved to
-  CustomLogger instances. Preserve global then dynamic order, duplicates and list/tuple dynamic
+  CustomLogger instances. For the agentic hooks, use B9820's AgenticCallback trait and its overrides() flags
+  instead of a detector of its own. Preserve global then dynamic order, duplicates and list/tuple dynamic
   inputs. A missing pre-hook or null result returns the original arguments. Otherwise split
   modified fields by the complete Responses optional-name set; identity fields are handled
   separately and every other field updates GenericLiteLLMParams. Presence, not truthiness,
@@ -20,7 +21,7 @@ description: >-
 
   Load model_list[].litellm_params.max_agentic_loops with B002 using the shared validator; default
   3, explicit null means default, integer-like strings/floats are accepted and bool is rejected.
-  B119 retains the websearch_interception_params config integration and uses this validator.
+  websearch_interception_params is B4116's websearch_request_hooks section, loaded by B9823, which uses this validator.
   No MAX_AGENTIC_LOOPS environment variable is read directly: os.environ references resolve in
   B002. Preserve trusted internal depth/fingerprint fields and construct follow-up kwargs with
   request parameters removed from both original and patch kwargs, patch winning other collisions,
@@ -34,12 +35,8 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_hook_policy.rs
   - crates/betterlite-core/src/api/responses_hook_policy/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/responses_hook_policy.rs
   - crates/betterlite-config/src/api/responses_hook_policy/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-hook-policy-*
@@ -50,6 +47,10 @@ scope:
   - tools/oracle/cases/helpers/responses-hook-policy/**
   - tools/oracle/fuzz/corpus/helper_case/responses_hook_policy-*
   - Cargo.lock
+  - tools/oracle/helpers/b2419.py
+  - tools/oracle/helpers/b2419/**
+  - tools/oracle/src/helpers/core_ops/b2419.rs
+  - tools/oracle/src/helpers/core_ops/b2419/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L315-L351
@@ -138,7 +139,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - B2415 owns whole agentic execution/cleanup/finalization functions; B2414 owns create sends and fake-stream preparation.
-- B189 owns AgenticLoopPlan/RequestPatch and interception-prefix helpers; B119 installs websearch/code-interpreter callbacks after API assembly.
+- B4119 owns AgenticLoopPlan and AgenticLoopRequestPatch (betterlite_context::agentic_loop_plan), B189 owns the interception-prefix helpers; B9823 and B9824 install the websearch/code-interpreter callbacks after API assembly.
 - _agentic_hook_kwargs and _server_fulfilled_tools_in_request serve other HTTP-handler paths and remain with their Anthropic API integration; they are not called by this policy slice.
 - Other llm_http_handler.py families retain their endpoint owners; this task claims only the eleven named functions.
 pitfalls:

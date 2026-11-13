@@ -1,0 +1,18 @@
+kind: helper
+name: local-zone-timestamp
+call:
+  vertex_model_policy:
+    timestamp:
+      zone: America/New_York
+      values:
+        - '2024-07-01T12:00:00.000000Z'
+        - '2024-01-02T03:04:05.5Z'
+        - '2024-11-03T01:30:00.000000Z'
+        - '2024-11-03T01:30:00.999999Z'
+        - '2024-03-10T02:30:00.000000Z'
+        - '2024-03-10T01:59:59.999999Z'
+        - '2024-03-10T03:00:00.000000Z'
+        - '1969-12-31T23:59:59.500000Z'
+        - '2024-01-02T03:04:05.123456Z'
+env: {TZ: America/New_York}
+compare: {ignore: []}

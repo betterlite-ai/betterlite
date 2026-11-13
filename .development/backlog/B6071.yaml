@@ -1,0 +1,14 @@
+id: B6071
+milestone: M3 providers
+title: Fireworks AI chat settings, supported params, param mapping and extra_body translation
+status: todo
+depends_on: [B2202, B2214, B2221, B2222, B171]
+file: tasks/B6071-fireworks-chat-params.yaml
+covers:
+  - "litellm/llms/fireworks_ai/chat/transformation.py"
+parent: B5832
+split_from: B5832
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

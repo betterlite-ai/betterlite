@@ -1,0 +1,15 @@
+kind: helper
+name: exact-hash-with-preset-key
+call:
+  b4296:
+    get_cache_key:
+      cache_type: local
+      namespace: cache-ns
+      semantic_cache_scope: key
+      params:
+        - {name: model, value: gpt-4}
+      litellm_params:
+        preset_cache_key: preset-key
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,23 @@
+task: B8179
+deviations:
+  - what: A message whose content is not a plain string fails with NlpCloudError status 400.
+    why: LiteLLM joins the text parts of a content list into the prompt and silently drops images and files; the task's request contract declares content must be a plain string, so the lossy path is refused by name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nlp_cloud/chat/transformation.py#L158
+  - what: The reply's created time comes from a clock the caller passes in.
+    why: Tests and the oracle need a fixed second; the field keeps the same unix timestamp meaning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nlp_cloud/chat/transformation.py#L213
+  - what: The reply's id is supplied by the caller instead of minted at random.
+    why: LiteLLM's ModelResponse mints a random chatcmpl- id with no contract behind its text; passing the id in keeps the dependency injected and lets tests and the oracle compare a reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2219
+  - what: A reply whose JSON root is not an object fails with NlpCloudError carrying the reply status.
+    why: LiteLLM's "error" in completion_response raises TypeError for a null, number or bool root, which surfaces as an internal server error; the typed error names the malformed body instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nlp_cloud/chat/transformation.py#L194
+  - what: A reply without an integer nb_input_tokens or nb_generated_tokens fails with NlpCloudError status 500.
+    why: LiteLLM raises an unhandled KeyError or TypeError there, which a caller sees as an internal server error; the typed error carries the same status and the cause.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nlp_cloud/chat/transformation.py#L210
+  - what: The stream cleaner does not yield a chunk that is empty after the NUL bytes are removed, and an empty chunk leaves the stream running.
+    why: LiteLLM yields the empty string and stops at an empty chunk; the shared stream wrapper skips an empty chunk anyway, and the task's cleaner contract says a line that is empty after cleaning is skipped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nlp_cloud/chat/handler.py#L112-L127
+  - what: A stream buffer that would pass 1 MiB without a NUL fails with StreamError::TooLarge.
+    why: LiteLLM buffers provider bytes without a limit; betterlite caps the buffer at the same 1 MiB SseParser uses so a provider that never sends a NUL cannot grow memory without bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nlp_cloud/chat/handler.py#L112-L127

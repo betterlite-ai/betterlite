@@ -1,0 +1,11 @@
+kind: helper
+name: route-metadata-inverse
+call:
+  route_metadata:
+    {
+      "function": "get_routes",
+      "call_type": "completion"
+    }
+env: {}
+compare:
+  ignore: []

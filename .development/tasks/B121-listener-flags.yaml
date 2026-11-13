@@ -1,0 +1,184 @@
+id: B121
+title: Listener flags from the proxy CLI into the server
+description: >-
+  LiteLLM's run_server ends by turning six flags into the HTTP server's listener settings: --keepalive_timeout
+  (KEEPALIVE_TIMEOUT), --limit_concurrency (LIMIT_CONCURRENCY), --max_requests_before_restart
+  (MAX_REQUESTS_BEFORE_RESTART), --max_requests_before_restart_jitter (MAX_REQUESTS_BEFORE_RESTART_JITTER),
+  --ssl_certfile_path (SSL_CERTFILE_PATH) and --ssl_keyfile_path (SSL_KEYFILE_PATH). Which of them reach the server
+  depends on the launcher flag. B8375 declares the flags, B4176 and B4177 build the uvicorn and alternate-launcher
+  plans, and B9550 makes the server apply a ListenerOptions value, but nothing turns the flags into that value, so the
+  betterlite binary always serves with ListenerOptions::default(). This task is that step and the wiring that carries
+  the value to the server. It is the last part of B121; the bug report, diagnostics, worker, CLI root and server parts
+  are B4170 to B4177, B8375, B9550 and B9551.
+
+
+  Module crates/betterlite/src/listener_flags.rs (declared in lib.rs by the skeleton; private code may go in
+  listener_flags/), with its own thiserror enum ListenerFlagsError. `pub struct ListenerFlags { pub launcher:
+  Option<Backend>, pub keepalive_timeout: Option<i64>, pub limit_concurrency: Option<NonZeroUsize>, pub
+  max_requests_before_restart: Option<i64>, pub max_requests_before_restart_jitter: Option<i64>, pub ssl_certfile_path:
+  Option<PathBuf>, pub ssl_keyfile_path: Option<PathBuf> }`, where Backend is B4177's
+  betterlite_server::worker_options::Backend and None means uvicorn. A constructor on ListenerFlags takes B8375's parsed
+  flag struct (read its merged module for the name) and picks the launcher in run_server's order: --run_gunicorn, then
+  --run_hypercorn, then --run_granian, else uvicorn. `pub fn listener_options(flags: &ListenerFlags) ->
+  Result<ListenerOptions, ListenerFlagsError>` returns B9550's ListenerOptions by these rules.
+
+
+  Uvicorn (no --run_* flag). keep_alive_seconds is --keepalive_timeout, else 5, uvicorn's default, since LiteLLM sets
+  timeout_keep_alive only when the flag is given. limit_concurrency is the flag. max_requests is RequestLimit { limit:
+  max_requests_before_restart, jitter: the jitter flag or 0 } when the limit is given, and None otherwise, whatever the
+  jitter says (B4176 owns the "has no effect" warning). A negative jitter next to a limit is
+  ListenerFlagsError::NegativeJitter { value }, whose Display names --max_requests_before_restart_jitter; uvicorn's
+  random.randint(0, jitter) raises on it. tls is TlsFiles when both SSL paths are given and None when one or neither
+  is, with no message, as LiteLLM's uvicorn branch skips SSL silently. --ciphers is never passed to uvicorn, so it does
+  nothing here.
+
+  Gunicorn. LiteLLM never passes the keep-alive flag to gunicorn, and uvicorn's gunicorn worker takes
+  timeout_keep_alive from gunicorn's keepalive setting, default 2, so keep_alive_seconds is 2 whatever
+  --keepalive_timeout says. limit_concurrency is None, since the flag only applies to uvicorn. max_requests follows
+  gunicorn: a limit of 0 means none, a positive limit gives RequestLimit with the jitter or 0, and a negative limit or
+  jitter is ListenerFlagsError::NegativeGunicornSetting { flag, value }, since gunicorn's validate_pos_int refuses it
+  with "Value must be positive". tls as for uvicorn.
+
+  Hypercorn. keep_alive_seconds 5 (hypercorn's keep_alive_timeout default), no limit_concurrency, no max_requests
+  (LiteLLM passes neither), tls as for uvicorn. When both SSL paths and --ciphers are given, the wiring below prints
+  one yellow warning that --ciphers is not applied with --run_hypercorn, worded like B4177's granian warning.
+
+  Granian. keep_alive_seconds 30, the header_read_timeout of granian's default HTTP1Settings that its hyper server also
+  uses as the idle limit, no limit_concurrency, no max_requests (B4177 prints the not-supported warning), tls when
+  both paths are given (B4177 already fails startup when only one is).
+
+
+  Wiring. B8374's LifespanInputs in crates/betterlite/src/lifespan.rs gets `pub listener: ListenerOptions`, and run_proxy
+  puts it into ServerInputs where B9550 left ListenerOptions::default(). In proxy_cli, where B8375 builds LifespanInputs
+  after the launch plan, build ListenerFlags from the parsed flags, call listener_options, put the result into
+  LifespanInputs and print the hypercorn ciphers warning when it applies. A ListenerFlagsError prints its Display on
+  stderr and exits 1 before the lifespan starts. Update every other LifespanInputs literal in the two modules (tests
+  included) with ListenerOptions::default().
+
+
+  Tests in crates/betterlite/src/listener_flags/tests.rs, one rstest table per launcher: defaults, flag values, the
+  jitter without a limit, the negative jitter and gunicorn values, one SSL path, both SSL paths and the launcher order
+  when two --run_* flags are given.
+
+
+  Oracle helper cases (operation b121) run LiteLLM's run_server through click's CliRunner with the case's argv and env
+  and report the settings the server would get, so both sides answer `{"keep_alive_seconds", "limit_concurrency",
+  "max_requests": {"limit", "jitter"} or null, "tls": {"certfile", "keyfile"} or null}`. The Python adapter patches
+  ProxyInitializationHelpers._is_port_in_use to False and patches uvicorn.run,
+  gunicorn.app.base.BaseApplication.run, granian.Granian.serve, start_query_engine_reaper and
+  litellm.rust_bridge.fork_guard.reserve_process_for_forking so nothing serves or forks. For uvicorn it builds
+  uvicorn.Config from the captured kwargs and reads timeout_keep_alive, limit_concurrency, limit_max_requests,
+  limit_max_requests_jitter, ssl_certfile and ssl_keyfile; for gunicorn it reads the application's cfg (keepalive,
+  max_requests where 0 is null, max_requests_jitter, certfile, keyfile); for granian it reads
+  HTTP1Settings().header_read_timeout in seconds and the ssl_cert and ssl_key kwargs. The Rust adapter parses argv and env
+  the way B8375's run_cli does and calls listener_options. hypercorn is not installed in the oracle's environment, so no
+  case uses --run_hypercorn. The worker writes the cases under tools/oracle/cases/helpers/listener-flags/:
+  uvicorn-defaults (no flags); keepalive-env (KEEPALIVE_TIMEOUT=30); keepalive-flag-over-env (--keepalive_timeout 12 with
+  KEEPALIVE_TIMEOUT=30); limit-concurrency-env (LIMIT_CONCURRENCY=8); max-requests-with-jitter
+  (MAX_REQUESTS_BEFORE_RESTART=100, MAX_REQUESTS_BEFORE_RESTART_JITTER=10); jitter-without-limit
+  (MAX_REQUESTS_BEFORE_RESTART_JITTER=10 only); ssl-certfile-only (SSL_CERTFILE_PATH only); ssl-both-files (both
+  paths, files need not exist since nothing loads them); gunicorn-ignores-keepalive (--run_gunicorn --keepalive_timeout
+  30 with LIMIT_CONCURRENCY=8); gunicorn-zero-max-requests (--run_gunicorn --max_requests_before_restart 0);
+  granian-keep-alive (--run_granian).
+scope:
+  paths:
+    - crates/betterlite/src/listener_flags.rs
+    - crates/betterlite/src/listener_flags/**
+    - crates/betterlite/src/proxy_cli.rs
+    - crates/betterlite/src/proxy_cli/**
+    - crates/betterlite/src/lifespan.rs
+    - crates/betterlite/src/lifespan/**
+    - tools/oracle/cases/helpers/listener-flags/**
+    - tools/oracle/helpers/b121.py
+    - tools/oracle/helpers/b121/**
+    - tools/oracle/src/helpers/server/b121.rs
+    - tools/oracle/src/helpers/server/b121/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L876-L895
+    why: --ssl_keyfile_path, --ssl_certfile_path with their env vars, and --ciphers without one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L915-L964
+    why: --keepalive_timeout, --max_requests_before_restart, its jitter and --limit_concurrency (IntRange min 1) with their env vars.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L283-L353
+    why: timeout_keep_alive is set only when the flag is given; the jitter is applied only next to a limit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1509-L1583
+    why: Which settings reach uvicorn, gunicorn, hypercorn and granian, and the launcher order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L436-L632
+    why: The hypercorn, granian and gunicorn launchers and the settings each passes on.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/start.sh#L1-L2
+    why: start.sh runs proxy_cli.py with no flags, which is the betterlite binary's default path; nothing at the pin calls it.
+  - url: https://github.com/encode/uvicorn/blob/0.54.0/uvicorn/workers.py#L45-L53
+    why: The gunicorn worker takes timeout_keep_alive from gunicorn's keepalive and limit_max_requests from the worker's drawn limit.
+  - url: https://github.com/benoitc/gunicorn/blob/23.0.0/gunicorn/config.py#L819-L825
+    why: gunicorn's keepalive default of 2 seconds.
+  - url: https://github.com/benoitc/gunicorn/blob/23.0.0/gunicorn/config.py#L741-L767
+    why: max_requests and max_requests_jitter default to 0 and use validate_pos_int.
+  - url: https://github.com/benoitc/gunicorn/blob/23.0.0/gunicorn/config.py#L357-L365
+    why: validate_pos_int refuses negative values with "Value must be positive".
+  - url: https://github.com/emmett-framework/granian/blob/v2.8.5/granian/http.py#L4-L9
+    why: Granian's HTTP/1 header_read_timeout of 30000 ms with keep-alive on.
+dod:
+  - text: listener_options returns LiteLLM's effective keep-alive, concurrency limit, request limit with jitter and TLS files for uvicorn, gunicorn, hypercorn and granian, and the launcher follows run_server's order.
+    proof: [listener-flags-tests, oracle, helper-python]
+  - text: A negative jitter next to a uvicorn limit, and a negative gunicorn limit or jitter, fail with an error naming the flag.
+    proof: [listener-flags-tests]
+  - text: proxy_cli passes the options through LifespanInputs into ServerInputs, so the binary no longer serves with ListenerOptions::default().
+    proof: [cli-wiring]
+checks:
+  optional: []
+  commands:
+    - id: listener-flags-tests
+      why: A launcher's listener settings, the launcher order or a negative-value error is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^listener_flags::/)'
+    - id: cli-wiring
+      why: The CLI does not hand its listener options to the server, or B8375's CLI tests broke
+      run: >-
+        grep -rq 'listener_options(' crates/betterlite/src/proxy_cli.rs crates/betterlite/src/proxy_cli &&
+        ! grep -rq --exclude=tests.rs --exclude-dir=tests 'ListenerOptions::default()' crates/betterlite/src/lifespan.rs crates/betterlite/src/lifespan &&
+        cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^proxy_cli::/)'
+    - id: helper-python
+      why: The strict oracle adapter for the listener cases fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b121)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b121 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b121/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/listener-flags/uvicorn-defaults.yaml
+  - tools/oracle/cases/helpers/listener-flags/keepalive-env.yaml
+  - tools/oracle/cases/helpers/listener-flags/keepalive-flag-over-env.yaml
+  - tools/oracle/cases/helpers/listener-flags/limit-concurrency-env.yaml
+  - tools/oracle/cases/helpers/listener-flags/max-requests-with-jitter.yaml
+  - tools/oracle/cases/helpers/listener-flags/jitter-without-limit.yaml
+  - tools/oracle/cases/helpers/listener-flags/ssl-certfile-only.yaml
+  - tools/oracle/cases/helpers/listener-flags/ssl-both-files.yaml
+  - tools/oracle/cases/helpers/listener-flags/gunicorn-ignores-keepalive.yaml
+  - tools/oracle/cases/helpers/listener-flags/gunicorn-zero-max-requests.yaml
+  - tools/oracle/cases/helpers/listener-flags/granian-keep-alive.yaml
+deviations:
+  - what: Under --run_gunicorn, reaching the request limit stops the betterlite process, where gunicorn's master starts a fresh worker and the process keeps its port.
+    why: betterlite runs one process with no master (B4177 refuses multi-worker modes), so it stops the way a single uvicorn worker does and leaves the restart to the supervisor.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L588-L608
+  - what: A negative --max_requests_before_restart_jitter next to a limit stops startup with exit 1 and a message naming the flag, where LiteLLM's uvicorn raises random.randint's ValueError on its first tick after startup.
+    why: The value can never work, and failing before the lifespan starts keeps the database and jobs from starting for a process that is about to crash.
+    link: https://github.com/encode/uvicorn/blob/0.54.0/uvicorn/server.py#L79-L83
+  - what: With --run_hypercorn, both SSL paths and --ciphers, the cipher string is not applied and one warning says so.
+    why: rustls takes no OpenSSL cipher strings; LiteLLM prints the same kind of warning for --run_granian.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L456-L463
+out_of_scope:
+  - "The click option declarations, env fallbacks and run_server order: B8375. The uvicorn argument builder, its log config and reload: B4176. The alternate launch plans, their messages and the granian TLS pair error: B4177."
+  - "Applying keep-alive, the concurrency limit, request recycling and TLS in the server: B9550."
+  - "Mounting the debugging router: B9551. The bug report, diagnostics and process state parts: B4170 to B4175."
+  - "--timeout-keep-alive and KEEPALIVE_TIMEOUT in the gateway binary (gateway/launch.py): B131."
+  - "litellm/proxy/start.sh: a two-line script that runs `python3 proxy_cli.py` with no flags; nothing at the pin calls it, and the betterlite binary with no flags is the same launch, so nothing is built for it."
+  - "timeout_worker_healthcheck, log_config and the event loop choice: B4176; they configure uvicorn's process handling, not the listener."
+pitfalls:
+  - LiteLLM picks gunicorn before hypercorn before granian when several --run_* flags are given, but its running_uvicorn test ignores --run_granian, so only the launcher choice follows the elif chain.
+  - --limit_concurrency is click.IntRange(min=1), so 0 is a usage error at parse time (B8375) and never reaches this function.
+  - gunicorn reads a max_requests of 0 as no limit, while uvicorn with limit_max_requests 0 stops at its first tick; the two launchers must not share that rule.
+  - KEEPALIVE_TIMEOUT only matters to uvicorn; with --run_gunicorn the effective value stays 2 even when the flag is given.
+  - run_server sets os.environ["NUM_WORKERS"] inside the CliRunner call, so the Python adapter must save and restore os.environ around each case.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

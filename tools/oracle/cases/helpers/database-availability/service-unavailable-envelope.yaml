@@ -1,0 +1,20 @@
+kind: helper
+name: database-availability-service-unavailable-envelope
+call:
+  database_availability:
+    scenarios:
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused}
+      - chain:
+          - {kind: database, error_type: prisma, message: query engine crashed}
+      - chain:
+          - {kind: database, error_type: data, message: invalid byte sequence}
+      - chain:
+          - {kind: os, message: connection refused}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/0/error/message, why: betterlite writes its own message}
+    - {pointer: /value/1/error/message, why: betterlite writes its own message}
+    - {pointer: /value/2/error/message, why: betterlite writes its own message}
+    - {pointer: /value/3/error/message, why: betterlite writes its own message}

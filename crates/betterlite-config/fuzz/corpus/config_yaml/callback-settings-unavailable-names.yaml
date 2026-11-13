@@ -1,0 +1,4 @@
+litellm_settings:
+  callbacks: ["langfuse", "not_a_callback"]
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]

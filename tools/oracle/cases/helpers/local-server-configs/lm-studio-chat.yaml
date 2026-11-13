@@ -1,0 +1,8 @@
+kind: helper
+name: lm-studio-chat-response-format
+call:
+  b8152:
+    function: "chat_params"
+    calls: [{"provider": "lm_studio", "model": "m", "params": [["response_format", {"type": "json_object"}]], "preset": {}, "chat_models": [], "text_models": []}, {"provider": "lm_studio", "model": "m", "params": [["response_format", {"type": "json_schema", "schema": {"type": "object"}}]], "preset": {}, "chat_models": [], "text_models": []}, {"provider": "lm_studio", "model": "m", "params": [["response_format", {"type": "json_schema", "json_schema": {"name": "n", "schema": {"type": "object"}}}]], "preset": {}, "chat_models": [], "text_models": []}, {"provider": "lm_studio", "model": "m", "params": [["response_format", {"type": "json_schema", "json_schema": {"name": "n"}, "schema": {"type": "object"}}]], "preset": {}, "chat_models": [], "text_models": []}, {"provider": "lm_studio", "model": "m", "params": [["response_format", {"type": "text"}]], "preset": {}, "chat_models": [], "text_models": []}, {"provider": "lm_studio", "model": "m", "params": [["response_format", {"type": "json_object"}], ["temperature", 0.2], ["unknown_option", 1]], "preset": {"seed": 4}, "chat_models": [], "text_models": []}, {"provider": "lm_studio", "model": "m", "params": [["max_completion_tokens", 5], ["temperature", 0]], "preset": {}, "chat_models": [], "text_models": []}, {"provider": "lm_studio", "model": "m", "params": [["response_format", {"type": "json_object"}]], "preset": {"response_format": {"type": "text"}}, "chat_models": [], "text_models": []}, {"provider": "lm_studio", "model": "m", "params": [["response_format", {}]], "preset": {}, "chat_models": [], "text_models": []}]
+env: {}
+compare: {ignore: []}

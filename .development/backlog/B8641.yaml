@@ -1,0 +1,14 @@
+id: B8641
+milestone: M5 api families
+title: Pass-through port adapters over shared state
+status: todo
+depends_on: [B8610, B8611, B8612, B8399, B6510, B3629, B3622, B3623, B3624, B3620, B3628, B396, B844, B885, B641, B1060, B1061, B1062, B1063, B558, B7892, B3602, B3613, B3615, B052, B8520]
+file: tasks/B8641-passthrough-port-adapters.yaml
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

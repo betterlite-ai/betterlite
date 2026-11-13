@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Search HTTP execution
 status: todo
 depends_on: [B3270, B173, B2402, B012]
-file: null
+file: tasks/B3276-search-http-execution.yaml
 covers:
   - "litellm/llms/custom_httpx/llm_http_handler.py"
 parent: B091

@@ -11,9 +11,7 @@ description: 'Implement CooldownPolicy and CooldownDecision over typed B011 erro
   AuthenticationErrorAllowedFails, TimeoutErrorAllowedFails, RateLimitErrorAllowedFails, InternalServerErrorAllowedFails,
   ServiceUnavailableErrorAllowedFails, BadGatewayErrorAllowedFails and NotFoundErrorAllowedFails. Each
   is absent unless set. Implement the owned native service in crates/betterlite-router/src/cooldown_decisions.rs.
-  Add ProbeOperation::CooldownDecisions in tools/oracle/src/router_probes/mod.rs and the corresponding B369 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::CooldownDecisions and its Python entry as stubs, so fill only tools/oracle/src/router_probes/cooldown_decisions.rs and tools/oracle/litellm/probes/cooldown_decisions.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router_utils/cooldown_handlers.py: mark_advisor_orchestration_failure
@@ -24,26 +22,16 @@ description: 'Implement CooldownPolicy and CooldownDecision over typed B011 erro
   (L330-L424), should_cooldown_based_on_allowed_fails_policy (L561-L609), _increment_allowed_fails (L612-L622),
   _is_allowed_fails_set_on_router (L625-L639), cast_exception_status_to_int (L642-L651), is_caller_timeout_408
   (L654-L671). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B308 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/cooldown_decisions.rs
   - crates/betterlite-router/src/cooldown_decisions/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/cooldown_decisions.rs
   - crates/betterlite-server/src/routing/cooldown_decisions/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/cooldown_decisions.rs
   - tools/oracle/src/router_probes/cooldown_decisions/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/cooldown_decisions.py
   - tools/oracle/cases/routing/cooldown-decisions/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/cooldown-decisions-*
@@ -133,6 +121,7 @@ out_of_scope:
 - 'litellm/router_utils/cooldown_handlers.py: B308 owns: _set_cooldown_deployments (L427-L489), _async_get_cooldown_deployments
   (L492-L515), _async_get_cooldown_deployments_with_debug_info (L518-L531), _get_cooldown_deployments
   (L534-L558).'
+- "_should_cooldown_deployment takes the alternatives answer as a `has_alternatives: bool` input. Its caller B308 computes it from B323's `routing_group_has_alternatives` and B8351's `CatalogQueries::team_model_has_alternatives`, so this module does not read the catalog."
 pitfalls:
 - Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
   a hard request error.

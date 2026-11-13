@@ -1,0 +1,20 @@
+kind: probe
+name: cancel-after-grant
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_concurrency:
+        initial: 2
+        floor: 1
+        ceiling: 2
+        steps:
+          - {action: acquire, deadline_millis: 60000}
+          - {action: acquire, deadline_millis: 60000}
+          - {action: acquire, deadline_millis: 60000}
+          - {action: acquire, deadline_millis: 60000}
+          - {action: release, id: 0}
+          - {action: cancel, id: 2}
+          - {action: poll, id: 3}
+          - {action: release, id: 1}
+          - {action: release, id: 3}

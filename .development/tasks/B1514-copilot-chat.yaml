@@ -31,8 +31,6 @@ description: >-
   230 tests, 100 adapter and 45 wiring lines, maximum 700.
 scope:
   paths:
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/copilot_chat.rs
     - crates/betterlite-core/src/api/copilot_chat/**
     - crates/betterlite-config/src/providers/copilot.rs

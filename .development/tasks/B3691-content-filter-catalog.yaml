@@ -158,7 +158,7 @@ out_of_scope:
   - The guardrail_hooks/litellm_content_filter examples, benchmarks and guardrail_benchmarks
     tests are out of scope; B105's outline notes they are evaluation infrastructure,
     not production behavior.
-  - llamaguard_prompt.txt has no caller at the pinned commit; B105 owns this file
+  - llamaguard_prompt.txt has no caller at the pinned commit, so nothing builds it; it stays in B105's covers
     for inventory accounting only and does not implement any loader.
   - PrebuiltPatternName enum (patterns.py:30-36) has no caller at the pinned commit
     and is not built.

@@ -1,0 +1,115 @@
+id: B6593
+title: MCP toolset scope filter
+description: >-
+  Build the check that pins a caller to one toolset, for the routes /toolset/{name}/mcp and /{name}/mcp and for the toolset name on the MCP REST routes. In LiteLLM it is _apply_toolset_scope and its small neighbour _toolset_server_ids in litellm/proxy/_experimental/mcp_server/server.py. It decides whether the caller holds the toolset, and then returns a copy of the caller's auth whose MCP permissions are cut down to the toolset's servers and tools, so every later access check sees only those. B4726 declares the ActingPorts port with a method apply_toolset_scope(auth, toolset_id); this task builds what that method calls. No route is registered here, and the two transport callers (server.py L2027-L2031 and L2374-L2378) belong to the gateway task B136.
+
+
+  The code goes in two crates and neither gains a dependency. UserAPIKeyAuth keeps its fields pub(crate) in betterlite-auth, so the copies that rewrite one live there, in the new module toolset_scope (crates/betterlite-auth/src/toolset_scope.rs with a tests.rs beside it). The decision is pure over ports and goes in betterlite-mcp, in the new module toolset_scope (crates/betterlite-mcp/src/toolset_scope.rs with a tests.rs beside it). No Cargo.toml changes: betterlite-mcp already depends on betterlite-auth and betterlite-db. Use, and do not copy: UserAPIKeyAuth and user_api_key_has_admin_view from B2314, key_identity(auth).mcp_admitted_user_subject from B4679, source_identity(auth).requires_fresh_policy from B4671, LiteLLMObjectPermissionTable and PermissionList from betterlite-db (budget_permission_rows), and RestAccessError from B4726 (module rest_access).
+
+
+  Module toolset_scope in betterlite-auth.
+
+  1. ToolsetView<'a> and toolset_view(auth) -> ToolsetView<'_>. Fields: opts_out_of_mcp (bool), has_admin_view (bool), admitted_subject (bool), requires_fresh_policy (bool) and session_resource_server_id (Option<&str>, the server-only field mcp_session_resource_server_id). opts_out_of_mcp is true when the auth's own object permission (the key's, from its token) is present and its mcp_servers list contains the literal "no-mcp-servers". A permission whose mcp_servers is unset, or no permission at all, is false. has_admin_view is B2314's user_api_key_has_admin_view (proxy_admin and proxy_admin_viewer only). The other three come from B4679, B4671 and a direct read of the one field no accessor covers.
+
+  2. pin_toolset(auth, toolset_id) -> UserAPIKeyAuth: a full copy of the auth with only mcp_toolset_id set to Some(toolset_id).
+
+  3. scope_to_toolset(auth, toolset_id, tool_permissions: &BTreeMap<String, Vec<String>>) -> UserAPIKeyAuth: a full copy with mcp_toolset_id set and the object permission rewritten. server_ids are the keys of tool_permissions in its order. When the auth already has an object permission, the copy of that row sets mcp_servers to Some(server_ids), mcp_tool_permissions to Some(tool_permissions) (an empty map stays Some) and mcp_toolsets to Some(empty list), and keeps every other field, mcp_access_groups and the row's object_permission_id included. When it has none, a new row with object_permission_id "toolset-scope", mcp_servers and mcp_tool_permissions as above, and every other field unset (PermissionList(None) and None, not the serde default of an empty list, because LiteLLM's model defaults every list to None).
+
+
+  Module toolset_scope in betterlite-mcp.
+
+  4. Ports, all async and returning Result<_, ToolsetScopeError> except granted: ActingUsers::acting_user_auth(auth) -> UserAPIKeyAuth (B4672's acting_user_auth), GrantedToolsets::granted_toolset_ids(auth) -> BTreeSet<String> (B4672's granted_toolset_ids, which cannot fail) and ToolsetPermissions::toolset_permissions(toolset_ids: &[String], requires_fresh_policy: bool) -> BTreeMap<String, Vec<String>> (B6591's ServerUnion::resolve_toolset_permissions, which returns an error only when requires_fresh_policy is true). ToolsetScope<A, G, P> holds the three ports in a struct literal (generic, no trait object, no global).
+
+  5. ToolsetScopeError (thiserror) has Forbidden(String), the 403 detail text, and Port(String). A From<ToolsetScopeError> for RestAccessError turns Forbidden(detail) into RestAccessError::Http { status: 403, detail: plain text } and Port into RestAccessError::Port, so B4726's ActingPorts::apply_toolset_scope can return the result of ToolsetScope::apply_toolset_scope after the conversion.
+
+  6. apply_toolset_scope (_apply_toolset_scope), inputs: the auth and the toolset id. Steps in this order:
+     a. view = toolset_view(auth). When opts_out_of_mcp is true, fail with Forbidden "API key is scoped to no MCP servers; toolset access is denied." This reads the auth that came in, before the acting user is resolved, and it runs before the admin check.
+     b. acting = acting_user_auth(auth). acting_view = toolset_view(&acting).
+     c. When acting_view.has_admin_view is false and toolset_id is not in granted_toolset_ids(&acting), fail with Forbidden "API key does not have access to toolset '<toolset_id>'.". An admin passes without the lookup.
+     d. When acting_view.admitted_subject is true: if session_resource_server_id is Some and that id is not a key of toolset_permissions([toolset_id], acting_view.requires_fresh_policy), fail with the same Forbidden text as step c. Then return pin_toolset(&acting, toolset_id). The object permission is not rewritten for an admitted user; the toolset rides along as mcp_toolset_id and every grant source is intersected with it later.
+     e. Otherwise permissions = toolset_permissions([toolset_id], false) (always without the fresh flag) and return scope_to_toolset(&acting, toolset_id, &permissions).
+
+  7. toolset_server_ids (_toolset_server_ids), input: the toolset id. Returns the set of keys of toolset_permissions([toolset_id], false). The transport handlers call it right after apply_toolset_scope.
+
+  Tests use in-memory fakes that record their calls and a synthetic auth builder; ids and names have the prefix test-.
+scope:
+  paths:
+    - crates/betterlite-auth/src/toolset_scope.rs
+    - crates/betterlite-auth/src/toolset_scope/**
+    - crates/betterlite-mcp/src/toolset_scope.rs
+    - crates/betterlite-mcp/src/toolset_scope/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1521-L1600
+    why: _apply_toolset_scope with its four refusals and two result shapes, and _toolset_server_ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2027-L2031
+    why: the streamable HTTP caller; the SSE caller at L2374-L2378 is the same.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L912-L933
+    why: the REST caller (_resolve_acting_auth), which B4726 ports through ActingPorts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3600-L3658
+    why: resolve_toolset_tool_permissions, the cache, the fresh policy flag and the swallowed read fault (B6591 builds it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L223-L230
+    why: _is_mcp_admitted_user_subject, a read of the server-only mcp_admitted_user_subject field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1268-L1280
+    why: every list on the object permission model defaults to None, which the new toolset-scope row relies on.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3934-L3935
+    why: SpecialMCPServerNames.no_mcp_servers is the string "no-mcp-servers".
+
+dod:
+  - text: toolset_view reports the no-mcp-servers opt-out only when the auth's own object permission lists that literal in mcp_servers, and reports the admin view, admitted subject, fresh policy and session resource server id of the auth.
+    proof: [view-tests]
+  - text: scope_to_toolset rewrites an existing object permission to the toolset's servers, its tool map and an empty toolset list while keeping the access groups and the row id, builds a toolset-scope row with every other field unset when there is none, and sets mcp_toolset_id on both.
+    proof: [rewrite-tests]
+  - text: pin_toolset changes only mcp_toolset_id.
+    proof: [rewrite-tests]
+  - text: apply_toolset_scope refuses a key scoped to no MCP servers with the exact 403 text, before the acting user is resolved and for an admin too.
+    proof: [refusal-tests]
+  - text: apply_toolset_scope refuses a non-admin whose acting user does not hold the toolset with the exact 403 text, lets an admin through without asking for grants, and refuses an admitted user whose session resource server is not in the toolset.
+    proof: [refusal-tests]
+  - text: apply_toolset_scope returns the acting user pinned by mcp_toolset_id alone for an admitted user, and the rewritten acting user for everyone else, always resolving the permissions without the fresh flag in the second case and with the acting user's flag in the first.
+    proof: [scoped-tests]
+  - text: toolset_server_ids returns the keys of the toolset's permissions, and a ToolsetScopeError converts to the matching RestAccessError.
+    proof: [scoped-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: view-tests
+      why: toolset_view or its opt-out rule is missing or wrong
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^toolset_scope::tests::view_/)'
+    - id: rewrite-tests
+      why: the object permission rewrite or the toolset pin is missing or wrong
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^toolset_scope::tests::(rewrite|pin)_/)'
+    - id: refusal-tests
+      why: one of the three 403 refusals, or their order, is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^toolset_scope::tests::refusal_/)'
+    - id: scoped-tests
+      why: the admitted user pin, the rewritten result, toolset_server_ids or the error conversion is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^toolset_scope::tests::(admitted|scoped|server_ids|error)_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The acting user, the granted toolset ids and the toolset permissions arrive through three ports, and a refusal is a ToolsetScopeError that converts to RestAccessError::Http with status 403 and a plain text detail.
+    why: Rust has no HTTPException to raise and no module global to read; the body text of each refusal is LiteLLM's.
+
+out_of_scope:
+  - "Every other function of server.py (transport handlers handle_streamable_http_mcp and handle_sse_mcp, session tracking, _raise_preemptive_401_for_unauthenticated_servers, the origin and client allowlist checks, the OpenTelemetry carriers): B136. B136 also calls apply_toolset_scope and toolset_server_ids at L2027-L2031 and L2374-L2378."
+  - "acting_user_auth and granted_toolset_ids: B4672. resolve_toolset_tool_permissions and its cache: B6591. get_toolset_by_name_cached: B6592. _is_mcp_admitted_user_subject: B4679 as key_identity."
+  - "ActingPorts itself, resolve_acting_auth and the 404 and 500 branches for a missing toolset or database: B4726. The adapters that implement the three ports here over B4672 and B6591 are composition code for the roots that wire B4726 and B136."
+
+pitfalls:
+  - "The no-mcp-servers check reads the auth that came in, not the acting user, and runs before the admin check, so an admin key scoped to no MCP servers is still refused."
+  - "An admin skips the granted_toolset_ids lookup, but an admitted user is checked against the toolset's servers in step d even when it passed step c."
+  - "The admitted-user branch returns the acting user with only mcp_toolset_id changed. Rewriting its object_permission there would cap it with the toolset's servers and drop the team-granted toolset path."
+  - "Step d compares the session resource server id with the keys of the permission map, and asks for those permissions with the acting user's requires_fresh_policy. Step e and toolset_server_ids ask without the flag, so a read fault there is an empty map and a toolset with no grants."
+  - "An empty permission map is still a rewrite: mcp_servers becomes an empty list and mcp_tool_permissions an empty map, which grants nothing. It must not fall back to the caller's old servers."
+  - "mcp_toolsets is set to an empty list, not None, on the rewritten row, and mcp_access_groups is kept, so access group grants stay valid under a toolset scope."
+  - "The new toolset-scope row leaves every list unset. The serde default of PermissionList is an empty list, which would read as an explicit empty grant, so set PermissionList(None) by hand."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

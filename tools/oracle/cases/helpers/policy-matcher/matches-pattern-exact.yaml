@@ -1,0 +1,10 @@
+kind: helper
+name: matches-pattern-exact
+call:
+  b3241:
+    policy_memory_matching_matcher:
+      action: matches_pattern
+      value: gpt-4
+      patterns: [gpt-4, gpt-4-turbo]
+env: {}
+compare: {ignore: []}

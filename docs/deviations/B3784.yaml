@@ -1,0 +1,11 @@
+task: B3784
+deviations:
+  - what: betterlite caps the Tracker checkpoint response body at 1 MiB and fails the checkpoint call when it is larger; LiteLLM reads whatever the Tracker sends.
+    why: Rule bounded-inputs requires a limit on every response body, and an unbounded read is a free denial of service on a gateway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ovalix/ovalix.py#L197-L199
+  - what: betterlite applies one total per-request timeout, resolved from litellm_params.timeout or 600 seconds; LiteLLM's httpx handler splits that into a 600 second read/write timeout and a separate 5 second connect timeout.
+    why: the guardrail receives one shared reqwest client and one Duration, so a connect-only sub-timeout would need a client built with its own connect_timeout, which belongs to the transport owner.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167
+  - what: betterlite sends one POST per checkpoint; LiteLLM's shared AsyncHTTPHandler retries the POST once with a fresh client after a connect error or a remote protocol error.
+    why: the retry belongs to the shared outbound HTTP client, not to this guardrail; betterlite's transport owner applies its retry policy to every guardrail call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851

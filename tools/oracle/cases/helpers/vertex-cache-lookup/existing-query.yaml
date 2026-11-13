@@ -1,0 +1,9 @@
+kind: helper
+name: vertex-cache-lookup-existing-query
+call:
+  vertex_cache_lookup:
+    targets:
+      - {provider: vertex_ai, api_base: "https://proxy.example.com/v1?x=1", project: proj, location: us-central1, auth: token-proxy, gemini_api_key: null, model: gemini-2.5-flash}
+      - {provider: vertex_ai_beta, api_base: "https://proxy.example.com/v1beta1?x=1&y=2", project: proj, location: us-central1, auth: token-proxy, gemini_api_key: null, model: gemini-2.5-flash}
+env: {}
+compare: {ignore: []}

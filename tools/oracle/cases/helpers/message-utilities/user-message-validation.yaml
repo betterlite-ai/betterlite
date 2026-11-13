@@ -1,0 +1,11 @@
+kind: helper
+name: message-utilities-user-message-validation
+call:
+  b5366:
+    calls:
+      - function: validate_openai_user_messages
+        messages:
+          - {role: assistant, content: a}
+          - {role: user, content: [{type: text, text: t}, {type: tool_use}]}
+env: {}
+compare: {ignore: []}

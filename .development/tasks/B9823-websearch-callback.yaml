@@ -1,0 +1,120 @@
+id: B9823
+title: Register websearch_interception in the SDK callback list
+description: >-
+  With `litellm_settings.callbacks: ["websearch_interception"]` LiteLLM builds one WebSearchInterceptionLogger at startup
+  (callback_utils.py L360-L369, `initialize_from_proxy_config` at handler.py L1970-L2010) and appends it to
+  litellm.callbacks. It then turns a native web search tool into the `litellm_web_search` function before the provider
+  sees it (the deployment hook L420-L495 and the Messages pre-request hook L592-L675), answers a search-only Messages
+  request without the model for providers that do not search natively (`try_short_circuit_search`, L291-L418), and when
+  the model calls `litellm_web_search` runs the search through the router's search tools and sends the follow-up (gate
+  L677-L898, plan L933-L1004, post response hook L1006-L1029). The pieces are built: B4116 (settings and both request
+  hooks), B4115 (search execution and the short circuit), B4117 (the gate by API surface), B4118 (the Anthropic plan and
+  the surface dispatcher), B4119 (the chat and Responses plans) and B4113 (the native result blocks the post hook adds).
+  B9821's list has a builder slot for this name that still answers UnavailableAdapter, and B9825 runs the seams on the
+  gateway. This task fills the slot, so the name starts and the interception runs through the gateway.
+
+
+  Code goes in crates/betterlite-server/src/state/sdk_callbacks/websearch.rs and websearch/ (tests.rs). Replace the
+  body of `build(inputs)` and touch no other file of the slot. Also add websearch/adapter.rs, which implements B8383's `WebsearchInterception` port (is_registered over the Slot's contains, apply over its replace with this builder's entry) for the composition root to hand to B8383.
+
+
+  `WebSearchCallback` holds the B4116 logger value built from its config section (`config.sections.websearch_request_hooks`),
+  which applies LiteLLM's precedence: litellm_settings.websearch_interception_params wins over
+  callback_settings.websearch_interception, and enabled_providers defaults to ["bedrock"] when absent or null. It also
+  holds B4115's search execution built over `shared.router` (the search tools) and `shared.http`, and B4119's
+  ChatResponsesFollowup over that executor. Built once per process. It implements:
+  - B5367's DeploymentHook: the pre-call method is B4116's async_pre_call_deployment_hook; success and failure keep the
+    defaults.
+  - B1118's PreRequestHook: B4116's async_pre_request_hook. B1118's SearchShortCircuit: B4115's try_short_circuit_search.
+  - B9820's AgenticCallback: `callback_name` "websearch_interception", `overrides()` with should_run, build_plan and
+    post_response (the class also overrides async_run_agentic_loop, but B4118 does not build it because every loop
+    prefers the plan path, so the run flag stays false), `should_run_agentic_loop` through B4117's surface gate,
+    `build_agentic_loop_plan` through B4118's dispatcher (which calls B4119's builders for chat and Responses), and
+    `post_agentic_loop_response` through B4113's native block injection.
+  `build` returns `SdkCallbackEntry { name: "websearch_interception", deployment, agentic, pre_request and search all
+  Some }`, every view the same Arc.
+
+
+  Tests in websearch/tests.rs (`state::sdk_callbacks::websearch::tests`): install with the name gives one entry with all
+  four views over one object; params from litellm_settings win over callback_settings and a missing enabled_providers
+  becomes ["bedrock"]; overrides() reports exactly should_run, build_plan and post_response; the pre-request view turns a
+  `web_search_20250305` tool into litellm_web_search for an enabled provider and leaves a disabled provider's request
+  alone; the agentic view's plan for a response that calls litellm_web_search runs the search through a test search
+  executor and patches the messages.
+
+
+  HTTP oracle cases in tools/oracle/cases/interception/websearch/, through the booted proxies. Config: an
+  `anthropic/claude-sonnet-4-20250514` deployment `claude-search` and an `openai/gpt-4o-mini` deployment `gpt-search`,
+  both with `api_base: "{{upstream}}"` and `api_key: oracle-key`; a `search_tools` entry with a provider LiteLLM supports
+  at the pin (perplexity, as LiteLLM's example config uses) and `api_base: "{{upstream}}"`; `litellm_settings.callbacks: ["websearch_interception"]` and
+  `websearch_interception_params: {enabled_providers: ["anthropic", "openai"], search_tool_name: <that tool>}`. Compare
+  status, the body and every captured upstream request (path and body); ignore only generated ids and timestamps at their
+  pointers. Confirm each case with `--self-check` before comparing betterlite.
+  - messages-tool-rewrite.yaml: POST /v1/messages with a `web_search_20250305` tool and a plain text answer; the upstream
+    sees litellm_web_search and the client gets the answer.
+  - messages-search-loop.yaml: the first answer calls litellm_web_search with a query, the search provider gets the
+    query, the second Messages request carries the search result, and the client gets the second answer.
+  - chat-tool-rewrite.yaml: POST /v1/chat/completions to gpt-search with the same native tool; the upstream sees the
+    litellm_web_search function.
+  - disabled-provider-untouched.yaml: the same Messages request with enabled_providers ["bedrock"] goes upstream with the
+    client's tool.
+  Add one http_case corpus seed per case.
+scope:
+  paths:
+    - crates/betterlite-server/src/state/sdk_callbacks/websearch.rs
+    - crates/betterlite-server/src/state/sdk_callbacks/websearch/**
+    - tools/oracle/cases/interception/websearch/**
+    - tools/oracle/fuzz/corpus/http_case/interception-websearch-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L360-L369
+    why: The name builds one logger in the proxy hook branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1970-L2010
+    why: initialize_from_proxy_config and its precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L291-L360
+    why: The short circuit skips providers that search natively, anthropic included.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L420-L675
+    why: The two request hooks that rewrite the tool.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L677-L1029
+    why: The gate, the run and plan hooks and the post response hook the class overrides.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/example_config_yaml/websearch_interception_config.yaml#L1-L20
+    why: The config shape users write, search tool and params.
+dod:
+  - text: websearch_interception in litellm_settings.callbacks installs one entry with all four views over one object built from LiteLLM's param precedence and the bedrock default.
+    proof: [websearch-tests]
+  - text: The views delegate to B4116's hooks, B4115's short circuit, B4117's gate, B4118's plan and B4113's post hook, and overrides() names should_run, build_plan and post_response.
+    proof: [websearch-tests]
+  - text: Through /v1/messages and /v1/chat/completions a native web search tool reaches the provider as litellm_web_search, a search call runs the configured search tool and the follow-up answer reaches the client, and a provider outside enabled_providers is untouched.
+    proof: [case-files, oracle]
+  - text: The new HTTP transcripts replay through the existing HTTP-case decoder.
+    proof: [http-corpus]
+checks:
+  optional: []
+  commands:
+    - id: websearch-tests
+      why: the name still fails startup, a view is missing, or a hook delegates to the wrong piece
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^state::sdk_callbacks::websearch::tests::/)'
+    - id: case-files
+      why: no web search interception case exists on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/interception/websearch)"
+    - id: http-corpus
+      why: the HTTP transcripts never reach the production case parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/interception-websearch-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/interception/websearch/messages-tool-rewrite.yaml
+  - tools/oracle/cases/interception/websearch/messages-search-loop.yaml
+  - tools/oracle/cases/interception/websearch/chat-tool-rewrite.yaml
+  - tools/oracle/cases/interception/websearch/disabled-provider-untouched.yaml
+deviations: []
+out_of_scope:
+  - "Every hook body: B4113, B4115, B4116, B4117, B4118, B4119. The search providers: their search tasks."
+  - "Running the seams on the gateway: B9825. The list and the slot: B9821. Re-registering from the database and the admin settings routes: B8383, which calls the slot's replace with this builder's entry."
+  - "The chat-only legacy hooks (async_run_chat_completion_agentic_loop and the two chat variants) that the OpenAI provider calls: B119."
+pitfalls:
+  - "enabled_providers defaults to [\"bedrock\"], so a case without the param intercepts nothing on anthropic or openai; set it in every case that expects a rewrite."
+  - "The short circuit never fires for anthropic, bedrock, vertex_ai or azure_ai, which search natively in their agentic loop; a short circuit case needs a provider whose Messages config does not."
+  - "Build the search executor over the shared router handle, not a copy, so a search tool added at runtime is found as LiteLLM's llm_router lookup finds it."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

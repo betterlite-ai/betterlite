@@ -1,0 +1,9 @@
+kind: helper
+name: container-object-wrong-literal
+call:
+  b3360:
+    operation: record_decode
+    records:
+      - {kind: container_object, value: {id: container_abc, object: other, created_at: 1, status: running}}
+env: {}
+compare: {ignore: []}

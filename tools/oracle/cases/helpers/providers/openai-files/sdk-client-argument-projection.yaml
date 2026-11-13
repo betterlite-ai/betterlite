@@ -1,0 +1,8 @@
+kind: helper
+name: openai-files-sdk-client-argument-projection
+call:
+  openai_files:
+    action: client
+    client: {api_key: sk-files, api_base: 'https://empty.test/v1', organization: '', timeout: 0, max_retries: 0, supplied: null, is_async: true}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: arn-in-partition-s3
+call: {aws_partition: {region: us-east-1, value: 'arn:aws-barn:s3:x'}}
+env: {}
+compare: {ignore: []}

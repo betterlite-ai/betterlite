@@ -1,0 +1,5 @@
+kind: helper
+name: "request-base-url-env-wins"
+call: {"b4654":{"function":"request_base_url","proxy_base_url":"https://proxy.example.com/","base_url":"http://llm.example.com/","x_forwarded_proto":"https","x_forwarded_host":"api.example.com","x_forwarded_port":"8443","from_trusted_proxy":true}}
+env: {"PROXY_BASE_URL":"https://proxy.example.com/"}
+compare: {"ignore":[]}

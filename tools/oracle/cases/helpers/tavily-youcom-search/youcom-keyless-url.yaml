@@ -1,0 +1,16 @@
+kind: helper
+name: youcom-keyless-url
+call:
+  b8021:
+    provider: you_com
+    calls:
+      - operation: complete_url
+        api_base: null
+        environment: {}
+      - operation: complete_url
+        api_base: null
+        environment:
+          YOUCOM_API_KEY: ""
+env: {}
+compare:
+  ignore: []

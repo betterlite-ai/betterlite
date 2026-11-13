@@ -31,7 +31,8 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-guardrails/src/**
+    - crates/betterlite-guardrails/src/purview_dlp_evaluation.rs
+    - crates/betterlite-guardrails/src/purview_dlp_evaluation/**
   lint_tables: false
 
 references:
@@ -119,7 +120,7 @@ deviations:
 out_of_scope:
   - "PurviewGuardrailBase constructor, _compute_protection_scopes, _process_content, _should_block, _extract_tool_call_args_from_message, get_prompt_text_for_dlp, _resolve_trusted_user_id, _resolve_user_id: owned by B3738"
   - "async_pre_call_hook, async_post_call_success_hook, async_post_call_streaming_iterator_hook, logging_hook and async_logging_hook: owned by B3740"
-  - "CustomGuardrail base class and standard guardrail logging: belongs to B104"
+  - "CustomGuardrail base class and standard guardrail logging: belong to B5471 and B3664"
   - "LiteLLMCompletionResponsesConfig: defined in betterlite-core (B909)"
   - "Model-response and streaming-response types: owned by wire format (B005, B2400)"
   - "HTTPException construction: framework utility"

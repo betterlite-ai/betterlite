@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-ascii-complement",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/é",
+      "allowed_routes": [
+        "/(?a:[\\W])"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

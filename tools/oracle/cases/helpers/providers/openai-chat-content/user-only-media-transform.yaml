@@ -1,0 +1,28 @@
+kind: helper
+name: openai-chat-content-user-only-media-transform
+call:
+  openai_chat_content:
+    transform_requests:
+      requests:
+        - model: gpt-4.1
+          provider: openai
+          messages:
+            - role: user
+              content:
+                - {type: text, text: look}
+                - {type: image_url, image_url: 'data:image/png;base64,iVBORw0KGgo='}
+            - role: assistant
+              content:
+                - {type: image_url, image_url: 'data:image/png;base64,iVBORw0KGgo='}
+            - role: tool
+              tool_call_id: call_1
+              content:
+                - {type: text, text: loaded}
+                - {type: image_url, image_url: 'data:image/png;base64,iVBORw0KGgo='}
+                - {type: tool_reference, tool_name: WebFetch}
+            - role: user
+              content: plain text
+            - role: user
+              content: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: openai-threads-seed-get-thread
+call: {openai_threads: {get_thread: {options: {api_key: sk-seed, api_base: 'https://example.test/v1'}, thread_id: thread_1, aget_thread: true, reply: {status: 200, body: '{"id":"thread_1","object":"thread","created_at":7,"metadata":{"team":"core"}}'}}}}
+env: {}
+compare: {ignore: []}

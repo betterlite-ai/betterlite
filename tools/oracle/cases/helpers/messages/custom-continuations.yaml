@@ -1,0 +1,14 @@
+kind: helper
+name: message-normalization-custom-continuations
+call:
+  message_normalization:
+    operation: get_completion_messages
+    messages:
+      - {role: assistant, content: start}
+      - {role: user, content: first}
+      - {role: user, content: second}
+    user_continue_message: {role: user, content: go on}
+    assistant_continue_message: {role: assistant, content: go on}
+    ensure_alternating_roles: true
+env: {}
+compare: {ignore: []}

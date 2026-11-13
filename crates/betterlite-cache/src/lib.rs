@@ -1,5 +1,6 @@
 pub mod azure_blob_cache;
 pub mod backend;
+pub mod batch_reads;
 pub mod cache_key;
 pub mod codec;
 pub mod configuration;
@@ -11,6 +12,7 @@ pub mod embedding_merge;
 pub mod envelope;
 pub mod evicted_client_closer;
 pub mod factories;
+pub mod gcs_cache;
 pub mod handler;
 pub mod llm_client_cache;
 pub mod native_adapter;
@@ -21,3 +23,4 @@ pub mod replay;
 )]
 pub mod s3_cache;
 pub mod types;
+pub mod write_completion;

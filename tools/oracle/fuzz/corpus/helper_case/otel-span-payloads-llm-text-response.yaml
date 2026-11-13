@@ -1,0 +1,18 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-llm-text-response",
+  "call": {
+    "b3844": {
+      "function": "llm_call",
+      "payload": {
+        "response": "plain text",
+        "call_type": "text_completion"
+      },
+      "capture_content": true
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

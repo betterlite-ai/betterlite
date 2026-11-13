@@ -1,0 +1,74 @@
+id: B8378
+title: Deployment checks before router build
+description: >-
+  LiteLLM builds its router with ignore_invalid_deployments=True, so a bad deployment would silently vanish. To refuse
+  startup instead, proxy_server.py checks each model_list entry before the router is built. Build these checks in crates/betterlite-server/src/deployment_checks.rs
+  (declared by the skeleton) for the router build to call on every config deployment. Error enum DeploymentCheckError,
+  whose messages are LiteLLM's ValueError texts.
+
+  `check_max_agentic_loops(model)`: when litellm_params has max_agentic_loops, validate it with B4116's rule and the
+  field name "litellm_params.max_agentic_loops on model {model_name!r}". `check_complexity_placement(model)`: when
+  B377's carries_complexity_router_settings is true for the model string and the present strategy fields, run B377's
+  placement check and fail with "model {model_name!r}: {violation}". `check_access_windows(model)`: B322's
+  access_windows_config_error on model_info. `check_capability_limits(model_list, limit)`: B377's per-capability
+  count and limit check, failing with "config.yaml model_list: {violations joined by a space} {remedy}" where the remedy
+  is B377's AUTO_ROUTER_LICENSE_REMEDY text. `pin_complexity_model_id(model)`: when litellm_params carries a
+  complexity_router_config mapping and model_info.id is unset, stamp model_info.id with the router's generate_model_id
+  (B016) on the raw params, creating model_info when missing.
+
+  Plugin resolution (resolve_routing_plugins, resolve_classifier_plugin, resolve_complexity_plugins and the
+  PythonHostMissing error) is B8587's, so these checks never wait on the Python host.
+
+  Tests cover every check with good and bad deployments.
+  Helper cases (operation b8378 with an `operation:` field) compare the error texts for a zero max_agentic_loops, a
+  misplaced complexity setting, a bad access window, an over-limit capability count, and the pinned model id.
+  The worker writes them under tools/oracle/cases/helpers/deployment-checks/.
+scope:
+  paths:
+    - crates/betterlite-server/src/deployment_checks.rs
+    - crates/betterlite-server/src/deployment_checks/**
+    - tools/oracle/cases/helpers/deployment-checks/**
+    - tools/oracle/helpers/b8378.py
+    - tools/oracle/helpers/b8378/**
+    - tools/oracle/src/helpers/server/b8378.rs
+    - tools/oracle/src/helpers/server/b8378/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4965-L5158
+    why: Plugin resolution, the four deployment checks and the model id pin with their error texts.
+dod:
+  - text: Each deployment check refuses a bad deployment with LiteLLM's message and passes a good one.
+    proof: [deployment-checks-tests, oracle, helper-python]
+  - text: pin_complexity_model_id stamps the id from the raw params only when a complexity config is present and no id is set.
+    proof: [deployment-checks-tests, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+    - id: deployment-checks-tests
+      why: A deployment check or the id pin is missing or differs from LiteLLM
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^deployment_checks::/)'
+    - id: helper-python
+      why: The strict oracle adapter for the deployment check cases fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b8378)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b8378 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b8378/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/deployment-checks/zero-agentic-loops.yaml
+  - tools/oracle/cases/helpers/deployment-checks/misplaced-complexity-setting.yaml
+  - tools/oracle/cases/helpers/deployment-checks/bad-access-window.yaml
+  - tools/oracle/cases/helpers/deployment-checks/capability-over-limit.yaml
+  - tools/oracle/cases/helpers/deployment-checks/pinned-model-id.yaml
+deviations: []
+out_of_scope:
+  - "The rules themselves: B4116 (max_agentic_loops), B377 (complexity placement and capability counts), B322 (access windows)."
+  - "Where load_config calls these for each model: the router build from config (B016) calls them; this task does not load config."
+  - "Routing and classifier plugin resolution with PythonHostMissing: B8587."
+pitfalls:
+  - The id is pinned from the raw params before plugin paths are swapped for objects, because _delete_deployment re-hashes the raw params later and would evict every plugin-bearing deployment otherwise.
+  - Non-mapping litellm_params or model_info skip the checks instead of failing.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

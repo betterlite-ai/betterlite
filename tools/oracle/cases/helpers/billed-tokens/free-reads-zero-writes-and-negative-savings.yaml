@@ -1,0 +1,9 @@
+kind: helper
+name: free-reads-zero-writes-and-negative-savings
+call:
+  billed_tokens:
+    operation: savings
+    model_info: {input_cost_per_token: 1, cache_read_input_token_cost: 0, cache_creation_input_token_cost: 0, cache_creation_input_token_cost_above_1hr: 4}
+    usage: {detail_cache_read: 2, detail_cache_creation: 9, detail_cache_creation_5m: 7, detail_cache_creation_1h: 2}
+compare: {ignore: []}
+env: {}

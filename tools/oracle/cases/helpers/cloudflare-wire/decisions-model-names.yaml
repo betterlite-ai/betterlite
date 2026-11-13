@@ -1,0 +1,7 @@
+kind: helper
+name: cloudflare-wire-decisions-model-names
+call:
+  b5836:
+    decisions_models: ["@cf/meta/llama", "@cf/cloudflare/foo", "meta/llama", "foo", "", "a/b/", "foo/bar/baz"]
+env: {}
+compare: {ignore: []}

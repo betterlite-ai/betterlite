@@ -1,0 +1,17 @@
+kind: helper
+name: agent-search-text
+call:
+  b4783:
+    function: search_text
+    agent:
+      agent_id: a1
+      agent_name: planner
+      agent_card_params:
+        description: Plans trips
+        skills:
+          - {name: lookup, description: Finds places, tags: [travel, maps]}
+          - {name: summarize}
+          - {description: no name}
+          - {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,22 @@
+kind: helper
+name: model-metadata-resolution-provider-aliases
+call:
+  model_metadata_resolution:
+    scenario: provider_aliases
+    fixture:
+      model_cost:
+        azure/gpt-35-turbo: {litellm_provider: azure, mode: chat, input_cost_per_token: 1}
+        azure/ada: {litellm_provider: azure, mode: embedding, input_cost_per_token: 2}
+        vertex_ai/meta/llama3-8b-instruct-maas: {litellm_provider: vertex_ai-llama_models, mode: chat, input_cost_per_token: 3}
+        vertex_ai/codestral@latest: {litellm_provider: vertex_ai-mistral_models, mode: chat, input_cost_per_token: 4}
+        vertex_ai/jamba-1.5@latest: {litellm_provider: vertex_ai-ai21_models, mode: chat, input_cost_per_token: 5}
+        github_copilot/gpt-4: {litellm_provider: github_copilot, mode: chat, input_cost_per_token: 6}
+    queries:
+      - {model: gpt-35-turbo}
+      - {model: ada}
+      - {model: llama3-8b-instruct-maas, custom_llm_provider: vertex_ai_beta}
+      - {model: codestral, custom_llm_provider: vertex_ai}
+      - {model: jamba-1.5, custom_llm_provider: vertex_ai}
+      - {model: github_copilot/gpt-4}
+env: {}
+compare: {ignore: []}

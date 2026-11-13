@@ -1,0 +1,14 @@
+kind: helper
+name: cohere-v1-chat-seed-request
+call:
+  cohere_v1_chat:
+    function: request
+    requests:
+      - model: command-r
+        messages:
+          - {role: user, content: seed question}
+          - {role: user, content: seed follow up}
+        non_default_params: {stop: [done]}
+        optional_params: {preamble: seed}
+compare: {ignore: []}
+env: {}

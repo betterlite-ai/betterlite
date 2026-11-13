@@ -1,0 +1,16 @@
+kind: helper
+name: media-tokens-shared-context-limit
+call:
+  media_tokens:
+    calls:
+      - function: modified_max_tokens
+        model: gpt-4
+        base_model: writer.palmyra-x4-v1:0
+        messages:
+          - role: user
+            content: "hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world hi"
+        user_max_tokens: 8150
+        buffer_perc: 0.58
+        buffer_num: 10
+env: {}
+compare: {ignore: []}

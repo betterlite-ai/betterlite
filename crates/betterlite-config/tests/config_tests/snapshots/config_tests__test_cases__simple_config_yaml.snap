@@ -8,6 +8,7 @@ Ok(
             ModelDeployment {
                 model_name: "gpt-5-mini",
                 litellm_params: LiteLlmParams {
+                    ssl_verify: None,
                     model: Some(
                         "gpt-5-mini",
                     ),
@@ -42,6 +43,11 @@ Ok(
             fallbacks: [],
         },
         litellm_settings: LiteLlmSettings {
+            ssl_verify: None,
+            ssl_certificate: None,
+            http2: None,
+            ssl_ecdh_curve: None,
+            ssl_security_level: None,
             num_retries: None,
             request_timeout: None,
             drop_params: None,

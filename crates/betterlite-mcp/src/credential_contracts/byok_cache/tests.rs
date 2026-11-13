@@ -184,3 +184,62 @@ fn cache_evicts_the_oldest_entry_once_full() {
         Some("second".to_owned())
     );
 }
+
+#[rstest]
+fn entries_are_keyed_by_litellms_cache_key() {
+    let cache = cache_with_limits(8, Duration::from_secs(60));
+    cache.cache_byok_credential(
+        "user-1",
+        "server-1",
+        Some(SecretString::from("api-key".to_owned())),
+    );
+    assert!(
+        cache
+            .entries
+            .lock()
+            .unwrap()
+            .contains_key("mcp_byok_credential:user-1:server-1")
+    );
+    assert_eq!(
+        cache.invalidate_byok_credential("user-1", "server-1"),
+        "mcp_byok_credential:user-1:server-1"
+    );
+}
+
+#[rstest]
+fn invalidate_drops_one_entry_before_its_ttl() {
+    let clock = FixedClock::new(Instant::now());
+    let cache = ByokCredentialCache {
+        max_size: 8,
+        ttl: Duration::from_secs(60),
+        clock: Box::new(clock),
+        entries: Mutex::new(HashMap::new()),
+    };
+    cache.cache_byok_credential(
+        "user-1",
+        "server-1",
+        Some(SecretString::from("first".to_owned())),
+    );
+    cache.cache_byok_credential(
+        "user-2",
+        "server-1",
+        Some(SecretString::from("second".to_owned())),
+    );
+    cache.cache_byok_credential("user-3", "server-1", None);
+    cache.invalidate_byok_credential("user-1", "server-1");
+    cache.invalidate_byok_credential("user-3", "server-1");
+    assert!(
+        cache
+            .get_cached_byok_credential("user-1", "server-1")
+            .is_none()
+    );
+    assert!(
+        cache
+            .get_cached_byok_credential("user-3", "server-1")
+            .is_none()
+    );
+    assert_eq!(
+        credential_text(cache.get_cached_byok_credential("user-2", "server-1")),
+        Some("second".to_owned())
+    );
+}

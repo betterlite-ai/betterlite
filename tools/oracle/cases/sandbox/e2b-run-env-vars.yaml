@@ -1,0 +1,19 @@
+kind: helper
+name: e2b-run-forwards-env-vars
+call:
+  b3516:
+    operation: run
+    container:
+      id: sbx_456
+      domain: e2b.app
+      envd_access_token: envd-secret
+    code: "echo $FOO"
+    env_vars:
+      FOO: bar
+      BAZ: qux
+    response_body: |
+      {"type":"stdout","text":"bar\n"}
+      {"type":"number_of_executions","execution_count":1}
+env: {}
+compare:
+  ignore: []

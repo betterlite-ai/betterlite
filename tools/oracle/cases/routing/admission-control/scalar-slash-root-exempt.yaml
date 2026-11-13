@@ -1,0 +1,31 @@
+kind: probe
+name: admission-scalar-slash-root-exempt
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      admission_control:
+        settings:
+          max_in_flight_requests_per_worker: 1
+          max_queued_requests_per_worker: 0
+        root_path: /
+        scalar_root: true
+        requests:
+          - {id: 0, path: /chat/completions, behavior: hold}
+          - {id: 1, path: /health/liveliness, behavior: immediate}
+          - {id: 2, path: /metrics, behavior: immediate}
+          - {id: 3, path: /other, behavior: immediate}
+        steps:
+          - {kind: start, request: 0}
+          - {kind: await_started, request: 0}
+          - {kind: start, request: 1}
+          - {kind: await_started, request: 1}
+          - {kind: complete, request: 1}
+          - {kind: start, request: 2}
+          - {kind: await_started, request: 2}
+          - {kind: complete, request: 2}
+          - {kind: start, request: 3}
+          - {kind: complete, request: 3}
+          - {kind: stats}
+          - {kind: release, request: 0}
+          - {kind: complete, request: 0}

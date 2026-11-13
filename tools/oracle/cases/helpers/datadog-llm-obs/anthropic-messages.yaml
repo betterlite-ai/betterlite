@@ -1,0 +1,25 @@
+kind: helper
+name: datadog-llm-obs-anthropic-messages
+call:
+  b3935:
+    function: messages
+    messages:
+      - {role: system, content: "sys"}
+      - role: user
+        content:
+          - {type: text, text: "Describe "}
+          - {type: image, source: {type: base64, media_type: image/png, data: "aGk="}}
+          - {type: text, text: "this"}
+      - role: assistant
+        content:
+          - {type: text, text: "An image"}
+          - {type: image, source: {type: url, url: "https://example.com/b.png"}}
+      - role: assistant
+        content: "plain string"
+      - {role: user, content: null}
+      - role: user
+        content:
+          - {type: image, source: {type: url, url: "https://example.com/c.png"}}
+env: {}
+compare:
+  ignore: []

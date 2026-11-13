@@ -1,0 +1,8 @@
+model_list:
+  - model_name: provider-model
+    litellm_params:
+      model: gpt-4o
+      custom_llm_provider: openai
+  - model_name: undeclared-model
+    litellm_params:
+      model: openai/gpt-4o-mini

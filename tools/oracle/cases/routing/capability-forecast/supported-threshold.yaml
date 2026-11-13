@@ -1,0 +1,47 @@
+kind: probe
+name: supported-threshold
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.1"}
+        reply: {kind: text, content: '{"crux":"complete the requested change","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":0.5}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.1"}
+        reply: {kind: text, content: '{"crux":"complete the requested change","primary_rule":"SUP-2","capability_boundary":"supported","p_solve":0.49}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: validate_config
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5"}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: response_format
+        mode: json_schema
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: system_prompt
+        mode: json_schema
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.0"}
+        reply:
+          kind: padded
+          content: '{"crux":"x","primary_rule":"SUP-1","capability_boundary":"supported","p_solve":0.5}'
+          pad: " "
+          pad_len: 1048493
+compare: {ignore: []}

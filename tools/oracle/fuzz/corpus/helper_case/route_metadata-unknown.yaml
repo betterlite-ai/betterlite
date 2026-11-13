@@ -1,0 +1,11 @@
+kind: helper
+name: route-metadata-unknown
+call:
+  route_metadata:
+    {
+      "function": "get_call_types",
+      "route": "/no-such-route"
+    }
+env: {}
+compare:
+  ignore: []

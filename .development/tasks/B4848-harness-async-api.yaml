@@ -1,0 +1,179 @@
+id: B4848
+title: Expose asynchronous harness runs, sessions and resume
+description: >-
+  Port the public async surface of LiteLLM's harness (litellm/harness/runtime.py L544-L582, L743-L748, L779-L1028) into a new module `agent_api` of the crate
+  betterlite-harness: `arun_agent`, `aagent_session`, `aagent_resume`, `astream_agent`, `aagent`, `agent_capabilities`, `AsyncSession::arun`, `AsyncSession::astream`
+  and `AsyncEventStream`. The pieces below them already exist or are planned. Read these on main first and use their exact Rust names: crates/betterlite-harness/src/session.rs
+  (B4844: `SessionConfig<S>`, `SessionParameters`, `build_config`, `BuildError`), session/routing.rs (`ProxySettings`), session/validation.rs (`ValidationError`),
+  session_runtime.rs (B4846: `AsyncSession<S, H, E>` with `new`, `start`, `close`, `detach`, `stop`, `history`, `cost`, `usage`, `session_id`, `results`, the trait
+  `SessionEndpoints`, `SessionRuntimeError` and `harness_capabilities`), turn_runtime.rs and turn_runtime/control.rs (B4847: `TurnControl` and the inherent
+  `AsyncSession::turn_events(&mut self, prompt: String, control: TurnControl, interactive: bool)`), events.rs (`Event`, `RunResult`), state.rs (`State::loads`) and
+  types.rs (`Harness`, `Capabilities`). If one of them is named differently, use the name on main and say so in your report. Every other task that runs a harness
+  from Rust, B4849 first, calls this module, so the types in `agent_api` are public and own their data.
+
+  Why the arguments are values. Python builds a session from keyword arguments and picks the handler class itself. In Rust the handler traits have associated
+  types and the Deep Agents handler lives in a crate that depends on this one, so the caller hands in the handler and the endpoint starter. All of it travels in
+  plain structs with public fields (`agent_api/args.rs`):
+
+  - `SessionArgs<S, H, E> { harness: Harness, sandbox: S, parameters: SessionParameters, proxy: ProxySettings, directory: PathBuf, handler: H, endpoints: E }`.
+  `proxy` and `directory` are the two extra inputs B4844's `build_config` takes (the proxy settings read from `LITELLM_PROXY_API_BASE`, `LITELLM_PROXY_API_KEY` and
+  `litellm.use_litellm_proxy` by the configuration boundary, and the folder relative skill paths resolve against).
+
+  - `RunArgs<S, H, E> { prompt: String, session: SessionArgs<S, H, E> }`.
+
+  - `ResumeArgs<S, H, E> { state: StateInput, sandbox: S, parameters: SessionParameters, proxy: ProxySettings, directory: PathBuf, handler: H, endpoints: E }`, where
+  `StateInput` is `enum { State(State), Bytes(Vec<u8>) }` with `From<State>` and `From<Vec<u8>>` (Python's `_coerce_state` L922-L927 accepts both; its `TypeError`
+  branch cannot happen).
+
+  The bounds are `S: Sandbox + Clone + Send + 'static`, `H: BaseHarnessHandler + Send + 'static` and `E: SessionEndpoints + Send + 'static`, as B4846 states them.
+
+  Errors (`agent_api/error.rs`). `AgentBuildError` is the error of every function that only builds or resumes a session: `Build(#[from] BuildError)`,
+  `Session(#[from] SessionRuntimeError)` (what `AsyncSession::new` returns for validation, a resume on a harness without the resume capability, or
+  `validate_environment`), `State(HarnessError)` (a state that does not load, from `State::loads`) and `NoNativeId`, displayed exactly "State has no native session id to resume"
+  (L938-L939; B4830 has no variant for it, so it lives here). `AgentRunError` is the error of the functions that also run: `Build(#[from] AgentBuildError)`,
+  `Session(#[from] SessionRuntimeError)` and `NoResult`, displayed "turn ended without a result" (L784-L785). Both derive `thiserror::Error`, are `Debug`, and have no catch-all variant.
+
+  Session and resume (`agent_api/session.rs`, `aagent_session` L789-L829, `aagent_resume` L930-L973, `agent_capabilities` L976-L978).
+
+  - `aagent_session(args: SessionArgs<S, H, E>) -> Result<AsyncSession<S, H, E>, AgentBuildError>` is a plain function, not async. It runs `build_config(harness, sandbox, parameters,
+  &proxy, &directory)` and then `AsyncSession::new(config, handler, endpoints, None, true)`. It does not start the session, so a validation or option error comes back
+  before any I/O. The last argument (`interactive`) is true, as `AsyncSession(config)` defaults to.
+
+  - `aagent_resume(args: ResumeArgs<S, H, E>) -> Result<AsyncSession<S, H, E>, AgentBuildError>` converts `StateInput` (bytes go through `State::loads`), then returns `NoNativeId` when
+  `native_session_id` is `None` or empty (Python tests `not resolved.native_session_id`). Only then does it call `build_config` with the state's harness. The model is
+  `parameters.settings.model` when it is `Some`, else the state's model (L956: `model if model is not None else resolved.model`). Then `AsyncSession::new(config, handler, endpoints,
+  Some(native_session_id), true)`. A resume on a harness whose capabilities lack `Resume` fails inside `new` (B4846 owns that check).
+
+  - `agent_capabilities(harness: Harness) -> Capabilities` returns `harness_capabilities(harness)` from B4846's registry.
+
+  Running (`agent_api/run.rs`, `arun_agent` L832-L874, `_collect` L779-L786, `AsyncSession.arun` L747-L748).
+
+  - `AsyncSession::arun(&mut self, prompt: String) -> Result<RunResult, AgentRunError>` is an inherent method in `agent_api/run.rs`. It reads `self.turn_events(prompt, TurnControl::default(), false)` to the end. Every `Event::Done`
+  stores its result (the last one wins). The first `Err` item is returned at once as `AgentRunError::Session`, even when a `Done` came before it: B4847 yields `Done` and then the `OutputInvalid` error,
+  and LiteLLM raises that error and discards the result. When the stream ends with no `Done`, the result is `NoResult`.
+
+  - `arun_agent(args: RunArgs<S, H, E>) -> Result<RunResult, AgentRunError>` builds the session like `aagent_session` but with `interactive == false` (L869: `AsyncSession(config, interactive=False)`), so
+  `permissions: ask` without an approval callback fails at build. Then it runs `start`, then `arun`, and closes the session on every exit that got past `start` (Python's `async with` exit).
+  The run's own error is returned, not a close problem. A failed `start` is returned as is, with no `close` call, because B4846's `start` already releases its endpoint.
+
+  Event stream (`agent_api/stream.rs`, `AsyncEventStream` L544-L570, `astream` L743-L745, `_one_shot` L573-L581, `astream_agent` L877-L919, `aagent` L981-L1028).
+
+  - `AsyncEventStream<'a>` holds `source: Pin<Box<dyn Stream<Item = Result<Event, SessionRuntimeError>> + Send + 'a>>`, a `TurnControl` and `result: Option<RunResult>`. It implements
+  `futures_core::Stream` with the same item type; every `Event::Done` that passes through stores a clone of its result. `result(&self) -> Option<&RunResult>` is `None` until `Done` has been seen.
+  `cancel(&self)` calls `TurnControl::cancel`, and the stream still ends with `Done` whose stop reason is `Cancelled`. `aclose(self)` cancels and then polls the source until it ends, dropping
+  the items, so the source runs its own cleanup (for a one-shot stream that means closing the session).
+
+  - `AsyncSession::astream(&mut self, prompt: String) -> AsyncEventStream<'_>` makes a `TurnControl::default()` and wraps `turn_events(prompt, control.clone(), true)`. The stream borrows the session, so the session
+  cannot be used until the stream is dropped; B4846's busy permit still guards the case where the stream is dropped and a new turn starts.
+
+  - `astream_agent(args: RunArgs<S, H, E>) -> Result<AsyncEventStream<'static>, AgentBuildError>` builds the session at once with `aagent_session` (so a bad argument is returned before any event, L891 "Validation errors raise here")
+  and then returns a stream made with `async_stream::try_stream!` that owns the session. Inside, it runs `start`, then `turn_events(prompt, control, true)`. LiteLLM closes the session when `Done` passes
+  and again in `finally`, so the session is closed before the reader gets `Done`. Rust cannot close the session while its turn stream still borrows it, so from the first `Done` on the generator holds every item back,
+  lets the turn stream run to its end (only the trailing `OutputInvalid` error can follow `Done`), drops it, awaits `close()`, and then yields the held items in order. It also closes the session when the turn stream
+  fails or the generator is cancelled through `aclose`. A start failure is yielded as the first `Err` item.
+
+  - `aagent(args: RunArgs<S, H, E>, stream: bool) -> Result<AgentOutcome, AgentRunError>` is an async function returning `AgentOutcome::Result(RunResult)` or `AgentOutcome::Stream(AsyncEventStream<'static>)` by the flag. It calls `arun_agent` or
+  `astream_agent`. `AgentOutcome` is a plain public enum in stream.rs.
+
+  Do not add module level state, a global runtime, or a second copy of the argument list. No `unwrap` or `expect` outside tests. `tracing::warn!` is only used where B4846 and B4847 already log.
+scope:
+  paths:
+  - crates/betterlite-harness/src/agent_api.rs
+  - crates/betterlite-harness/src/agent_api/**
+  - crates/betterlite-harness/Cargo.toml
+  - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L544-L581
+    why: AsyncEventStream (result set on Done, cancel, aclose) and _one_shot, which closes the session before Done is handed out and again in finally.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L743-L748
+    why: astream (interactive true) and arun (interactive false), the two ways a session runs a turn.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L779-L829
+    why: _collect (last Done wins, no Done is an error) and aagent_session, which builds the config and does not start the session.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L832-L919
+    why: arun_agent (non-interactive session, async with) and astream_agent (builds the session before the stream exists).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L922-L973
+    why: _coerce_state, the missing native id check and the model fallback of aagent_resume.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/runtime.py#L976-L1028
+    why: agent_capabilities and aagent with its stream flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/harness/test_runtime.py#L219-L260
+    why: Tests for arun and the stream result property.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/harness/test_runtime.py#L553-L600
+    why: Tests for the state round trip, resume without the capability, a state without a native id and the registry capabilities.
+dod:
+  - text: aagent_session returns an unstarted AsyncSession built through build_config with interactive true, and returns a build, validation or option error before any handler or endpoint call.
+    proof: [session-tests]
+  - text: aagent_resume accepts a State or its bytes, returns NoNativeId for a missing or empty native id before build_config runs, takes the state's model only when the caller gave none, and passes the native id to the session as resume_from.
+    proof: [resume-tests]
+  - text: A resume on a harness without the resume capability fails, and bytes that do not load return State(...) without building a session.
+    proof: [resume-tests]
+  - text: A session that was detached and then resumed with the bytes of its State starts the handler and calls the handler's resume with the saved native id.
+    proof: [resume-tests]
+  - text: AsyncSession::arun returns the last Done result, returns the OutputInvalid error when it follows a Done, and returns NoResult when the stream ends with no Done.
+    proof: [run-tests]
+  - text: arun_agent builds a non-interactive session, so permissions ask without an approval callback fails at build; it closes the session after a successful run, after a failed run, and does not call close when start failed.
+    proof: [run-tests]
+  - text: AsyncSession::astream yields the handler's events in order, sets result only once Done passed, and cancel ends the stream with Done whose stop reason is Cancelled.
+    proof: [stream-tests]
+  - text: astream_agent returns a build error before any event, and the session it owns is closed before the reader gets Done, also when the turn failed and when aclose ends the stream early.
+    proof: [stream-tests]
+  - text: aagent gives a RunResult for false and a stream for true; agent_capabilities returns what harness_capabilities gives for each harness.
+    proof: [stream-tests]
+checks:
+  optional: []
+  commands:
+    - id: session-tests
+      why: aagent_session build and eager validation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^agent_api::tests::session::/)'
+    - id: resume-tests
+      why: aagent_resume state, native id and model tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^agent_api::tests::resume::/)'
+    - id: run-tests
+      why: arun and arun_agent tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^agent_api::tests::run::/)'
+    - id: stream-tests
+      why: event stream, one-shot stream, aagent and capabilities tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^agent_api::tests::stream::/)'
+oracle_cases: []
+deviations:
+  - what: The handler and the endpoint starter are fields of the argument structs, and the arguments are structs with public fields, not keyword arguments.
+    why: Handler traits have associated types and the Deep Agents handler lives in a crate that depends on this one. The same values reach the same checks in the same order.
+  - what: There are no `__await__`, `__aenter__` or `__aexit__`; `aagent_session` and `aagent_resume` return an unstarted session and the caller calls `start` and `close`.
+    why: Rust has no async context manager. `arun_agent` and `astream_agent` do the start and close themselves.
+  - what: Dropping an `AsyncEventStream` from `astream_agent` before the end does not close the session; `aclose` does.
+    why: Drop cannot wait for async work. `aclose` cancels the turn and runs the stream to its end so the session is closed.
+  - what: A non-streaming `aagent` reports a build error when the future is awaited, where Python's `aagent(stream=True)` raises at the call. `aagent` also returns an `AgentOutcome` enum for both flag values.
+    why: Rust has no function that returns either of two types by a flag, and a future does nothing before it is awaited.
+  - what: The `TypeError` for a state that is neither `State` nor bytes, and the "No harness config registered" errors, cannot happen.
+    why: >-
+      `StateInput` and `Harness` are closed types.
+  - what: A close failure in `arun_agent` is not returned. B4846's `close` already logs the failure.
+    why: LiteLLM's `__aexit__` runs while the run's own error is propagating, and that error is the one the caller sees.
+out_of_scope:
+  - "SessionConfig, build_config, validate, context_for, parse_output and resolve_model_route (runtime.py L72-L255) belong to B4844 and are called here."
+  - "AsyncSession (L584-L776 except `arun` L747-L748 and `astream` L743-L745), the registry and the busy permit belong to B4846."
+  - "TurnControl, pump_events, call_approval_handler, _Turn and `turn_events` (L259-L541, L732-L741) belong to B4847."
+  - "The blocking wrappers in litellm/harness/sync.py belong to B4849, which calls the functions built here."
+  - "Re-exports in litellm/harness/__init__.py (L30-L60) have no Rust code."
+pitfalls:
+  - >-
+    aagent_session builds an interactive session and arun_agent a non-interactive one; passing the wrong flag turns `permissions: ask` without `on_approval` from a build error into a hang or the other way round.
+  - >-
+    aagent_resume checks the native session id before it calls build_config, so a bad state never touches the sandbox or the skill folders.
+  - >-
+    The state's model is used only when the caller's model is `None`; an explicit model replaces it, as in `model if model is not None else resolved.model`.
+  - >-
+    arun must return the OutputInvalid error that B4847 yields right after Done; keeping the Done result and ignoring the error would hide a failed output schema.
+  - >-
+    The generator inside astream_agent owns the session, so `close()` can only run after the borrowed turn stream is dropped; holding items back from the first Done is the only way to close before the reader sees Done.
+  - >-
+    AsyncEventStream::aclose must cancel before it drains, otherwise a turn that waits on a slow handler keeps the drain waiting.
+  - >-
+    The close in arun_agent runs also when arun failed, but not when start failed, because B4846's start already stops the endpoint it opened and leaves the session unstarted.
+  - >-
+    AsyncEventStream::result copies the result on Done only; an error item before Done leaves it None.
+  - "crates/betterlite-harness/Cargo.toml and Cargo.lock are in scope because the worker adds the tokio dev features rt and macros to the harness dev-dependencies."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

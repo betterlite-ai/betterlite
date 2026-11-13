@@ -1,0 +1,1 @@
+3{"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"t","type":"function","function":{"name":"f","arguments":null}}]},"finish_reason":"tool_calls"}]}

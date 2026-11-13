@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, io, sync::Arc};
 use crate::catalog_generalizations::CatalogGeneralizations;
 use crate::entry::{ModelFieldError, ModelFields};
 use crate::error::ModelsError;
+use crate::fetch_policy::revision::git_blob_id;
 use crate::metadata::identity::Mode;
 use crate::price_fields::{PriceFieldError, PriceFields};
 
@@ -80,17 +81,17 @@ pub struct ModelCatalog {
     pub lookup: BTreeMap<String, Arc<str>>,
     pub generalizations: CatalogGeneralizations,
     pub warnings: Vec<String>,
+    // git blob id of the exact bytes parse received, so a source can report what it loaded
+    pub revision: Option<String>,
+    // top-level entries LiteLLM's finalized map would hold, reserved keys and aliases included
+    pub adopted_size: usize,
 }
 
 impl ModelCatalog {
     #[must_use]
-    pub fn lookup(&self, name: &str) -> Option<&CatalogEntry> {
-        let canonical = self.lookup.get(name)?;
-        self.entries.get(canonical.as_ref())
-    }
-    #[must_use]
     pub fn metadata(&self, name: &str) -> Option<ModelMetadataProjection<'_>> {
-        let entry = self.lookup(name)?;
+        let canonical = self.lookup.get(name)?;
+        let entry = self.entries.get(canonical.as_ref())?;
         Some(ModelMetadataProjection {
             model: entry.name.as_str(),
             provider: entry.fields.metadata.litellm_provider.as_str(),
@@ -115,7 +116,15 @@ impl ModelCatalog {
                 limit: MAX_CATALOG_ENTRIES,
             });
         }
-        loader::build_catalog(raw, unknown)
+        let source_entries = raw.len();
+        let has_generalizations = raw.contains_key(FALLBACK_GENERALIZATIONS);
+        let mut catalog = loader::build_catalog(raw, unknown)?;
+        let aliases = catalog.lookup.len().saturating_sub(catalog.entries.len());
+        catalog.adopted_size = source_entries
+            .saturating_sub(usize::from(has_generalizations))
+            .saturating_add(aliases);
+        catalog.revision = Some(git_blob_id(bytes));
+        Ok(catalog)
     }
 }
 

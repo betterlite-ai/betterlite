@@ -1,0 +1,64 @@
+kind: helper
+name: ollama-model-metadata-configured-origin-auth
+call:
+  ollama_model_metadata:
+    configured_origin_auth:
+      model: "ollama/llama3:8b"
+      groups:
+        - fixture:
+            env: {OLLAMA_API_BASE: "http://env-host:11434", OLLAMA_API_KEY: env-key}
+            globals: {api_key: global-key, openai_key: openai-key}
+            secret_manager_api_key: manager-key
+            catalog: []
+          queries:
+            - {}
+            - {api_key: explicit-key}
+            - {api_key: ""}
+            - {api_key: null}
+            - {api_base: "http://explicit:11434"}
+            - {api_base: ""}
+            - {api_base: "", api_key: ""}
+            - {api_base: "http://explicit:11434", api_key: explicit-key}
+            - {api_base: "http://host:3/"}
+            - {api_base: "http://host:3///"}
+            - {api_base: "http://host:3/api/generate"}
+            - {api_base: "http://host:3/api/chat"}
+            - {api_base: "http://host:3/api/embed"}
+            - {api_base: "http://host:3/api/embeddings"}
+            - {api_base: "http://host:3/api/show"}
+            - {api_base: "http://host:3/api/tags"}
+            - {api_base: "http://host:3/api/tags/"}
+            - {api_base: "http://host:3/api/tags//"}
+            - {api_base: "http://host:3/api/tags/x"}
+            - {api_base: "http://host:3/prefix/api/generate/"}
+        - fixture:
+            env: {}
+            globals: {api_key: global-key, openai_key: openai-key}
+            secret_manager_api_key: manager-key
+            catalog: []
+          queries:
+            - {}
+            - {api_base: "http://explicit:11434"}
+            - {api_base: "http://explicit:11434", api_key: ""}
+        - fixture:
+            env: {}
+            globals: {openai_key: openai-key}
+            secret_manager_api_key: manager-key
+            catalog: []
+          queries:
+            - {}
+        - fixture:
+            env: {}
+            globals: {}
+            secret_manager_api_key: manager-key
+            catalog: []
+          queries:
+            - {}
+        - fixture:
+            env: {}
+            catalog: []
+          queries:
+            - {}
+            - {api_base: "///"}
+env: {}
+compare: {ignore: []}

@@ -126,9 +126,9 @@ fn assert_nested_top_level_fields(parsed_value: &PriceFields) {
         parsed_value.provider_specific.us.unwrap().to_string(),
         "0.000000000000000001"
     );
-    assert_eq!(parsed_value.guardrail_units.len(), 1);
+    assert_eq!(parsed_value.guardrail_units.as_ref().unwrap().len(), 1);
     assert_eq!(
-        parsed_value.guardrail_units["contentPolicyUnits"].to_string(),
+        parsed_value.guardrail_units.as_ref().unwrap()["contentPolicyUnits"].to_string(),
         "0.0000001"
     );
     assert_eq!(
@@ -267,21 +267,6 @@ fn assert_nested_sample_amounts(parsed: &PriceFields) {
     );
 }
 
-fn assert_nested_sample_metadata(parsed: &PriceFields) {
-    assert_eq!(parsed.metadata.per_hour.unwrap().to_string(), "1.25");
-    assert_eq!(
-        parsed.metadata.per_minute.unwrap().to_string(),
-        "0.020833333333333333"
-    );
-    assert_eq!(parsed.provider_specific.us.unwrap().to_string(), "1.1");
-    assert_eq!(parsed.provider_specific.fast.unwrap().to_string(), "2.0");
-    assert_eq!(parsed.guardrail_units.len(), 1);
-    assert_eq!(
-        parsed.guardrail_units["custom"].to_string(),
-        "0.000000000000000001"
-    );
-}
-
 #[test]
 fn price_case_nested_and_sample_prices_keep_every_field() {
     let raw: Box<RawValue> = serde_json::from_str(
@@ -290,7 +275,18 @@ fn price_case_nested_and_sample_prices_keep_every_field() {
     .unwrap();
     let parsed = PriceFields::parse(raw.as_ref()).unwrap();
     assert_nested_sample_amounts(&parsed);
-    assert_nested_sample_metadata(&parsed);
+    assert_eq!(parsed.metadata.per_hour.unwrap().to_string(), "1.25");
+    assert_eq!(
+        parsed.metadata.per_minute.unwrap().to_string(),
+        "0.020833333333333333"
+    );
+    assert_eq!(parsed.provider_specific.us.unwrap().to_string(), "1.1");
+    assert_eq!(parsed.provider_specific.fast.unwrap().to_string(), "2.0");
+    assert_eq!(parsed.guardrail_units.as_ref().unwrap().len(), 1);
+    assert_eq!(
+        parsed.guardrail_units.as_ref().unwrap()["custom"].to_string(),
+        "0.000000000000000001"
+    );
 }
 
 #[test]
@@ -465,4 +461,14 @@ fn replays_the_price_fields_corpus() {
         let raw: Box<RawValue> = serde_json::from_str(&source).unwrap();
         drop(PriceFields::parse(raw.as_ref()));
     }
+}
+
+#[test]
+fn price_case_guardrail_units_keep_absent_null_and_empty_apart() {
+    let absent: PriceFields = serde_json::from_str("{}").unwrap();
+    let null: PriceFields = serde_json::from_str(r#"{"guardrail_cost_per_unit":null}"#).unwrap();
+    let empty: PriceFields = serde_json::from_str(r#"{"guardrail_cost_per_unit":{}}"#).unwrap();
+    assert_eq!(absent.guardrail_units, None);
+    assert_eq!(null.guardrail_units, None);
+    assert_eq!(empty.guardrail_units, Some(BTreeMap::new()));
 }

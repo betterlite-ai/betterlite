@@ -1,0 +1,25 @@
+{
+  "_comment": "This file defines which endpoints are supported by each LiteLLM provider",
+  "providers": {
+    "a2a": {
+      "display_name": "A2A (Agent-to-Agent) (`a2a`)",
+      "url": "https://docs.litellm.ai/docs/providers/a2a",
+      "endpoints": {"chat_completions": true, "messages": false}
+    },
+    "anthropic": {
+      "display_name": "Anthropic (`anthropic`)",
+      "url": null,
+      "endpoints": {"chat_completions": true, "messages": true}
+    }
+  },
+  "endpoints": {
+    "a2a": {
+      "docs_label": "a2a",
+      "display_name": "A2A (Agent-to-Agent) protocol for agent communication",
+      "leftnav_label": "/a2a",
+      "provider_json_field": "a2a",
+      "url": "https://docs.litellm.ai/docs/a2a",
+      "bridges_to_chat_completion": true
+    }
+  }
+}

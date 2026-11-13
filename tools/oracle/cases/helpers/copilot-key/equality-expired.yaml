@@ -1,0 +1,15 @@
+kind: helper
+name: equality_expired
+call:
+  copilot_key:
+    action: get_api_key
+    now: 1700000000
+    api_key_file: '{"token": "cached", "expires_at": 1700000000}'
+    access_token_file: access-token
+    api_replies:
+      - status: 200
+        body: {"token": "refreshed", "expires_at": 1800000000}
+    fail_write: false
+env: {}
+compare:
+  ignore: []

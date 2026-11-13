@@ -1,0 +1,17 @@
+task: B7325
+deviations:
+  - what: GIGACHAT_ACCESS_TOKEN, GIGACHAT_CREDENTIALS, GIGACHAT_API_KEY, GIGACHAT_AUTH_URL and GIGACHAT_SCOPE are read from the environment only.
+    why: LiteLLM's get_secret_str also asks the configured secret manager. Secret manager lookups belong to the secret-managers crate, which the gigachat_auth section does not depend on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L44-L56
+  - what: A 2xx reply that is not a JSON object, carries an expiry that is not an i64 integer or a numeric string, or is larger than 64 KiB gives GigachatAuthError::InvalidReply with status 500, and the message does not echo the reply.
+    why: LiteLLM lets JSONDecodeError, AttributeError, TypeError or ValueError escape from the parser, which the proxy answers as a plain 500. The status is the same and the message is betterlite's own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L232-L253
+  - what: A Rejected error keeps at most the first 1024 bytes of the OAuth server's reply text, and its Display names the status without the reply.
+    why: LiteLLM puts the whole response text in the error message; betterlite bounds the read and never repeats an untrusted body in a log or an error string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L184-L193
+  - what: The OAuth call uses the reqwest::Client the caller built, so TLS verification and certificate trust follow that client.
+    why: LiteLLM's GigaChat client passes ssl_verify=False. Turning certificate checks off belongs to the shared TLS policy (B173), not to a provider module, so the choice stays with the caller that builds the client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L59-L61
+  - what: The token is a secrecy::SecretString and is never logged, where LiteLLM returns a plain str.
+    why: rules.yaml secrets-stay-secret keeps API keys and tokens inside their secret type from the moment they are read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L64-L110

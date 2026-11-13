@@ -1,0 +1,1 @@
+{"tool":{"type":"function","function":{"name":"f","parameters":{"type":"OBJECT","properties":{"x":{"type":"STRING"}}}}}}

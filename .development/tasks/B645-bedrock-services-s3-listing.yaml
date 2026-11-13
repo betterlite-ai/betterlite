@@ -357,7 +357,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_listing_cases::case_[0-9]+_invalid_xml$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_s3_listing.py)" &&
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_s3_listing.py tools/oracle/helpers/bedrock_services_s3_listing)" &&
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -370,7 +370,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_listing)"
       && grep -q 'decode_s3_listing' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_s3_listing.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_s3_listing_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_s3_listing_corpus(::|$)/)'
   - id: credential-identity-isolation
     why: The credential identity isolation invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_s3_listing_credential_identity_isolation$/)'

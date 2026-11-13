@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-tool-results-empty-result
+call:
+  bedrock_tool_results:
+    function: tool_call_result
+    message: {role: tool}
+    id: "11111111-2222-3333-4444-555555555555"
+env: {}
+compare:
+  ignore: []

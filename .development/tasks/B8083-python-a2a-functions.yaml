@@ -1,0 +1,129 @@
+id: B8083
+title: Python A2A functions, errors and response objects
+description: >-
+  A LiteLLM user writes `from litellm.a2a_protocol import asend_message, asend_message_streaming, create_a2a_client,
+  aget_agent_card, send_message` and catches `A2AConnectionError`. This task builds those names in the betterlite wheel over
+  B8081's native bridge. It is a thin layer: Python collects arguments into JSON, calls the native functions and builds objects
+  from the JSON that comes back. Read B158's task file for the pattern (JSON in, JSON out, a table of native error types).
+
+
+  Files, all under `crates/betterlite-python/python/betterlite/a2a_protocol/`, each under the 300-line limit. `exceptions.py` has
+  `A2AError`, `A2AConnectionError`, `A2AAgentCardError`, `A2AAgentCardDiscoveryError` and `A2ALocalhostURLError` with LiteLLM's
+  constructors, attributes, `__str__` (appends " LiteLLM Retried: N times" and ", LiteLLM Max Retries: M") and `__repr__`
+  (litellm/a2a_protocol/exceptions.py L12-L160). The message gets the "litellm.A2AError: " prefix in `A2AError.__init__` only,
+  so native messages arrive without it. `response` is B163's `Response` from its private `_http.py` (read B163 for the module
+  path), with the default `Response(status_code, request=Request("POST", "https://litellm.ai"))`. `types.py` has
+  `LiteLLMSendMessageResponse` on B5657's `ResponseObject` with `id`, `jsonrpc` ("2.0"), `result`, `error`, `usage`,
+  `_hidden_params` (a dict, empty by default) and `from_dict(data, request_id=None)` (litellm/types/agents.py L446-L520), and
+  `SendMessageRequest`, `SendStreamingMessageRequest` and `SendStreamingMessageResponse` as small `ResponseObject` classes with
+  `model_dump(mode="json", exclude_none=True)`, so a caller builds a request from `{"jsonrpc": "2.0", "id": ..., "method":
+  "message/send", "params": {...}}` and no `a2a` package is needed. A plain dict is accepted wherever a request object is.
+  `errors.py` also has `UnsupportedA2AArgument(name)` and `UnknownNativeError`, and holds one explicit `dict` from the `type` in B8081's `NativeA2aError` JSON to the five classes. Each class is
+  built with its own fields, and `raise ... from` keeps the native error as the cause. A `type` missing from the table
+  raises `UnknownNativeError` with the payload, never a generic error. "ValueError" and "RuntimeError" map to the builtins.
+
+
+  `main.py` has `create_a2a_client`, `aget_agent_card`, `asend_message`, `asend_message_streaming` and `send_message` with the
+  names, order and defaults of litellm/a2a_protocol/main.py L404-L890, and re-exports `A2AClientType` as the native
+  `NativeA2aClient` name for annotations. `create_a2a_client(base_url, timeout=DEFAULT_A2A_AGENT_TIMEOUT, extra_headers=None,
+  streaming=False, relative_card_path=None)` calls `create_client` and returns the `NativeA2aClient`. `aget_agent_card` calls
+  `get_agent_card` and returns the card as a `ResponseObject` with `model_dump`. `asend_message` calls
+  `NativeA2aClient.send_message(call)` when a client is given and `send_message_direct(call)` when only `api_base` is, and builds
+  `LiteLLMSendMessageResponse`. The `call` JSON carries `request`, `api_base`, `litellm_params`, `agent_id`,
+  `agent_extra_headers`, and from `**kwargs` the JSON-able `litellm_call_id`, `litellm_trace_id` and `metadata`; other kwargs
+  are ignored, as the `@client` wrapper leaves them to the logging object. `asend_message_streaming` is an async generator
+  that yields `SendStreamingMessageResponse` objects from `NativeA2aStream.anext_chunk()` until None and always awaits `aclose()`,
+  including when the caller stops early. `send_message` returns the coroutine when a loop is running and runs `asyncio.run`
+  otherwise (main.py L556-L582). Passing an SDK client object that is not a `NativeA2aClient` raises `UnsupportedA2AArgument` with
+  the parameter name. `DEFAULT_A2A_AGENT_TIMEOUT` is 6000.0 and comes from the env var of the same name read when the module loads, as
+  in litellm/constants.py.
+
+
+  `card_resolver.py` has `is_localhost_or_internal_url`, `normalize_agent_card_interfaces`, `get_agent_card_url`,
+  `set_agent_card_url` and `fix_agent_card_url` as thin calls to the native helpers, and the three path constants
+  `AGENT_CARD_WELL_KNOWN_PATH` ("/.well-known/agent-card.json"), `PREV_AGENT_CARD_WELL_KNOWN_PATH` ("/.well-known/agent.json") and
+  `FOUNDRY_AGENT_CARD_PATH` ("/agentCard/v1.0"). Cards are plain dicts here (`get_agent_card_url` reads `url` or the first
+  `supported_interfaces` entry as B4800 does).
+
+
+  This task creates the package `__init__.py` as an empty file and B168 fills it in, so tests here import the submodules.
+  Tests call `litellm` and `betterlite` with the same arguments against `tests/a2a_server.py` (B8081) and compare results with
+  `model_dump(mode="json", exclude_none=True)`. The oracle project does not lock `a2a-sdk`, so the check commands add
+  `--with "a2a-sdk==1.1.0"` (the pin litellm's pyproject uses at L254).
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/a2a_protocol/__init__.py
+  - crates/betterlite-python/python/betterlite/a2a_protocol/exceptions.py
+  - crates/betterlite-python/python/betterlite/a2a_protocol/errors.py
+  - crates/betterlite-python/python/betterlite/a2a_protocol/types.py
+  - crates/betterlite-python/python/betterlite/a2a_protocol/main.py
+  - crates/betterlite-python/python/betterlite/a2a_protocol/card_resolver.py
+  - crates/betterlite-python/tests/test_a2a_functions.py
+  - crates/betterlite-python/tests/test_a2a_errors.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L404-L582
+  why: asend_message and send_message, with their arguments and the sync wrapper.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L627-L890
+  why: asend_message_streaming, create_a2a_client and aget_agent_card.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L18-L158
+  why: The path constants and the card helpers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L12-L160
+  why: The five error classes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L446-L520
+  why: LiteLLMSendMessageResponse.
+dod:
+- text: The five error classes keep LiteLLM's attributes, status codes, `__str__` and `__repr__`.
+  proof: [a2a-py-errors]
+- text: Each native error type raises the matching class with its fields and the native error as cause, and an unknown type raises `UnknownNativeError`.
+  proof: [a2a-py-errors]
+- text: "`create_a2a_client` and `aget_agent_card` give the same card as LiteLLM against one local agent, and extra headers reach the agent."
+  proof: [a2a-py-card]
+- text: "`asend_message` gives the same `model_dump` as LiteLLM, both with a client and with only `api_base`, and `send_message` works inside and outside a running loop."
+  proof: [a2a-py-send]
+- text: "`asend_message_streaming` gives the same events as LiteLLM, ends cleanly and closes the native stream when the caller stops early."
+  proof: [a2a-py-stream]
+- text: A foreign client object is refused by name, and the card helpers and path constants match LiteLLM.
+  proof: [a2a-py-card]
+- text: The package passes ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: a2a-py-errors
+    why: "`except betterlite.a2a_protocol.A2AConnectionError` stops matching."
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "a2a-sdk==1.1.0" --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_a2a_errors.py
+  - id: a2a-py-card
+    why: A card or a helper differs from LiteLLM's, or a foreign client is accepted.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "a2a-sdk==1.1.0" --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_a2a_functions.py -k card
+  - id: a2a-py-send
+    why: A send call differs from LiteLLM's or loses a header.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "a2a-sdk==1.1.0" --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_a2a_functions.py -k send
+  - id: a2a-py-stream
+    why: A stream differs from LiteLLM's, never ends or leaks its connection.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "a2a-sdk==1.1.0" --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_a2a_functions.py -k stream
+  - id: python-lint
+    why: The public layer is where an untyped dict would creep back in.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Requests are dicts or small `ResponseObject` classes, not `a2a.types` pydantic models, and an `a2a.client.Client` object is refused with `UnsupportedA2AArgument`.
+  why: The wheel depends only on python-dotenv, and a Python SDK client cannot drive the Rust transport.
+- what: Success and failure callbacks from `betterlite.callbacks` are not called for A2A sends.
+  why: Logging and cost accounting run in Rust (B4810, B4814), and no Python callback bridge exists for A2A yet.
+- what: "`LiteLLMA2ACardResolver` (card_resolver.py L161-L209) is not exposed as a class."
+  why: It subclasses the a2a-sdk resolver. The same probing of the three card paths runs in Rust (B4800).
+out_of_scope:
+- The native bridge and `tests/a2a_server.py` are B8081.
+- The `A2AClient` class and the package `__init__.py` files are B168.
+- '`_set_usage_on_logging_obj`, `_set_agent_id_on_logging_obj`, `_a2a_cost_params`, `_card_http_kwargs`, `_agent_card_path`, `_set_litellm_params_on_logging_obj`, `_get_a2a_model_info`, `_get_a2a_client_agent_card`, `_send_message_via_completion_bridge`, `_get_a2a_call_context`, `_to_core_send_message_request`, `_to_compat_stream_response`, `_send_message`, `_execute_a2a_send_with_retry`, `_stream_messages`, `_execute_a2a_stream_with_retry` and `_build_streaming_logging_obj` run in Rust (B4801, B4810, B4814) and have no Python face.'
+pitfalls:
+- '`A2AError.message` already has the "litellm.A2AError: " prefix, so building it twice gives a doubled prefix in every subclass.'
+- '`A2AConnectionError` always has `status_code` 503 and `A2AAgentCardError` 404 unless the discovery error passes its own, so never read the code from the native payload for the first.'
+- '`A2ALocalhostURLError` builds its message from `localhost_url` and `base_url`, so the native payload must carry those two, not a message.'
+- '`send_message` called inside a running loop returns the coroutine unawaited, and outside it runs `asyncio.run`, so a test needs both.'
+- A generator that is not exhausted must still close the native stream, so use `try` and `finally` around the loop.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

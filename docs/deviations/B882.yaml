@@ -1,0 +1,8 @@
+task: B882
+deviations:
+  - what: Route regex evaluation denies patterns exceeding 16 KiB, 128 nested groups, 1 MiB of translated pattern or encoded matching input, or the native engine's match and depth limits.
+    why: Route admission must bound compilation memory and backtracking work. Exhausting a regex resource limit cannot grant access.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L543-L548
+  - what: Invalid route regex syntax denies a match instead of raising Python re.error.
+    why: The native boolean route admission interface fails closed on malformed policy patterns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L543-L548

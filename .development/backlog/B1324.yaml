@@ -1,15 +1,15 @@
 id: B1324
 milestone: M3 providers
 title: Automatic Gemini cached-content creation
-status: todo
-depends_on: [B1317, B1318, B173, B193, B196, B125, B002]
+status: done
+depends_on: [B1317, B1318, B173, B193, B196, B4296, B002]
 file: tasks/B1324-gemini-cache-create.yaml
 covers:
   - "litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py"
   - "litellm/types/llms/vertex_ai.py"
 parent: B031
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1521

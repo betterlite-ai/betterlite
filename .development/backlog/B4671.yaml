@@ -2,8 +2,8 @@ id: B4671
 milestone: M9 agents and mcp
 title: MCP admitted subject server access and source attribution
 status: todo
-depends_on: [B4654, B4668, B4669, B4670, B4679, B732, B736, B737, B752, B879, B887]
-file: null
+depends_on: [B2314, B4668, B4669, B4670, B4679, B4772, B4778, B737, B752, B887]
+file: tasks/B4671-mcp-server-access-and-source-attribution.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/auth/{user_api_key_auth_mcp,managed_agent_access}.py"
 parent: B137

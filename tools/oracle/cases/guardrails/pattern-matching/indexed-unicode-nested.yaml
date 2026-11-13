@@ -1,0 +1,1 @@
+{"kind":"helper","name":"indexed-unicode-nested","call":{"b3693":{"function":"tag","format":"{pattern_name[\uff11][\u0660]}","name":"email"}},"env":{},"compare":{"ignore":[]}}

@@ -1,0 +1,164 @@
+id: B7970
+title: MCP OAuth faults package, token and registration rejections, list outcomes and the fault renderer
+description: >-
+  Build LiteLLM's mcp_server/faults package: the one place that turns a failed upstream OAuth token or registration call into a typed fault, and a fault into a status and a body. It also holds the per-server tool listing outcomes and the exception tree walk. B7531 and B7532 call it through their FaultRenderer port, and B7321 wires the implementation into OauthFlowsImpl. This task writes that implementation, so B7531 and B7532 stay free of the fault rules.
+
+
+  Code goes in two crates. The pure package goes in betterlite-mcp, new module faults: crates/betterlite-mcp/src/faults.rs (re-exports only) and the submodules types, classify, render, list_outcomes and error_chain, each with a tests.rs beside it. The adapter goes in betterlite-server, new module mcp::oauth_faults: crates/betterlite-server/src/mcp/oauth_faults.rs and a tests.rs beside it. The package takes plain values (a status and a body string), never an HTTP client type, so the adapter does the conversion from B7531's UpstreamReply and to B4719's FlowReply. Nothing is global. None of these functions can fail, so there is no error enum.
+
+
+  Python names longer than 30 characters get these Rust names: classify_upstream_token_rejection is classify_token_rejection, classify_upstream_dcr_rejection is classify_dcr_rejection, raise_classified_list_failure is list_failure_carrier. The other names stay as they are.
+
+
+  A. types (faults/types.py L1-L88). MAX_WIRE_FIELD_CHARS is 500. `CredentialSource { GatewayStored, CallerSupplied }` (wire text gateway_stored and caller_supplied). The fault is one enum, `UpstreamOAuthFault`, matched exhaustively everywhere, with these variants: CallerRejected { code: String, description: Option<String>, error_uri: Option<String> }, GatewayRejected { code: String }, UpstreamReported { code: ReportedCode } with ReportedCode { ServerError, TemporarilyUnavailable }, ProtocolFault { note: String }, RegistrationRefused { status: RefusalStatus } with RefusalStatus { Unauthorized, Forbidden } (401 and 403). The code sets GATEWAY_CREDENTIAL_CODES (invalid_client, unauthorized_client) and GATEWAY_CAPABILITY_CODES (invalid_target) are constants. UPSTREAM_FAULT_CODES has no caller at the pin, so it is not built.
+
+
+  B. classify (faults/classify.py L29-L141). Input is `RejectedReply<'a> { status: u16, body: &'a str }`. `classify_token_rejection(reply, source: CredentialSource, log_context: &str) -> UpstreamOAuthFault` and `classify_dcr_rejection(reply, log_context) -> UpstreamOAuthFault`. Both are total: they never fail and never panic, whatever the body is.
+
+  Reading the body (`_safe_json`, `_bounded_field`): parse the body as JSON; a body that does not parse, or parses to anything but an object, is an empty object. A field is usable only when it is a JSON string that is not empty; it is cut to its first 500 characters (Unicode scalar values, not bytes). The three fields read are error, error_description and error_uri; the DCR classifier does not read error_uri and passes None.
+
+  Blame assignment (`_classify_oauth_error_code`, L60-L96), in this order, never looking at the upstream HTTP status: the codes server_error and temporarily_unavailable give UpstreamReported. invalid_target gives GatewayRejected and logs a warn with the invalid_target text of L68-L77 (the server in log_context, advice to set upstream_resource to the exact resource or to "auto"). When the source is GatewayStored and the code is invalid_client or unauthorized_client: GatewayRejected and a warn with the text of L79-L86 (code, and the description or "<no description>"). Everything else, including unknown codes, is CallerRejected with the code, description and error_uri. Copy the log texts from those lines.
+
+  Token (L99-L119): no usable `error` field is ProtocolFault with the note "upstream token endpoint returned HTTP <status>" and a warn log (below); otherwise blame assignment with the given source. DCR (L122-L141): no usable `error` field is RegistrationRefused when the status is 401 or 403 (no log), else ProtocolFault with the note "upstream registration failed with HTTP <status>" and the warn log; otherwise blame assignment with the source fixed to CallerSupplied (registration sends no credentials, so invalid_client stays the caller's). The out-of-contract warn (L49-L57) reads "MCP upstream <token or registration> endpoint (<log_context>) returned HTTP <status> outside the OAuth error contract (first 500 chars): <first 500 characters of the body>". Logs go through tracing at warn.
+
+
+  C. render (faults/render_oauth.py L18-L114). `render_token_fault(fault: &UpstreamOAuthFault) -> TokenFaultReply` with TokenFaultReply { status: u16, body: TokenFaultBody, headers } where TokenFaultBody is a serde struct { error: String, error_description: Option<String>, error_uri: Option<String> } that skips None fields and serializes in that order, and headers is B4654's TOKEN_NO_CACHE_HEADERS (Cache-Control no-store, Pragma no-cache) on every reply. The match, per variant:
+  - CallerRejected: status 401 when the code is exactly invalid_client, else 400. The body has error, plus error_description when the description is non-empty, plus error_uri when it is non-empty.
+  - GatewayRejected: 502, error "server_error", error_description from `gateway_rejected_description(code)`: for invalid_target "the upstream authorization server rejected the request (invalid_target); it did not accept this server's RFC 8707 resource indicator. Set upstream_resource on the MCP server to the resource identifier the authorization server expects, or unset it if that authorization server does not support resource indicators", for any other code "the upstream authorization server rejected the gateway's configured client credentials (<code>); verify the MCP server's client_id and client_secret". Copy the exact text of L18-L29.
+  - UpstreamReported: temporarily_unavailable is 503 with "the upstream authorization server is temporarily unavailable; retry shortly", server_error is 502 with "the upstream authorization server reported an internal error" (L32-L35). The error field is the fault's own code.
+  - RegistrationRefused: rendered as CallerRejected with code unauthorized_client and the description of `registration_refused_description(status)` (L38-L43: "the upstream authorization server refused dynamic client registration (HTTP <status>). This provider may require a pre-registered OAuth client. Configure client_id and, if required by the provider, client_secret for this MCP server to skip dynamic registration"), so its status is 400.
+  - ProtocolFault: 502, error "server_error", error_description is the note.
+
+  `dcr_fault_detail(fault) -> (u16, String)` (L97-L114): CallerRejected is 400 with "<code>: <description>" when the description is non-empty, else the bare code; GatewayRejected is 502 with the gateway text above; UpstreamReported is the same status and text pair as in the token render; RegistrationRefused is 403 with the refusal text; ProtocolFault is 502 with the note. Status 400 for every contract-conformant rejection, whatever the upstream status was.
+
+
+  D. list_outcomes (faults/list_outcomes.py L28-L178). Python walks an exception tree. Rust has no exception groups, so the caller flattens its error into a typed view first: `ListFailure { kind: ListFailureKind, responses: Vec<UpstreamResponseView> }` with UpstreamResponseView { status: u16, www_authenticate: Option<String> } (the upstream responses found in the error, already in the traversal order of section E) and ListFailureKind { ServerList(ServerListFault) (an MCPServerListError carrying a classified fault), UpstreamAuth { status: u16 } (an MCPUpstreamAuthError), Timeout (TimeoutError), Connection (ConnectionError), HttpTimeout, HttpTransport, Other }.
+  Types: ListFaultCategory { AuthRequired, Forbidden, Timeout, Unreachable, UpstreamError, Internal } (snake_case on the wire), ServerListFault { tag: ListFaultCategory, status_code: Option<u16> }, ServerListOk { tool_count: usize }, `ServerOutcome { Ok(ServerListOk), Fault(ServerListFault) }`, the constant SERVER_OUTCOMES_META_KEY "litellm.ai/server_outcomes", and `AggregateToolListing<Tool> { tools: Vec<Tool>, outcomes: Vec<(String, ServerOutcome)> }` (a Vec of pairs keeps the insertion order of the Python dict).
+  `upstream_auth_challenge(failure) -> Option<(u16, Option<String>)>` (L84-L93): the first response whose status is 401 or 403, with that same response's www_authenticate; a non-auth response does not stop the scan.
+  `classify_list_exception(failure) -> ServerListFault` (L118-L144), total, in this order: ServerList returns its fault unchanged; UpstreamAuth is forbidden for 403 and auth_required for anything else, with status_code set; Timeout is timeout; Connection is unreachable; an upstream_auth_challenge hit is forbidden (403) or auth_required, with that status_code; otherwise the first response gives upstream_error with its status_code; then HttpTimeout is timeout, HttpTransport is unreachable; everything else is internal with no status_code.
+  `list_failure_carrier(failure, server_name: &str, suppress_challenge: bool) -> ListCarrier` is `raise_classified_list_failure` (L96-L115) without the raise: ListCarrier { UpstreamAuth { status_code: u16, www_authenticate: Option<String>, server_name: String }, ServerList { fault: ServerListFault, server_name: String } }. An upstream_auth_challenge hit gives UpstreamAuth, with www_authenticate None when suppress_challenge is true (dcr_bridge servers); else ServerList with classify_list_exception.
+  `outcome_wire_value(outcome)` (L147-L159) returns a serde value: Ok is {"status": "ok", "tool_count": n}; a fault is {"status": <tag>} plus "http_status" when status_code is Some. `list_fault_http_status(fault) -> u16` (L162-L178): auth_required is its status_code, or 401 when absent (or zero); forbidden is always 403; timeout 504; unreachable and upstream_error 502; internal 500.
+
+
+  E. error_chain (faults/traversal.py L17-L36). `error_chain(err: &(dyn std::error::Error + 'static)) -> Vec<&(dyn std::error::Error + 'static)>` returns the error and every error reachable through source(), outermost first. Python's order (cause subtree first, then exception group members in raise order, then the incidental context chain last, with a cycle check) has no Rust equivalent beyond source(): there is no context link and no group, and a source chain cannot loop. A caller that has real group members flattens them itself into UpstreamResponseView in the order cause, members, context.
+
+
+  F. The adapter, crates/betterlite-server/src/mcp/oauth_faults.rs. `OauthFaultRenderer` is a unit struct that implements B7531's FaultRenderer trait and the methods B7532 adds to it, one call each:
+  - `dcr_rejection(&self, reply: &UpstreamReply, log_context: &str) -> (u16, serde_json::Value)` is dcr_fault_detail(classify_dcr_rejection(..)), the detail as a JSON string value.
+  - `token_rejection(&self, reply, source, log_context) -> TokenFaultOutcome`: classify_token_rejection, then invalid_grant is true exactly when the fault is CallerRejected with code "invalid_grant" (discoverable_endpoints.py L1233-L1237, B7532 adds the bridge refresh condition itself), and reply is render_token_fault turned into a FlowReply: the same status, the body as JSON, the headers kept.
+  - `protocol_fault(&self, note: &str) -> FlowReply` is render_token_fault(ProtocolFault { note }) as a FlowReply.
+  The adapter owns no rule of its own. If B7532 declares its own CredentialSource, the adapter maps it one to one onto this task's enum.
+
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/faults.rs
+    - crates/betterlite-mcp/src/faults/**
+    - crates/betterlite-mcp/fuzz/Cargo.toml
+    - crates/betterlite-mcp/fuzz/fuzz_targets/oauth_fault_body.rs
+    - crates/betterlite-mcp/fuzz/corpus/oauth_fault_body/**
+    - crates/betterlite-server/src/mcp/oauth_faults.rs
+    - crates/betterlite-server/src/mcp/oauth_faults/**
+    - tools/oracle/cases/mcp-oauth-faults/**
+    - tools/oracle/helpers/b7970.py
+    - tools/oracle/helpers/b7970/**
+    - tools/oracle/src/helpers/mcp/b7970.rs
+    - tools/oracle/src/helpers/mcp/b7970/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/faults/types.py#L1-L88
+    why: The five fault types, the credential source and the code sets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/faults/classify.py#L29-L141
+    why: Total body reading, blame assignment, the token and registration classifiers and their warn logs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/faults/render_oauth.py#L18-L114
+    why: Statuses, bodies and exact gateway texts for token faults and registration details.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/faults/list_outcomes.py#L28-L178
+    why: Listing outcomes, classification order, carrier choice, wire form and HTTP status.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/faults/traversal.py#L17-L36
+    why: The exception tree walk order that the Rust error chain replaces.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1226-L1245
+    why: How the token flow uses the classifier and where invalid_grant is read from the fault.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1695-L1710
+    why: How the registration flow turns the fault into an HTTPException.
+  - url: https://www.rfc-editor.org/rfc/rfc6749#section-5.2
+    why: The token endpoint error response and its codes.
+  - url: https://www.rfc-editor.org/rfc/rfc7591#section-3.2.2
+    why: The client registration error response.
+
+dod:
+  - text: classify_token_rejection and classify_dcr_rejection never fail on any body and read error, error_description and error_uri only when they are non-empty JSON strings, cut to 500 characters.
+    proof: [faults-tests, faults-corpus, oracle]
+  - text: Blame assignment follows the order server_error and temporarily_unavailable, invalid_target, credential codes for GatewayStored only, then the caller, and the DCR classifier always treats the source as CallerSupplied.
+    proof: [faults-tests, oracle]
+  - text: A body without a usable error field is a ProtocolFault with the HTTP status in its note, except a DCR 401 or 403, which is RegistrationRefused.
+    proof: [faults-tests, oracle]
+  - text: render_token_fault gives the status, JSON body and no-store headers of each variant, with 401 only for CallerRejected invalid_client, and dcr_fault_detail gives the status and detail string of each variant.
+    proof: [faults-tests, oracle]
+  - text: The listing classifier, list_failure_carrier, upstream_auth_challenge, outcome_wire_value and list_fault_http_status follow LiteLLM's order and values.
+    proof: [faults-tests, oracle]
+  - text: error_chain returns the error and its sources outermost first.
+    proof: [faults-tests]
+  - text: OauthFaultRenderer implements the dcr_rejection, token_rejection and protocol_fault methods of the port with no rule of its own, and sets invalid_grant only for a CallerRejected invalid_grant.
+    proof: [adapter-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: faults-tests
+      why: the faults package has no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^faults::/) - test(/::replays_fault_corpus$/)'
+    - id: faults-corpus
+      why: the fault body classifier has no fuzz target or no new seed, or its replay fails
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-mcp/fuzz/corpus/oauth_fault_body)" && test -f crates/betterlite-mcp/fuzz/fuzz_targets/oauth_fault_body.rs && grep -qF "classify_token_rejection" crates/betterlite-mcp/fuzz/fuzz_targets/oauth_fault_body.rs && grep -qF "classify_dcr_rejection" crates/betterlite-mcp/fuzz/fuzz_targets/oauth_fault_body.rs && cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^faults::classify::tests::replays_fault_corpus$/)'
+    - id: adapter-tests
+      why: the fault renderer adapter has no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::oauth_faults::/)'
+
+oracle_cases:
+  - tools/oracle/cases/mcp-oauth-faults/token-invalid-grant.yaml
+  - tools/oracle/cases/mcp-oauth-faults/token-invalid-client-stored.yaml
+  - tools/oracle/cases/mcp-oauth-faults/token-invalid-client-supplied.yaml
+  - tools/oracle/cases/mcp-oauth-faults/token-invalid-target.yaml
+  - tools/oracle/cases/mcp-oauth-faults/token-upstream-reported.yaml
+  - tools/oracle/cases/mcp-oauth-faults/token-no-error-field.yaml
+  - tools/oracle/cases/mcp-oauth-faults/token-long-fields.yaml
+  - tools/oracle/cases/mcp-oauth-faults/dcr-error-body.yaml
+  - tools/oracle/cases/mcp-oauth-faults/dcr-refused.yaml
+  - tools/oracle/cases/mcp-oauth-faults/dcr-protocol-fault.yaml
+  - tools/oracle/cases/mcp-oauth-faults/list-classification.yaml
+  - tools/oracle/cases/mcp-oauth-faults/list-wire-and-status.yaml
+
+deviations:
+  - what: classify_token_rejection, classify_dcr_rejection and list_failure_carrier have shorter names than LiteLLM's classify_upstream_token_rejection, classify_upstream_dcr_rejection and raise_classified_list_failure, and list_failure_carrier returns the carrier instead of raising it.
+    why: A repository rule refuses names over 30 characters, and Rust errors are values the caller returns.
+  - what: The classifiers take a status and a body string, not an httpx response, and the list classifier takes a flattened ListFailure, not an exception tree.
+    why: The package must not depend on an HTTP client type or on Python's exception model. The caller builds the view in LiteLLM's traversal order.
+  - what: error_chain follows source() only, so exception group members and the incidental context link are not walked.
+    why: Rust errors have no group or context link, and a source chain has no cycle. The cycle check is not needed.
+  - what: An MCP upstream body that is JSON with duplicate keys or non-finite numbers is read like any JSON document, following docs/compatibility.md.
+    why: Python runtime behavior beyond the declared types is not an oracle case.
+
+out_of_scope:
+  - "The FaultRenderer trait, UpstreamReply and the flows that call it: B7531 for the trait and the registration flow, B7532 for the token methods and the token flow. This task implements the trait and never declares it."
+  - "FlowReply and FlowError: B4719. TOKEN_NO_CACHE_HEADERS: B4654. The gateway OauthError bodies and the bridge refresh error reply (B7532 turns an invalid_grant outcome into InvalidRefresh): B4674 and B4666."
+  - "MCPServerListError and MCPUpstreamAuthError as exception types, their to_http_exception, and the tools/list callers of classify_list_exception (rest_endpoints.py, operations.py): the MCP REST and operations tasks, which build ListFailure and use ListCarrier. mcp_debug.py's use of iter_exception_tree: its owner under B136 calls error_chain."
+  - "faults/__init__.py is only re-exports; faults.rs holds the same."
+
+pitfalls:
+  - The upstream HTTP status never decides blame; only the error code and the credential source do, so a 500 with error invalid_grant is still CallerRejected.
+  - Fields are cut to 500 characters, not 500 bytes, so a multi-byte description must be cut on a character boundary and never panic.
+  - A non-string, empty or missing error field means no contract, so an error of 5 or "" is a ProtocolFault (or RegistrationRefused for DCR 401 and 403), not a CallerRejected.
+  - Only the token classifier honours GatewayStored; invalid_client from a DCR reply stays CallerRejected, and invalid_target is GatewayRejected for both.
+  - RegistrationRefused through render_token_fault is 400 unauthorized_client, but through dcr_fault_detail it is 403.
+  - The 401 status is only for the exact code invalid_client; unauthorized_client from the caller is 400.
+  - GatewayRejected and ProtocolFault never show the upstream description or body to the caller; the description only goes to the warn log.
+  - forbidden always renders 403 in list_fault_http_status, but auth_required relays the upstream status_code (401 when it is absent).
+  - upstream_auth_challenge keeps scanning past non-auth responses, so a 401 behind an earlier 500 is still found.
+  - dcr_bridge servers pass suppress_challenge true, and the carrier then keeps the 401 or 403 status but drops the www_authenticate value.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,159 @@
+id: B8931
+title: Assemble the shared pass-through logging runtime
+description: >-
+  The pass-through leaves are independently testable, but the proxy still lacks their production
+  object graph. Build betterlite-server::passthrough_runtime, with RuntimeInputs and
+  PassThroughRuntime::new(inputs) returning the assembled services. This is the replacement for
+  pass_through_endpoint_logging's module-level instance and the implicit provider imports used
+  by its success and streaming siblings. Keep the builder below the app mounts: it takes typed
+  resources and never imports Shared or calls an app mount. B8640 consumes one Arc of its result
+  for both authenticated and public routes; B102 later tests that integration over HTTP.
+
+  RuntimeInputs carries the `stream_assembler: Arc<dyn StreamAssembler>` (B250's port, the one value B8610 builds) for
+  B3605's PassThroughEndpointLogging success handler, so this task builds no assembler of its own, and the existing B068 CostCalculator, B1717 CostRecorder, B193 catalog and
+  B205 effective model-info lookup, B190 logging payload services, the B191 worker owned by
+  B012's logging integration, B173 pooled HTTP
+  client and its server-owned task tracker, B198 clock/ID source, B3602 credential router, B8611
+  router views, B594 credential resolver, B595 signer, and B8930's enabled setting. Use the merged
+  public types rather than making a second config or service registry. Expose completion,
+  streaming, binder and speech_rates on PassThroughRuntime, using the handles accepted by B3613's
+  HandlerDeps, B3612's WebSocketDeps and B3625's SpeechRates. Also expose the provider dispatcher
+  and collected-chunks router for composition tests. All state is per constructed runtime; no
+  process globals, environment reads, independent HTTP pools or extra logging worker.
+
+  First build one B3605 PassThroughEndpointLogging and its lower PassThroughLogDispatch sink.
+  The sink must be available before billing services are built: TinyFish and AssemblyAI call
+  that sink directly, never re-enter PassThroughSuccessCompletion, which would schedule them
+  again. Adapt their credential ports to the supplied B3602 router, passing provider and region
+  unchanged, and their HTTP ports to the supplied B173 client. AssemblyAI pricing uses B205's
+  effective lookup, keeping its nano fallback in B3647. Preserve the lower-layer dependency
+  direction by implementing these ports here, not by importing betterlite-server into core.
+
+  Construct the provider services once. Build AnthropicBatchLogging and VertexBatchLogging
+  with a RouterModelIds adapter over B8611's current router view and B844 get_model_ids with
+  exclude_team_models=false, the injected response-ID source, and registry=None. The absent
+  managed_files hook must retain each leaf's warning without creating a database row. Give the
+  Anthropic batch service and B3630's real costing collaborator to B3634's AnthropicPassthroughLogger.
+  Build B3637's OpenAiPassthroughLogger with its production OpenAiLoggingToolbox and B3630's
+  payload collaborator; build B3650's CoherePassthroughLogger with its CohereProvider, shared
+  PassthroughChatLogger and production embedding tools. Bind the cost collaborators in these
+  tools to the supplied calculator and payload services, without replacing their transformations.
+  Implement B3638's cost port over B068, preserving response kind, model, provider, optional call
+  type and vertex_location. Use it for B3639's VertexPredictLogger and B3642's VertexPassthroughHandler
+  with the Vertex batch service. Construct B3640's GeminiPassthroughLogger and VertexStreamCollector
+  over that same calculator, and B3643's VertexAiLiveLogger over the supplied CostRecorder.
+
+  Implement CatalogSpeechRates once over B193's live catalog view: its TranscribeRates and
+  SpeechRates implementations both call B3644's transcribe_cost_per_second for
+  transcribe/StartTranscriptionJob.input_cost_per_second. Missing or invalid entries remain None,
+  never zero. This lets the admission route and delayed logger see the same price. Build the
+  B3645 live-pricing dependency bundle from the supplied credentials, signer, HTTP client and
+  clock, then call B3646's TranscribeLogger::production once. Share its one download permit and
+  its MAX_PENDING_PRICING_JOBS=10000 limit; do not create a logger per request or per mount.
+  Build B3647's AssemblyAI service and B3649's TinyFish billing service with the lower dispatch
+  sink and credential adapters. Their polling algorithms and default attempts/deadlines remain
+  in those leaves. Billing tasks belong to the supplied server tracker and survive a client
+  disconnect but are drained or cancelled when the server shuts down.
+
+  Pass these services to B3606's ProviderLogHandlers::production, which owns the fourteen branch
+  adapters including the stateless Cursor, Typesafe, Comprehend Medical, Azure Speech, Deepgram
+  and Fal handlers. Use B3607's EarlyExitHandlers::production over the same TinyFish, AssemblyAI
+  and Transcribe instances. Construct ProviderLogDispatcher and PassThroughSuccessCompletion
+  with the original lower sink. This task assembles them; it neither repeats branch selection
+  nor writes a new success handler.
+
+  Fill B3608's ProviderChunkHandlers with the same Anthropic and OpenAI logger Arcs and B3640's
+  Gemini and Vertex collectors. Implement AnthropicFrameProbe by calling B979's message-stop
+  and provider-error probes; no substring approximation. Implement TinyfishStreamBilling by
+  delegating run-ID parsing and the spawned marker to B3648 and billing/fallback calls to B3649.
+  The stream-start scan and the end-of-stream router must see the same per-call poller marker.
+  Build StreamLoggingRouter with those adapters. Supply B3609's production stream collaborators
+  with this router, B8930's byte injector, B3632's Anthropic partial-usage reconstruction, and
+  the shared logging worker. Adapt B3607's ReservationBinder to B1719's bind operation. The
+  buffered, byte-relay, SSE and WebSocket completion paths must share this binder and worker.
+  B3609 still owns when they are called, including no bind after rejected queue admission.
+
+  Native tests under passthrough_runtime::tests use four parameterized functions,
+  runtime_provider_graph, runtime_billing_graph, runtime_stream_graph and runtime_lifetime,
+  to construct the real graph with deterministic clock, catalog and loopback transports.
+  Spy only on external effects, not provider dispatch:
+  exercise one representative response through every production branch, all four stream
+  collectors, the real frame probes, a missing batch registry, and the three early exits.
+  Prove one shared Transcribe semaphore/rate source, callback sink identity, the TinyFish marker
+  shared by both stream paths, retained per-request logging state, and worker shutdown ownership.
+  These tests must fail if a field is filled with a fake or a no-op. The builder consumes parsed
+  records only; decoders and their fuzz targets remain with the leaves. No helper oracle is
+  appropriate for constructing this live graph. Its HTTP proof is B102's final integration task.
+
+  This is assembly over existing behavior, expected to need roughly 550-750 production and
+  adapter lines. The LiteLLM call-site ranges below identify lifetime and dependency wiring;
+  the functions themselves remain with the explicit owners in out_of_scope.
+scope:
+  paths:
+    - crates/betterlite-server/src/passthrough_runtime.rs
+    - crates/betterlite-server/src/passthrough_runtime/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L134-L144
+    why: Own the process lifetime and composition of the pass-through logger, not a new registry implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L52-L149
+    why: Constructor and shared dispatch bindings; B3605 owns logger methods and B3607 owns text decoding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L412-L517
+    why: Assembly of provider dispatch and early-exit collaborators; B3607 owns the algorithm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L139-L275
+    why: The logger, cost injector, TinyFish service, worker and reservation binder passed to B3609.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L277-L469
+    why: Connect the real provider collectors and stream probes behind B3608's injected ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L149-L153
+    why: Rate lookup shared by admission and delayed pricing; B3644 supplies the function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L579-L683
+    why: One logger and download semaphore, live pricer binding and the shared delayed dispatch sink.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/assembly_passthrough_logging_handler.py#L37-L159
+    why: AssemblyAI logger lifetime and its call into the common sink, which must not recurse through completion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L176-L260
+    why: Async and SSE billing use one injected sink after polling and share the request marker.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/__init__.py#L18-L58
+    why: Open-source hook registry has no managed_files registration; no native batch persistence adapter is installed.
+dod:
+  - text: The production graph has a real handler for every provider branch and all four stream collectors, reuses its pricing and payload resources and keeps batch registries absent.
+    proof: [provider-tests]
+  - text: TinyFish, AssemblyAI and Transcribe use the lower success sink without recursion, and both Transcribe rate ports read the same catalog and share one live logger.
+    proof: [billing-tests]
+  - text: The Anthropic probes and partial usage, TinyFish marker, byte cost injection and reservation binder reach their real leaves with request-local state.
+    proof: [stream-tests]
+  - text: Multiple route consumers share the graph and its worker, while distinct calls retain separate payloads; shutdown accounts for background work.
+    proof: [lifetime-tests]
+checks:
+  optional: []
+  commands:
+    - id: provider-tests
+      why: A production branch or stream collector is missing, fake or priced with the wrong service.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::runtime_provider_graph(::|$)/)'
+    - id: billing-tests
+      why: Delayed billing uses the wrong sink, loses credentials or builds inconsistent Transcribe pricing state.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::runtime_billing_graph(::|$)/)'
+    - id: stream-tests
+      why: The assembled stream path uses a stub probe, drops cost injection, duplicates a poller or binds the wrong reservation.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::runtime_stream_graph(::|$)/)'
+    - id: lifetime-tests
+      why: A route builds independent state, one request contaminates another or billing work outlives shutdown.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::runtime_lifetime(::|$)/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B8640 and B8610 store and distribute one runtime through the app; B8606-B8609 own family mounts and B102 owns HTTP integration. This task registers no routes and changes no shared module."
+  - "All pass_through_endpoints.py function bodies stay with B2302, B3600, B3607, B3610-B3617, B6510 and B8520; B102 records the unused and enterprise-only exclusions. Only the logger's assembly is added here."
+  - "success_handler.py methods belong to B3605-B3607. streaming_handler.py methods belong to B3608-B3609. This task supplies their production inputs and does not port their algorithms again."
+  - "Every Transcribe helper, decoder, policy and pricing function belongs to B3644-B3646; AssemblyAI methods to B3647; TinyFish functions to B3648-B3649. Their returned tasks must support the shared tracker before this builder is dispatched."
+  - "Provider transformations, payload building and batch registration decisions remain B3630-B3653. B979 owns Anthropic frame recognition; B8930 owns optional SSE cost insertion."
+  - "hooks/__init__.py registration and other hooks belong to B8399 and the individual hook tasks; the absent enterprise hook is not reimplemented."
+pitfalls:
+  - Wiring a poller's result to PassThroughSuccessCompletion schedules the same poller again; use PassThroughLogDispatch instead.
+  - mount and mount_public run separately, so a fresh TranscribeLogger in either path doubles the supposedly process-wide download concurrency.
+  - The Vertex non-streaming dispatcher is not the Vertex collected-chunks handler; the latter is VertexStreamCollector from B3640.
+  - A missing transcribe/StartTranscriptionJob rate must remain None in both ports or admission and billing disagree.
+  - Lower core and logging crates cannot depend on this server module; credential, pricing and stream adapters are implemented here.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,7 +1,7 @@
 id: B3799
 milestone: M6 guardrails
 title: Vigil analysis retries and sanitized output
-status: todo
+status: done
 depends_on: [B173]
 file: tasks/B3799-vigil-analysis.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/vigil_guard.py"
 parent: B108
 split_from: B108
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 761

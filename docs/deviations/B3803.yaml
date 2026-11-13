@@ -1,0 +1,32 @@
+task: B3803
+deviations:
+  - what: The execution timeout defaults to 30 seconds and must be a positive number; LiteLLM's config model and constructor use the same default and the same rule.
+    why: Custom guardrail code must not stall the proxy, and 30 seconds is LiteLLM's user-facing default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L100-L115
+  - what: A run past its deadline becomes a CustomCodeExecutionError variant carrying the guardrail name, the input type and the configured timeout; LiteLLM raises the same error with the same details.
+    why: The timeout is a user-facing failure, and keeping the name and budget lets an operator see which guardrail and which limit failed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L237-L318
+  - what: Custom code receives only model, user_id, team_id, end_user_id and a metadata dict merged from metadata and litellm_metadata; every other request field is withheld.
+    why: The code is untrusted, and withholding api_keys and auth headers keeps credentials out of it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L344-L368
+  - what: A block before the model call returns a passthrough outcome for the caller to turn into a synthetic response; a block after it is HTTP 400 with {error, guardrail, detection_info} as the detail.
+    why: LiteLLM raises ModifyResponseException pre-call and HTTPException(400) post-call, and response construction belongs to the caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L369-L477
+  - what: A result action other than allow, block, flag or modify is treated as allow with a warning.
+    why: Unexpected user code output must not stall or crash a request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L369-L477
+  - what: Compile-time and run-time failures are separate CustomCodeGuardrailError variants and each keeps its cause (CompileError or ExecutionError) as an error source, where LiteLLM's CustomCodeCompilationError and CustomCodeExecutionError classes carry the same causes with `from e`.
+    why: A guardrail whose code does not compile must fail at startup instead of being skipped, and Rust has no exception hierarchy, so the two classes become variants of one enum.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L192-L235
+  - what: CustomCodeGuardrail calls the loaded apply_guardrail through a ModuleHost and LoadedModule port; the caller supplies the runtime that executes the sandboxed source.
+    why: betterlite has no in-process Python, and B3802 returns guarded source instead of a code object, so the runtime that runs it is a separate component.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L319-L343
+  - what: The flag branch writes guardrail_name, guardrail_response, guardrail_status, start_time, end_time and duration into the metadata bucket; the remaining StandardLoggingGuardrailInformation fields and its sanitizing are B3664's.
+    why: The shared logging helper is not built yet, and these are the fields _process_result itself supplies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/custom_code_guardrail.py#L369-L477
+  - what: start_time, end_time and duration come from an injected monotonic clock as Duration values instead of time.time() Unix seconds.
+    why: betterlite injects clocks, and only the duration is comparable across the two implementations.
+    link: ""
+  - what: The guardrail reads custom_code, guardrail_name and timeout; litellm_params.mode and default_on are B5471's base settings and are not consumed here.
+    why: The base guardrail class, its event-hook validation and the logging object are outside this task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/__init__.py#L24-L55

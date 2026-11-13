@@ -10,7 +10,7 @@ use betterlite_postgres_fixture::connection::RandomDatabaseName;
 use serde_json::Value;
 
 use crate::OracleError;
-use crate::case::{BodyKind, Case, Request, decode_http_case, validate};
+use crate::case::{BodyKind, Case, Request, decode_case, validate};
 use crate::cli::Options;
 use crate::gateway::{self, GatewayInput};
 use crate::http::{self, Response, client};
@@ -27,15 +27,17 @@ fn case(extra: &str) -> String {
 
 #[test]
 fn absent_eligibility_is_stock_behavior() {
-    let decoded = decode_http_case(case("").as_bytes()).expect("case decodes");
+    let decoded = decode_case(Path::new("<bytes>"), case("").as_bytes()).expect("case decodes");
     assert!(!decoded.native_feature_eligibility);
 }
 
 #[test]
 fn explicit_eligibility_decodes() {
-    let decoded =
-        decode_http_case(format!("native_feature_eligibility: true\n{}", case("")).as_bytes())
-            .expect("case decodes");
+    let decoded = decode_case(
+        Path::new("<bytes>"),
+        format!("native_feature_eligibility: true\n{}", case("")).as_bytes(),
+    )
+    .expect("case decodes");
     assert!(decoded.native_feature_eligibility);
 }
 
@@ -43,7 +45,10 @@ fn explicit_eligibility_decodes() {
 #[case("LITELLM_LICENSE")]
 #[case("LITELLM_WORKER_STARTUP_HOOKS")]
 fn controlled_environment_values_are_rejected(#[case] key: &str) {
-    let result = decode_http_case(case(&format!("\n  {key}: value")).as_bytes());
+    let result = decode_case(
+        Path::new("<bytes>"),
+        case(&format!("\n  {key}: value")).as_bytes(),
+    );
     assert!(matches!(result, Err(OracleError::CaseInvalid { .. })));
 }
 
@@ -53,7 +58,7 @@ fn controlled_config_license_is_rejected() {
         "general_settings: {}",
         "general_settings: {litellm_license: value}",
     );
-    let result = decode_http_case(source.as_bytes());
+    let result = decode_case(Path::new("<bytes>"), source.as_bytes());
     assert!(matches!(result, Err(OracleError::CaseInvalid { .. })));
 }
 
@@ -63,31 +68,38 @@ fn general_settings_license_is_rejected_when_environment_variables_are_wrongly_s
         "general_settings: {}",
         "general_settings: {litellm_license: value}\n  environment_variables: ''",
     );
-    let result = decode_http_case(source.as_bytes());
+    let result = decode_case(Path::new("<bytes>"), source.as_bytes());
     assert!(matches!(result, Err(OracleError::CaseInvalid { .. })));
 }
 
 #[test]
 fn environment_variables_license_in_config_is_rejected() {
-    let result = decode_http_case(include_bytes!(
-        "../../../fuzz/corpus/http_case/native-feature-environment-variables-license-conflict.yaml"
-    ));
+    let result = decode_case(
+        Path::new("<bytes>"),
+        include_bytes!(
+            "../../../fuzz/corpus/http_case/native-feature-environment-variables-license-conflict.yaml"
+        ),
+    );
     assert!(matches!(result, Err(OracleError::CaseInvalid { .. })));
 }
 
 #[test]
 fn duplicate_general_settings_in_config_is_rejected() {
-    let result = decode_http_case(include_bytes!(
-        "../../../fuzz/corpus/http_case/native-feature-duplicate-general-settings.yaml"
-    ));
+    let result = decode_case(
+        Path::new("<bytes>"),
+        include_bytes!(
+            "../../../fuzz/corpus/http_case/native-feature-duplicate-general-settings.yaml"
+        ),
+    );
     assert!(matches!(result, Err(OracleError::CaseParse { .. })));
 }
 
 #[test]
 fn pythonpath_conflict_on_an_eligible_case_is_rejected() {
-    let result = decode_http_case(include_bytes!(
-        "../../../fuzz/corpus/http_case/native-feature-pythonpath-conflict.yaml"
-    ));
+    let result = decode_case(
+        Path::new("<bytes>"),
+        include_bytes!("../../../fuzz/corpus/http_case/native-feature-pythonpath-conflict.yaml"),
+    );
     assert!(matches!(result, Err(OracleError::CaseInvalid { .. })));
 }
 
@@ -258,9 +270,12 @@ fn enterprise_import_still_fails(#[case] eligible: bool) {
 
 #[test]
 fn the_real_runner_resolves_the_fixture_and_the_mit_handler_answers() {
-    let scim_case = decode_http_case(include_bytes!(
-        "../../../cases/management/native-feature-oracle/scim-service-provider-config.yaml"
-    ))
+    let scim_case = decode_case(
+        Path::new("<bytes>"),
+        include_bytes!(
+            "../../../cases/management/native-feature-oracle/scim-service-provider-config.yaml"
+        ),
+    )
     .expect("the oracle case decodes");
     let options = Options {
         self_check: true,

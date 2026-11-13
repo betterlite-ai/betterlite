@@ -1,7 +1,7 @@
 id: B716
 milestone: M4 keys, spend and management
 title: Migration locking and ledger recovery
-status: todo
+status: done
 depends_on: [B002, B700, B701, B711, B860, B873]
 file: tasks/B716-migration-ledger.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1217

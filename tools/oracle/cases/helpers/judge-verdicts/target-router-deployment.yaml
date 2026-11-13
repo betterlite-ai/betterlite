@@ -1,0 +1,21 @@
+kind: helper
+name: judge-target-router-deployment
+call:
+  b4080:
+    check: target
+    router:
+      served:
+        - model: judge-deployment
+          models: ["openai/gpt-4o"]
+    queries:
+      - model: judge-deployment
+      - model: gpt-4o
+    dispatch:
+      model: judge-deployment
+      messages:
+        - role: user
+          content: which reply is better?
+      params:
+        temperature: 0
+env: {}
+compare: {ignore: []}

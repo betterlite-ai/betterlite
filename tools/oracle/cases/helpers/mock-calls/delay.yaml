@@ -1,0 +1,13 @@
+kind: helper
+name: mock-calls-delay
+call:
+  mock_calls:
+    model: gpt-4o
+    mode: chat
+    clock: 1700000000
+    uuid: "12345678-1234-4234-8234-123456789012"
+    operator_mock_response: delayed answer
+    mock_delay: 0.001
+env: {}
+compare:
+  ignore: []

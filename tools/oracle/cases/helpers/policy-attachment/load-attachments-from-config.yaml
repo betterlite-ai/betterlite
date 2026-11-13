@@ -1,0 +1,17 @@
+kind: helper
+name: load-attachments-from-config
+call:
+  b3241:
+    policy_memory_matching_attachment:
+      action: load_attachments
+      attachments:
+        - policy: global-baseline
+          scope: "*"
+        - policy: healthcare-compliance
+          teams: [healthcare-team]
+          priority: 2
+        - policy: dev-safety
+          keys: [dev-key-*]
+          default: true
+env: {}
+compare: {ignore: []}

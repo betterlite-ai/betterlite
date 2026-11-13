@@ -1,0 +1,178 @@
+use super::super::{ExclusionInput, RawOtel};
+use crate::loader::{ConfigError, EnvironmentLookup};
+use serde::de::DeserializeOwned;
+
+pub(in crate::sections::otel_settings) fn csv_values(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+pub(super) fn normalized_exclusions(value: Option<ExclusionInput>) -> Vec<String> {
+    let items = match value {
+        None => return Vec::new(),
+        Some(ExclusionInput::Csv(text)) => return csv_values(&text),
+        Some(ExclusionInput::List(items)) => items,
+        Some(ExclusionInput::Ignored(_)) => {
+            tracing::warn!(
+                "excluded_services must be a list or comma-separated string; ignoring value"
+            );
+            return Vec::new();
+        }
+    };
+    items
+        .into_iter()
+        .filter_map(|item| match item {
+            ExclusionInput::Csv(text) => Some(text),
+            ExclusionInput::List(_) | ExclusionInput::Ignored(_) => {
+                tracing::warn!("excluded_services entries must be strings; ignoring entry");
+                None
+            }
+        })
+        .collect()
+}
+
+pub(super) fn environment_or<L, T, F>(
+    lookup: &L,
+    names: &[&str],
+    configured: Option<T>,
+    parse: F,
+) -> Option<T>
+where
+    L: EnvironmentLookup,
+    F: FnOnce(String) -> T,
+{
+    let environment = names.iter().find_map(|name| {
+        lookup
+            .lookup(name)
+            .or_else(|| {
+                lookup
+                    .lookup(&name.to_ascii_lowercase())
+                    .or_else(|| lookup.lookup(&name.to_ascii_uppercase()))
+            })
+            .filter(|value| !value.is_empty())
+    });
+    configured.or_else(|| environment.map(parse))
+}
+
+pub(super) fn setting_bool<L>(
+    lookup: &L,
+    names: &[&str],
+    configured: Option<bool>,
+    default: bool,
+) -> Result<bool, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    if let Some(explicit) = configured {
+        return Ok(explicit);
+    }
+    let found = names.iter().find_map(|name| {
+        lookup
+            .lookup(name)
+            .or_else(|| {
+                lookup
+                    .lookup(&name.to_ascii_lowercase())
+                    .or_else(|| lookup.lookup(&name.to_ascii_uppercase()))
+            })
+            .map(|value| (*name, value))
+    });
+    let Some((name, value)) = found else {
+        return Ok(default);
+    };
+    betterlite_env::flag(name, &value)
+        .map_err(|source| ConfigError::Environment { source })
+        .map(|parsed| parsed.unwrap_or(default))
+}
+
+pub(super) const DEFAULT_BAGGAGE_PROMOTED_KEYS: &[&str] = &[
+    "litellm.team.id",
+    "litellm.team.alias",
+    "litellm.team.metadata",
+    "litellm.api_key.hash",
+    "gen_ai.request.model",
+    "litellm.provider.model",
+];
+
+pub(super) const DEFAULT_BAGGAGE_METADATA_KEYS: &[&str] = &[
+    "user_api_key_org_id",
+    "user_api_key_user_id",
+    "user_api_key_alias",
+    "user_api_key_end_user_id",
+    "requester_ip_address",
+];
+
+pub(super) fn default_baggage_keys(keys: &[&str]) -> Vec<String> {
+    let mut output = Vec::with_capacity(keys.len());
+    for key in keys {
+        output.push((*key).to_owned());
+    }
+    output
+}
+
+pub(super) fn resolve_exclusions<L>(raw: &RawOtel, lookup: &L) -> Vec<String>
+where
+    L: EnvironmentLookup,
+{
+    normalized_exclusions(environment_or(
+        lookup,
+        &["LITELLM_OTEL_EXCLUDED_SERVICES"],
+        raw.excluded_services.clone(),
+        ExclusionInput::Csv,
+    ))
+}
+
+pub(super) fn structured_setting<L, T>(
+    lookup: &L,
+    name: &str,
+    configured: Option<T>,
+) -> Result<Option<T>, ConfigError>
+where
+    L: EnvironmentLookup,
+    T: DeserializeOwned,
+{
+    if configured.is_some() {
+        return Ok(configured);
+    }
+    let value = lookup
+        .lookup(name)
+        .or_else(|| lookup.lookup(&name.to_ascii_uppercase()));
+    value
+        .filter(|text| !text.is_empty())
+        .map(|text| serde_saphyr::from_str(&text).map_err(|source| ConfigError::Yaml { source }))
+        .transpose()
+}
+
+pub(super) fn string_settings<L>(raw: &RawOtel, lookup: &L) -> [Option<String>; 6]
+where
+    L: EnvironmentLookup,
+{
+    let configured = [
+        raw.exporter.clone(),
+        raw.endpoint.clone(),
+        raw.traces_endpoint.clone(),
+        raw.headers.clone(),
+        raw.service_name.clone(),
+        raw.deployment_environment.clone(),
+    ];
+    let aliases: [&[&str]; 6] = [
+        &["OTEL_EXPORTER", "OTEL_EXPORTER_OTLP_PROTOCOL", "exporter"],
+        &["OTEL_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT", "endpoint"],
+        &[
+            "OTEL_TRACES_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+            "traces_endpoint",
+        ],
+        &["OTEL_HEADERS", "OTEL_EXPORTER_OTLP_HEADERS", "headers"],
+        &["OTEL_SERVICE_NAME", "service_name"],
+        &["OTEL_ENVIRONMENT_NAME", "deployment_environment"],
+    ];
+    let mut values: [Option<String>; 6] = Default::default();
+    for ((output, configured_value), names) in values.iter_mut().zip(configured).zip(aliases) {
+        *output = environment_or(lookup, names, configured_value, |value| value);
+    }
+    values
+}

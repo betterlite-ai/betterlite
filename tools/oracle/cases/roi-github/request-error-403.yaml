@@ -1,0 +1,5 @@
+kind: helper
+name: request-error-403
+call: {"b3152": {"operation": "request", "method": "GET", "path": "user/repos", "replies": [{"status": 403}]}}
+env: {}
+compare: {ignore: []}

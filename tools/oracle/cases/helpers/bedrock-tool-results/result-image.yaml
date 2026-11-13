@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-tool-results-result-image
+call:
+  bedrock_tool_results:
+    function: tool_call_result
+    message:
+      role: tool
+      tool_call_id: call_image
+      content:
+        - {type: text, text: shot}
+        - {type: image_url, image_url: "data:image/png;base64,QUJD"}
+        - {type: image_url, image_url: {url: "data:image/png;base64,QUJD", format: "image/webp"}}
+        - {type: image_url, image_url: "data:video/mp4;base64,QUJD"}
+    id: unused-fixed-id
+env: {}
+compare:
+  ignore: []

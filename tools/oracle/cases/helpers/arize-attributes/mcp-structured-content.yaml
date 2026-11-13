@@ -1,0 +1,16 @@
+kind: helper
+name: mcp-structured-content
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: call_mcp_tool
+        metadata:
+          mcp_tool_call_metadata:
+            name: get_temperature
+    response:
+      structured_content:
+        temperature: 72
+env: {}
+compare: {ignore: []}

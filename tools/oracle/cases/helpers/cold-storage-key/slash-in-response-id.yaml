@@ -1,0 +1,5 @@
+kind: helper
+name: slash-in-response-id
+call: {"b9520": {"cold_storage_custom_logger": "s3_v2", "metadata": {}, "start_time": "2026-01-02T03:04:05.123456", "response_id": "a/b:c", "s3_v2": {"path": "logs/", "partition_granularity": null}}}
+env: {}
+compare: {ignore: []}

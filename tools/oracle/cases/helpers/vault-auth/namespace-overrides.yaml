@@ -1,0 +1,16 @@
+kind: helper
+name: vault-auth-namespace-overrides
+env: {}
+compare: {ignore: []}
+call:
+  b4416:
+    env:
+      HCP_VAULT_TOKEN: token-1
+      HCP_VAULT_NAMESPACE: admin
+      HCP_VAULT_LOGIN_NAMESPACE: root
+      HCP_VAULT_SECRET_NAMESPACE: teams/team-a
+    routes: []
+    steps:
+      - {op: namespaces}
+      - {op: token}
+      - {op: target, name: OPENAI_API_KEY}

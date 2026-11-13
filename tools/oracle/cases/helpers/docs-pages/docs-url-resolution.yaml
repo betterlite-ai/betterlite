@@ -1,0 +1,40 @@
+kind: helper
+name: docs_url_resolution_matches_litellm
+call:
+  b7740:
+    op: docs_url_resolution
+    scenarios:
+      - {}
+      - DOCS_URL: ""
+      - DOCS_URL: /docs
+      - REDOC_URL: /catalog
+      - OPENAPI_URL: /spec.json
+      - NO_DOCS: "true"
+      - NO_DOCS: " true "
+      - NO_DOCS: "True"
+      - NO_DOCS: "yes"
+      - NO_DOCS: "1"
+      - NO_DOCS: ""
+      - NO_DOCS: "false"
+      - NO_DOCS: "true"
+        DOCS_URL: /docs
+      - DOCS_URL: ""
+        NO_DOCS: "true"
+      - NO_REDOC: "TRUE"
+      - NO_OPENAPI: " true "
+      - NO_OPENAPI: "false"
+      - OPENAPI_URL: /spec.json
+        NO_OPENAPI: "true"
+      - DOCS_URL: /docs
+        ROOT_REDIRECT_URL: /ui
+      - NO_DOCS: "true"
+        ROOT_REDIRECT_URL: ""
+      - DOCS_URL: /docs
+        ROOT_REDIRECT_URL: "/my page/ü"
+      - DOCS_URL: /docs
+        ROOT_REDIRECT_URL: /a|b
+      - DOCS_URL: /docs
+        ROOT_REDIRECT_URL: "https://ui.example/catalog?tenant=1&theme=dark"
+env: {}
+compare:
+  ignore: []

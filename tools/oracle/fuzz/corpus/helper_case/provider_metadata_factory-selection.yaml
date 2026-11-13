@@ -1,0 +1,11 @@
+kind: helper
+name: provider-metadata-factory-seed-selection
+call:
+  provider_metadata_factory:
+    metadata_adapter_selection:
+      queries:
+        - model: "glm-4p6"
+          providers: [fireworks_ai, openai, ollama_chat, vllm, hosted_vllm, lemonade, azure_ai, openai_like]
+        - providers: [custom_openai, vertex_ai_beta, bedrock_mantle]
+env: {}
+compare: {ignore: []}

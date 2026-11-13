@@ -2,10 +2,9 @@ id: B042
 milestone: M3 providers
 title: Cloud ML platforms
 status: todo
-depends_on: [B010, B011, B186, B1427]
-file: null
+depends_on: [B080, B083, B085, B900, B8330, B8331, B9220]
+file: tasks/B042-cloud-ml-endpoints.yaml
 covers:
-  - "litellm/llms/{sagemaker,databricks,watsonx,oci,snowflake,sap,predibase,replicate,huggingface}/**"
   - "litellm/types/llms/{databricks,watsonx,oci}.py"
   - "litellm/main.py"
 parent: null

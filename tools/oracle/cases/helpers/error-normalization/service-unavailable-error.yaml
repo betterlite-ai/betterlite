@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-service-unavailable-error
+call: {"error_normalization": {"message": "ordinary", "class": "ServiceUnavailableError", "status_code": 418}}
+env: {}
+compare: {ignore: []}

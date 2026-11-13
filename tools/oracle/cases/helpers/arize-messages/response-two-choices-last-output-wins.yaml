@@ -1,0 +1,17 @@
+kind: helper
+name: response-two-choices-last-output-wins
+call:
+  b3860:
+    function: set_response
+    response:
+      choices:
+        - message: {role: assistant, content: first}
+        - message:
+            role: assistant
+            content: second
+            tool_calls:
+              - id: call_9
+                type: function
+                function: {name: lookup, arguments: "{}"}
+env: {}
+compare: {ignore: []}

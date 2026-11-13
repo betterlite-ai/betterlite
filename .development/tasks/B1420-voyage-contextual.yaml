@@ -35,13 +35,13 @@ description: >-
   125 adapters, 55 decoder harness and 75 settings/export lines, capped at 775.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,voyage_embedding}.rs
+    - crates/betterlite-openai/src/voyage_embedding.rs
     - crates/betterlite-openai/src/voyage_embedding/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/voyage_embedding_reply.rs
     - crates/betterlite-openai/fuzz/corpus/voyage_embedding_reply/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,voyage}.rs
+    - crates/betterlite-config/src/sections/voyage_credentials.rs
+    - crates/betterlite-config/src/sections/voyage_credentials/**
     - crates/betterlite-config/tests/voyage_credentials.rs
     - tools/oracle/src/helpers/openai/voyage_contextual.rs
     - tools/oracle/src/helpers/openai/voyage_contextual/**

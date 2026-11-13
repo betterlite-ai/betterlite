@@ -1,7 +1,7 @@
 id: B4292
 milestone: M8 platform
 title: Retire evicted clients and reuse logging clients safely
-status: todo
+status: done
 depends_on: [B2226, B390, B4290]
 file: tasks/B4292-cache-client-lifecycle.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/litellm_core_utils/specialty_caches/**"
 parent: B125
 split_from: B125
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1244

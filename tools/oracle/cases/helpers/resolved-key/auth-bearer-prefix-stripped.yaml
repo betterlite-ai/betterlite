@@ -1,0 +1,9 @@
+kind: helper
+name: bearer-prefix-stripped
+call:
+  resolved_key:
+    function: auth
+    value:       {api_key: "Bearer sk-abc"}
+env: {}
+compare:
+  ignore: []

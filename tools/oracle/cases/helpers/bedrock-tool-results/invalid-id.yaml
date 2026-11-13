@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-tool-results-invalid-id
+call:
+  bedrock_tool_results:
+    function: sanitize_tool_use_ids
+    values:
+      - call_abc123
+      - call.abc/123
+      - ""
+      - aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      - a b
+env: {}
+compare:
+  ignore: []

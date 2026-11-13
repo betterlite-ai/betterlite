@@ -1,0 +1,9 @@
+kind: helper
+name: image-b64-single-pad-sign
+call:
+  b5240:
+    function: "output_choices"
+    response: {"data": [{"b64_json": "="}]}
+env: {}
+compare:
+  ignore: []

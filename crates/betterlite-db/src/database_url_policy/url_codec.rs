@@ -11,12 +11,19 @@ const QUOTE_PLUS_SET: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'~')
     .remove(b' ');
 
-pub(super) struct SplitUrl {
-    pub(super) scheme: String,
-    pub(super) netloc: String,
-    pub(super) path: String,
-    pub(super) query: String,
-    pub(super) fragment: String,
+// CPython's quote with the default safe='': a space stays %20 instead of becoming '+'.
+const QUOTE_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'-')
+    .remove(b'~');
+
+pub(crate) struct SplitUrl {
+    pub(crate) scheme: String,
+    pub(crate) netloc: String,
+    pub(crate) path: String,
+    pub(crate) query: String,
+    pub(crate) fragment: String,
 }
 
 // Mirrors the ValueError Python's urlsplit raises for a malformed or invalid bracketed netloc.
@@ -34,7 +41,7 @@ pub enum UrlSplitError {
     InvalidNfkcNetloc,
 }
 
-pub(super) fn urlsplit(url: &str) -> Result<SplitUrl, UrlSplitError> {
+pub(crate) fn urlsplit(url: &str) -> Result<SplitUrl, UrlSplitError> {
     let trimmed = url.trim_start_matches(|character: char| u32::from(character) <= 0x20);
     let cleaned: String = trimmed
         .chars()
@@ -167,7 +174,7 @@ fn is_ipvfuture_rest(rest: &str) -> bool {
         && after_dot.len() > 1
 }
 
-pub(super) fn urlunsplit(parts: &SplitUrl) -> String {
+pub(crate) fn urlunsplit(parts: &SplitUrl) -> String {
     let mut url = parts.path.clone();
     if parts.netloc.is_empty() {
         // An empty netloc with a path starting "//" (postgresql:////db) still forces a leading "//".
@@ -193,7 +200,7 @@ pub(super) fn urlunsplit(parts: &SplitUrl) -> String {
 }
 
 // Mirrors urllib.parse.parse_qsl(query, keep_blank_values=keep_blank_values).
-pub(super) fn parse_qsl(query: &str, keep_blank_values: bool) -> Vec<(String, String)> {
+pub(crate) fn parse_qsl(query: &str, keep_blank_values: bool) -> Vec<(String, String)> {
     if query.is_empty() {
         return Vec::new();
     }
@@ -224,7 +231,7 @@ pub(super) fn parse_qs(query: &str) -> Vec<(String, Vec<String>)> {
 }
 
 // Mirrors urllib.parse.urlencode(pairs) with no doseq.
-pub(super) fn urlencode_pairs(pairs: &[(String, String)]) -> String {
+pub(crate) fn urlencode_pairs(pairs: &[(String, String)]) -> String {
     let mut parts = Vec::new();
     for (name, value) in pairs {
         let encoded_name = utf8_percent_encode(name, QUOTE_PLUS_SET)
@@ -236,6 +243,23 @@ pub(super) fn urlencode_pairs(pairs: &[(String, String)]) -> String {
         parts.push(format!("{encoded_name}={encoded_value}"));
     }
     parts.join("&")
+}
+
+// Mirrors urllib.parse.urlencode(pairs, quote_via=quote): the same pairs, but a space stays %20.
+pub(crate) fn urlencode_pairs_quote(pairs: &[(String, String)]) -> String {
+    let encoded: Vec<String> = pairs
+        .iter()
+        .map(|(name, value)| quote_pair(name, value))
+        .collect();
+    encoded.join("&")
+}
+
+fn quote_pair(name: &str, value: &str) -> String {
+    format!(
+        "{}={}",
+        utf8_percent_encode(name, QUOTE_SET),
+        utf8_percent_encode(value, QUOTE_SET)
+    )
 }
 
 // Mirrors urllib.parse.urlencode(groups, doseq=True): repeats a key once per value.

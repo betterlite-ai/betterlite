@@ -1,0 +1,8 @@
+model_list:
+  - model_name: io-token-reservations
+    litellm_params:
+      model: openai/gpt-4o
+      itpm: 100
+      otpm: 200
+    model_info:
+      itpm: 50

@@ -1,0 +1,7 @@
+kind: helper
+name: get-routes-for-mounted-app-basic
+call:
+  b4262: {"function":"get_routes_for_mounted_app","route":{"path":"/v1/","app":{"name":"Router","routes":[{"path":"/models","methods":["GET"],"name":"models","endpoint":"list_models"},{"path":"/nested","app":{"name":"Router","routes":[]}}]}}}
+env: {}
+compare:
+  ignore: []

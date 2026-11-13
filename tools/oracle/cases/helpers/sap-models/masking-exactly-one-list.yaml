@@ -1,0 +1,36 @@
+kind: helper
+name: sap-models-masking-exactly-one-list
+call:
+  b5951:
+    calls:
+      - model: orchestration_request
+        data:
+          config:
+            modules:
+              - prompt_templating:
+                  prompt: {template: []}
+                  model: {name: m}
+                masking:
+                  providers:
+                    - type: sap_data_privacy_integration
+                      method: anonymization
+                      entities:
+                        - {type: profile-person}
+                        - {regex: r, replacement_strategy: {method: constant, value: x}}
+                        - {type: profile-email, replacement_strategy: {}}
+                      allowlist: [a]
+                      mask_grounding_input: {enabled: true}
+              - prompt_templating:
+                  prompt: {template: []}
+                  model: {name: m}
+                masking:
+                  masking_providers:
+                    - {method: pseudonymization, entities: []}
+      - model: masking_module
+        data:
+          providers: [{method: anonymization, entities: []}]
+          masking_providers: [{method: anonymization, entities: []}]
+      - model: masking_module
+        data: {}
+env: {}
+compare: {ignore: []}

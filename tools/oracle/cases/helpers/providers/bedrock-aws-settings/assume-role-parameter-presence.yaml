@@ -1,0 +1,8 @@
+kind: helper
+name: assume-role-parameter-presence
+call:
+  bedrock_aws_settings:
+    operation: assume_role
+    params: {'role_arn': 'arn:aws:iam::123:role/demo', 'session_name': 'session', 'external_id': '', 'tags': []}
+env: {}
+compare: {ignore: []}

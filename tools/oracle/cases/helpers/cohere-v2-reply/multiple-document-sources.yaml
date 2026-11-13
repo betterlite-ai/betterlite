@@ -1,0 +1,35 @@
+kind: helper
+name: cohere-v2-reply-multiple-document-sources
+call:
+  cohere_v2_reply:
+    function: annotations
+    citations:
+      - start: 1
+        end: 4
+        text: hello
+        sources:
+          - type: document
+            document: {title: First, snippet: x}
+            id: one
+          - type: document
+            document: {title: Second}
+            url: https://example.test/page
+          - type: other
+            document: {title: Third}
+            id: three
+          - type: document
+            id: four
+      - start: 5
+        end: 9
+        sources:
+          - type: document
+            document: {title: Fourth}
+            url: ""
+            id: five
+          - type: document
+            document: {}
+      - start: 10
+        end: 12
+        sources: []
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,13 @@
+kind: helper
+name: span-plan-dynamic-headers-win
+call:
+  b3855:
+    function: span_processor_plan
+    config:
+      exporter: otlp_http
+      endpoint: http://collector:4318
+      headers: x-config=1
+    dynamic_headers:
+      x-dynamic: "2"
+env: {}
+compare: {ignore: []}

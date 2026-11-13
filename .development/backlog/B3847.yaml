@@ -1,8 +1,8 @@
 id: B3847
 milestone: M7 observability
 title: OTel request context and span emission
-status: todo
-depends_on: [B198, B3840, B3842, B3843, B3845, B3846, B3848]
+status: done
+depends_on: [B198, B3840, B3842, B3843, B3845, B3848]
 file: tasks/B3847-otel-context-emission.yaml
 covers:
   - "litellm/integrations/otel/emitter.py"
@@ -11,7 +11,7 @@ covers:
   - "litellm/litellm_core_utils/core_helpers.py"
 parent: B110
 split_from: B110
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1071

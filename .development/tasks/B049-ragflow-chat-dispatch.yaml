@@ -1,0 +1,94 @@
+id: B049
+title: RAGFlow chat provider and vector store umbrella
+description: >-
+  Last part of the vector store, RAG and OCR provider group. Parts B7810 (Milvus, PG Vector), B7811 (MongoDB), B7812 (S3
+  Vectors), B7813 (Valkey) and B7814 (RAGFlow datasets) own their provider files. This task owns what is left: the RAGFlow
+  chat provider (ragflow/chat/transformation.py, 245 lines) and the _complete_ragflow dispatch in main.py, in the module
+  ragflow_chat in betterlite-provider. ragflow/__init__.py and reducto/__init__.py hold no code (reducto has one comment line;
+  its OCR provider is B6806).
+
+  Model names. A RAGFlow model is ragflow/chat/{chat_id}/{model} or ragflow/agent/{agent_id}/{model}. Parsing splits on "/":
+  fewer than 4 parts fails with "Invalid RAGFlow model format: <model>. Expected format: ragflow/chat/{chat_id}/{model} or
+  ragflow/agent/{agent_id}/{model}"; a first part other than "ragflow" fails with "Invalid RAGFlow model format: <model>. Must
+  start with 'ragflow/'"; a type other than chat or agent fails with "Invalid RAGFlow endpoint type: <type>. Must be 'chat' or
+  'agent'". The model name is the parts from the fourth on, joined by "/".
+
+  URL. The base is the explicit api_base, else litellm.api_base, else RAGFLOW_API_BASE; none gives "api_base is required for
+  RAGFlow provider. Set it via api_base parameter, RAGFLOW_API_BASE environment variable, or litellm.api_base". The model is
+  parsed before the base is changed. Trailing slashes are removed, then one trailing "/api/v1" is removed, else one trailing
+  "/v1". The path is /api/v1/chats_openai/{id}/chat/completions for chat and /api/v1/agents_openai/{id}/chat/completions for
+  agent, with the id percent-encoded by B171's encode_url_path_segment (field name "entity_id"). The litellm_params api_base
+  and api_key branches test attributes on a plain dict at the pin, so they never run; do not read those keys.
+
+  Provider info returns the base (explicit, litellm.api_base, RAGFLOW_API_BASE), the key (explicit, litellm.api_key,
+  RAGFLOW_API_KEY) and the provider name. It still parses the model first, so a bad model fails here. validate_environment
+  sets Authorization "Bearer <key>" when a key resolves (explicit, litellm.api_key, RAGFLOW_API_KEY), adds Content-Type
+  application/json when neither spelling exists, and stores the parsed model name in litellm_params["_ragflow_actual_model"];
+  a parse failure is swallowed there. transform_request uses that stored name, else the parsed one, else the whole model
+  string when parsing fails, and then runs the OpenAI chat transform (B004) with it. Everything else in RAGFlowConfig is
+  inherited OpenAI chat behavior from B004, B005 and B024.
+
+  Dispatch. _complete_ragflow calls the shared HTTP completion handler with the context fields (model, messages, headers,
+  model_response, api_key, api_base, acompletion, logging, optional_params, litellm_params, shared_session, timeout, client
+  made by the dispatch client helper, custom_llm_provider, encoding, stream, provider_config). On any error it logs
+  post_call with the messages, api_key, original_response str(error) and additional_args {"headers": headers}, then re-raises
+  the same error. Register the arm with the dispatch table at main.py L5897-L5899 through B2230 selection.
+scope:
+  paths:
+    - crates/betterlite-provider/src/ragflow_chat.rs
+    - crates/betterlite-provider/src/ragflow_chat/**
+    - tools/oracle/cases/helpers/ragflow-chat/**
+    - tools/oracle/helpers/b049.py
+    - tools/oracle/helpers/b049/**
+    - tools/oracle/src/helpers/provider/b049.rs
+    - tools/oracle/src/helpers/provider/b049/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ragflow/chat/transformation.py#L22-L125
+    why: Model name parsing and the chat and agent URL building.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ragflow/chat/transformation.py#L127-L245
+    why: Provider info, headers, the stored model name and transform_request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2010-L2057
+    why: The _complete_ragflow body, with its post_call on error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5897-L5899
+    why: Where the ragflow provider reaches _complete_ragflow.
+dod:
+  - text: Model names parse into type, id and model, with the three error messages and slashes kept in the model part.
+    proof: [ragflow-chat-tests, oracle]
+  - text: The URL strips /api/v1 or /v1, picks the chat or agent path and encodes the id.
+    proof: [ragflow-chat-tests, oracle]
+  - text: Key, base and header resolution follow the three-step chain, and transform_request sends the actual model name.
+    proof: [ragflow-chat-tests, oracle]
+  - text: The dispatch passes the context to the shared handler and logs post_call then re-raises on error.
+    proof: [ragflow-dispatch-tests]
+checks:
+  optional: []
+  commands:
+    - id: ragflow-chat-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^ragflow_chat::(parse|url|env|request)/)'
+      why: Fixtures cover parsing, URL building, credential resolution and the request model.
+    - id: ragflow-dispatch-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^ragflow_chat::dispatch/)'
+      why: Tests check the handler call and the post_call on a failing handler.
+oracle_cases:
+  - tools/oracle/cases/helpers/ragflow-chat/model-too-short.yaml
+  - tools/oracle/cases/helpers/ragflow-chat/model-wrong-prefix.yaml
+  - tools/oracle/cases/helpers/ragflow-chat/endpoint-type-invalid.yaml
+  - tools/oracle/cases/helpers/ragflow-chat/model-name-with-slash.yaml
+  - tools/oracle/cases/helpers/ragflow-chat/url-chat-strip-api-v1.yaml
+  - tools/oracle/cases/helpers/ragflow-chat/url-agent-strip-v1.yaml
+  - tools/oracle/cases/helpers/ragflow-chat/url-id-encoded.yaml
+  - tools/oracle/cases/helpers/ragflow-chat/base-missing.yaml
+deviations: []
+out_of_scope:
+  - The vector store providers (Milvus, PG Vector, MongoDB, S3 Vectors, Valkey, RAGFlow datasets) are B7810 to B7814.
+  - OCR providers, including Reducto, are B6806.
+  - get_provider_vector_stores_config in utils.py and the HTTP and direct vector search wiring have no owner yet (see the notes to the architect).
+pitfalls:
+  - The base is parsed for the model first. A bad model fails before the missing base error.
+  - Only one suffix is removed, and "/api/v1" is checked before "/v1".
+  - validate_environment swallows a bad model name, so the failure shows up later in the URL step.
+  - The key chain is explicit key, litellm.api_key, then RAGFLOW_API_KEY, and an empty explicit key falls through.
+  - A model name that contains slashes stays whole after the id.
+budget: {max_changed_lines: 1500, max_new_expects: 1}
+review_level: standard

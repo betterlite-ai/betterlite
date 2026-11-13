@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "private-json-symlinked-parent-seed", "call": {"private_json": {"function": "symlinked_parent", "name": "state.json", "data": {"through": "link"}}}, "env": {}, "compare": {"ignore": []}}

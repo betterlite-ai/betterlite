@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::cell::Cell;
 use std::sync::{Arc, Mutex};
 
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -13,18 +14,28 @@ use super::{ConsoleSink, LoggerSink, VerboseHooks};
 struct FixtureLogger {
     fails: bool,
     debug_enabled: bool,
+    calls: Cell<Vec<&'static str>>,
 }
 
 impl LoggerSink for FixtureLogger {
     fn debug(&self, _payload: &Payload) -> bool {
+        let mut calls = self.calls.take();
+        calls.push("debug");
+        self.calls.set(calls);
         !self.fails
     }
 
     fn info(&self, _payload: &Payload) -> bool {
+        let mut calls = self.calls.take();
+        calls.push("info");
+        self.calls.set(calls);
         !self.fails
     }
 
     fn error(&self, _payload: &Payload) -> bool {
+        let mut calls = self.calls.take();
+        calls.push("error");
+        self.calls.set(calls);
         !self.fails
     }
 
@@ -100,12 +111,14 @@ struct Expected {
     console: usize,
     active: bool,
     payload: Payload,
+    level: &'static str,
+    calls: Vec<&'static str>,
 }
 
 #[rstest]
 #[case::main_verbose_guard(
     Scenario::Main { payload: json!("message"), set_verbose: json!(true) },
-    Expected { logs: 1, console: 1, active: false, payload: json!("message") }
+    Expected { logs: 1, console: 1, active: false, payload: json!("message"), level: "DEBUG", calls: vec!["debug"] }
 )]
 #[case::utils_verbose_levels(
     Scenario::Utils {
@@ -114,28 +127,60 @@ struct Expected {
         log_level: "INFO",
         logger_only: json!(false),
     },
-    Expected { logs: 1, console: 1, active: false, payload: json!("message") }
+    Expected { logs: 1, console: 1, active: false, payload: json!("message"), level: "INFO", calls: vec!["info"] }
+)]
+#[case::utils_debug_level(
+    Scenario::Utils { payload: json!("message"), set_verbose: json!(true), log_level: "DEBUG", logger_only: json!(false) },
+    Expected { logs: 1, console: 1, active: false, payload: json!("message"), level: "DEBUG", calls: vec!["debug"] }
+)]
+#[case::utils_error_level(
+    Scenario::Utils { payload: json!("message"), set_verbose: json!(true), log_level: "ERROR", logger_only: json!(false) },
+    Expected { logs: 1, console: 1, active: false, payload: json!("message"), level: "ERROR", calls: vec!["error"] }
 )]
 #[case::verbose_active(
     Scenario::Active { set_verbose: json!(false), logger_debug_enabled: true },
-    Expected { logs: 0, console: 0, active: true, payload: json!(null) }
+    Expected { logs: 0, console: 0, active: true, payload: json!(null), level: "", calls: vec![] }
 )]
 #[case::redacted_verbose_payload(
     Scenario::Main { payload: credential_payload(), set_verbose: json!(true) },
-    Expected { logs: 1, console: 1, active: false, payload: redacted_payload() }
+    Expected { logs: 1, console: 1, active: false, payload: redacted_payload(), level: "DEBUG", calls: vec!["debug"] }
 )]
 fn verbose_hooks_cases(#[case] scenario: Scenario, #[case] expected: Expected) {
-    let result = match scenario {
+    let (result, calls) = match scenario {
         Scenario::Main {
             payload,
             set_verbose,
-        } => healthy_hooks(set_verbose).main_print_verbose(payload),
+        } => {
+            let hooks = hooks(
+                FixtureLogger {
+                    fails: false,
+                    debug_enabled: false,
+                    calls: Cell::new(Vec::new()),
+                },
+                FixtureConsole::default(),
+                set_verbose,
+            );
+            let result = hooks.main_print_verbose(payload);
+            (result, hooks.logger.calls.take())
+        }
         Scenario::Utils {
             payload,
             set_verbose,
             log_level,
             logger_only,
-        } => healthy_hooks(set_verbose).utils_print_verbose(payload, log_level, &logger_only),
+        } => {
+            let hooks = hooks(
+                FixtureLogger {
+                    fails: false,
+                    debug_enabled: false,
+                    calls: Cell::new(Vec::new()),
+                },
+                FixtureConsole::default(),
+                set_verbose,
+            );
+            let result = hooks.utils_print_verbose(payload, log_level, &logger_only);
+            (result, hooks.logger.calls.take())
+        }
         Scenario::Active {
             set_verbose,
             logger_debug_enabled,
@@ -144,18 +189,22 @@ fn verbose_hooks_cases(#[case] scenario: Scenario, #[case] expected: Expected) {
                 FixtureLogger {
                     fails: false,
                     debug_enabled: logger_debug_enabled,
+                    calls: Cell::new(Vec::new()),
                 },
                 FixtureConsole::default(),
                 set_verbose,
             );
             assert_eq!(hooks.is_active(), expected.active);
+            assert_eq!(hooks.logger.calls.take(), expected.calls);
             return;
         }
     };
     assert_eq!(result.logs.len(), expected.logs);
     assert_eq!(result.console.len(), expected.console);
     assert_eq!(result.logs[0].payload, expected.payload);
+    assert_eq!(result.logs[0].level, expected.level);
     assert_eq!(result.console[0], expected.payload);
+    assert_eq!(calls, expected.calls);
 }
 
 #[test]
@@ -301,6 +350,7 @@ fn logger_failure_suppresses_both_sinks() {
             FixtureLogger {
                 fails: true,
                 debug_enabled: false,
+                calls: Cell::new(Vec::new()),
             },
             FixtureConsole::default(),
             json!(true),
@@ -326,10 +376,19 @@ fn logger_only_suppresses_the_console_even_when_verbose_is_set() {
 
 #[test]
 fn unknown_log_level_skips_the_logger_but_not_the_console() {
-    let result =
-        healthy_hooks(json!(true)).utils_print_verbose(json!("body"), "TRACE", &json!(false));
+    let hooks = hooks(
+        FixtureLogger {
+            fails: false,
+            debug_enabled: false,
+            calls: Cell::new(Vec::new()),
+        },
+        FixtureConsole::default(),
+        json!(true),
+    );
+    let result = hooks.utils_print_verbose(json!("body"), "TRACE", &json!(false));
     assert!(result.logs.is_empty());
     assert_eq!(result.console.len(), 1);
+    assert!(hooks.logger.calls.take().is_empty());
 }
 
 #[test]
@@ -366,15 +425,6 @@ fn utils_guard_requires_logger_only_to_be_identically_false_a_falsey_non_boolean
 }
 
 #[test]
-fn utils_error_level_logs_the_record_and_allows_the_console() {
-    let result =
-        healthy_hooks(json!(true)).utils_print_verbose(json!("body"), "ERROR", &json!(false));
-    assert_eq!(result.logs.len(), 1);
-    assert_eq!(result.logs[0].level, "ERROR");
-    assert_eq!(result.console.len(), 1);
-}
-
-#[test]
 fn main_guard_treats_an_empty_string_set_verbose_as_falsey() {
     let result = healthy_hooks(json!("")).main_print_verbose(json!("body"));
     assert!(result.console.is_empty());
@@ -405,6 +455,7 @@ fn is_active_is_true_when_the_logger_is_already_enabled_at_debug_even_if_set_ver
         FixtureLogger {
             fails: false,
             debug_enabled: true,
+            calls: Cell::new(Vec::new()),
         },
         FixtureConsole::default(),
         json!(0_i64),
@@ -443,6 +494,7 @@ fn utils_logger_failure(#[case] log_level: &str) {
         FixtureLogger {
             fails: true,
             debug_enabled: false,
+            calls: Cell::new(Vec::new()),
         },
         FixtureConsole::default(),
         json!(true),

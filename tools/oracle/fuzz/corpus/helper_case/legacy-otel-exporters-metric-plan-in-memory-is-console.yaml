@@ -1,0 +1,10 @@
+kind: helper
+name: metric-plan-in-memory-is-console
+call:
+  b3855:
+    function: metric_reader_plan
+    config:
+      exporter: in_memory
+      endpoint: http://collector:4318
+env: {}
+compare: {ignore: []}

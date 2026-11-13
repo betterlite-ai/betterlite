@@ -1,0 +1,228 @@
+id: B4670
+title: MCP user, organization and agent permission ceilings
+description: >-
+  Build the ceilings that narrow an MCP caller's server list and tool list after the key and team levels
+  (B4669) have run: the organization, end user, internal user and agent levels, plus the agent caller
+  (the user and team an agent echoes back in x-litellm-user-id and x-litellm-team-id). Put the code in
+  `crates/betterlite-mcp/src/ceilings.rs` and `ceilings/**`, with its own `CeilingsError` enum. Combining the levels in
+  order (get_mcp_server_access, get_allowed_tools_for_server) is B4671 and B4672; this task only supplies the pieces they call.
+  Reuse, do not rebuild: the resolved-key record `UserApiKeyAuth` (B2314: fields `org_id`, `end_user_id`, `user_id`, `agent_id`,
+  `team_id`, `object_permission`, `requires_fresh_policy`, `mcp_explicit_grants_only`, `mcp_admitted_user_subject`, `agent_caller`,
+  `user_role`, and its `user_api_key_has_admin_view` predicate), B4668's `ObjectPermission` row (`mcp_servers`, `mcp_access_groups`,
+  `mcp_tool_permissions`, `mcp_toolsets`), `UnloadableEntitlementError`, its object permission getters, `toolset_tool_permissions`,
+  `toolset_tools_for_server` and `union_tool_grants`, and B4669's `team_servers` and `servers_from_access_groups`.
+
+  Everything outside this module goes through one trait, `CeilingReads`, received by the constructor of `Ceilings<R: CeilingReads>`
+  (generic, no trait object, no global). All methods are async and return `Result<_, CeilingReadError>`, an enum with
+  `Unloadable(UnloadableEntitlementError)` and `Failed(String)`: `has_database() -> bool` (sync); `org_object_permission(auth) -> Option<ObjectPermission>`,
+  `end_user_object_permission(auth)`, `user_object_permission(auth)`, `agent_object_permission(auth)` and `team_object_permission(auth)`
+  (B4668's getters, each already applying its own rules for absent rows, unreadable rows and the database being down);
+  `servers_from_access_groups(groups, fresh) -> Vec<String>` and `team_servers(auth) -> Vec<String>` (B4669);
+  `toolset_tool_permissions(permission, fresh) -> Map<server_id, Vec<tool>>` and `toolset_tools_for_server(permission, server_id, fresh) -> Option<Vec<String>>`
+  (B4668, which return `Unloadable` when declared toolsets resolve to nothing); `expand_permission_list(names) -> Vec<String>` and
+  `expand_tool_permissions(map) -> Map<server_id, Vec<tool>>` (the server manager's registry expansion, sync, no owner at the pin, see notes);
+  `agent_access_group_server_ids(agent_id) -> Option<Vec<String>>` (B4778's resolve_agent_access_group_ceiling, `mcp_server_ids` of the attached groups, `None` when none attached);
+  `agent_caller_auth(auth) -> Option<UserApiKeyAuth>` (B4778: a bare record holding only the echoed user_id and team_id and the caller's `requires_fresh_policy`, `None` when nothing was echoed)
+  and `is_managed_agent(auth) -> bool` (B4772's managed_agent_policy is present). Tests use an in-memory fake of `CeilingReads`; the production implementation
+  is a thin struct that forwards to those owners and is built in this task.
+
+  Shared result shapes. `CeilingServers` is an enum: `NoRestriction` (LiteLLM's `[]`), `Unresolved` (LiteLLM's `None`) and `Servers(Vec<String>)`.
+  `Capped { servers: Vec<String>, restricts: bool }` is the (list, flag) pair LiteLLM returns from the server ceilings. Tool lists are `Option<Vec<String>>`:
+  `None` is unrestricted, `Some(empty)` denies every tool. Lists LiteLLM builds from a Python set come back de-duplicated in first-seen order.
+
+  Server level functions (each a method on `Ceilings`, LiteLLM name in backticks):
+  1. `org_servers` (`_get_allowed_mcp_servers_for_org`). Read `org_object_permission`. No permission gives `NoRestriction`. Otherwise the union of
+  `expand_permission_list(mcp_servers)`, `servers_from_access_groups(mcp_access_groups, fresh)`, the keys of `expand_tool_permissions(mcp_tool_permissions)` and the keys of
+  `toolset_tool_permissions`. An `Unloadable` error from the getter or from the toolset read is returned as `CeilingsError::Unloadable` (deny for every caller shape). Any
+  other error is logged as a warning and gives `Unresolved`. Note the union can come out empty, which then reads as `Servers([])`, not `NoRestriction`.
+  2. `apply_primary_org_ceiling` (`_apply_primary_org_ceiling`), inputs: the current list, the auth, `has_lower_level_restrictions`, `keyless_source`. No auth or no `org_id`: list unchanged, `restricts=false`.
+  Read `org_servers`. `Unresolved`: a keyless source gets an empty list, a key keeps its list, `restricts=false`, warn either way. `NoRestriction` and `Servers([])` both leave the list unchanged with `restricts=false`
+  (an empty org list means no ceiling). A non-empty org list caps the list by membership (order of the current list kept) when `has_lower_level_restrictions` or `keyless_source`; otherwise the org list replaces
+  the current list. `restricts=true` in both of those arms.
+  3. `end_user_servers` (`_get_allowed_mcp_servers_for_end_user`). No auth, no `end_user_id`, or no database gives an empty list. Read `end_user_object_permission`; `None` gives an empty list; an `Unloadable` error from it is returned.
+  Otherwise the union of expanded `mcp_servers`, access group servers and the keys of `expand_tool_permissions(mcp_tool_permissions)`. Any error inside that union is warned and gives an empty list. This level does NOT add toolset servers.
+  4. `user_servers` (`_get_allowed_mcp_servers_for_user`). Read `user_object_permission`; `None` gives `NoRestriction`. Otherwise the same union as the org level, including toolset keys. Every error, `Unloadable` included, is warned and gives `Unresolved`.
+  5. `apply_user_server_ceiling` (`_apply_user_server_ceiling`), input `keyless_source`. A keyless source returns the list unchanged with `restricts=false` and reads nothing. Otherwise `user_servers`: `Unresolved` returns
+  `CeilingsError::UserCeilingUnresolvable { user_id }`; `NoRestriction` or an empty list leaves the list unchanged with `restricts=false`; a non-empty list caps by membership with `restricts=true`.
+  6. `user_places_ceiling` (`_user_places_mcp_ceiling`): true when `user_servers` is `Unresolved` or a non-empty list. `admin_view_unscoped` (`admin_view_unscoped`): false for no auth, `mcp_explicit_grants_only`, or a role that is not proxy admin or proxy admin viewer (use B2314's `user_api_key_has_admin_view`).
+  False when the auth is not an admitted user subject (`mcp_admitted_user_subject != true`) and its own `object_permission` has `mcp_servers` set to a list (including an empty list). Otherwise the negation of `user_places_ceiling`.
+  7. `agent_servers` (`get_allowed_mcp_servers_for_agent`). No auth or no `agent_id` gives an empty list. Use the pre-fetched permission when the caller passes one, else `agent_object_permission` (its `Unloadable` error is returned). No permission gives an empty list.
+  Otherwise the union of expanded `mcp_servers`, access group servers, the keys of `toolset_tool_permissions` and the keys of `expand_tool_permissions(mcp_tool_permissions)`. On error: return it when the agent is managed (`is_managed_agent`) or the error is `Unloadable`, else warn and give an empty list.
+  8. `agent_access_group_ceiling` (`_get_agent_access_group_server_ceiling`): no `agent_id` or `agent_access_group_server_ids` answering `None` gives `None`; otherwise `Some(expand_permission_list(sorted ids))`, which can be an empty set that denies every server.
+  `agent_capped_servers` (`_agent_capped_servers`, pure): when `agent_servers` is empty and the ceiling is `None`, return `None` (no cap). Otherwise keep each allowed server that is in `agent_servers` (skipped when `agent_servers` is empty) and in the ceiling (skipped when the ceiling is `None`), in the allowed list's order.
+  9. `apply_agent_caller_ceiling` (`apply_agent_caller_ceiling`). `agent_caller_auth` of the auth gives `None`: list unchanged, `restricts=false`. Otherwise `team_servers(caller_auth)`; non-empty caps the list by membership, empty leaves it. Then `apply_user_server_ceiling` on that result with the caller auth and `keyless_source=false`
+  (its error is returned). `restricts` is true when the team list was non-empty or the user ceiling restricted.
+
+  Tool level functions (the tools axis; B4672 chains them):
+  10. `apply_user_tool_ceiling` (`_apply_user_tool_ceiling`), inputs: allowed tools, `server_id`, auth, `keyless_source`. A keyless source returns the tools unchanged. Read `user_object_permission`; ANY error gives `Some(empty)` (deny, because key auth would otherwise
+  read a raise as allow-all). No permission returns the tools unchanged. Otherwise `union_tool_grants(expand_tool_permissions(mcp_tool_permissions)[server_id], toolset_tools_for_server(permission, server_id, fresh))`: `None` returns the tools unchanged;
+  `Some(grants)` becomes the list when the incoming tools are `None`, else their intersection. An error from the toolset read here is returned, not turned into a deny.
+  11. `apply_end_user_tool_ceiling` (`_apply_end_user_tool_ceiling`): no auth, no `end_user_id` or no database returns the tools unchanged. Same narrowing as 10 on `end_user_object_permission`; errors are returned.
+  12. `apply_agent_caller_tool_ceiling` (`apply_agent_caller_tool_ceiling`). `agent_caller_auth` gives `None`: tools unchanged. Read the caller's `team_object_permission` and its `toolset_tools_for_server`; any error there returns `Some(empty)`.
+  Team grants are `union_tool_grants(direct tools for the server, toolset tools)`; `None` keeps the incoming tools, else it becomes the list (incoming `None`) or the intersection. Then run 10 on the result with the caller auth.
+  13. `agent_tool_permissions_for_server` (`get_agent_tool_permissions_for_server`). No auth or no `agent_id` gives `None`. Pre-fetched permission or `agent_object_permission`; no permission gives `None`. Direct tools are read only when `mcp_tool_permissions` is non-empty. Result is
+  `union_tool_grants(direct, toolset_tools_for_server(...))`. Errors: returned for a managed agent or `Unloadable`, else warn and `None`.
+  14. `apply_agent_and_org_tool_ceilings` (`_apply_agent_and_org_tool_ceilings`). With an `agent_id`: fetch the agent permission once, call 13, and intersect (or adopt when incoming is `None`) when it is non-`None`. With an `org_id`: read `org_object_permission`; on error, a keyless source or an `Unloadable` error is returned,
+  any other error is warned and the tools so far are returned. Org tools are `union_tool_grants(direct tools for the server when the org has `mcp_tool_permissions`, toolset_tools_for_server)`; non-`None` intersects (or is adopted when incoming is `None`).
+
+  All names, sentinels and defaults are LiteLLM's: `no-mcp-servers`, `all-proxy-mcpservers` and the wildcard tool name `*` (MCP_ALL_TOOLS_WILDCARD) stay inside B4668 and B4669. There is no config key or env var in these functions.
+  They run on every MCP request, so keep the reads to the ones listed above.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/ceilings.rs
+    - crates/betterlite-mcp/src/ceilings/**
+    - tools/oracle/cases/helpers/mcp-ceilings/**
+    - "tools/oracle/fuzz/corpus/helper_case/mcp-ceilings-*"
+    - tools/oracle/helpers/b4670.py
+    - tools/oracle/helpers/b4670/**
+    - tools/oracle/src/helpers/mcp/b4670.rs
+    - tools/oracle/src/helpers/mcp/b4670/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1763-L1801
+    why: Org ceiling application, with the keyless-source versus key split on an unresolved org and the cap-versus-replace rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1660-L1749
+    why: How get_mcp_server_access (B4671) calls the end user, agent, caller, user and org steps and what it does with their flags.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L208-L220
+    why: _agent_capped_servers, the one pure function here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2890-L2944
+    why: Org server list, with None for unresolved and the Unloadable re-raise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2990-L3037
+    why: End user server list, which has no toolset term.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3137-L3202
+    why: User server list and the user server ceiling that raises on an unresolved entitlement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3205-L3265
+    why: Agent caller ceiling, user_places_mcp_ceiling and admin_view_unscoped.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3268-L3391
+    why: User, agent caller and end user tool ceilings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3468-L3592
+    why: Agent server list, agent access group ceiling and agent tool permissions for one server.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2390-L2450
+    why: Agent and org tool ceilings with the per-caller-shape org fault rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_caller.py#L39-L53
+    why: agent_caller_auth, the minimal auth the caller ceilings run on (owned by B4778).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/auth/agent_access_groups.py#L64-L86
+    why: resolve_agent_access_group_ceiling, the read behind the agent access group ceiling (owned by B4778).
+
+dod:
+  - text: >-
+      The org server list is the union of expanded mcp_servers, access group servers, tool permission keys and toolset keys; no permission gives NoRestriction, an unreadable named permission or unresolvable
+      declared toolsets return the Unloadable error, and every other error gives Unresolved.
+    proof: [org-tests]
+  - text: >-
+      The org ceiling application leaves the list alone for no org_id, NoRestriction or an empty org list, empties it for an Unresolved org on a keyless source and keeps it for a key, caps by membership when a lower
+      restriction exists or the source is keyless, and replaces the list otherwise, with the flag true only in the last two cases.
+    proof: [org-tests]
+  - text: >-
+      The end user server list returns an empty list for no end_user_id, no database, no permission or an error inside the union, returns the Unloadable error from the getter, and contains no toolset servers.
+    proof: [end-user-tests]
+  - text: >-
+      The user server list includes toolset servers, gives NoRestriction for no permission, and gives Unresolved for every error including an unreadable named permission.
+    proof: [user-tests]
+  - text: >-
+      The user server ceiling skips a keyless source without reading, errors when the entitlement is Unresolved, leaves the list when the user restricts nothing and caps it otherwise;
+      user_places_ceiling is true for Unresolved or a non-empty list.
+    proof: [user-tests]
+  - text: >-
+      admin_view_unscoped is false for no auth, mcp_explicit_grants_only, a non-admin role, or a non-admitted credential whose own object_permission sets mcp_servers (even to an empty list);
+      otherwise it is true exactly when the user places no ceiling.
+    proof: [user-tests]
+  - text: >-
+      The agent server list returns an empty list for no agent_id or no permission, includes toolset and tool permission servers, returns Unloadable errors, and also returns any other error for a managed agent
+      but turns it into an empty list for a plain agent.
+    proof: [agent-tests]
+  - text: >-
+      agent_capped_servers returns no cap when the agent names no servers and has no access group ceiling, treats an empty access group ceiling as deny-all, intersects both when both exist, and keeps the allowed list's order;
+      the agent access group ceiling expands the group server ids and is None without an agent_id or attached groups.
+    proof: [agent-tests, oracle]
+  - text: >-
+      The agent caller server ceiling leaves the list alone without an echoed caller, caps by the caller team's servers only when that list is non-empty, then applies the user ceiling to the echoed user,
+      and reports restricts when either step did.
+    proof: [agent-tests]
+  - text: >-
+      The user and end user tool ceilings intersect with the entitlement's grants on the server, adopt those grants when the incoming tools are None, ignore a wildcard or absent grant,
+      and the user ceiling returns an empty list on any read error or leaves a keyless source untouched.
+    proof: [tool-tests]
+  - text: >-
+      The agent caller tool ceiling denies every tool when the caller team cannot be read, intersects with the team's grants, then applies the user tool ceiling; the agent tool permissions for a server return None for
+      no restriction and the Unloadable or managed-agent errors; the agent and org tool ceilings intersect both, and an unresolvable org is skipped for a key but returned for a keyless source or an Unloadable error.
+    proof: [tool-tests]
+  - text: Helper cases for agent_capped_servers are present, replay through the shared parser and agree with LiteLLM.
+    proof: [helper-case-corpus, helper-python, helper-tests, oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: org-tests
+      why: the org server list or the org ceiling application is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^ceilings::tests::org_/)'
+    - id: end-user-tests
+      why: the end user server list is missing, adds toolset servers, or swallows the Unloadable error
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^ceilings::tests::end_user_/)'
+    - id: user-tests
+      why: the user server list, user server ceiling, user_places_ceiling or admin_view_unscoped is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^ceilings::tests::user_/)'
+    - id: agent-tests
+      why: the agent server list, agent caps, access group ceiling or agent caller server ceiling is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^ceilings::tests::agent_/)'
+    - id: tool-tests
+      why: one of the tool ceilings (user, end user, agent caller, agent and org) is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^ceilings::tests::tool_/)'
+    - id: helper-tests
+      why: the helper adapter does not agree with LiteLLM on agent_capped_servers
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mcp::b4670::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: the Python helper adapter is missing or fails the strict checks
+      run: test -f tools/oracle/helpers/b4670.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no newly added mcp-ceilings helper case reaches the shared parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-ceilings-*')" && grep -rlq b4670 tools/oracle/fuzz/corpus/helper_case/mcp-ceilings-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-ceilings/agent-cap-no-restriction.yaml
+  - tools/oracle/cases/helpers/mcp-ceilings/agent-cap-direct-servers.yaml
+  - tools/oracle/cases/helpers/mcp-ceilings/agent-cap-access-group-only.yaml
+  - tools/oracle/cases/helpers/mcp-ceilings/agent-cap-both-intersect.yaml
+  - tools/oracle/cases/helpers/mcp-ceilings/agent-cap-empty-group-denies.yaml
+
+deviations:
+  - what: Reads go through a typed `CeilingReads` trait instead of importing proxy_server globals (prisma_client, user_api_key_cache, global_mcp_server_manager).
+    why: betterlite has no module-level state; the observable results are the same.
+  - what: Lists that LiteLLM builds from a Python set come back de-duplicated in first-seen order.
+    why: Python's set order is not stable, so no client can rely on it; tests compare as sets.
+  - what: The `[]` versus `None` returns of the org and user server lists are the `CeilingServers` enum, and the (list, flag) tuples are `Capped`.
+    why: Rust has no truthiness-based reading of an empty list, and the enum keeps "no ceiling", "unresolved" and "empty list" apart in types.
+  - what: Only agent_capped_servers has oracle cases; every other function is covered by Rust tests with a fake `CeilingReads`.
+    why: the rest read proxy_server globals, and a helper adapter cannot drive them; the HTTP cases come with the umbrella that wires the MCP routes.
+
+out_of_scope:
+  - "get_mcp_server_access, get_allowed_mcp_servers, the key/team intersection, require_end_user_mcp_access_defined and the order of the ceilings: B4671."
+  - "get_allowed_tools_for_server, tool_is_granted, is_tool_allowed_for_server, is_tool_allowed and the admitted subject tool paths: B4672."
+  - "_get_org_object_permission, _get_end_user_object_permission, _get_user_object_permission, _user_object_permission_id, _agent_object_permission_id, _get_agent_object_permission, _load_named_object_permission, _toolset_tool_permissions, _toolset_tools_for_server, _union_tool_grants, _get_team_object_permission and _key_object_permission_hydrated: B4668. This task calls them."
+  - "_get_allowed_mcp_servers_for_key, _get_allowed_mcp_servers_for_team and servers from access groups: B4669."
+  - "agent_caller_auth and resolve_agent_access_group_ceiling: B4778. managed_agent_policy: B4772. This task calls them through CeilingReads."
+  - "managed_agent_access.py, the other caller of apply_agent_caller_ceiling and get_agent_tool_permissions_for_server: the managed agent tasks."
+  - "_is_mcp_admitted_user_subject: one field read (mcp_admitted_user_subject == true) done inline in admin_view_unscoped."
+  - "MCPServerManager.expand_permission_list, expand_tool_permissions and resolve_toolset_tool_permissions bodies: the server manager task."
+
+pitfalls:
+  - The end user server list adds no toolset servers, while the org, user and agent lists do, so an end user with only mcp_toolsets reads as "no restriction" on the servers axis.
+  - user_servers turns an unreadable named permission into Unresolved, because the user getter raises a plain ValueError and not UnloadableEntitlementError, so the user server ceiling then fails with the unresolved error instead of the Unloadable deny.
+  - An org permission whose lists union to nothing gives `Servers([])`, and apply_primary_org_ceiling then reads it as no ceiling, the same as NoRestriction; do not turn it into a deny-all.
+  - apply_primary_org_ceiling replaces the list with the org list only for a key with no lower restriction; a keyless source (the admitted model unions grants) may only be capped, never given the org list.
+  - An Unresolved org empties a keyless source but leaves a key untouched, and an Unloadable org error is never turned into Unresolved, so it denies both shapes.
+  - apply_user_tool_ceiling answers `Some(empty)` on any user permission read error, since the caller's own handler would read a raise as allow-all for key auth, but an error from the toolset read right after it is not caught there.
+  - apply_agent_caller_ceiling caps by the echoed team only when `team_servers` is non-empty, so a caller team with no MCP grants widens nothing and narrows nothing, and `restricts` is then decided by the user step alone.
+  - apply_agent_caller_tool_ceiling denies with an empty list when the caller team cannot be read, but a caller with no echoed headers (no caller auth) leaves the tools untouched.
+  - An empty `agent_servers` list means "no direct restriction", yet an empty access group ceiling set means "deny every server"; agent_capped_servers must tell them apart by `None` versus empty.
+  - For a managed agent (policy attached to the auth) any resolution error is returned and never swallowed into an empty list, which for a plain agent means no restriction.
+  - admin_view_unscoped treats an admitted subject's own object_permission.mcp_servers (empty by database default) as no scope, but a credential's explicit list, even an empty one, always disqualifies the admin.
+  - agent_tool_permissions_for_server reads direct tool grants only when `mcp_tool_permissions` is non-empty, while the org tool step checks the same condition on the org permission; a wildcard direct grant makes the level None whatever the toolsets say.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

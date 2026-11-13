@@ -1,0 +1,69 @@
+id: B7922
+title: Python types for OpenAI realtime events, moderation, image quality, finish reasons and video (types/llms/openai L1932-L2576)
+description: >-
+  The realtime proxy, moderation endpoint and video endpoint all read shapes from the last third of
+  litellm/types/llms/openai.py. This task ports L1932-L2576 into `crates/betterlite-python/python/betterlite/types/llms/openai/realtime/`. It is Python only.
+  B7920 owns L1-L1007, B7921 owns L1008-L1931, and the umbrella B167 writes the package `__init__.py`.
+
+
+  Realtime: `REASONING_EFFORT` (L1932, a Literal of none, minimal, low, medium, high, xhigh, max), then the session,
+  conversation, response, content part, delta, done, VAD, transcription and usage TypedDicts from `OpenAIRealtimeStreamSession`
+  to `OpenAIRealtimeResponseUsage` (about 40 classes), the `OpenAIRealtimeEventTypes` Enum, the `OpenAIRealtimeEvents` union and
+  `OpenAIRealtimeStreamList`. Then `ImageGenerationRequestQuality` (str Enum), `OpenAIModerationResult` and
+  `OpenAIModerationResponse` (extend B7929's `BaseLiteLLMOpenAIResponseObject`), the OpenAI-shaped chat response TypedDicts
+  `OpenAIChatCompletionLogprobs` to `OpenAIBatchResult`, `OpenAIChatCompletionFinishReason`, the web search TypedDicts,
+  `OpenAIRealtimeTurnDetection`, `OpenAIMcpServerTool`, `CreateVideoRequest` and `OpenAIVideoObject` (a BaseModel, so a
+  `ResponseObject` here).
+
+
+  Realtime TypedDicts mix total and `total=False` classes in one file; the test compares required and optional keys per class.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/llms/openai/realtime/**
+  - crates/betterlite-python/tests/test_types_openai_realtime_moderation.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1932-L2365
+  why: Realtime session, response, transcription and usage shapes, the event enum and union.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L2366-L2576
+  why: Image quality, moderation, OpenAI-shaped chat responses, finish reasons, web search, MCP tool and video types.
+dod:
+- text: Every name listed exists with the same keys, required keys, Literal values and Enum members as LiteLLM.
+  proof: [names]
+- text: '`OpenAIRealtimeEventTypes` has the same members and values, and `OpenAIRealtimeEvents` accepts the same event shapes.'
+  proof: [events]
+- text: '`OpenAIModerationResponse` and `OpenAIVideoObject` build from the same input as LiteLLM and give the same `model_dump()`.'
+  proof: [models]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A realtime key or enum member is missing.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_openai_realtime_moderation.py -k names
+  - id: events
+    why: The event enum or union differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_openai_realtime_moderation.py -k events
+  - id: models
+    why: Moderation or video objects dump differently.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_openai_realtime_moderation.py -k models
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+- >-
+  The httpx and SDK pagination imports at the file top are not exported (see B7920). Nothing in L1932-L2576 is skipped.
+pitfalls:
+- >-
+  `OpenAIWebSearchUserLocationApproximate` and `WebSearchOptionsUserLocationApproximate` (B7920, L673) are two different classes with different required keys.
+- >-
+  `OpenAIRealtimeStreamSession` is one very large `total=False` TypedDict (L1935-L2007), and a missed key only shows when a realtime session is sent.
+- >-
+  `OpenAIRealtimeEventTypes` is a plain `Enum`, not a `str` Enum, so `.value` is what gets compared with the wire text.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

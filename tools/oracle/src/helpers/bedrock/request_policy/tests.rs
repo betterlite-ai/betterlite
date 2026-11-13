@@ -5,7 +5,7 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::case::{HelperCase, parse_helper_case};
+use crate::case::{HelperCase, helper::validate_helper};
 
 #[test]
 fn helper_seeds_select_bedrock_request_policy() {
@@ -24,7 +24,13 @@ fn helper_seeds_select_bedrock_request_policy() {
     let calls: Vec<crate::helpers::HelperCall> = seeds
         .iter()
         .map(|source| {
-            parse_helper_case(source).unwrap();
+            serde_saphyr::from_str(source)
+                .map_err(|error| error.to_string())
+                .and_then(|parsed| {
+                    validate_helper(Path::new("<helper>"), &parsed)
+                        .map_err(|error| error.to_string())
+                })
+                .unwrap();
             serde_saphyr::from_str::<HelperCase>(source).unwrap().call
         })
         .collect();

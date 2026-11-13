@@ -1,0 +1,11 @@
+kind: helper
+name: secret-lookup-env-plain-text
+env: {}
+compare: {ignore: []}
+call:
+  b8500:
+    function: get_secret
+    secret_name: ENV_TEXT
+    environment:
+      ENV_TEXT: plain-value
+    default_value: null

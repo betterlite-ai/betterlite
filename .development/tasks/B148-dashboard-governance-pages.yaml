@@ -1,0 +1,196 @@
+id: B148
+title: Prove guardrail monitoring and tool policies and run the retained governance pages
+description: >-
+  Finish B148 with missing monitor/tool HTTP cases and a browser check of the actual retained
+  pages. B9090 already takes in every covered file from the hash-checked archive. B9751 tests
+  guardrail forms/submissions, B9752 policies/versions/attachments/pipelines and B9753 templates.
+  This task implements no proxy handler, generated client or replacement React page. All
+  product routes below have owners. Use their production mounts and B9750's optional governance
+  database fixture, never a successful mock response for a management endpoint.
+
+  Monitoring inventory. GuardrailsMonitorView defaults to today minus seven days through
+  today. useGuardrailsUsageOverview and useGuardrailsUsageDetail use the retained typed $api
+  client, not networking.tsx: GET /guardrails/usage/overview and GET /guardrails/usage/detail/
+  <guardrail_id> with start_date,end_date as YYYY-MM-DD. B8772 owns both handlers and mounts;
+  B3689 owns projection helpers. Overview reads rows[] with id,name,type,provider,status,
+  requestsEvaluated,failRate,avgScore,avgLatency,trend,usageUnits,cost,
+  untrackedUsageUnits; chart[] date/passed/blocked; totalRequests,totalBlocked,passRate,
+  totalUsageUnits,totalCost,totalUntrackedUsageUnits. Detail reads guardrail_id/name,type,
+  provider,status,description,requestsEvaluated,failRate,avgScore,avgLatency,trend,time_series,
+  usage_units,usage_units_daily,usage_units_by_team/by_key,cost,cost_by_unit/by_team/by_key,
+  untracked_usage_units and its by_team/by_key maps. Null cost is unpriced, never zero.
+
+  GuardrailDetail calls networking.getGuardrailsUsageLogs: GET /guardrails/usage/logs with
+  guardrail_id,page=1,page_size=50,start_date,end_date; no policy_id or action query is sent.
+  Its local action filter and sample-size control do not fetch another page. Read logs[]
+  id,timestamp,action,score,model,input_snippet,output_snippet,reason and total. B8772 also owns
+  this route. Seed current and preceding-window metrics, priced and unpriced usage units,
+  and an indexed blocked log tied to a config guardrail. Compare the populated overview,
+  detail and log requests, then another valid window with no matching rows. B8772's planned
+  empty-window/config-only/error cases do not exercise these populated responses.
+
+  Both monitor and tool log viewers call uiSpendLogsCall when a row is opened: GET
+  /spend/logs/ui?start_date=<UTC YYYY-MM-DD HH:mm:ss>&end_date=<UTC end-of-day>&page=1&
+  page_size=10&request_id=<selected-id>. B1732 builds this route and B8662 mounts it through
+  B069's spend composition. The caller finds data[].request_id, falling back to data[0], and
+  passes that whole lean ViewLogsLogEntry to B147's LogDetailsDrawer. Compare its model,
+  custom_llm_provider,spend,total_tokens,prompt_tokens,completion_tokens,startTime,endTime,
+  metadata,team_id,api_key and user fields. The drawer then GETs /spend/logs/ui/<request_id>
+  with start_date=<the same UTC window start>, reading messages,response,proxy_server_request
+  from B1729's payload route, also mounted by B8662. This differs from B9741's row-startTime
+  case, so include the exact window-start handoff in guardrail-logs-and-request-drawer.yaml.
+  With a nonempty row.user, useUserLookup additionally GETs /user/list?user_ids=<id>&page=1&
+  page_size=1 (B796), consuming users[].user_id,user_email,user_alias; reuse B9732's lookup
+  case. LogViewer supplies no sessionId, so this entry does not send /spend/logs/session/ui.
+  Do not require heavy message columns in B1732's deliberately lean list response.
+  EvaluationSettingsModal GETs /model_group/info (B060), reads
+  data[].model_group and fetchAvailableModels metadata and only stores its settings locally.
+  Neither monitor caller supplies onRunEvaluation at the pin, so there is no evaluation API
+  request to build. Reuse B9735's model-group case.
+
+  ToolPoliciesPanel GET /v1/tool/list has no query/body; networking unwraps tools[] locally.
+  B1607 owns it. The panel/table consumes tool_id,tool_name,input_policy,output_policy,
+  call_count,created_at,team_id,key_hash,key_alias,user_agent and user.user_alias/user_email/
+  user_id; filtering, sorting and new-today counts are local. Each dropdown separately POSTs
+  /v1/tool/policy with {tool_name,input_policy} or {tool_name,output_policy}, omitting the other
+  policy and all scope fields. B062 builds and mounts that route. The page ignores its return
+  body and updates the local row cache after success. Compare a refetch after each partial
+  write so the untouched policy cannot be lost. Preserve useCan("viewToolPolicies") and all
+  server permissions; no subscription-only gate was found in the B148-covered components.
+
+  ToolPoliciesView opens the retained B149 ToolDetail. Inventory its reachable requests here
+  without claiming its source: GET /v1/tool/policy/options reads input_policies/output_policies
+  value/label/description fields; GET /v1/tool/<encodeURIComponent(name)>/detail reads tool plus
+  overrides[] override_id,tool_name,team_id,key_hash,key_alias,input_policy and timestamps;
+  GET /v1/tool/<encoded-name>/logs sends page=1,page_size=50,start_date,end_date as UTC space-
+  separated timestamps, initially a ninety-day window, and reads logs[] id,timestamp,model,
+  input_snippet and total. All three are B1607, whose bare /v1/tool/<name> detail alias is not
+  sent by the page. Test a slash-bearing name to reach the existing suffix dispatcher.
+  Scoped block POST /v1/tool/policy sends tool_name,input_policy:"blocked" and either team_id
+  or key_hash with optional key_alias. DELETE /v1/tool/<encoded-name>/overrides sends exactly
+  one team_id or key_hash query, no body and only the auth header. B062 owns these writes;
+  responses trigger detail refresh. B9762 now plans the exact ToolDetail logs and scoped
+  write-read-delete transcript; reuse it and B1607's options-without-db and
+  detail-overrides-and-slashes cases. Do not add another scoped override transcript here.
+  TeamDropdown's actual default page_size=20 request is B9751's case; the size=100 key picker is B9752's,
+  with ToolDetail additionally consuming keys[].token. The same spend-log request above opens
+  tool invocation details. /v1/tool/spend is not called by this page.
+
+  Audit. No existing on-disk HTTP case sends these monitor, tool or request-drawer calls.
+  B1607 plans generic tool reads and B062 partial-update/override cases, but neither plans
+  this full page sequence, both fixed date formats or the exact picker requests. B9762
+  supplies the ToolDetail portion and B9732 the shared user lookup. If an
+  identical dependency case lands first, reuse its path and document its matching request;
+  do not recreate any endpoint. All new cases use Bearer auth with discovery's header name,
+  default Authorization, compare status/content-type/error type/param/code and full stable
+  projections, and capture only generated values and per-gateway IDs. Add admin-viewer and
+  ordinary-user requests to prove the actual existing permission decisions, not invented
+  UI access. Current defaults and accepted owner config/env keys remain unchanged.
+
+  Browser. B144 explicitly provides the locked tools/dashboard/browser Playwright package,
+  the betterlite-dashboard-browser test package and real-binary/database lifecycle. B144's
+  tools/dashboard-browser/tests/support/mod.rs holds that lifecycle: a FixtureSeed and proxy
+  config in, the URL out, owned process and database cleanup. Use that support in the new
+  tools/dashboard-browser/tests/dashboard_governance.rs, test dashboard_governance_pages.
+  Add tools/dashboard/browser/governance/*.spec.ts and run everything with bash
+  tools/dashboard/browser-check.sh --test dashboard_governance. That script builds and installs
+  the bundle, sets up the locked browser, runs strict TypeScript, eslint and prettier over the
+  browser package and then exactly this test with --no-tests=fail. Do not modify the shared
+  package, config, runner or support files. Missing Chromium, database or test is a failure.
+
+  Sign in against the real proxy as admin; run at root and /gateway with the discovered
+  header. Navigate guardrails, policies, guardrails-monitor and tool-policies. Create/read/
+  PATCH a local content guardrail, create a policy draft and attachment, resolve its context,
+  preview one template and consume enrichment SSE from a local provider fixture. Open a
+  populated monitor detail/log drawer and change a tool input policy then reload the page.
+  Assert displayed persisted values and captured outgoing request shapes from B9751-B9753,
+  no unexpected 404/500, no hydration error and no missing first-party assets. Keep ordinary
+  auth/management responses real; provider responses alone may be deterministic mocks.
+  Choose the date window before selecting the guardrail, matching the pinned query cache.
+  Assert the normal role-denial view in a second authenticated session. Keep test lifetimes
+  bounded and cleanup owned by the shared support. Around 400 HTTP fixture/case lines and
+  350 browser/runner lines fit this final part; zero upstream executable logic is ported.
+scope:
+  paths:
+    - tools/oracle/cases/ui/governance-monitor-tools/**
+    - tools/dashboard/browser/governance/**
+    - tools/dashboard-browser/tests/dashboard_governance.rs
+    - tools/dashboard-browser/tests/dashboard_governance/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/guardrails/useGuardrailsUsage.ts#L1-L36
+    why: The two typed-client monitor requests, outside networking.tsx.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/guardrails-monitor/_components/GuardrailDetail.tsx#L30-L94
+    why: Fixed page/size, date arguments and consumed detail/log fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/GuardrailsMonitor/LogViewer.tsx#L37-L87
+    why: UTC request-drawer query and full-row selection passed to the shared drawer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/ToolPolicies/ToolPoliciesPanel.tsx#L50-L131
+    why: Real permission check, list cache and two partial policy mutations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L3785-L3824
+    why: Guardrail usage log query construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L1923-L1979
+    why: Request-drawer spend-log query and pagination.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L4677-L4707
+    why: The imported drawer requests heavy payloads separately with the supplied window start.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L7462-L7682
+    why: Tool list/options/detail/logs and partial/scoped policy request serialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L553-L741
+    why: B8772 overview and detail decorators, with projection helpers owned by B3689.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/usage_endpoints.py#L864-L960
+    why: Decorated B8772 usage logs route, not the unrelated policies overview route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tool_management_endpoints.py#L161-L231
+    why: B1607 options and list handlers used without filters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tool_management_endpoints.py#L314-L522
+    why: B1607 encoded-name detail/logs and the unused bare detail alias.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tool_management_endpoints.py#L585-L759
+    why: B062's scoped/global policy mutation and override deletion decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2458-L2474
+    why: B1732 registers both spend-list aliases; B1728 owns the query signature immediately below.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3385-L3475
+    why: B1729's payload route authorizes before looking up the selected request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2218-L2388
+    why: B796's user-list route powers the reused single-user lookup.
+dod:
+  - text: Populated monitor/detail/log requests preserve date windows, usage units, unpriced costs and the actual request-drawer response through both booted proxies.
+    proof: [monitor-tool-cases, oracle]
+  - text: Tool table partial writes, scoped overrides and encoded-name detail/log reads persist without losing the untouched policy and preserve authorization.
+    proof: [monitor-tool-cases, oracle]
+  - text: The production dashboard completes guardrail, policy, template, monitoring and tool-policy interactions against betterlite at both deployment roots.
+    proof: [governance-browser]
+checks:
+  optional: []
+  commands:
+    - id: monitor-tool-cases
+      why: Existing empty monitor and generic tool cases cannot prove the page-specific populated sequence.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/governance-monitor-tools)"
+    - id: governance-browser
+      why: HTTP contracts may pass while the retained page cannot render, authenticate, submit or consume SSE.
+      run: bash tools/dashboard/browser-check.sh --test dashboard_governance
+oracle_cases:
+  - tools/oracle/cases/ui/governance-monitor-tools/overview-detail-units-and-window.yaml
+  - tools/oracle/cases/ui/governance-monitor-tools/guardrail-logs-and-request-drawer.yaml
+  - tools/oracle/cases/ui/governance-monitor-tools/tool-list-and-partial-updates.yaml
+  - tools/oracle/cases/ui/governance-monitor-tools/viewer-and-user-permissions.yaml
+  - tools/oracle/cases/management/tool-reports/options-without-db.yaml
+  - tools/oracle/cases/management/tool-reports/detail-overrides-and-slashes.yaml
+  - tools/oracle/cases/ui/guardrail-forms/team-dropdown-and-visibility.yaml
+  - tools/oracle/cases/ui/policy-workflows/team-and-key-alias-selectors.yaml
+  - tools/oracle/cases/ui/management-selectors/model-groups-for-router-fallbacks.yaml
+  - tools/oracle/cases/ui/mcp-tools/detail-log-dates-and-overrides.yaml
+  - tools/oracle/cases/ui/users/infinite-picker-and-id-lookups.yaml
+deviations: []
+out_of_scope:
+  - B9090 retains every covered UI function and test, including static monitor mockData and calculation helpers; B9091/B9092/B9093 own build, branding and serving, and B144 owns authentication/bootstrap and browser support.
+  - B9750 owns fixture schema/rows; B9751-B9753 own the other page HTTP contracts. B148 never duplicates their route implementations or case files.
+  - B8772 owns monitoring routes, B3689 projections, B1607 tool reads, B062 tool mutations, B1728/B1732 query/list handling, B1729 payloads, B8662 their mount and B060 model groups.
+  - B149 retains ToolDetail source and its own MCP-page callers; B9762 supplies its shared HTTP transcript. B147 retains LogDetailsDrawer and fetchAvailableModels; B9732 supplies user lookup coverage.
+  - B8667/B8668/B8669/B8790 own guardrail/policy production composition; B9321 owns B3250/B3252 route mounting and the enrichment model adapter.
+pitfalls:
+  - Monitor overview/detail use the generated $api client while the log fetch still uses networking.tsx; testing only one transport misses part of the page.
+  - The guardrail log query key omits dates at the pin, so changing dates while that detail remains selected does not promise a new log fetch.
+  - Tool input and output changes are separate POST bodies; a combined body cannot catch accidental deletion of the omitted policy.
+  - EvaluationSettingsModal has no onRunEvaluation callback from either monitor caller at this pin, so inventing an evaluation endpoint creates unused work.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,18 @@
+kind: helper
+name: named-media-sources
+call:
+  bedrock_other_marengo_three:
+    named_media_sources:
+      model: twelvelabs.marengo-embed-3-0-v1:0
+      input: caption
+      inference_params:
+        input_type: multi_input
+        bucketOwner: "123456789012"
+        inferenceId: ""
+        media_sources:
+          b: s3://bucket/key.png
+          a: data:image/png;base64,AAA
+        unknown: true
+env: {}
+compare:
+  ignore: []

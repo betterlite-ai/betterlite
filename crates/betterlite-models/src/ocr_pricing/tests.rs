@@ -2,13 +2,80 @@
 
 use super::{
     OcrBatchUsage, OcrBilling, OcrCostError, OcrPricingField, OcrResponseKind, OcrUsage,
-    first_ocr_price, first_price, layered_ocr_pricing, ocr_batch_cost, ocr_cost, single_log_line,
+    first_numeric, first_ocr_price, layered_ocr_pricing, ocr_batch_cost, ocr_cost, single_log_line,
 };
 use crate::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use crate::tiered_pricing::Scalar;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use std::cell::Cell;
+use std::io::{self, Write};
+use std::sync::{Arc, Mutex};
+use tracing::subscriber::with_default;
+
+#[derive(Clone)]
+struct LogCapture(Arc<Mutex<Vec<u8>>>);
+
+impl Write for LogCapture {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .flush()
+    }
+}
+
+#[rstest]
+#[case::zero_pages(0, None, None, (0, false, false), 0)]
+#[case::negative_pages(-1, None, None, (0, false, false), 0)]
+#[case::missing_pricing(1, None, None, (1, true, true), 0)]
+#[case::published_without_page_rate(1, None, Some(PriceRecord::new()), (1, false, true), 0)]
+#[case::deployment_priced(1, Some(2), None, (0, false, false), 2)]
+fn batch_warnings_only_report_missing_prices_for_positive_usage(
+    #[case] pages: i64,
+    #[case] page_rate: Option<i64>,
+    #[case] published: Option<PriceRecord>,
+    #[case] expected: (u32, bool, bool),
+    #[case] expected_cost: i64,
+) {
+    let lookup = CountingLookup::new(published);
+    let deployment = deployment(page_rate, None, None);
+    let usage = OcrBatchUsage {
+        pages_processed: pages,
+        pages_processed_annotation: 0,
+    };
+    let bytes = Arc::new(Mutex::new(Vec::new()));
+    let writer = LogCapture(Arc::clone(&bytes));
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_target(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let cost = with_default(subscriber, || {
+        ocr_batch_cost("model", None, &usage, Some(&deployment), &lookup).unwrap()
+    });
+    assert_eq!(cost, Decimal::from(expected_cost));
+    assert_eq!(lookup.calls.get(), expected.0);
+    let log = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+    assert_eq!(
+        log.contains("WARN OCR batch cost: no pricing entry"),
+        expected.1,
+        "{log}"
+    );
+    assert_eq!(
+        log.contains("WARN OCR batch cost: no ocr_cost_per_page"),
+        expected.2,
+        "{log}"
+    );
+}
 
 fn number(value: i64) -> Scalar {
     Scalar::Number(serde_json::Number::from(value))
@@ -123,6 +190,35 @@ struct CountingLookup {
     calls: Cell<u32>,
 }
 
+struct EffectiveAndRawLookup {
+    effective: PriceRecord,
+    raw: PriceRecord,
+    raw_calls: Cell<u32>,
+}
+
+impl PriceLookup for EffectiveAndRawLookup {
+    fn effective_model_info(
+        &self,
+        _model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<PriceRecord> {
+        Some(self.effective.clone())
+    }
+
+    fn raw_cost_map_entry(&self, _key: &str) -> Option<PriceRecord> {
+        self.raw_calls.set(self.raw_calls.get().saturating_add(1));
+        Some(self.raw.clone())
+    }
+
+    fn effective_priced_model(
+        &self,
+        _model: &str,
+        _custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
+        Some(no_tables(self.effective.clone()))
+    }
+}
+
 impl CountingLookup {
     fn new(answer: Option<PriceRecord>) -> Self {
         Self {
@@ -198,10 +294,13 @@ fn first_price_checks_each_key_in_order(
     #[case] expected: Option<Decimal>,
 ) {
     let source = record(pairs);
+    let keys = ["ocr_cost_per_page_batches", "ocr_cost_per_page"];
     assert_eq!(
-        first_price(
-            Some(&source),
-            &["ocr_cost_per_page_batches", "ocr_cost_per_page"]
+        first_numeric(
+            &keys
+                .iter()
+                .map(|key| (Some(&source), *key))
+                .collect::<Vec<(Option<&PriceRecord>, &str)>>()
         )
         .unwrap(),
         expected
@@ -250,8 +349,8 @@ enum Expected {
     Expected::Cost("0")
 )]
 #[case::credit_precedence_wins_even_at_zero_rate(
-    usage(Some(3), None, 0),
-    deployment(None, Some(0), None),
+    usage(Some(3), Some(100), 0),
+    deployment(Some(1), Some(0), None),
     Expected::Cost("0")
 )]
 #[case::annotation_rate_falls_back_to_page_rate(
@@ -284,9 +383,9 @@ enum Expected {
     deployment(Some(10), None, None),
     Expected::MissingPages
 )]
-#[case::present_pages_no_rate_no_annotation_warns_zero(
-    usage(None, Some(5), 0),
-    deployment(None, None, None),
+#[case::present_pages_no_page_rate_negative_annotation_warns_zero(
+    usage(None, Some(5), -2),
+    deployment(None, None, Some(3)),
     Expected::Cost("0")
 )]
 #[case::negative_pages_retain_arithmetic_sign(
@@ -417,17 +516,58 @@ fn batch_cost_still_fetches_public_annotation_price_when_deployment_only_prices_
 }
 
 #[test]
-fn batch_cost_bills_only_the_families_that_remain_priced_after_a_failed_lookup() {
+fn batch_cost_still_bills_the_deployment_annotation_family_after_a_failed_lookup() {
     let lookup = CountingLookup::new(None);
     let usage = OcrBatchUsage {
         pages_processed: 2,
-        pages_processed_annotation: 0,
+        pages_processed_annotation: 4,
+    };
+    let deployment_info = deployment(None, None, Some(3));
+
+    let cost = ocr_batch_cost("model", None, &usage, Some(&deployment_info), &lookup).unwrap();
+
+    assert_eq!(cost, dec("12"));
+    assert_eq!(lookup.calls.get(), 1);
+}
+
+#[test]
+fn ocr_cost_reads_effective_model_info_never_the_raw_entry() {
+    let lookup = EffectiveAndRawLookup {
+        effective: record(&[("ocr_cost_per_page", number(2))]),
+        raw: record(&[
+            ("ocr_cost_per_credit", number(7)),
+            ("annotation_cost_per_page", number(50)),
+            ("ocr_cost_per_page", number(99)),
+        ]),
+        raw_calls: Cell::new(0),
+    };
+    let billing = billing(usage(Some(3), Some(4), 1));
+
+    let cost = ocr_cost("model", None, &billing, None, &lookup).unwrap();
+
+    assert_eq!(cost, dec("10"));
+    assert_eq!(lookup.raw_calls.get(), 0);
+}
+
+#[test]
+fn ocr_batch_cost_reads_effective_model_info_never_the_raw_entry() {
+    let lookup = EffectiveAndRawLookup {
+        effective: record(&[("ocr_cost_per_page", number(2))]),
+        raw: record(&[
+            ("ocr_cost_per_page_batches", number(99)),
+            ("annotation_cost_per_page_batches", number(50)),
+        ]),
+        raw_calls: Cell::new(0),
+    };
+    let usage = OcrBatchUsage {
+        pages_processed: 4,
+        pages_processed_annotation: 1,
     };
 
     let cost = ocr_batch_cost("model", None, &usage, None, &lookup).unwrap();
 
-    assert_eq!(cost, Decimal::ZERO);
-    assert_eq!(lookup.calls.get(), 1);
+    assert_eq!(cost, dec("10"));
+    assert_eq!(lookup.raw_calls.get(), 0);
 }
 
 // Proves docs/deviations/B1678.yaml: a product too large for Decimal is a typed error, not a rounded float.

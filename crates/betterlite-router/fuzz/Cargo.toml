@@ -4,10 +4,21 @@ version = "0.0.0"
 publish = false
 edition = "2024"
 metadata.cargo-fuzz = true
+license.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 betterlite-router = { path = ".." }
 libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "route_value"
+path = "fuzz_targets/route_value.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "routing_header_value"
@@ -16,4 +27,23 @@ test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "cap_reply"
+path = "fuzz_targets/cap_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "tag_match"
+path = "fuzz_targets/tag_match.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "retry_after"
+path = "fuzz_targets/retry_after.rs"
+test = false
+doc = false
+bench = false

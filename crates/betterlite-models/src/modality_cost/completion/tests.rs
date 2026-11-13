@@ -75,14 +75,29 @@ fn video_tokens_require_a_strictly_positive_count(
     assert_eq!(result.video_tokens, expected);
 }
 
-#[test]
-fn audio_and_image_counters_pass_through_unchanged() {
+#[rstest]
+#[case::positive(Some(7), Some(2), 9, 7, 2)]
+#[case::negative_audio(Some(-3), None, 5, -3, 0)]
+#[case::negative_image(None, Some(-3), 5, 0, -3)]
+fn signed_audio_and_image_counters_pass_through_and_count_toward_the_excess(
+    #[case] audio_tokens: Option<i64>,
+    #[case] image_tokens: Option<i64>,
+    #[case] completion_tokens: i64,
+    #[case] expected_audio: i64,
+    #[case] expected_image: i64,
+) {
     let details = CompletionDetails {
-        audio_tokens: Some(7),
-        image_tokens: Some(2),
+        text_tokens: Some(5),
+        reasoning_tokens: Some(5),
+        audio_tokens,
+        image_tokens,
         ..empty_completion_details()
     };
-    let result = parse_completion_details(9, &details).expect("ok");
-    assert_eq!(result.audio_tokens, 7);
-    assert_eq!(result.image_tokens, 2);
+    let result = parse_completion_details(completion_tokens, &details).expect("ok");
+    assert_eq!(result.audio_tokens, expected_audio);
+    assert_eq!(result.image_tokens, expected_image);
+    assert_eq!(
+        result.text_tokens,
+        if completion_tokens == 9 { 0 } else { 3 }
+    );
 }

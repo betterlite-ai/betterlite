@@ -1,0 +1,14 @@
+id: B7970
+milestone: M9 agents and mcp
+title: "MCP OAuth faults package: classify_upstream_token_rejection, classify_upstream_dcr_rejection, render_token_fault, dcr_fault_detail and list outcomes"
+status: todo
+depends_on: [B4654, B4719, B7531, B7532]
+file: tasks/B7970-mcp-oauth-faults.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/faults/**"
+parent: B136
+split_from: B7321
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

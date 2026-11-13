@@ -2,8 +2,8 @@ id: B3622
 milestone: M5 api families
 title: Pass-through Vertex credential preparation
 status: todo
-depends_on: [B3603, B3618, B174, B1100, B1303, B1304]
-file: null
+depends_on: [B174, B396, B1100, B1303, B1304, B3602, B3603]
+file: tasks/B3622-vertex-passthrough-credentials.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
 parent: B102

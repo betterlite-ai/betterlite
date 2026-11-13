@@ -1,0 +1,1 @@
+{"kind":"helper","name":"keyword-dotted-i","call":{"b3693":{"function":"add","patterns":[{"pattern_type":"prebuilt","pattern_name":"nl_bsn_contextual","action":"MASK"}],"text":"c\u0130tizen service number 123456789"}},"env":{},"compare":{"ignore":[]}}

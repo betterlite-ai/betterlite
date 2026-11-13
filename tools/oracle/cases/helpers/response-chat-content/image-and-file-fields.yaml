@@ -1,0 +1,8 @@
+kind: helper
+name: image-and-file-fields
+call:
+  response_chat_content:
+    operation: image_and_file_fields
+    item: {image_url: {url: "https://example.test/a", detail: high}}
+env: {}
+compare: {ignore: []}

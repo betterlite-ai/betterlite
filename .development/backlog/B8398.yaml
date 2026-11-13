@@ -1,0 +1,14 @@
+id: B8398
+milestone: M8 platform
+title: Models a key may list and the model info listing records
+status: todo
+depends_on: [B759, B4778]
+file: tasks/B8398-key-model-listing.yaml
+covers:
+  - "litellm/proxy/utils.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

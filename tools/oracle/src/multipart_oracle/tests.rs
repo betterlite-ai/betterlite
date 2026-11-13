@@ -7,9 +7,7 @@ use std::{env, fs, process, slice};
 use rstest::rstest;
 use serde_json::{Map, Value};
 
-use crate::case::{
-    Compare, Request, RequestBody, UpstreamAnswer, decode_http_body, decode_http_case,
-};
+use crate::case::{Compare, Request, RequestBody, UpstreamAnswer, decode_case, decode_http_body};
 use crate::compare::compare;
 use crate::compare::multipart::first_part_difference;
 use crate::http::{Response, client, parse_body, send};
@@ -75,6 +73,7 @@ fn upstream_pointer(left: &ProviderRequest, right: &ProviderRequest) -> Option<S
         headers_present: vec![],
         upstream_headers: vec!["content-type".to_owned(), "x-test".to_owned()],
         ignore: vec![],
+        contracts: None,
     };
     compare(
         &response,
@@ -290,7 +289,9 @@ fn rejects_unknown_field() {
     );
     let case = "name: upload\nconfig: |\n  model_list: []\nenv: {}\nrequest: {method: POST, path: /upload, headers: {}, body_kind: multipart, body: {parts: [{name: file, text: x, bogus: true}]}}\nupstream: []\ncompare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}\n";
     assert_eq!(
-        decode_http_case(case.as_bytes()).unwrap_err().to_string(),
+        decode_case(Path::new("<bytes>"), case.as_bytes())
+            .unwrap_err()
+            .to_string(),
         "field \"bogus\" is not allowed"
     );
 }

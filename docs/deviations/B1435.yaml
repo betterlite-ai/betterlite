@@ -1,0 +1,5 @@
+task: B1435
+deviations:
+  - what: A Bytez stream fragment, or the body of a refused stream request, that is not valid UTF-8 gives a typed error instead of U+FFFD replacement text.
+    why: httpx decodes both with errors="replace", so a mangled byte reaches the caller as a replacement character with no signal. betterlite refuses bytes that are not UTF-8 instead of passing mangled text on. No working Bytez setup can depend on replacement characters, since the provider sends JSON text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bytez/chat/transformation.py#L283-L284

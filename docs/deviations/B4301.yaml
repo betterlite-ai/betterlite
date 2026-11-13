@@ -1,0 +1,41 @@
+task: B4301
+deviations:
+  - what: >-
+      The cache-hit success callbacks are enqueued on the LoggingWorker the caller passes to
+      log_cache_hit_on_callbacks, not on a module-level GLOBAL_LOGGING_WORKER singleton. The worker is started
+      and stopped by its owner with the rest of the server, and the cache-hit path never starts it.
+    why: >-
+      betterlite has no globals and no lazy statics; B191 replaced the Python global worker and its atexit
+      teardown with an explicitly owned worker, so the entry point takes it as a parameter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L657
+  - what: >-
+      The async success handler and the sync-on-async callbacks run as one job inside the bounded logging
+      worker. LiteLLM enqueues the async coroutine on the worker and submits the sync callbacks separately to
+      a thread-pool executor.
+    why: >-
+      The logging object moves with the job, so both handlers read the same request-owned state without an
+      Arc, a lock, or a borrow across tasks. Both still run off the request path and in the same order:
+      async success first, then the sync callbacks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3983-L4004
+  - what: >-
+      The logging environment records api_key as null instead of copying the request's API key into the call
+      details.
+    why: >-
+      docs and rule secrets-stay-secret keep a key out of logs, error text and Debug output from the moment it
+      is read. A setup that read the key back out of the logging context was reading a leaked secret.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L1276
+  - what: >-
+      The CachingDetails record is stored under the "caching_details" key of the logging object's call
+      details. LiteLLM assigns it to a Logging.caching_details attribute.
+    why: >-
+      The Logging object's fields are B247's, and this task only owns the cache-hit module. The record keeps
+      exactly the two declared fields (cache_hit, cache_duration_ms); readers find it next to the other call
+      details they already read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3488-L3501
+  - what: >-
+      A full logging-worker queue drops that cache-hit's success callbacks, counted and logged by B191.
+      LiteLLM's queue-full path starts an aggressive clear and retries the coroutine.
+    why: >-
+      B191's admission uses try_send and never awaits, so a logging backlog cannot delay or fail a cached
+      response. The rejected event is counted and reported rather than silently retried.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L249-L265

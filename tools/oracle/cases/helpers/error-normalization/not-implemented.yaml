@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-not-implemented
+call: {"error_normalization": {"message": "not implemented", "status_code": 418}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,93 @@
+id: B6162
+title: Registry adapters for pass-through and Bedrock pass-through guardrails
+description: >-
+  Give the pass_through and allm_passthrough_route call types a value that implements B3661's `BaseTranslation`, so
+  B3680 can register them. B3574 already ships `PASSTHROUGH_TRANSLATION_KINDS: [(CallType, PassthroughTranslationKind); 2]`
+  with the kinds `Endpoint` (B3573's `PassThroughEndpointHandler`) and `LlmRoute`
+  (`LlmPassthroughRouteHandler<H: BaseTranslation>::new(providers: Vec<(String, H)>)`). B3574 says B3680 wraps each
+  kind in its own handler enum. This task writes that wrapper and the Bedrock provider adapter that goes into the
+  `LlmRoute` provider list. B3678's Bedrock handlers are plain async functions, so they need the adapter too.
+
+  Code goes in crates/betterlite-server/src/guardrails/unified_passthrough.rs and unified_passthrough/. Files:
+  endpoint.rs, bedrock.rs and kinds.rs.
+
+  `endpoint.rs`: `PassthroughEndpointTranslation` implements `BaseTranslation` by forwarding to B3573's
+  `PassThroughEndpointHandler`. B3574 may already implement the trait for that handler; then this type is a thin
+  newtype that calls it. If B3573's handler cannot implement the trait from outside its crate (orphan rule), the
+  newtype is the fix, and you say so in your report.
+
+  `bedrock.rs`: `BedrockPassthroughTranslation` implements `BaseTranslation` over B3678's functions (routing, text
+  paths, request, output, event stream). B3678's functions return `Routed::Handled` or `Routed::Generic`; on
+  `Generic` the adapter calls the endpoint translation above, as LiteLLM falls back to the generic handler. B3678
+  takes explicit `skip_system`, `skip_tool` and `user_metadata` arguments and an injected `PostCallSuccessHook` for
+  the event-stream function; the adapter owns fields for the two skip values and the user metadata map, set by its
+  constructor, and takes the hook as a generic parameter. Do not read config inside the adapter; B3680 supplies the
+  values from the guardrail.
+
+  `kinds.rs`: `pub fn passthrough_provider_list(bedrock: BedrockPassthroughTranslation<H>) -> Vec<(String,
+  BedrockPassthroughTranslation<H>)>` returns the single entry `("bedrock", bedrock)`, the provider name B3574
+  matches on. Check the exact provider key in B3574 and use it. Also export `PASSTHROUGH_TABLE`: for each entry of
+  B3574's `PASSTHROUGH_TRANSLATION_KINDS`, the call type and a `PassthroughKind` tag (`Endpoint` or `LlmRoute`), so
+  B3680 can build the entries without reading B3574 again. The sync `llm_passthrough_route` call type stays
+  unmapped, as B3574 leaves it.
+
+  The class flags for both adapters are false, as in the pinned handlers; read the two handler.py files to confirm.
+  All streaming methods that LiteLLM leaves to the base class keep B3661's defaults.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/unified_passthrough.rs
+    - crates/betterlite-server/src/guardrails/unified_passthrough/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/guardrail_translation/__init__.py
+    why: The pass_through and allm_passthrough_route table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/guardrail_translation/handler.py
+    why: The generic handler the endpoint wrapper forwards to.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py
+    why: The Bedrock handler and its fall back to the generic handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L73-L101
+    why: How the dispatcher resolves a translation by call type.
+
+dod:
+  - text: The endpoint wrapper forwards every `BaseTranslation` method to B3573's handler and returns its result unchanged.
+    proof: [endpoint-tests]
+  - text: The Bedrock adapter calls B3678's functions with its stored skip flags and user metadata, and on `Routed::Generic` runs the endpoint wrapper instead.
+    proof: [bedrock-tests]
+  - text: The provider list holds one entry named as B3574 expects, and the table covers exactly the call types of B3574's kinds, with `llm_passthrough_route` absent.
+    proof: [kinds-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: endpoint-tests
+      why: a method is not forwarded or its result is changed
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_passthrough::endpoint::tests::/)'
+    - id: bedrock-tests
+      why: the adapter drops a skip flag, the metadata or the generic fall back
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_passthrough::bedrock::tests::/)'
+    - id: kinds-tests
+      why: the provider name or the call-type table differs from B3574
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_passthrough::kinds::tests::/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - B3573's generic handler and B3574's `LlmPassthroughRouteHandler` and kind table; they own them.
+  - B3678's Bedrock functions; B3678 owns them.
+  - Building the registry entries and the translation enum; B3680 owns them.
+  - HTTP oracle cases for pass-through guardrails; B3680 adds them.
+
+pitfalls:
+  - The sync `llm_passthrough_route` call type stays unmapped on purpose; mapping it changes which requests are scanned.
+  - "`Routed::Generic` must call the generic handler with the same request, not an empty one."
+  - B3574 does not import the Bedrock handler, so the provider list is built here and handed to `LlmPassthroughRouteHandler::new` by B3680.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1200
+  max_new_expects: 0

@@ -1,0 +1,16 @@
+kind: helper
+name: modality_zero_rate_and_clamped_text
+call:
+  batch_token_cost:
+    kind: prompt
+    usage:
+      prompt_tokens: 100
+      prompt_details: {audio_tokens: 60, image_tokens: 50, video_tokens: 10}
+    model_info:
+      input_cost_per_audio_token_batches: 0
+      input_cost_per_image_token_batches: 1.5
+    input_rate: 0.5
+    cache_read_rate: null
+    cache_creation_rate: null
+env: {}
+compare: {ignore: []}

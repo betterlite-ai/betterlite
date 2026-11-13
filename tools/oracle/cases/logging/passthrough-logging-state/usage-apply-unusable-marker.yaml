@@ -1,0 +1,12 @@
+kind: helper
+name: usage-apply-unusable-marker
+call:
+  b3605:
+    operation: apply_usage
+    headers:
+      - [x-litellm-response-cost, "abc"]
+    state:
+      response_cost: 1.5
+      combined_usage_total_tokens: 3
+env: {}
+compare: {ignore: []}

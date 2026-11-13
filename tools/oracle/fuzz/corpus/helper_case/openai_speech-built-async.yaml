@@ -1,0 +1,9 @@
+kind: helper
+name: openai-speech-seed-built-async
+call:
+  openai_speech:
+    client: {api_key: sk-seed, api_base: 'https://speech.test/v1', timeout: 10, max_retries: 0, aspeech: true, shared_session: true}
+    request: {model: tts-1-hd, input: seed, voice: nova, response_format: opus, speed: 2.0}
+    reply: {status: 200, headers: [[content-type, audio/opus]], chunks: [[3]]}
+env: {}
+compare: {ignore: []}

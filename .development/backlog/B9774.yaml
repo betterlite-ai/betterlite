@@ -1,0 +1,15 @@
+id: B9774
+milestone: M10 admin ui
+title: Pass-through settings page HTTP acceptance
+status: todo
+depends_on: [B3617, B8520, B8640, B8641, B1630, B860, B5076, B9735]
+file: tasks/B9774-dashboard-passthrough-http.yaml
+covers:
+  - "ui/litellm-dashboard/src/components/PassThroughSettings/**"
+  - "ui/litellm-dashboard/src/components/{add_pass_through,pass_through_info,query_param_input}.*"
+parent: B150
+split_from: B150
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

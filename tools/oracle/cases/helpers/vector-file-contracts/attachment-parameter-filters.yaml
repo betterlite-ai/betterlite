@@ -1,0 +1,19 @@
+kind: helper
+name: vector-file-attachment-parameter-filters
+call:
+  vector_file_contracts:
+    operation: attachment_parameter_filters
+    create:
+      - {file_id: file_a, attributes: {}, chunking_strategy: {type: auto}, unknown: 1}
+      - {file_id: file_a, attributes: null, chunking_strategy: null}
+      - {attributes: {k: v}}
+      - {chunking_strategy: {type: static, static: {max_chunk_size_tokens: 800, chunk_overlap_tokens: 400}}}
+      - {file_id: "", attributes: {flag: false, count: 0}}
+      - {}
+    update:
+      - {attributes: {}, file_id: file_a, unknown: 1}
+      - {attributes: null}
+      - {attributes: {flag: false, ratio: 0.25}}
+      - {}
+env: {}
+compare: {ignore: []}

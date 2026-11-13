@@ -3,6 +3,7 @@ mod tests;
 
 use std::env;
 use std::fs::{self, File};
+use std::io;
 use std::path::Path;
 use std::process::ExitStatus;
 
@@ -10,20 +11,42 @@ use crate::checks::Outcome;
 use crate::error::GateError;
 use crate::git::coordinator;
 use crate::process::check_command;
-use crate::spec::command::Command;
+use crate::spec::command::{Command, Turn};
 
-const HINT_WORDS: [&str; 6] = ["error", "fail", "panicked", "denied", "banned", "mismatch"];
+const HINT_WORDS: [&str; 11] = [
+    "error",
+    "errors",
+    "fail",
+    "failed",
+    "failure",
+    "failures",
+    "panicked",
+    "denied",
+    "banned",
+    "mismatch",
+    "mismatched",
+];
 
 fn hints(output: &str) -> Vec<String> {
-    let flagged: Vec<String> = output
-        .lines()
-        .filter(|line| {
-            let lower = line.to_ascii_lowercase();
-            HINT_WORDS.iter().any(|word| lower.contains(word))
-        })
-        .take(3)
-        .map(|line| line.trim().to_owned())
-        .collect();
+    let mut flagged: Vec<String> = Vec::new();
+    let mut worded: Vec<String> = Vec::new();
+    for line in output.lines() {
+        let trimmed = line.trim();
+        let lower = trimmed.to_ascii_lowercase();
+        // an underscore stays inside the word, so a test named ..._fails is not a failure
+        let has_word = lower
+            .split(|letter: char| !(letter.is_ascii_alphanumeric() || letter == '_'))
+            .any(|word| HINT_WORDS.contains(&word));
+        let failing = trimmed.starts_with("FAIL [") || trimmed.contains("panicked at");
+        if failing && !flagged.iter().any(|seen| seen == trimmed) {
+            flagged.push(trimmed.to_owned());
+        }
+        if !failing && has_word {
+            worded.push(trimmed.to_owned());
+        }
+    }
+    flagged.append(&mut worded);
+    flagged.truncate(3);
     if !flagged.is_empty() {
         return flagged;
     }
@@ -73,7 +96,7 @@ pub(crate) fn execute(
     environment: &[(&str, String)],
 ) -> Result<Outcome, GateError> {
     let log_path = log_dir.join(format!("{}.log", command.id));
-    let turn = if command.one_at_a_time {
+    let lock = if command.turn == Turn::Alone {
         let path = coordinator(root)?
             .join("betterlite")
             .join(format!("{}.lock", command.id));
@@ -90,7 +113,7 @@ pub(crate) fn execute(
     let build = build_slot(root, command)?;
     let status = run_logged(root, &log_path, command, environment)?;
     drop(build);
-    drop(turn);
+    drop(lock);
     if status.success() {
         return Ok(Outcome::Pass);
     }
@@ -113,28 +136,38 @@ pub(crate) fn execute(
     })
 }
 
-fn build_slot(root: &Path, command: &Command) -> Result<Option<File>, GateError> {
-    let configured = env::var("GATE_BUILD_SLOTS")
+fn slot_setting(name: &str) -> Result<Option<u32>, GateError> {
+    let value = env::var(name)
         .ok()
         .map(|value| value.parse::<u32>())
         .transpose()
         .map_err(|error| {
-            GateError::Selection(format!(
-                "GATE_BUILD_SLOTS must be a positive integer: {error}"
-            ))
+            GateError::Selection(format!("{name} must be a positive integer: {error}"))
         })?;
-    if configured == Some(0) {
-        return Err(GateError::Selection(
-            "GATE_BUILD_SLOTS must be positive".to_owned(),
-        ));
+    if value == Some(0) {
+        return Err(GateError::Selection(format!("{name} must be positive")));
     }
+    Ok(value)
+}
+
+fn build_slot(root: &Path, command: &Command) -> Result<Option<File>, GateError> {
+    let configured = slot_setting("GATE_BUILD_SLOTS")?;
     let build = if let Some(count) = configured
+        && command.turn == Turn::Build
         && command.run.contains("cargo ")
         && env::var("GATE_BUILD_HELD").as_deref() != Ok("1")
     {
+        let lowest = slot_setting("GATE_LOWEST_BUILD_SLOT")?.unwrap_or(1);
+        if lowest > count {
+            return Err(GateError::Selection(format!(
+                "GATE_LOWEST_BUILD_SLOT must be at most GATE_BUILD_SLOTS ({count})"
+            )));
+        }
         Some(slots::acquire(
             &coordinator(root)?.join("betterlite/builds"),
+            lowest,
             count,
+            &mut io::stderr(),
         )?)
     } else {
         None

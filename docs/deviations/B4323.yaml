@@ -22,3 +22,13 @@ deviations:
       raises a TypeError in LiteLLM itself; no working setup can rely on reaching it, and
       betterlite returns None for Sentinel instead of reproducing the crash.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L906-L932
+  - what: >-
+      In the Redis Configuration debug table, a password, sentinel_password or ssl_password with
+      fewer than 24 characters shows one * per character. LiteLLM shows the first 4 and last 4
+      characters of any value longer than 8, so a 12-character password shows 8 of them there. A
+      secret of 8 characters or fewer, or of 24 or more, looks the same as in LiteLLM.
+    why: >-
+      Showing 8 characters of a 9 to 12 character secret leaks most of it, and no working setup
+      relies on reading them. Max decided on 24 as the point where the first 4 and last 4 stop
+      giving most of a secret away.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/sensitive_data_masker.py#L57-L72

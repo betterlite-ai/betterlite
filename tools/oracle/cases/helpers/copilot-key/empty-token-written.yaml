@@ -1,0 +1,15 @@
+kind: helper
+name: empty_token_written
+call:
+  copilot_key:
+    action: get_api_key
+    now: 1700000000
+    api_key_file: null
+    access_token_file: access-token
+    api_replies:
+      - status: 200
+        body: {"token": ""}
+    fail_write: false
+env: {}
+compare:
+  ignore: []

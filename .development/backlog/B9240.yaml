@@ -1,0 +1,14 @@
+id: B9240
+milestone: M4 keys, spend and management
+title: Elect the budget reset worker and run the five reset phases
+status: todo
+depends_on: [B700, B1690, B2311, B2317, B3009, B3011, B3012, B3013]
+file: tasks/B9240-budget-reset-coordinator.yaml
+covers:
+  - "litellm/proxy/common_utils/reset_budget_job.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

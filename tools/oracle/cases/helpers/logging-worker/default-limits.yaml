@@ -1,0 +1,8 @@
+kind: helper
+name: logging-worker-default-limits
+call:
+  worker_trace:
+    steps: []
+env: {}
+compare:
+  ignore: []

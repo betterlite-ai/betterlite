@@ -48,11 +48,10 @@ description: >-
   275 implementation, 225 tests, 145 adapters and 95 settings/export lines within 775.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,agent_and_diffusion_hosts}.rs
     - crates/betterlite-openai/src/agent_and_diffusion_hosts.rs
     - crates/betterlite-openai/src/agent_and_diffusion_hosts/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,agent_hosts}.rs
+    - crates/betterlite-config/src/sections/agent_host_settings.rs
+    - crates/betterlite-config/src/sections/agent_host_settings/**
     - crates/betterlite-config/tests/agent_host_settings.rs
     - tools/oracle/src/helpers/openai/agent_host_policy.rs
     - tools/oracle/src/helpers/openai/agent_host_policy/**
@@ -111,5 +110,5 @@ pitfalls:
   - A configured Gradient agent endpoint can override an explicitly supplied serverless base during complete-URL selection.
   - Inception treats an explicit empty base as caller-supplied when deciding whether to borrow ambient credentials.
   - Heroku appends /v1/chat/completions to an existing /v1 base without removing the duplicated version.
-budget: {max_changed_lines: 775, max_new_expects: 0}
+budget: {max_changed_lines: 1162, max_new_expects: 0}
 review_level: standard

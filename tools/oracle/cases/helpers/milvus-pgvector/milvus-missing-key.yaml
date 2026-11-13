@@ -1,0 +1,16 @@
+kind: helper
+name: milvus-missing-key
+call:
+  b7810:
+    calls:
+      - {call: milvus_auth_credentials, input: {api_key: null}}
+      - {call: milvus_auth_credentials, input: {api_key: ""}}
+      - {call: milvus_auth_credentials, input: {api_key: explicit-key}}
+      - {call: milvus_validate_environment, input: {headers: {}, litellm_params: {api_key: null}, env: {}}}
+      - {call: milvus_validate_environment, input: {headers: {}, litellm_params: null, env: {MILVUS_API_KEY: env-key}}}
+      - {call: milvus_validate_environment, input: {headers: {}, litellm_params: {api_key: null}, env: {MILVUS_API_KEY: env-key}}}
+      - {call: milvus_validate_environment, input: {headers: {X-Trace: t}, litellm_params: {api_key: explicit-key}, env: {MILVUS_API_KEY: env-key}}}
+      - {call: milvus_create_request, input: {optional_params: {}, api_base: "https://milvus.example.test"}}
+      - {call: milvus_create_response, input: {status_code: 200, headers: {x-request-id: req_1}}}
+env: {}
+compare: {ignore: []}

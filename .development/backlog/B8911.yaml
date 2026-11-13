@@ -1,0 +1,16 @@
+id: B8911
+milestone: M7 observability
+title: Agent trace receiver lifetime and spend callback attachment
+status: done
+depends_on: [B002, B189, B4001, B8740]
+file: tasks/B8911-trace-receiver-lifecycle.yaml
+covers:
+  - "litellm/proxy/tracing_runtime.py"
+  - "litellm/tracing/receiver.py"
+  - "litellm/proxy/proxy_server.py"
+parent: B110
+split_from: B110
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 1255

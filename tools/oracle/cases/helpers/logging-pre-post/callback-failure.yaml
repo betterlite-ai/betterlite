@@ -1,0 +1,11 @@
+kind: helper
+name: logging-pre-post-callback-failure
+call:
+  logging_pre_post: {"action": "pre", "raw_request_only": true, "failing_callback": true, "failing_logger_fn": true, "messages": [{"role": "user", "content": "hello"}], "input": [{"role": "user", "content": "call input"}], "additional_args": {"api_base": "https://api.example.com/v1"}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/error/message
+      why: LiteLLM raises RawRequestCaptured with no message
+    - pointer: /value/events/3/message
+      why: LiteLLM misspells the failure headline and betterlite does not

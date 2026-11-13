@@ -1,0 +1,5 @@
+kind: helper
+name: openai-assistants-seed-list-assistants
+call: {openai_assistants: {list_assistants: {options: {api_key: sk-seed, api_base: 'https://example.test/v1'}, params: {order: asc, limit: 5, before: b, after: a}, flag: false}}}
+env: {}
+compare: {ignore: []}

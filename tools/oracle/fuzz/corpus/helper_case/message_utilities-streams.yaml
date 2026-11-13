@@ -1,0 +1,10 @@
+kind: helper
+name: message_utilities-streams-seed
+call:
+  b5366:
+    calls:
+      - {function: model_response_list_iterator, responses: [{id: seeded}], delay_seconds: 0}
+      - {function: text_completion_stream, chunks: ["None"], include_usage: false}
+      - {function: should_run_mock_completion, mock_response: seeded}
+env: {}
+compare: {ignore: []}

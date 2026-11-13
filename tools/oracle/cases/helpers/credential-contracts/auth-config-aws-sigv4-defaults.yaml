@@ -1,0 +1,8 @@
+kind: helper
+name: auth-config-aws-sigv4-defaults
+call:
+  b4650:
+    function: auth_config_variants
+    kind: aws_sigv4
+env: {}
+compare: {ignore: []}

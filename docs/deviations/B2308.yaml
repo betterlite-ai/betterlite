@@ -1,0 +1,14 @@
+task: B2308
+deviations:
+  - what: The STS client for AssumeRoleWithWebIdentity and AssumeRole calls the regional endpoint of the selected AWS region; LiteLLM passes no region, so botocore resolves one from its own default chain and raises NoRegionError when only AWS_REGION_NAME is set.
+    why: betterlite already validated the region, and temporary STS credentials work in every region, so a setup that sets only AWS_REGION_NAME gains a working role call instead of a startup failure no working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L83
+  - what: A timeout float that is NaN, infinite or too large for a Duration fails the signer construction with an error; botocore stores NaN and infinity in the client config and only fails when a request uses it.
+    why: The RDS signer never opens a connection, so the configured limits cannot be represented as a Duration, and an error is clearer than silently dropping a declared float.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L64-L70
+  - what: betterlite reads the seven AWS inputs from general_settings.aws_access_key_id, aws_secret_access_key, aws_region_name, aws_session_name, aws_profile_name, aws_role_name and aws_web_identity_token before the environment; LiteLLM has no config keys for them and reads the environment only.
+    why: The proxy's database settings live in general_settings in betterlite, and the task asks for these inputs to load through the config loader with os.environ/ references resolved; LiteLLM has no config keys for them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L158-L166
+  - what: An STS response whose AccessKeyId, SecretAccessKey or SessionToken element is empty fails with a missing-field error; LiteLLM only fails when the element is absent and would build a client with the empty value.
+    why: The AWS SDK decoder fills an absent element with an empty string, so betterlite cannot tell an absent field from an empty one, and an STS response with an empty credential field cannot produce a working database token.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/rds_iam_token.py#L94-L101

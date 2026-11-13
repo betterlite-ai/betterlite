@@ -1,0 +1,51 @@
+id: B8398
+title: Models a key may list and the model info listing records
+description: >-
+  Port the utils.py functions behind /v1/models and /model/info that decide which models a key, its team and its access groups may see and how each listed model is described: `get_available_models_for_user` with `_get_validated_team_object`, `_get_team_object_for_access_groups`, `_get_access_group_models` and `_agent_access_group_visible_models` (utils.py L8436-L8676), and `create_model_info_response` with `_safe_get_model_info`, `_resolve_listing_model_info`, `_first_token_limit` and `_group_token_limit`, plus `validate_model_access` and `model_dump_with_preserved_fields` (L8679-L8940). Code goes in crates/betterlite-server/src/model_listing.rs and model_listing/ (available.rs, info.rs, access.rs, tests.rs). The routes that call these stay with their owners; this task builds the functions they call.
+
+  available.rs. `available_models_for_user(...)` takes LiteLLM's arguments as a struct with the same defaults (team_id None, include_model_access_groups, only_model_access_groups and return_wildcard_routes false). With no router the proxy model list and access groups are empty. A requested team_id is loaded and membership-checked (`get_team_object` and `validate_membership`) only when the database, logging and key cache are all present; then the key's own models are ignored and the team's models replace the key's team models. Access group models (team access_group_ids, then the key's `access_model_names`, first-seen order) are added only to a list that is not empty, so they never widen an unrestricted key. Then B759's `get_complete_model_list` with `infer_model_from_keys` from general_settings, and finally the agent cap: a key with an agent_id whose access ceiling (B4778's `resolve_agent_access_group_ceiling`) is set keeps only the models that ceiling grants. A team that cannot be fetched while listing access groups is logged at debug and treated as none.
+
+  info.rs. `create_model_info_response` describes one listed model from the cost map, preferring the deployment's own model over the public alias when the alias only matched a generalized entry (`is_generalized_model_info`), and for a group takes the widest token limit any deployment declares (`coerce_token_limit` on each field). A cost map lookup error is logged at debug and treated as no info. `validate_model_access` and `model_dump_with_preserved_fields` follow L8861-L8940.
+
+  The team, membership, access group and agent ceiling lookups come in through an `AccessLookups` trait, and the router through a `ListingRouter` trait (model names, access groups, model list by name and team), so tests use fakes.
+scope:
+  paths:
+    - crates/betterlite-server/src/model_listing.rs
+    - crates/betterlite-server/src/model_listing/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8436-L8676
+    why: get_available_models_for_user and its team, access group and agent helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8679-L8940
+    why: The model info listing helpers, validate_model_access and model_dump_with_preserved_fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/model_checks.py
+    why: get_key_models, get_team_models and get_complete_model_list, owned by B759.
+dod:
+  - text: A requested team replaces the key's models only after a membership check, and access group models extend only a restricted list.
+    proof: [listing-tests]
+  - text: An agent key's list is capped by its access ceiling, and a missing ceiling leaves the list as it is.
+    proof: [listing-tests]
+  - text: Model info prefers the deployment's exact entry over a generalized alias match and reports the widest group token limit.
+    proof: [listing-tests]
+  - text: validate_model_access and model_dump_with_preserved_fields answer like LiteLLM.
+    proof: [listing-tests]
+checks:
+  optional: []
+  commands:
+    - id: listing-tests
+      why: model availability, the agent cap, model info or access validation is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_listing::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The /v1/models, /models and /model/info routes and their HTTP oracle cases: the proxy_server.py route tasks of B124, which call these functions."
+  - "get_team_object: B4778. Model list expansion: B759. hidden_by_listing_callbacks: B8394."
+pitfalls:
+  - Access group models are added to the key list only when the key list is not empty, and the same for the team list.
+  - A requested team_id without a database still lists by the key, with no error.
+  - The agent cap filters the final list and keeps its order.
+  - The group token limit is the widest value, not the narrowest, to match /model_group/info.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

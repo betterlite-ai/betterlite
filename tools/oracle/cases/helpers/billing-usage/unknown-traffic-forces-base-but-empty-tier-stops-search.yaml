@@ -1,0 +1,61 @@
+kind: helper
+name: billing-usage-unknown-traffic-forces-base-but-empty-tier-stops-search
+call:
+  billing_usage:
+    calls:
+      - function: served_service_tier
+        response:
+          kind: chat
+          hidden_params:
+            provider_specific_fields:
+              traffic_type: weird
+      - function: resolve_billable_service_tier
+        requested_tier: priority
+        served_tier: default
+      - function: served_service_tier
+        response:
+          kind: chat
+          hidden_params:
+            provider_specific_fields:
+              traffic_type: on_demand_priority
+      - function: served_service_tier
+        response:
+          kind: chat
+          hidden_params:
+            provider_specific_fields:
+              traffic_type: BATCH
+      - function: served_service_tier
+        response:
+          kind: chat
+          service_tier: ""
+          usage:
+            kind: absent
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 1
+          total_tokens: 2
+          service_tier: flex
+      - function: resolve_billable_service_tier
+        requested_tier: priority
+        served_tier: ""
+      - function: served_service_tier
+        response:
+          kind: chat
+          service_tier: auto
+          hidden_params:
+            provider_specific_fields:
+              traffic_type: ON_DEMAND_PRIORITY
+      - function: served_service_tier
+        response:
+          kind: chat
+          usage:
+            kind: absent
+        usage:
+          prompt_tokens: 1
+          completion_tokens: 1
+          total_tokens: 2
+          service_tier: FLEX
+      - function: resolve_billable_service_tier
+        served_tier: FLEX
+env: {}
+compare: {ignore: []}

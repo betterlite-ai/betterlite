@@ -14,15 +14,17 @@ description: >-
   is per-skill not per-caller. get_skill loads a cached row and checks ownership via user_can_access_resource_owner,
   returning the same not-found message for both missing and cross-tenant cases.
 
-  The missing-principal bypass is intentional: discovery calls list_skills(limit=1000) and get_skill(skill_id) without
-  a principal. Authenticated identity-less callers still have no owner scopes; cross-owner and nonexistent reads share
-  the same not-found error. Preserve base64 conversion at the Prisma-model boundary and a distinct negative-cache
+  An absent principal and an authenticated principal without owner scopes are different. With no principal (None),
+  list_skills and get_skill skip every owner check, as the pinned handler and resource_ownership.py do, and discovery
+  calls list_skills(limit=1000) and get_skill(skill_id) that way. An authenticated principal that is not a proxy admin
+  and has no owner scopes gets an empty list from list_skills and the not-found error from get_skill; cross-owner and
+  nonexistent reads share that same error. Preserve base64 conversion at the Prisma-model boundary and a distinct negative-cache
   sentinel, not a cached null indistinguishable from a miss. The 60-second TTL and 10,000-entry max capacity are
   configured in B2226 separately as shared cache defaults.
 
   Production module: betterlite-core::api::stored_skill_reads. Write standalone Rust test stored_skill_reads_missing_principal
-  in betterlite-core: identity-less list_skills(limit=1000) and get_skill(skill_id) succeed without an auth check. This
-  invariant is Rust-only, not a Python oracle case, since the missing-principal path has no LiteLLM equivalent to compare.
+  in betterlite-core: list_skills(limit=1000) and get_skill(skill_id) with no principal succeed without an owner check.
+  The oracle case missing-principal-bypass compares the same path with LiteLLM.
 
   Reuse the Postgres fixture from B860 for database-connected read tests. Each test uses a unique schema and cleans on exit.
   Failure to connect/start is a test failure, never an ignored or skipped test.
@@ -64,8 +66,9 @@ dod:
   proof:
   - behavior-tests
 - text: >-
-    missing_principal_bypass: list_skills(limit=1000) and get_skill(skill_id) succeed when called without a principal,
-    returning no filtered results for list and not-found for get. Authenticated identity-less callers have no owner scopes.
+    missing_principal_bypass: with no principal (None), list_skills(limit=1000) returns every row, newest first, and
+    get_skill(skill_id) returns the row. An authenticated non-admin principal without owner scopes gets an empty list
+    from list_skills and the not-found error from get_skill.
   proof:
   - behavior-tests
   - missing-principal-invariant
@@ -101,8 +104,8 @@ checks:
     why: The named domain behavior tests are absent or pinned behavior fails.
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::stored_skill_reads::tests::/) - test(/replays_the_/)'
   - id: missing-principal-invariant
-    why: Identity-less list_skills and get_skill succeed without requiring an auth check.
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^stored_skill_reads_missing_principal$/)'
+    why: list_skills and get_skill with no principal succeed without an owner check.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::stored_skill_reads::(.*::)?stored_skill_reads_missing_principal$/)'
   - id: postgres-tests
     why: Real Postgres skill row reads with ownership filtering are absent or fail.
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::stored_skill_reads_postgres$/)'
@@ -118,14 +121,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/stored-skill-reads/cache-policy.yaml
 - tools/oracle/cases/helpers/stored-skill-reads/ownership-checks.yaml
 - tools/oracle/cases/helpers/stored-skill-reads/list-pagination.yaml
-deviations:
-- what: >-
-    Identity-less callers (no user_id / team_id / org_id / api_key / token) succeed on list_skills and get_skill
-    without raising, returning all accessible results. LiteLLM raises ValueError on create_skill for identity-less callers
-    to prevent ambiguous ownership, but discovery reads intentionally publish all stored skills regardless of caller identity.
-  why: >-
-    Discovery endpoints require public read access when enabled. The missing-principal bypass is intentional per the outline.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L167-L180
+deviations: []
 out_of_scope:
 - LiteLLMSkillsHandler.create_skill (litellm/llms/litellm_proxy/skills/handler.py:65-110), list_skills_for_search
   (138-149), delete_skill (182-197) and fetch_skill_from_db (199-212) remain for B048's future leaf tasks, which

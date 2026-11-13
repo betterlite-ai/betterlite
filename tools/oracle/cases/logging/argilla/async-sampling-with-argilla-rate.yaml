@@ -1,0 +1,31 @@
+# async_log_success_event samples with ARGILLA_SAMPLING_RATE read once at initialization through the digit-only parser
+kind: helper
+name: argilla-async-sampling-with-argilla-rate
+call:
+  b3960:
+    scenarios:
+      - environment: {ARGILLA_API_KEY: key, ARGILLA_SAMPLING_RATE: "0"}
+        transformation_object: {input: messages}
+        random: [0.5, 0.0]
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: async_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+          - do: async_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+      - environment: {ARGILLA_API_KEY: key, ARGILLA_SAMPLING_RATE: "0.5"}
+        transformation_object: {input: messages}
+        random: [0.9]
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: async_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+      - environment: {ARGILLA_API_KEY: key, ARGILLA_SAMPLING_RATE: " 1 "}
+        transformation_object: {input: messages}
+        random: [0.9]
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: async_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+env: {}
+compare: {ignore: []}

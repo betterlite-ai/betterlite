@@ -1,0 +1,17 @@
+task: B5991
+deviations:
+  - what: A task lookup that LiteLLM does with two blocking GETs inside an async call is made through the injected PipelineTagSource and called like any other dependency.
+    why: betterlite has no sync/async split; the number of lookups and their URL stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/embedding/handler.py#L37-L51
+  - what: An invalid task_type is a typed InvalidTaskType error carrying the value; LiteLLM raises a bare Exception with the text "Invalid task_type=...".
+    why: betterlite errors are typed so the caller can match the failure, and the five accepted values and the rejection stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/embedding/handler.py#L38-L42
+  - what: A response element that is empty, or whose first item cannot be flattened to a value, is a typed EmbeddingShape error; LiteLLM raises IndexError or TypeError from element[0][0].
+    why: betterlite does not port Python's runtime exceptions, and the caller gets a typed failure instead of an index panic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/embedding/handler.py#L194-L209
+  - what: A response element that is a JSON integer, or a list that starts with an integer, is taken as the vector itself, and a response object with neither "error" nor "similarities" is a decode error; LiteLLM crashes with TypeError on the integer shapes and iterates the object's keys.
+    why: No working setup relies on a Python TypeError or on key iteration, and the Hub never answers with those shapes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/embedding/handler.py#L190-L209
+  - what: A Hub reply over 64 MiB is refused with a typed ResponseTooLarge error before it is decoded; LiteLLM reads any size with response.json().
+    why: The cap bounds memory for a hostile or broken upstream and sits well above a real reply, since a batch of 64 inputs at 1024 dimensions is about 1.3 MB of float text and even 4096 dimensions with hundreds of inputs stays under 64 MiB.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/embedding/handler.py#L371

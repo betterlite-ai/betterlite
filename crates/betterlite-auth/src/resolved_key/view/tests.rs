@@ -155,8 +155,8 @@ fn flattened_budget_zero_false_empty_string_win(
 }
 
 #[test]
-fn json_string_not_empty_dict() {
-    let fields = "{\"litellm_budget_table_team_model_aliases\": {\"a\": \"b\"}, \"team_model_aliases\": \"{}\"}";
+fn model_max_budget_json_string_rejected() {
+    let fields = "{\"litellm_budget_table_model_max_budget\": {\"gpt-4\": 1.0}, \"model_max_budget\": \"{}\"}";
     let outcome = VerificationTokenView::construct(object(fields));
     outcome.unwrap_err();
 }
@@ -188,10 +188,14 @@ fn integer_and_bool_end_user_id(#[case] input: &str, #[case] expected: &str) {
     assert_eq!(field(&view_from(&fields), "end_user_id"), parse(expected));
 }
 
-#[test]
-fn organization_id_overrides_org_id() {
-    let fields = "{\"org_id\": \"explicit\", \"organization_id\": \"override\"}";
-    assert_eq!(field(&view_from(fields), "org_id"), parse("\"override\""));
+#[rstest]
+#[case::override_value(
+    "{\"org_id\": \"explicit\", \"organization_id\": \"override\"}",
+    "\"override\""
+)]
+#[case::empty_organization_id("{\"org_id\": \"explicit\", \"organization_id\": \"\"}", "\"\"")]
+fn organization_id_overrides_org_id(#[case] fields: &str, #[case] expected: &str) {
+    assert_eq!(field(&view_from(fields), "org_id"), parse(expected));
 }
 
 #[test]

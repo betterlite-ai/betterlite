@@ -51,12 +51,12 @@ checks:
     - id: behavior-tests
       why: new behavior tests are missing or fail
       run: >-
-        cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^semantic_embeddings::tests::/)' --no-tests=warn
+        cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^semantic_embeddings::tests::/)'
     - id: helper-python
       why: strict adapters fail
       run: >-
-        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/semantic_embeddings)" && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers/semantic_embeddings && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4381/pyrightconfig.json
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4381)" && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers/b4381 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4381/pyrightconfig.json
     - id: helper-case-corpus
       why: new helper seeds are missing or fail replay
       run: >-

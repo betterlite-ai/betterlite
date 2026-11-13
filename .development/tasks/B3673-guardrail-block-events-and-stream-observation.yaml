@@ -1,0 +1,329 @@
+id: B3673
+title: Native guardrail stream observation and Responses block events
+description: >-
+  Build the pieces that tell a client "this stream was blocked" and the pieces that
+  read a stream already sent to the client. The Responses and Anthropic handler tasks
+  (B3671, B3672, B3674 to B3676) call them. Nothing here talks to a guardrail, a provider
+  or the network, and every function is pure: ids and the clock come in as arguments.
+
+  Responses block events go in
+  crates/betterlite-server/src/guardrails/responses_translation/block_events.rs.
+  `BlockStamp { response_id: String, message_id: String, created_at: i64 }` carries the
+  values LiteLLM takes from `uuid.uuid4()` and `time.time()` (ids already carry their
+  `resp_` and `msg_` prefix), so the caller makes them and tests can fix them. Every
+  function below takes `message: &str`, `model: &str` and `original_response:
+  Option<&serde_json::Value>` where LiteLLM reads them off the ModifyResponseException,
+  because the exception type belongs to another task. `blocked_output_item(message,
+  stamp)` is an assistant `message` item: `type` "message", `id` the stamp's message_id,
+  `status` "completed", `role` "assistant", `content` one `output_text` part with the
+  message and `annotations: []`. `build_blocked_response(message, model,
+  original_response, stamp)` is a Responses object with `id` the stamp's response_id,
+  `object` "response", `created_at`, `model`, `output` that one item, `status`
+  "completed" and `usage` from B3663's `blocked_responses_stream_usage(original_response)`.
+  A private `blocked_response` does the same for a given response id, model and item;
+  the continuation path reuses it. `build_block_sse_chunks(message, model,
+  original_response, stream_started: bool, responses_so_far: Option<&[Value]>, stamp) ->
+  Result<Vec<Vec<u8>>, BlockEventError>` returns one chunk per event, each exactly
+  `data: <compact json>\n\n`. The JSON leaves out null and unset fields the way
+  `model_dump_json(exclude_none=True, exclude_unset=True)` does, and keeps non-ASCII text
+  as is. With `stream_started` false the events are B928's synthetic event list for
+  `build_blocked_response`, with chunk size `max(character count of message, 1)` (count
+  characters, not bytes), no logging object. With `stream_started` true the client has
+  already received events, so the list continues the same response (`block_continuation_events`):
+  first `open_item_closing_events(responses_so_far)`, then for the new item at
+  `output_index` (see `continuation_identity`) and `content_index` 0 these events in
+  order: `response.output_item.added` (item), `response.content_part.added` (part
+  `output_text`, text, `annotations: []`), `response.output_text.delta` (delta = message),
+  `response.output_text.done` (text = message), `response.content_part.done` (part adds
+  `logprobs: null`), `response.output_item.done`, and `response.completed` whose response
+  is `blocked_response` with the continuation's response id and model and only the new
+  item in `output`. `continuation_identity(message, model, responses_so_far)` returns
+  (response id, model, output index): the id and model come from the first streamed event
+  whose `response` has a non-empty string `id` and `model`, else the stamp's response_id
+  and the given model, and the index is the highest integer `output_index` seen plus one
+  (0 when none). Items are read with B3663's `stream_item_field`. The module's error
+  enum `BlockEventError` (thiserror) covers a JSON serialization failure of an event.
+  `build_stream_error_items(status_code: u16, message: &str, responses_so_far:
+  Option<&[Value]>) -> Vec<ErrorEvent>` returns one B508 `ErrorEvent` with `error.type`
+  "guardrail_error", `error.code` the status as text, `error.message`, `error.param`
+  null, and `sequence_number` from `next_stream_sequence_number`. The caller turns the
+  HTTP exception into status and message first. `next_stream_sequence_number(
+  responses_so_far: Option<&[Value]>) -> i64` scans from the last event backwards and
+  returns the first integer `sequence_number` plus one, else 0.
+
+  Open item state goes in
+  crates/betterlite-server/src/guardrails/responses_translation/open_item.rs. It finds
+  the output item the client saw start but not finish, so the block can close it.
+  `OpenItemState { item_id, item_type, role, output_index, content_index, text, part_open,
+  payload }` and `open_item_state(responses_so_far: &[Value]) -> Option<OpenItemState>`.
+  Take every `response.output_item.added` event whose `output_index` is an integer, and
+  drop each one whose index also appears on a `response.output_item.done` event. Use the
+  last that remains; none gives None. A None `item`, or an item `id` that is not a
+  non-empty string, gives None. `item_type` is the item's `type` when it is a non-empty
+  string, else "message"; `role` likewise defaults to "assistant". `content_index` is the
+  last `content_index` of a `response.content_part.added` event for that item_id with no
+  `response.content_part.done` for the same index, else 0, and `part_open` says whether
+  there was one. `text` joins, in order, every string `delta` of the
+  `response.output_text.delta` events with that item_id. `incomplete_item_fields(payload)
+  -> Map<String, Value>` is the payload as an object, or an empty map when it is not an
+  object. `open_item_closing_events(responses_so_far)` returns nothing without an open
+  item. For an item whose type is not "message" (a function call the guardrail rejected)
+  it returns one `response.output_item.done` at the item's output_index whose item is the
+  payload's fields with `status` set to "incomplete", so no client acts on it. For a
+  message item it returns, in order and only when `part_open`: `response.output_text.done`
+  (text = streamed text, at the item's output_index and content_index), `response.content_part.done`
+  (the `output_text` part with the streamed text, `annotations: []`, `logprobs: null`); then
+  always `response.output_item.done` carrying the message with `status` "completed", its
+  own id and role, and one `output_text` part holding the streamed text (the part is there
+  even when the text is empty).
+
+  Stream shape types go in
+  crates/betterlite-server/src/guardrails/responses_translation/stream_shapes.rs.
+  `ResponseOutputEnvelope { output: Option<Vec<serde_json::Value>>, model: Option<String> }`
+  and `ResponsesStreamChunk { r#type: Option<String>, text: Option<String>, delta:
+  Option<String>, item_id: Option<String>, output_index: Option<i64>, content_index:
+  Option<i64> }` are the two partial views LiteLLM's TypedDicts give the handler: every
+  field is optional and unknown keys are ignored. Both derive Clone, Debug, Default,
+  PartialEq and Deserialize. B3671 and B3672 read their input through them.
+
+  Anthropic stream events go in
+  crates/betterlite-server/src/guardrails/anthropic_translation/sse_events.rs.
+  `SseChunk` is the Anthropic stream item: `Bytes(Vec<u8>)`, `Event(Map<String, Value>)`
+  (an already parsed event) or `Other` (anything else, which every function ignores).
+  `parse_sse_data_line(raw_line: &str) -> Option<Map<String, Value>>` trims the line,
+  needs the `data:` prefix, parses the rest (trimmed) as JSON and returns it only when it
+  is an object; bad JSON gives None, no log. `iter_sse_events(item: &SseChunk) ->
+  Vec<Map<String, Value>>` returns an `Event` as is. For `Bytes` it decodes UTF-8 with
+  replacement characters, splits on "\n\n" and each block on "\n", and keeps what
+  `parse_sse_data_line` accepts. This is the one reader of the `data:` lines, and it
+  uses the JSON `type` field, not the `event:` line. It parses bytes from the upstream
+  provider, so it gets a cargo-fuzz target (see checks).
+  `content_block_state(responses_so_far: &[SseChunk]) -> (Option<i64>, Option<i64>)` walks
+  all events: `content_block_start` with an integer `index` opens it and raises the maximum
+  index, `content_block_stop` closes it. It returns the highest still-open index and the
+  highest index seen.
+
+  The same file holds the four readers of the stream so far. They use the `event:` line
+  of each block, not the JSON `type`, which is why they do not call `iter_sse_events`.
+  `extract_text_from_sse(bytes: &[u8]) -> String`: strict UTF-8 decode (a decode failure
+  logs at error level "Error extracting text from SSE" and returns what was gathered, an
+  empty string); split on "\n\n"; skip blank blocks; per block the last `event:` line
+  gives the event type and the last `data:` line the payload, each with the prefix cut
+  and trimmed; for a `content_block_delta` event with a payload, parse it, and when
+  `delta.type` is "text_delta" append `delta.text` (empty when missing). Bad JSON logs a
+  warning "Failed to parse JSON from SSE data" and moves on.
+  `streaming_string_so_far(responses_so_far: &[SseChunk]) -> String` joins
+  `extract_text_from_sse` over the `Bytes` items and, for an `Event` item, its
+  `delta.text` when `delta.type` is "text_delta" and the text is non-empty (this branch
+  does not look at the event's own `type`). `streaming_has_ended(responses_so_far) ->
+  bool` is true as soon as a `message_delta` event, found by its `event:` line in bytes or
+  by its `type` in an `Event`, has a non-null `delta.stop_reason`. A decode failure logs
+  at error level and the item is skipped, bad JSON warns and the scan goes on.
+  `streamed_tool_use_fingerprints(responses_so_far) -> Vec<String>` runs
+  `iter_sse_events` over every item and, for each `content_block_start` event whose
+  `content_block` is an object with `type` "tool_use", returns B3663's
+  `stream_item_fingerprint(content_block)`. `streaming_scan_key(responses_so_far) ->
+  StreamingScanKey` (B3661's type) is: `texts` one entry, the string so far; `tool_calls`
+  the fingerprints only once the stream has ended, else empty; `stream_ended`; and
+  `tool_calls_in_flight` true when there are fingerprints and the stream has not ended.
+
+  Anthropic block chunks go in
+  crates/betterlite-server/src/guardrails/anthropic_translation/block_continuation.rs.
+  `build_block_sse_chunks(message, model, original_response, stream_started,
+  responses_so_far, message_id) -> Result<Vec<Vec<u8>>, AnthropicBlockError>`.
+  With `stream_started` false it builds an Anthropic message (`id` message_id, `type`
+  "message", `role` "assistant", `content` `[{"type":"text","text":message}]`, `model`,
+  `stop_reason` "end_turn", `usage` from B3663's `blocked_response_usage(original_response)`)
+  and returns the frames B2435's `MessagesFakeStream` renders for it. With `stream_started`
+  true it continues the open message and never sends a second `message_start`. It reads
+  `content_block_state`, takes `new_index` as the highest index seen plus one (0 when none),
+  and emits in order: a `content_block_stop` for the open index (only when one is open),
+  `content_block_start` (new_index, `content_block` text with empty text),
+  `content_block_delta` (`text_delta` carrying the message), `content_block_stop` (new_index),
+  `message_delta` (`delta` with `stop_reason` "end_turn" and `stop_sequence` null, `usage`
+  with `output_tokens` from `blocked_response_usage`, 0 when absent) and `message_stop`.
+  Each frame is `event: <type>\ndata: <json>\n\n` where the JSON is Python `json.dumps`
+  output: ", " and ": " separators and every non-ASCII character escaped as \uXXXX (a
+  surrogate pair above U+FFFF). `build_stream_error_items(message: &str) ->
+  Vec<Vec<u8>>` returns B3669's `anthropic_sse_error_frames(message)` frames unchanged.
+  The module's error enum is `AnthropicBlockError` (thiserror), covering a failure from
+  the fake stream renderer and a JSON failure.
+
+  Raw JSON from the wire is untyped here, so `serde_json::Value` is allowed at these
+  boundaries only, one `#[expect]` per module with its reason (the budget below allows
+  four). Tests live in the `tests.rs` of each module, named so the filters below match:
+  `blocked_response_*`, `standalone_*`, `continuation_*`, `stream_error_*`,
+  `sequence_number_*` in block_events; `open_item_state_*` and `closing_events_*` in
+  open_item; `envelope_*` and `stream_chunk_*` in stream_shapes; `iter_events_*`,
+  `block_state_*`, `text_*`, `has_ended_*`, `fingerprints_*`, `scan_key_*` in sse_events;
+  `standalone_*`, `continuation_*`, `error_frames_*` in block_continuation.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/responses_translation/block_events.rs
+    - crates/betterlite-server/src/guardrails/responses_translation/block_events/**
+    - crates/betterlite-server/src/guardrails/responses_translation/open_item.rs
+    - crates/betterlite-server/src/guardrails/responses_translation/open_item/**
+    - crates/betterlite-server/src/guardrails/responses_translation/stream_shapes.rs
+    - crates/betterlite-server/src/guardrails/responses_translation/stream_shapes/**
+    - crates/betterlite-server/src/guardrails/anthropic_translation/sse_events.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/sse_events/**
+    - crates/betterlite-server/src/guardrails/anthropic_translation/block_continuation.rs
+    - crates/betterlite-server/src/guardrails/anthropic_translation/block_continuation/**
+    - crates/betterlite-server/fuzz/fuzz_targets/anthropic_sse_events.rs
+    - crates/betterlite-server/fuzz/corpus/anthropic_sse_events/**
+    - tools/oracle/cases/helpers/guardrail-block-events/**
+    - tools/oracle/helpers/b3673.py
+    - tools/oracle/helpers/b3673/**
+    - tools/oracle/src/helpers/server/b3673.rs
+    - tools/oracle/src/helpers/server/b3673/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L202-L217
+    why: ResponseOutputEnvelope and ResponsesStreamChunk, the partial views the handler reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L460-L465
+    why: _next_stream_sequence_number, the backwards scan for an integer sequence_number.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1359-L1380
+    why: Responses build_stream_error_items, the guardrail_error event.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1569-L1611
+    why: build_block_sse_chunks, the standalone path and the data frame encoding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1613-L1670
+    why: The continuation event list for a block that arrives after the stream started.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1673-L1753
+    why: Blocked payload shapes, the blocked item and response, and the continuation identity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1756-L1827
+    why: OpenItemState and the search for the item still open on the wire.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1830-L1899
+    why: How an open item is closed before the block item, completed for a message and incomplete otherwise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L327-L364
+    why: Anthropic build_block_sse_chunks and build_stream_error_items.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L365-L436
+    why: Standalone message and the continuation frames, including the json.dumps encoding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L438-L494
+    why: content_block_state, the SSE data line parser and the event iterator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1566-L1668
+    why: Anthropic scan key, tool_use fingerprints, text so far and the text extractor that reads the event line.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1670-L1740
+    why: Anthropic stream-ended check on message_delta stop_reason.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L129-L132
+    why: stream_item_field, the object-or-dict read that B3663 owns.
+dod:
+  - text: >-
+      build_block_sse_chunks with stream_started false returns the B928 synthetic event
+      sequence for the blocked response as `data: <json>\n\n` chunks, with usage from the
+      original response, chunk size the message's character count (at least 1), and no
+      null or unset fields.
+    proof: [block-events-tests, oracle]
+  - text: >-
+      With stream_started true the Responses block continues the same response: it closes
+      the open item first, adds the block message as a new item at the next output index,
+      and ends with a response.completed that holds only the new item and reuses the
+      streamed response id and model (the stamp id and given model when none was streamed).
+    proof: [block-events-tests, oracle]
+  - text: >-
+      open_item_state returns the last output item added and not done, and None when every
+      item is done, the item is missing or its id is empty. Type and role default to
+      message and assistant, the content index is the last part not yet done, and the text
+      is the joined deltas.
+    proof: [open-item-tests, oracle]
+  - text: >-
+      open_item_closing_events closes a message item as completed with the streamed text
+      (with the text and content-part done events only when a part is open) and a
+      non-message item as incomplete with its original fields, and returns nothing without
+      an open item.
+    proof: [open-item-tests, oracle]
+  - text: >-
+      next_stream_sequence_number returns the last integer sequence_number plus one, skipping
+      events without one, and 0 for none; the Responses stream error item carries the
+      guardrail_error type, the status as code and that sequence number.
+    proof: [block-events-tests, oracle]
+  - text: >-
+      ResponseOutputEnvelope and ResponsesStreamChunk read their partial fields, accept a
+      missing field as None and ignore unknown keys.
+    proof: [stream-shapes-tests]
+  - text: >-
+      iter_sse_events returns an already parsed event as is and, for bytes, every
+      data line that is a JSON object, ignoring bad JSON and non-objects, with invalid UTF-8
+      replaced rather than failing; content_block_state returns the highest open and the
+      highest seen index.
+    proof: [sse-events-tests, oracle, sse-corpus-replay]
+  - text: >-
+      The Anthropic readers pick text, stream end and tool_use fingerprints the way
+      LiteLLM does: the first two by the event line in bytes, the fingerprints by the
+      JSON type, and the scan key only lists tool calls once the stream has ended.
+    proof: [sse-events-tests, oracle]
+  - text: >-
+      The Anthropic standalone block is the fake-stream rendering of an end_turn message
+      with the blocked usage, and the continuation closes the open block, adds one text
+      block at the next index, and ends with message_delta and message_stop, with no
+      second message_start and json.dumps encoding.
+    proof: [anthropic-block-tests, oracle]
+  - text: >-
+      Anthropic build_stream_error_items returns the shared error frames for the message.
+    proof: [anthropic-block-tests]
+checks:
+  optional: []
+  commands:
+    - id: block-events-tests
+      why: the Responses block events, sequence number or stream error item tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::block_events::tests::/)'
+    - id: open-item-tests
+      why: the open item search or the closing events tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::open_item::tests::/)'
+    - id: stream-shapes-tests
+      why: the partial stream view tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::responses_translation::stream_shapes::tests::/)'
+    - id: sse-events-tests
+      why: the Anthropic SSE reader, block state or stream observation tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::sse_events::tests::/) - test(replays_the_anthropic_sse_events_corpus)'
+    - id: anthropic-block-tests
+      why: the Anthropic standalone, continuation or error frame tests are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::anthropic_translation::block_continuation::tests::/)'
+    - id: sse-corpus-replay
+      why: the corpus files for the Anthropic SSE reader were not added or are not replayed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/anthropic_sse_events)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_anthropic_sse_events_corpus)'
+    - id: helper-cases-added
+      why: the helper cases for this task were not added on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/guardrail-block-events)"
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-block-events/responses-block-standalone.yaml
+  - tools/oracle/cases/helpers/guardrail-block-events/responses-block-continuation-open-message.yaml
+  - tools/oracle/cases/helpers/guardrail-block-events/responses-block-continuation-open-function-call.yaml
+  - tools/oracle/cases/helpers/guardrail-block-events/responses-block-continuation-no-open-item.yaml
+  - tools/oracle/cases/helpers/guardrail-block-events/responses-open-item-state.yaml
+  - tools/oracle/cases/helpers/guardrail-block-events/responses-stream-error-sequence-number.yaml
+  - tools/oracle/cases/helpers/guardrail-block-events/anthropic-sse-iter-events.yaml
+  - tools/oracle/cases/helpers/guardrail-block-events/anthropic-content-block-state.yaml
+  - tools/oracle/cases/helpers/guardrail-block-events/anthropic-stream-observation.yaml
+  - tools/oracle/cases/helpers/guardrail-block-events/anthropic-scan-key-tool-use.yaml
+  - tools/oracle/cases/helpers/guardrail-block-events/anthropic-block-standalone.yaml
+  - tools/oracle/cases/helpers/guardrail-block-events/anthropic-block-continuation.yaml
+deviations:
+  - what: The block builders take the message, model and original response as arguments, and the response id, message id and creation time as a BlockStamp (the Anthropic one takes a message id), instead of reading a ModifyResponseException and calling uuid4 and time.time.
+    why: The exception type is owned by another task, and the project forbids ambient randomness and clocks in pure code; the oracle helper feeds the same values to LiteLLM by patching uuid.uuid4 and time.time.
+  - what: The two error-item builders take the status code and the already serialized message, not the HTTPException.
+    why: serialize_http_exception_detail has no owner yet, and the dispatcher that holds the exception can turn it into text once for both endpoints.
+  - what: The Anthropic stream item is the closed enum SseChunk (bytes, parsed event, other), and a Python str item is not read.
+    why: LiteLLM's readers only look at bytes and dicts, so a str item yields nothing there either; the enum makes that explicit.
+out_of_scope:
+  - "B3670 owns the shared tool call shapes, the Responses input provenance helpers and the Anthropic scan target types. This task does not use them."
+  - "B3671 owns the Responses request and completed-output processing, and B3672 owns the Responses process_output_streaming_response, get_streaming_scan_key, _check_streaming_has_ended, get_streaming_string_so_far, _has_streamed_tool_call_events, _completed_response_scan_key and the event type constants (_TERMINAL_ENVELOPE_EVENT_TYPES, _OUTPUT_ITEM_EVENT_TYPES, _OUTPUT_TEXT_EVENT_TYPES). They read this task's ResponseOutputEnvelope, ResponsesStreamChunk and open item helpers."
+  - "B3674 owns the Anthropic request write-back, B3675 the Anthropic input and completed-output scans, and B3676 the Anthropic process_output_streaming_response, the ended-stream rewrite helpers, _SSEFieldRewrite and its rewriters, the SSE line rewriters and _build_streaming_usage_response. They call this task's sse_events readers and block chunks."
+  - "The Anthropic handler's post_call_hook_response, its constructor's LiteLLMAnthropicMessagesAdapter and _translate_to_openai are request and response translation, not block or stream code, and are not built here."
+  - "B928 owns build_synthetic_response_events and B2435 owns FakeAnthropicMessagesStreamIterator; this task only calls them."
+  - "B3663 owns stream_item_field, stream_item_fingerprint, blocked_response_usage and blocked_responses_stream_usage; B3669 owns anthropic_sse_error_frames. This task only calls them."
+  - "The Anthropic typing helpers _as_str_mapping, _content_block_at, _ModelDumpBlock, _TextAttrBlock, _WritableMessage and _as_writable only narrow Python types and have no Rust counterpart. The _AnthropicSSEDelta and _AnthropicSSEEvent TypedDicts are read through serde_json maps here."
+pitfalls:
+  - "The Responses frames are `data: <json>\\n\\n` with no `event:` line, and the JSON is pydantic `model_dump_json(exclude_none=True, exclude_unset=True)`: a field LiteLLM never set must not appear, so the continuation events carry no `sequence_number` and the oracle compares each frame as parsed JSON."
+  - "The standalone chunk size is the message length in characters, floored at 1, so an empty message still gives a delta event; counting bytes changes the number of text deltas for non-ASCII text."
+  - "A continuation after a half-sent function call closes that call as `incomplete`, never `completed`, so a client that waits for output_item.done cannot run a tool the guardrail refused."
+  - "open_item_state ignores an index that has a done event even if the same index was added again later, and it keeps only the last remaining added item, so two open items close only the newest one."
+  - "The message closing event is built even when the streamed text is empty, with one output_text part holding the empty string."
+  - "The Anthropic continuation uses `json.dumps` defaults (`, ` and `: ` separators, ensure_ascii), the Responses frames use compact JSON that keeps non-ASCII; do not share one encoder."
+  - "Anthropic `streaming_has_ended` and `extract_text_from_sse` find the event kind from the `event:` line, so a bytes chunk with only a `data:` line never ends the stream, while `iter_sse_events` and the fingerprints use the JSON `type`. Keep both readers."
+  - "The Event branch of `streaming_string_so_far` accepts any parsed event that has a `text_delta` delta, whatever its own `type` is."
+  - "`iter_sse_events` splits blocks on a literal blank line and lines on \\n only, so a \\r\\n stream parses only because each line is trimmed."
+  - "`tool_calls` in the Anthropic scan key stay empty until a non-null stop_reason arrives, and `tool_calls_in_flight` is the flag that tells the dispatcher to wait."
+review_level: standard
+budget:
+  max_changed_lines: 2000
+  max_new_expects: 4

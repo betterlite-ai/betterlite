@@ -1,0 +1,11 @@
+task: B1714
+deviations:
+  - what: Request durations divide exact integer microseconds, so a duration whose Python float product lands just below a whole millisecond reports one millisecond more than LiteLLM, and a naive timestamp in a local DST gap converts to no instant while an ambiguous hour takes its first offset; LiteLLM truncates the float product and normalizes a gap through mktime.
+    why: The workspace forbids floating-point arithmetic, so the duration is divided as checked integer microseconds, and chrono reports a local-time gap as no instant.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L914-L925
+  - what: MAX_STRING_LENGTH_PROMPT_IN_DB is parsed by the shared integer parser, which rejects Python int() spellings such as digit-group underscores and magnitudes outside i64; an initial value of that shape fails loading instead of being accepted.
+    why: Environment integers go through betterlite-env, the project's single parser for environment text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L75-L86
+  - what: STORE_PROMPTS_IN_SPEND_LOGS is read from the configured environment through B8500's boolean text parser; a value held only by a configured secret manager is not consulted while the config loads.
+    why: secret-manager state is wired at runtime by the server, and the config crate has no manager handle to pass to get_secret_bool.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L1701-L1717

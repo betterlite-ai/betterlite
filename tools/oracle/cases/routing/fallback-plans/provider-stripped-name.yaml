@@ -1,0 +1,101 @@
+kind: probe
+name: fallback-provider-stripped-name
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: openai/gpt-4
+          lookup_model_group: openai/gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [claude]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {openai/gpt-4: [claude]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: openai/gpt-4
+          lookup_model_group: openai/gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [first]}
+            - {gpt-4: [second]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: unknown/gpt-4
+          lookup_model_group: unknown/gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [claude]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: openai/*
+          lookup_model_group: openai/*
+        config:
+          fallbacks:
+            - {"*": [backup]}
+            - {gpt-4: [claude]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: azure/gpt-4
+          lookup_model_group: azure/gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [claude]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {azure/gpt-4: [claude]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: crusoe/gpt-4
+          lookup_model_group: crusoe/gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [claude]}
+          max_fallbacks: 5
+        request: {}

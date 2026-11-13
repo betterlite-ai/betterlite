@@ -1,0 +1,18 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-llm-no-provider",
+  "call": {
+    "b3844": {
+      "function": "llm_call",
+      "payload": {
+        "model": "gpt-4o",
+        "response": {}
+      },
+      "capture_content": false
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

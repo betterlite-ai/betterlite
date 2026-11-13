@@ -1,0 +1,19 @@
+kind: helper
+name: logging-worker-flush-order
+call:
+  worker_trace:
+    settings:
+      concurrency: 1
+    steps:
+      - op: enqueue
+        events:
+          - {name: a, outcome: success, context: request-a}
+          - {name: b, outcome: success, context: request-b}
+      - op: flush
+      - op: enqueue
+        events:
+          - {name: c, outcome: success, context: request-c}
+      - op: flush
+env: {}
+compare:
+  ignore: []

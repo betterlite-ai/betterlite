@@ -1,0 +1,5 @@
+kind: helper
+name: utils-error-level
+call: {verbose_hooks: {function: utils, payload: message, set_verbose: true, log_level: ERROR, logger_only: false}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+id: no-string-mocking
+language: python
+severity: error
+message: patching by a dotted string or an attribute name breaks silently when the target moves; pass the collaborator in (LiteLLM calls take a client) or assign the typed attribute
+rule:
+  kind: call
+  has:
+    field: function
+    regex: ^((unittest\.)?mock\.)?patch(\.object|\.dict|\.multiple)?$|\.setattr$|\.delattr$

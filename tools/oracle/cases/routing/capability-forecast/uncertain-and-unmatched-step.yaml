@@ -1,0 +1,37 @@
+kind: probe
+name: uncertain-and-unmatched-step
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.1"}
+        reply: {kind: text, content: '{"crux":"ambiguous output placement","primary_rule":"UNC-1","capability_boundary":"uncertain","p_solve":0.6}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.1"}
+        reply: {kind: text, content: '{"crux":"unbounded search","primary_rule":"UNC-2","capability_boundary":"uncertain","p_solve":0.59}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: evaluate
+        config: {efficient_tier: SIMPLE, capable_tier: REASONING, base_threshold: "0.5", threshold_step: "0.1"}
+        reply: {kind: text, content: '{"crux":"no rule applies","primary_rule":"none","capability_boundary":"unmatched","p_solve":0.6}'}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: response_format
+        mode: json_object
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      capability_forecast:
+        function: system_prompt
+        mode: json_object
+compare: {ignore: []}

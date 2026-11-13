@@ -1,0 +1,232 @@
+id: B3608
+title: Pass-through streamed response logging reconstruction
+description: >-
+  Build the code that turns the bytes of a finished pass-through stream into one logged response, in the new module
+  passthrough_stream_logging in betterlite-logging (crates/betterlite-logging/src/passthrough_stream_logging.rs and its folder).
+  B3609's chunk_processor collects the raw chunks and calls this module once the stream ends, and so do the Messages and
+  Gemini stream iterators (anthropic/pass_through/messages/streaming_iterator.py L410 and google_genai/streaming_iterator.py L93).
+  This module never reads the network and never forwards a chunk.
+
+  Chunk lines. `convert_raw_bytes_to_str_lines(raw_bytes: &[Vec<u8>]) -> Vec<String>` joins all chunks, decodes the result as
+  UTF-8 with invalid bytes replaced by U+FFFD (String::from_utf8_lossy), splits on "\n", trims every line with str::trim and drops
+  the lines that are empty after trimming. Decoding happens after the join, so a multibyte character cut between two chunks
+  decodes whole. A stream cut in the middle of a character (client disconnect) still decodes and keeps the usage events that
+  arrived before the cut. Python's str.strip and Rust's str::trim both remove Unicode whitespace.
+
+  Model for cost injection. `extract_model_for_cost_injection(request_body: Option<&Json>, model_call_details_model:
+  Option<&str>, url_route: &str, endpoint_type: EndpointType) -> Option<String>` tries three sources in order and returns the
+  first non-empty string. One, request_body["model"] when the body exists and the value is a non-empty string. Two, the "model"
+  entry of the logging object's model_call_details (the caller reads it and passes it in). Three, only for EndpointType::VertexAi,
+  the model from the URL: call B3638's extract_model_from_url and accept the result unless it is "unknown". Otherwise None.
+  A body without a string model, such as a number, is skipped and the next source is tried (the declared type is a string).
+
+  Reconstruction. `build_passthrough_logging_result(input: &StreamLoggingInput) -> StreamLoggingOutput` is the synchronous,
+  CPU-bound step. `StreamLoggingInput` holds the logging object handle, the PassThroughEndpointLogging from B3605, url_route,
+  request_body, endpoint_type, start_time, end_time, raw_bytes and the optional model. It first calls convert_raw_bytes_to_str_lines,
+  then picks a handler by endpoint type: Anthropic, VertexAi, Gemini and OpenAi each call the matching collected-chunks handler
+  with the lines and the same context; the Vertex and Gemini handlers also get the model argument, and the Anthropic and OpenAi handlers take none. Every other endpoint type (Tinyfish,
+  Generic) selects no handler. A handler returns a result (the response object) and a kwargs map. When there is no result,
+  either because no handler was selected or because the handler returned None, the result becomes the fallback
+  StandardPassThroughResponseObject with the text "cannot parse chunks to standard response object. Chunks=" followed by the
+  lines rendered as a JSON array of strings (serde_json). kwargs from a handler are kept as they are even when its result is None;
+  with no handler kwargs is empty. Use B3605's response-object enum for the result and its typed kwargs map for kwargs; both
+  already carry what dispatch needs, so add no new result type.
+
+  The handlers are not built here. Define the trait `CollectedChunksHandler` with one sync method `fn handle(&self, call:
+  &CollectedChunksCall) -> Result<HandlerOutcome, HandlerError>` (CollectedChunksCall has the logging object, the passthrough logger, url_route,
+  request_body, endpoint_type, start_time, end_time, the lines and the optional model; HandlerOutcome has an optional result and
+  a kwargs map; HandlerError can be built from a leaf's own error, for example B3640's GeminiPassthroughError) and the struct `ProviderChunkHandlers { anthropic, vertex, gemini, openai }`, each an `Arc<dyn CollectedChunksHandler>`.
+  The router receives the struct through its constructor, so tests inject fakes and B102 wires the real leaf handlers
+  (Anthropic B3634, OpenAI B3637, Vertex and Gemini B3640; B3642 owns only vertex_passthrough_handler). A handler failure is the Err(HandlerError) of handle: the caller of build_passthrough_logging_result gets that error, matching the Python exception.
+
+  Routing and dispatch. `StreamLoggingRouter::route_streaming_logging_to_handler(&self, input: StreamLoggingInput)` is async and
+  returns nothing. In order: (1) stamp model_call_details["prompt_cache_response_complete"] with a bool on every call, before
+  anything can fail. It is true only when endpoint_type is Anthropic, and the joined bytes split with B005's
+  split_complete_sse_frames leave a tail that is empty after trimming whitespace, and the complete frames contain a message_stop
+  event, and they contain no provider error event. For every other endpoint type it is false, and split_complete_sse_frames runs
+  on empty bytes. The two frame probes (is the stream stopped, is there an Anthropic error frame) are the trait
+  `AnthropicFrameProbe { is_message_stop(&self, frames: &[u8]) -> bool; is_provider_error(&self, frames: &[u8]) -> bool }`
+  passed to the router constructor, because LiteLLM keeps them private in the Messages iterator and no betterlite task owns
+  them yet. (2) For EndpointType::Tinyfish: return at once when sse_poller_spawned says a poller already bills this request; else
+  look for a run_id in the joined bytes with run_id_from_sse_frames and, when found, start the poller with start_sse_run_billing
+  and return (the run_id came in an unterminated frame and a poll to the end is better than pricing a running run at 0); else
+  call handle_logging_tinyfish_collected_chunks with the lines and dispatch its result and kwargs. These four TinyFish
+  operations are the trait `TinyfishStreamBilling` passed to the constructor (B3648 and B3649 own the real ones). (3) For all other
+  types run build_passthrough_logging_result on tokio::task::spawn_blocking so the token counting stays off the async runtime.
+  (4) Call B250's dispatch_success_handlers on the logging object with the result, start_time, end_time,
+  cache_hit = (model_call_details["cache_hit"] is the JSON value true), prefer_async_handlers = true, and the kwargs map. Any
+  error in steps 2 to 4 is logged at the tracing error level with the text "Error in _route_streaming_logging_to_handler: <error>"
+  and swallowed, because this runs from a background task and nobody can handle it. The stamp in step 1 is outside that guard.
+
+  Tests live under passthrough_stream_logging::tests and are named by group (see checks). Add the fuzz target
+  passthrough_stream_lines in crates/betterlite-logging/fuzz, which feeds arbitrary chunk lists to convert_raw_bytes_to_str_lines,
+  with a committed corpus and the test replays_the_passthrough_stream_lines_corpus. The router and dispatch have no HTTP route
+  at this point, so they get native tests only; B102 adds the HTTP oracle cases when it wires the routes.
+scope:
+  paths:
+    - crates/betterlite-logging/src/passthrough_stream_logging.rs
+    - crates/betterlite-logging/src/passthrough_stream_logging/**
+    - crates/betterlite-logging/fuzz/Cargo.toml
+    - crates/betterlite-logging/fuzz/fuzz_targets/passthrough_stream_lines.rs
+    - crates/betterlite-logging/fuzz/corpus/passthrough_stream_lines/**
+    - tools/oracle/cases/logging/passthrough-stream-logging/**
+    - "tools/oracle/fuzz/corpus/helper_case/passthrough_stream_logging-*"
+    - tools/oracle/helpers/b3608.py
+    - tools/oracle/helpers/b3608/**
+    - tools/oracle/src/helpers/logging/b3608.rs
+    - tools/oracle/src/helpers/logging/b3608/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L277-L374
+    why: _route_streaming_logging_to_handler, with the prompt_cache_response_complete stamp, the TinyFish early returns, the thread-offloaded build and the success dispatch inside one catch-all.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L376-L469
+    why: _build_passthrough_logging_result, the per-endpoint handler dispatch and the "cannot parse chunks" fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L471-L499
+    why: _extract_model_for_cost_injection and its three sources in order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L501-L520
+    why: _convert_raw_bytes_to_str_lines, the lossy decode and the empty-line filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L33-L38
+    why: _is_message_stop_chunk matches a bytes line equal to the message_stop event name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L136-L137
+    why: _is_provider_error_chunk is true when the frames hold an Anthropic error body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L400-L420
+    why: Call site in the Messages stream iterator that builds the logging coroutine from this router.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/google_genai/streaming_iterator.py#L85-L105
+    why: Call site in the Gemini stream iterator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L100-L115
+    why: Reader of prompt_cache_response_complete, which treats an incomplete stream as no evidence.
+dod:
+  - text: >-
+      convert_raw_bytes_to_str_lines joins chunks before decoding, replaces invalid UTF-8 with U+FFFD, trims each line and drops empty lines;
+      a multibyte character split across two chunks decodes whole.
+    proof: [lines-tests, stream-logging-oracle, helper-python]
+  - text: A stream cut inside a multibyte character still yields the lines before the cut and a replacement character, and does not fail.
+    proof: [lines-tests, stream-logging-oracle]
+  - text: Arbitrary chunk lists never panic in the line converter, and the committed corpus replays.
+    proof: [stream-lines-corpus]
+  - text: extract_model_for_cost_injection returns the body model first, then the logging object's model, then the Vertex URL model, and skips an empty or non-string value.
+    proof: [model-tests, stream-logging-oracle]
+  - text: The URL source applies to EndpointType::VertexAi only, and the URL result "unknown" is rejected so None comes back.
+    proof: [model-tests]
+  - text: >-
+      build_passthrough_logging_result calls the Anthropic, Vertex, Gemini and OpenAi handler for its own endpoint type only,
+      passes the model to the Vertex and Gemini handlers only, and passes the converted lines.
+    proof: [result-dispatch-tests]
+  - text: >-
+      With no handler for the endpoint type, or a handler that returns no result, the result is the "cannot parse chunks to standard
+      response object. Chunks=" fallback holding the lines as a JSON array; a handler's kwargs survive a missing result.
+    proof: [result-fallback-tests, stream-logging-oracle]
+  - text: A handler error comes back to the caller of build_passthrough_logging_result and is not turned into the fallback.
+    proof: [result-dispatch-tests]
+  - text: >-
+      prompt_cache_response_complete is stamped on every call: true only for a complete Anthropic stream with message_stop, no error
+      frame and no non-whitespace tail, false for each other case and for every other endpoint type.
+    proof: [evidence-tests]
+  - text: The stamp is written even when a later step fails, and split_complete_sse_frames gets empty bytes for non-Anthropic types.
+    proof: [evidence-tests]
+  - text: >-
+      A TinyFish stream returns without dispatch when a poller is already running, starts the poller and returns when a run_id is found
+      in the joined bytes, and otherwise dispatches the result of handle_logging_tinyfish_collected_chunks.
+    proof: [tinyfish-route-tests]
+  - text: >-
+      Other endpoint types build the result off the async runtime (spawn_blocking) and call dispatch_success_handlers once with
+      prefer_async_handlers true, the same start and end time, the kwargs, and cache_hit true only for a JSON true in model_call_details.
+    proof: [route-dispatch-tests]
+  - text: >-
+      An error in the build or the dispatch is logged as "Error in _route_streaming_logging_to_handler: <error>" and does not
+      propagate; no dispatch happens after a build error.
+    proof: [route-error-tests]
+checks:
+  optional: []
+  commands:
+    - id: lines-tests
+      why: the line converter does not join before decoding, does not replace invalid bytes or keeps empty lines
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_logging::tests::lines_/) - test(replays_the_passthrough_stream_lines_corpus)'
+    - id: model-tests
+      why: the model source order, the Vertex-only URL source or the "unknown" rejection is wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_logging::tests::model_/)'
+    - id: result-dispatch-tests
+      why: the wrong handler is chosen, the model goes to the wrong handlers or a handler error is swallowed
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_logging::tests::result_dispatch_/)'
+    - id: result-fallback-tests
+      why: the fallback text, its JSON line list or the kwargs on a missing result is wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_logging::tests::result_fallback_/)'
+    - id: evidence-tests
+      why: prompt_cache_response_complete is missing, true for an incomplete or error stream, or true for a non-Anthropic type
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_logging::tests::evidence_/)'
+    - id: tinyfish-route-tests
+      why: the TinyFish early returns, the late run_id poller start or the fallback billing dispatch is wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_logging::tests::tinyfish_route_/)'
+    - id: route-dispatch-tests
+      why: the success dispatch arguments, cache_hit rule or off-runtime build is wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_logging::tests::route_dispatch_/)'
+    - id: route-error-tests
+      why: a build or dispatch error propagates, is not logged with the exact text, or is followed by a dispatch
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_stream_logging::tests::route_error_/)'
+    - id: stream-lines-corpus
+      why: the line converter fuzz target or its fresh replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-logging/fuzz/fuzz_targets/passthrough_stream_lines.rs &&
+        grep -q 'name = "passthrough_stream_lines"' crates/betterlite-logging/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-logging/fuzz/corpus/passthrough_stream_lines)" &&
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_passthrough_stream_lines_corpus)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3608)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3608 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3608/pyrightconfig.json
+    - id: stream-logging-oracle
+      why: newly added helper cases are absent or betterlite and LiteLLM disagree on them
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/logging/passthrough-stream-logging)" &&
+        grep -rlE '^[[:space:]]+b3608:' tools/oracle/cases/logging/passthrough-stream-logging &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/logging/passthrough-stream-logging
+oracle_cases:
+  - tools/oracle/cases/logging/passthrough-stream-logging/lines-join-split-multibyte.yaml
+  - tools/oracle/cases/logging/passthrough-stream-logging/lines-cut-mid-character.yaml
+  - tools/oracle/cases/logging/passthrough-stream-logging/lines-drop-blank-and-trim.yaml
+  - tools/oracle/cases/logging/passthrough-stream-logging/model-from-body.yaml
+  - tools/oracle/cases/logging/passthrough-stream-logging/model-from-logging-object.yaml
+  - tools/oracle/cases/logging/passthrough-stream-logging/model-vertex-url.yaml
+  - tools/oracle/cases/logging/passthrough-stream-logging/model-vertex-url-unknown.yaml
+  - tools/oracle/cases/logging/passthrough-stream-logging/model-url-ignored-for-openai.yaml
+  - tools/oracle/cases/logging/passthrough-stream-logging/result-fallback-generic-empty.yaml
+deviations:
+  - what: >-
+      The fallback response text renders the lines as a JSON array of strings (serde_json), where LiteLLM formats a Python list
+      with repr (single quotes, Python escapes).
+    why: Python repr text is not ported (docs/compatibility.md). The two agree for an empty chunk list, which is the only fallback oracle case.
+  - what: >-
+      The Anthropic stream-complete probes (message_stop event, provider error frame) and the TinyFish billing calls are injected
+      traits, not direct calls.
+    why: LiteLLM reaches into other modules for them, and the tasks that own them do not exist yet or do not know this module; B102 wires the real ones.
+  - what: A handler that fails makes build_passthrough_logging_result return an error, where LiteLLM raises the handler's exception.
+    why: Rust has no exceptions; the router catches the error where LiteLLM's catch-all does and logs the same message.
+  - what: The model is read from model_call_details by the caller and passed to extract_model_for_cost_injection as an Option<&str>.
+    why: LiteLLM probes the logging object with hasattr; the typed logging state always has the field.
+out_of_scope:
+  - "B3609 owns chunk_processor, schedule_stream_failure_logging and _record_partial_usage_for_failure, which call this module's build_passthrough_logging_result and extract_model_for_cost_injection."
+  - "The collected-chunks handlers _handle_logging_anthropic_collected_chunks, _handle_logging_vertex_collected_chunks, _handle_logging_gemini_collected_chunks and _handle_logging_openai_collected_chunks belong to the provider leaf tasks (B3634 Anthropic, B3637 OpenAI, B3640 Vertex and Gemini). B3642 owns only vertex_passthrough_handler."
+  - "B3638 owns VertexPassthroughLoggingHandler.extract_model_from_url."
+  - "B3648 and B3649 own sse_poller_spawned, run_id_from_sse_frames, start_sse_run_billing and handle_logging_tinyfish_collected_chunks."
+  - "B005 owns split_complete_sse_frames (litellm/proxy/common_utils/sse_keepalive.py)."
+  - "B250 owns dispatch_success_handlers and the logging object's model_call_details."
+  - "_is_message_stop_chunk and _is_provider_error_chunk in the Anthropic Messages streaming_iterator.py belong to the Messages stream tasks (B979); this module only calls them through AnthropicFrameProbe."
+  - "ProxyBaseLLMRequestProcessing._process_chunk_with_cost_injection and the include_cost_in_streaming_usage flag are used by B3609, not here."
+  - "The HTTP oracle cases for pass-through stream logging belong to B102, which composes the routes."
+pitfalls:
+  - "The prompt_cache_response_complete stamp runs before the try block, so it is written even when TinyFish returns early or the build fails; put it before the guarded part."
+  - "For non-Anthropic types the probe input is empty bytes, not the collected chunks, so the stamp is false without splitting a large body."
+  - "An Anthropic stream ending on a partial frame (any non-whitespace in the tail) is not complete even when message_stop appeared earlier."
+  - "Decode once after joining all chunks; decoding each chunk alone breaks a multibyte character that the transport split and puts U+FFFD in the middle of a word."
+  - "Lines are trimmed, not only filtered: a line with only spaces or a carriage return is dropped, and kept lines lose a trailing \\r."
+  - "Only the Vertex and Gemini handlers receive the model. The Anthropic and OpenAI handlers take no model argument."
+  - "A Vertex URL with no /models/<name> gives the string unknown, and the extractor must treat that as no model and return None, not Some(\"unknown\")."
+  - "cache_hit is true only when model_call_details[\"cache_hit\"] is the JSON value true; the string \"true\" or 1 is false."
+  - "A handler may return kwargs together with a None result; the fallback replaces only the result, and the kwargs still go to the dispatch."
+  - "TinyFish checks sse_poller_spawned before it looks for a late run_id; a late run_id found after a running poller must not start a second poller."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

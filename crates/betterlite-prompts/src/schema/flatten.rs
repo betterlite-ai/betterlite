@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::budget::FlattenBudget;
-use super::flatten_and_drop_schema;
 use crate::arguments::json::{Json, Object};
 
 const COMBINATORS: [&str; 3] = ["allOf", "anyOf", "oneOf"];
@@ -16,12 +15,6 @@ pub fn flatten_top_level(schema: &Object) -> Object {
         budget: FlattenBudget::default(),
     };
     flatten_against_root(schema, &BTreeSet::new(), 0, &mut context)
-}
-
-#[must_use]
-pub fn flatten_and_drop(schema: &Object) -> Object {
-    let filtered = flatten_and_drop_schema(schema);
-    flatten_top_level(&filtered)
 }
 
 pub fn tool_with_sanitized_parameters(tool: Object, sanitize: fn(&Object) -> Object) -> Object {

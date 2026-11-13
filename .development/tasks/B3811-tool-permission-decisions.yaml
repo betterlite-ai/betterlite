@@ -66,16 +66,9 @@ checks:
   commands:
     - id: tool-permission-tests
       why: the permission evaluation tests fail, do not exist, or filter selects no tests
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission_evaluation::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^tool_permission::(.*::)?tool_permission_evaluation::/)'
 oracle_cases: []
 deviations:
-  - what: >-
-      _get_permission_for_tool_call calls a render_violation_message method that formats the default message with template parameters.
-      Until B3664 lands, betterlite returns the raw default message without template rendering.
-    why: >-
-      The render_violation_message method (litellm/integrations/custom_guardrail.py) is owned by B3664 and not yet implemented.
-      Evaluation still returns the correct allow/deny decision; only the message text is unrendered.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L422-L425
   - what: >-
       When a matching rule has allowed_param_patterns and arguments cannot be parsed (JSON decode error, non-object result),
       evaluation reports a parse error and continues to the next rule instead of blocking at that rule.
@@ -94,7 +87,7 @@ out_of_scope:
   - "_check_tool_permission L253-L305, the simpler tool_name/tool_type-only check used by the pre-call hook (owned by B3812)"
   - "async_pre_call_hook L790-L838 and _modify_request_with_permission_errors L658-L704, which call _get_permission_for_tool_call indirectly via _check_tool_permission (owned by B3812)"
   - "async_post_call_success_hook L841-L890, async_post_call_streaming_iterator_hook L892-L953, _check_assembled_stream L955-L967, _modify_response_with_permission_errors L725-L787, and _anthropic_tool_use_to_tool_call L515-L527, which call _get_permission_for_tool_call or wrap extracted tool calls (owned by B3813)"
-  - "render_violation_message/violation_message_template (litellm/integrations/custom_guardrail.py, owned by B3664); betterlite returns the raw default message until B3664 lands"
+  - "render_violation_message/violation_message_template (litellm/integrations/custom_guardrail.py, owned by B3664, which this task depends on and calls)"
 pitfalls:
   - Argument patterns are matched on string representations of values, not typed structures; flatten to strings for comparison.
   - Array paths like field[] must be recognized as a single collected-into target, not individual indexes.

@@ -1,0 +1,10 @@
+kind: helper
+name: openai-moderation-no-text
+call:
+  b3731:
+    apply:
+      settings: {api_key: test-key}
+      inputs: {texts: [], structured_messages: [{role: assistant, content: only an answer}]}
+      request_data: {model: gpt-4o}
+env: {}
+compare: {ignore: []}

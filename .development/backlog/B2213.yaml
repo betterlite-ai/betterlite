@@ -1,14 +1,14 @@
 id: B2213
 milestone: M3 providers
 title: Azure Arc managed-identity challenge protocol
-status: todo
+status: done
 depends_on: [B173, B171, B187, B002]
 file: tasks/B2213-azure-arc-identity.yaml
 covers:
   - "litellm/secret_managers/get_azure_ad_token_provider.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 769

@@ -3,6 +3,10 @@ name = "betterlite-mcp-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
@@ -20,11 +24,26 @@ test = false
 doc = false
 bench = false
 
-[workspace]
 
 [[bin]]
 name = "envelope"
 path = "fuzz_targets/envelope.rs"
+test = false
+doc = false
+bench = false
+
+
+[[bin]]
+name = "request_path_targets"
+path = "fuzz_targets/request_path_targets.rs"
+test = false
+doc = false
+bench = false
+
+
+[[bin]]
+name = "oauth_metadata"
+path = "fuzz_targets/oauth_metadata.rs"
 test = false
 doc = false
 bench = false

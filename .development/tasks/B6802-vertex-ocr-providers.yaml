@@ -1,0 +1,83 @@
+id: B6802
+title: Vertex AI OCR providers for Mistral and DeepSeek
+description: >-
+  Add modules `vertex_ocr` and `vertex_deepseek_ocr` to betterlite-ocr. `VertexAiOcrConfig` ports
+  vertex_ai/ocr (transformation.rs and common_utils.rs) for Mistral OCR models on Vertex. It reuses
+  B6801's request and response functions. The URL is
+  https://{location}-aiplatform.googleapis.com/v1/projects/{project}/locations/{location}/publishers/mistralai/models/{model}:rawPredict,
+  where location defaults to us-central1. A vertex_location or vertex_ai_location that is not a
+  plain region name fails with RequestField path vertex_location, and an api_base that does not parse fails
+  with RequestField path api_base. The bearer token comes from B6800's `VertexTokenSource`, with
+  VERTEX_AI_API_KEY as the key variable and the option names vertex_credentials, vertex_ai_credentials,
+  vertex_project, vertex_ai_project, vertex_location and vertex_ai_location. Any api_base that comes from the
+  request is refused with InvalidConfiguration, since host credentials must not go to a request-chosen
+  endpoint (port validate_destination from common_utils.rs).
+  `VertexAIDeepSeekOCRConfig` ports deepseek_transformation.rs. The model name has the prefix
+  deepseek-ai/. The default base is https://aiplatform.googleapis.com. It sends a chat-style request
+  with an image_url content part, defaults temperature to 0.0 and repetition_penalty to 1.05, and
+  supports the options stream, temperature, max_tokens, top_p, n and stop. A missing document URL is
+  MissingDocumentUrl. The reply is chat output, and the OCR JSON sits in choices[0].message.content.
+  Decode it into pages, usage_info, model, document_annotation, tables and keyValuePairs, put every
+  other key into the page extra fields, and fail with EmptyContent when the content is missing or
+  blank. If the content is not the OCR JSON but has a pages key, fall back as the Rust file does.
+  A bad pages or model value fails with ResponseField path choices[0].message.content.pages or .model.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-ocr/Cargo.toml
+    - crates/betterlite-ocr/src/vertex_ocr.rs
+    - crates/betterlite-ocr/src/vertex_ocr/**
+    - crates/betterlite-ocr/src/vertex_deepseek_ocr.rs
+    - crates/betterlite-ocr/src/vertex_deepseek_ocr/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/vertex_ai/ocr/transformation.rs#L1-L227
+    why: Vertex Mistral URL, location rule and auth flow.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/vertex_ai/ocr/common_utils.rs#L1-L29
+    why: The refusal to send host credentials to a request-controlled endpoint.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/vertex_ai/ocr/deepseek_transformation.rs#L1-L669
+    why: DeepSeek request body, defaults, chat reply decoding and its error cases.
+
+dod:
+  - text: The Vertex Mistral URL is built from project, location and model, defaults the location to us-central1, and rejects a bad location with RequestField path vertex_location.
+    proof: [vertex-tests]
+  - text: An api_base supplied by the request is refused with InvalidConfiguration before any request is sent.
+    proof: [vertex-tests]
+  - text: The Vertex Mistral body and OCRResponse equal B6801's for the same mock answer.
+    proof: [vertex-tests]
+  - text: The DeepSeek request carries the image_url part with temperature 0.0 and repetition_penalty 1.05 unless the caller sets them, and a missing document URL is MissingDocumentUrl.
+    proof: [deepseek-tests]
+  - text: The DeepSeek reply decodes pages, usage_info, model, document_annotation, tables and keyValuePairs from the chat content, and empty content is EmptyContent.
+    proof: [deepseek-tests]
+  - text: A malformed pages or model value in the DeepSeek content fails with the ResponseField path in the description.
+    proof: [deepseek-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: vertex-tests
+      why: Vertex Mistral URL, auth refusal or body behavior is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^vertex_ocr::tests::/)'
+    - id: deepseek-tests
+      why: DeepSeek request or reply decoding is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^vertex_deepseek_ocr::tests::/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - Getting a Vertex token (service account, workload identity, cache) is B1301 and B1302. This task calls the injected VertexTokenSource.
+  - Picking the DeepSeek or Mistral config from the model name is B6808.
+
+pitfalls:
+  - The DeepSeek model check is a case-insensitive "deepseek" substring in B6808, but the request model keeps the deepseek-ai/ prefix handling from the Rust file. Read both.
+  - Do not log the bearer token or the vertex_credentials value. They are secrets.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

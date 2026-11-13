@@ -1,0 +1,178 @@
+id: B3099
+title: Report cache activity, errors and available filters
+description: >-
+  Build the module `cache_activity_routes` in betterlite-server. It serves one route for the Admin UI cache dashboard:
+  GET `/global/activity/cache_hits`, authenticated by B052, hidden from /openapi.json (LiteLLM sets
+  include_in_schema=False; keep it out of the schema too). It is the only path; there is no /v1 or other alias.
+  The route reads the LiteLLM_SpendLogs table and answers `CacheActivityResponse`. The route is not scoped to the caller:
+  every admitted caller sees all rows, as in LiteLLM (B867 decides which roles may reach the path). This task adds no
+  role check. Expose one public function that returns the axum route; B8482 composes it into the app and this task adds
+  no registration of its own.
+
+  Query parameters. `start_date` and `end_date` are required strings. `key_aliases` and `models` are optional and can
+  repeat (`?models=a&models=b`); a missing list becomes an empty list, and a repeated empty value stays one empty string.
+  A missing date answers 422 in the envelope B003 uses for other query validation errors.
+
+  Order inside the handler. First the caller is authenticated (B052), so a missing or bad credential answers 401 before
+  anything else. Then the query string is checked, so a missing date is a 422 even when the database is missing. Then the
+  database handle: a missing handle answers HTTP 500 with detail `{"error": "Database not connected. Connect a database to
+  your proxy - https://docs.litellm.ai/docs/simple_proxy#managing-auth---virtual-keys"}`. That text is not
+  CommonProxyErrors.db_not_connected_error; copy it from this route (analytics_endpoints.py L47-L53). Only after that are
+  the dates parsed, start first and then end; the first bad one answers HTTP 400 with detail
+  `{"error": "<param_name> must be a YYYY-MM-DD date, got <repr>"}`, where param_name is `start_date` or `end_date` and
+  `<repr>` is Python's repr of the string: single quotes, but double quotes when the value contains a single quote and no
+  double quote, with backslash, newline, tab, carriage return and other control characters escaped (`\\`, `\n`, `\t`,
+  `\r`, `\xNN`). Write one small function for the repr and cover it with tests. A start date after the end date is not an
+  error; it selects nothing and answers an empty report.
+
+  Date parsing is Python's `datetime.strptime(value, "%Y-%m-%d")` with UTC attached, at 00:00:00. It accepts a four digit
+  year, a month of 1 to 12 with or without a leading zero, and a day of 1 to 31 with or without a leading zero or with a
+  space in place of it (`2024-01- 5`). It rejects a day that does not exist in that month (`2024-02-30`), trailing text and
+  surrounding whitespace. Non-ASCII digits are rejected (see deviations). Years before 0001 do not exist, so `0000` is an
+  error.
+
+  Queries. Four SQL statements run in one database round, and any database error leaves the handler uncaught, so it
+  becomes the server's generic internal error response (this route adds no "Failed to fetch" wrapper). Copy the four
+  statements from cache_activity.py L125-L192 without changing a character of the SQL: GROUPS_SQL, ERROR_BREAKDOWN_SQL,
+  KEY_ALIAS_OPTIONS_SQL and MODEL_OPTIONS_SQL. Bind positions: $1 start date and $2 end date as timestamptz at midnight
+  UTC; $3 and $4 in the first two statements are the key alias list and the model list; the last one or two parameters are
+  the info routes list. GROUPS_SQL and ERROR_BREAKDOWN_SQL take ($1 start, $2 end, $3 key aliases, $4 models, $5 info
+  routes). KEY_ALIAS_OPTIONS_SQL and MODEL_OPTIONS_SQL take ($1 start, $2 end, $3 info routes), and they ignore the user's
+  key alias and model filters, so the filter dropdowns always show every option in the range. Every list parameter is a
+  JSON array of strings bound as jsonb (the SQL casts `$n::jsonb`). The info routes list is B868's `INFO_ROUTES` in
+  betterlite-auth (the same values as LiteLLMRoutes.info_routes), in its order. Rows whose call_type is one of those
+  routes are left out of all four statements, so dashboard reads of /key/info, /models and the like do not count. The end
+  date is inclusive: the SQL adds one day.
+
+  Row decoding. A group row has call_type (text), api_requests, cache_hits, failed_requests, cached_completion_tokens and
+  generated_completion_tokens (all int4, since the SQL casts `::int`). An error row has call_type, error_code, error_class
+  (text) and count (int4). An option row has one text column. A statement that returns no rows gives an empty list. Keep
+  the row order the database returns; do not sort in Rust. Decode by column name through typed row structs, not by
+  position.
+
+  Totals. `compute_totals(groups)` sums api_requests, cache_hits, failed_requests and cached_completion_tokens over the
+  groups. `all_requests` is api_requests + cache_hits + failed_requests (the sums), and `cache_hit_ratio` is
+  `cache_hits / all_requests * 100` as f64 when all_requests is greater than zero, otherwise `0.0`. The ratio is a
+  percentage from 0 to 100, not a fraction. Sums are over i64 so large groups cannot overflow.
+
+  Response types, in this task's files, with LiteLLM's names and field order: `CacheActivityGroup { call_type,
+  api_requests, cache_hits, failed_requests, cached_completion_tokens, generated_completion_tokens }`,
+  `CacheActivityTotals { api_requests, cache_hits, failed_requests, cached_completion_tokens, cache_hit_ratio }`,
+  `CacheActivityFilterOptions { key_aliases, models }`, `CacheActivityErrorBucket { call_type, error_code, error_class,
+  count }` and `CacheActivityResponse { groups, totals, filter_options, error_breakdown }`. `error_breakdown` is a JSON
+  array. The counts serialize as integers and `cache_hit_ratio` as a JSON number (`0.0` when zero).
+
+  Tests. Native tests build small LiteLLM_SpendLogs and LiteLLM_VerificationToken tables in a unique schema through B700's
+  PostgreSQL fixture (columns: request_id, call_type, api_key, model, startTime, status, cache_hit, completion_tokens,
+  metadata jsonb; token, key_alias) and run the four statements against seeded rows. HTTP oracle cases run the route
+  through the booted proxy next to LiteLLM. The seeded database has users, keys and teams and no usable spend log rows, so
+  the cases cover the empty report, parameter validation, date errors, the check order, authentication and the missing
+  database; row grouping, totals and the error breakdown are covered by the native Postgres tests.
+scope:
+  paths:
+    - crates/betterlite-server/src/cache_activity_routes.rs
+    - crates/betterlite-server/src/cache_activity_routes/**
+    - tools/oracle/cases/management/cache-activity/**
+    - tools/oracle/helpers/b3099.py
+    - tools/oracle/helpers/b3099/**
+    - tools/oracle/src/helpers/server/b3099.rs
+    - tools/oracle/src/helpers/server/b3099/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/analytics_endpoints/analytics_endpoints.py#L15-L22
+    why: _parse_date, the strptime format, UTC attachment and the 400 body with the repr of the bad value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/analytics_endpoints/analytics_endpoints.py#L25-L61
+    why: The route decorator (path, auth dependency, include_in_schema=False), query parameters, database check and the call into get_cache_activity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/analytics_endpoints/cache_activity.py#L89-L122
+    why: The five response models and their field order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/analytics_endpoints/cache_activity.py#L125-L192
+    why: The four SQL statements to copy, with their parameter positions and the info routes exclusion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/analytics_endpoints/cache_activity.py#L209-L249
+    why: compute_totals and get_cache_activity, which runs the four queries together and builds the response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L880-L893
+    why: internal_user_routes includes this path, so internal users can call it (B867 owns the table).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19981
+    why: analytics_router is included in the app; B8482 owns the registration.
+  - url: https://docs.python.org/3.12/library/datetime.html#strftime-and-strptime-format-codes
+    why: The %Y, %m and %d rules the date parser has to match.
+dod:
+  - text: GET /global/activity/cache_hits answers CacheActivityResponse with groups, totals, filter_options and error_breakdown in that order, and the path is absent from /openapi.json.
+    proof: [oracle, route-tests]
+  - text: A missing start_date or end_date answers 422, and a missing credential answers 401 before it.
+    proof: [oracle, route-tests]
+  - text: A missing database answers 500 with the "Database not connected. Connect a database to your proxy" text before any date is parsed, and after the 422 check.
+    proof: [oracle, route-tests]
+  - text: A bad start_date or end_date answers 400 with detail.error naming the parameter and the Python repr of the value, start checked first.
+    proof: [oracle, date-tests]
+  - text: The date parser accepts non-padded months and days and a space before a one digit day, and rejects impossible days, trailing text, whitespace and non-ASCII digits.
+    proof: [date-tests]
+  - text: The groups statement counts cache hits, failures and other requests apart, merges an empty call_type into "Unknown", orders by request count, and leaves out info route call types.
+    proof: [query-tests]
+  - text: The date range is inclusive of the whole end day, and key_aliases and models filters apply to groups and errors but not to the filter option lists.
+    proof: [query-tests]
+  - text: The error breakdown counts failures only, by call_type, error_code and error_class, with "Unknown" for empty or missing error information.
+    proof: [query-tests]
+  - text: Totals sum the groups, and cache_hit_ratio is a percentage that is 0.0 when there are no requests.
+    proof: [totals-tests]
+  - text: A database error in any of the four statements is not wrapped and reaches the server's generic internal error response.
+    proof: [route-tests]
+checks:
+  optional: []
+  commands:
+    - id: route-tests
+      why: the route, its check order, authentication, 422 or 500 answers or the schema hiding are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_activity_routes::tests::route_/)'
+    - id: date-tests
+      why: the strptime-compatible date parser or the Python repr in the 400 body is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_activity_routes::tests::date_/)'
+    - id: query-tests
+      why: the four SQL statements, their parameters or the info route exclusion do not behave on a real PostgreSQL database
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_activity_routes::tests::query_/)'
+    - id: totals-tests
+      why: compute_totals or the response serialization is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_activity_routes::tests::totals_/)'
+oracle_cases:
+  - tools/oracle/cases/management/cache-activity/empty-report.yaml
+  - tools/oracle/cases/management/cache-activity/filters-repeated-values.yaml
+  - tools/oracle/cases/management/cache-activity/reversed-range-empty.yaml
+  - tools/oracle/cases/management/cache-activity/date-not-padded.yaml
+  - tools/oracle/cases/management/cache-activity/missing-start-date.yaml
+  - tools/oracle/cases/management/cache-activity/missing-end-date.yaml
+  - tools/oracle/cases/management/cache-activity/bad-start-date.yaml
+  - tools/oracle/cases/management/cache-activity/bad-end-date.yaml
+  - tools/oracle/cases/management/cache-activity/impossible-day.yaml
+  - tools/oracle/cases/management/cache-activity/single-quote-in-date.yaml
+  - tools/oracle/cases/management/cache-activity/both-dates-bad-start-first.yaml
+  - tools/oracle/cases/management/cache-activity/no-database.yaml
+  - tools/oracle/cases/management/cache-activity/no-database-bad-date.yaml
+  - tools/oracle/cases/management/cache-activity/no-database-missing-date.yaml
+  - tools/oracle/cases/management/cache-activity/no-credentials.yaml
+  - tools/oracle/cases/management/cache-activity/post-not-allowed.yaml
+  - tools/oracle/cases/management/cache-activity/absent-from-openapi.yaml
+deviations:
+  - what: Dates with non-ASCII digits (for example Arabic-Indic digits) answer 400, where Python's strptime accepts some of them.
+    why: The format is a calendar date in ASCII; docs/compatibility.md covers what Python's runtime accepts beyond the declared type, and no client sends these.
+  - what: A database error in a statement answers with the server's generic internal error body, not Python's exception text.
+    why: The wording of an internal error cannot match Python's exception strings; the 500 status is the same.
+out_of_scope:
+  - "B8482 composes this route into the app, like the analytics_router include at proxy_server.py L19981; this task exposes only the route function."
+  - "B867 owns the internal_user_routes entry for this path and B868 owns info_routes; this task reads INFO_ROUTES and adds no role check."
+  - "_SupportsQueryRaw, _SupportsRawQueryDb and the Pydantic TypeAdapters (L76-L86, L195-L206) are Python typing helpers with no Rust counterpart."
+  - "UNKNOWN_CALL_TYPE (cache_activity.py L72) has no caller at the pin; the SQL spells 'Unknown' itself, so it is not built."
+  - "B700 owns the PostgreSQL pool and session; the database handle and the generic internal error response come from the server crate and B003."
+pitfalls:
+  - The missing-database 500 uses this route's own text ("Database not connected. Connect a database to your proxy - ..."), not CommonProxyErrors.db_not_connected_error that the daily activity routes use.
+  - A missing date is a 422 and wins over the missing database 500, but a malformed date is a 400 that comes after the database check, so a bad date with no database answers 500.
+  - api_requests is COUNT(*) minus cache hits minus failures, so a row that is both a cache hit and a failure is subtracted twice and can push a group below zero; copy the SQL and do not clamp.
+  - cache_hit is a text column compared with 'True' after COALESCE(..., ''); a native boolean bind or a lowercase 'true' matches nothing.
+  - Failure rows are the ones with status = 'failure', and cache hits are counted in the same pass, so a failed cache hit appears in both counters.
+  - metadata is nullable jsonb, and a missing error_information or an empty error_code gives 'Unknown' through NULLIF and COALESCE; do not decode it in Rust.
+  - The key alias filter compares COALESCE(vt.key_alias, 'Unnamed Key'), so keys without a row in LiteLLM_VerificationToken are matched by the literal alias "Unnamed Key".
+  - The GROUPS_SQL ORDER BY COUNT(*) DESC leaves ties in database order, and ORDER BY 1 on the option lists follows the database collation; oracle cases must not seed ties and must compare the lists with the same collation on both sides.
+  - The end date is exclusive in SQL after adding one day, so both dates are midnight UTC and the end day is fully included; never add the day in Rust as well.
+  - $3 and $4 are jsonb parameters; binding a Rust Vec<String> as text[] fails the `$3::jsonb` cast, so bind serde_json values.
+  - The route is not under any prefix that other daily activity routes use, and the same path under /v1 does not exist, so an oracle case for it must expect the unknown-path answer.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

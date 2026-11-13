@@ -1,0 +1,106 @@
+id: B8023
+title: Map Linkup POST and SearXNG GET search requests and replies
+description: >-
+  Add api::search_providers::linkup and api::search_providers::searxng to betterlite-core on the B3270 base
+  hooks. betterlite-config gets linkup_search_settings (LINKUP_API_KEY unset, LINKUP_API_BASE default
+  https://api.linkup.so/v1) and searxng_search_settings (SEARXNG_API_KEY unset, SEARXNG_API_BASE unset, no
+  default). Display names are "Linkup" and "SearXNG". Linkup is POST. SearXNG overrides the method to GET.
+
+  Linkup: key through the shared policy with the Linkup default as the trusted host; Authorization Bearer plus
+  Content-Type application/json; a missing key fails with "LINKUP_API_KEY is not set. Set `LINKUP_API_KEY`
+  environment variable." URL is the caller base, else env, else default, plus /search unless already present.
+  Request body: q (a list is joined with a space), depth (option or "standard"), outputType (option or
+  "searchResults"), maxResults from max_results and includeDomains from search_domain_filter, in that order.
+  country and max_tokens_per_page are dropped. Other options pass through unless unified or already in the
+  body. Reply: walk results in order. An item whose type is "text" (the default when type is absent) maps name
+  to title, url, content to snippet. An "image" item does the same but title falls back to its url when name is
+  absent. Any other type is skipped. Dates are null. A reply without results (the sourcedAnswer shape) gives
+  an empty list.
+
+  SearXNG: the key is optional and sent as Authorization Bearer when resolved; Content-Type is always set. The
+  shared resolver gets no default base, so its only trusted host is SEARXNG_API_BASE; with a server key set and
+  no matching env base, any caller base is refused. The URL needs a base: caller, else SEARXNG_API_BASE, else a
+  ValueError with the source text naming SEARXNG_API_BASE. Append /search (handling one trailing slash) unless
+  present, then append ?query-string when the request carries the _searxng_params record. The request body is
+  that record: q, format "json" always, and language from country lowercased (us and uk give en, de, fr, es,
+  jp gives ja, anything else is kept as is). max_results is ignored. Other options copy in unless unified or
+  already present, so q, format and language (when country was sent) cannot be overridden. Encode the record
+  without doseq, so a list value becomes its Python-style text. Reply: results with title, url, content
+  as snippet, and date from publishedDate or else pubdate.
+
+  Add fuzz targets linkup_reply and searxng_reply with replays_the_linkup_corpus and
+  replays_the_searxng_corpus. The source holds 349 nonblank lines with initializers; plan 290 production and
+  config lines, 240 test lines and 170 oracle and fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/api/search_providers/linkup.rs
+    - crates/betterlite-core/src/api/search_providers/linkup/**
+    - crates/betterlite-core/src/api/search_providers/searxng.rs
+    - crates/betterlite-core/src/api/search_providers/searxng/**
+    - crates/betterlite-config/src/providers/linkup.rs
+    - crates/betterlite-config/src/providers/linkup/**
+    - crates/betterlite-config/src/providers/searxng.rs
+    - crates/betterlite-config/src/providers/searxng/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/linkup_reply.rs
+    - crates/betterlite-core/fuzz/fuzz_targets/searxng_reply.rs
+    - crates/betterlite-core/fuzz/corpus/linkup_reply/**
+    - crates/betterlite-core/fuzz/corpus/searxng_reply/**
+    - tools/oracle/cases/helpers/linkup-searxng-search/**
+    - tools/oracle/helpers/b8023.py
+    - tools/oracle/helpers/b8023/**
+    - tools/oracle/src/helpers/core_ops/b8023.rs
+    - tools/oracle/src/helpers/core_ops/b8023/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/linkup/search/transformation.py#L45-L203
+    why: Linkup body defaults, dropped country and the text and image reply branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/searxng/search/transformation.py#L40-L229
+    why: SearXNG GET method, base requirement, country-to-language table, params record and reply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/search/transformation.py#L137-L189
+    why: The shared host check, here called with no default base for SearXNG.
+  - url: https://docs.python.org/3/library/urllib.parse.html#urllib.parse.urlencode
+    why: urlencode quoting rules that the query string must reproduce byte for byte.
+dod:
+  - text: Linkup settings, POST body defaults and URL match the source.
+    proof: [linkup-searxng-tests, oracle]
+  - text: SearXNG base requirement, trust rule, language table and GET query string match the source.
+    proof: [linkup-searxng-tests, oracle]
+  - text: Both replies project the pinned fields, including Linkup's type branches and SearXNG's date fallback.
+    proof: [linkup-searxng-tests, linkup-searxng-corpus, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: linkup-searxng-tests
+      why: Linkup or SearXNG mapping, URL building, reply projection or settings loading is missing
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::search_providers::(linkup|searxng)::/) - test(replays_the_linkup_corpus) - test(replays_the_searxng_corpus) | test(linkup_search_settings) | test(searxng_search_settings)'
+    - id: linkup-searxng-corpus
+      why: The Linkup or SearXNG reply decoder has no new corpus inputs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/linkup_reply)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/searxng_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_linkup_corpus) | test(replays_the_searxng_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/linkup-searxng-search/linkup-body-defaults.yaml
+  - tools/oracle/cases/helpers/linkup-searxng-search/linkup-image-title-fallback.yaml
+  - tools/oracle/cases/helpers/linkup-searxng-search/linkup-unknown-type-skipped.yaml
+  - tools/oracle/cases/helpers/linkup-searxng-search/searxng-language-table.yaml
+  - tools/oracle/cases/helpers/linkup-searxng-search/searxng-query-string.yaml
+  - tools/oracle/cases/helpers/linkup-searxng-search/searxng-slash-base.yaml
+  - tools/oracle/cases/helpers/linkup-searxng-search/searxng-pubdate-fallback.yaml
+  - tools/oracle/cases/helpers/linkup-searxng-search/searxng-key-without-env-base.yaml
+deviations: []
+out_of_scope:
+  - B3270 owns the shared records and the host check.
+  - Both package initializers only re-export the config class.
+  - B048 registers both configs, and B3272 runs them.
+pitfalls:
+  - The unified country is dropped for Linkup, and max_results is dropped for SearXNG, so neither reaches the wire.
+  - SearXNG with SEARXNG_API_KEY set and no SEARXNG_API_BASE refuses every caller base, since the trusted set is empty.
+  - SearXNG urlencode has no doseq, so a list option is encoded as its bracketed text and a bool as True or False.
+  - Python quote_plus keeps `~` and encodes `*`, while the url crate form encoder does the reverse, so the encoder needs a fix-up and an oracle case with both characters.
+  - A caller depth or outputType is read for the body defaults and then not copied again by the passthrough loop.
+  - Linkup items typed anything but text or image vanish with no warning.
+  - "The url crate (form_urlencoded) is needed in crates/betterlite-core/Cargo.toml by B8023, B8024 and B048. The first part to merge adds the line and the others keep it."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

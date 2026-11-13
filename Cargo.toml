@@ -1,6 +1,15 @@
 [workspace]
-members = ["crates/*", "tools/*"]
-exclude = ["tools/management-cli"]
+exclude = ["crates/.claude", "crates/betterlite-openapi/fuzz", "tools/.claude", "tools/dashboard", "tools/management-cli"]
+members = [
+  "crates/*",
+  "crates/*/fuzz",
+  "tools/*",
+  "tools/*/fuzz",
+  "tools/oracle/helper-api",
+  "tools/oracle/src/helpers/core_ops",
+  "tools/oracle/src/helpers/redact",
+  "tools/oracle/src/helpers/server",
+]
 resolver = "3"
 
 [workspace.package]
@@ -11,7 +20,7 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
-axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "original-uri", "tokio"] }
 chrono = { version = "0.4.45", default-features = false, features = ["now", "serde"] }
 deadpool-postgres = "0.14.2"
 hex = "0.4.3"
@@ -19,6 +28,7 @@ hyper-util = "0.1.21"
 percent-encoding = "2.3.2"
 phf = { version = "0.13.1", features = ["macros"] }
 quick-xml = "0.41.0"
+redis = { version = "1.7.0", default-features = false }
 regex = "1.13.1"
 rust_decimal = { version = "1.43.0", features = ["serde-with-arbitrary-precision"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws-lc-rs"] }
@@ -105,3 +115,7 @@ debug = "line-tables-only" # backtraces keep file and line; full debug info adde
 
 [profile.dev.package."*"]
 debug = false # a dependency frame still shows its function name
+
+[profile.dev.package]
+regex-automata = { opt-level = 2 } # Redactor compilation otherwise dominates debug startup.
+regex-syntax = { opt-level = 2 }

@@ -1,0 +1,7 @@
+kind: helper
+name: bedrock-converse-usage-total-token-normalization
+call:
+  bedrock_converse_usage:
+    total_tokens: {usage: {inputTokens: 2, outputTokens: 3, totalTokens: 0}}
+env: {}
+compare: {ignore: []}

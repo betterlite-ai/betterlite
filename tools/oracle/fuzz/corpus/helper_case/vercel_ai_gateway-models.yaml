@@ -1,0 +1,9 @@
+kind: helper
+name: vercel-ai-gateway-seed-models
+call:
+  b5835:
+    steps:
+      - {kind: models_url_and_list, status: 200, body: '{"data":[{"id":"a"}]}'}
+      - {kind: map_params, model: vercel-model, non_default_params: {providerOptions: {gateway: {order: [a]}}}}
+env: {}
+compare: {ignore: []}

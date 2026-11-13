@@ -1,0 +1,21 @@
+kind: helper
+name: shrunken-map
+call:
+  catalog_fetch_policy:
+    operation: validate_map
+    model_keys:
+      - sample_spec
+      - model-a
+      - model-b
+      - model-c
+      - model-d
+      - model-e
+      - model-f
+      - model-g
+      - model-h
+      - model-i
+    backup_model_count: 100
+    min_model_count: 1
+    max_shrink_ratio: "0.5"
+compare: {ignore: []}
+env: {}

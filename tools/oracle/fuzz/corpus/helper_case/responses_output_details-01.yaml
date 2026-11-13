@@ -1,0 +1,11 @@
+kind: helper
+name: responses-output-details-seed
+call:
+  responses_output_details:
+    images: []
+    finish_reason: null
+    annotations: null
+    usage: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,9 @@
+kind: helper
+name: realtime-cost-events-missing-realtime-type-is-an-error
+call:
+  realtime_cost_events:
+    function: collect
+    events:
+      - {response: {usage: {input_tokens: 1, output_tokens: 1}}}
+env: {}
+compare: {ignore: []}

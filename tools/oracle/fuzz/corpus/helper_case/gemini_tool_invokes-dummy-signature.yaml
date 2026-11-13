@@ -1,0 +1,5 @@
+kind: helper
+name: gemini-tool-invokes-corpus-dummy-signature
+call: {gemini_tool_invokes: {operation: dummy_thought_signature}}
+env: {}
+compare: {ignore: []}

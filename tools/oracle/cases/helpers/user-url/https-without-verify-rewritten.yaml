@@ -1,0 +1,11 @@
+kind: helper
+name: user-url-https-without-verify-rewritten
+call:
+  b5082:
+    call: validate_url
+    url: "https://93.184.216.34/a/b?c=1#top"
+    user_url_allowed_hosts: []
+    ssl_verify: false
+env: {}
+compare:
+  ignore: []

@@ -87,6 +87,8 @@ description: >-
   wiring lines; 550 planned, 550 maximum changed lines.
 scope:
   paths:
+  - "crates/betterlite-anthropic/src/usage/tests.rs"
+  - crates/betterlite-anthropic/src/usage.rs
   - crates/betterlite-bedrock/Cargo.toml
   - crates/betterlite-bedrock/src/converse_usage.rs
   - crates/betterlite-bedrock/src/converse_usage/**

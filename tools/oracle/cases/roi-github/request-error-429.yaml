@@ -1,0 +1,5 @@
+kind: helper
+name: request-error-429
+call: {"b3152": {"operation": "request", "method": "GET", "path": "user/repos", "replies": [{"status": 429}, {"status": 429}, {"status": 429}]}}
+env: {}
+compare: {ignore: []}

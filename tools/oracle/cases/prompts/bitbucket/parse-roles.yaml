@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "parse-roles", "call": {"b4056": {"mode": "parse", "template": "system: first rule\n\nUSER: hello there\nAssistant: hi\n\nuser: second turn"}}, "env": {}, "compare": {"ignore": []}}

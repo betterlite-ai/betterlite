@@ -1,0 +1,14 @@
+id: B6750
+milestone: M8 platform
+title: Health check entry point flow and error result
+status: todo
+depends_on: [B4440, B174, B193, B247, B187]
+file: tasks/B6750-health-check-entry.yaml
+covers:
+  - "litellm/main.py"
+parent: null
+split_from: B4449
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

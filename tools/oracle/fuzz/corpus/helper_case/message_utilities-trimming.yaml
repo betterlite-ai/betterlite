@@ -1,0 +1,10 @@
+kind: helper
+name: message_utilities-trimming-seed
+call:
+  b5366:
+    calls:
+      - {function: trim_messages, model: gpt-4o, max_tokens: 30, messages: [{role: user, content: seeded}]}
+      - {function: process_system_message, system_message: seeded, max_tokens: 10, model: gpt-4o}
+      - {function: get_token_count, model: gpt-4o, messages: [{role: user, content: seeded}]}
+env: {}
+compare: {ignore: []}

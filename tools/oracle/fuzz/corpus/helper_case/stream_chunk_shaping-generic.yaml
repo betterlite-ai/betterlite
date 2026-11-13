@@ -1,0 +1,10 @@
+kind: helper
+name: stream-chunk-shaping-generic-seed
+call:
+  b5652:
+    state: {model: gpt-4, provider: openai}
+    repeated_chunk_limit: 100
+    steps:
+      - {op: convert_generic, chunk: {text: hi, is_finished: true, finish_reason: stop}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+kind: helper
+name: triton-provider-reply-infer
+env: {}
+compare: {ignore: []}
+call:
+  b8154:
+    op: infer_reply
+    replies:
+      - {status: 200, body: '{"outputs":[{"data":"hello"}]}'}
+      - {status: 200, body: '{"outputs":[{"data":["he","llo"]}]}'}
+      - {status: 200, body: '{"outputs":[{"data":[]}]}'}
+      - {status: 200, body: '{"outputs":[{"data":null}]}'}
+      - {status: 200, body: '{"outputs":[]}'}
+      - {status: 200, body: '{"other":1}'}
+      - {status: 200, body: '[[{"data":"hi"}]]'}
+      - {status: 200, body: '{"outputs":[["hi"]]}'}
+      - {status: 200, body: '{"outputs":[{"shape":[1]}]}'}
+      - {status: 200, body: '{"outputs":[{"data":5}]}'}
+      - {status: 200, body: '{"outputs":[{"data":[1,2]}]}'}
+      - {status: 502, body: "oops"}

@@ -1,0 +1,226 @@
+id: B071
+title: Verify budgets, reservation cleanup and scheduled resets through the proxy
+description: >-
+  Finish the budget umbrella with the integration evidence its lower parts could
+  not provide. B9240 supplies the missing reset-job coordinator. B8481 builds the
+  budget services, B8610 shares them, B8660 connects auth and reservation inputs,
+  B8662 starts settlement, B8680 installs release middleware and B8372 schedules
+  resets. Use those production paths once each. This task adds HTTP oracle cases
+  and a stateful HTTP test driver inside betterlite-oracle; it registers no route,
+  callback, middleware or scheduler job and reimplements none of the budget engines.
+
+  Put the driver in tools/oracle/src/budget_http.rs and budget_http/tests/ with its
+  tests in tests.rs. The skeleton declares the module; do not edit the oracle's
+  lib.rs or any shared registry. Reuse gateway::start, process::Gateway, http::send,
+  the comparison/artifact functions, B860's PostgresFixture and B1690's OracleRedis.
+  Existing tokio-postgres dev support can seed additional pinned columns in each
+  isolated database using parameterized fixture SQL, without extending the shared
+  fixture schema. Launch the actual betterlite binary and MIT LiteLLM, each with
+  its own database, Redis and mock-provider transcript. Always compare different
+  implementations, never --self-check. Cleanup must stop both gateways before
+  dropping fixtures, including after a failed assertion. No helper calls FastAPI
+  or patches proxy globals. No new byte decoder or dependency is needed.
+
+  Static cases are kind: http under tools/oracle/cases/http/budget-lifecycle/. Use
+  their existing steps/captures support to POST /key/generate with the master key,
+  capture the returned secret, and call POST /v1/chat/completions with that key.
+  These are existing paths, with no new aliases. Use a configured OpenAI gpt-4o-mini
+  deployment and the local mock provider, fixed messages and usage. Choose a
+  positive max_budget below the estimate for max_tokens 1000 but above zero, with
+  initial spend zero so ordinary read-time admission passes. strict-estimate-blocked
+  enables general_settings.fail_closed_budget_enforcement and must reject before
+  any provider request. partial-headroom-served uses the default false and serves
+  the same request after reservation resizing. unbilled-model-list uses the same
+  key and strict config for GET /v1/models; no reservation is taken. These cases
+  complement B1225's flag/handoff cases and B8660's zero-model-cap cases rather
+  than duplicating them. Preserve full status, error type, param, code and
+  content-type; ignore /error/message only for betterlite's wording. The default
+  BudgetExceededError status is 422 by default, from
+  litellm.budget_exceeded_status_code; it is not the session hook's HTTP 429.
+
+  session-zero-cap and session-without-id configure a registry agent with
+  litellm_params.max_budget_per_session equal to zero and create a key whose agent_id
+  identifies it. Both call the normal chat route, not an A2A invocation: the hook
+  reads the authenticated agent_id, not invoked_agent_id. With metadata.session_id
+  present, the first returns the pinned 429 budget rate-limit envelope with no
+  upstream call; with that field absent, the second reaches the mock provider.
+  Keep the registry's normal AgentResponse config shape. B3007 supplies the hook,
+  B8613 supplies the config registry and B8742/B8399 register it. Its TTL defaults
+  to LITELLM_MAX_BUDGET_PER_SESSION_TTL=3600; this task does not add another parser.
+
+  Timing-dependent comparisons belong in the stateful driver, using the same real
+  HTTP requests and ordinary oracle comparison. Write named tests under
+  budget_http::tests::reservations, ::models, ::fallbacks and ::resets. Test support
+  owns a bounded observation loop, at most 30 seconds per transition and 100 ms
+  between observations, and fails with the two peer transcripts when the expected
+  state never arrives. Do not compare asynchronous intermediate states or sleep a
+  fixed amount and assume settlement completed. Observe counters read-only through
+  the isolated Redis and persisted rows through the fixture connections. Driver
+  observations must never repair a counter or invoke the reset job themselves.
+
+  Reservations: reservation_success_http reserves a much larger output ceiling
+  than the mock response uses, waits for settlement, and compares the next chat
+  response plus GET /key/info?key=<captured-key> and the counter value. The spent
+  amount must be actual response cost once, not the reservation, zero, or twice
+  the cost. reservation_failure_http makes the provider refuse a first call
+  with retries disabled, then succeeds on a second request using the same key;
+  compare both responses and verify the failed reservation left no spend. Run
+  both with Redis and memory-only, using SQL/key info for observations in the latter.
+  unbound_release_adapters composes the production B8270 layer, B1225 handoff and
+  B8481 releaser over real counter services with an inner service that produces
+  no logged LLM call: only the handler is a test double, never the release port.
+  Prove it releases after both an ordinary result and an error, and that an actual
+  callback-bound reservation is left for settlement. This internal layer test
+  supplements HTTP failure cleanup without inventing a public test endpoint.
+  unbound_cancel_http exercises the real unbound route as well: POST to B086's
+  /batches/{batch_id}/cancel, /v1/batches/{batch_id}/cancel and
+  /{provider}/v1/batches/{batch_id}/cancel aliases, with provider openai, a
+  B1019 model-encoded batch ID and a JSON model matching the priced deployment.
+  The auth body supplies the reservation estimate; cancellation routes by the ID.
+  A test-owned upstream barrier holds the cancellation response until a read-only
+  Redis observation proves the reservation exists, then returns the same valid
+  cancelling Batch response on each peer. After the response, observe zero spend
+  and compare a subsequent chat; this must fail if the installed release layer
+  is omitted. Do not use an executed-batch ID, whose MIT path requires an
+  unavailable enterprise managed-store hook.
+
+  Models: model_charge_http uses a positive model_max_budget and
+  positive mock usage. Await the real success callback's counter write, then send
+  a second request that the shared limiter refuses. Compare the refusal, upstream
+  call count and /key/info model_max_budget_usage with the reference, proving that
+  B3005/B3006/B3016 and the auth slots share counters and do not double-register
+  charging. session_charge_http uses an agent key and a positive
+  session budget smaller than one completion's cost; after charging, the same
+  session is refused and a different session passes. The native layer test and
+  these two HTTP tests must fail if the relevant shared adapter is replaced by a
+  fresh limiter or a no-op, even when ordinary successful chat still works.
+
+  Fallbacks: fallback_paid_target_http seeds a key already at its max_budget and
+  configures a zero-priced primary with a paid fallback. The primary is permitted
+  by auth and the mock makes it fail; the paid target must not be contacted. The
+  fallback_policy_disabled_http case makes exactly that request with
+  general_settings.enforce_fallback_budget=false and compares the successful paid
+  fallback and provider transcript. The default is true. Use B310's real fallback
+  stage and B3008's predicate, including its request auth metadata. Both startup
+  and a router first created by deployment sync must install that predicate;
+  their owners are B8613 and B8381, whose prerequisite corrections are recorded
+  in the planning report. This task does not silently install a test-only predicate.
+
+  Resets: scheduled_reset_http has named rstest cases key, user, team,
+  linked_tier and key_window, each seeding one exhausted budget with an already
+  due timestamp and a valid positive duration. Start with a bounded scheduler
+  interval using general_settings.proxy_budget_rescheduler_min_time=1 and
+  proxy_budget_rescheduler_max_time=1,
+  general_settings.scheduled_job_stagger.enabled=false, rollover false,
+  and seed future reset times for unrelated budgets. The real B8372 tick calls
+  B9240, advances the row/window and invalidates the old counters; poll those
+  effects, then compare a paid chat and /key/info against LiteLLM. Check all five
+  cases independently so omitting any phase fails. A reset_foreign_lease_http test seeds
+  another owner's cronjob_lock:reset_budget_job with a long TTL in each fixture,
+  verifies the exhausted request stays refused across two observed scheduler
+  ticks, then removes that test-owned lease, waits for reset and verifies admission
+  opens. reset_disabled_http uses general_settings.disable_reset_budget=true and a
+  due row: it remains unchanged across the same bounded observation period.
+  These tests exercise the scheduled job, not POST /reset_budget or the manual
+  /key/{key}/reset_spend endpoint, which have different owners and semantics.
+
+  No new config keys are supported here. Use existing sections and fail if the
+  booted config cannot consume one. The driver may keep test-only lifecycle helpers
+  under tests/ so they are not exported as a second runtime. Keep ordinary source
+  files below 300 lines; reuse the existing fixture lifecycle to keep this near
+  200 case lines and 600 test/support lines, without porting the already-owned
+  1700-line reservation engine again.
+scope:
+  paths:
+    - tools/oracle/src/budget_http.rs
+    - tools/oracle/src/budget_http/**
+    - tools/oracle/cases/http/budget-lifecycle/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L151-L347
+    why: Integration specification only; B3004 and B8480 own throttle policy, resizing, strict admission and reservation construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L350-L478
+    why: B3003's settlement, finalized and callback_bound decisions whose real HTTP composition is missing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/budget_reservation_release_middleware.py#L19-L33
+    why: B8270 owns this layer; B8680 installs it, and the integration test must call its real release adapter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L1017-L1142
+    why: B086's existing cancel route decorators and model-encoded dispatch supply the unbound-reservation HTTP test, not another route registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L454-L552
+    why: B9240's coordinator is observed through scheduled effects and subsequent HTTP admission.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10628-L10645
+    why: B8372's scheduled caller, distinct from the manual reset routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/max_budget_per_session_limiter.py#L86-L206
+    why: B3007's agent/session lookup, zero-cap refusal and positive-cost callback need booted coverage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L298-L340
+    why: B3006's shared limiter state and auth-time read use the callback's cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/fallback_budget.py#L75-L166
+    why: B3008's live enforcement setting, free-target exception and fail-closed budget predicate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6992-L7003
+    why: Context for B8613's required startup installation of the existing fallback budget predicate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7480-L7494
+    why: Context for B8381's same installation when deployment sync creates the router.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L57
+    why: Existing auth error translation retains the budget error status and emits budget_exceeded with null param.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L407-L409
+    why: The pinned budget_exceeded_status_code default is 422.
+dod:
+  - text: The five new kind-http cases compare strict versus resized admission, unbilled model listing and session zero-cap versus missing-session behavior through actual protected routes.
+    proof: [http-cases, oracle]
+  - text: Reservation success/failure HTTP transcripts and the native unbound-layer test prove actual-cost settlement, retry after release and callback-bound ownership over the production adapters.
+    proof: [reservation-tests]
+  - text: A successful completion changes the model and session limits enforced by the next HTTP request, with one charge and the reference usage report.
+    proof: [model-tests]
+  - text: A free primary cannot spend on a paid fallback under the default policy, and the explicit enforcement switch restores the pinned fallback behavior.
+    proof: [fallback-tests]
+  - text: Every scheduled reset phase restores HTTP admission, an observed foreign lease suppresses the tick, removing it permits a reset, and disable_reset_budget suppresses resets.
+    proof: [reset-tests]
+checks:
+  optional: []
+  commands:
+    - id: http-cases
+      why: No new booted HTTP cases were added, or the files are helper cases in disguise.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/budget-lifecycle)"
+        && grep -rlq '^kind: http$' tools/oracle/cases/http/budget-lifecycle
+    - id: reservation-tests
+      why: The real gateways or the production unbound release composition leave reserved spend behind or settle it twice.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::reservation_success_http(::|$)/) | test(/::reservation_failure_http(::|$)/) | test(/::unbound_release_adapters(::|$)/) | test(/::unbound_cancel_http(::|$)/)'
+    - id: model-tests
+      why: Model/session callbacks and the next auth check use different counters or charging is missing.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::model_charge_http(::|$)/) | test(/::session_charge_http(::|$)/)'
+    - id: fallback-tests
+      why: The booted router omits its budget predicate or ignores the configured enforcement setting.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::fallback_paid_target_http(::|$)/) | test(/::fallback_policy_disabled_http(::|$)/)'
+    - id: reset-tests
+      why: A reset phase is never scheduled, never changes admission, ignores contention or runs despite disable_reset_budget.
+      run: cargo build --locked -p betterlite && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::scheduled_reset_http(::|$)/) | test(/::reset_foreign_lease_http(::|$)/) | test(/::reset_disabled_http(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/http/budget-lifecycle/strict-estimate-blocked.yaml
+  - tools/oracle/cases/http/budget-lifecycle/partial-headroom-served.yaml
+  - tools/oracle/cases/http/budget-lifecycle/unbilled-model-list.yaml
+  - tools/oracle/cases/http/budget-lifecycle/session-zero-cap.yaml
+  - tools/oracle/cases/http/budget-lifecycle/session-without-id.yaml
+deviations: []
+out_of_scope:
+  - "budget_reservation.py L47-L70 and L1695-L1716: B3000 owns _BudgetCounter, entity names, _to_float, _to_int and _get_value."
+  - "budget_reservation.py L73-L97, L151-L222 and L910-L1095: B3004 owns BudgetReservationUnavailableError, _raise_reservation_unavailable, _key_reservation_should_release_for_throttle, _apply_over_budget_reservation_policy, _raise_counter_budget_exceeded, _initialize_reservation_counters, _loaded_reservation_counters, _reservation_counter_loaded, _initialize_reservation_counter, _reserve_reservable_counters, _reservation_groups, _reserve_counters and _get_current_counter_value."
+  - "budget_reservation.py L100-L106, L350-L478 and L1098-L1265: B3003 owns get_reserved_counter_keys, reconcile_budget_reservation, stamp_budget_reservation_actual_cost, release_budget_reservation, release_budget_reservation_on_cancel, invalidate_budget_reservation_counters, release_or_invalidate_budget_reservation, release_unbound_budget_reservation, _counters_batch_scope, _EntryAdjustment, _entry_adjustment, _set_reserved_entries_actual_cost, _reseed_reserved_entry, _counter_can_apply_adjustment, _release_applied_entries_best_effort, _resize_applied_reservation, _counter_to_reservation_entry and _get_entry_reserved_cost."
+  - "budget_reservation.py L109-L148 and L225-L347: B8480 owns _start_reservation_lease_renewal, _renew_reservation_lease, _is_token_counting_route, _is_unbilled_route and reserve_budget_for_request."
+  - "budget_reservation.py L481-L891: B3002 owns _get_budget_counters, _get_end_user_budget_counter, _get_tag_budget_counters, _get_model_access_group_budget_counters, _model_access_group_counter, _dedupe_tags, _get_team_member_budget_counter, _get_org_budget_counter, _get_project_budget_counter and _get_budget_limit_counters."
+  - "budget_reservation.py L894-L907 and L1268-L1296: merged B2325 owns _coerce_window, get_budget_window_start and _coerce_datetime; B2361 also claims them and needs the architect's duplicate-ownership correction."
+  - "budget_reservation.py L1299-L1692: B3001 owns estimate_request_max_cost, estimate_request_input_cost, _estimate_request_input_cost_for_model, _input_cost_for_cost_info, _estimate_request_max_cost_for_model, _max_cost_for_cost_info, _estimate_image_generation_cost, _get_model_cost_info, _get_model_cost_infos, _deployment_tiered_pricing_table, _get_deployment_tiered_pricing_tables, _get_request_models, count_request_input_tokens, _estimate_input_tokens, _estimate_output_tokens, _requested_output_tokens, _get_output_multiplier and _is_input_only_route."
+  - "budget_reservation_release_middleware.py: both __init__ and __call__ are B8270; B8680 owns installation. B8481 owns its concrete releaser and settlement adapters, and B8660 supersedes B732's old BudgetAdmission handoff by removing that unused port."
+  - "reset_budget_job.py is assigned to B9240 and B3009-B3013, including every phase and helper; B8372 owns the scheduled caller. B071 writes only their integration tests."
+  - "Model budget algorithms and increments are B3005/B3006/B3016; session algorithms and rate-limit context are B3007/B3017; fallback policy is B3008, execution B310, router construction B8613/B8381."
+  - "B773 and B778 own /key/generate and /key/info, B003/B8630 own chat routing, and B8660 already owns the three HTTP zero-model-cap cases. No existing route or case file moves here."
+  - "B086 owns cancel_batch and its three route aliases, and B1019 owns the model-encoded ID codec. This task only supplies the missing reservation lifecycle comparison through them."
+pitfalls:
+  - A cap of zero is skipped by reservation counter collection, so use a positive cap to prove estimate-versus-headroom admission.
+  - Invoking an A2A agent sets invoked_agent_id, whereas MaxBudgetPerSessionHandler reads the key's agent_id.
+  - The fixed reset lease lasts 900 seconds; do not confuse its TTL with the scheduler interval configured to one second for tests.
+  - Successful HTTP delivery can precede the asynchronous charge; wait for an observed state transition before asserting the next refusal.
+  - The model limiter and session limiter produce different error paths, so compare their actual envelopes rather than normalizing both to one budget error.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

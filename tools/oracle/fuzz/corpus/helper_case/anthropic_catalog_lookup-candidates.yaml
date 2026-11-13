@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-catalog-lookup-candidates
+call: {anthropic_catalog_lookup: {function: candidates, model: "bedrock/global"}}
+env: {}
+compare: {ignore: []}

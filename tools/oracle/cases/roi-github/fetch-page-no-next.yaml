@@ -1,0 +1,5 @@
+kind: helper
+name: fetch-page-no-next
+call: {"b3152": {"operation": "fetch_page", "path": "user/repos", "page": 2, "replies": [{"status": 200, "headers": [["link", "</user/repos?page=1>; rel=\"prev\""]], "body": [{"full_name": "octo/repo"}]}]}}
+env: {}
+compare: {ignore: []}

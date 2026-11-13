@@ -1,0 +1,48 @@
+# async_log_success_event applies each litellm.callbacks async_dataset_hook in order, skips a NotImplementedError and stops when a hook returns None
+kind: helper
+name: argilla-async-dataset-hook-chaining
+call:
+  b3960:
+    scenarios:
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        random: [0.0]
+        hooks: [identity, identity]
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: async_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        random: [0.0]
+        hooks: [rewrite, identity]
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: async_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        random: [0.0]
+        hooks: [identity, filter, identity]
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: async_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        random: [0.0]
+        hooks: [not_implemented, identity]
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: async_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        random: [0.0]
+        hooks: [failed]
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: async_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+env: {}
+compare: {ignore: []}

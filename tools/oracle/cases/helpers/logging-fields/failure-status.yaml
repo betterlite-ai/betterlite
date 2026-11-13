@@ -1,0 +1,12 @@
+kind: helper
+name: logging-fields-failure-status
+call:
+  logging_fields:
+    function: status_fields
+    status: failure
+    guardrail_information:
+      - {guardrail_status: success}
+      - {guardrail_status: blocked}
+      - {guardrail_status: guardrail_failed_to_respond}
+env: {}
+compare: {ignore: []}

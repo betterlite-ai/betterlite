@@ -3,7 +3,7 @@ name: str-to-bool-padded-true
 call:
   database_url_policy:
     function: str_to_bool
-    value: " true "
+    value: " false "
 env: {}
 compare:
   ignore: []

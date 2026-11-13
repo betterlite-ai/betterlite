@@ -1,0 +1,20 @@
+task: B123
+deviations:
+  - what: The document is built from typed route entries (`RouteDoc`) rather than from route handlers, so fields FastAPI derives from a handler (request and response schemas, operation descriptions, the 422 Validation Error response and its HTTPValidationError component) are absent. Every operation's 200 response carries an empty JSON schema.
+    why: axum has no route introspection and there are no pydantic models to derive schemas from. FastAPI's output for every management route cannot be reproduced mechanically; B8681 supplies the entries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1815-L1821
+  - what: A route with `error_responses` keeps the description "Successful Response" for its 200 response; LiteLLM's decorator overrides it to "Successful response" on the one alias that carries ERROR_RESPONSES.
+    why: The task fixes the 200 wording for every operation, and no client branches on a response description.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11942-L11951
+  - what: The `openapi` field is "3.1.0" and the document has no lazy-feature stub paths, no `/lazy/warm` tag stubs and no `lazy` snapshot fragments.
+    why: LiteLLM registers some routers on first use and shows placeholders until then. betterlite registers every route at startup, so `/openapi.json` always lists the real routes; the committed `_lazy_openapi_snapshot.json` and its generator have no purpose here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1835-L1838
+  - what: Operation ids of multi-method routes are built from an explicit single method per `RouteDoc`, so they never depend on set iteration order.
+    why: LiteLLM needs `_stabilize_multi_method_route_ids` and `_normalize_operation_ids` because FastAPI derives the id suffix from a Python set; betterlite has no set to order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1648-L1653
+  - what: The enterprise-only `DOCS_FILTERED` branch (`custom_openapi`) and the `DOCS_TITLE` and `DOCS_DESCRIPTION` overrides are not built.
+    why: They run only when `premium_user` is true, an enterprise license check betterlite does not have; the open-source path is `get_openapi_schema`.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1849-L1860
+  - what: The served `/openapi.json` is the built document in insertion order as compact JSON; only the committed snapshot file is key-sorted and indented.
+    why: LiteLLM's route answer is FastAPI's JSONResponse and its snapshot file is a different artifact with a different format; each keeps its own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_openapi_snapshot.py#L168

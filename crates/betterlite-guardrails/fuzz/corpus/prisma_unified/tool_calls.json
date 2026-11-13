@@ -1,0 +1,1 @@
+{"texts":[],"tool_calls":[{"function":{"name":"get_weather","arguments":"{\"city\":\"Paris\"}"}}]}

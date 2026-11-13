@@ -1,0 +1,28 @@
+kind: helper
+name: media-tokens-nested-parse-error-default
+call:
+  media_tokens:
+    model: gpt-3.5-turbo
+    calls:
+      - function: count_content
+        default_token_count: 777
+        content:
+          - hello world
+          - type: tool_result
+            tool_use_id: toolu_1
+            content:
+              - type: image_url
+                image_url:
+                  url: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABA
+                  detail: medium
+      - function: count_content
+        default_token_count: 777
+        content:
+          - type: document
+            title: hello
+            source:
+              type: content
+              content:
+                - type: image_url
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,1 @@
+{"messages":[{"role":"user","content":"ground"}],"tools":[{"toolSpec":null},{"cachePoint":{"type":"default"}},"not a tool"],"model":"anthropic.claude-sonnet-4-5-20250929-v1:0"}

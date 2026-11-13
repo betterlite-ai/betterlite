@@ -1,0 +1,34 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-mcp-call-content-off",
+  "call": {
+    "b3844": {
+      "function": "mcp_tool_call",
+      "payload": {
+        "id": "call-1",
+        "call_type": "call_mcp_tool",
+        "response_cost": 0.002,
+        "metadata": {
+          "mcp_tool_call_metadata": {
+            "name": "get_weather",
+            "mcp_server_name": "weather",
+            "mcp_server_resource": "https://weather.example:8443",
+            "mcp_session_id": "session-1",
+            "arguments": {
+              "city": "Paris"
+            },
+            "result": {
+              "temperature": 20
+            }
+          },
+          "user_api_key_request_route": "/mcp"
+        }
+      },
+      "capture_content": false
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

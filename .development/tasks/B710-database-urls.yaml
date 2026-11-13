@@ -51,12 +51,12 @@ description: >-
   database_socket_timeout=None, database_disable_prepared_statements=false,
   database_extra_connection_params=None, database_max_idle_connection_lifetime=None,
   database_statement_timeout=None and database_lock_timeout=None through B002. A non-None database_url
-  wins over DATABASE_URL, even an empty string; resolve its os.environ/ reference through B129 first.
+  wins over DATABASE_URL, even an empty string; resolve its os.environ/ reference through B8500's get_secret first.
   Only when both config URL and environment URL are absent does the CLI try discrete fields.
   database_connection_timeout wins when non-None, then database_connection_pool_timeout, then 60;
   zero survives. The pool limit defaults to 10 only when the key is absent. Optional connect/socket
   values are passed to the query policy; do not invent an invalid-number fallback. Statement/lock
-  values use B2307's optional-float validation. YAML disable-prepared string values use B129's parser
+  values use B2307's optional-float validation. YAML disable-prepared string values use B8500's str_to_bool
   ('true' only after strip/lower); nonstrings use truthiness, and the strict env flag is ORed with it.
   Extra connection params override the named writer/direct params. Reader explicit values win and
   only B2307's allowlist follows the writer; B051 applies statement/lock options separately.
@@ -168,10 +168,10 @@ out_of_scope:
   - B711 owns translate_libpq_ssl_params and the native replacement of _VerifiedChainSource,
     _verified_chain_der, _server_trust_anchor, pin_bundle_root and _replace_file; B051 owns
     DatabaseURLSettings.apply_to_env composition without global env mutation.
-  - B121 owns other proxy_cli.py entry/worker/diagnostic functions; B717 owns resolve_v2_migration_resolver.
+  - B8375 owns the proxy_cli.py flags and run_server order and B4175-B4177 the entry, worker and diagnostic helpers; B717 owns resolve_v2_migration_resolver.
     B051 invokes database settings and lowered URL helpers, without importing the CLI task.
-  - B129 owns get_secret_str, get_secret and secret-manager str_to_bool used by CLI configuration policy.
-  - B2302 owns proxy/utils.py get_server_root_path and normalize_route_for_root_path; B124 owns the
+  - B8500 owns get_secret_str, get_secret and the secret-manager str_to_bool used by CLI configuration policy.
+  - B2302 owns proxy/utils.py get_server_root_path and normalize_route_for_root_path; B8390 to B8401 and the other tasks covering proxy/utils.py own the
     remaining proxy utility functions outside construct_database_url_from_env_vars. They are not
     dependencies of password construction.
 pitfalls:

@@ -1,0 +1,13 @@
+kind: helper
+name: response-image-url-and-b64
+call:
+  b3860:
+    function: set_response
+    response:
+      data:
+        - {url: "https://example.com/a.png"}
+        - {b64_json: QUJD}
+        - {url: "", b64_json: REVG}
+        - {b64_json: ""}
+env: {}
+compare: {ignore: []}

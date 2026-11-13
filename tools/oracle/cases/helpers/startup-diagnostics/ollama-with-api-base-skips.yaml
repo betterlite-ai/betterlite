@@ -1,0 +1,5 @@
+kind: helper
+name: ollama-with-api-base-skips
+call: {"b4175": {"operation": "ollama_with_api_base_skips", "model": "ollama/llama3", "api_base": "http://localhost:11434"}}
+env: {}
+compare: {ignore: []}

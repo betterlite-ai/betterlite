@@ -1,0 +1,28 @@
+kind: helper
+name: bedrock-tool-results-tool-invoke
+call:
+  bedrock_tool_results:
+    function: tool_call_invoke
+    tool_calls:
+      - id: call_abc123
+        type: function
+        function:
+          name: get_current_weather
+          arguments: '{"location": "Boston, MA"}'
+        cache_control: {type: ephemeral}
+      - id: call_split
+        type: function
+        function:
+          name: run commands
+          arguments: '{"cmd":"a"}{"cmd":"b"}'
+      - id: call_skip
+        type: web_search
+      - id: call_empty
+        type: function
+        function:
+          name: 9lives
+          arguments: '"not-an-object"'
+    model: null
+env: {}
+compare:
+  ignore: []

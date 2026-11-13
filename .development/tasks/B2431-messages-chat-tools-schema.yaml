@@ -17,8 +17,6 @@ description: >-
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_chat_tools_schema.rs
   - crates/betterlite-core/src/api/messages_chat_tools_schema/**
   - tools/oracle/Cargo.toml
@@ -117,4 +115,4 @@ pitfalls:
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 2

@@ -1,31 +1,12 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::iter;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Deserialize;
 
+use crate::builtins::workspace::{self, Package};
 use crate::error::GateError;
-use crate::process::check_command;
-
-#[derive(Debug, Deserialize)]
-struct Metadata {
-    packages: Vec<Package>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Package {
-    name: String,
-    manifest_path: PathBuf,
-    license: Option<String>,
-    targets: Vec<Target>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Target {
-    name: String,
-    kind: Vec<String>,
-}
 
 #[derive(Debug, Deserialize)]
 struct MemberManifest {
@@ -80,25 +61,8 @@ pub(crate) fn check(root: &Path) -> Result<Vec<String>, GateError> {
     if !root.join("Cargo.toml").exists() {
         return Ok(vec!["no Cargo.toml at the repository root".to_owned()]);
     }
-    let output = check_command("cargo")
-        .args(["metadata", "--format-version", "1", "--no-deps", "--locked"])
-        .current_dir(root)
-        .output()
-        .map_err(|source| GateError::Spawn {
-            program: "cargo metadata".to_owned(),
-            source,
-        })?;
-    if !output.status.success() {
-        let stderr = String::from_utf8(output.stderr).unwrap_or_default();
-        return Ok(vec![format!("cargo metadata failed: {}", stderr.trim())]);
-    }
-    let metadata: Metadata =
-        serde_json::from_slice(&output.stdout).map_err(|source| GateError::Json {
-            what: "cargo metadata".to_owned(),
-            source,
-        })?;
     let mut problems = Vec::new();
-    for package in &metadata.packages {
+    for package in &workspace::packages(root)? {
         problems.extend(package_problems(package)?);
     }
     Ok(problems)

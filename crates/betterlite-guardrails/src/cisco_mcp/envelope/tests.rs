@@ -36,6 +36,20 @@ fn request_from_call_data_builds_tools_call_envelope() {
     );
 }
 
+#[rstest::rstest]
+#[case::primary(r#"{"q":"primary"}"#, r#"{"q":"primary"}"#)]
+#[case::empty("{}", "{}")]
+#[case::null("null", r#"{"q":"fallback"}"#)]
+fn request_prefers_non_null_mcp_arguments(#[case] primary: &str, #[case] expected: &str) {
+    let data = fields_of(&format!(
+        r#"{{"tool_name":"search","mcp_arguments":{primary},"arguments":{{"q":"fallback"}}}}"#
+    ));
+    let request = envelope::build_request_payload(&data).expect("built request");
+    let params = serde_json::to_string(&request.params).unwrap();
+    let fields = fields_of(&params);
+    assert_eq!(fields["arguments"].get(), expected);
+}
+
 #[test]
 fn request_from_call_data_defaults_id_and_empty_arguments() {
     let data = fields_of(r#"{"tool_name": "search"}"#);

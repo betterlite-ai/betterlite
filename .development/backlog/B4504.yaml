@@ -2,8 +2,8 @@ id: B4504
 milestone: M8 platform
 title: Authorize and charge Lens analysis calls
 status: todo
-depends_on: [B4500, B4501, B014, B052, B068, B188, B732, B743, B844, B870, B2225]
-file: null
+depends_on: [B4500, B4501, B014, B052, B068, B188, B870, B743, B844, B2225, B3003, B4001]
+file: tasks/B4504-lens-billing.yaml
 covers:
   - "litellm/proxy/lens/billing.py"
   - "litellm/proxy/lens/inference.py"

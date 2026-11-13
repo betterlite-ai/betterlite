@@ -1,0 +1,14 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-json-null",
+  "call": {
+    "b3843": {
+      "function": "json_or_none",
+      "value": null
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

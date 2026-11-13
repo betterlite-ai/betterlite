@@ -1,0 +1,14 @@
+id: B6043
+milestone: M12 python
+title: Python image_generation, image_variation and image_edit
+status: todo
+depends_on: [B6040]
+file: tasks/B6043-python-images.yaml
+covers:
+  - "litellm/images/**"
+parent: B159
+split_from: B159
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

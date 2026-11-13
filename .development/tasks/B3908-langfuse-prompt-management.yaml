@@ -17,6 +17,8 @@ scope:
     - Cargo.toml
     - crates/betterlite-logging/src/langfuse_prompt_management.rs
     - crates/betterlite-logging/src/langfuse_prompt_management/**
+    - crates/betterlite-logging/src/registry/catalog/langfuse.rs
+    - crates/betterlite-logging/src/registry/catalog/langfuse/**
   lint_tables: false
 
 references:
@@ -30,6 +32,8 @@ references:
     why: "log_success_event, log_failure_event, async_log_success_event, async_log_failure_event with callback wrapping"
 
 dod:
+  - text: "LangfusePromptManagement implements CallbackLogger by forwarding success and failure to its Langfuse logger, and registry/catalog/langfuse.rs builds the single instance for langfuse in callbacks or success_callback (tests named callback_logger_* in langfuse_prompt_management and registry/catalog/langfuse/tests.rs)."
+    proof: [callback-logger]
   - text: "langfuse_client_init initializes a REST client through build_langfuse_client with LRU cache of size 10, checking Langfuse version and TTL validity before creation, returning the same client for identical credential+host combinations."
     proof: [client-init-tests]
   - text: "_remember_trace_id extracts the trace_id from logged events and stores it in the trace ID cache when the litellm_call_id is a string."
@@ -66,6 +70,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: langfuse still fails at startup or the prompt management logger drops events
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::langfuse::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::(.*::)?callback_logger_/)'
     - id: client-init-tests
       why: "REST client caching and version/TTL checks must not fail silently"
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^langfuse_prompt_management::tests::client_init(::|$)/)'

@@ -1,0 +1,20 @@
+{
+  "kind": "helper",
+  "name": "payload-primitives-usage-cache-hit",
+  "call": {
+    "b3843": {
+      "function": "usage",
+      "value": {
+        "metadata": {
+          "usage_object": {
+            "prompt_cache_hit_tokens": 9
+          }
+        }
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -11,6 +11,14 @@ use crate::error::GateError;
 #[derive(Serialize)]
 struct Settings<'dirs> {
     sandbox: Sandbox<'dirs>,
+    // a config folder without the user's settings would add Claude Code's Co-Authored-By line to commits
+    attribution: Attribution,
+}
+
+#[derive(Serialize)]
+struct Attribution {
+    commit: &'static str,
+    pr: &'static str,
 }
 
 #[derive(Serialize)]
@@ -53,6 +61,7 @@ pub(crate) fn write_settings(
                 allow_unix_sockets: env::var("GATE_POSTGRES_SOCKET").ok().into_iter().collect(),
             },
         },
+        attribution: Attribution { commit: "", pr: "" },
     };
     let text = serde_json::to_string_pretty(&settings).map_err(|source| GateError::Json {
         what: "the Claude sandbox settings".to_owned(),

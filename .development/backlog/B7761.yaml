@@ -1,0 +1,14 @@
+id: B7761
+milestone: M11 distribution
+title: Terraform provider endpoint audit against betterlite's OpenAPI document
+status: blocked
+depends_on: [B7760, B123, B055, B058]
+file: tasks/B7761-terraform-endpoint-audit.yaml
+covers:
+  - "terraform/provider/tools/**"
+parent: B155
+split_from: B155
+resolution: null
+superseded_by: null
+blocked_reason: "waits for Max: the gate has no pinned go or terraform toolchain and the provider tree needs a budget exclude"
+pr: null

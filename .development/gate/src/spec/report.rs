@@ -28,6 +28,10 @@ pub(crate) struct Report {
         description = "One entry per problem solved by choosing an existing solution or deliberately writing one."
     )]
     pub(crate) prior_art: Vec<PriorArt>,
+    #[schemars(
+        description = "One entry per line that cargo mutants --list --in-diff prints for the branch's Rust diff, as worker.md's step 3 runs it; empty when it prints none."
+    )]
+    pub(crate) mutants: Vec<MutantTest>,
     #[schemars(description = "Facts the architect needs and nothing else.")]
     pub(crate) notes: Vec<String>,
 }
@@ -51,6 +55,15 @@ pub(crate) struct OwnedBehavior {
     #[schemars(description = "Where betterlite does it, as path:line.")]
     pub(crate) code: String,
     #[schemars(description = "The test name or oracle case that proves it.")]
+    pub(crate) test: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MutantTest {
+    #[schemars(description = "The mutant line exactly as cargo mutants --list prints it.")]
+    pub(crate) mutant: String,
+    #[schemars(description = "The test that fails on that change, by its nextest name.")]
     pub(crate) test: String,
 }
 

@@ -1,0 +1,30 @@
+kind: helper
+name: resource-config-realtime-batches-skills-evals
+call:
+  b5360:
+    requests:
+      - selector: realtime
+        calls:
+          - {provider: gemini, model: m}
+          - {provider: meta, model: m}
+          - {provider: openai, model: m}
+      - selector: realtime_http
+        calls:
+          - {provider: openai, model: m}
+          - {provider: azure, model: m}
+          - {provider: gemini, model: m}
+      - selector: batches
+        calls:
+          - {provider: bedrock, model: m}
+          - {provider: mistral, model: m}
+          - {provider: openai, model: m}
+      - selector: skills
+        calls:
+          - {provider: anthropic}
+          - {provider: openai}
+      - selector: evals
+        calls:
+          - {provider: openai}
+          - {provider: anthropic}
+env: {}
+compare: {ignore: []}

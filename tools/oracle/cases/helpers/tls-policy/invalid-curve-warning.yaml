@@ -1,0 +1,16 @@
+kind: helper
+name: tls-invalid-curve
+call:
+  tls_policy:
+    ca_pem: null
+    deployment_ssl_verify: null
+    config_ssl_verify: null
+    config_ssl_certificate: null
+    config_http2: false
+    environment:
+      SSL_ECDH_CURVE: invalid
+env: {}
+compare:
+  ignore:
+    - pointer: /value/user_agent
+      why: the default User-Agent intentionally differs from LiteLLM

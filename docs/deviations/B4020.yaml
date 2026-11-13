@@ -1,0 +1,23 @@
+task: B4020
+deviations:
+  - what: Missing Slack email branding constants default to LiteLLM's values. betterlite does not fetch replacement assets implicitly.
+    why: B4020 defines the types and defaults; B4022 and B4023 use them without implicit network fetches for compatibility.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L37-L39
+  - what: An unknown alert type name in alert_types, alert_to_webhook_url or alert_type_config fails the config load.
+    why: betterlite keys these maps and lists by a typed enum, while LiteLLM keeps whatever string the config holds and an unknown name silently matches no alert.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L125-L128
+  - what: An unknown key inside general_settings.alerting_args fails the config load as unsupported.
+    why: LiteLLM's pydantic model ignores extra fields; betterlite reports every config key it does not handle, as rule no-silent-drops requires.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L116-L117
+  - what: An unknown key inside an alert_type_config entry fails the config load as unsupported.
+    why: LiteLLM builds AlertTypeConfig from a plain pydantic model that ignores extra fields (types/llms/base.py, constructed at slack_alerting.py 128), while betterlite reports every config key it does not handle.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L7
+  - what: A negative alerting_args count such as daily_report_frequency or budget_alert_ttl fails the config load.
+    why: betterlite parses these counts as unsigned integers, so a value LiteLLM would store as a negative int is refused at startup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L51-L128
+  - what: A negative alert_type_config.digest_interval fails the config load.
+    why: LiteLLM declares digest_interval as a plain int and stores a negative value, while betterlite parses it as an unsigned integer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L276
+  - what: The per-user spend thresholds, the anomaly multiplier and the anomaly minimum spend are exact Decimals instead of binary floats, and a non-finite value fails the config load.
+    why: Rule money-is-decimal requires spend amounts as Decimal from the moment they are read, so comparisons at the boundary differ from LiteLLM's float arithmetic in the last digits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/slack_alerting.py#L85-L105

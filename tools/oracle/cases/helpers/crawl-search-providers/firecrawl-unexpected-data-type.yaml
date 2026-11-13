@@ -1,0 +1,15 @@
+kind: helper
+name: crawl-search-providers-firecrawl-unexpected-data-type
+call:
+  b8022:
+    provider: firecrawl
+    function: transform_search_response
+    replies:
+      - data: null
+      - data: "unexpected text"
+      - data: 5
+      - data: true
+      - success: true
+env: {}
+compare:
+  ignore: []

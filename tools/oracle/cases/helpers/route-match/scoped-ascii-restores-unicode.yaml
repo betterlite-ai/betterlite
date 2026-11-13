@@ -1,0 +1,11 @@
+kind: helper
+name: scoped-ascii-restores-unicode
+call:
+  route_match:
+    function: check_route_access
+    route: "/aé"
+    allowed_routes:
+      - "/(?a:\\w)\\w"
+env: {}
+compare:
+  ignore: []

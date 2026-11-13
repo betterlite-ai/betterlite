@@ -1,0 +1,21 @@
+kind: helper
+name: media-config-text-to-speech
+call:
+  b5360:
+    requests:
+      - selector: text_to_speech
+        calls:
+          - {provider: azure, model: speech/tts, is_lyria: false}
+          - {provider: azure, model: azure-tts, is_lyria: false}
+          - {provider: elevenlabs, model: eleven, is_lyria: false}
+          - {provider: runwayml, model: gen4, is_lyria: false}
+          - {provider: vertex_ai, model: gemini-tts, is_lyria: true}
+          - {provider: vertex_ai, model: lyria, is_lyria: true}
+          - {provider: vertex_ai, model: cloud-tts, is_lyria: false}
+          - {provider: minimax, model: speech-2, is_lyria: false}
+          - {provider: mistral, model: voxtral, is_lyria: false}
+          - {provider: aws_polly, model: polly, is_lyria: false}
+          - {provider: edenai, model: tts, is_lyria: false}
+          - {provider: groq, model: tts, is_lyria: false}
+env: {}
+compare: {ignore: []}

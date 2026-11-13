@@ -1,0 +1,89 @@
+id: B8725
+title: MCP preemptive auth challenges and upstream probes
+description: >-
+  The MCP SDK commits a 200 before any handler runs, so LiteLLM decides at the transport edge whether a client must authenticate first. It answers 401 with a WWW-Authenticate header that points the client at the right OAuth metadata, probes pass-through upstreams with the client's token, and computes the merged instructions and the scoped server name that the initialize answer carries. This task builds those steps. Code goes in betterlite-server, module mcp::auth_challenge (crates/betterlite-server/src/mcp/auth_challenge.rs) with the submodules preemptive, probe and init_scope, each with a tests.rs.
+
+
+  Ports. ChallengePorts is one trait with native async methods, passed as a generic parameter: server_by_name(name, client_ip) (B4731), ensure_discovered(server) (B6762's ensure_oauth_metadata_discovered), has_user_oauth_token(server, auth) and preflight_token_exchange(server, oauth2_headers, auth, raw_headers) (B8461), token_exchange_challenge(server, root_path) (B4667's raise_token_exchange_challenge, as an error value), allowed_servers(auth, mcp_servers, client_ip) (B8195's _get_allowed_mcp_servers), refuse_empty_initialize(allowed, auth, mcp_servers, client_ip) (B8196's _raise_if_initialize_grants_no_mcp_servers), cache_instructions(server) (B6592's _ensure_upstream_initialize_instructions_cached), merge_instructions(allowed) (B8196's _merge_gateway_initialize_instructions) and probe(url, authorization, timeout) -> ProbeAnswer. Pure helpers are called directly: B6590's MCPServer properties (auth_type, oauth2_flow, delegate_auth_to_upstream, is_oauth_passthrough, is_oauth_delegate, is_true_passthrough, is_dcr_bridge, url), B6760's effective_oauth2_flow, B8196's client_has_passthrough_authorization and client_has_per_server_auth_header, B4679's key_identity(auth).mcp_admitted_user_subject, and B8724's authorization_header and forwarded_authorization. RequestView carries the request's base url (B4654's get_request_base_url), its route relative path (B4654's get_route_relative_request_path, which honors the original path), its root path and its headers. Every refusal is B8724's McpHttpError; port failures propagate unchanged.
+
+
+  preemptive.
+
+  1. passthrough_metadata_url(view, server_name) and passthrough_www_authenticate(view, server_name, invalid_token) port get_passthrough_resource_metadata_url and get_passthrough_www_authenticate from oauth_utils.py, which no other task builds: base url, "/.well-known/oauth-protected-resource", B4654's well_known_root_suffix, then "/{name}/mcp" when the route path starts with "/{name}/mcp", else "/mcp/{name}"; the header value is Bearer resource_metadata="<url>", with error="invalid_token", before resource_metadata when invalid_token is true.
+
+  2. preemptive_challenge(view, mcp_servers, oauth2_headers, server_auth_headers, auth, client_ip, allowed_server_ids: Option<&BTreeSet<String>>, raw_headers) is _raise_preemptive_401_for_unauthenticated_servers. For each name in mcp_servers, in order, with server = server_by_name(name, client_ip):
+     a. A server outside allowed_server_ids (when given) is skipped.
+     b. An oauth2 server whose stored oauth2_flow is "client_credentials" is skipped before discovery.
+     c. Any other found server is replaced by ensure_discovered(server).
+     d. An oauth2 server: effective_oauth2_flow "client_credentials" is skipped. Without delegate_auth_to_upstream true: has_user_oauth_token skips it; an admitted user subject gets 401 with passthrough_www_authenticate(name); otherwise 401 with Bearer authorization_uri="<as url>", where the as url is base url, "/.well-known/oauth-authorization-server", well_known_root_suffix, then "/mcp/{name}" when the route path starts with "/mcp/{name}", else "/{name}". With delegate_auth_to_upstream true: no oauth2_headers gives 401 with passthrough_www_authenticate(name); a bearer present skips it. Every oauth2 server ends here.
+     e. oauth2_token_exchange without oauth2_headers: fail with token_exchange_challenge(server, root path).
+     f. When mcp_servers has exactly one name and the server's id is among allowed_servers(auth, mcp_servers, client_ip): preflight_token_exchange, whose errors propagate.
+     g. is_oauth_passthrough without client_has_passthrough_authorization: 401 with passthrough_www_authenticate(name).
+     h. is_oauth_delegate with exactly one name, no forwarded_authorization and no client_has_per_server_auth_header: the same 401.
+     i. is_true_passthrough with exactly one name, no Authorization header and no client_has_per_server_auth_header: a dcr bridge server gets the same 401; otherwise probe(url or "", "", 5 seconds), and a 401 with a www-authenticate value is refused with 401 carrying that upstream value.
+     Every 401 here has detail "Unauthorized" and the header name www-authenticate.
+
+
+  probe.
+
+  3. ProbeAnswer is (status, www_authenticate). The production probe (in B8727's port implementation) is _probe_upstream_auth: POST to the url with JSON {"jsonrpc": "2.0", "id": "litellm-mcp-auth-probe", "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "litellm-mcp-auth-probe", "version": "1.0.0"}}}, header Accept "application/json, text/event-stream" and Authorization only when non-empty, timeout 5 seconds; any HTTP status comes back with its www-authenticate header; a network failure logs at debug level and answers (200, None). Build probe_request(url, authorization) -> http::Request here so its shape is tested once.
+
+  4. check_passthrough_auth(view, auth, mcp_servers, client_ip) is _check_passthrough_upstream_auth: no forwarded_authorization returns at once; targets are allowed_servers(...) that are is_oauth_passthrough, in order; probe them all concurrently with the forwarded value; then in target order a 401 fails with 401 and passthrough_www_authenticate(server name, invalid_token true), and a 403 fails with 403 and detail "Forbidden".
+
+
+  init_scope.
+
+  5. initialize_overrides(auth, mcp_servers, client_ip, scoped_server_endpoint, is_initialize) -> Result<(Option<String>, Option<String>), _> is _gateway_initialize_instructions_request_scope without the ContextVars: allowed = allowed_servers(...); when is_initialize, refuse_empty_initialize first; cache_instructions for every allowed server concurrently, ignoring each failure; instructions = merge_instructions(allowed); server name = when scoped_server_endpoint and exactly one allowed server, its alias, else server_name, else name, else server_id (the first non-empty). B8727 puts both into B8720's InitOverrides.
+
+
+  Tests use a fake ChallengePorts that records calls and synthetic servers and auths named test-.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/auth_challenge.rs
+    - crates/betterlite-server/src/mcp/auth_challenge/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1002-L1045
+    why: _gateway_initialize_instructions_request_scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1602-L1824
+    why: _raise_preemptive_401_for_unauthenticated_servers and its order of branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1854-L1980
+    why: _probe_upstream_auth and _check_passthrough_upstream_auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L208-L236
+    why: get_passthrough_resource_metadata_url and get_passthrough_www_authenticate.
+dod:
+  - text: passthrough_www_authenticate builds the resource metadata url for both path spellings, with and without invalid_token.
+    proof: [preemptive-tests]
+  - text: preemptive_challenge walks the servers in LiteLLM's order and answers each oauth2 sub mode, token exchange, pass-through, delegate and true pass-through case with LiteLLM's 401 header or a skip, and honors the toolset's allowed ids.
+    proof: [preemptive-tests]
+  - text: The probe request has LiteLLM's body and headers, a network failure counts as 200, and check_passthrough_auth maps upstream 401 and 403 in target order.
+    proof: [probe-tests]
+  - text: initialize_overrides refuses an empty initialize grant, warms instructions without failing on one server, merges them and names a single scoped server.
+    proof: [scope-tests]
+checks:
+  optional: []
+  commands:
+    - id: preemptive-tests
+      why: a challenge branch, its order, the skip rules or the header value differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::auth_challenge::preemptive::/)'
+    - id: probe-tests
+      why: the probe request, its fail open rule or the pass-through mapping differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::auth_challenge::probe::/)'
+    - id: scope-tests
+      why: the initialize grant check, the instruction merge or the scoped name differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::auth_challenge::init_scope::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Calling these steps after the toolset scope and before dispatch, and the production ChallengePorts over the registry, the upstream client and the shared HTTP client: B8727."
+  - "The server lookups, discovery, token checks and instruction caches behind each port: B4731, B6762, B8461, B4667, B8195, B8196 and B6592."
+pitfalls:
+  - "A gateway managed oauth2 server is challenged whenever no stored per user token exists, even when the request carries a bearer; only delegate_auth_to_upstream treats a present bearer as the upstream token."
+  - "A stamped client_credentials server is skipped before ensure_discovered, so a discovery failure cannot turn into a 503 for it; an unstamped one is discovered first."
+  - "The true pass-through probe in preemptive_challenge sends no Authorization at all, while check_passthrough_auth sends the forwarded one."
+  - "The authorization_uri form uses /mcp/{name} only when the route path starts with /mcp/{name}; the resource_metadata form tests /{name}/mcp instead."
+  - "The preflight token exchange runs only for single server routes the key may reach, so a multi server aggregate never fails on one server's exchange."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,25 @@
+kind: helper
+name: responses-api-output
+call:
+  b3856:
+    function: set_attributes
+    kwargs:
+      litellm_params: {custom_llm_provider: openai}
+      standard_logging_object:
+        call_type: acompletion
+        metadata: {}
+    response:
+      id: resp-1
+      output:
+        - type: message
+          role: assistant
+          content:
+            - {type: output_text, text: hi}
+        - type: function_call
+          name: lookup
+          arguments: '{"q":1}'
+          call_id: call_1
+      status: completed
+      usage: {total_tokens: 3, completion_tokens: 1, prompt_tokens: 2}
+env: {}
+compare: {ignore: []}

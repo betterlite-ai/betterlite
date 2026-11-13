@@ -1,0 +1,21 @@
+kind: helper
+name: batch-write-delegation
+call:
+  b4297:
+    async_add_cache:
+      request:
+        cache_key: key-1
+        key:
+          params:
+            - {name: model, value: gpt-4}
+      result:
+        choices: []
+      cache_type: redis
+      settings:
+        ttl: 600.0
+        redis_flush_size: 10
+env: {}
+compare:
+  ignore:
+    - pointer: /value/cached/timestamp
+      why: a cache write stamps the wall clock

@@ -1,0 +1,99 @@
+id: B6762
+title: MCP OAuth discovery slots, retry and backoff
+description: >-
+  Build the state that schedules OAuth discovery per server: one slot per server id, retry with backoff, background tasks, the on-startup switch and the publish of the result into the registry. In LiteLLM this is the discovery section of mcp_server_manager.py (dataclasses at L325-350, helpers at L286-312 and the state machine at L1996-2300). The fetch is B6761 and the trust rules are B6760.
+
+
+  Code goes in the new betterlite-mcp module discovery_slots: crates/betterlite-mcp/src/discovery_slots.rs, discovery_slots/** and tests beside each file. The registry is B4731's ServerRegistry. Because discovery tasks run in the background and write into the registry, the registry has to sit behind a shared handle. Use B4731's SharedRegistry alias (Arc<tokio::sync::RwLock<ServerRegistry>>, defined next to ServerRegistry, whose two server maps are pub(crate)) and take it in the DiscoverySlots constructor. betterlite-mcp needs the tokio features sync, rt and macros in its Cargo.toml (architect).
+
+
+  Items to build.
+
+  1. Constants and settings, in a DiscoverySettings struct built once from the environment: LITELLM_MCP_OAUTH_DISCOVERY_ON_STARTUP (`_oauth_discovery_on_startup`, true for 1, true, yes, on after trim and lowercase, default false), retry delays [0.05, 0.15] seconds, backoff base 30 s, backoff cap 900 s, temporary discovery ttl 300 s. The struct has a Default impl with these values so tests can shorten them.
+
+  2. A DiscoverySlot enum (`_OAuthDiscoverySlot` with `_OAuthDiscoveryResolved`, `_OAuthDiscoveryFailed`, `_OAuthDiscoveryStale`): Resolved{metadata, at}, Failed{attempts, retry_after, at} and Stale{previous metadata, retry_after}. Time is passed in through a Clock trait (now() -> Instant) so tests run without sleeping.
+
+  3. `discover_server` (`_discover_oauth_metadata_for_server`), inputs: &MCPServer. Calls the B6761 discover_metadata with retries at the configured delays, only for retryable failures (transport and 5xx; not found and invalid are final). Returns the outcome, and on success applies restrict_to_corroborated (B6760) against the server's manual authorization url.
+
+  4. `ensure_discovered` (`ensure_oauth_metadata_discovered`), inputs: server id and a flag has_client_token. Returns the registered server with merged metadata. If a slot is Resolved and fresh, merge and return it. If Failed and backoff has not elapsed, return the failure at once without a fetch. Otherwise run discover_server, store the new slot and merge. On failure with no client forwarded token return a DiscoveryUnavailable error that the server maps to HTTP 503; with a client forwarded token (has_client_token true) return the server unchanged. Two callers for the same server share one in-flight task (a map of server id to a shared future or a Mutex per id), so a burst makes one fetch.
+
+  5. `prime` (`_prime_oauth_discovery`) spawns tasks for every registered server that requires_discovery (B6760) when the on-startup flag is on, and only records the set otherwise. `reconcile` (`_reconcile_oauth_discovery_slots`) drops slots of servers that are gone or whose url or auth_type changed, and keeps Resolved slots of unchanged servers. `registered_server` (`_registered_server`) reads a server from the shared registry by id.
+
+  6. `publish` writes a merged server (merge_discovered, B6760) back into the registry's db_servers or config_servers entry for its id, taking the write lock for the shortest time and never holding it across a fetch. Each task logs one info line on success and one warning on failure with the redacted origin.
+
+  7. Small methods the later tasks call: `set_deferred(server_id, bool)` (`_set_oauth_discovery_deferred`, records whether discovery waits for the first request), `invalidate_state(server_id)` (`_invalidate_oauth_discovery_state`, drops the slot, the deferred flag and the in-flight task), `prime_one(server)` (`prime_oauth_metadata_discovery`, the single-server form of prime) and `slot_exists(server_id)` (`_oauth_discovery_slot(...) is not None`).
+
+  8. Temporary slots: a server that is not registered yet (a create form test) gets a temporary slot with the 300 s ttl that expires on the next sweep.
+
+  Tests use a fake MetadataFetcher from B6761, a fake Clock and tokio::test with paused time. Cover: fresh hit makes no fetch, backoff window, retry then success, final failure not retried, 503 versus client token, burst makes one fetch, reconcile drops changed servers, prime respects the flag.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/src/discovery_slots.rs
+    - crates/betterlite-mcp/src/discovery_slots/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L286-L350
+    why: retry helpers, startup env var and the slot dataclasses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1996-L2300
+    why: the slot state machine, per-server discovery and publish.
+
+dod:
+  - text: DiscoverySettings reads the on-startup env var with the accepted truthy values and defaults the delays, backoff and ttl to the stated numbers.
+    proof: [slots-settings-tests]
+  - text: A fresh Resolved slot returns the merged server without a fetch, and a Failed slot inside its backoff window fails without a fetch.
+    proof: [slots-state-tests]
+  - text: Retryable failures retry at the configured delays, final failures do not.
+    proof: [slots-retry-tests]
+  - text: ensure_discovered returns DiscoveryUnavailable without a client token and the unchanged server with one.
+    proof: [slots-state-tests]
+  - text: Concurrent callers for one server make one fetch.
+    proof: [slots-concurrency-tests]
+  - text: prime and reconcile follow the startup flag and drop slots of removed or changed servers, and publish never holds the write lock across a fetch.
+    proof: [slots-concurrency-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: slots-settings-tests
+      why: env parsing or the default numbers are wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^discovery_slots::tests::settings_/)'
+    - id: slots-state-tests
+      why: slot reuse, backoff or the 503 rule is missing
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^discovery_slots::tests::state_/)'
+    - id: slots-retry-tests
+      why: the retry classification or delays are wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^discovery_slots::tests::retry_/)'
+    - id: slots-concurrency-tests
+      why: callers duplicate fetches, or prime, reconcile or publish is wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^discovery_slots::tests::concurrency_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The in-flight sharing uses a per-id tokio Mutex and a Clock trait, and slots live in a struct field, not on the manager class and event loop.
+    why: Rust has no module-level mutable state in this repo and tests need a controllable clock.
+  - what: The registry is shared as Arc<RwLock<ServerRegistry>> for publish.
+    why: LiteLLM mutates a plain dict from asyncio tasks; Rust needs an explicit lock.
+
+out_of_scope:
+  - "Fetching and parsing metadata: B6761."
+  - "Trust rules and merge functions: B6760."
+  - "The HTTP 503 mapping itself: the server route that calls ensure_discovered."
+  - "ServerRegistry fields and reads: B4731."
+
+pitfalls:
+  - "Never hold the registry write lock while a fetch runs, or every request blocks on a slow IdP."
+  - "A final failure (not found, invalid body) is stored as Failed with backoff, but is not retried inside one call."
+  - "Backoff doubles from 30 s and stops at 900 s; a success resets the attempt count."
+  - "reconcile must compare url and auth_type, so a changed url never serves the old server's metadata."
+  - "A client forwarded token skips the 503 but a Failed slot is still recorded for the next caller."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -35,8 +35,6 @@ description: >-
   support 260 implementation, 230 tests and 170 oracle/corpus lines under 750 changed lines.
 scope:
   paths:
-    - crates/betterlite-core/src/api/runway.rs
-    - crates/betterlite-core/src/api/runway/**
     - crates/betterlite-core/src/api/runway/video_create.rs
     - crates/betterlite-core/src/api/runway/video_create/**
     - crates/betterlite-core/src/api/runway/tasks.rs

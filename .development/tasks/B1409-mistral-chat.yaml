@@ -34,7 +34,6 @@ description: >-
   implementation, 220 tests, 120 adapters and 100 fuzz/wiring, maximum 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,error,mistral_chat}.rs
     - crates/betterlite-openai/src/mistral_chat.rs
     - crates/betterlite-openai/src/mistral_chat/**
     - crates/betterlite-openai/fuzz/Cargo.toml

@@ -1,0 +1,23 @@
+kind: helper
+name: gemini-metadata-first-nonweb-index
+call:
+  gemini_metadata:
+    call: first_nonweb_index
+    grounding_metadata:
+      - groundingChunks:
+          - retrievedContext: {uri: 'gs://local'}
+          - web: {uri: 'https://first-web', title: First}
+        groundingSupports:
+          - segment: {startIndex: 0, endIndex: 5}
+            groundingChunkIndices: [0, 1]
+          - segment: {startIndex: 6, endIndex: 9}
+            groundingChunkIndices: [1, 0]
+      - groundingChunks:
+          - web: {uri: 'https://only', title: Only}
+        groundingSupports:
+          - segment: {startIndex: 0, endIndex: 2}
+            groundingChunkIndices: [7]
+          - segment: {startIndex: 3, endIndex: 4}
+            groundingChunkIndices: []
+env: {}
+compare: {ignore: []}

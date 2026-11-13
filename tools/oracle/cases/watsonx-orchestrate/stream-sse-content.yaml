@@ -1,0 +1,30 @@
+kind: helper
+name: watsonx-stream-sse-content
+call:
+  b4808:
+    mode: streaming
+    request_id: req-6
+    params:
+      message:
+        parts:
+          - {kind: text, text: hello}
+    kwargs:
+      litellm_params:
+        cp4d_host: "https://cp4d.example.com"
+        instance_id: inst-1
+        wxo_agent_id: agent-1
+        api_key: key-1
+        username: bob
+        auth_mode: cp4d
+        thread_id: thread-1
+    steps:
+      - {body: {token: tok-1, expiration: 1700001000}}
+      - content_type: "text/event-stream"
+        lines:
+          - "event: message"
+          - 'data: {"result": {"data": {"message": {"content": [{"text": "nested"}]}}}}'
+          - "data: not json"
+          - "data: [DONE]"
+          - 'data: {"results": "raw"}'
+env: {}
+compare: {ignore: []}

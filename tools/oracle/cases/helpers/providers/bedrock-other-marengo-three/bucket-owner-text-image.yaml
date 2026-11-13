@@ -1,0 +1,14 @@
+kind: helper
+name: bucket-owner-text-image
+call:
+  bedrock_other_marengo_three:
+    required_bucket_owner:
+      model: marengo-embed-3-0-v1:0
+      input: words
+      inference_params:
+        inputType: text_image
+        media_source: s3://bucket/pic.png
+        bucketOwner: "123456789012"
+env: {}
+compare:
+  ignore: []

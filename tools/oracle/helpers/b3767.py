@@ -29,6 +29,7 @@ def construct(settings: dict[str, Json]) -> Json:
     return {
         "api_base": deepkeep.api_base,
         "timeout_ms": int(seconds * 1000) if seconds is not None else None,
+        "unreachable_fallback": deepkeep.unreachable_fallback,
         "supported_event_hooks": cast(Json, deepkeep.supported_event_hooks),
     }
 

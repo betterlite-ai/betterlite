@@ -1,0 +1,61 @@
+id: B8394
+title: ProxyLogging post-call, MCP result, response header and per-chunk hooks
+description: >-
+  Port the hooks ProxyLogging runs after the provider answered: `post_call_success_hook` with its post-call pipelines and parallel guardrails (utils.py L3476-L3662), `post_mcp_call_hook` (L3664-L3716), `post_call_response_headers_hook` with `_build_litellm_call_info` (L3718-L3810), the listing filter `hidden_by_listing_callbacks` (L1154-L1182, L3777-L3787) and the per-chunk `async_post_call_streaming_hook` with `is_a2a_streaming_response` (L3812-L3903). Code goes in crates/betterlite-server/src/guardrails/post_call_hooks.rs and post_call_hooks/ (success.rs, mcp_result.rs, headers.rs, listing.rs, chunk.rs, tests.rs).
+
+  success.rs. First the post-call pipelines: a pending background response (B8391's `is_pending_background_response`) calls `defer_post_call_pipelines` and runs none; otherwise B8393's `maybe_execute_pipelines` with event post_call and the logging object's call type, or acompletion, and a replacement response is adopted. Then B8390's `partition_post_call`: guardrails run first in order, skipping pipeline-managed and run_in_parallel ones and those whose gate on the model-merged data (B8391's `check_and_merge_model_level_guardrails`) is not true; each runs the unified post_call_success (own apply_guardrail without native lifecycle hooks) or its own hook through B8392's `run_guardrail_with_metrics` with hook type post_call, and a returned response replaces the current one. The parallel guardrails then run together like B8392's pre-call runner (block before passthrough), and their returned responses are dropped. Last, every other callback's post_call_success hook runs in order and may replace the response.
+
+  mcp_result.rs. `post_mcp_call_hook(response, request_data, user_api_key_dict)`: no guardrail returns the result as is; without the call_mcp_tool translation handler log at debug and return. Each guardrail with its own apply_guardrail, no native lifecycle hooks and a true gate for post_mcp_call runs B3818's MCP `process_output_response` through the metric wrapper with hook type post_mcp_call, and its result feeds the next. Errors propagate.
+
+  headers.rs. With no header override return an empty map. Build call info: custom_llm_provider from the response's hidden params or attribute, model_info from metadata or litellm_metadata, api_base and model_id from hidden params. Each overriding callback is called, with `litellm_call_info` only when it accepts it, and later maps override earlier keys. Any error is logged with "Error in post_call_response_headers_hook" and the headers merged so far are returned.
+
+  listing.rs. `hidden_by_listing_callbacks(user_api_key_dict, model_names)` passes the names through every listing filter in order, each seeing only what the previous kept; a filter that returns anything but a list of strings fails with ProxyException 500 internal_server_error "{Class}.async_filter_listed_models must return a sequence of model names". The answer is the candidates minus the kept names.
+
+  chunk.rs. `post_call_streaming_chunk(data, response, user_api_key_dict, str_so_far)`: without chunk overrides or guardrails return the chunk. Take the text of a chat chunk with B8602's `chunk_response_text` (crates/betterlite-server/src/stream_chunks.rs; a ModelStream or ModelFull `StreamChunk`, the standard branch of get_response_string), or of an A2A response (keys jsonrpc, id and result; its text comes from `extract_text_from_a2a_response` in litellm/llms/a2a/common_utils.py, reached through a small `A2aText` trait that B8399 implements); with no text return the chunk. Guardrails gated by a stream pipeline (B8391's `stream_gated_guardrail_names`) are skipped, others need a true post_call gate on the model-merged data computed once per chunk; each callback gets `str_so_far + text` and may replace the chunk.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/post_call_hooks.rs
+    - crates/betterlite-server/src/guardrails/post_call_hooks/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3476-L3662
+    why: Post-call pipelines, post_call_success_hook and the parallel post-call guardrails.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3664-L3903
+    why: post_mcp_call_hook, the response header hook, call info, the listing filter and the per-chunk streaming hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1154-L1182
+    why: MalformedListingFilterReturn and the recursive listing filter.
+dod:
+  - text: post_call_success_hook runs pipelines, sequential guardrails, parallel guardrails and other callbacks in LiteLLM's order with its skip rules.
+    proof: [post-call-tests]
+  - text: A pending background response defers the post-call pipelines instead of running them.
+    proof: [post-call-tests]
+  - text: post_mcp_call_hook runs only unified guardrails gated for post_mcp_call and lets their errors through.
+    proof: [post-call-tests]
+  - text: Response headers merge with later callbacks winning, call info is passed only to callbacks that accept it, and errors keep the merged headers.
+    proof: [post-call-tests]
+  - text: The listing filter chains callbacks and fails with the 500 ProxyException on a malformed return.
+    proof: [post-call-tests]
+  - text: The per-chunk hook passes the text so far plus the chunk text and skips pipeline-gated guardrails.
+    proof: [post-call-tests]
+checks:
+  optional: []
+  commands:
+    - id: post-call-tests
+      why: a post-call, MCP result, header, listing or per-chunk hook behavior is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::post_call_hooks::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The streaming iterator wrapper: B6370. The failure hook: B8395."
+  - "MCP translation handler process_output_response: B3818. Unified hooks: B3680."
+  - "HTTP oracle cases through the booted proxy: B8399."
+pitfalls:
+  - Parallel post-call guardrails see the response the sequential guardrails produced, and what they return is discarded.
+  - The per-chunk hook computes the model-merged guardrail data at most once per chunk, and only when a guardrail is reached.
+  - Response header errors are swallowed after logging; the hook never fails the request.
+  - The listing filter stops calling later filters once no names are left, since an empty candidate list returns at once.
+  - post_mcp_call_hook skips guardrails that use native lifecycle hooks, since Logging.async_post_mcp_tool_call_hook runs those.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

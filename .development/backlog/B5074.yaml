@@ -1,14 +1,14 @@
 id: B5074
 milestone: M11 distribution
 title: Container installation from a published Python package
-status: todo
+status: done
 depends_on: [B5070]
 file: tasks/B5074-package-container-image.yaml
 covers:
   - "docker/build_from_pip/**"
 parent: B151
 split_from: B151
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1313

@@ -4,21 +4,33 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+default-run = "betterlite-oracle"
 
 [dependencies]
+async-trait = "0.1.92"
 aws-credential-types = "1.3.1"
+aws-smithy-async = "=1.3.1"
+aws-smithy-runtime-api = { version = "=1.19.2", features = ["client"] }
+aws-smithy-types = "=1.9.1"
+aws-types = "=1.6.0"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
 base64 = "0.23.1"
+betterlite = { path = "../../crates/betterlite" }
+betterlite-a2a = { path = "../../crates/betterlite-a2a" }
 betterlite-anthropic = { path = "../../crates/betterlite-anthropic" }
 betterlite-auth = { path = "../../crates/betterlite-auth" }
 betterlite-azure = { path = "../../crates/betterlite-azure" }
 betterlite-bedrock = { path = "../../crates/betterlite-bedrock" }
+betterlite-cache = { path = "../../crates/betterlite-cache" }
+betterlite-cli = { path = "../../crates/betterlite-cli" }
 betterlite-config = { path = "../../crates/betterlite-config" }
 betterlite-context = { path = "../../crates/betterlite-context" }
 betterlite-core = { path = "../../crates/betterlite-core" }
 betterlite-cost = { path = "../../crates/betterlite-cost" }
 betterlite-db = { path = "../../crates/betterlite-db" }
+betterlite-env = { path = "../../crates/betterlite-env" }
 betterlite-error = { path = "../../crates/betterlite-error" }
+betterlite-foundry = { path = "../../crates/betterlite-foundry" }
 betterlite-guardrails = { path = "../../crates/betterlite-guardrails" }
 betterlite-harness = { path = "../../crates/betterlite-harness" }
 betterlite-http = { path = "../../crates/betterlite-http" }
@@ -29,55 +41,82 @@ betterlite-models = { path = "../../crates/betterlite-models" }
 betterlite-ocr = { path = "../../crates/betterlite-ocr" }
 betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-openapi = { path = "../../crates/betterlite-openapi" }
+betterlite-oracle-core-ops = { path = "src/helpers/core_ops" }
+betterlite-oracle-helper-api = { path = "helper-api" }
+betterlite-oracle-redact = { path = "src/helpers/redact" }
+betterlite-oracle-server = { path = "src/helpers/server" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
+betterlite-policy = { path = "../../crates/betterlite-policy" }
 betterlite-postgres-fixture = { path = "../postgres-fixture" }
 betterlite-prompts = { path = "../../crates/betterlite-prompts" }
+betterlite-provider = { path = "../../crates/betterlite-provider" }
+betterlite-proxy = { path = "../../crates/betterlite-proxy" }
+betterlite-pyhost = { path = "../../crates/betterlite-pyhost" }
+betterlite-rag = { path = "../../crates/betterlite-rag" }
 betterlite-rate-limit = { path = "../../crates/betterlite-rate-limit" }
 betterlite-redact = { path = "../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../crates/betterlite-redis" }
-betterlite-router = { path = "../../crates/betterlite-router" }
+betterlite-roi = { path = "../../crates/betterlite-roi" }
+betterlite-router = { path = "../../crates/betterlite-router", features = ["testing"] }
+betterlite-sdk = { path = "../../crates/betterlite-sdk" }
+betterlite-secret-managers = { path = "../../crates/betterlite-secret-managers" }
 betterlite-secrets = { path = "../../crates/betterlite-secrets" }
+betterlite-semantic = { path = "../../crates/betterlite-semantic" }
 betterlite-server = { path = "../../crates/betterlite-server" }
 betterlite-streaming = { path = "../../crates/betterlite-streaming" }
+betterlite-tokenizer = { path = "../../crates/betterlite-tokenizer" }
+betterlite-transcribe = { path = "../../crates/betterlite-transcribe" }
+betterlite-vertex = { path = "../../crates/betterlite-vertex" }
 betterlite-websearch = { path = "../../crates/betterlite-websearch" }
+bytes = "1.12.1"
 chrono.workspace = true
 clap = { version = "4.6.7", features = ["derive", "env"] }
 cookie_store = "0.22.0"
+flate2 = "1.1.5"
 futures-util = { version = "0.3.34", default-features = false }
+google-cloud-speech-v2 = "=1.15.0"
+google-cloud-wkt = "=1.11.0"
 hex = "0.4.3"
+http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+opentelemetry = { version = "0.33.1", default-features = false }
+opentelemetry-http = { version = "0.33.1", default-features = false }
+opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["trace", "testing"] }
 percent-encoding.workspace = true
+pyo3 = "0.30.1"
 quick-xml.workspace = true
+rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
+redis.workspace = true
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking"] }
+rmcp = { version = "=3.9.0", default-features = false, features = ["server"] }
 rust_decimal.workspace = true
-secrecy = "0.10.3"
+secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
 serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
-serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "indexmap_2", "macros"] }
 sha2.workspace = true
 soft-canonicalize = "0.5.6"
 tempfile = "3.27.0"
 thiserror = "2.0.17"
 tl = "0.7.8"
 tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake"] }
+tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
+tower = { workspace = true, features = ["util"] }
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry"] }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "registry"] }
 ulid = "3.0.0"
 url = "2.5.8"
 uuid = { version = "1.28.0", default-features = false }
-
 [dev-dependencies]
 rstest = "=0.27.0"
 tokio-postgres.workspace = true
-
 [[test]]
 name = "otlp_normalization"
 path = "src/helpers/logging/otlp_normalization/tests.rs"
-
 [lints]
 workspace = true
-
 [package.metadata.cargo-shear]
 ignored-paths = ["src/helpers/*/*.rs"]

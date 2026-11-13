@@ -1,0 +1,160 @@
+kind: helper
+name: cache-placement-carry-forward
+call:
+  b4124:
+    operation: chat_injections
+    probes:
+      - model: gpt-5.6
+        messages: [{role: user, content: hello}]
+        params:
+          custom_llm_provider: azure
+          _litellm_carry_unmatched_cache_control_points: true
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null}
+      - model: gpt-5.6
+        messages: [{role: assistant, content: hello}]
+        params:
+          custom_llm_provider: azure
+          _litellm_carry_unmatched_cache_control_points: true
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null}
+      - model: gpt-5.6
+        messages: [{role: user, content: a}, {role: user, content: b}]
+        params:
+          custom_llm_provider: azure
+          _litellm_carry_unmatched_cache_control_points: true
+          cache_control_injection_points:
+            - {location: message, role: null, index: 1, control: null}
+            - {location: message, role: user, index: null, control: null}
+      - model: gpt-5.6
+        messages: [{role: user, content: hello}]
+        params:
+          custom_llm_provider: azure
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null}
+      - model: gpt-5.6
+        messages: [{role: user, content: hello}]
+        params:
+          custom_llm_provider: azure
+          _litellm_carry_unmatched_cache_control_points: false
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null}
+      - model: gpt-5.6
+        messages: []
+        params:
+          custom_llm_provider: azure
+          cache_control_injection_points:
+            - {location: tool_config, control: null}
+      - model: gpt-5.6
+        messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+          - {role: user, content: c, cache_control: {}}
+          - {role: assistant, content: d, cache_control: {}}
+        params:
+          custom_llm_provider: azure
+          cache_control_injection_points:
+            - {location: tool_config, control: null}
+      - model: gpt-5.6
+        messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+          - {role: user, content: c, cache_control: {}}
+          - {role: assistant, content: d, cache_control: {}}
+        params:
+          custom_llm_provider: azure
+          cache_control_injection_points:
+            - {location: tool_config, control: null, _litellm_openai_dialect: true}
+      - model: gpt-5.6
+        messages: [{role: user, content: hello}]
+        params:
+          custom_llm_provider: openai
+          api_base: https://api.openai.com/v1
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null}
+      - model: gpt-5.6
+        messages: [{role: user, content: hello}]
+        params:
+          custom_llm_provider: openai
+          api_base: https://api.openai.com/v1
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null}
+        model_cost:
+          gpt-5.6: {supports_prompt_cache_breakpoint: false}
+      - model: gpt-5.6
+        messages: [{role: user, content: hello}]
+        params:
+          custom_llm_provider: openai
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null}
+        environment:
+          OPENAI_BASE_URL: https://api.openai.com/v1
+      - model: gpt-5.6
+        messages: [{role: user, content: hello}]
+        params:
+          custom_llm_provider: azure
+          api_base: https://api.openai.com/v1
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null}
+      - model: gpt-5.6
+        messages: [{role: user, content: hello}]
+        params:
+          custom_llm_provider: openai
+          api_base: https://example.test/v1
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null}
+      - model: gpt-5.6
+        messages: [{role: user, content: hello}]
+        params:
+          custom_llm_provider: openai
+          api_base: https://example.test/v1
+          prompt_cache_options: {mode: explicit}
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null}
+      - model: gpt-5.6
+        messages: [{role: user, content: hello}]
+        params:
+          custom_llm_provider: openai
+          api_base: https://api.openai.com/v1
+          prompt_cache_options: {mode: implicit}
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null}
+      - model: gpt-5.6
+        messages: [{role: assistant, content: hello}]
+        params:
+          custom_llm_provider: openai
+          api_base: https://api.openai.com/v1
+          cache_control_injection_points:
+            - {location: message, role: assistant, index: null, control: null}
+      - model: gpt-5.6
+        messages: [{role: user, content: hello}]
+        params:
+          custom_llm_provider: azure
+          _litellm_carry_unmatched_cache_control_points: true
+          cache_control_injection_points: []
+      - model: gpt-5.6
+        messages: [{role: user, content: a, cache_control: {}}, {role: user, content: b}]
+        params:
+          custom_llm_provider: azure
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null, _litellm_external_breakpoints: 3}
+      - model: gpt-5.6
+        messages: [{role: user, content: hello}]
+        params:
+          custom_llm_provider: azure
+          cache_control_injection_points:
+            - {location: tool_config, control: null}
+            - {location: message, role: user, index: null, control: null, _litellm_openai_dialect: true}
+      - model: gpt-5.6
+        messages:
+          - {role: user, content: a, cache_control: {}}
+          - {role: assistant, content: b, cache_control: {}}
+          - {role: user, content: c, cache_control: {}}
+          - {role: user, content: d}
+        params:
+          custom_llm_provider: azure
+          cache_control_injection_points:
+            - {location: message, role: user, index: null, control: null}
+            - {location: tool_config, control: null}
+env: {}
+compare: {ignore: []}

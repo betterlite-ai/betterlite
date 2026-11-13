@@ -1,0 +1,9 @@
+kind: helper
+name: binary-without-content-type
+call:
+  b5240:
+    function: "output_choices"
+    response: {"num_bytes": 12}
+env: {}
+compare:
+  ignore: []

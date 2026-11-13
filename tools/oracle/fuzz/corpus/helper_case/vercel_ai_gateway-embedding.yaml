@@ -1,0 +1,9 @@
+kind: helper
+name: vercel-ai-gateway-seed-embedding
+call:
+  b5835:
+    steps:
+      - {kind: embedding_headers_and_url, api_key: seed-key, environment: {VERCEL_AI_GATEWAY_API_BASE: https://env.example/v1}}
+      - {kind: embedding_request_and_params, model: vercel_ai_gateway/model, input: hello, non_default_params: {dimensions: 8}}
+env: {}
+compare: {ignore: []}

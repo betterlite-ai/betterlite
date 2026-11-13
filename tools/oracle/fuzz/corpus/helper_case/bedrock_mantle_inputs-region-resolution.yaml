@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-mantle-inputs-region-resolution-seed
+call:
+  bedrock_mantle_inputs:
+    mantle_region_resolution:
+      cases:
+        - api_base: https://bedrock-mantle.eu-west-2.api.aws/v1
+        - aws_region_name: us-east-1
+          environment: {AWS_REGION: sa-east-1}
+        - environment: {BEDROCK_MANTLE_REGION: '', AWS_REGION_NAME: ap-south-1}
+        - {}
+env: {}
+compare: {ignore: []}

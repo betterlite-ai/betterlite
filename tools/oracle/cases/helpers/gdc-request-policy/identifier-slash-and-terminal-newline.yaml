@@ -1,0 +1,31 @@
+kind: helper
+name: gdc-request-policy-identifier-slash-and-terminal-newline
+call:
+  gdc_request_policy:
+    scenarios:
+      - config:
+          model_list:
+            - litellm_params: {}
+          litellm_settings:
+            gdc_api_base: https://gateway.example
+        urls:
+          - model: gdc/gemini-2.5-pro
+            deployment: 0
+            optional_params: {vertex_project: bad/project, vertex_location: location}
+          - model: gdc/gemini-2.5-pro
+            deployment: 0
+            optional_params: {vertex_project: project, vertex_location: "bad location"}
+          - model: gdc/gemini-2.5-pro
+            deployment: 0
+            optional_params: {vertex_project: "project\n", vertex_location: location}
+          - model: gdc/gemini-2.5-pro
+            deployment: 0
+            optional_params: {vertex_project: "project\n\n", vertex_location: location}
+          - model: gdc/gemini-2.5-pro
+            deployment: 0
+            optional_params: {vertex_project: "", vertex_location: location}
+          - model: gdc/gemini-2.5-pro
+            deployment: 0
+            optional_params: {vertex_project: project}
+env: {}
+compare: {ignore: []}

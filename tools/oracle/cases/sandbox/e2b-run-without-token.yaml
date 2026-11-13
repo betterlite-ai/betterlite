@@ -1,0 +1,12 @@
+kind: helper
+name: e2b-run-without-access-token
+call:
+  b3516:
+    operation: run
+    container:
+      id: sbx_789
+      domain: custom.e2b.app
+    code: "1 + 1"
+env: {}
+compare:
+  ignore: []

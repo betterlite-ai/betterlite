@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-replicate-errors-anthropic-overloaded-before-invalid-api-key
+call:
+  anthropic_replicate_errors:
+    provider: anthropic
+    model: claude-3-opus
+    error_str: "Overloaded: Invalid API Key provided"
+    status_code: null
+env: {}
+compare:
+  ignore:
+    - pointer: /value/result/message
+      why: betterlite writes its own message

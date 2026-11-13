@@ -1,0 +1,17 @@
+kind: helper
+name: a2a-send-params-v10-push-config-authentication
+call:
+  b6950:
+    params:
+      message:
+        messageId: m1
+        parts:
+          - text: hi
+      configuration:
+        taskPushNotificationConfig:
+          url: ""
+          id: p1
+          token: ""
+          authentication: {scheme: Bearer, credentials: cred}
+env: {}
+compare: {ignore: []}

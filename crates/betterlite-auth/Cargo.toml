@@ -6,9 +6,22 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+async-trait = "0.1.92"
+base64 = "0.23.1"
+betterlite-cache = { path = "../betterlite-cache" }
+betterlite-context = { path = "../betterlite-context" }
 betterlite-db = { path = "../betterlite-db" }
+betterlite-error = { path = "../betterlite-error" }
+betterlite-models = { path = "../betterlite-models" }
+betterlite-paths = { path = "../betterlite-paths" }
+betterlite-redis = { path = "../betterlite-redis" }
+betterlite-secrets = { path = "../betterlite-secrets" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 hex.workspace = true
+lru = "0.18.4"
+pcre2 = "0.2.11"
+regex.workspace = true
+regex-syntax = "0.8.11"
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
@@ -18,12 +31,15 @@ sha2.workspace = true
 speedate = "0.18.0"
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 unicode-normalization = "0.1.26"
 uuid = { version = "1.29.0", features = ["serde"] }
 
 [dev-dependencies]
 rstest = "=0.27.0"
 serde_json = "1.0.154"
+tracing-subscriber = { workspace = true, features = ["registry"] }
 
 [lints]
 workspace = true

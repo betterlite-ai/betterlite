@@ -1,4 +1,6 @@
+pub mod docker;
 pub mod local;
+pub mod shared;
 
 use std::collections::BTreeMap;
 use std::future::Future;

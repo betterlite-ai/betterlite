@@ -1,0 +1,15 @@
+kind: helper
+name: password-policy-hibp-timeout-warning-allow
+call:
+  password_policy:
+    function: breach
+    password: Corr3ct-Horse-Battery!
+    hibp:
+      replies:
+        "57439":
+          timeout: true
+env: {}
+compare:
+  ignore:
+    - pointer: /value/warning_details
+      why: The detail is the text of the HTTP client's own exception, which differs between httpx and reqwest.

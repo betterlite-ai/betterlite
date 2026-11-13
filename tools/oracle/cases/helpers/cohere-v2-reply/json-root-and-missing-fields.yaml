@@ -1,0 +1,33 @@
+kind: helper
+name: cohere-v2-reply-json-root-and-missing-fields
+call:
+  cohere_v2_reply:
+    function: reply
+    requests:
+      - body: '[1,2]'
+        status: 200
+        model: command-r
+        created: 1
+        id: chatcmpl-template
+      - body: '{not json'
+        status: 502
+        model: command-r
+        created: 1
+        id: chatcmpl-template
+      - body: '{"usage":{"tokens":{}}}'
+        status: 200
+        model: command-r
+        created: 1
+        id: chatcmpl-template
+      - body: '{"message":{"content":[]}}'
+        status: 200
+        model: command-r
+        created: 1
+        id: chatcmpl-template
+      - body: '{"message":{"content":"text"},"usage":{"tokens":{}}}'
+        status: 200
+        model: command-r
+        created: 1
+        id: chatcmpl-template
+compare: {ignore: []}
+env: {}

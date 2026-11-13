@@ -1,0 +1,1 @@
+{"kind":"helper","name":"keyword-pattern-escape","call":{"b3693":{"function":"keyword","keyword":"a.b+[c](d){e}^$|?\\ #","texts":["A.B+[c](d){e}^$|?\\ #","axb"]}},"env":{},"compare":{"ignore":[]}}

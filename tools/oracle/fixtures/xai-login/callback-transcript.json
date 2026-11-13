@@ -1,0 +1,106 @@
+{
+  "source": "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L78-L111",
+  "litellm": "1.105.1",
+  "expected_state": "state-expected",
+  "cases": [
+    {
+      "name": "matching_state_and_code",
+      "target": "/callback?code=code-1&state=state-expected",
+      "status": 200,
+      "content_type": "text/html; charset=utf-8",
+      "body": "<html><body><h1>xAI authorization received.</h1>You can close this tab.</body></html>",
+      "callback": {
+        "code": "code-1",
+        "state": "state-expected",
+        "error": null,
+        "error_description": null
+      }
+    },
+    {
+      "name": "matching_state_with_provider_error",
+      "target": "/callback?error=access_denied&error_description=user+denied&state=state-expected",
+      "status": 200,
+      "content_type": "text/html; charset=utf-8",
+      "body": "<html><body><h1>xAI authorization failed.</h1>You can close this tab.</body></html>",
+      "callback": {
+        "code": null,
+        "state": "state-expected",
+        "error": "access_denied",
+        "error_description": "user denied"
+      }
+    },
+    {
+      "name": "matching_state_without_code",
+      "target": "/callback?state=state-expected",
+      "status": 200,
+      "content_type": "text/html; charset=utf-8",
+      "body": "<html><body><h1>xAI authorization received.</h1>You can close this tab.</body></html>",
+      "callback": {
+        "code": null,
+        "state": "state-expected",
+        "error": null,
+        "error_description": null
+      }
+    },
+    {
+      "name": "state_mismatch",
+      "target": "/callback?code=code-1&state=state-other",
+      "status": 400,
+      "content_type": "text/html; charset=utf-8",
+      "body": "<html><body><h1>xAI authorization state mismatch.</h1></body></html>",
+      "callback": {
+        "code": "code-1",
+        "state": "state-other",
+        "error": null,
+        "error_description": null
+      }
+    },
+    {
+      "name": "duplicate_query_fields_keep_the_first",
+      "target": "/callback?code=&code=first&state=&state=state-expected",
+      "status": 200,
+      "content_type": "text/html; charset=utf-8",
+      "body": "<html><body><h1>xAI authorization received.</h1>You can close this tab.</body></html>",
+      "callback": {
+        "code": "first",
+        "state": "state-expected",
+        "error": null,
+        "error_description": null
+      }
+    },
+    {
+      "name": "percent_escaped_values",
+      "target": "/callback?code=a%2Fb%20c&state=state%2Dexpected",
+      "status": 200,
+      "content_type": "text/html; charset=utf-8",
+      "body": "<html><body><h1>xAI authorization received.</h1>You can close this tab.</body></html>",
+      "callback": {
+        "code": "a/b c",
+        "state": "state-expected",
+        "error": null,
+        "error_description": null
+      }
+    },
+    {
+      "name": "blank_query_fields_are_dropped",
+      "target": "/callback?code=&state=",
+      "status": 400,
+      "content_type": "text/html; charset=utf-8",
+      "body": "<html><body><h1>xAI authorization state mismatch.</h1></body></html>",
+      "callback": {
+        "code": null,
+        "state": null,
+        "error": null,
+        "error_description": null
+      }
+    },
+    {
+      "name": "unrelated_path",
+      "target": "/favicon.ico?code=code-1&state=state-expected",
+      "status": 404,
+      "content_type": null,
+      "body": "",
+      "callback": null
+    }
+  ]
+}

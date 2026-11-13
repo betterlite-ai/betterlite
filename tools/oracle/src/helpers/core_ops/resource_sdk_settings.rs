@@ -1,5 +1,5 @@
 use betterlite_core::api::resource_sdk_settings::timeout::{
-    FineTuningTimeout, TimeoutError, resolve_fine_tuning_timeout, supports_httpx_timeout,
+    FineTuningTimeout, TimeoutError, resolve_fine_tuning_timeout,
 };
 
 pub(crate) struct Op;
@@ -25,7 +25,7 @@ impl crate::helpers::Helper for Op {
             )
             .map_err(|error| invalid_timeout(&error))?;
         Ok(serde_json::json!({
-            "supports_httpx_timeout": supports_httpx_timeout(&input.provider),
+            "supports_httpx_timeout": (["openai", "azure", "bedrock"].contains(&input.provider.as_str())),
             "timeout": timeout,
             "request_timeout": request_timeout,
         }))

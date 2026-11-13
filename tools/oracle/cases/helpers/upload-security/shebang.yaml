@@ -1,0 +1,8 @@
+kind: helper
+name: upload-security-shebang
+call:
+  b3452:
+    content_hex: 'efbbbf20090d0a2321'
+env: {}
+compare:
+  ignore: []

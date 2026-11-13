@@ -23,7 +23,13 @@ description: >-
   attached to the model name at submission time may not run on retrieval.
   _submit_model_hidden_by checks whether a model group name matches a wildcard
   pattern or is the target of one or more model_group_alias entries, returning
-  a warning string or None.
+  a warning string or None. betterlite-policy may not depend on betterlite-router, so both
+  functions read the router through the `PolicyRouterView` port, a trait in this module with
+  `deployment_model_name(model_id)` (the deployment's model_name, none when absent) and
+  `model_group_aliases()` (each alias name with the group it resolves to), passed as an
+  optional trait object (none is the "no router" case). B8611's RouterView
+  implements it in betterlite-server over B844's Router.get_deployment and model_group_alias
+  and B302's resolve_model_group_alias.
 
   _retrieval_context builds a PolicyMatchContext from the request metadata and
   model group. Extract team_alias and key_alias from UserAPIKeyAuth (or None if
@@ -140,8 +146,8 @@ out_of_scope:
   - "B3240 owns policy values (Policy, PolicyAttachment, PolicyScope, PolicyGuardrails, PolicyCondition) and GuardrailPipeline; this task reuses them."
   - "B3241 owns policy registry, attachment registry, matching and resolution; this task calls get_policy_registry, is_initialized, policy_applies, get_policies_with_matching_conditions, get_attached_policies_with_reasons, and resolve_pipelines_for_context."
   - "B903 owns ResponsesAPIRequestUtils.get_model_id_from_response_id in betterlite-responses; this task calls it to decode response IDs."
-  - "B844 owns Router.get_deployment and model_group_alias in betterlite-router; this task calls get_deployment and accesses model_group_alias."
-  - "B302 owns resolve_model_group_alias in betterlite-router; this task calls it to detect alias targets."
+  - "B844 owns Router.get_deployment and model_group_alias in betterlite-router; this task reads them only through its `PolicyRouterView` port."
+  - "B302 owns resolve_model_group_alias in betterlite-router; the `PolicyRouterView` port gives the resolved alias targets, so this task does not call it."
   - "B1102 owns get_tags_from_request_body in betterlite-http; this task calls it for retrieval context tags."
   - "B206 owns get_or_create_metadata_bucket in betterlite-models; this task calls it to access metadata for header updates."
   - "B732 owns AuthContext in betterlite-auth; this task reuses team_alias and key_alias in retrieval context."

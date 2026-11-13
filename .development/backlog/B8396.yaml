@@ -1,0 +1,14 @@
+id: B8396
+milestone: M8 platform
+title: Database health watchdog, read-only writer recreation and view bootstrap
+status: todo
+depends_on: [B2323, B713, B714, B719]
+file: tasks/B8396-db-lifecycle.yaml
+covers:
+  - "litellm/proxy/utils.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,8 @@
+task: B5970
+deviations:
+  - what: The IAM token request is logged without the apikey form value.
+    why: LiteLLM's debug line prints the whole form body, including the key. Betterlite redacts secrets in logs (B187).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/common_utils.py#L60-L65
+  - what: Environment names arrive in an injected WatsonxEnvironment value instead of get_secret_str.
+    why: No code outside the config crate reads the process environment (rule inject-dependencies); secret-manager lookups for these names stay with B8500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/common_utils.py#L29-L31

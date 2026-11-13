@@ -1,0 +1,29 @@
+kind: helper
+name: langfuse-trace-attributes-scalar
+call:
+  b3901:
+    steps:
+      - function: trace_attributes
+        fields:
+          name: trace-name
+          user_id: user-1
+          session_id: session-1
+          version: "1.0"
+          release: rel
+          public: true
+          input: hello
+          output: bye
+      - function: trace_attributes
+        fields:
+          public: false
+          tags: [alpha, beta]
+      - function: trace_attributes
+        fields:
+          tags: []
+      - function: trace_attributes
+        fields:
+          name: null
+          metadata: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,40 @@
+kind: probe
+name: unset-versus-explicit-6000
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        configured: {seconds: "6000", explicitly_set: false}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        configured: {seconds: "6000", explicitly_set: true}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        configured: {seconds: "300", explicitly_set: false}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        completion:
+          provider: groq
+          global_timeout: {seconds: "6000", explicitly_set: false}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        completion:
+          provider: groq
+          global_timeout: {seconds: "6000", explicitly_set: true}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_timeouts:
+        completion:
+          provider: groq
+          global_timeout: {seconds: "300", explicitly_set: false}
+compare: {ignore: []}

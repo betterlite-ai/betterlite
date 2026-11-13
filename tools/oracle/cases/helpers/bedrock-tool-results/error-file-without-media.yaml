@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-tool-results-error-file-without-media
+call:
+  bedrock_tool_results:
+    function: tool_call_result
+    message:
+      role: tool
+      tool_call_id: call_abc
+      content:
+        - {type: file, file: {}}
+    id: unused-fixed-id
+env: {}
+compare:
+  ignore: []

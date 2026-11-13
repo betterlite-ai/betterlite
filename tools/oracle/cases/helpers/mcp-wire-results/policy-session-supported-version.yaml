@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b8190_policy_session_supported_version","call":{"b8190":{"function":"version_policy","versions":["2025-06-18"],"method":"tools/list","initialized":{},"protocol_version":"2025-06-18"}},"env":{},"compare":{"ignore":[]}}

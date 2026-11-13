@@ -1,0 +1,5 @@
+kind: helper
+name: openai-fine-tuning-retrieve-checkpoint-fields
+call: {"openai_fine_tuning": {"steps": [{"action": "retrieve", "client": "sync", "job_id": "ft_1", "reply": {"status": 200, "body": {"id": "ft_1", "created_at": 1, "error": null, "fine_tuned_model": "ft:gpt-4o-mini:org::1", "finished_at": 9, "estimated_finish": null, "integrations": null, "metadata": null, "hyperparameters": {"batch_size": null, "learning_rate_multiplier": null, "n_epochs": 3}, "method": null, "model": "gpt-4o-mini", "object": "fine_tuning.job", "organization_id": "org", "result_files": ["file_r"], "seed": 5, "status": "succeeded", "trained_tokens": 120, "training_file": "file_a", "validation_file": null, "checkpoint_ids": ["ckpt_1"]}}}]}}
+env: {}
+compare: {ignore: []}

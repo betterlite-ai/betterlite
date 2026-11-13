@@ -1,0 +1,5 @@
+kind: helper
+name: candidate-order
+call: {anthropic_catalog_lookup: {function: candidates, model: "bedrock/invoke/us.anthropic.Claude-Sonnet-4.6@x-20260219-v1:0"}}
+env: {}
+compare: {ignore: []}

@@ -29,6 +29,7 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-models/src/lib.rs"
     - crates/betterlite-models/src/judge_primitives.rs
     - crates/betterlite-models/src/judge_primitives/**
     - crates/betterlite-models/fuzz/Cargo.toml
@@ -98,13 +99,13 @@ checks:
   commands:
     - id: verdict-parser-tests
       why: parse_json_verdict tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^judge_verdict_parsing::/)'
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^judge_primitives::(.*::)?judge_verdict_parsing::/)'
     - id: content-text-tests
       why: extract_text_from_content tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^content_text_extraction::/)'
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^judge_primitives::(.*::)?content_text_extraction::/)'
     - id: provider-qualified-tests
       why: _provider_qualified tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^provider_qualified::/)'
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^judge_primitives::(.*::)?provider_qualified::/)'
     - id: judge-target-tests
       why: judge_target and JudgeTarget tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^judge_targets::/)'
@@ -137,7 +138,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_judge.py#L79-L90
 
 out_of_scope:
-  - "`default_router_provider`: owned by B118 as part of the shadow eval logger callback setup; B4080 owns only the judge primitives and dispatch."
+  - "`default_router_provider` (llm_judge.py L21-L27) is in this task's file, but betterlite keeps no module-level state, so no such function is built: B4084's shadow calls and B3809's decision model take the router handle through their constructors, and the server passes the proxy router."
   - "`litellm.Router.acompletion` (question 1): this native operation awaits resolution of which task owns it."
   - "`litellm.Router.resolved_litellm_models` (question 1): this native operation awaits resolution of which task owns it."
   - "`litellm.acompletion` fallback path (question 2): the SDK completion executor awaits resolution of which task owns it."

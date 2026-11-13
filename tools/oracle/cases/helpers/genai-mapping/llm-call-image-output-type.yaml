@@ -1,0 +1,19 @@
+{
+  "kind": "helper",
+  "name": "genai-mapping-llm-call-image-output-type",
+  "call": {
+    "b3845": {
+      "function": "genai_llm_call",
+      "payload": {
+        "id": "call-1",
+        "model": "dall-e-3",
+        "call_type": "image_generation",
+        "custom_llm_provider": "openai"
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -55,10 +55,12 @@ fn input(error_str: &str, status_code: Option<u16>) -> AnthropicExceptionInput {
 #[case::status_401("generic failure", Some(401), Some("authentication"), Some(401))]
 #[case::status_403("generic failure", Some(403), Some("permission_denied"), Some(403))]
 #[case::status_413("generic failure", Some(413), Some("bad_request"), Some(400))]
+#[case::status_400("generic failure", Some(400), Some("bad_request"), Some(400))]
 #[case::status_404("generic failure", Some(404), Some("not_found"), Some(404))]
 #[case::status_408("generic failure", Some(408), Some("timeout"), Some(408))]
 #[case::status_429("generic failure", Some(429), Some("rate_limit"), Some(429))]
 #[case::status_529("generic failure", Some(529), Some("internal_server"), Some(500))]
+#[case::status_500("generic failure", Some(500), Some("internal_server"), Some(500))]
 #[case::status_502("generic failure", Some(502), Some("bad_gateway"), Some(502))]
 #[case::status_503("generic failure", Some(503), Some("service_unavailable"), Some(503))]
 #[case::status_504("generic failure", Some(504), Some("timeout"), Some(504))]
@@ -81,6 +83,30 @@ fn anthropic_replicate_errors_behavior_tests_behavior(
             }
         }
     }
+}
+
+#[rstest]
+#[case::prompt_too_long_before_overloaded(
+    "prompt is too long: 205000 tokens > 200000 maximum; Overloaded",
+    "context_window_exceeded"
+)]
+#[case::overloaded_before_invalid_api_key(
+    "Overloaded: Invalid API Key provided",
+    "internal_server"
+)]
+#[case::invalid_api_key_before_content_filtering(
+    "Invalid API Key provided; blocked by the content filtering policy",
+    "authentication"
+)]
+#[case::content_filtering_before_client_error_400(
+    "blocked by the content filtering policy: Client error '400 Bad Request'",
+    "content_policy_violation"
+)]
+fn earlier_text_predicate_wins(#[case] error_str: &str, #[case] expected_family: &str) {
+    let mapped = map_anthropic_exception(&input(error_str, None));
+    let class = mapped.expect("an earlier text predicate must match");
+    let value = serde_json::to_value(&class).expect("ErrorClass always serializes");
+    assert_eq!(value["family"], serde_json::json!(expected_family));
 }
 
 #[rstest]

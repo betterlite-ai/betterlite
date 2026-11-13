@@ -5,12 +5,6 @@ mod tests;
 const BEARER_PREFIX_LEN: usize = 7;
 
 #[must_use]
-pub fn hash_token(value: &str) -> String {
-    let hashed_token = Sha256::digest(value.as_bytes());
-    hex::encode(hashed_token)
-}
-
-#[must_use]
 pub fn is_jwt(token: Option<&str>) -> bool {
     let Some(value) = token else {
         return false;
@@ -32,10 +26,13 @@ fn strip_bearer_prefix(value: &str) -> &str {
 pub fn safe_hash_api_key(api_key: &str) -> String {
     let normalized = strip_bearer_prefix(api_key);
     if normalized.starts_with("sk-") {
-        return hash_token(normalized);
+        return hex::encode(Sha256::digest(normalized.as_bytes()));
     }
     if is_jwt(Some(normalized)) {
-        return format!("hashed-jwt-{}", hash_token(normalized));
+        return format!(
+            "hashed-jwt-{}",
+            hex::encode(Sha256::digest(normalized.as_bytes()))
+        );
     }
     normalized.to_owned()
 }

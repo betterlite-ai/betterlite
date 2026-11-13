@@ -1,0 +1,13 @@
+kind: helper
+name: opensandbox-delete-bare-id
+call:
+  b3518:
+    operation: delete
+    container: sbx_7
+    api_base: http://sandbox.example
+    responses:
+      - status: 204
+        body: ''
+env: {}
+compare:
+  ignore: []

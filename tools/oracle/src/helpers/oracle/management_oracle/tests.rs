@@ -6,7 +6,7 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 use super::{Input, run};
-use crate::case::parse_helper_case;
+use crate::case::helper::validate_helper;
 use crate::helpers::HelperCall;
 use crate::helpers::answers::Answers;
 
@@ -146,7 +146,12 @@ env: {}
 compare:
   ignore: []
 ";
-    let error = parse_helper_case(source).unwrap_err();
+    let error = serde_saphyr::from_str(source)
+        .map_err(|error| error.to_string())
+        .and_then(|parsed| {
+            validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
+        })
+        .unwrap_err();
     assert!(error.contains("duplicate"));
 }
 

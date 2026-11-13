@@ -1,0 +1,11 @@
+kind: helper
+name: secret-lookup-os-environ-prefix
+env: {}
+compare: {ignore: []}
+call:
+  b8500:
+    function: get_secret
+    secret_name: os.environ/os.environ/DB_PASSWORD
+    environment:
+      DB_PASSWORD: db-secret
+    default_value: null

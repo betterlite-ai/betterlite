@@ -1,0 +1,10 @@
+kind: helper
+name: xai-usage-search-count-conversion
+call:
+  xai_usage:
+    action: search
+    usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+    details: {web_search_calls: "3"}
+    search_costs: {search_context_size_medium: 0.01}
+env: {}
+compare: {ignore: []}

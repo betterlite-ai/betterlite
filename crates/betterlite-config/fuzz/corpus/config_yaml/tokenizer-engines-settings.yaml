@@ -1,0 +1,2 @@
+litellm_settings:
+  disable_hf_tokenizer_download: true

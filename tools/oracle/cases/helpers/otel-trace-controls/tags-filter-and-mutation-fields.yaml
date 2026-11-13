@@ -1,0 +1,16 @@
+kind: helper
+name: tags-filter-and-mutation-fields
+call:
+  b3892:
+    function: trace
+    litellm_params:
+      metadata:
+        tags: ["", ignored, one]
+        trace_id: ignored
+        existing_trace_id: ignored
+        update_trace_keys: [ignored]
+      litellm_metadata:
+        tags: [later]
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,26 @@
+kind: helper
+name: reservation-tokens-nested-lists-dictionaries-and-python-booleans
+call:
+  reservation_tokens:
+    calls:
+      - function: count_for_model
+        model: gpt-3.5-turbo
+        request:
+          prompt:
+            - null
+            - true
+            - false
+            - 2
+            - hi
+            - - 3
+              - b: true
+                a: "é"
+            - k: "it's"
+      - function: count_for_model
+        model: gpt-3.5-turbo
+        request:
+          input:
+            - name: "line\nbreak"
+              "quote\"key": [1, 2]
+env: {}
+compare: {ignore: []}

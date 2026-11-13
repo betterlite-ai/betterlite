@@ -1,0 +1,19 @@
+kind: helper
+name: response-audio-fields
+call:
+  b3860:
+    function: set_response
+    response:
+      data:
+        - {url: "https://example.com/image.png"}
+      audio:
+        - url: "https://example.com/a.wav"
+          mime_type: audio/wav
+          transcript: hello
+        - b64_json: QUJD
+          transcript: world
+        - mime_type: audio/mp3
+        - url: ""
+          mime_type: ""
+env: {}
+compare: {ignore: []}

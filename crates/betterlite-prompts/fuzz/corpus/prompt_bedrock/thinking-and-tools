@@ -1,0 +1,1 @@
+{"messages":[{"role":"user","content":"solve"},{"role":"assistant","content":[{"type":"text","text":"answer"},{"type":"thinking","thinking":"why","signature":"sig"}],"tool_calls":[{"id":"call_1","type":"function","function":{"name":"f","arguments":"{}"}}]}],"model":"anthropic.claude-sonnet-4-5-20250929-v1:0","capabilities":{"supports_strict_tools":true}}

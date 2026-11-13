@@ -1,0 +1,15 @@
+kind: helper
+name: filter-internal
+call:
+  call_helpers:
+    function: filter_internal
+    record:
+      skip_mcp_handler: 1
+      mcp_handler_context: true
+      _skip_mcp_handler: null
+      keep: 2
+      _other: 3
+      nested: {skip_mcp_handler: 4}
+    additional: [keep]
+env: {}
+compare: {ignore: []}

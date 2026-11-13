@@ -1,0 +1,32 @@
+kind: helper
+name: vector-file-attachment-record-fields
+call:
+  vector_file_contracts:
+    operation: attachment_record_fields
+    records:
+      - {kind: file_object, value: {id: file_a, object: vector_store.file, created_at: 1, usage_bytes: 2, vector_store_id: vs_a, status: in_progress, last_error: {code: bad, message: failed}, chunking_strategy: {type: auto}, attributes: {text: x, integer: 2, decimal: 0.25, boolean: false}}}
+      - {kind: file_object, value: {status: completed}}
+      - {kind: file_object, value: {status: failed}}
+      - {kind: file_object, value: {status: cancelled}}
+      - {kind: file_object, value: {usage_bytes: null, last_error: null, chunking_strategy: null, attributes: null}}
+      - {kind: file_object, value: {}}
+      - {kind: file_object, value: {status: queued, chunking_strategy: {type: other}}}
+      - {kind: file_object, value: {object: vector_store.other, created_at: 1.5, usage_bytes: "2", attributes: []}}
+      - {kind: chunking_strategy, value: {type: other, static: {max_chunk_size_tokens: "800"}}}
+      - {kind: list_response, value: {object: list, data: [{id: file_a, status: queued, chunking_strategy: {type: other}}], first_id: file_a, last_id: null, has_more: false}}
+      - {kind: list_query, value: {filter: unexpected, order: sideways, limit: -1}}
+      - {kind: chunking_strategy, value: {type: static, static: {max_chunk_size_tokens: 800, chunk_overlap_tokens: 400}}}
+      - {kind: chunking_strategy, value: {type: static, static: null}}
+      - {kind: static_chunking, value: {max_chunk_size_tokens: -5, chunk_overlap_tokens: 900000}}
+      - {kind: create_request, value: {file_id: file_a, attributes: {}, chunking_strategy: {type: auto}}}
+      - {kind: update_request, value: {attributes: {flag: true}}}
+      - {kind: list_query, value: {after: "", before: file_b, filter: failed, limit: 0, order: asc}}
+      - {kind: list_response, value: {object: list, data: [{id: file_a}], first_id: file_a, last_id: null, has_more: false}}
+      - {kind: delete_response, value: {id: file_a, object: vector_store.file.deleted, deleted: true}}
+      - {kind: content_response, value: {file_id: file_a, filename: null, attributes: {k: v}, content: [{type: text, text: hello}]}}
+      - {kind: content_text_part, value: {type: text, text: hello}}
+      - {kind: auth_credentials, value: {headers: {Authorization: Bearer x}, query_params: {p: 1}}}
+      - {kind: auth_credentials, value: {headers: {Authorization: Bearer x}}}
+      - {kind: auth_credentials, value: {}}
+env: {}
+compare: {ignore: []}

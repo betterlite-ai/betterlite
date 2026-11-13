@@ -1,0 +1,8 @@
+name: auth-route-patterns-http-malformed-host
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request: {"method": "GET", "path": "/v1/models", "headers": {"Host": "localhost/?x=1", "Authorization": "Bearer rejected-master"}, "body": null}
+upstream: []
+compare: {"headers": ["content-type"], "headers_present": [], "upstream_headers": [], "ignore": [{"pointer": "/error/message", "why": "betterlite writes its own authentication error message"}]}

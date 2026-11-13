@@ -1,0 +1,14 @@
+id: B8215
+milestone: M6 guardrails
+title: Singulr guardrail
+status: todo
+depends_on: [B173, B3662, B5471]
+file: tasks/B8215-singulr-guard.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/singulr/**"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

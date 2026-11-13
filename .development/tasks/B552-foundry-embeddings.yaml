@@ -189,7 +189,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::embeddings_cases::case_[0-9]+_embedding_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_embeddings.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_embeddings.py tools/oracle/helpers/foundry_embeddings)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -202,7 +202,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_embeddings)"
       && grep -q 'decode_foundry_embedding' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_embeddings.rs &&
-      cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_embeddings_corpus$/)'
+      cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_embeddings_corpus(::|$)/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-embeddings/foundry-models-embeddings-route.yaml
 - tools/oracle/cases/helpers/providers/foundry-embeddings/cohere-model-group.yaml

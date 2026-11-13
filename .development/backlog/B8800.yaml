@@ -1,0 +1,14 @@
+id: B8800
+milestone: M1 openai data plane
+title: Pre-call route types, ports and request rewrites
+status: todo
+depends_on: [B1102, B3930, B732, B002]
+file: tasks/B8800-pre-call-types-ports.yaml
+covers:
+  - "litellm/proxy/common_request_processing.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

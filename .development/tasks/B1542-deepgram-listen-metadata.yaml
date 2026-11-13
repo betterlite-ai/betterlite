@@ -33,10 +33,6 @@ description: >-
   oracle/fuzz lines, maximum 650.
 scope:
   paths:
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
-    - crates/betterlite-core/src/api/deepgram.rs
-    - crates/betterlite-core/src/api/deepgram/**
     - crates/betterlite-core/src/api/deepgram/{common,listen_metadata}.rs
     - crates/betterlite-core/src/api/deepgram/listen_metadata.rs
     - crates/betterlite-core/src/api/deepgram/listen_metadata/**
@@ -83,7 +79,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/deepgram-listen-metadata/final-transcript.yaml
 deviations: []
 out_of_scope:
-  - B094 owns passthrough WebSocket routes and their consumers; this task does not mount /deepgram/v1/listen or perform authorization itself.
+  - B3628 owns the Deepgram passthrough routes, B8606 their mount and B3653 the billing consumers; this task does not mount /deepgram/v1/listen or perform authorization itself.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as deepgram_listen_metadata in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/deepgram_listen_metadata.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/deepgram_listen_metadata.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - diarize_model and diarize activate a single streaming/diarize billing key.

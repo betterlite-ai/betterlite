@@ -1,0 +1,21 @@
+kind: helper
+name: datadog-llm-obs-openai-tool-calls
+call:
+  b3935:
+    function: messages
+    messages:
+      - role: assistant
+        content: null
+        tool_calls:
+          - id: call_1
+            type: function
+            function: {name: get_weather, arguments: '{"city": "Paris", "days": 3}'}
+          - id: call_2
+            function: {name: lookup, arguments: "not json"}
+          - function: {name: unlinked}
+      - {role: tool, tool_call_id: call_1, content: '{"temperature": 21}'}
+      - {role: tool, tool_call_id: call_2, content: "not found"}
+      - {role: tool, content: missing id}
+env: {}
+compare:
+  ignore: []

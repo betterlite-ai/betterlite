@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-mantle-inputs-chat-endpoint-seed
+call:
+  bedrock_mantle_inputs:
+    mantle_chat_endpoint_inputs:
+      model_cost:
+        bedrock_mantle/openai.gpt-5:
+          use_openai_responses_path: true
+      cases:
+        - model: eu-west-1/openai.gpt-5
+          environment: {BEDROCK_MANTLE_REGION: ap-south-1}
+        - model: openai.gpt-5
+          api_base: https://custom.example/v1/
+          api_key: explicit-key
+        - {}
+env: {}
+compare: {ignore: []}

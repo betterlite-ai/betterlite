@@ -1,0 +1,25 @@
+kind: helper
+name: post-call-no-text-skip
+call:
+  b3737:
+    post_call:
+      settings:
+        auth_token: test-token
+        detector_id: jailbreak-detector
+        mode: post_call
+      data:
+        messages:
+          - {role: user, content: hello}
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: null
+              tool_calls:
+                - {id: call-1, type: function, function: {name: lookup, arguments: "{}"}}
+      answer:
+        status: 200
+        headers: {}
+        body: []
+env: {}
+compare: {ignore: []}

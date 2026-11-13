@@ -1,0 +1,5 @@
+kind: helper
+name: galileo-delivery-ingest-url-v2-api
+call: {"b3964": {"environment": {"GALILEO_API_KEY": "key-0123456789abcdef", "GALILEO_PROJECT_ID": "project-1"}, "replies": [], "actions": [{"do": "push", "label": "a"}, {"do": "push", "label": "b"}, {"do": "ingest_url"}]}}
+env: {}
+compare: {ignore: []}

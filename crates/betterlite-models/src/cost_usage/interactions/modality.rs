@@ -39,13 +39,6 @@ impl From<RawModalityName> for ModalityName {
     }
 }
 
-impl ModalityName {
-    fn field_name(&self) -> Option<ModalityField> {
-        let name = self.0.as_deref()?;
-        modality_field_name(&name.to_lowercase())
-    }
-}
-
 type ModalityEntryFields = BTreeMap<Box<str>, Box<RawValue>>;
 
 // A non-mapping entry is a transformation error, never silently skipped.
@@ -61,7 +54,10 @@ pub(crate) fn modality_token_sums(
             .map_or_else(ModalityName::default, |raw| {
                 serde_json::from_str(raw.get()).unwrap_or_default()
             });
-        let Some(field) = modality.field_name() else {
+        let Some(name) = modality.0.as_deref() else {
+            continue;
+        };
+        let Some(field) = modality_field_name(&name.to_lowercase()) else {
             continue;
         };
         let tokens = match fields.get("tokens") {

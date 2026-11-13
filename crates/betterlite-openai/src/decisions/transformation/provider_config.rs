@@ -16,7 +16,7 @@ const RESERVED_HEADERS: [&str; 2] = ["authorization", "content-type"];
 pub struct SigningContext<'call> {
     pub url: &'call str,
     pub api_base: &'call str,
-    pub body: &'call wire::RequestWire,
+    pub body: &'call wire::ProviderRequestWire,
     pub api_key: Option<&'call SecretString>,
     pub litellm_params: &'call Extra,
 }
@@ -44,7 +44,10 @@ fn response_error(custom_llm_provider: &str, source: &serde_json::Error) -> Prov
 }
 
 #[must_use]
-fn first_secret(names: &[&str], get_secret_str: fn(&str) -> String) -> Option<String> {
+pub(crate) fn first_secret<F>(names: &[&str], get_secret_str: &F) -> Option<String>
+where
+    F: Fn(&str) -> String + ?Sized,
+{
     names
         .iter()
         .map(|name| get_secret_str(name))
@@ -59,7 +62,7 @@ fn resolve_credential(
 ) -> Option<String> {
     explicit
         .map(str::to_owned)
-        .or_else(|| first_secret(env_names, get_secret_str))
+        .or_else(|| first_secret(env_names, &get_secret_str))
         .or(default)
 }
 
@@ -155,9 +158,11 @@ pub trait DecisionsProviderConfig {
         model: &str,
         request: &ir::DecisionRequest,
         _custom_llm_provider: &str,
-    ) -> Result<wire::RequestWire, RequestConversionError> {
+    ) -> Result<wire::ProviderRequestWire, RequestConversionError> {
         let built = requests::ir_to_systemone_request(&self.request_model(model), request)?;
-        Ok(wire::RequestWire::from(&built))
+        Ok(wire::ProviderRequestWire::SystemOne(
+            wire::RequestWire::from(&built),
+        ))
     }
 
     fn unwrap_response<'call>(&self, payload: &'call [u8]) -> &'call [u8] {

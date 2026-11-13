@@ -1,0 +1,100 @@
+id: B7879
+title: Python assistant messages, runs, run streams and the assistants package
+description: >-
+  This is the last part of the assistants entry. It adds `add_message`, `a_add_message`, `get_messages`, `aget_messages`,
+  `run_thread`, `arun_thread`, `run_thread_stream` and `arun_thread_stream`, the two helpers of litellm/assistants/utils.py
+  and the `assistants` package files. Rust does the provider calls (B1057 messages, B2488 runs and streams).
+
+
+  Native side, the family `assistant_runs`: `src/assistant_runs.rs` with `register` that adds `NativeAssistantRunSession`,
+  `NativeAssistantStream` and `NativeAssistantRunError`. `run_thread` with `stream=True` returns a `NativeAssistantStream`
+  with `next_event()`, `anext_event()`, `close()` and `aclose()` that give event JSON or None at the end. Conversion is in
+  `src/assistant_runs/convert.rs` with tests `request_*` and `error_*`. The architect writes the `lib.rs` lines.
+
+
+  Python side, `python/betterlite/assistants/_runs.py` and `_utils.py`, plus `main.py` and `__init__.py` that re-export the
+  names of B7878 and this task. `add_message(custom_llm_provider, thread_id, role, content, attachments, metadata, client,
+  **kwargs)`, `get_messages(custom_llm_provider, thread_id, client, **kwargs)` and `run_thread(custom_llm_provider, thread_id,
+  assistant_id, additional_instructions, instructions, metadata, model, stream, tools, client, event_handler, **kwargs)`
+  follow the source. `arun_thread` has the same parameters minus `event_handler`. `run_thread_stream(*, event_handler=None,
+  **kwargs)` calls `run_thread(stream=True, ...)`, and `arun_thread_stream` sets `kwargs["arun_thread"] = True` first, so it
+  returns an async stream manager (L1165-L1171 and L1231-L1236). `get_optional_params_add_message` and
+  `get_optional_params_image_gen` (assistants/utils.py L10-L122) are built here as plain functions with the same output.
+  A stream manager is a context manager (sync or async) that gives itself, iterates events as `AssistantStreamEvent` objects
+  and closes on exit. `event_handler` must be an object with an `on_event(event)` method, called for every event. Any other
+  handler raises `UnsupportedCallArgument` naming it.
+scope:
+  paths:
+  - crates/betterlite-python/src/assistant_runs.rs
+  - crates/betterlite-python/src/assistant_runs/**
+  - crates/betterlite-python/python/betterlite/_native_assistant_runs.pyi
+  - crates/betterlite-python/python/betterlite/assistants/_runs.py
+  - crates/betterlite-python/python/betterlite/assistants/_utils.py
+  - crates/betterlite-python/python/betterlite/assistants/main.py
+  - crates/betterlite-python/python/betterlite/assistants/__init__.py
+  - crates/betterlite-python/tests/test_assistants_runs.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L841-L1163
+  why: a_add_message, add_message, aget_messages and get_messages
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L1165-L1330
+  why: stream helpers, arun_thread and run_thread
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/utils.py#L1-L122
+  why: get_optional_params_add_message and get_optional_params_image_gen
+dod:
+- text: The eight functions keep LiteLLM's signatures, and the two stream helpers return managers.
+  proof: [runs-signature]
+- text: Messages are added and read, and a run returns the same `Run` object as LiteLLM against one server.
+  proof: [runs-calls]
+- text: A stream run gives the same events on the sync and async paths, calls `on_event`, and closes on exit.
+  proof: [runs-stream]
+- text: The two optional-param helpers give LiteLLM's output for the same input.
+  proof: [runs-utils]
+- text: A provider error keeps its class and cause, and `betterlite.assistants.main` exports every name of both parts.
+  proof: [runs-package]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [runs-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: runs-signature
+    why: A caller's keyword is refused.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_assistants_runs.py -k signature
+  - id: runs-calls
+    why: A message or run differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_assistants_runs.py -k calls
+  - id: runs-stream
+    why: Events differ or the stream never closes.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_assistants_runs.py -k stream
+  - id: runs-utils
+    why: A param is dropped or renamed.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_assistants_runs.py -k utils
+  - id: runs-package
+    why: A name is missing or the error class is wrong.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_assistants_runs.py -k 'package or error'
+  - id: runs-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^assistant_runs::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for the run calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`run_thread_stream` returns a betterlite stream manager of `AssistantStreamEvent` objects, not the OpenAI SDK's `AssistantStreamManager`."
+  why: The wheel does not depend on the OpenAI SDK. Iteration, the context manager and `on_event` work the same. The `on_text_delta`-style handler methods do not.
+- what: This task has no helper oracle cases.
+  why: pytest compares both packages against one local server.
+out_of_scope:
+- "Assistant and thread calls are B7878."
+- "Run and run-stream provider execution belongs to B2488, message I/O to B1057."
+pitfalls:
+- "`a_add_message` has the underscore after `a`, unlike every other async name, and `aget_messages` does not."
+- "`arun_thread_stream` is a plain function (not `async def`) that returns the manager, so `inspect.iscoroutinefunction` is false for it."
+- "`run_thread` with `stream=True` and an `event_handler` passes the handler through the stream manager, never into the JSON."
+- "`get_optional_params_image_gen` is unrelated to assistants by name but sits in this package, so keep it importable from `betterlite.assistants.utils` as well as `_utils`."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

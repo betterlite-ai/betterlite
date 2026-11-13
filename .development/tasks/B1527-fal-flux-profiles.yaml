@@ -30,8 +30,6 @@ description: >-
   implementation, 240 tests and 110 adapters/wiring lines within a 650-line budget.
 scope:
   paths:
-    - crates/betterlite-core/src/api/fal.rs
-    - crates/betterlite-core/src/api/fal/**
     - crates/betterlite-core/src/api/fal/flux.rs
     - crates/betterlite-core/src/api/fal/flux/**
     - tools/oracle/src/helpers/core_ops/fal_flux.rs

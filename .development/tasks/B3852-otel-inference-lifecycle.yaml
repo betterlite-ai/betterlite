@@ -76,6 +76,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/routing.py#L351-L400
     why: "Config and exporter routing with credential-replace and project-append behavior."
 dod:
+  - text: "OpenTelemetryV2 implements CallbackLogger with this lifecycle as its async success and failure events, which the arms of B8746 return when V2 is enabled (tests named callback_logger_* under otel::logger)."
+    proof: [callback-logger]
   - text: >-
       log_pre_api_call opens an LLM-call span at the pre_call boundary when the ambient parent
       is recordable, storing the routed provider in the carrier. When no recordable parent exists
@@ -149,6 +151,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: OpenTelemetryV2 has no CallbackLogger impl for the catalog arms
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger::(.*::)?callback_logger_/)'
     - id: lifecycle-pre-call-tests
       why: log_pre_api_call must open spans at boundary when parent is recordable and defer when not.
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::logger::lifecycle::pre_call::/)'

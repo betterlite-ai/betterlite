@@ -1,0 +1,8 @@
+task: B588
+deviations:
+  - what: A file size or byte count past i64::MAX is refused as an invalid field value; LiteLLM's Python int has no such limit and projects it into OpenAIFileObject.bytes.
+    why: The shared OpenAI file record carries bytes as i64, which the whole workspace uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/files/transformation.py#L295
+  - what: A created_at whose day is space-padded ("2025-01- 1T00:00:00") falls back to the current time here; Python's time.strptime accepts a leading space before a one-digit day and parses it.
+    why: betterlite parses the documented %Y-%m-%dT%H:%M:%S spelling strictly instead of keeping strptime's padded-day pattern.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/files/transformation.py#L280-L284

@@ -1,0 +1,28 @@
+kind: helper
+name: missing-access-token
+call:
+  azure_oidc_exchange:
+    steps:
+      - environment: {AZURE_CLIENT_ID: client, AZURE_TENANT_ID: tenant, OIDC_ASSERTION: assertion-value}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+        replies:
+          - {status: 200, body: '{"expires_in":3600}'}
+      - environment: {AZURE_CLIENT_ID: client, AZURE_TENANT_ID: tenant, OIDC_ASSERTION: assertion-value}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+        replies:
+          - {status: 200, body: '{"access_token":null,"expires_in":3600}'}
+      - environment: {AZURE_CLIENT_ID: client, AZURE_TENANT_ID: tenant, OIDC_ASSERTION: assertion-value}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+        replies:
+          - {status: 200, body: '{}'}
+      - environment: {AZURE_CLIENT_ID: client, AZURE_TENANT_ID: tenant, OIDC_ASSERTION: assertion-value}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+        replies:
+          - {status: 200, body: '{"access_token":"","expires_in":3600}'}
+env: {}
+compare: {ignore: []}

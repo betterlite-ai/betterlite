@@ -1,0 +1,24 @@
+kind: helper
+name: bedrock-reverse-tool-name-lookup
+call:
+  bedrock_model_routes:
+    price_map: {}
+    converse_models: []
+    request_metadata_fields: []
+    tool_names:
+      converted_name: "Original Name"
+      x: "y"
+      same: same
+      empty_original: ""
+    step:
+      tool_names:
+        names:
+          - converted_name
+          - missing_name
+          - x
+          - same
+          - empty_original
+          - ""
+env: {}
+compare:
+  ignore: []

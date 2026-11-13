@@ -1,0 +1,243 @@
+id: B117
+title: Connect prompt managers to inference and prove registry composition over HTTP
+description: >-
+  Finish the prompt area after its algorithms and mounts exist. The ownership audit found only two unbuilt
+  handlers, assigned to B9010, and the production handoff from the callback factory to per-call prompt dispatch.
+  This task fills that handoff and the HTTP coverage that the pure backend and startup parts could not add.
+  It does not port the 1209-line endpoint file or reimplement a prompt manager. The additional LiteLLM setting
+  branch is proxy_server.py L6390-L6398 (nine nonblank lines); the source excerpts for dispatch and registry lookup
+  below describe composition of dependencies, not new ownership of their algorithms. Keep the implementation to
+  adapters and constructor changes, roughly 400-800 changed production lines including the config section and
+  corpus target. New modules live under app/inference/prompt_runtime in betterlite-server.
+
+  Runtime. Build a fresh B8560 PromptHookDispatch for each logging call, retaining B247's actual call state rather
+  than copying model_call_details into a disconnected map. Supply the process-wide PromptLoggerFactory built by
+  B8747 and the prompt-role managers from B189's current callback order. Resolve configured names with that
+  factory's configured() and retain existing prompt objects in their positions; do not independently sort the
+  names or instantiate a second backend. A small state/callback_loggers/prompts.rs child may expose the existing
+  slot's factory and live callback view to the runtime. Pass through the optional vector registry already held
+  by Shared. No separate global callback list, private prompt registry or new background task is needed.
+
+  Expose install_prompt_runtime(&Arc<ServerState>) from the new runtime module. The architect pre-registers its
+  startup stub after app::callbacks::start and before the listener opens, when callback_loggers is populated.
+  It installs the runtime through B8399's set_prompt_templates(Arc<dyn PromptTemplates>) injection point. B8399
+  must expose this injection point before dispatch (see the planner notes); it stores the trait object, not a
+  B117 concrete type, so its constructor does not depend on this task or a not-yet-built ServerState.
+  Bind the prompt part of B8399's proxy_logging/adapters.rs to this runtime. Its B8393 PromptTemplates adapter
+  must resolve through the same shared.prompts Arc that startup and B8672 use, retain the explicit manager from
+  that resolved spec, and call B8560 with the call's logging handle. Take an owned snapshot of the selected spec
+  and manager under the registry read lock and release it before awaiting a compiler or remote fetch. Leave
+  environment/version selection, stripping consumed prompt keys, Responses input conversion and optional-parameter
+  precedence inside their existing owners. In particular a registry-resolved prompt is consumed by the proxy
+  pre-call once; the later SDK hook must not receive the removed prompt_id again.
+
+  Wire the factory into B8630's RouterCompletion construction and its prompt compile port, and into the prompt
+  port of B5655's completion preparation. The router compile port invokes B8560's synchronous hook with
+  injected_for_every_deployment=true, while ordinary async completion invokes its async hook. Their differences
+  are intentional. Read the merged port signatures rather than adding parallel traits. In routes/chat.rs, route
+  prompt-management model groups through the existing RouterCompletion prompt entry after the shared pre-call;
+  this is the previously missing HTTP caller of B8466. For ordinary groups, apply B8560's gate and async hook to
+  the returned pre-call data when prompt controls remain, then give the updated model/messages to the existing
+  ChatExecutor path before selecting a deployment. ChatExecutor has no SDK preparation port of its own, so do
+  not run the whole prepare_acompletion algorithm there. Its runtime adapter forwards the same hook inputs as
+  B5655's prompt port, including tools and request_kwargs, and preserves the empty-tools-to-None handoff.
+  Feed either result into the existing JSON/SSE result and post-call path, retaining the B8803 pre-call and B8633
+  cleanup. In routes/responses.rs supply this runtime to B931/B932's existing prompt ports instead of a no-op.
+  No hook algorithms move from betterlite-core or betterlite-sdk into the server. B9010's preview bridge already
+  enters the chat execution path, so it must observe this wiring without another compilation layer.
+
+  Preserve all existing route registrations: POST /v1/chat/completions, /chat/completions,
+  /engines/{model:path}/chat/completions and /openai/deployments/{model:path}/chat/completions; POST /v1/responses,
+  /responses and /openai/v1/responses; B8672's eight management method/path pairs; and B9010's two utilities.
+  This task adds no route and edits no root mount or B1100 registry list. Prompt authentication and normal key,
+  team and model restrictions remain on the same pipeline, including when a compiled prompt changes the model;
+  do not invent a second authorization decision after compilation.
+
+  Directory setting. Add betterlite-config sections/prompt_runtime.rs and prompt_runtime/ with Section holding
+  global_prompt_directory: Option<String>. Parse litellm_settings.global_prompt_directory from the whole config;
+  absent or null means None, and a string is preserved with the normal os.environ/ resolution. There is no dedicated
+  environment variable and no fallback to the current directory when unset. Expose it as
+  config.sections.prompt_runtime.global_prompt_directory. In B8747's dotprompt factory arm pass this value as the
+  directory argument to the existing DotpromptManager constructor, preserving its lazy loading and any explicit
+  per-manager directory precedence; do not reach into GlobalPromptDirectory's crate-private cell or invent a
+  process environment lookup. Emit the source's informational setting message when configured, without the path
+  or prompt contents. Tests load absent, null, a literal directory, os.environ/PROMPT_FIXTURE_DIR with an injected
+  lookup, and a wrong type through ConfigLoader::load; the named test loads_global_prompt_directory proves the
+  literal reaches config.sections.prompt_runtime. A server test creates a temporary directory and .prompt file,
+  loads a real config with callbacks: [dotprompt], and proves that the factory and runtime render that file.
+
+  The config byte boundary is the existing ConfigLoader::load(&str), including the new section's Raw deserialize
+  and Section conversion. The config crate's prompt_runtime cargo-fuzz target checks UTF-8 then calls that exact
+  production loader with an empty injected environment. Seed absent, null, valid, wrong-type, invalid UTF-8 and
+  invalid-YAML inputs in its own corpus and replay them in sections::prompt_runtime::tests. No new JSON or YAML
+  parser is needed in the server, since these adapters consume typed requests. Keep local errors typed, preserve
+  backend causes and the existing error mapper, and never print prompt bodies, variables or access tokens.
+
+  HTTP evidence. Add kind http cases and kind http_scenario sequences under prompts/runtime, using master key
+  oracle-master, configured prompts and the harness's mock upstream. Dotprompt registry fixtures use prompt_data
+  (content and metadata) instead of depending on the two gateway processes' working directories. Cover startup
+  registration followed by GET /prompts/list and a chat call in one scenario; default production priority and
+  an explicit development selection; exact prompt_version selection; a template model/temperature overriding
+  the request and the two ignore flags in PromptSpec.litellm_params preserving request choices; rendered messages preceding
+  the client's messages; schema rejection; and an absent prompt returning the source's actual behavior rather
+  than an invented registry 404. The directory-setting HTTP case loads global_prompt_directory: '.' with a
+  registered inline prompt, proving config acceptance and inference; the real file render is the native test.
+
+  Exercise GitLab and Bitbucket registered prompts over mock repository endpoints, then generic_prompt_management
+  over its /beta/litellm_prompt_management endpoint. Reuse the existing backend contracts when forming fixtures:
+  gitlab_config and git_ref with the outer registered prompt_id for GitLab; bitbucket_config and its existing
+  empty-string API-base override key for Bitbucket; api_base, api_key, provider_specific_query_params and the
+  30-second default timeout for the generic manager, whose answer field is prompt_template_optional_params.
+  Assert fetched method/path/query, configured authentication headers and the final inference body, and ensure
+  those credentials do not reach the inference provider. A two-request generic scenario checks that one live
+  manager preserves its cache rather than being reconstructed for each call.
+
+  Use a model group whose single deployment has a gitlab/ model and a configured GitLab callback for two router
+  cases: request prompt identity/variables overriding deployment defaults, and the compiled model taking the
+  routed or direct branch. Fixture values must be nonempty values of the declared type; Python truthiness and
+  repr differences are not cases. The Responses cases cover both string input and a list with a non-message
+  item; compare the full upstream input to prove preservation and absence of doubled prompt messages. Add a
+  stream case, missing-auth requests that perform no prompt fetch, and an alias scenario for the four chat and
+  three Responses paths. A database-backed scenario
+  creates, reads, compiles, updates, compiles, patches, compiles and deletes a prompt through the existing routes,
+  then observes the changed lookup; use the harness's database fixture and captured returned ids/versions,
+  never a fixed generated suffix. A final scenario calls B9010's converter and preview and verifies the registry
+  list did not change. B8672 already owns standalone CRUD cases, so do not copy those cases here.
+
+  Compare statuses, all existing error type/param/code fields, SSE events, content-type, call-id presence and mock
+  upstream records. Ignore only generated ids/times and human wording at /error/message or /detail with a reason;
+  no broad response or upstream-body ignore. Native tests under app::inference::prompt_runtime:: prove callback
+  order, reuse of factory instances, isolated logging state across concurrent requests, immediate visibility of
+  registry replacement, no held registry lock during a remote await, and single hook invocation after pre-call.
+  Add the named test directory_reaches_factory, and constructor tests in the other touched server modules.
+  A startup test proves install_prompt_runtime runs after callback initialization and is available before requests.
+  Run the existing factory, proxy-logging, router-completion, chat, Responses and preview tests with a branch-change
+  guard in addition to the new runtime tests.
+
+  Compaction. The prompt test route (prompt_endpoints.py L1122) runs through base_process_llm_request with the
+  compaction executor installed in LiteLLM. Its dispatch here calls B9810's GatewayCompaction once.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference/prompt_runtime.rs
+    - crates/betterlite-server/src/app/inference/prompt_runtime/**
+    - crates/betterlite-server/src/state/callback_loggers/prompts.rs
+    - crates/betterlite-server/src/state/callback_loggers/prompts/**
+    - crates/betterlite-server/src/app/callbacks/catalog/prompt_factory.rs
+    - crates/betterlite-server/src/app/callbacks/catalog/prompt_factory/**
+    - crates/betterlite-server/src/app/inference/router_completion.rs
+    - crates/betterlite-server/src/app/inference/router_completion/**
+    - crates/betterlite-server/src/proxy_logging/adapters.rs
+    - crates/betterlite-server/src/proxy_logging/adapters/**
+    - crates/betterlite-server/src/routes/chat.rs
+    - crates/betterlite-server/src/routes/chat/tests/**
+    - crates/betterlite-server/src/routes/responses.rs
+    - crates/betterlite-server/src/routes/responses/tests/**
+    - crates/betterlite-config/src/sections/prompt_runtime.rs
+    - crates/betterlite-config/src/sections/prompt_runtime/**
+    - crates/betterlite-config/fuzz/fuzz_targets/prompt_runtime.rs
+    - crates/betterlite-config/fuzz/corpus/prompt_runtime/**
+    - tools/oracle/cases/prompts/runtime/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/custom_prompt_management.py#L10-L45
+    why: Audited remainder; both X42 methods and its module instance have no caller at the pin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/test_prompts/test_hello_world_prompt.prompt#L1-L11
+    why: Unreferenced example retained in coverage, with no runtime reader to implement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/init_prompts.py#L10-L28
+    why: B8293's startup behavior now proved through the shared registry and inference.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6390-L6398
+    why: The uncovered global_prompt_directory config-to-manager handoff.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/__init__.py#L14-L27
+    why: None default and the existing B4052 directory setting, without a new environment variable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/dotprompt/dotprompt_manager.py#L44-L84
+    why: The constructor's directory fallback and lazy manager creation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2079-L2152
+    why: B8393's explicit-registry callback path, one-shot key consumption and Responses merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1012-L1302
+    why: B8560's dispatch receives the real factory, ordered callbacks and per-call logging state here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4518-L4617
+    why: B8466's prompt-model entry, request precedence and direct-versus-routed continuation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L548-L578
+    why: B5655's ordinary async completion call site and the already-consumed registry prompt distinction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L640-L680
+    why: B932's async Responses hook and input merge use the same live dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11959
+    why: Existing chat decorators and aliases; no new route registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L194-L221
+    why: Existing Responses decorators and aliases, reused by the runtime cases.
+dod:
+  - text: The live callback factory and ordered callbacks feed one PromptHookDispatch per logging call, with shared registry access released before remote awaits and no state leakage between calls.
+    proof: [runtime-tests, wiring-regressions, new-http-cases, oracle]
+  - text: Config, repository and generic prompts reach chat and Responses through production pre-call and SDK ports; prompt-model groups use router prompt dispatch and retain the direct/routed distinction.
+    proof: [runtime-tests, wiring-regressions, new-http-cases, oracle]
+  - text: Configured registry identity, environment, version, ignore flags and message order match LiteLLM, and CRUD changes become visible to later inference without a second registry or mount.
+    proof: [runtime-tests, new-http-cases, oracle]
+  - text: The global_prompt_directory key is loaded with its None default and normal environment resolution, and the configured factory renders a real local prompt lazily.
+    proof: [section-tests, directory-wiring, new-http-cases, oracle]
+  - text: Config corpus inputs run through the production loader, while malformed section values name the setting and do not leak input data.
+    proof: [section-tests, config-corpus]
+  - text: Auth, aliases, stream cleanup and preview/converter isolation survive the composition without route registration changes.
+    proof: [wiring-regressions, new-http-cases, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: runtime-tests
+      why: production dispatch lacks the real factory, registry, ordered callbacks or per-call logging state
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::prompt_runtime::/)'
+    - id: section-tests
+      why: global_prompt_directory is unknown, has the wrong default or loses normal environment resolution
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::prompt_runtime::/) - test(replay_prompt_runtime_corpus)'
+    - id: directory-wiring
+      why: parsing the setting alone would pass while the factory ignores it
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::prompt_runtime::.*directory_reaches_factory$/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::prompt_runtime::.*loads_global_prompt_directory$/)'
+    - id: wiring-regressions
+      why: a constructor or route change bypasses existing hook, provider or stream behavior
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-server/src/app/inference/prompt_runtime.rs crates/betterlite-server/src/app/inference/prompt_runtime)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::catalog::prompt_factory::/) | test(/^state::callback_loggers::prompts::/) | test(/^proxy_logging::/) | test(/^app::inference::router_completion::/) | test(/^routes::chat::/) | test(/^routes::responses::/) | test(/^api::responses_routes::/) | test(/^routes::prompt_tools::/) | test(/^app::admin::prompts::/)'
+    - id: config-corpus
+      why: a new corpus is absent or the real configuration decoder fails its replay
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/prompt_runtime)" && test -f crates/betterlite-config/fuzz/fuzz_targets/prompt_runtime.rs && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::prompt_runtime::.*replay_prompt_runtime_corpus$/)'
+    - id: new-http-cases
+      why: the parts would still have only pure-function or isolated-route coverage
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/prompts/runtime)"
+oracle_cases:
+  - tools/oracle/cases/prompts/runtime/startup-list-and-chat.yaml
+  - tools/oracle/cases/prompts/runtime/environment-priority.yaml
+  - tools/oracle/cases/prompts/runtime/explicit-version.yaml
+  - tools/oracle/cases/prompts/runtime/model-options-and-message-order.yaml
+  - tools/oracle/cases/prompts/runtime/ignore-model-and-options.yaml
+  - tools/oracle/cases/prompts/runtime/schema-error.yaml
+  - tools/oracle/cases/prompts/runtime/unregistered-prompt.yaml
+  - tools/oracle/cases/prompts/runtime/directory-config.yaml
+  - tools/oracle/cases/prompts/runtime/gitlab-fetch.yaml
+  - tools/oracle/cases/prompts/runtime/bitbucket-fetch.yaml
+  - tools/oracle/cases/prompts/runtime/generic-fetch-and-cache.yaml
+  - tools/oracle/cases/prompts/runtime/router-request-overrides.yaml
+  - tools/oracle/cases/prompts/runtime/router-routed-and-direct.yaml
+  - tools/oracle/cases/prompts/runtime/responses-string-input.yaml
+  - tools/oracle/cases/prompts/runtime/responses-item-preservation.yaml
+  - tools/oracle/cases/prompts/runtime/chat-stream.yaml
+  - tools/oracle/cases/prompts/runtime/inference-auth.yaml
+  - tools/oracle/cases/prompts/runtime/inference-aliases.yaml
+  - tools/oracle/cases/prompts/runtime/crud-visible-to-inference.yaml
+  - tools/oracle/cases/prompts/runtime/utilities-do-not-register.yaml
+deviations: []
+out_of_scope:
+  - "X42PromptManagement.get_chat_completion_prompt, its integration_name property and x42_prompt_management in proxy/custom_prompt_management.py L10-L45: no caller at the pin; dynamic user Python classes remain B165, not a new built-in X42 backend."
+  - "proxy/test_prompts/test_hello_world_prompt.prompt: example with no reader at the pin; no copied fixture or executable behavior."
+  - "proxy/prompts/__init__.py is empty; init_prompts.py init_prompts L10-L28 and the prompts config section: B8293; startup call and shared registry construction: B8613 and B8610."
+  - "Endpoint row contracts/helpers: B4059; list_prompts, get_prompt_versions, _get_prompt_template and get_prompt_info: B4061; create_prompt, update_prompt, delete_prompt, _reload_prompt_in_registry and patch_prompt: B4062; test_prompt and convert_prompt_file_to_json: B9010."
+  - "Registry selection/accessors: B4059; initialize_prompt, supported initializers, key/cache mutation and deletion: B4060; database polling and stale removal: B8384; read/write mounts and their standalone HTTP cases: B8672."
+  - "Template parsing, schema, rendering, fetching and compilation algorithms: B4051-B4058. Backend initialization stays in those parts; directory wiring here calls the existing constructor."
+  - "Prompt hook gate/selection/logging/cache-breakpoint methods: B8560; _process_prompt_template: B8393; Router._is_prompt_management_model and _prompt_management_factory: B8466; RouterCompletion assembly and general router ports: B8630."
+  - "SDK completion preparation and Responses hook algorithms: B5655, B931 and B932; route pre-call algorithms and existing aliases: B8803 and B8804 with their route owners. No enterprise prompt service is implemented."
+pitfalls:
+  - "The shared.prompts registry is live state, so a cloned registry at constructor time hides POST, PATCH and the database poll from inference."
+  - "PromptLoggerFactory::configured preserves callback order and cached manager identity; rebuilding managers per request changes both selection and fetch caching."
+  - "The proxy removes prompt_id only after resolving its registry entry; suppressing every later SDK hook would break configured callback-only prompts."
+  - "Router._prompt_management_factory calls the synchronous logging hook even from async acompletion, so substituting its async sibling changes backend forwarding."
+  - "global_prompt_directory belongs under litellm_settings and has no environment-variable default; a current-directory fallback would make an unset callback unexpectedly read files."
+  - "B8672, B8613 and B9010 already register or initialize the prompt surfaces; this final task only connects their existing state and consumers."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

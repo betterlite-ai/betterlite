@@ -1,0 +1,42 @@
+kind: helper
+name: ragflow-create-response-time
+call:
+  b7814:
+    calls:
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"code":0,"data":{"id":"ds_1","name":"notes","create_time":1745836841611,"chunk_method":"naive"}}'
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"code":0,"data":{"id":"ds_1"}}'
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"code":0,"data":{"id":"ds_1","name":null,"create_time":0}}'
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"code":0,"data":{"id":"ds_1","create_time":999}}'
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"code":0,"data":{"id":"ds_1","create_time":-1500}}'
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"code":0,"data":{"id":"ds_1","create_time":1745836841.611}}'
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {}
+          body: '{"code":0.0,"data":{"id":"ds_1"}}'
+env: {}
+compare: {ignore: []}

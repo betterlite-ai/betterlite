@@ -1,0 +1,11 @@
+kind: helper
+name: secret-lookup-str-drops-bool
+env: {}
+compare: {ignore: []}
+call:
+  b8500:
+    function: get_secret_str
+    secret_name: ENV_FLAG
+    environment:
+      ENV_FLAG: "True"
+    default_value: null

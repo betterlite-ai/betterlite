@@ -1,0 +1,24 @@
+kind: helper
+name: cohere_parse_blocks_and_billing
+call:
+  b6803:
+    model: parse-v5.0
+    document:
+      type: image_url
+      image_url: https://example.com/receipt.png
+    options:
+      output_format: blocks
+      req_format: native
+    response:
+      pages:
+        - type: blocks
+          index: "2"
+          blocks:
+            - {type: text, text: {content: "Total Due: $4.00"}}
+            - {type: table, table: {type: html, html: "<table></table>"}}
+      meta:
+        api_version: {version: "2"}
+        billed_units: {pages: 3.0}
+    api_key: oracle-key
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-aws-endpoints-model-arn-region-seed
+call:
+  bedrock_aws_endpoints:
+    model_arn_region:
+      models: ['arn:aws:bedrock:us-east-1:1:model/x', null]
+env: {}
+compare: {ignore: []}

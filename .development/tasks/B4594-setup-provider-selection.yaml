@@ -10,8 +10,16 @@ description: >-
   Terminal initialization runs once at import time, checking platform and NO_COLOR; _supports_color() reads the result and checks stdout at call time. The _styled_input wrapper strips ANSI from the readline prompt in non-TTY, leaving the display clean. The _render_selector handles both first and subsequent renders by moving the cursor up and reprinting. The _select_interactive loop reads byte-by-byte via /dev/tty in raw mode and restores terminal state in a finally block.
 scope:
   paths:
-    - crates/betterlite/src/**
-    - crates/betterlite-config/src/**
+    - crates/betterlite/src/terminal_styling.rs
+    - crates/betterlite/src/terminal_styling/**
+    - crates/betterlite/src/styled_input.rs
+    - crates/betterlite/src/styled_input/**
+    - crates/betterlite/src/yaml_escape.rs
+    - crates/betterlite/src/yaml_escape/**
+    - crates/betterlite/src/provider_selection.rs
+    - crates/betterlite/src/provider_selection/**
+    - crates/betterlite/src/welcome.rs
+    - crates/betterlite/src/welcome/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L140-L195
@@ -58,25 +66,25 @@ checks:
         grep -q '"openai"' crates/betterlite/src/*.rs && grep -q 'gpt-4o' crates/betterlite/src/*.rs && grep -q 'ANTHROPIC_API_KEY' crates/betterlite/src/*.rs && grep -q 'claude-haiku' crates/betterlite/src/*.rs && grep -q 'AZURE_AI_API_KEY' crates/betterlite/src/*.rs && grep -q 'AWS_ACCESS_KEY_ID' crates/betterlite/src/*.rs && grep -q 'ollama' crates/betterlite/src/*.rs && grep -q 'localhost:11434' crates/betterlite/src/*.rs
     - id: color-support-tests
       why: "color support checks fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^terminal_styling::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*color.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^terminal_styling::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/color/)'
     - id: styled-input-tests
       why: "styled_input readline wrapping tests fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^styled_input::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*styled_input.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^styled_input::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/styled_input/)'
     - id: yaml-escape-tests
       why: "YAML escape tests fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^yaml_escape::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*yaml.*escape.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^yaml_escape::/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/yaml.*escape/)'
     - id: interactive-select-tests
       why: "interactive provider selector tests fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::interactive.*/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*interactive.*select.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::interactive.*/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/interactive.*select/)'
     - id: raw-mode-tests
       why: "raw terminal mode restoration tests fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::.*raw/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*raw.*mode.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::.*raw/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/raw.*mode/)'
     - id: fallback-select-tests
       why: "numeric fallback selector tests fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::fallback/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*fallback.*select.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^provider_selection::fallback/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/fallback.*select/)'
     - id: welcome-tests
       why: "welcome message tests fail or do not exist"
-      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^welcome/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(.*print_welcome.*)'
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^welcome/)' || cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/print_welcome/)'
 oracle_cases: []
 deviations:
   - what: "The six-provider catalog and ANSI styling are built as Rust code, not referenced from LiteLLM at runtime."
@@ -86,16 +94,16 @@ deviations:
     why: "All environment reads go through the config boundary for testability and injection."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/setup_wizard.py#L140-L141"
 out_of_scope:
-  - "`SetupWizard.run` (L226-231) — entry point for the wizard flow; owned by B135."
-  - "`SetupWizard._wizard` (L235-254) — orchestrates the complete wizard steps; owned by B135."
-  - "`SetupWizard._collect_keys` (L390-426) — collects and validates keys using _prompt_key and _validate_and_report; owned by B135."
-  - "`SetupWizard._prompt_key` (L428-438) — prompts for a single API key with skip option; owned by B135."
-  - "`SetupWizard._validate_and_report` (L440-468) — validates credentials via check_valid_key and offers re-entry; owned by B135."
-  - "`SetupWizard._proxy_settings` (L472-490) — collects port and master key from user; owned by B135."
-  - "`SetupWizard._build_config` (L494-550) — generates litellm_config.yaml from providers and env vars; owned by B135."
-  - "`SetupWizard._print_success` (L554-571) — prints config saved message and startup instructions; owned by B135."
-  - "`SetupWizard._offer_start` (L573-620) — prompts to start the proxy and invokes it via os.execlp; owned by B135."
-  - "`run_setup_wizard` (L628-631) — public entrypoint called by litellm --setup; owned by B135."
+  - "`SetupWizard.run` (L226-231) — entry point for the wizard flow; owned by B8542."
+  - "`SetupWizard._wizard` (L235-254) — orchestrates the complete wizard steps; owned by B8542."
+  - "`SetupWizard._collect_keys` (L390-426) — collects and validates keys using _prompt_key and _validate_and_report; owned by B8542."
+  - "`SetupWizard._prompt_key` (L428-438) — prompts for a single API key with skip option; owned by B8542."
+  - "`SetupWizard._validate_and_report` (L440-468) — validates credentials via check_valid_key and offers re-entry; owned by B8542."
+  - "`SetupWizard._proxy_settings` (L472-490) — collects port and master key from user; owned by B8542."
+  - "`SetupWizard._build_config` (L494-550) — generates litellm_config.yaml from providers and env vars; owned by B8542."
+  - "`SetupWizard._print_success` (L554-571) — prints config saved message and startup instructions; owned by B8542."
+  - "`SetupWizard._offer_start` (L573-620) — prompts to start the proxy and invokes it via os.execlp; owned by B8542."
+  - "`run_setup_wizard` (L628-631) — public entrypoint called by litellm --setup; owned by B8542."
   - "Key validation (check_valid_key) calls litellm.completion with a test message; owned by an unassigned task."
   - "CLI command parsing for --setup; that belongs to the CLI owner."
 pitfalls:

@@ -1,0 +1,9 @@
+kind: helper
+name: gemini-tool-results-corpus-boundary-empty-message
+call:
+  gemini_tool_results:
+    message:
+      role: tool
+env: {}
+compare:
+  ignore: []

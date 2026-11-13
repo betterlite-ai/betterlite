@@ -1,0 +1,32 @@
+kind: helper
+name: model-file-ids-responses-file-id
+call:
+  model_file_ids:
+    function: update_responses_input_with_model_file_ids
+    model_id: deployment-1
+    mapping:
+      file-mapped:
+        deployment-1: provider-file-9
+    input:
+      - role: user
+        content: plain string
+      - role: user
+        content:
+          - type: input_text
+            text: hello
+          - type: input_file
+            file_id: file-mapped
+          - type: input_file
+            file_id: bGl0ZWxsbV9wcm94eTpmaWxlLmFiYzEyMzt1bmlmaWVkX2lkLGFiYy0xMjM7dGFyZ2V0X21vZGVsX25hbWVzLGdwdC00O2xsbV9vdXRwdXRfZmlsZV9pZCxmaWxlLXh5ejtsbG1fb3V0cHV0X2ZpbGVfbW9kZWxfaWQsZGVwbG95bWVudC0x
+          - type: input_file
+            file_id: file-bGl0ZWxsbTpmaWxlLWFiYzEyMzttb2RlbCxncHQtNG8tbGl0ZWxsbQ
+          - type: input_file
+            file_id: file-plain
+          - type: input_file
+      - type: function_call
+        call_id: call-1
+      - role: user
+        content: []
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,32 @@
+kind: helper
+name: multiline-data-not-joined
+call:
+  bedrock_services_agentcore_stream:
+    model: agentcore-model
+    ids:
+      - 00000000-0000-4000-8000-000000000041
+      - 00000000-0000-4000-8000-000000000042
+      - 00000000-0000-4000-8000-000000000043
+    scenarios:
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"one"}}}}
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"two"}}}}
+      - reads:
+          - |
+            data: {"event":
+            data: {"contentBlockDelta":{"delta":{"text":"joined"}}}}
+      - reads:
+          - "  data: {\"event\":{\"contentBlockDelta\":{\"delta\":{\"text\":\"crlf\"}}}}\r\n"
+      - reads:
+          - |-
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"ke
+          - |
+            pt"}}}}
+      - reads:
+          - |
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"a"}}}}
+
+            data: {"event":{"contentBlockDelta":{"delta":{"text":"b"}}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,22 @@
+kind: helper
+name: hypercorn-ssl-missing-key
+call:
+  b4177:
+    function: launch_plan
+    options:
+      backend: hypercorn
+      host: 127.0.0.1
+      port: 4000
+      workers: 1
+      runtime_threads: null
+      certfile: cert.pem
+      keyfile: null
+      ciphers: DEFAULT
+      max_requests: null
+      max_requests_jitter: null
+      metrics_port: null
+      prometheus_dir: null
+    environment: {}
+env: {}
+compare:
+  ignore: []

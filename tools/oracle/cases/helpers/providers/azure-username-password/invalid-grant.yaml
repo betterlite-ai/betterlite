@@ -1,0 +1,92 @@
+kind: helper
+name: invalid-grant
+call:
+  azure_username_password:
+    action: invalid_grant
+    steps:
+      - environment: {}
+        client_id: client
+        username: user@example.com
+        password: password
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/organizations/oauth2/v2.0/token"}'
+          - url_contains: userrealm
+            status: 200
+            body: '{}'
+          - url_contains: /oauth2/v2.0/token
+            status: 400
+            body: '{"error":"invalid_grant","error_description":"AADSTS50126: bad password"}'
+      - environment: {}
+        client_id: client
+        username: user@example.com
+        password: password
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/organizations/oauth2/v2.0/token"}'
+          - url_contains: userrealm
+            status: 200
+            body: '{}'
+          - url_contains: /oauth2/v2.0/token
+            status: 400
+            body: '{"error":"invalid_grant"}'
+      - environment: {}
+        client_id: client
+        username: user@example.com
+        password: password
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/organizations/oauth2/v2.0/token"}'
+          - url_contains: userrealm
+            status: 200
+            body: '{}'
+          - url_contains: /oauth2/v2.0/token
+            status: 400
+            body: '{"error":"invalid_grant","error_description":""}'
+      - environment: {}
+        client_id: client
+        username: user@example.com
+        password: password
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/organizations/oauth2/v2.0/token"}'
+          - url_contains: userrealm
+            status: 200
+            body: '{}'
+          - url_contains: /oauth2/v2.0/token
+            status: 200
+            body: '{"access_token":"tok-value","expires_in":3600}'
+      - environment: {}
+        client_id: client
+        username: user@example.com
+        password: password
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/organizations/oauth2/v2.0/token"}'
+          - url_contains: userrealm
+            status: 200
+            body: '{}'
+          - url_contains: /oauth2/v2.0/token
+            status: 200
+            body: '{"access_token":"tok-value","expires_in":3600,"id_token_claims":{"iss":"https://login.microsoftonline.com/tenant/v2.0","sub":"subject","preferred_username":"user@example.com"},"client_info":"eyJ1aWQiOiJ1aWQiLCJ1dGlkIjoidXRpZCJ9"}'
+      - environment: {}
+        client_id: client
+        username: user@example.com
+        password: password
+        replies:
+          - url_contains: well-known
+            status: 200
+            body: '{"authorization_endpoint":"https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize","token_endpoint":"https://login.microsoftonline.com/organizations/oauth2/v2.0/token"}'
+          - url_contains: userrealm
+            status: 200
+            body: '{}'
+          - url_contains: /oauth2/v2.0/token
+            status: 500
+            body: unexpected
+env: {}
+compare: {ignore: []}

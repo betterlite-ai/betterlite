@@ -1,0 +1,9 @@
+kind: helper
+name: native-model-no-replace
+call:
+  batch_records:
+    function: should_replace_model
+    purpose: messages
+    passthrough: false
+env: {}
+compare: {ignore: []}

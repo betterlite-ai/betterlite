@@ -1,0 +1,9 @@
+kind: helper
+name: image-empty-url
+call:
+  b5240:
+    function: "output_choices"
+    response: {"data": [{"url": ""}]}
+env: {}
+compare:
+  ignore: []

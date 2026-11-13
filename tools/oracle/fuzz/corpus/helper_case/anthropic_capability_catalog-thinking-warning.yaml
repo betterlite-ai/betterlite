@@ -1,0 +1,23 @@
+kind: helper
+name: anthropic-capability-catalog-thinking-warning
+call:
+  anthropic_capability_catalog:
+    fixture:
+      model_cost:
+        anthropic/claude-fable-5: {litellm_provider: anthropic, thinking_always_on: true}
+      packaged: {}
+      thresholds: {medium: 2048, high: 4096, xhigh: 8192}
+    steps:
+      - function: disabled_thinking_warning
+        model: claude-fable-5
+        custom_llm_provider: anthropic
+        params: {thinking: {type: disabled}}
+      - function: forced_tool_downgrade
+        model: claude-fable-5
+        tool_choice: {type: any}
+        drop_params: false
+        global_drop_params: false
+      - {function: legacy_budget_effort, model: claude-fable-5, custom_llm_provider: anthropic, budget_tokens: 4096}
+      - {function: effort_beta_gate, model: claude-fable-5, custom_llm_provider: anthropic, params: {output_config: {effort: high}}}
+env: {}
+compare: {ignore: []}

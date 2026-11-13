@@ -1,0 +1,13 @@
+id: B5133
+milestone: M4 keys, spend and management
+title: Close the B721 resource rows audit gaps
+status: done
+depends_on: [B721]
+file: tasks/B5133-resource-rows-audit-gaps.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 591

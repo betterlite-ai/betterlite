@@ -1,0 +1,137 @@
+id: B9733
+title: Enable MIT organization pages and verify their form requests
+description: >-
+  Make the retained organization screens usable under betterlite's no-paid-tier decision.
+  B9090 already takes in OrganizationsPanel, organization_view, OrgCreateDialog, OrgSettingsForm
+  and their mappers. Add 43-organization-pages.patch and checked preimage/postimage hashes to
+  remove OrganizationsPanel's premiumUser early return and the premiumUser===true predicates
+  in useOrganizations/useOrganization. Keep hasSession, authenticated role filtering, org-admin
+  membership and server authorization. This shared hook also supplies organizations to key,
+  team and user selectors; do not patch it separately in those tasks. Remove its trial CTA,
+  not its failure/loading states. B9091 component checks run the real hooks and forms.
+  tests/organizations/upstream-tests.json also selects the existing useOrganizations.test.ts
+  and OrganizationsPanel.test.tsx. Their paid-only expectations are updated in the same patch,
+  while session-disabled and org-detail behavior tests remain intact.
+
+  Request inventory. GET /organization/list (B1212) has no body and optional org_id/org_alias,
+  not organization_id for this list filter. OrganizationsPanel filters send the two names
+  exactly. Read the bare organization array: organization_id,organization_alias,models,spend,
+  created_at,updated_at and litellm_budget_table budget fields. GET /organization/info
+  ?organization_id=<id> (B1212) returns one organization directly. organization_view reads
+  teams[],members[],object_permission,created_by and the nested budget, then joins teams from
+  GET /team/list (B813, covered by B9731). It does not POST /organization/info, although
+  B1212 owns that deprecated alias. Neither page calls B058 /organization/daily/activity.
+
+  OrgCreateDialog POST /organization/new is B826's route. buildOrgCreateBody sends the untrimmed
+  organization_alias, models and nonempty budget fields max_budget,tpm_limit,rpm_limit,
+  budget_duration; optional metadata is a JSON object. object_permission contains vector_stores,
+  mcp_servers,mcp_access_groups,mcp_toolsets when selected. The page consumes success without
+  reading response fields and refreshes the list; the HTTP case captures organization_id for
+  its later steps. OrgSettingsForm uses PATCH /v2/organization/<encoded-id> (B2342), not legacy PATCH
+  /organization/update (B827). pickDirty/buildOrgPatch sends only dirty fields; clearing a
+  number, duration or metadata sends null, clearing model/resource lists sends [], and nested
+  object_permission includes only dirty permission categories. The response refreshes both
+  detail and list; verify the resulting fields through GET rather than imposing another envelope.
+  DELETE /organization/delete (B827) has JSON body {organization_ids:[id]} and invalidates rows.
+
+  organization_view POST /organization/member_add (B828) sends
+  {organization_id,member:{user_id,user_email,role}}, omitting undefined identity fields. PATCH
+  /organization/member_update (B828) flattens organization_id and the edited member fields;
+  DELETE /organization/member_delete (B828) sends {organization_id,user_id}. Refetch the detail
+  after each write. These member forms do not submit budget fields. Members use user_id,user_email,user_role; preserve the
+  UI's conversion between its role property and the response's user_role. Keep failed member
+  operations visible without discarding the already loaded organization. There are no /v1
+  aliases for these page requests and no organization CRUD implementation in this task.
+
+  These MIT handlers have a router-wide license dependency at L96-L111. B826 omits that paid
+  check in betterlite, preserving all subsequent auth/role checks. Use the already merged
+  B1644 native_feature_eligibility=true HTTP facility for the success/readback cases below.
+  Its fixed startup hook changes only the LiteLLM child's eligibility, leaves enterprise
+  uninstalled and marks the artifacts; these are eligible MIT handler comparisons, not stock
+  OSS success claims. The missing-auth case stays stock. No custom hook or handler shim is
+  added. B145 separately exercises the native browser without any eligibility fixture.
+
+  Start both real proxies on B860 independent databases with general_settings.master_key set,
+  a fixed model deployment and fixture admin/user rows. Setup is POST /organization/new,
+  capturing its generated organization_id per process; subsequent steps read/filter/patch the
+  same org. Create teams with B804 when testing the nested teams projection, and use existing
+  users for member operations. Compare full stable JSON, null/omitted differences, status,
+  content-type and error type/param/code. Mask only per-process generated identifiers and
+  timestamps with narrow pointers. Include an org admin, unrelated user and admin viewer so
+  removing the subscription predicate cannot broaden authorization.
+
+  The audit found no on-disk HTTP request for these routes. B826, B827 and B2342 list only
+  authentication-before-license cases; B1212 and B828 list future authorized cases but they
+  are absent and need the explicit eligibility prerequisite. Their handler implementations
+  stay theirs. This task adds the exact list filters, dirty-patch nulls and member form requests
+  instead of duplicating route logic. About 70 patch lines, 190 component assertions and
+  440 HTTP sequence lines fits one part. Native API changes discovered by these cases are
+  returned to B826/B827/B828/B1212/B2342, outside this patch's scope.
+scope:
+  paths:
+    - ui/dashboard/patches/43-organization-pages.patch
+    - ui/dashboard/patches/43-organization-pages.json
+    - ui/dashboard/tests/organizations/**
+    - tools/oracle/cases/ui/organizations/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/organizations/useOrganizations.ts#L13-L53
+    why: The two subscription-only query gates and exact list filter names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/organizations/_components/OrganizationsPanel.tsx#L98-L126
+    why: The paid-only early return that prevents the retained MIT page from rendering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/organization/org-settings/mapper.ts#L19-L73
+    why: Dirty patch construction, explicit nulls and partial nested permissions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L1186-L1265
+    why: Organization list/info/delete request spellings and DELETE body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/networking.tsx#L2953-L3022
+    why: Nested add versus flat patch/delete member payloads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L96-L111
+    why: Only eligibility is adjusted by the existing test facility; the production omission is B826's deviation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L360-L557
+    why: B826 owns creation, its decorator and the budget write contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L838-L1057
+    why: B2342 owns v2 patch; B827 owns DELETE, with distinct body handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L1082-L1232
+    why: B1212 owns the bare list and direct info projections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L1274-L1621
+    why: B828's add, PATCH and DELETE member routes and their response roles.
+dod:
+  - text: Organization pages and shared selectors load without a subscription claim while session and role constraints still apply.
+    proof: [organization-components, oracle]
+  - text: Filtered reads, creation, dirty patches, member actions and deletion match eligible MIT handlers through real HTTP.
+    proof: [organization-cases, oracle, organization-components]
+checks:
+  optional: []
+  commands:
+    - id: organization-components
+      why: Removing the panel gate alone leaves its shared queries disabled or changes dirty-field serialization.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/organizations
+    - id: organization-cases
+      why: Organization parity is claimed without new requests or explicit eligibility labels.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/organizations)" &&
+        grep -q '^native_feature_eligibility: true' tools/oracle/cases/ui/organizations/dirty-v2-patch-eligible-mit.yaml
+oracle_cases:
+  - tools/oracle/cases/ui/organizations/list-filter-info-eligible-mit.yaml
+  - tools/oracle/cases/ui/organizations/create-form-eligible-mit.yaml
+  - tools/oracle/cases/ui/organizations/dirty-v2-patch-eligible-mit.yaml
+  - tools/oracle/cases/ui/organizations/member-forms-eligible-mit.yaml
+  - tools/oracle/cases/ui/organizations/scoped-roles-eligible-mit.yaml
+  - tools/oracle/cases/ui/organizations/delete-body-eligible-mit.yaml
+  - tools/oracle/cases/ui/organizations/missing-auth-stock.yaml
+deviations:
+  - what: OrganizationsPanel and the organization hooks no longer require premiumUser=true; authenticated callers reach the existing role-scoped organization APIs.
+    why: This is the UI half of B826's recorded no-paid-tier behavior, not a change to organization membership authorization.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/hooks/organizations/useOrganizations.ts#L13-L35
+out_of_scope:
+  - B9090 retains all organization components, mappers and unchanged hook functions; this part only patches eligibility presentation and tests requests.
+  - B826/B827/B828/B1212/B2342 remain the sole organization route builders; B058 activity and the deprecated POST info/legacy PATCH are not page calls.
+  - B9731 covers team list reads and B9735 covers models, MCP and vector-store selectors used by organization forms.
+pitfalls:
+  - Organization filters are org_id/org_alias, whereas detail uses organization_id.
+  - A cleared nested grant list must remain an explicit empty list in the v2 patch.
+  - Removing only the panel's upsell leaves useOrganizations disabled and produces an empty selector.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

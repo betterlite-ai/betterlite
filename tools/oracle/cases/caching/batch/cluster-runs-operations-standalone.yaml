@@ -1,0 +1,18 @@
+kind: helper
+name: caching-batch-cluster-runs-operations-standalone
+call:
+  b4330:
+    namespace: ns
+    default_ttl: 60
+    cluster: true
+    replies:
+      MGET: [{array: [{bulk: "1"}]}]
+      INCRBYFLOAT: [{bulk: "2.5"}]
+      TTL: [{int: -1}]
+      EXPIRE: [{int: 1}]
+    steps:
+      - declare: {kind: mget, keys: [alpha]}
+      - declare: {kind: increment, key: beta, value: 2.5}
+      - await_all
+env: {}
+compare: {ignore: []}

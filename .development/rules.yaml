@@ -302,6 +302,27 @@ rules:
         assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
         assert_eq!(body.error.code, "408");
 
+  - id: paused-clock-tests
+    title: Timer tests start paused and let spawned tasks run before advancing
+    statement: >-
+      A test that drives timers through tokio's paused clock uses #[tokio::test(start_paused = true)] instead of calling pause() inside the test, and after building something that spawns a timer task it yields before the first advance. advance moves the clock first and yields after, so a task first polled inside advance starts its timer late. pause() inside a running test also leaves deadlines between millisecond ticks, so advancing by exactly the interval stops one tick short.
+    why: Both mistakes make the timer never fire, so the test waits for a flush that never comes and fails only once CI runs it.
+    enforced_by: []
+    reviewed: true
+    example:
+      instead_of: |
+        #[tokio::test]
+        async fn flushes_after_the_interval() {
+            pause();
+            let logger = fixture.build();
+            advance(Duration::from_secs(5)).await;
+      write: |
+        #[tokio::test(start_paused = true)]
+        async fn flushes_after_the_interval() {
+            let logger = fixture.build();
+            yield_now().await;
+            advance(Duration::from_secs(5)).await;
+
   - id: no-subprocess
     title: Gateway code never spawns processes
     statement: Only tests and crates under tools/ start other processes.
@@ -454,7 +475,7 @@ rules:
     statement: >-
       Every parser of bytes from outside (config files, request bodies, SSE streams from providers) has a cargo-fuzz target under its crate's fuzz/ folder. The corpus is committed, and a normal test replays every corpus file through the same parser, so each input the fuzzer found runs in the task gate that adds it and on every push to main.
     why: Those parsers see the input nobody wrote a test for, and a fuzzer finds the inputs that panic or hang before a provider sends one.
-    enforced_by: []
+    enforced_by: [corpus-replays]
     reviewed: true
     example:
       instead_of: |
@@ -479,11 +500,11 @@ rules:
           optional: [mutants]
 
   - id: other-languages
-    title: TypeScript and Python follow their own strict checks
+    title: TypeScript, Python and shell follow their own strict checks
     statement: >-
-      The admin dashboard keeps LiteLLM's own eslint, prettier and vitest setup as its checks. Python code is typed strictly: ruff and basedpyright in strict mode, run through uv, no Any, and errors as named exception classes that keep their cause.
-    why: The kept dashboard already has working checks, and Python without strict types loses what the Rust core guarantees at the first call across the boundary.
-    enforced_by: []
+      The admin dashboard keeps LiteLLM's own eslint, prettier and vitest setup as its checks. Python code is typed strictly: ruff with every rule and mypy --strict with no Any, run through uv, and the rules in .ast-grep/python (no isinstance, catch-all match arms, reflection, object or Any types, own Json aliases, nested functions, lambdas, one-line functions, docstrings, fallback defaults, string mocks, TYPE_CHECKING blocks or names past 30 characters). A LiteLLM value enters our types through pydantic's TypeAdapter(T).validate_json(value.model_dump_json()) into a TypedDict that names the fields the code reads, the way serde does in Rust. JsonValue types only JSON whose shape is really open, and no narrowing helper such as as_mapping or _as_dict turns a JSON value into a dict or list. A cast, noqa, type: ignore or pyright: ignore[rule] is allowed only for an upstream dependency's own types, with a link to the upstream line pinned to a commit on the same line, and each line that has one costs one from the task's max_new_expects, the same budget as a Rust #[expect]. An oracle helper calls LiteLLM through its public names, without an underscore name or module, and keeps a private one only where no public entry reaches the behavior; cleanup tasks move the rest. Errors are named exception classes that keep their cause. A file in python-legacy.txt keeps its old checks until a cleanup task fixes it and takes it off; the list never grows. Shell scripts pass shellcheck with every optional check (.shellcheckrc) and shfmt -i 2 -sr -ci with no shellcheck directive, and workflows pass actionlint. The run commands in checks.yaml pass the same shellcheck, and the commands of a task file a change adds pass its default checks.
+    why: The kept dashboard already has working checks, Python without strict types loses what the Rust core guarantees at the first call across the boundary, and the flow scripts run every task, so a masked failure there stalls the whole pipeline.
+    enforced_by: [hooks, python-legacy, expect-budget]
     reviewed: true
     example:
       instead_of: |
@@ -509,7 +530,7 @@ rules:
   - id: owned-behavior-is-built
     title: Everything a task owns in LiteLLM is built
     statement: >-
-      The LiteLLM code a task's references mark as owned is its spec, and the task text is a guide to it. Every behavior in that code a user can observe (defaults, header names and values, env vars, config keys, error status and codes, warn-and-drop paths, body rewrites) is built and tested, listed as a deviation with its reason, or listed out of scope with its owner, even when the task text doesn't name it. Where LiteLLM itself is wrong, the line is whether a LiteLLM user whose setup works today could break after switching. Copy what a working setup can rely on: success responses, the wire format, headers, the status, type and code of a handled error, config keys, env vars, defaults, and input of the types LiteLLM declares. Python's runtime habits are not part of that: truthiness, duck typing, repr and str text, json.dumps formatting and object identity follow the project policy in docs/compatibility.md, with no deviation entry. Fix, without asking, a bug no working setup can rely on: a 500 from an unhandled exception on input LiteLLM already fails, where a 4xx belongs; lost data; a leaked secret; a missing auth check; a leak or a hang. Each fix is listed as a deviation with a link to the LiteLLM line.
+      The LiteLLM code a task's references mark as owned is its spec, and the task text is a guide to it. Every behavior in that code a user can observe (defaults, header names and values, env vars, config keys, error status and codes, warn-and-drop paths, body rewrites) is built and tested, listed as a deviation with its reason, or listed out of scope with its owner, even when the task text doesn't name it. Where LiteLLM itself is wrong, the line is whether a LiteLLM user whose setup works today could break after switching. Copy what a working setup can rely on: success responses, the wire format, headers, the status, type and code of a handled error, config keys, env vars, defaults, and input of the types LiteLLM declares. Python's runtime habits are not part of that: truthiness, duck typing, repr and str text, json.dumps formatting and object identity follow the project policy in docs/compatibility.md, with no deviation entry. Fix, without asking, a bug no working setup can rely on: a 500 from an unhandled exception on input LiteLLM already fails, where a 4xx belongs; lost data; a leaked secret; a missing auth check; any other security flaw a CVE would score, such as injection, SSRF, path traversal or unsafe deserialization; a leak or a hang. Each fix is listed as a deviation with a link to the LiteLLM line.
     why: Task text is a summary and misses things. A review of the planned provider tasks found missing behavior in 6 of 8 of them, and a gap nobody builds ships as a silent difference from LiteLLM. Copying a bug no setup relies on only ports the bug, and changing what a setup relies on breaks it for that user. In the week to 2026-10-31, 26 of 82 sampled findings under this rule asked to copy a Python accident, like `ttl or 600` with 0, "false" as a config bool or json.dumps key order.
     enforced_by: [oracle]
     reviewed: true

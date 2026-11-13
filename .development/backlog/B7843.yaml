@@ -1,0 +1,14 @@
+id: B7843
+milestone: M12 python
+title: Python Anthropic Messages functions
+status: todo
+depends_on: [B1134, B6040, B158]
+file: tasks/B7843-python-anthropic-messages.yaml
+covers:
+  - "litellm/{anthropic_interface,messages}/**"
+parent: B160
+split_from: B160
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

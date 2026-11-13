@@ -1,0 +1,15 @@
+id: B5841
+milestone: M3 providers
+title: Databricks provider
+status: todo
+depends_on: [B5980, B668, B1425, B2202, B2214, B575, B574, B569, B2221, B218, B219, B220, B179, B171]
+file: tasks/B5841-databricks-chat.yaml
+covers:
+  - "litellm/llms/databricks/chat/**"
+  - "litellm/llms/databricks/responses/__init__.py"
+parent: B042
+split_from: B042
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

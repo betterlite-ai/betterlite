@@ -1,0 +1,93 @@
+id: B8626
+title: Mount the /mcp-rest tool routes and the connection preview
+description: >-
+  LiteLLM's rest_endpoints.py serves four routes under the prefix /mcp-rest, each behind Depends(user_api_key_auth):
+  GET /mcp-rest/tools/list (B4727), POST /mcp-rest/tools/call (B4728), POST /mcp-rest/test/connection and POST
+  /mcp-rest/test/tools/list (B4729). B4729's mcp_preview_routes::router(state) never mounts itself, B4727 and B4728 name
+  no mount, and no B1100 entry merges them. This task builds their states and mounts them through app::mcp::mount,
+  inside the auth layers, so a missing or invalid key answers B052's 401 before any handler runs, as LiteLLM's
+  dependency does.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/rest.rs and app/mcp/rest/ (tools.rs, preview.rs, a tests.rs beside
+  each), plus one line in app::mcp::mount (crates/betterlite-server/src/app/mcp.rs) that merges
+  `rest::router(&McpState::shared(state), state)`.
+
+
+  tools.rs. The states of B4727 and B4728 with each port their modules declare (B4728's pre-call step is `app::inference::pre_call_step(state)` from B8802, built once), implemented over the task its text
+  names: B4726's acting identity with B6593's toolset scope, B8197's listing entry, B8198's execution entry and B8199's
+  gateway operations, the registry in `shared.mcp_registry`, McpState's identity (McpAccess and ServerUnion, built by
+  B8621) and McpState's tokens (the credential resolver, built by B8622). Read each module's state struct for the exact
+  port list; every port gets a production implementation and none is left as a fake.
+
+
+  preview.rs. B4729's router state: the registry, McpCore's PayloadRules and B4730's preview client. B4729 reads the
+  authenticated caller from the extension the app's auth layers set, so it needs no key layer of its own here.
+
+
+  Tests in app::mcp::rest:: : the merged router builds, the four paths answer something other than 404 through
+  tower's oneshot, and the tool list port passes the caller's auth unchanged.
+
+
+  HTTP oracle cases. The cases B4729 planned through the booted proxy move here, because its routes only answer once
+  this task mounts them; write each from .development/tasks/B4729-mcp-connection-preview.yaml. B4727 and B4728 planned
+  no HTTP cases, so this task adds five in tools/oracle/cases/http/mcp-wiring-rest/, with a master key and no database:
+  tools-list-no-servers (GET /mcp-rest/tools/list with no mcp_servers configured), tools-list-no-key (the same without
+  a key), tools-call-unknown-server (POST /mcp-rest/tools/call with name "missing-tool" and server_id "missing"),
+  test-connection-no-key (POST /mcp-rest/test/connection without a key) and test-connection-bad-url (POST
+  /mcp-rest/test/connection with the master key and a NewMCPServerRequest whose url is "ftp://example.invalid").
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp.rs
+    - crates/betterlite-server/src/app/mcp/rest.rs
+    - crates/betterlite-server/src/app/mcp/rest/**
+    - tools/oracle/cases/http/mcp-wiring-rest/**
+    - tools/oracle/cases/http/mcp-rest-preview/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L97-L110
+    why: The /mcp-rest router prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L936-L1170
+    why: GET /mcp-rest/tools/list and the start of POST /mcp-rest/tools/call with their key dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L1686-L1760
+    why: The two preview routes and their key dependency.
+dod:
+  - text: The routers of B4727, B4728 and B4729 are merged once each under /mcp-rest, inside the auth layers.
+    proof: [rest-tests, oracle]
+  - text: Every port of B4727 and B4728 has a production implementation over its owning crate.
+    proof: [rest-tests]
+  - text: The moved B4729 cases and the five REST cases match LiteLLM through the booted proxy.
+    proof: [rest-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: rest-tests
+      why: a router is not merged, a path is missing, or a port is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::rest::/)'
+    - id: rest-cases
+      why: without the case files the oracle proof compares nothing for these routes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/mcp-rest-preview tools/oracle/cases/http/mcp-wiring-rest)"
+oracle_cases:
+  - tools/oracle/cases/http/mcp-rest-preview/connection-regular-user-403.yaml
+  - tools/oracle/cases/http/mcp-rest-preview/connection-view-only-admin-403.yaml
+  - tools/oracle/cases/http/mcp-rest-preview/tools-list-regular-user-403.yaml
+  - tools/oracle/cases/http/mcp-rest-preview/connection-unreachable-server.yaml
+  - tools/oracle/cases/http/mcp-rest-preview/connection-missing-url-422.yaml
+  - tools/oracle/cases/http/mcp-rest-preview/tools-list-unreachable-server.yaml
+  - tools/oracle/cases/http/mcp-rest-preview/tools-list-openapi-missing-file.yaml
+  - tools/oracle/cases/http/mcp-wiring-rest/tools-list-no-servers.yaml
+  - tools/oracle/cases/http/mcp-wiring-rest/tools-list-no-key.yaml
+  - tools/oracle/cases/http/mcp-wiring-rest/tools-call-unknown-server.yaml
+  - tools/oracle/cases/http/mcp-wiring-rest/test-connection-no-key.yaml
+  - tools/oracle/cases/http/mcp-wiring-rest/test-connection-bad-url.yaml
+deviations: []
+out_of_scope:
+  - "Route behavior: B4727, B4728, B4729 and B4730."
+  - "The /mcp, /mcp/proxy, toolset and named server routes of B8592: they need the MCP transport of server.py."
+pitfalls:
+  - A preview with a key of role PROXY_ADMIN_VIEW_ONLY must reach the handler, which answers 403; the auth layers check only that the key is valid.
+  - Mount these through mount, not mount_public; outside the auth layers B4729 finds no caller extension and answers 500 instead of 401.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

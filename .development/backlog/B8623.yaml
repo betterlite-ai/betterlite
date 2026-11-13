@@ -1,0 +1,13 @@
+id: B8623
+milestone: M9 agents and mcp
+title: Build the MCP OAuth flow ports and the authorization server state
+status: todo
+depends_on: [B8620, B8621, B8622, B8610, B8612, B1600, B1612, B3816, B4655, B4658, B4659, B4662, B4663, B4666, B4673, B4674, B4675, B4676, B4678, B4711, B4712, B4713, B4715, B6762, B6765, B7321, B7530, B7531, B7532, B7970, B173]
+file: tasks/B8623-mcp-oauth-flow-wiring.yaml
+covers: []
+parent: B137
+split_from: B137
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

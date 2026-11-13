@@ -1,0 +1,20 @@
+kind: helper
+name: assembled-provider-metadata
+call:
+  stream_base_assembly:
+    function: assembled_provider_metadata
+    cases:
+      - {model: gpt-4o, custom_llm_provider: openai, chunks: [{choices: []}], hidden_params: {start: 1}}
+      - {model: claude-3-5-sonnet, custom_llm_provider: anthropic, chunks: [{choices: []}]}
+      - {model: anthropic/claude-3-5-sonnet-20241022, chunks: [{choices: []}]}
+      - {model: claude, custom_llm_provider: not-a-provider, chunks: [{choices: []}], hidden_params: {start: 1}}
+      - {model: totally-unknown-model, chunks: [{choices: []}]}
+      - {model: claude, custom_llm_provider: anthropic, chunks: [{choices: []}], selector: none}
+      - {model: claude, custom_llm_provider: anthropic, chunks: [{choices: []}], selector: raise}
+      - {model: claude, custom_llm_provider: anthropic, chunks: [{choices: []}], projection: raise}
+      - {model: '', custom_llm_provider: anthropic, chunks: [{choices: []}]}
+      - {model: claude, custom_llm_provider: anthropic, chunks: []}
+      - {model: claude, custom_llm_provider: '', chunks: [{choices: []}]}
+      - {model: anthropic/claude-3-5-sonnet-20241022, chunks: [{form: model_response_stream, id: x, created: 2, model: claude, choices: []}]}
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

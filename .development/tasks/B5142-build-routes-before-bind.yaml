@@ -1,0 +1,63 @@
+id: B5142
+title: The server builds its routes before it binds, so a bound port can serve
+description: >-
+  main run 41951757288 failed sigterm_finishes_in_flight_request_and_writes_flat_json_logs on both attempts with
+  ConnectionReset at crates/betterlite/tests/tests.rs:63, the first read in assert_shutdown_response. run in
+  crates/betterlite-server/src/server.rs binds the listener and logs "betterlite server listening" before it calls
+  application, and since B011 application also builds the Normalizer and Redactor for the chat error layer. The
+  test's wait_until_ready counts a TCP connect as ready, so its three requests wait unaccepted in the listen backlog.
+  SIGTERM comes 10 ms later, the accept loop sees the shutdown flag and stops, and the queued connections are reset
+  instead of getting 503 and 404.
+
+
+  run builds the application before TcpListener::bind, so a bound port and the listening log both mean the server
+  can answer. Before the change, reproduce the reset once by putting a 200 ms sleep between the bind and the
+  application call, run the SIGTERM test, and say in the report that it failed with ConnectionReset. Remove the
+  sleep before you finish.
+scope:
+  paths:
+    - crates/betterlite-server/src/server.rs
+  lint_tables: false
+references:
+  - url: https://github.com/betterlite-ai/betterlite/actions/runs/41951757288
+    why: Both attempts of the main run on 5528c7c5b failed only the SIGTERM test with ConnectionReset.
+  - url: https://github.com/betterlite-ai/betterlite/blob/05ce1497a/crates/betterlite-server/src/server.rs#L57-L62
+    why: run binds and logs listening on lines 57 and 60, then builds the application on line 62.
+  - url: https://github.com/betterlite-ai/betterlite/blob/05ce1497a/crates/betterlite/tests/tests.rs#L19-L66
+    why: The SIGTERM test sends three partial requests, waits 10 ms and terminates the server.
+  - url: https://github.com/betterlite-ai/betterlite/blob/05ce1497a/crates/betterlite/tests/tests.rs#L323-L331
+    why: wait_until_ready returns on the first TCP connect.
+  - url: https://github.com/betterlite-ai/betterlite/pull/684
+    why: B011 added the error layer build to application.
+dod:
+  - text: run builds the application before it binds the listener, and the SIGTERM test passes 20 runs in a row.
+    proof: [routes-before-bind, sigterm-stress]
+  - text: Every test of the betterlite binary passes.
+    proof: [binary-tests]
+checks:
+  optional: []
+  commands:
+    - id: routes-before-bind
+      why: run binds the listener before it builds the application, so a client can connect before the server can answer.
+      run: |-
+        awk '/TcpListener::bind/ { bind = NR } /= application\(/ { app = NR } END { exit !(bind && app && app < bind) }' crates/betterlite-server/src/server.rs || { echo "run binds the listener before it builds the application"; exit 1; }
+    - id: sigterm-stress
+      why: The SIGTERM test fails on some of 20 runs.
+      run: |-
+        cargo nextest run --locked -p betterlite --test tests --no-tests=fail --stress-count 20 -E 'test(=sigterm_finishes_in_flight_request_and_writes_flat_json_logs)'
+    - id: binary-tests
+      why: A test of the betterlite binary fails.
+      run: |-
+        cargo nextest run --locked -p betterlite --test tests --no-tests=fail
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - crates/betterlite/tests/tests.rs. Its TCP readiness check is what caught the late build, so it stays as it is.
+  - Answering connections still in the backlog when SIGTERM comes. The server closes the listener on shutdown the way uvicorn does.
+pitfalls:
+  - The build errors still come out of run as ServerError, so a failed build stops startup before the port is bound.
+  - The listening log stays right after the bind; moving it before the bind would log a port the server may fail to get.
+budget:
+  max_changed_lines: 30
+  max_new_expects: 0
+review_level: standard

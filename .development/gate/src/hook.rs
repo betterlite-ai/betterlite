@@ -17,6 +17,7 @@ use crate::facts::resolve_base;
 use crate::git::git;
 use crate::ids::task_id_problem;
 use crate::journal::journal_dir;
+use crate::report_check::mutants::mutant_problems;
 use crate::report_check::report_problems;
 use crate::spec::agents::Agents;
 use crate::spec::report::{Report, ReportStatus};
@@ -117,13 +118,15 @@ fn check_report(
         return Ok(Vec::new());
     }
     let task = development.task(task_id)?;
-    let added = added_dependencies(&development.root, &resolve_base(&development.root)?)?;
-    let problems = report_problems(report, &task, &added);
+    let base = resolve_base(&development.root)?;
+    let added = added_dependencies(&development.root, &base)?;
+    let mut problems = report_problems(report, &task, &added);
+    problems.extend(mutant_problems(&development.root, &base, report)?);
     if !problems.is_empty() {
         return block_counted(development, task_id, &problems);
     }
     let selection = if env::var("GATE_DISPATCHED").as_deref() == Ok("1") {
-        checks::selection::preflight(development, &task)?
+        checks::selection::builtins_and(development, &task, checks::selection::prerequisite)?
     } else {
         Selection::default()
     };

@@ -10,6 +10,9 @@ covers:
   - "litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py"
   - "migrations/run.py"
   - "litellm/proxy/prisma_migration.py"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/migration_lock.toml"
+  - "litellm-proxy-extras/litellm_proxy_extras/py.typed"
+  - "migrations/Dockerfile"
 parent: null
 split_from: null
 resolution: null

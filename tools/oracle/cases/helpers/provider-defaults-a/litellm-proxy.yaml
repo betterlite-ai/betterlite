@@ -1,0 +1,11 @@
+kind: helper
+name: provider-defaults-a-litellm-proxy
+call:
+  provider_defaults_a:
+    provider: litellm_proxy
+    model: gpt-4o
+    environment:
+      LITELLM_PROXY_API_BASE: https://proxy.example
+      LITELLM_PROXY_API_KEY: proxy-key
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: watsonx-token-ibm-cloud-basic
+call:
+  b4807:
+    operation: token
+    steps:
+      - params: {cp4d_host: "https://orchestrate.example.com", auth_mode: ibm_cloud, api_key: "k&y=1 +é"}
+        at: 100
+        wall: 1000
+        answer: {access_token: iam-1, expires_in: 3600}
+env: {}
+compare: {ignore: []}

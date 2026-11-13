@@ -2,11 +2,10 @@ id: B073
 milestone: M4 keys, spend and management
 title: Billing and FinOps exports
 status: todo
-depends_on: [B052, B189, B3060, B3061, B3062, B3063, B3064, B3065, B3066, B3067, B3068, B3069, B3070, B3071, B3072, B3073, B3074, B3075, B3076, B3077, B3078, B3079]
-file: null
+depends_on: [B052, B860, B3060, B3061, B3065, B3066, B3067, B3074, B3075, B3076, B3077, B3079, B8610, B8742, B8745, B8749, B9260]
+file: tasks/B073-finops-export-composition.yaml
 covers:
   - "litellm/proxy/spend_tracking/vantage_endpoints.py"
-  - "litellm/llms/openai/organization_costs.py"
 parent: null
 split_from: null
 resolution: null

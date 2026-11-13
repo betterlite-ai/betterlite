@@ -1,0 +1,28 @@
+kind: helper
+name: conditional-sort-original-first
+call:
+  stream_base_assembly:
+    function: batch
+    cases:
+      - function: conditional_sort_original_first
+        chunks:
+          - {id: a, _hidden_params: {created_at: 3}}
+          - {id: b, _hidden_params: {created_at: 1}}
+          - {id: c}
+          - {id: d, _hidden_params: junk}
+      - function: conditional_sort_original_first
+        chunks:
+          - {form: model_response_stream, id: a, created: 4, model: m, _hidden_params: {created_at: 2}}
+          - {form: model_response_stream, id: b, created: 5, model: m, _hidden_params: {created_at: 1}}
+      - function: conditional_sort_original_first
+        chunks:
+          - {id: a, _hidden_params: {created_at: 0}}
+          - {id: b, _hidden_params: {created_at: -2}}
+      - function: conditional_sort_original_first
+        chunks:
+          - {id: a, _hidden_params: null}
+          - {id: b, _hidden_params: {created_at: 1}}
+      - function: conditional_sort_original_first
+        chunks: []
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

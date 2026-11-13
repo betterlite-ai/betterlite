@@ -33,3 +33,4 @@ CREATE INDEX IF NOT EXISTS "LiteLLM_DailyTeamSpend_model_idx" ON "LiteLLM_DailyT
 
 -- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "LiteLLM_DailyTeamSpend_team_id_date_api_key_model_custom_ll_key" ON "LiteLLM_DailyTeamSpend"("team_id", "date", "api_key", "model", "custom_llm_provider");
+

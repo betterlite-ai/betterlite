@@ -1,0 +1,5 @@
+kind: helper
+name: policy-values-condition-seed
+call: {"b3240": {function: evaluate_condition, condition: {model: "gpt-4.*"}, context: {model: gpt-4o}}}
+env: {}
+compare: {ignore: []}

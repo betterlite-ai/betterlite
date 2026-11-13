@@ -1,0 +1,21 @@
+id: B8151
+milestone: M3 providers
+title: hosted_vllm rerank, responses, image edit, transcription, video and decisions configs
+status: todo
+depends_on: [B2202, B1013, B3510, B506, B512, B515, B525, B3331]
+file: tasks/B8151-hosted-vllm-media.yaml
+covers:
+  - "litellm/llms/hosted_vllm/decisions/transformation.py"
+  - "litellm/llms/hosted_vllm/image_edit/__init__.py"
+  - "litellm/llms/hosted_vllm/image_edit/transformation.py"
+  - "litellm/llms/hosted_vllm/rerank/transformation.py"
+  - "litellm/llms/hosted_vllm/responses/transformation.py"
+  - "litellm/llms/hosted_vllm/transcriptions/transformation.py"
+  - "litellm/llms/hosted_vllm/videos/__init__.py"
+  - "litellm/llms/hosted_vllm/videos/transformation.py"
+parent: B040
+split_from: B040
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

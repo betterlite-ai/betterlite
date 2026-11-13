@@ -1,0 +1,18 @@
+id: B9752
+milestone: M10 admin ui
+title: Policy form, version, attachment and pipeline HTTP workflows
+status: todo
+depends_on: [B9740, B9750, B9260, B8669, B8790, B9321, B813, B782, B9735]
+file: tasks/B9752-dashboard-policy-workflows.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/policies/page.tsx"
+  - "ui/litellm-dashboard/src/app/(dashboard)/policies/_components/{AttachmentTable,AttachmentTableColumns,PolicyTable,PolicyTableColumns,TokenSelect,add_attachment_form,add_policy_form,build_attachment_data,impact_popover,impact_preview_alert,index,pipeline_flow_builder,policy_info,policy_test_panel,scope_validation}.*"
+  - "ui/litellm-dashboard/src/components/policies/**"
+  - "ui/litellm-dashboard/src/data/**"
+  - "ui/litellm-dashboard/src/hooks/policies/**"
+parent: B148
+split_from: B148
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

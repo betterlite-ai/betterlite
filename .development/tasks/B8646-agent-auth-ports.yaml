@@ -1,0 +1,78 @@
+id: B8646
+title: Install the agent ports into the authentication stages
+description: >-
+  Three auth stages own a port for agent data and leave its implementation to this task. B748 (state/auth_model_grants.rs) checks agent model ceilings through its AgentAccessSource port. B875 (state/auth_backend_dispatch.rs) resolves and records managed agent identities through its AgentIdentity port (resolve and record). B877 (state/jwt_team_authorization.rs) picks the team a delegated human acts through with its ManagedAgentTeam port (resolve). B760 builds the JWT handler with B761's AgentLookup port (get_agent_list, get_agent_by_id, get_agent_by_name), which answers no agent until bind_agent_lookup binds the proxy registry. B052 and B053 rely on these four. Until they are installed, a proxy with agents refuses to start or treats every agent as unknown. This task writes the four adapters over B8645's AgentServices and builds them in the three slots.
+
+  Where. Adapters in module `app::agents::auth_ports` (crates/betterlite-server/src/app/agents/auth_ports.rs and auth_ports/**: access_source.rs, identity.rs, team.rs, jwt_agents.rs, tests.rs). The skeleton declares the module in app/agents.rs. Then edit the Slot::new of each of the three slot files so it builds the stage with the adapter, created from `AgentServices::new(config, shared)`. Change nothing else in those files: the stage logic and its tests stay as their owners wrote them. Read the three trait definitions in crates/betterlite-auth/src/auth_model_grants, the auth_backend_dispatch module and the jwt_team_authorization module first, and use their names.
+
+  1. AgentAccessSource for B748 (access_source.rs, `RegistryAgentAccess`). LiteLLM's six collaborators map to: managed policy, B4772's managed_agent_policy(auth); managed ceilings, B4778's AgentAccessGroups::resolve_managed_agent_ceilings(agent_id, access_group_ids) with both values taken from the managed AgentResponse; the unmanaged ceiling, resolve_agent_access_group_ceiling(agent_id, false); caller auth, B4778's agent_caller_auth(auth); caller team, AgentCallerLoaders::load_agent_caller_team(auth); caller user, load_agent_caller_user(auth). The unmanaged resolver is never called when the managed policy is Some, and errors pass through unchanged (B748 decides the 403 and the warning).
+
+  2. AgentIdentity for B875 (identity.rs, `StoreAgentIdentity`). resolve(claims): without a store (no database) return Ok(None) at once, as LiteLLM's resolve_managed_agent does for a missing client. Otherwise call B4773's resolve_verified_claims on the store built with the auth cache; a returned AgentIdentityFailure becomes B875's AuthError through B4772's failure conversion (policy_unavailable is 503, any other code 403, the failure message as detail); an unbound subject is Ok(None). record(agent): call the store's record_authentication; a failure goes out through the same conversion, success returns the IdentityEvidence B875 defines. Without a store record is never reached, since resolve returned None; return the policy_unavailable failure "Agent policy could not be loaded" if it is.
+
+  3. ManagedAgentTeam for B877 (team.rs, `ResolverAgentTeam`): resolve forwards to B4780's AgentAccessResolver::resolve_delegated_agent_team(user_id, agent_id, team_id, explicit_team, allowed_team_ids) and returns its answer. Pass allowed_team_ids through as given; B877 computes it (None when litellm_jwtauth.fallback_to_db_teams is on, else the claimed or scoped teams).
+
+  4. AgentLookup for B761 (jwt_agents.rs, `RegistryJwtAgents` over the registry from AgentServices): get_agent_list is registry.get_agent_list(None), get_agent_by_id and get_agent_by_name forward to the registry methods of the same names. Bind it with B760's bind_agent_lookup in the slot that builds the JWT handler: state/jwt_keys.rs (B761) or state/jwt_auth.rs (B053). Read both, edit only the one that constructs the handler, and add one bind call after the construction. LiteLLM binds global_agent_registry at startup (proxy_server.py L10386-L10388), and until then its _NoRegisteredAgents lookup matches no agent claim.
+
+  Slots. In each Slot::new, build the adapter from AgentServices::new(config, shared) and hand it to the stage constructor where the owner left the port. When the slot also needs B4780's resolver (B877), take it from the same AgentServices value so one slot builds one AgentServices.
+
+  Tests in app::agents::auth_ports::tests with the real AgentRegistry and in-memory fakes behind AgentServices: the ceiling adapter calls the managed path only for a managed key and the unmanaged path with check_db_only false otherwise; identity resolve answers None without a database and maps a policy_unavailable failure to 503 and a binding failure to 403 with the message kept; the team adapter returns the resolver's team and passes None and Some(empty) through unchanged. Then the stage tests the three owners wrote must still pass with the installed adapters.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/agents/auth_ports.rs
+    - crates/betterlite-server/src/app/agents/auth_ports/**
+    - crates/betterlite-server/src/state/auth_model_grants.rs
+    - crates/betterlite-server/src/state/auth_backend_dispatch.rs
+    - crates/betterlite-server/src/state/jwt_team_authorization.rs
+    - crates/betterlite-server/src/state/jwt_keys.rs
+    - crates/betterlite-server/src/state/jwt_auth.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L160-L184
+    why: The AgentLookup protocol and _NoRegisteredAgents, the lookup a JWT agent claim uses before the registry is bound.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10380-L10388
+    why: update_environment, then bind_agent_lookup(global_agent_registry) at startup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4546-L4640
+    why: _check_agent_access_group_model_access and _check_agent_caller_model_access, the six collaborators and the order they are asked in.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2498-L2516
+    why: The JWT path resolves the managed agent with the auth cache and records the authentication with a store built without it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2739-L2756
+    why: The call of resolve_delegated_agent_team behind ManagedAgentTeam and how allowed_team_ids is chosen.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L239-L251
+    why: resolve_managed_agent returns None without a database client and raises the identity failure otherwise.
+dod:
+  - text: RegistryAgentAccess asks the managed policy first, uses the managed ceilings for a managed key and the unmanaged ceiling with check_db_only false otherwise, and reads the caller team before the caller user.
+    proof: [auth-ports-tests]
+  - text: StoreAgentIdentity answers None without a database, keeps a failure's status rule (503 for policy_unavailable, else 403) and message, and records through the store.
+    proof: [auth-ports-tests]
+  - text: ResolverAgentTeam forwards to resolve_delegated_agent_team with allowed_team_ids unchanged.
+    proof: [auth-ports-tests]
+  - text: RegistryJwtAgents answers the registry's list and its id and name lookups, and the slot that builds the JWT handler binds it with bind_agent_lookup.
+    proof: [auth-ports-tests, stage-tests]
+  - text: The three slots build their stage with the installed adapter and the owners' stage tests still pass.
+    proof: [stage-tests]
+checks:
+  optional: []
+  commands:
+    - id: auth-ports-tests
+      why: an agent auth adapter is missing or calls the wrong resolver, flag or conversion
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::agents::auth_ports::/)'
+    - id: stage-tests
+      why: a slot does not build its stage with the adapter, or installing it broke the stage that owns the port
+      run: grep -q RegistryAgentAccess crates/betterlite-server/src/state/auth_model_grants.rs && grep -q StoreAgentIdentity crates/betterlite-server/src/state/auth_backend_dispatch.rs && grep -q ResolverAgentTeam crates/betterlite-server/src/state/jwt_team_authorization.rs && grep -q RegistryJwtAgents crates/betterlite-server/src/state/jwt_keys.rs crates/betterlite-server/src/state/jwt_auth.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::auth_model_grants::/) | test(/^auth::auth_backend_dispatch::/) | test(/^auth::jwt_team_authorization::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The stage logic, its error envelopes and its own HTTP oracle cases: B748, B875 and B877."
+  - "The managed admission port (admit and prepare): B8544 in state/auth_admission.rs."
+  - "The adapters behind AgentServices: B8645."
+  - "The AgentLookup trait and _NoRegisteredAgents: B761. bind_agent_lookup on the JWT handler: B760."
+pitfalls:
+  - Bind the JWT agent lookup once, to the shared registry; a lookup over a copied agent list misses every agent added after startup.
+  - B4778's resolve_managed_agent_ceilings takes the agent id and the access group ids of the managed record the key already holds, not a registry lookup.
+  - LiteLLM builds the resolve store with user_api_key_cache but the record store without it; the record call must not read a cached binding revision.
+  - An identity failure keeps its message as a plain string detail; only policy_unavailable maps to 503.
+  - allowed_team_ids None means no team limit and Some(empty) means no team allowed; converting one into the other changes who may act.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,5 @@
+kind: helper
+name: openai-count-tokens-count
+call: {openai_count_tokens: {"count": {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}], "api_key": "sk-deployment"}}}
+env: {}
+compare: {ignore: []}

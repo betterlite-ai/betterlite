@@ -1,0 +1,32 @@
+kind: helper
+name: message-utilities-thought-signatures
+call:
+  b5366:
+    calls:
+      - function: is_gemini_model
+        model: gemini-pro
+        custom_llm_provider: null
+      - function: is_gemini_model
+        model: gpt-4o
+        custom_llm_provider: vertex_ai
+      - function: is_gemini_model
+        model: GEMINI-pro
+        custom_llm_provider: vertex_ai_beta
+      - function: is_gemini_model
+        model: null
+        custom_llm_provider: null
+      - function: strip_signature_from_id
+        tool_call_id: c1__thought__sig
+        separator: __thought__
+      - function: strip_signature_from_id
+        tool_call_id: c2
+        separator: __thought__
+      - function: strip_signatures_from_messages
+        separator: __thought__
+        messages:
+          - {role: assistant, content: null, tool_calls: [{id: "c1__thought__s1", type: function, function: {name: f, arguments: "{}"}}, {id: c2, type: function}, "not-a-dict", {id: 5}]}
+          - {role: tool, tool_call_id: "c1__thought__s1", content: x}
+          - {role: user, content: hi}
+          - "plain"
+env: {}
+compare: {ignore: []}

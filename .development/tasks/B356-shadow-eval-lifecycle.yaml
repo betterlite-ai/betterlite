@@ -1,13 +1,12 @@
 id: B356
 title: Start and stop automatic-router shadow evaluations
 description: 'Implement shadow evaluation start/stop endpoints using B345 input validation, B380 response
-  models and B118 job runtime through B051 repository services. Preserve conflict, target-direction, seed-failure
+  models and B4083''s shadow job loading and attempt persistence through B051 repository services. Preserve conflict, target-direction, seed-failure
   and stop-state behavior. Authenticate before repository access and never retry an ambiguous write by
   generating a second job ID. Keep the integration adapter in betterlite-server in this task module; consume
   predecessor public interfaces without editing their implementation crates. Implement the owned native
-  service in crates/betterlite-server/src/shadow_eval_lifecycle.rs. Add ProbeOperation::ShadowEvalLifecycle in tools/oracle/src/router_probes/mod.rs
-  and the corresponding B356 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
-  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  service in crates/betterlite-server/src/shadow_eval_lifecycle.rs. B301 registers ProbeOperation::ShadowEvalLifecycle and its Python entry as stubs, so fill only tools/oracle/src/router_probes/shadow_eval_lifecycle.rs and tools/oracle/litellm/probes/shadow_eval_lifecycle.py and leave mod.rs and registry.py as they are; the adapters only call
+  production services. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
   lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
   services instead of copying their algorithms. Function coverage in litellm/proxy/management_endpoints/auto_router_endpoints.py:
@@ -15,23 +14,17 @@ description: 'Implement shadow evaluation start/stop endpoints using B345 input 
   the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
   instead of separate ports. Bound the shadow_body outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path).'
+  path). B1100 registers routes/shadow_eval_lifecycle.rs as a stub, so fill only crates/betterlite-server/src/routes/shadow_eval_lifecycle.rs and leave routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-server/src/shadow_eval_lifecycle.rs
   - crates/betterlite-server/src/shadow_eval_lifecycle/**
-  - crates/betterlite-server/src/error.rs
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/shadow_eval_lifecycle.rs
+  - crates/betterlite-server/src/routes/shadow_eval_lifecycle/**
   - crates/betterlite-server/src/routing/shadow_eval_lifecycle.rs
   - crates/betterlite-server/src/routing/shadow_eval_lifecycle/**
   - tools/oracle/src/router_probes/shadow_eval_lifecycle.rs
   - tools/oracle/src/router_probes/shadow_eval_lifecycle/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/shadow_eval_lifecycle.py
   - tools/oracle/cases/routing/shadow-eval-lifecycle/**
   - crates/betterlite-server/fuzz/Cargo.toml
@@ -116,7 +109,7 @@ deviations:
     limit. Existing structural field limits remain unchanged.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1580-L1800
 out_of_scope:
-- Executing shadow requests or writing the judge, owned by B118.
+- Executing shadow requests or writing the judge, owned by B4084 (shadow calls and judgments) and B4085 (the evaluation pipeline).
 - Changing tables or adding uniqueness constraints outside B051.
 - B380 owns shadow evaluation lifecycle response models; consume its tested public interface.
 - 'litellm/proxy/management_endpoints/auto_router_endpoints.py: B051 owns: _TeamTable.find_unique (L97-L97),

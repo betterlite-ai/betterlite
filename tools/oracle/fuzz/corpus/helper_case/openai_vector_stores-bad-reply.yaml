@@ -1,0 +1,5 @@
+kind: helper
+name: openai-vector-stores-seed-bad-reply
+call: {"openai_vector_stores": {"reply": {"kind": "file", "status_code": 502, "headers": {"X-Request-Id": "req-1", "Content-Length": "8"}, "body": "not json"}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,30 @@
+kind: helper
+name: predibase-reply-best-of-choices
+env: {}
+compare: {ignore: []}
+call:
+  b5846:
+    op: reply
+    replies:
+      - body: '{"generated_text":"a","details":{"finish_reason":"stop","tokens":[],"best_of_sequences":[{"generated_text":"<|user|>b","finish_reason":"length","tokens":[{"logprob":-0.5},{"logprob":null}]},{"generated_text":"","finish_reason":"stop","tokens":[{"logprob":-0.25}]},{"generated_text":"c","finish_reason":"weird","tokens":[]}]}}'
+        model: model
+        options: {best_of: 2}
+      - body: '{"generated_text":"a","details":{"finish_reason":"stop","tokens":[],"best_of_sequences":[{"generated_text":"b","finish_reason":"stop","tokens":[]}]}}'
+        model: model
+        parameters: {best_of: 2}
+      - body: '{"generated_text":"a","details":{"finish_reason":"stop","tokens":[],"best_of_sequences":[{"generated_text":"b","finish_reason":"stop","tokens":[]}]}}'
+        model: model
+        options: {best_of: 1}
+        parameters: {best_of: 2}
+      - body: '{"generated_text":"a","details":{"finish_reason":"stop","tokens":[],"best_of_sequences":[{"generated_text":"b","finish_reason":"stop","tokens":[]}]}}'
+        model: model
+        options: {best_of: null}
+      - body: '{"generated_text":"a","details":{"finish_reason":"stop","tokens":[],"best_of_sequences":[{"generated_text":"b","finish_reason":"stop","tokens":[]}]}}'
+        model: model
+        options: {best_of: null}
+        parameters: {best_of: 2}
+      - body: '{"generated_text":"a","details":{"finish_reason":"stop","tokens":[],"best_of_sequences":[{"generated_text":"b","finish_reason":"stop","tokens":[]}]}}'
+        model: model
+      - body: '{"generated_text":"a","details":{"finish_reason":"stop","tokens":[],"best_of_sequences":[{"generated_text":"b","finish_reason":"stop","tokens":[{"logprob":1},{"logprob":2}]}]}}'
+        model: model
+        options: {best_of: 3}

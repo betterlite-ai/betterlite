@@ -1,0 +1,72 @@
+id: B7886
+title: Python eval runs and the evals package
+description: >-
+  This is the last part of the evals entry. It adds `create_run`, `acreate_run`, `list_runs`, `alist_runs`, `get_run`, `aget_run`, `cancel_run`, `acancel_run`, `delete_run`, `adelete_run` and the `evals` package files (`main.py`, `__init__.py`). Rust runs the provider calls (B3424 run create and list, B3425 get, cancel and delete).
+
+
+  Native side, the family `eval_runs`: `src/eval_runs.rs` with `register` that adds `NativeEvalRunSession` and `NativeEvalRunError`, and `src/eval_runs/convert.rs` with tests `request_*` and `error_*`. The architect writes the `lib.rs` line.
+
+
+  Python side, `python/betterlite/evals/_runs.py`, plus `main.py` and `__init__.py` that re-export the names of B7885 and this task. `create_run(eval_id, data_source, name, metadata, extra_headers, extra_query, extra_body, timeout, custom_llm_provider, **kwargs)` and the other eight keep the source signatures. Run ids and eval ids are plain strings. Python objects that cannot cross to Rust (`client`, `shared_session`) raise `UnsupportedCallArgument` from B158.
+scope:
+  paths:
+  - crates/betterlite-python/src/eval_runs.rs
+  - crates/betterlite-python/src/eval_runs/**
+  - crates/betterlite-python/python/betterlite/_native_eval_runs.pyi
+  - crates/betterlite-python/python/betterlite/evals/_runs.py
+  - crates/betterlite-python/python/betterlite/evals/main.py
+  - crates/betterlite-python/python/betterlite/evals/__init__.py
+  - crates/betterlite-python/tests/test_evals_runs.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1095-L1463
+  why: acreate_run, create_run, alist_runs and list_runs
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/main.py#L1464-L1941
+  why: get, cancel and delete runs, sync and async
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/evals/__init__.py#L1-L33
+  why: the exported names
+dod:
+- text: Every function keeps LiteLLM's name and parameters, and a keyword LiteLLM refuses is refused here.
+  proof: [evals-runs-signature]
+- text: "Run create, list, get, cancel and delete return the same objects as LiteLLM, and the package exports every name of both evals parts."
+  proof: [evals-runs-calls]
+- text: A provider error keeps its class and cause, and an unsupported Python object raises `UnsupportedCallArgument`.
+  proof: [evals-runs-errors]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [evals-runs-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: evals-runs-signature
+    why: A caller's keyword is accepted or refused wrongly.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_evals_runs.py -k signature
+  - id: evals-runs-calls
+    why: A result differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_evals_runs.py -k calls
+  - id: evals-runs-errors
+    why: An error class or message changes.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_evals_runs.py -k 'error or unsupported'
+  - id: evals-runs-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^eval_runs::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for these calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: There are no deviations from the source call shape.
+  why: The functions are thin and Rust owns the provider work.
+- what: This task has no helper oracle cases.
+  why: The functions call a native session, so pytest compares both packages against one local server.
+out_of_scope:
+- "Eval calls are B7885."
+- "Provider execution belongs to B3424 and B3425."
+pitfalls:
+- "`get_run`, `cancel_run` and `delete_run` need both `eval_id` and `run_id`, in that order."
+- "`create_run` and `create_eval` share a name stem, so keep `betterlite.evals.create_run` and `create_eval` distinct in `__init__`."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

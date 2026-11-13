@@ -1,0 +1,14 @@
+id: B8605
+milestone: M8 platform
+title: Streaming cleanup after a client disconnect
+status: todo
+depends_on: [B8604, B8602, B5652]
+file: tasks/B8605-stream-cleanup.yaml
+covers:
+  - "litellm/proxy/common_request_processing.py"
+parent: B7980
+split_from: B7980
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

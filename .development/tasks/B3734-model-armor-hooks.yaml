@@ -84,7 +84,7 @@ dod:
     proof: [error-handling-tests]
   - text: Metadata buckets use get_or_create_metadata_bucket to ensure unique per-request state, preventing race conditions when the same guardrail instance handles concurrent requests.
     proof: [metadata-isolation-tests]
-  - text: "Post-call success hook records StandardLoggingGuardrailInformation via add_guardrail_response_to_standard_logging_object with hardcoded guardrail_status=success at the top level (the actual block/pass outcome lives in guardrail_response.model_armor_status); includes start_time, end_time, duration and sanitized model_armor_response dict."
+  - text: "Post-call success hook calls B8994's guardrail_metadata::append_guardrail_response before the block decision, and records StandardLoggingGuardrailInformation via add_guardrail_response_to_standard_logging_object with hardcoded guardrail_status=success at the top level (the actual block/pass outcome lives in guardrail_response.model_armor_status); includes start_time, end_time, duration and sanitized model_armor_response dict."
     proof: [logging-information-tests]
   - text: "apply_guardrail (logging-only path) records guardrail verdict via add_standard_logging_guardrail_information_to_request_data with guardrail_status in {success, guardrail_flagged, guardrail_failed_to_respond}, without raising even when flagged."
     proof: [logging-information-tests]
@@ -160,7 +160,7 @@ out_of_scope:
   - "_log_request_debug and _log_response_debug (L244-L280) owned by B3733 and not called from this task."
   - "Filter result decision logic (_should_block_content, _get_sanitized_content) owned by B3732."
   - "Message and response content extraction helpers from common_utils (B219) and core_helpers (B206); those are used but not built here."
-  - "Callback utilities add_guardrail_to_applied_guardrails_header and add_guardrail_response_to_standard_logging_object (callback_utils.py:591, :672) owned by B189."
+  - "Callback utilities add_guardrail_to_applied_guardrails_header and add_guardrail_response_to_standard_logging_object (callback_utils.py:591, :672): the first is owned by B189, the second by B8994 (betterlite-guardrails)."
   - "should_run_guardrail, _event_hook_is_event_type, add_standard_logging_guardrail_information_to_request_data, and log_guardrail_information decorator (custom_guardrail.py) owned by B3664/B3665/B3666."
 
 pitfalls:

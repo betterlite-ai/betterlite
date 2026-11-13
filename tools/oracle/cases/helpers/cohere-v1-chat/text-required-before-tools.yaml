@@ -1,0 +1,24 @@
+kind: helper
+name: cohere-v1-chat-text-required-before-tools
+call:
+  cohere_v1_chat:
+    function: reply
+    requests:
+      - body: '{"tool_calls":[{"name":"lookup","generation_id":"gen-1","parameters":{"q":"x"}}]}'
+        status: 200
+        model: command-r
+        created: 1234
+        id: chatcmpl-template
+      - body: '{"text":"hello","tool_calls":[{"name":"lookup","generation_id":"gen-1","parameters":{"q":"x"}}]}'
+        status: 200
+        model: command-r
+        created: 1235
+        id: chatcmpl-template
+        finish_reason: stop
+      - body: not json
+        status: 429
+        model: command-r
+        created: 1236
+        id: chatcmpl-template
+compare: {ignore: []}
+env: {}

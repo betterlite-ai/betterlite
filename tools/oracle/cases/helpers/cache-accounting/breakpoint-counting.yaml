@@ -1,0 +1,80 @@
+kind: helper
+name: cache-accounting-breakpoint-counting
+call:
+  b4123:
+    operation: breakpoint_counting
+    probes:
+      - messages: [{role: user, content: hi, cache_control: {}}]
+      - messages: [{role: user, content: [{type: text, cache_control: {}}, {type: text}]}]
+      - messages: [{role: user, content: [{type: text, cache_control: {}}, {type: image, prompt_cache_breakpoint: {}}]}]
+      - messages: [{role: user, content: hi, cache_control: null}]
+      - messages: [5]
+      - messages: [{cache_control: {}}, {content: [{cache_control: {}}]}]
+        system: [{type: text, cache_control: {}}, {type: text}]
+      - messages: []
+        system: a system prompt
+      - messages: []
+        system: [{type: text, cache_control: {}}]
+      - messages: []
+        tools: [{type: function, cache_control: {}}]
+      - messages: []
+        tools: [{type: function, function: {cache_control: {}}}, {type: function}]
+        cache_control: {}
+      - messages: []
+        cache_control: null
+      - messages: []
+        tools: [{cache_control: {}}]
+        request_kwargs: {extra_body: {tools: []}}
+      - messages: []
+        tools: [{cache_control: {}}]
+        request_kwargs: {extra_body: {tools: 5}}
+      - messages: []
+        request_kwargs: {extra_body: {tools: [{cache_control: {}}]}}
+      - messages: []
+        request_kwargs: {extra_body: {}}
+      - messages: []
+        cache_control: {}
+        request_kwargs: {extra_body: {cache_control: null}}
+      - messages: []
+        request_kwargs: {extra_body: {cache_control: {}}}
+      - messages: []
+        request_kwargs: {extra_body: {messages: [{cache_control: {}}, {content: [{cache_control: {}}]}]}}
+      - messages: []
+        request_kwargs: {extra_body: {messages: x}}
+      - messages: []
+        request_kwargs: {extra_body: {system: [{cache_control: {}}]}}
+      - messages: []
+        cache_control: {}
+        request_kwargs: {extra_body: []}
+      - messages: []
+        tools: [{cache_control: {}}]
+        cache_control: {}
+        request_kwargs: {extra_body: {messages: [{cache_control: {}}]}}
+      - messages: [{cache_control: {}}]
+        tools: [{cache_control: {}}]
+        request_kwargs: {extra_body: {tools: []}}
+        on_messages_route: true
+      - messages: [{cache_control: {}}]
+        tools: [{cache_control: {}}]
+        request_kwargs: {extra_body: {tools: []}}
+        on_messages_route: false
+      - messages: []
+        points: [{location: message, role: system, control: null}, {location: tool_config, control: {type: ephemeral}}]
+        external_breakpoints: 2
+        openai_dialect: false
+        breakpoints_on_wire: 3
+      - messages: []
+        points: [{location: message}, {location: tool_config}]
+        external_breakpoints: 2
+        openai_dialect: false
+        breakpoints_on_wire: 4
+      - messages: []
+        points: [{location: message}, {location: tool_config}]
+        external_breakpoints: 2
+        openai_dialect: true
+        breakpoints_on_wire: 4
+      - messages: []
+        points: [{location: tool_config}]
+        openai_dialect: false
+env: {}
+compare: {ignore: []}

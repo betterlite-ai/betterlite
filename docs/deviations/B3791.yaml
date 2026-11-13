@@ -1,0 +1,8 @@
+task: B3791
+deviations:
+  - what: A data URL payload or document data field with a character outside the base64 alphabet, other than whitespace, fails with a 500 (image and document processors) or is logged and skipped (standalone images). Whitespace is still dropped before decoding.
+    why: Python's base64.b64decode silently discards every non-alphabet character, so a corrupted payload is uploaded as different bytes. Sending altered bytes to a security scanner hides the corruption.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L615
+  - what: A Prompt Security answer larger than 64 MiB is refused with a 500 instead of being read in full.
+    why: LiteLLM reads the whole upload and poll answers into memory, so a misbehaving or hostile vendor endpoint can exhaust the gateway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/prompt_security/prompt_security.py#L519-L530

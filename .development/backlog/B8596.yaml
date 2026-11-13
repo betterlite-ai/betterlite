@@ -1,0 +1,15 @@
+id: B8596
+milestone: M8 platform
+title: Callback config routes and the /config/yaml stub
+status: todo
+depends_on: [B8594, B8380, B8611, B4140, B2304, B9711]
+file: tasks/B8596-callback-config-routes.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"
+  - "litellm/proxy/common_utils/callback_utils.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

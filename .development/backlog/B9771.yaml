@@ -1,0 +1,14 @@
+id: B9771
+milestone: M10 admin ui
+title: Cache settings and activity page HTTP acceptance
+status: todo
+depends_on: [B4307, B4308, B4309, B8502, B8650, B1653, B3099, B8482, B1630, B860, B5076, B9735]
+file: tasks/B9771-dashboard-cache-http.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/caching/**"
+parent: B150
+split_from: B150
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -2,8 +2,8 @@ id: B3095
 milestone: M4 keys, spend and management
 title: Resolve tag, organization, customer and agent analytics scopes
 status: todo
-depends_on: [B3090, B3094]
-file: null
+depends_on: [B058, B059, B1604, B2314, B3090, B3094, B4787]
+file: tasks/B3095-tag-org-customer-agent-scopes.yaml
 covers:
   - "litellm/proxy/management_endpoints/daily_activity_scopes.py"
 parent: B074

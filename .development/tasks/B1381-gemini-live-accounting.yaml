@@ -31,7 +31,6 @@ description: >-
   220 code, 190 tests and 130 adapters/shared-corpus lines within 600.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,gemini_live_accounting}.rs
     - crates/betterlite-vertex/src/gemini_live_accounting.rs
     - crates/betterlite-vertex/src/gemini_live_accounting/**
     - tools/oracle/src/helpers/vertex/gemini_live_accounting.rs

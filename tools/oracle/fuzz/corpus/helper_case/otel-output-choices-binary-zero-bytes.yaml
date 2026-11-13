@@ -1,0 +1,9 @@
+kind: helper
+name: binary-zero-bytes
+call:
+  b5240:
+    function: "output_choices"
+    response: {"num_bytes": 0}
+env: {}
+compare:
+  ignore: []

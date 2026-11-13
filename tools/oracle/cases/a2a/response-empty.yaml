@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-response-empty
+call: {"b4803": {"operation": "response", "response": {"choices": []}}}
+env: {}
+compare: {ignore: []}

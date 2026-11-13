@@ -1,0 +1,9 @@
+kind: helper
+name: host-suffix-attack
+call:
+  url_origin:
+    candidate_url: "https://api.example.com.evil.test/v1/jobs/42"
+    expected_url: "https://api.example.com/v1/jobs/42"
+env: {}
+compare:
+  ignore: []

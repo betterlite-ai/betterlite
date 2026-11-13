@@ -1,0 +1,37 @@
+kind: helper
+name: ragflow-nonzero-code
+call:
+  b7814:
+    calls:
+      - call: create_response
+        input:
+          status_code: 400
+          headers: {x-request-id: req_1, content-length: "31"}
+          body: '{"code":102,"message":"bad name"}'
+      - call: create_response
+        input:
+          status_code: 400
+          headers: {x-request-id: req_2, content-length: "10"}
+          body: '{"code":1}'
+      - call: create_response
+        input:
+          status_code: 502
+          headers: {x-request-id: req_3, content-length: "5"}
+          body: 'nope!'
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {x-request-id: req_4, content-length: "2"}
+          body: '[]'
+      - call: create_response
+        input:
+          status_code: 200
+          headers: {x-request-id: req_6, content-length: "18"}
+          body: '{"code":0,"data":null}'
+      - call: create_response
+        input:
+          status_code: 500
+          headers: {x-request-id: req_7, content-length: "2"}
+          body: '{}'
+env: {}
+compare: {ignore: []}

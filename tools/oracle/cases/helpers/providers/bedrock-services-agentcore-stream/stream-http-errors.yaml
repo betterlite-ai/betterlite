@@ -1,0 +1,46 @@
+kind: helper
+name: stream-http-errors
+call:
+  bedrock_services_agentcore_stream:
+    model: agentcore-model
+    ids:
+      - 00000000-0000-4000-8000-000000000091
+      - 00000000-0000-4000-8000-000000000092
+    scenarios:
+      - reads: [boom]
+        status: 500
+        headers:
+          - [content-type, text/plain]
+          - [x-request-id, raw]
+        api_base: https://bedrock-agentcore.example/runtime
+        request_headers: [[accept, application/json]]
+        data: {prompt: hi}
+        messages: [{role: user, content: hi}]
+      - reads: ['{"result":{"content":[{"text":"kept"}]}}']
+        status: 201
+        headers: [[content-type, application/json]]
+        api_base: https://bedrock-agentcore.example/runtime
+        data: {}
+        messages: []
+      - reads: ['{"result":']
+        status: 200
+        headers:
+          - [content-type, application/json]
+          - [x-request-id, raw]
+        api_base: https://bedrock-agentcore.example/runtime
+        data: {}
+        messages: []
+      - reads: ['{"result":{"content":[{"text":5}]}}']
+        status: 200
+        headers: [[content-type, application/json]]
+        api_base: https://bedrock-agentcore.example/runtime
+        data: {}
+        messages: []
+      - reads: ['{"result":{"content":[{"text":"x"}]}}']
+        status: 500
+        headers: [[content-type, application/json]]
+        api_base: https://bedrock-agentcore.example/runtime
+        data: {}
+        messages: []
+env: {}
+compare: {ignore: []}

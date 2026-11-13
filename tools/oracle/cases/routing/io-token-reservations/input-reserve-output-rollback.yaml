@@ -1,0 +1,12 @@
+kind: probe
+name: io-token-reservations-input-reserve-output-rollback
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      io_token_reservations:
+        now_millis: 1700000000000
+        deployment: {id: dep-rollback, model: gpt-4o, itpm: 100, otpm: 15}
+        request: {messages: [{role: user, content: hello}], max_tokens: 20}
+        estimate: 10
+        counters: {itpm: 5, otpm: 7}

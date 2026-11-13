@@ -1,0 +1,13 @@
+kind: helper
+name: datarobot-root-deployment-and-query
+call:
+  host_model_identity:
+    calls:
+      - {kind: identity, host: datarobot, api_base: "https://app.datarobot.com"}
+      - {kind: identity, host: datarobot, api_base: /}
+      - {kind: identity, host: datarobot, api_base: "https://tenant.example/api/v2"}
+      - {kind: identity, host: datarobot, api_base: "https://tenant.example/api/v2/deployments/68f1?limit=5#frag"}
+      - {kind: identity, host: datarobot, api_base: "https://tenant.example/api/v2/genai/llmgw/chat/completions"}
+      - {kind: identity, host: datarobot, api_base: "https://tenant.example//api//v2//"}
+compare: {ignore: []}
+env: {}

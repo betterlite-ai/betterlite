@@ -1,0 +1,44 @@
+# sync _send_batch POSTs the queue as a JSON array to /records/bulk and clears it on any HTTP response, keeping it when the request never answers
+kind: helper
+name: argilla-sync-batch-post-and-clear
+call:
+  b3960:
+    scenarios:
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        batch_size: 2
+        random: [0.0, 0.0]
+        replies:
+          - {status: 200, body: '{"items": [{"id": "ds-1"}]}'}
+          - {status: 200, body: ""}
+        actions:
+          - do: sync_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+          - do: sync_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        batch_size: 2
+        random: [0.0, 0.0]
+        replies:
+          - {status: 200, body: '{"items": [{"id": "ds-1"}]}'}
+          - {status: 500, body: "server error"}
+        actions:
+          - do: sync_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+          - do: sync_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        batch_size: 2
+        random: [0.0, 0.0]
+        replies:
+          - {status: 200, body: '{"items": [{"id": "ds-1"}]}'}
+          - {raise: connection reset}
+        actions:
+          - do: sync_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+          - do: sync_success
+            kwargs: {standard_logging_object: {messages: [{role: user, content: hi}], response: {choices: [{message: {content: Hi}}]}}}
+env: {}
+compare: {ignore: []}

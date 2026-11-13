@@ -1,0 +1,52 @@
+kind: helper
+name: authority-tenant-path
+call:
+  azure_oidc_exchange:
+    steps:
+      - environment: {OIDC_ASSERTION: assertion-value}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+            azure_client_id: client
+            azure_tenant_id: tenant
+        replies:
+          - {status: 200, body: '{"access_token":"tok-value","expires_in":3600}'}
+      - environment: {OIDC_ASSERTION: assertion-value, AZURE_AUTHORITY_HOST: 'https://login.contoso.test/'}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+            azure_client_id: client
+            azure_tenant_id: tenant
+        replies:
+          - {status: 200, body: '{"access_token":"tok-value","expires_in":3600}'}
+      - environment: {OIDC_ASSERTION: assertion-value, AZURE_CLIENT_ID: env-client, AZURE_TENANT_ID: env-tenant}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+        replies:
+          - {status: 200, body: '{"access_token":"tok-value","expires_in":3600}'}
+      - environment: {OIDC_ASSERTION: assertion-value, AZURE_CLIENT_ID: '', AZURE_TENANT_ID: ''}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+        replies:
+          - {status: 200, body: '{"access_token":"tok-value","expires_in":3600}'}
+      - environment: {OIDC_ASSERTION: assertion-value, AZURE_CLIENT_ID: env-client, AZURE_TENANT_ID: env-tenant}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+            azure_client_id: explicit-client
+            azure_tenant_id: explicit-tenant
+        replies:
+          - {status: 200, body: '{"access_token":"tok-value","expires_in":3600}'}
+      - environment: {OIDC_ASSERTION: assertion-value, AZURE_CLIENT_ID: env-client, AZURE_TENANT_ID: env-tenant}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+            azure_client_id: ''
+            azure_tenant_id: ''
+        replies:
+          - {status: 200, body: '{"access_token":"tok-value","expires_in":3600}'}
+      - environment: {OIDC_ASSERTION: assertion-value, AZURE_AUTHORITY_HOST: ''}
+        calls:
+          - azure_ad_token: os.environ/OIDC_ASSERTION
+            azure_client_id: client
+            azure_tenant_id: tenant
+        replies:
+          - {status: 200, body: '{"access_token":"tok-value","expires_in":3600}'}
+env: {}
+compare: {ignore: []}

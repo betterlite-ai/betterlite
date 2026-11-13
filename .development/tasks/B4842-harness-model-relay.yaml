@@ -1,0 +1,166 @@
+id: B4842
+title: Relay harness model requests through gateway and SDK calls
+description: >-
+  A harness CLI talks to a local per-session endpoint. This task builds the part that answers one authenticated POST body
+  after the endpoint has checked the token and parsed the JSON object. It sends the request one of two ways and counts the
+  usage: gateway mode forwards the body to a LiteLLM AI Gateway, SDK mode calls the SDK directly. Server startup, the
+  listener, route registration, `_handle`, `_models` and `_gateway_client` belong to B4843. Credential filtering, header
+  builders, `UsageTracker`, `SSEUsageParser`, `compute_cost`, `header_cost`, `hidden_cost`, `error_status`, `error_body`,
+  `sanitize`, the stream chunk encoders, `route_of` and the `ModelEndpoint` state with its `_record` and `_error` methods
+  belong to B4841 and are called here, never rebuilt. Read crates/betterlite-harness/src/endpoint.rs on main for their
+  exact Rust names before writing code.
+
+
+  Put everything in a new module `relay` (crates/betterlite-harness/src/relay.rs and src/relay/), because B4841 owns
+  endpoint.rs. The module has three parts. `relay/gateway.rs` ports `_forward`, `_relay` and `_record_relayed`. `relay/sdk.rs`
+  ports `_sdk_kwargs`, `_invoke_sdk` and `_call_sdk`. `relay/sdk_stream.rs` ports `_sdk_stream`. `relay.rs` holds `RelayReply`
+  and `cost_model`. `RelayReply` is what B4843 turns into an HTTP response: `Json { status, body }` or
+  `Stream { status, headers, media_type, body }`, where `body` is a boxed `Stream` of `Bytes` that is `Send` and `'static`.
+  Build streams with `async-stream`, already in the crate.
+
+
+  Gateway mode (`_forward`, L548-L601). If `model` is set on the endpoint, replace the body's `model` with it, otherwise keep the
+  body as is. Send a POST to `{gateway.api_base}/v1/{route}` with the JSON body and B4841's `gateway_headers`. Join the URL by
+  plain formatting, with no trailing-slash trimming. Send through `betterlite_http::ProxiedClient::send` (B173), which returns a
+  streaming response, behind a small trait `GatewaySend` so tests inject a fake. The production impl wraps a `ProxiedClient`
+  and uses a 600 second deadline, LiteLLM's `HARNESS_ENDPOINT_REQUEST_TIMEOUT_SECONDS`. A transport error becomes status 502
+  through the endpoint's `_error` helper, so its message is redacted. Otherwise return `RelayReply::Stream` with the upstream
+  status and B4841's `response_headers`, and relay the body chunk by chunk without changing it. The body is SSE when the
+  `content-type` header contains `text/event-stream` anywhere in it. For SSE, feed each chunk to an `SSEUsageParser`. For
+  anything else, collect the bytes. When the stream ends, is dropped by a client that left, or fails, close the upstream
+  response, and only if the status is under 400 record usage once. SSE usage is the parser's tokens after `close()`. Other usage
+  is `usage_from_body` of the collected bytes parsed as JSON, and zero tokens if they do not parse. The cost is `header_cost` of
+  the upstream headers, and `None` falls through to `compute_cost` inside the endpoint's `_record`. In Rust the record call
+  sits in a guard struct's `Drop`, so a cancelled response body still records, as the Python `finally` does.
+
+
+  SDK mode (`_call_sdk`, L603-L647). Build the call arguments from the body: set `model` if the endpoint has one, `api_key` if
+  set and `api_base` if set, each overriding the body. The cost model is `self.model` or else the body's `model` when it is a
+  string (`_cost_model`, L533-L535), computed from the final arguments. Dispatch on the route behind a trait `SdkCalls` with one
+  async method per call: `messages` for route `messages` (`litellm.anthropic.messages.acreate`, through B1134), `chat` for
+  `chat/completions` (`litellm.acompletion`, through B5656's async completion target), and `responses` for every other route
+  (`litellm.aresponses`, through B932). Each returns `SdkReply::Complete { body: Value, hidden_cost: Option<f64> }` or
+  `SdkReply::Stream(BoxStream<Result<SdkChunk, SdkCallError>>)`, where `SdkChunk` is `Bytes`, `Text` or `Json`. A production
+  struct `LiteLlmSdk` implements `SdkCalls` and receives the three callers through its constructor. For chat with `stream` true,
+  set `stream_options` to `{"include_usage": true}` merged under the caller's own `stream_options`, so the caller's keys win,
+  including an explicit `include_usage: false`. `SdkCallError` carries the error type name, message and an optional status code;
+  it stands for `SDK_ERRORS` (L57-L59: openai errors, transport errors, harness errors, bad kwargs, unserializable chunks). When
+  the call fails, return B4841's error response with the status from `error_status`. When it works and `stream` is true and
+  the reply is a stream, return `RelayReply::Stream` with media type `text/event-stream`. Otherwise read tokens with
+  `usage_from_body`, record with `hidden_cost` and return `Json` with status 200.
+
+
+  SDK streaming (`_sdk_stream`, L649-L665). Pick the encoder by route from B4841's encoders (`messages` Anthropic, chat, and
+  responses). Encode each chunk, feed the encoded bytes to an `SSEUsageParser`, then yield them. After the last chunk, the chat
+  route yields the trailer `data: [DONE]\n\n`; no other route has a trailer. If a chunk fails with an SDK error, yield one
+  `event: error\ndata: <error_body JSON>\n\n` event with a sanitized message and stop; the chat trailer is not sent after an
+  error. Always close the parser and record usage with cost `None` when the stream ends or is dropped, even after an error.
+  If B4841 did not define the encoder table or the chat trailer, define them in `relay.rs`; check endpoint.rs first.
+
+
+  This task adds `betterlite-http`, `betterlite-core` and `betterlite-sdk` as path dependencies of betterlite-harness. None of
+  them depends on the harness crate, so there is no cycle. Tests live in tests.rs files and use a fake `GatewaySend` and a fake
+  `SdkCalls`; no network, no real server.
+scope:
+  paths:
+    - crates/betterlite-harness/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-harness/src/relay.rs
+    - crates/betterlite-harness/src/relay/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L548-L601
+    why: Gateway forward, the chunk relay with its finally block, and usage recording for relayed responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L603-L647
+    why: SDK kwargs overrides, route dispatch, the stream_options default and the non-stream result path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L649-L665
+    why: SDK stream encoding, the chat trailer, the in-band error event and the final record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L533-L535
+    why: cost_model picks the endpoint model, else a string model from the body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/harness/endpoint.py#L54-L59
+    why: Route names and the SDK_ERRORS tuple that decides which failures become error responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2215-L2224
+    why: Endpoint request timeout of 600 seconds and the session constants.
+dod:
+  - text: >-
+      Gateway mode POSTs to `{api_base}/v1/{route}` for routes messages, chat/completions and responses, with the endpoint
+      model replacing the body model when set and kept as is when unset, and with B4841's gateway headers (no incoming
+      authorization or x-litellm-* headers, the gateway bearer key added).
+    proof: [relay-gateway]
+  - text: >-
+      The gateway relay returns the upstream status and filtered headers and passes body bytes through unchanged; a
+      transport failure returns 502 with the gateway key, API key and session token replaced by ***.
+    proof: [relay-gateway]
+  - text: >-
+      A relayed SSE body (content-type containing text/event-stream) records parser tokens once after the body ends, and a
+      non-SSE body records tokens from the JSON usage, or zero tokens when it is not JSON; the x-litellm-response-cost
+      header becomes the cost, and a missing header falls back to compute_cost.
+    proof: [relay-gateway]
+  - text: >-
+      Upstream status 400 and above records nothing, and a response body dropped before its end still records the tokens seen
+      so far when status is under 400.
+    proof: [relay-gateway]
+  - text: >-
+      SDK mode applies the endpoint model, api_key and api_base over the body, and sends route messages, chat/completions
+      and any other route to the messages, chat and responses calls respectively.
+    proof: [relay-sdk]
+  - text: >-
+      A chat call with stream true gets stream_options.include_usage true unless the caller's own stream_options says
+      otherwise; a non-stream chat call and the other routes get no stream_options.
+    proof: [relay-sdk]
+  - text: >-
+      A non-stream SDK reply returns 200 JSON, records tokens from its usage and the hidden response cost, and an SDK error
+      returns B4841's error body with status from the error's status code when it is 400 to 599, else 500, with secrets
+      redacted.
+    proof: [relay-sdk]
+  - text: >-
+      A streaming SDK reply is encoded per route, ends with `data: [DONE]` only on chat, and records tokens and computed
+      cost when the stream ends.
+    proof: [relay-sdk-stream]
+  - text: >-
+      An SDK error mid-stream yields one sanitized `event: error` event with no chat trailer, then still records the usage seen
+      so far; a stream dropped early records too.
+    proof: [relay-sdk-stream]
+  - text: The harness crate has the three new path dependencies and builds with no dependency cycle.
+    proof: [relay-deps]
+checks:
+  optional: []
+  commands:
+    - id: relay-gateway
+      why: gateway forwarding, header filtering, 502 redaction or relayed-usage recording is missing or wrong
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^relay::gateway::/)'
+    - id: relay-sdk
+      why: SDK kwargs overrides, route dispatch, stream_options default or the non-stream result path is missing or wrong
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^relay::sdk::/)'
+    - id: relay-sdk-stream
+      why: SDK stream encoding, the chat trailer, the error event or final recording is missing or wrong
+      run: cargo nextest run --locked -p betterlite-harness --no-tests=fail -E 'test(/^relay::sdk_stream::/)'
+    - id: relay-deps
+      why: the harness crate does not yet depend on the http, core and sdk crates
+      run: grep -q '^betterlite-http' crates/betterlite-harness/Cargo.toml && grep -q '^betterlite-core' crates/betterlite-harness/Cargo.toml && grep -q '^betterlite-sdk' crates/betterlite-harness/Cargo.toml && cargo tree --locked -p betterlite-harness -e normal > /dev/null
+oracle_cases: []
+deviations:
+  - what: Gateway requests go through betterlite-http's ProxiedClient, not a shared httpx client keyed by `httpxSpecialProvider.AgentHarness`.
+    why: betterlite has one pooled transport (B173); the 600 second request deadline is kept.
+  - what: A response body dropped by a client that left still records usage, through a guard's Drop.
+    why: Python records in a `finally` that runs when the generator is closed; the guard keeps that behavior.
+  - what: The SDK is reached through the `SdkCalls` trait, and its three methods call B1134, B5656 and B932, not Python `litellm.*` functions.
+    why: There is no Python in the gateway; the trait lets tests inject a fake.
+out_of_scope:
+  - Server startup and shutdown, the uvicorn-style listener, route registration, `_handle`, `_models`, `_gateway_client`, `_wait_started` and `_build_app` (B4843).
+  - Credential filtering, header builders, usage parsing, cost computation, error helpers, chunk encoders, route_of and the ModelEndpoint state (B4841).
+  - Request-body JSON parsing and the 400 reply for a non-object body (B4843, in `_handle`).
+  - The litellm.* functions behind the SDK calls (B1134 messages, B5656 completion, B932 responses).
+pitfalls:
+  - "The chat trailer `data: [DONE]` is sent only after a clean chat stream, never after an in-band error event and never on the messages or responses routes."
+  - "In `_sdk_stream` the final record always passes cost `None`, so cost comes from `compute_cost`, while a non-stream SDK reply uses `hidden_cost` first."
+  - "`_relay` records only when the upstream status is under 400, but `_sdk_stream` records on every exit, including after an SDK error."
+  - "The `stream_options` merge puts `include_usage: true` first and the caller's keys after it, so a caller passing `include_usage: false` wins."
+  - "In SDK mode `_cost_model` reads the final kwargs, so an `api_key` or `model` override affects which price is looked up."
+  - "Gateway mode does not fall back to the SDK when the gateway fails; a transport error is a 502 reply and an upstream 4xx or 5xx is relayed as is."
+  - "The gateway URL is `{api_base}/v1/{route}` even if the client called `/v1/messages`; `route_of` has already removed the `v1/` prefix."
+  - "Any route other than messages and chat/completions goes to `aresponses`, so the dispatch is a two-way match with a default arm."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,31 @@
+kind: helper
+name: azure-class-defaults
+call:
+  azure_chat_base_policy:
+    action: azure_class_defaults
+    steps:
+      - values: {}
+      - values:
+          frequency_penalty: null
+          function_call: null
+          functions: null
+          logit_bias: null
+          max_tokens: null
+          n: null
+          presence_penalty: null
+          stop: null
+          temperature: null
+          top_p: null
+      - values:
+          frequency_penalty: 0
+          function_call: {name: f}
+          functions: []
+          logit_bias: {}
+          max_tokens: 0
+          n: 0
+          presence_penalty: 0
+          stop: ''
+          temperature: 0
+          top_p: 0
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,14 @@
+id: B8212
+milestone: M6 guardrails
+title: Qostodian Nexus guardrail
+status: todo
+depends_on: [B3662, B3770, B3771]
+file: tasks/B8212-qohash-guard.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/qohash/**"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

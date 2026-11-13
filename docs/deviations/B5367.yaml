@@ -1,0 +1,54 @@
+task: B5367
+deviations:
+  - what: >-
+      `_is_same_registered_custom_logger` compares the exact logger class and callback name; betterlite compares the
+      callback name alone, because a `CallbackLogger` trait object carries no class marker.
+    why: Two adapters of one class are told apart by their callback name, which is the only identity the logging trait exposes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L660-L668
+  - what: >-
+      LiteLLM scans `success_callback` while `_add_custom_logger_callback_to_specific_event` removes the resolved
+      name, so the entry after it is skipped and a second known name is never resolved. betterlite resolves every
+      known name in the list.
+    why: A config that lists two known callbacks expects both loggers; the skip is an artifact of mutating the list
+      during enumeration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1060-L1086
+  - what: >-
+      The `callbacks` registry check skips a callback whose class already appears in `_async_success_callback`;
+      betterlite skips only when the callback name is already registered.
+    why: Betterlite's loggers have no class identity, and the same check in `_is_same_registered_custom_logger`
+      already tells one class's presets apart by name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1017-L1022
+  - what: >-
+      `_snapshot_exception_for_hook` and `_accepts_fallback_depth_kwarg_for_class` are not built. A failure callback
+      gets a shared reference to the error, and the trait method always takes `fallback_depth`.
+    why: A shared reference cannot change the caller's error, and a Rust trait has one signature, so neither Python
+      workaround applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L117-L151
+  - what: The debug text shows request values as JSON, where LiteLLM uses Python `repr`.
+    why: It is a debug line and nothing parses it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7920-L7949
+  - what: Callback lists, the provider registries, the credential lookup, the breadcrumb sink and the debug flag come in as arguments.
+    why: The inject-dependencies rule bars the module-level globals LiteLLM reads and writes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L994-L1000
+  - what: >-
+      The generate_content message extraction returns "default-message-value" instead of the last user message of the
+      translated contents.
+    why: The contents translation is B3484's `GoogleGenAIAdapter.translate_generate_content_to_completion`, which is
+      not built yet; LiteLLM's own exception path returns the same text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1258-L1275
+  - what: >-
+      A transcription call hashes the `file` text it is given and rejects a file that is not text, where LiteLLM also
+      hashes file objects, paths and byte content.
+    why: The audio file hash is B1001's `get_audio_file_content_hash` and a JSON request can only carry a name; for a
+      bare string LiteLLM hashes the text itself, which is the one case betterlite builds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1229-L1239
+  - what: >-
+      A request `callbacks`, `success_callback` or `failure_callback` list of more than 100 names is rejected with a
+      callback error, where LiteLLM adds names until a global list holds the limit and drops the rest with a warning.
+      The limit is fixed at LiteLLM's default of 100, so a LITELLM_MAX_CALLBACKS above 100 is not honored here and a
+      request list that LiteLLM accepts under the raised limit fails.
+    why: The request list is untrusted input, so it is bounded before any name is resolved or scanned. The env
+      override is read by the config crate (callback_settings, B8741), and carrying that value into the SDK call
+      belongs to the caller that builds the call setup (B5368), which this task does not touch.
+      `CallbackLists::add` still drops overflow with a warning at the same 100.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L246-L247

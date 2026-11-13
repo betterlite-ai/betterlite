@@ -1,0 +1,132 @@
+id: B6595
+title: MCP pass-through metadata cache and DCR client hydration
+description: >-
+  Build two small pieces of litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py that the server registry calls: the in-process cache for upstream OAuth protected-resource metadata with its invalidation, and the overlay of a persisted DCR client onto a config-declared server. The route handlers, the upstream fetch (fetch_upstream_oauth_protected_resource) and the register, authorize and token flows of that file are not part of this task.
+
+
+  Put the code in two new modules of betterlite-mcp: oauth_metadata_cache (crates/betterlite-mcp/src/oauth_metadata_cache.rs and oauth_metadata_cache/**) and dcr_hydration (crates/betterlite-mcp/src/dcr_hydration.rs and dcr_hydration/**), each with a tests.rs beside it. The architect adds the tokio feature sync to crates/betterlite-mcp/Cargo.toml (the cache uses tokio::sync::Mutex).
+
+
+  Part 1, oauth_metadata_cache. LiteLLM keeps five module-level dicts. Betterlite keeps the same state inside one OAuthMetadataCache value, cheap to clone (an Arc around a std::sync::Mutex of the state plus the per-key async locks), created once by B8614 and passed to whoever needs it. Never use a static. A CacheKey is (server_id: String, resource_url: String). Constants: TTL_SECONDS 300, NEGATIVE_TTL_SECONDS 60, MAX_SIZE 128. A cached value is Option<serde_json::Value>: None is the negative entry that stops repeated upstream fetches. Time comes in as an argument, a tokio::time::Instant named now, so tests run on paused time.
+
+  1. `lookup(&self, key, now) -> Option<Option<Value>>` returns the entry only while expires_at is greater than now (an entry with expires_at equal to now is expired). It does not prune.
+
+  2. `prune(&self, now)` (`_prune_oauth_metadata_cache`), in this order: remove entries with expires_at <= now; when more than MAX_SIZE entries remain, remove the overflow count of entries with the earliest expiry (ties go to the oldest insert, so keep an insert sequence number on each entry and sort by (expires_at, sequence)); drop every per-key lock whose key has no cache entry and is idle; drop the generation of every server id that has no fetch in flight. A lock is idle when its key has no fetcher counted and the lock is not held (a missing lock counts as idle).
+
+  3. `store(&self, key, generation, payload, ttl_seconds, now) -> bool` is the `store` closure of fetch_upstream_oauth_protected_resource (L2418-L2423): do nothing and return false when the current generation of key.server_id (0 when absent) differs from the generation the caller read before fetching; otherwise insert (now + ttl_seconds, payload), call prune(now) and return true. `generation(&self, server_id) -> u64` returns 0 when absent.
+
+  4. `enter_fetch(&self, key) -> FetchSlot` is an async fn (`_oauth_metadata_fetch_slot`). It first adds one to the key's fetcher count, then waits for the key's tokio Mutex (created on first use, shared through an Arc), so callers for one key run one at a time and later ones see the stored result. FetchSlot releases on Drop in LiteLLM's order: unlock the Mutex first, then subtract one from the fetcher count and remove the count at zero. The FetchSlot value must exist before the await, so a caller whose future is cancelled while waiting still gives its count back.
+
+  5. `invalidate(&self, server_id)` (`invalidate_oauth_metadata_cache`): when any key of that server has a fetcher counted, add one to the server's generation; otherwise remove the server's generation. Then remove all cache entries of the server, and remove the per-key locks of the server that are idle (a lock that is held or has a waiter stays). Other servers are untouched. It never fails and it is called with a server that has no state.
+
+  Part 2, dcr_hydration. A config.yaml server has no LiteLLM_MCPServerTable row, so the DCR client minted for it lives in the server-scoped OAuth client store (table LiteLLM_MCPServerOAuthClient, keyed by server_id). After a restart the in-memory server has no client_id, and token refresh needs one. `hydrate_config_server_dcr_client` copies the stored client onto the in-memory server. The config loader (B6764) and the reload code call it for every config-declared server.
+
+  Collaborators come in through a DcrHydration constructor, following the way B6761 injects MetadataFetcher: a DcrClientStore trait with `async fn client_credentials(&self, server_id: &str) -> Result<Option<serde_json::Value>, StoreReadError>` (the raw credentials blob of the row, or None when there is no row; B4712 owns the real read, get_mcp_server_oauth_client_credentials, in betterlite-server, which this crate cannot import, so B8620 writes the adapter), and the Decryptor trait of B6763 (server_build). Types:
+
+  - PersistedDcrCredentials { client_id: Option<String>, client_secret: Option<String>, token_endpoint_auth_method: Option<String>, redirect_uris: Option<Vec<String>> } (`_PersistedDcrCredentials`), serde with every field optional and unknown fields ignored.
+
+  - `parse_persisted_credentials(blob: &serde_json::Value) -> Option<PersistedDcrCredentials>` (`_get_persisted_dcr_credentials`): None when the blob is null, an empty string, an empty object or an empty array, or when it does not fit the struct (wrong field type). A JSON string is parsed as JSON text first, any other value is read as is.
+
+  - `decrypt_credential(decryptor, value: Option<&str>, field) -> Option<String>` (`_decrypt_persisted_dcr_credential`): None stays None, otherwise decrypt with the field name as the key. Like return_original_value=True with debug logging, an undecryptable value comes back as it was stored, so a client written before encryption still works.
+
+  - `apply_persisted_credentials(&self, server: &mut MCPServer, credentials) -> bool` (`_apply_persisted_dcr_credentials`): decrypt client_id; when the result is None or empty return false and leave the server alone. Otherwise set server.client_id, set server.client_secret to the decrypted secret (None when absent) and set server.token_endpoint_auth_method from the stored text, then return true.
+
+  - `redirect_uri_not_registered(credentials, current_redirect_uri: &str) -> bool` (`_redirect_uri_not_registered`): false when redirect_uris is None or empty (old and admin-configured clients are never reported stale), else true when the current uri is not in the list. The register flow calls it; it lives here with the type.
+
+  - `load_store_credentials(&self, server_id) -> Option<PersistedDcrCredentials>` (`_load_store_dcr_credentials`): read the blob from the DcrClientStore; a read error is logged at debug level as "register_client_with_server: failed to read stored DCR client for server_id=<id>: <error>" and gives None, since the database may be unreachable at config-load time; then parse_persisted_credentials; None when parsing fails or client_id is None or empty.
+
+  - `hydrate_config_server_dcr_client(&self, server: &mut MCPServer) -> bool`: return false at once when server.client_id is set and non-empty (a client_id from config.yaml always wins and the store is not read). Otherwise load_store_credentials, return false for None, else return apply_persisted_credentials.
+
+  Tests: oauth_metadata_cache::tests with paused tokio time (a fresh hit, an expired hit, the negative entry, prune by expiry, prune by size with ties, store dropped after invalidate while a fetch is in flight, invalidate with no fetch in flight, a held lock surviving invalidate, two waiters on one key running one at a time, a cancelled waiter returning its count, other servers untouched). dcr_hydration::tests with a fake DcrClientStore and a Decryptor that strips an "enc:" prefix (client_id from config wins, no row, read error, blob as JSON string and as object, empty blob, wrong field type, undecryptable value kept, empty client_id, secret absent, the redirect check).
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/src/oauth_metadata_cache.rs
+    - crates/betterlite-mcp/src/oauth_metadata_cache/**
+    - crates/betterlite-mcp/src/dcr_hydration.rs
+    - crates/betterlite-mcp/src/dcr_hydration/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L99-L189
+    why: The cache dicts and their constants, prune, the idle test, the fetch slot and invalidate_oauth_metadata_cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L2380-L2476
+    why: How the cache is read, locked and stored by fetch_upstream_oauth_protected_resource (the generation check and the two TTLs). The fetch itself is not built here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1357-L1461
+    why: The persisted credentials type, the redirect check, parse, decrypt, apply, the store read and hydrate_config_server_dcr_client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2709-L2731
+    why: The caller of hydrate_config_server_dcr_client, which treats any failure as a debug log.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4616-L4622
+    why: The caller of invalidate_oauth_metadata_cache, together with the discovery list caches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1274-L1285
+    why: The store read behind DcrClientStore returns the raw credentials blob or None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L180-L206
+    why: decrypt_value_helper with exception_type debug and return_original_value True.
+
+dod:
+  - text: lookup returns an entry only while it is unexpired, and a negative entry (None payload) is returned as a hit.
+    proof: [cache-tests]
+  - text: prune removes expired entries first, then the earliest-expiring overflow above 128 with ties going to the older insert, then idle locks of evicted keys and generations with no fetch in flight.
+    proof: [cache-tests]
+  - text: store is refused after invalidate bumped the generation during a fetch, and works when the generation is unchanged.
+    proof: [cache-tests]
+  - text: invalidate removes only the named server's entries and idle locks, keeps a held lock, and bumps or removes the generation depending on a fetch in flight.
+    proof: [cache-tests]
+  - text: enter_fetch serializes callers of one key, and a cancelled waiter gives its fetcher count back.
+    proof: [cache-tests]
+  - text: hydrate returns false without reading the store when the server already has a client_id.
+    proof: [hydration-tests]
+  - text: hydrate overlays client_id, client_secret and token_endpoint_auth_method from the store, decrypting the first two and keeping an undecryptable value as stored.
+    proof: [hydration-tests]
+  - text: A store read error, a missing row, an empty or malformed blob and an empty client_id each give false and leave the server unchanged.
+    proof: [hydration-tests]
+  - text: redirect_uri_not_registered is false for missing or empty redirect_uris and true only when the current uri is absent from a non-empty list.
+    proof: [hydration-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: cache-tests
+      why: the metadata cache tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_metadata_cache::/)'
+    - id: hydration-tests
+      why: the DCR hydration tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^dcr_hydration::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: The cache and its locks are one OAuthMetadataCache value passed in, not module-level dicts, and time is an argument.
+    why: the repo allows no module state, and tests run on paused time.
+  - what: DcrClientStore is a trait and an undecryptable value is handled by the injected Decryptor.
+    why: betterlite-mcp cannot import the database code in betterlite-server, so B8620 wires the adapter.
+  - what: token_endpoint_auth_method from the store is kept as text on PersistedDcrCredentials and converted with the MCPTokenEndpointAuthMethod parser when it is applied; text that does not parse leaves the field None and logs at debug.
+    why: Python assigns the raw string without validation, while the Rust record holds the typed enum.
+
+out_of_scope:
+  - "fetch_upstream_oauth_protected_resource and is_network_error (the upstream fetch that reads and fills this cache), and every route handler of discoverable_endpoints: no owner found, see the architect notes."
+  - "_resolve_persisted_dcr_client, _reuse_persisted_dcr_client_if_available, _persisted_dcr_redirect_uri_is_stale and _persist_dcr_client_registration (the register flow, which reads the same types): no owner found, see the architect notes."
+  - "get_mcp_server_oauth_client_credentials, the real store read: B4712."
+  - "decrypt_value_helper and the Decryptor trait: B2303 and B6763."
+  - "_hydrate_config_servers_dcr_clients, the loop that calls hydrate for each server: B6764. _invalidate_server_definition_caches, the caller of invalidate: B6765 and the other registry writers."
+  - "The MCPServer record: B6590."
+
+pitfalls:
+  - "An entry whose expires_at equals now is expired, in lookup and in prune (the Python tests use <= for pruning and > for a hit)."
+  - "Lock.locked() is false between one holder's release and the next waiter waking, so idleness must also check the fetcher count, or prune and invalidate would delete a lock that a waiter is about to use."
+  - "FetchSlot must release the Mutex before it lowers the fetcher count, and must exist before the await on the Mutex, or a cancelled waiter leaks a count and its key is never pruned."
+  - "A fetch that started before invalidate must not repopulate the cache: it reads the generation first and store compares it again, and the generation entry exists only while a fetch is in flight."
+  - "The overflow eviction sorts by expiry only, so equal expiry needs the insert sequence to match Python's stable sort over dict order."
+  - "hydrate must not read the store when client_id is already set, because a client_id from config.yaml wins over a persisted one."
+  - "A stored client_id that decrypts to an empty string is no client: apply returns false before it touches any field."
+  - "The blob can arrive as a JSON string or as an already parsed object, and both an empty string and an empty object mean no credentials."
+  - "client_secret is replaced with None when the stored client has none, so a leftover secret from config never pairs with a different stored client_id (hydrate only runs when client_id was unset)."
+  - "Never put client_secret or the decrypted values in a log line or an error text."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,20 @@
+kind: helper
+name: chat-config-selection-cohere-and-bedrock
+call:
+  chat_config_selection:
+    function: cohere_and_bedrock_selection
+    calls:
+      - {provider: cohere, model: v1/command}
+      - {provider: cohere_chat, model: v1/command}
+      - {provider: cohere, model: cohere_chat/v1/command-r}
+      - {provider: cohere, model: command-r}
+      - {provider: cohere, model: V1/command}
+      - {provider: cohere, model: v2/command}
+      - {provider: bedrock, model: anthropic.claude-v2}
+      - {provider: bedrock, model: amazon.titan-text-express-v1}
+      - {provider: bedrock, model: converse/anthropic.claude-3}
+      - {provider: sail, model: test-model}
+      - {provider: langgraph, model: test-model}
+      - {provider: langflow, model: test-model}
+env: {}
+compare: {ignore: []}

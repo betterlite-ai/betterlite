@@ -1,0 +1,6 @@
+callback_settings:
+  otel:
+    endpoint: http://collector:4318
+    unknown_scalar: keep-me
+    exporters:
+      - kind: console

@@ -1,0 +1,5 @@
+kind: helper
+name: gemini-tool-invokes-corpus-encoded-id
+call: {gemini_tool_invokes: {operation: encode_tool_call_id_with_signature, pairs: [{tool_call_id: call_abc, thought_signature: sig-one}, {tool_call_id: call_def}, {tool_call_id: call_ghi, thought_signature: ''}]}}
+env: {}
+compare: {ignore: []}

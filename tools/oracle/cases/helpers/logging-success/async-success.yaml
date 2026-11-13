@@ -1,0 +1,56 @@
+kind: helper
+name: logging-success-async-success
+call:
+  logging_success:
+    operations:
+      - operation: handler
+        probes:
+          - mode: async
+            stream: false
+            call_type: completion
+            litellm_params: {acompletion: true}
+            result: {kind: chat}
+            start_time: "2024-01-01T00:00:00+00:00"
+            end_time: "2024-01-01T00:00:01+00:00"
+            cache_hit: false
+            payload: {id: chatcmpl-1, trace_id: trace-1, session_id: session-1, call_type: completion, response_cost: 0, status: success, status_fields: {llm_api_status: success, guardrail_status: not_run}, total_tokens: 5, prompt_tokens: 2, completion_tokens: 3, startTime: 1704067200, endTime: 1704067201, completionStartTime: 1704067200, response_time: 1, model_map_information: {}, model: gpt-4o, api_base: https://api.openai.com, metadata: {}, saved_cache_cost: 0, request_tags: [], model_parameters: {}, hidden_params: {}, messages: [{role: user, content: hi}], response: {id: chatcmpl-1, object: chat.completion, choices: []}}
+            loggers:
+              - name: datadog
+          - mode: async
+            stream: false
+            call_type: completion
+            litellm_params: {acompletion: true}
+            result: {kind: chat}
+            start_time: "2024-01-01T00:00:00+00:00"
+            end_time: "2024-01-01T00:00:01+00:00"
+            cache_hit: false
+            payload: {id: chatcmpl-1, trace_id: trace-1, session_id: session-1, call_type: completion, response_cost: 0, status: success, status_fields: {llm_api_status: success, guardrail_status: not_run}, total_tokens: 5, prompt_tokens: 2, completion_tokens: 3, startTime: 1704067200, endTime: 1704067201, completionStartTime: 1704067200, response_time: 1, model_map_information: {}, model: gpt-4o, api_base: https://api.openai.com, metadata: {}, saved_cache_cost: 0, request_tags: [], model_parameters: {}, hidden_params: {}, messages: [{role: user, content: hi}], response: {id: chatcmpl-1, object: chat.completion, choices: []}}
+            loggers:
+              - {name: quiet, turn_off_message_logging: true}
+              - {name: self_redacting, turn_off_message_logging: true, redacts_messages_itself: true}
+          - mode: async
+            stream: false
+            call_type: completion
+            litellm_params: {acompletion: true}
+            result: {kind: chat}
+            start_time: "2024-01-01T00:00:00+00:00"
+            end_time: "2024-01-01T00:00:01+00:00"
+            cache_hit: false
+            payload: {id: chatcmpl-1, trace_id: trace-1, session_id: session-1, call_type: completion, response_cost: 0, status: success, status_fields: {llm_api_status: success, guardrail_status: not_run}, total_tokens: 5, prompt_tokens: 2, completion_tokens: 3, startTime: 1704067200, endTime: 1704067201, completionStartTime: 1704067200, response_time: 1, model_map_information: {}, model: gpt-4o, api_base: https://api.openai.com, metadata: {}, saved_cache_cost: 0, request_tags: [], model_parameters: {}, hidden_params: {}, messages: [{role: user, content: hi}], response: {id: chatcmpl-1, object: chat.completion, choices: []}}
+            excluded_fields: [messages]
+            loggers:
+              - name: langfuse
+          - mode: async
+            stream: true
+            call_type: completion
+            litellm_params: {acompletion: true}
+            result: {kind: chunk}
+            start_time: "2024-01-01T00:00:00+00:00"
+            end_time: "2024-01-01T00:00:01+00:00"
+            cache_hit: false
+            payload: {id: chatcmpl-1, trace_id: trace-1, session_id: session-1, call_type: completion, response_cost: 0, status: success, status_fields: {llm_api_status: success, guardrail_status: not_run}, total_tokens: 5, prompt_tokens: 2, completion_tokens: 3, startTime: 1704067200, endTime: 1704067201, completionStartTime: 1704067200, response_time: 1, model_map_information: {}, model: gpt-4o, api_base: https://api.openai.com, metadata: {}, saved_cache_cost: 0, request_tags: [], model_parameters: {}, hidden_params: {}, messages: [{role: user, content: hi}], response: {id: chatcmpl-1, object: chat.completion, choices: []}}
+            loggers:
+              - name: streamer
+            stamp: {id: chatcmpl-placeholder, created: 1704067200}
+env: {}
+compare: {ignore: []}

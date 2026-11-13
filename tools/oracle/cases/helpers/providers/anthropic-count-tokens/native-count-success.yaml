@@ -1,0 +1,32 @@
+kind: helper
+name: native-count-success
+call:
+  anthropic_count_tokens:
+    function: counter
+    cases:
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          request_model: requested-model
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{"input_tokens":42,"extra":{"a":1}}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          request_model: requested-model
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{"input_tokens":0}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          request_model: requested-model
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: [{role: user, content: hi}]
+          request_model: requested-model
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{"input_tokens":7,"nested":{"b":[1,2]}}'}
+        - model: claude-3-5-sonnet-20241022
+          messages: null
+          deployment: {litellm_params: {api_key: sk-deployment}}
+          reply: {status: 200, body: '{"input_tokens":9}'}
+env: {}
+compare: {ignore: []}

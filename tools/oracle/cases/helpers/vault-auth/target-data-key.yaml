@@ -1,0 +1,14 @@
+kind: helper
+name: vault-auth-target-data-key
+env: {}
+compare: {ignore: []}
+call:
+  b4416:
+    env: {HCP_VAULT_TOKEN: token-1}
+    routes: []
+    steps:
+      - {op: target, name: DB_CREDS, params: {data: password}}
+      - {op: target, name: DB_CREDS}
+      - {op: target, name: DB_CREDS, params: {data: ""}}
+      - {op: target, name: DB_CREDS, params: {data: "   "}}
+      - {op: target, name: DB_CREDS, params: {data: " /a/ "}}

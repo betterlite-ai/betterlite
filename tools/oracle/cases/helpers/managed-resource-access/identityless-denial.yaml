@@ -1,0 +1,10 @@
+kind: helper
+name: managed-resource-access-identityless-denial
+call:
+  managed_resource_access:
+    principal: {user_id: null, team_id: null, token: null, api_key: null, user_role: internal_user}
+    records:
+      - {id: null-owner, created_by: null, team_id: null}
+env: {}
+compare:
+  ignore: []

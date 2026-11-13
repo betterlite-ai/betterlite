@@ -1,0 +1,11 @@
+kind: helper
+name: runway-tasks-seed
+call:
+  runway_tasks:
+    operation: endpoint
+    params:
+      kind: image
+      environment: {}
+      api_base: null
+env: {}
+compare: {ignore: []}

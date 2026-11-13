@@ -1,0 +1,14 @@
+kind: helper
+name: common-request-processing-exception-detail-shapes
+call:
+  b7324:
+    function: detail_parts
+    details:
+      - "blocked by a guardrail"
+      - {error: "the model is unavailable", detail: "kept"}
+      - {error: {message: "nested message", type: bad}}
+      - {message: "top level", other: 1}
+      - {}
+      - 7
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,691 @@
+{
+  "components": {
+    "schemas": {
+      "EmbeddingRequest": {
+        "properties": {
+          "input": {},
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "input"
+        ],
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "detail": {
+            "additionalProperties": true,
+            "example": {
+              "error": {
+                "code": "error_code",
+                "message": "Error message",
+                "param": "error_param",
+                "type": "error_type"
+              }
+            },
+            "title": "Detail",
+            "type": "object"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "ProxyChatCompletionRequest": {
+        "properties": {
+          "messages": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "model": {
+            "type": "string"
+          },
+          "stream": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "model",
+          "messages"
+        ],
+        "type": "object"
+      },
+      "ResponsesAPIRequestParams": {
+        "properties": {
+          "input": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "input"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Proxy Server to call 100+ LLMs in the OpenAI format. [**Customize Swagger Docs**](https://docs.litellm.ai/docs/proxy/enterprise#swagger-docs---custom-routes--branding)\n\n👉 [```LiteLLM Admin Panel on /ui```](/ui). Create, Edit Keys with SSO. Having issues? Try [```Fallback Login```](/fallback/login)\n\n💸 [```LiteLLM Model Cost Map```](https://models.litellm.ai/).\n\n🔎 [```LiteLLM Model Hub```](/ui/model_hub_table). See available models on the proxy. [**Docs**](https://docs.litellm.ai/docs/proxy/ai_hub)",
+    "title": "LiteLLM API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/chat/completions": {
+      "post": {
+        "operationId": "chat_completion_chat_completions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "messages": {
+                    "example": [
+                      {
+                        "content": "Hello, how are you?",
+                        "role": "user"
+                      }
+                    ],
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "stream": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "model",
+                  "messages"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Chat Completion",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/embeddings": {
+      "post": {
+        "operationId": "embeddings_embeddings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "input": {},
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "model",
+                  "input"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Embeddings",
+        "tags": [
+          "Embeddings"
+        ]
+      }
+    },
+    "/engines/{model}/chat/completions": {
+      "post": {
+        "operationId": "chat_completion_engines__model__chat_completions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "messages": {
+                    "example": [
+                      {
+                        "content": "Hello, how are you?",
+                        "role": "user"
+                      }
+                    ],
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "stream": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "model",
+                  "messages"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Chat Completion",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/engines/{model}/embeddings": {
+      "post": {
+        "operationId": "embeddings_engines__model__embeddings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "input": {},
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "model",
+                  "input"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Embeddings",
+        "tags": [
+          "Embeddings"
+        ]
+      }
+    },
+    "/openai/deployments/{model}/chat/completions": {
+      "post": {
+        "operationId": "chat_completion_openai_deployments__model__chat_completions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "messages": {
+                    "example": [
+                      {
+                        "content": "Hello, how are you?",
+                        "role": "user"
+                      }
+                    ],
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "stream": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "model",
+                  "messages"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "ContentPolicyViolationError"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "AuthenticationError"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "PermissionDeniedError"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "NotFoundError"
+          },
+          "408": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Timeout"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "UnprocessableEntityError"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unified rate-limit error.\n\nEvery rate-limit condition surfaced by litellm — whether it originated from\nan upstream LLM provider, a vendor batch endpoint, or one of litellm's own\nproxy-side limiters (parallel-requests, dynamic-rate, batch-rate, budget,\nmax-iterations, etc.) — is raised as an instance of this class.\n\nThe :attr:`category` attribute lets callers distinguish the source. See\n:class:`RateLimitErrorCategory` for the available values."
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "JSONSchemaValidationError"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "APIConnectionError"
+          }
+        },
+        "summary": "Chat Completion",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/openai/deployments/{model}/embeddings": {
+      "post": {
+        "operationId": "embeddings_openai_deployments__model__embeddings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "input": {},
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "model",
+                  "input"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Embeddings",
+        "tags": [
+          "Embeddings"
+        ]
+      }
+    },
+    "/openai/v1/responses": {
+      "post": {
+        "operationId": "responses_api_openai_v1_responses_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "input": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "model",
+                  "input"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Responses Api",
+        "tags": [
+          "Responses"
+        ]
+      }
+    },
+    "/responses": {
+      "post": {
+        "operationId": "responses_api_responses_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "input": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "model",
+                  "input"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Responses Api",
+        "tags": [
+          "Responses"
+        ]
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "operationId": "chat_completion_v1_chat_completions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "messages": {
+                    "example": [
+                      {
+                        "content": "Hello, how are you?",
+                        "role": "user"
+                      }
+                    ],
+                    "items": {
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "stream": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "model",
+                  "messages"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Chat Completion",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/embeddings": {
+      "post": {
+        "operationId": "embeddings_v1_embeddings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "input": {},
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "model",
+                  "input"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Embeddings",
+        "tags": [
+          "Embeddings"
+        ]
+      }
+    },
+    "/v1/realtime": {
+      "get": {
+        "description": "WebSocket connection endpoint",
+        "operationId": "websocket_realtime",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "model",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "WebSocket Protocol Switched"
+          }
+        },
+        "summary": "WebSocket: realtime",
+        "tags": [
+          "WebSocket"
+        ]
+      }
+    },
+    "/v1/responses": {
+      "post": {
+        "operationId": "responses_api_v1_responses_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "input": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "model",
+                  "input"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Responses Api",
+        "tags": [
+          "Responses"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,115 @@
+id: B7791
+title: Management clients for virtual keys and credentials
+description: >-
+  Add `KeysManagementClient` and `CredentialsManagementClient` to `betterlite.proxy.client`, with the calls, parameters,
+  headers and error behavior of LiteLLM's keys.py and credentials.py. They use the transport, `HTTPError`,
+  `UnauthorizedError` and the bridge from B7790 and import nothing from `requests`. Both take `(base_url, api_key=None,
+  timeout=30)`, strip trailing slashes from `base_url`, and send `Content-Type: application/json` plus `Authorization: Bearer
+  {key}` when a key is set. Every method below, except `KeysManagementClient.update`, takes `return_request=False` and
+  returns the B7790 `Request` without sending when it is true. Otherwise it sends, and a 401 becomes
+  `UnauthorizedError(error)` where error is the `HTTPError`. Any other failure propagates as `HTTPError`.
+
+
+  Keys. `list(page, size, user_id, team_id, organization_id, key_hash, key_alias, return_full_object, include_team_keys)` is
+  `GET /key/list`. Each argument that is not None goes into the query, in that order; the two booleans go out as the strings
+  `true` and `false`. `generate(models, aliases, spend, duration, key_alias, team_id, user_id, budget_id, config)` is
+  `POST /key/generate` and the JSON body holds only the arguments that are not None, under the argument names. `delete(keys,
+  key_aliases)` is `POST /key/delete` with both fields always present, a missing one as JSON null. `update(key, models,
+  aliases, spend, duration, key_alias, team_id, user_id)` is `POST /key/update`; the body has `key` and the non-None others.
+  It has no `return_request`, and it catches every exception, including the 401 and a connection error, and raises
+  `Exception(f"Error updating key: {text}")` where `text` is the response body, or None when no response came back. Keep
+  that, since a caller can rely on the message. `info(key)` is `GET /key/info?key={key}` with the key pasted into the URL
+  as given (not URL-encoded). On an `HTTPError` it redacts: a 401 raises `UnauthorizedError`, and any other status raises a
+  new `HTTPError(redact_string(str(error)), response=error.response)`, both with the original error not chained (the
+  `from None` in the source), because the URL in the message carries the key.
+
+
+  Credentials. `list()` is `GET /credentials`. `create(credential_name, credential_info, credential_values)` is `POST
+  /credentials` with those three fields as the JSON body. `delete(credential_name)` is `DELETE /credentials/{name}`. `get(
+  credential_name)` is `GET /credentials/by_name/{name}`. Names are put into the path as given, no encoding.
+
+
+  Tests live in `crates/betterlite-python/tests/test_proxy_client_keys.py` and use B7790's `proxy_client_support` recording
+  server. Each case runs LiteLLM's client and betterlite's against the server and compares the recorded request (method,
+  path, query, Authorization, Content-Type, parsed body) and the result or the raised class and message. Test functions start
+  with `keys_request`, `keys_error` or `credentials_`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/proxy/client/keys.py
+  - crates/betterlite-python/python/betterlite/proxy/client/credentials.py
+  - crates/betterlite-python/tests/test_proxy_client_keys.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/keys.py#L12-L322
+  why: The whole keys client. list is L38-L111, generate L113-L186, delete L188-L230, update L232-L290, info L292-L322.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/credentials.py#L9-L189
+  why: The whole credentials client, four calls and one shared header method.
+dod:
+- text: >-
+    keys list and generate send the same path, query and body as LiteLLM's for each optional argument alone and for all
+    together, with booleans as true and false.
+  proof: [keys-requests]
+- text: >-
+    keys delete always sends both fields, update sends only the given ones, and update turns every failure, a 401 too, into
+    the "Error updating key: ..." exception.
+  proof: [keys-requests, keys-errors]
+- text: >-
+    keys info puts the key in the URL unencoded, redacts the error message, and does not chain the original error.
+  proof: [keys-errors]
+- text: Credentials list, create, delete and get send the same request as LiteLLM's and map 401 to UnauthorizedError.
+  proof: [credentials]
+- text: With return_request=True each method returns the request and sends nothing.
+  proof: [keys-requests, credentials]
+- text: Python files pass ruff and basedpyright in strict mode.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: keys-requests
+    why: A key call builds a different request from LiteLLM's.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client_keys.py -k keys_request
+  - id: keys-errors
+    why: A key error is mapped, redacted or worded differently.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client_keys.py -k keys_error
+  - id: credentials
+    why: A credential call differs from LiteLLM's.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_proxy_client_keys.py -k credentials_
+  - id: python-lint
+    why: Strict typing has to hold for every new module.
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Request-only mode returns betterlite's `Request` dataclass, and failures are `betterlite.proxy.client.HTTPError`, not the requests classes.
+  why: >-
+    The wheel has no `requests`. B7790 states the same deviation for the base.
+- what: This task has no helper oracle cases.
+  why: The pytest file compares the two clients against one recording server.
+out_of_scope:
+- The transport, exceptions, bridge, HTTPClient and the health, model-group and user clients are B7790.
+- Models, chat and teams clients are B7792. `Client` and the exports are B169.
+- >-
+  LiteLLM's type hints that say `update` returns `requests.Request` are wrong, since it never does. betterlite types it as
+  `dict[str, object]`.
+pitfalls:
+- >-
+  `update` wraps its own call in `except Exception`, so even an error raised while building the request would become
+  "Error updating key". Wrap only the send and the JSON parse, as the source does, and keep `response_text` None until a
+  response arrived.
+- >-
+  `info` is the only keys call that redacts. A test with a key like `sk-abcdefghijklmnopqrstuvwxyz123456` in the URL must show
+  `REDACTED` in the raised message and no `__cause__`.
+- >-
+  `list` sends nothing when every argument is None: no `?` in the URL. Do not send an empty query string.
+- >-
+  `delete` sends `{"keys": null, "key_aliases": null}` for no arguments. It does not drop the None fields the way `generate`
+  does.
+- >-
+  `credentials.delete` is an HTTP DELETE with no body, and `credentials.get` uses the `by_name` path while `delete` does not.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

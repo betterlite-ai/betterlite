@@ -1,0 +1,9 @@
+kind: helper
+name: responses-in-progress
+call:
+  b5240:
+    function: "output_choices"
+    response: {"output": [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Hi"}]}], "status": "in_progress"}
+env: {}
+compare:
+  ignore: []

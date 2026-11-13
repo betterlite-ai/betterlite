@@ -1,0 +1,81 @@
+kind: helper
+name: stream-usage-assembly-token-fallback-and-failures
+call:
+  stream_usage_assembly:
+    function: batch
+    cases:
+    - function: calculate_usage
+      chunks:
+      - choices: []
+      messages:
+      - {role: user, content: hello}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - choices: []
+      messages:
+      - {role: user, content: hello}
+      model: gpt-4o
+      completion_output: hi
+      count_prompt_tokens: 11
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - choices: []
+      messages:
+      - {role: user, content: hello}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4, fail_messages: true}
+    - function: calculate_usage
+      chunks:
+      - choices: []
+      messages:
+      - {role: user, content: hello}
+      model: gpt-4o
+      completion_output: hi
+      count_prompt_tokens: raise
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - choices: []
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 0}
+    - function: calculate_usage
+      chunks:
+      - choices: []
+      messages:
+      - {role: user, content: hello}
+      model: gpt-4o
+      completion_output: hi
+      reasoning_tokens: 3
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - choices: []
+      messages:
+      - {role: user, content: hello}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4, fail_text: true}
+    - function: calculate_usage
+      chunks:
+      - usage: {prompt_tokens: 0, completion_tokens: 0}
+      messages:
+      - {role: user, content: hello}
+      model: gpt-4o
+      completion_output: hi
+      counter: {text: 7, messages: 4}
+    - function: calculate_usage
+      chunks:
+      - usage: {prompt_tokens: 2}
+      messages:
+      - {role: user, content: hello}
+      model: gpt-4o
+      completion_output: hello
+      counter: {text: 7, messages: 4}
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

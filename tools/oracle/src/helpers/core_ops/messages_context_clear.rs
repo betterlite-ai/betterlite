@@ -1,9 +1,34 @@
+mod input;
+mod ops;
+mod real_counter;
+mod scripted;
+
+mod tests;
+
+use crate::helpers::{Helper, HelperError, HelperResult};
+
+use input::Input;
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+impl Helper for Op {
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("messages_context_clear")
+    fn run(input: &Self::Input) -> HelperResult {
+        ops::run(input)
     }
+}
+
+fn failure<Error>(error: Error) -> Box<HelperError>
+where
+    Error: std::fmt::Display,
+{
+    Box::new(HelperError {
+        class: "ValueError".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
 }

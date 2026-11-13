@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-services-agentcore-stream-json-seed
+call:
+  bedrock_services_agentcore_stream:
+    model: agentcore-model
+    ids: [00000000-0000-4000-8000-000000000003]
+    scenarios:
+      - reads: ['{"result":{"content":[{"text":"hello"}]}}']
+        status: 200
+        headers: [[content-type, application/json]]
+        api_base: https://bedrock-agentcore.example/runtime
+        data: {}
+        messages: []
+        signed_json_body: [123, 125]
+env: {}
+compare: {ignore: []}

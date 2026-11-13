@@ -1,0 +1,14 @@
+id: B8460
+milestone: M9 agents and mcp
+title: "MCP upstream credential header rules"
+status: todo
+depends_on: [B6590, B4667, B4741, B6594, B7970, B8194, B732]
+file: tasks/B8460-mcp-upstream-auth.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/mcp_server_manager.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

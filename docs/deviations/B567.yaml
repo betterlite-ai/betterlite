@@ -1,0 +1,8 @@
+task: B567
+deviations:
+  - what: A non-2xx models reply whose body is not valid UTF-8 puts "<n> bytes that are not UTF-8" in the error message where LiteLLM puts the decoded response text.
+    why: The error text is built from raw bytes at the decode boundary, and replacement-character decoding would copy upstream garbage into the message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L1176-L1200
+  - what: A models reply body larger than 4 MiB is rejected with a ResponseTooLarge error for every status, where LiteLLM reads the whole body of whatever size.
+    why: Parser input has a fixed bound, and a real Anthropic model list is far below it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L1176-L1200

@@ -1,0 +1,5 @@
+kind: helper
+name: bedrock-model-seed-endpoint-arn
+call: {bedrock_model: {endpoint: 'arn:aws:bedrock:us-west-2:555666777888:application-inference-profile/ab12cd34'}}
+env: {}
+compare: {ignore: []}

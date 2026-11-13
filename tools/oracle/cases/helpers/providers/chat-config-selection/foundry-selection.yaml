@@ -1,0 +1,15 @@
+kind: helper
+name: chat-config-selection-foundry
+call:
+  chat_config_selection:
+    function: foundry_selection
+    calls:
+      - {provider: azure_ai, model: model_router/claude}
+      - {provider: azure_ai, model: MODEL-ROUTER/claude}
+      - {provider: azure_ai, model: claude-sonnet}
+      - {provider: azure_ai, model: CLAUDE-sonnet}
+      - {provider: azure_ai, model: agents/claude/agent-id}
+      - {provider: azure_ai, model: agents/gpt-4o}
+      - {provider: azure_ai, model: gpt-4o}
+env: {}
+compare: {ignore: []}

@@ -161,7 +161,7 @@ out_of_scope:
   - "B192 safe_dumps function is called but not implemented here."
   - "The reload job that calls record_reload_run and pod_reload_is_due periodically is owned by another task."
   - "The admin endpoints that call write_reload_interval and record_manual_reload are owned by another task."
-  - "evict_config_param (litellm/proxy/utils.py:4300-L4301) cache invalidation is owned by B124 or a task split from it; see architect question 3 in B120."
+  - "evict_config_param (litellm/proxy/utils.py:4300-L4301) cache invalidation is owned by B8397."
   - "The model cost map reload schedule itself is read as part of general config loading; this module manages persistence only."
 
 review_level: standard

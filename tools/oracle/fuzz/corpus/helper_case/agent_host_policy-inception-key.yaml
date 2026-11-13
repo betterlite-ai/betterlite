@@ -1,0 +1,24 @@
+kind: helper
+name: inception-custom-base-key-isolation
+call:
+  agent_host_policy:
+    scenarios:
+      - environment:
+          INCEPTION_API_KEY: env-key
+        inception_key: global-key
+        calls:
+          - {op: info, host: inception}
+          - {op: info, host: inception, api_base: https://custom.example/v1}
+          - {op: info, host: inception, api_base: https://custom.example/v1, api_key: explicit-key}
+          - {op: info, host: inception, api_base: ""}
+          - {op: info, host: inception, api_base: "", api_key: ""}
+      - environment: {}
+        calls:
+          - {op: info, host: inception}
+      - environment:
+          INCEPTION_API_KEY: env-key
+        inception_key: ""
+        calls:
+          - {op: info, host: inception}
+env: {}
+compare: {ignore: []}

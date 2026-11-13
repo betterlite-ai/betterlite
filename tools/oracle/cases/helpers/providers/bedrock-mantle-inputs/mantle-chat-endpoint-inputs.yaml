@@ -1,0 +1,36 @@
+kind: helper
+name: mantle-chat-endpoint-inputs
+call:
+  bedrock_mantle_inputs:
+    mantle_chat_endpoint_inputs:
+      model_cost:
+        bedrock_mantle/openai.gpt-5-pro:
+          use_openai_responses_path: true
+      cases:
+        - {}
+        - model: openai.gpt-5
+        - model: eu-west-1/openai.gpt-5
+        - model: eu-west-1/openai.gpt-5
+          aws_region_name: ca-central-1
+        - aws_region_name: ''
+        - environment: {BEDROCK_MANTLE_REGION: ap-south-1}
+        - environment: {BEDROCK_MANTLE_REGION: '', AWS_REGION_NAME: eu-west-1}
+        - environment: {AWS_REGION_NAME: '', AWS_REGION: sa-east-1}
+        - api_base: https://custom.example/v1/
+        - api_base: ''
+        - api_base: ''
+          environment: {BEDROCK_MANTLE_API_BASE: https://bedrock-mantle.sa-east-1.api.aws/prefix}
+        - api_base: https://custom.example
+          aws_region_name: BAD_REGION
+        - environment: {BEDROCK_MANTLE_REGION: BAD_REGION}
+        - api_base: https://bedrock-mantle.US-EAST-1.api.aws
+        - model: eu-west-1/openai.gpt-5
+          environment: {BEDROCK_MANTLE_API_BASE: https://bedrock-mantle.sa-east-1.api.aws}
+        - api_key: explicit-key
+        - api_key: ''
+          environment: {BEDROCK_MANTLE_API_KEY: mantle-key}
+        - environment: {AWS_BEARER_TOKEN_BEDROCK: standard-key}
+        - model: openai.gpt-5-pro
+        - model: eu-west-1/openai.gpt-5-pro
+env: {}
+compare: {ignore: []}

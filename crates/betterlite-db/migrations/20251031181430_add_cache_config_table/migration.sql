@@ -17,3 +17,4 @@ CREATE TABLE IF NOT EXISTS "LiteLLM_CacheConfig" (
 
     CONSTRAINT "LiteLLM_CacheConfig_pkey" PRIMARY KEY ("id")
 );
+

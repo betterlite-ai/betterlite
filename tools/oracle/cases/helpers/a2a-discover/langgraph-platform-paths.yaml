@@ -1,0 +1,11 @@
+kind: helper
+name: a2a-discover-langgraph-platform-paths
+call:
+  b8202:
+    operation: urls
+    base_url: https://agent.example
+    mode: langgraph_platform
+    params:
+      assistant_id: asst 1
+env: {}
+compare: {ignore: []}

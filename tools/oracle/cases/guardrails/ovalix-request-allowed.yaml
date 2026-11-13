@@ -1,0 +1,28 @@
+kind: helper
+name: ovalix-request-allowed
+call:
+  b3784:
+    ovalix_call:
+      env:
+        OVALIX_TRACKER_API_BASE: https://tracker.example
+        OVALIX_TRACKER_API_KEY: oracle-tracker-key
+        OVALIX_APPLICATION_ID: app-123
+        OVALIX_PRE_CHECKPOINT_ID: pre-1
+        OVALIX_POST_CHECKPOINT_ID: post-1
+      mode: pre_call
+      input_type: request
+      request_data:
+        metadata:
+          user_api_key_user_email: user@example.com
+          tags: ["x"]
+          user_api_key_spend: 0.5
+          headers:
+            a: b
+      texts: ["alpha", "beta"]
+      today: "2026-03-04"
+      timeout_ms: 500
+      answers:
+        - {status: 200, headers: {}, body: {action_type: "none"}}
+        - {status: 200, headers: {}, body: {action_type: "none"}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: endpoint-already-normalized
+call:
+  b3767:
+    construct:
+      settings: {api_key: key, api_base: "https://deepkeep.test/v3/openai/beta/litellm_basic_guardrail_api", deepkeep_firewall_id: fixed}
+env: {}
+compare: {ignore: []}

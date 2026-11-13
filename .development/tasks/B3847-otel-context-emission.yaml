@@ -58,34 +58,34 @@ checks:
   commands:
     - id: emitter-dedup
       why: SpanEmitter deduplication is missing, broken or exceeds the 10k cache limit
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^span_emission::/)' -- --nocapture
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::emitter|otel::plumbing::context)::(.*::)?span_emission::/)' -- --nocapture
     - id: emitter-attributes
       why: SpanEmitter attribute mapping, budgeting or message fitting is missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^span_emission::/)' -- --nocapture
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::emitter|otel::plumbing::context)::(.*::)?span_emission::/)' -- --nocapture
     - id: emitter-errors
       why: SpanEmitter error stamping or event recording is missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^span_emission::/)' -- --nocapture
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::emitter|otel::plumbing::context)::(.*::)?span_emission::/)' -- --nocapture
     - id: context-anchor
       why: Request root span anchoring or child parenting fails
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^context_slots::/)' -- --nocapture
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::emitter|otel::plumbing::context)::(.*::)?context_slots::/)' -- --nocapture
     - id: mcp-linking
       why: MCP message span linking is missing or incorrect
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^mcp_context::/)' -- --nocapture
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::emitter|otel::plumbing::context)::(.*::)?mcp_context::/)' -- --nocapture
     - id: post-response-links
       why: Post-response span linking logic is missing or incorrect
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^post_response::/)' -- --nocapture
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::emitter|otel::plumbing::context)::(.*::)?post_response::/)' -- --nocapture
     - id: context-propagation
       why: W3C context extraction or injection logic is broken
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^w3c_propagation::/)' -- --nocapture
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::emitter|otel::plumbing::context)::(.*::)?w3c_propagation::/)' -- --nocapture
     - id: destination-mode
       why: Tenant destination mode or suppressed backends logic is missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^destination_routing::/)' -- --nocapture
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::emitter|otel::plumbing::context)::(.*::)?destination_routing::/)' -- --nocapture
     - id: baggage-context
       why: Request baggage setting or persistence is missing
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^baggage_context::/)' -- --nocapture
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::emitter|otel::plumbing::context)::(.*::)?baggage_context::/)' -- --nocapture
     - id: mcp-transport-re-anchor
       why: Test validating MCP transport span re-anchors request root is missing or fails
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^mcp_context::.*re_anchor/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^(otel::emitter|otel::plumbing::context)::(.*::)?mcp_context::.*re_anchor/)'
 oracle_cases: []
 deviations:
   - what: On attribute count overflow, betterlite uses `fit_indexed_messages` to reduce indexed message payloads rather than dropping attributes wholesale.

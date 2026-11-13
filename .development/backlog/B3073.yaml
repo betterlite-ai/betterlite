@@ -1,7 +1,7 @@
 id: B3073
 milestone: M4 keys, spend and management
 title: Encode PointFive batches and upload presigned objects
-status: todo
+status: done
 depends_on: [B002, B009, B173, B189, B192]
 file: tasks/B3073-pointfive-delivery.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/integrations/pointfive.py"
 parent: B073
 split_from: B073
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 992

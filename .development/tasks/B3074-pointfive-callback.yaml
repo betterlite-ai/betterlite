@@ -10,19 +10,28 @@ description: >-
   Inherit from CustomBatchLogger (B256) and implement async callback hooks for
   success and failure events. Resolve API key and URL from litellm.pointfive_params
   (with Mapping fallback), then POINTFIVE_API_KEY/POINTFIVE_API_URL environment,
-  then DEFAULT_API_URL constant, using B129's get_secret_str for secret resolution.
+  then DEFAULT_API_URL constant, using B8500's get_secret_str for secret resolution.
   Apply redaction via B189's redact_standard_logging_payload_from_model_call_details,
   B188's should_redact_message_logging check, and B190's redacted_standard_logging_payload
   structure. Upload via B3073's PointFiveUploadClient and PointFiveUploadError, serialize
   with B3073's chunk_lines/serialize_records/encode_lines, and send health checks through
-  IntegrationHealthCheckStatus. Configuration: PointFiveInitParams with batch_size (default 10),
-  flush_interval (default 300), max_batch_bytes (default 5000), turn_off_message_logging (default false)
+  IntegrationHealthCheckStatus. Configuration: PointFiveInitParams with batch_size (default 1000),
+  flush_interval (default 300), max_batch_bytes (default 8388608), turn_off_message_logging (default false)
   and max_upload_retries (inherited from B3073).
+
+  Also own the config section for litellm_settings.pointfive_params in
+  crates/betterlite-config/src/sections/pointfive_params.rs: a typed PointFiveInitParams read from either a
+  mapping or the typed value, with those defaults, and a section test that loads a litellm_settings block with and
+  without the key. B073's configured flush case needs it before it can run.
 
 scope:
   paths:
     - crates/betterlite-logging/src/finops/pointfive.rs
     - crates/betterlite-logging/src/finops/pointfive/**
+    - crates/betterlite-logging/src/registry/catalog/pointfive.rs
+    - crates/betterlite-logging/src/registry/catalog/pointfive/**
+    - crates/betterlite-config/src/sections/pointfive_params.rs
+    - crates/betterlite-config/src/sections/pointfive_params/**
   lint_tables: false
 
 references:
@@ -62,6 +71,8 @@ references:
     why: Package __init__.py exports PointFiveLogger.
 
 dod:
+  - text: "The PointFive logger buffers redacted events from the async success and failure events of CallbackLogger, and registry/catalog/pointfive.rs builds the one process logger for the pointfive name (tests named callback_logger_* under finops::pointfive and registry/catalog/pointfive/tests.rs)."
+    proof: [callback-logger]
   - text: PointFiveLogger inherits from CustomBatchLogger and preserves constructor parameter start_periodic_flush flag.
     proof: [pointfive-logger-init]
   - text: API key is resolved from params.api_key, then POINTFIVE_API_KEY, then raises ValueError if neither is set.
@@ -90,10 +101,18 @@ dod:
     proof: [pointfive-logger-send]
   - text: async_health_check returns unhealthy with ValueError message if API key is missing, or calls upload_client.ping and reports its result.
     proof: [pointfive-logger-health]
+  - text: litellm_settings.pointfive_params loads as typed PointFiveInitParams with batch_size 1000, flush_interval 300 and max_batch_bytes 8388608 when keys are absent, and stays unset when the key is absent.
+    proof: [pointfive-params-section]
 
 checks:
   optional: []
   commands:
+    - id: pointfive-params-section
+      why: The pointfive_params config section is missing, has wrong defaults or does not load from litellm_settings
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::pointfive_params::/)'
+    - id: callback-logger
+      why: pointfive still stops startup or its buffer is never fed by a logger event
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::pointfive::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::(.*::)?callback_logger_/)'
     - id: pointfive-logger-init
       why: PointFiveLogger.__init__ initialization tests fail or are missing
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::pointfive::logger_tests_behavior::init/)'
@@ -152,7 +171,7 @@ out_of_scope:
   - "Serialization and encoding: chunk_lines, serialize_records, encode_lines (B3073)."
   - "IntegrationHealthCheckStatus type and callback/health check registration contracts (B189)."
   - "PointFiveInitParams, PointFiveUploadTarget, PointFiveUploadFailure types (B3073)."
-  - "get_secret_str secret resolution function (B129)."
+  - "get_secret_str secret resolution function (B8500)."
   - "Configuration storage and retrieval (B3075 owns finops config persistence)."
   - "Callback registry and dispatcher (B189 owns callback registration and routing)."
   - "Server startup registration and lifecycle (owned by server initialization layer)."

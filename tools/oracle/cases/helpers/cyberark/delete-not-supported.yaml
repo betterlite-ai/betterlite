@@ -1,0 +1,17 @@
+kind: helper
+name: cyberark-delete-not-supported
+env: {}
+compare: {ignore: []}
+call:
+  b4418:
+    env: {CYBERARK_API_KEY: key-1}
+    routes:
+      - route: "POST http://127.0.0.1:8080/authn/default/admin/authenticate"
+        replies: [{status: 200, body: '{"protected":"abc"}'}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/db"
+        replies: [{status: 200, body: s3cret}]
+    steps:
+      - {op: read, name: db}
+      - {op: delete, name: db}
+      - {op: read, name: db}
+      - {op: delete, name: never-cached}

@@ -1,0 +1,9 @@
+kind: helper
+name: anthropic-message-replay-provider-fields
+call:
+  anthropic_message_replay:
+    function: provider_fields
+    messages:
+    - {role: assistant, provider_specific_fields: {message: kept}, content: [ {type: text, text: x, provider_specific_fields: {a: 1}} ]}
+env: {}
+compare: {ignore: []}

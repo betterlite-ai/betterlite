@@ -1,0 +1,81 @@
+id: B7891
+title: Python decisions, SystemOne and sandbox functions
+description: >-
+  This task adds `decisions`, `adecisions` (litellm/decisions/main.py and call.py), `systemone`, `asystemone` (litellm/systemone/main.py), and the sandbox functions `acreate_sandbox`, `arun_code`, `adelete_sandbox`, `acode_interpreter_tool`, with `register_sandbox_tools`, `resolve_sandbox_tool` and `clear_sandbox_tools` of litellm/sandbox/sandbox_tools.py. Rust runs the calls (B3513 provider list, B3515 decisions and SystemOne entry points, B3519 sandbox dispatch and tool registry).
+
+
+  Native side, the family `decision_calls`: `src/decision_calls.rs` with `register` that adds `NativeDecisionSession` and `NativeDecisionError`, and `src/decision_calls/convert.rs` with tests `request_*` and `error_*`. The sandbox tool registry lives in the native session object and not in a module global. The architect writes the `lib.rs` line.
+
+
+  Python side, `python/betterlite/decisions/main.py`, `systemone/main.py`, `sandbox/main.py`, `sandbox/sandbox_tools.py` and the three `__init__.py` files. `decisions(model, input, questions, safety_identifier, api_key, api_base, timeout, custom_llm_provider, extra_headers, **kwargs)` and `systemone(model, state, questions, ...)` keep their signatures and return the typed responses of B167. `acreate_sandbox(provider, template, timeout, allow_internet_access, api_key, api_base, **kwargs)`, `arun_code(provider, container, code, api_key, **kwargs)`, `adelete_sandbox` and `acode_interpreter_tool(provider, code, template, timeout, api_key, api_base, **kwargs)` return `ContainerHandle` or `CodeExecutionResult`. `supported_decisions_providers()` (call.py L88) is exposed too. The private prepare helpers are not. Python objects that cannot cross to Rust (`client`, `shared_session`) raise `UnsupportedCallArgument` from B158.
+scope:
+  paths:
+  - crates/betterlite-python/src/decision_calls.rs
+  - crates/betterlite-python/src/decision_calls/**
+  - crates/betterlite-python/python/betterlite/_native_decision_calls.pyi
+  - crates/betterlite-python/python/betterlite/decisions/main.py
+  - crates/betterlite-python/python/betterlite/decisions/__init__.py
+  - crates/betterlite-python/python/betterlite/systemone/main.py
+  - crates/betterlite-python/python/betterlite/systemone/__init__.py
+  - crates/betterlite-python/python/betterlite/sandbox/main.py
+  - crates/betterlite-python/python/betterlite/sandbox/sandbox_tools.py
+  - crates/betterlite-python/python/betterlite/sandbox/__init__.py
+  - crates/betterlite-python/tests/test_decisions.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/main.py#L1-L131
+  why: adecisions and decisions
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L88-L347
+  why: supported_decisions_providers and the send path
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/systemone/main.py#L1-L107
+  why: asystemone and systemone
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/main.py#L1-L146
+  why: the four async sandbox functions
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/sandbox/sandbox_tools.py#L1-L59
+  why: the tool registry
+dod:
+- text: Every function keeps LiteLLM's name and parameters, and a keyword LiteLLM refuses is refused here.
+  proof: [decisions-signature]
+- text: "Decisions, SystemOne and the sandbox functions return the same results as LiteLLM against one local server, and the registry functions give the same lookups."
+  proof: [decisions-calls]
+- text: A provider error keeps its class and cause, and an unsupported Python object raises `UnsupportedCallArgument`.
+  proof: [decisions-errors]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [decisions-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: decisions-signature
+    why: A caller's keyword is accepted or refused wrongly.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_decisions.py -k signature
+  - id: decisions-calls
+    why: A result differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_decisions.py -k calls
+  - id: decisions-errors
+    why: An error class or message changes.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_decisions.py -k 'error or unsupported'
+  - id: decisions-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^decision_calls::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for these calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The sandbox tool registry is held by the native session and not in a module global.
+  why: The rules forbid module-level state. A `register_sandbox_tools` call and a later `resolve_sandbox_tool` through the same default session still agree.
+- what: This task has no helper oracle cases.
+  why: The functions call a native session, so pytest compares both packages against one local server.
+out_of_scope:
+- "Provider execution belongs to B3513, B3515 and B3519."
+- "The harness sandbox exports that LiteLLM loads lazily in sandbox/__init__.py are not part of this entry."
+pitfalls:
+- "Passing both an OpenAI-format and a SystemOne-format field to one call raises the error of `reject_other_format` (call.py L340), and Rust raises it."
+- "The sandbox functions are async only. There is no sync twin."
+- "`acode_interpreter_tool` creates, runs and deletes in one call, so a failure in the run still deletes the sandbox."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

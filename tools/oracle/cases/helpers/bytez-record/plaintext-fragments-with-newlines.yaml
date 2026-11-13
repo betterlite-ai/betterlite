@@ -1,0 +1,14 @@
+kind: helper
+name: bytez-record-plaintext-fragments-with-newlines
+call:
+  bytez_record:
+    function: chunks
+    model: org/model
+    provider: bytez
+    fragments:
+      - "hello"
+      - "line two\ndata: not an event"
+      - ""
+      - "tail"
+compare: {ignore: []}
+env: {}

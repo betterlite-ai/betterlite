@@ -153,7 +153,7 @@ checks:
   commands:
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_response.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_response.py tools/oracle/helpers/bedrock_invoke_response)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -166,7 +166,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_invoke_response)"
       && grep -q 'decode_invoke_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_invoke_response.rs &&
-      cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_invoke_response_corpus$/)'
+      cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_invoke_response_corpus(::|$)/)'
   - id: case-base-family-outputs
     why: Use B2205 provider selection. Cohere text key presence wins over generations and leaves finish_reason unchanged;
       otherwise use generations[0].text and B206 map_finish_reason on its required finish_reason. AI21 uses completions[0].data.text;

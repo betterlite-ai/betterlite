@@ -43,9 +43,11 @@ pub struct PriceFields {
     pub provider_specific: nested::ProviderSpecificPricing,
     #[serde(
         rename = "guardrail_cost_per_unit",
-        deserialize_with = "serde_with::As::<serde_with::MapPreventDuplicates<serde_with::Same, serde_with::FromInto<deserialize::ExactDecimal>>>::deserialize"
+        default,
+        deserialize_with = "serde_with::As::<Option<serde_with::MapPreventDuplicates<serde_with::Same, serde_with::FromInto<deserialize::ExactDecimal>>>>::deserialize",
+        skip_serializing_if = "Option::is_none"
     )]
-    pub guardrail_units: BTreeMap<String, Decimal>,
+    pub guardrail_units: Option<BTreeMap<String, Decimal>>,
     pub metadata: nested::MetadataPricing,
     #[serde(rename = "off_peak_pricing")]
     pub off_peak: Option<nested::OffPeakPricing>,

@@ -1,0 +1,8 @@
+kind: helper
+name: provider-defaults-a-missing-key
+call:
+  provider_defaults_a:
+    provider: litellm_proxy
+    model: gpt-4o
+env: {}
+compare: {ignore: []}

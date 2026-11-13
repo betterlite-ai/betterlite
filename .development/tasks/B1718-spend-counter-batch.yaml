@@ -1,7 +1,7 @@
 id: B1718
 title: Share authoritative counter reads within one spend phase
 description: >-
-  Implement SpendCounterBatch in betterlite-auth::spend_batch using B126's request Redis
+  Implement SpendCounterBatch in betterlite-auth::spend_batch using B4331's request Redis
   batch and B733's counter-key constructors. An explicit request-owned context replaces
   the Python ContextVar: an inner scope joins an open outer batch, a closed outer batch
   causes a fresh scope, and exit restores the previous context even after cancellation.
@@ -66,7 +66,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/counter-keys/tags-groups-and-project-namespace.yaml
 deviations: []
 out_of_scope:
-  - B126 owns Redis pipelines and response decoding; this task owns every function in spend_counter_batch.py but no counter increment or reservation policy.
+  - B4330 and B4331 own Redis pipelines and request batches, and B4324 response decoding; this task owns every function in spend_counter_batch.py but no counter increment or reservation policy.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as counter_keys in the auth group. Replace the stub Op in tools/oracle/src/helpers/auth/counter_keys.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/counter_keys.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A null MGET result suppresses a redundant per-key read, whereas an omitted key requires that fallback.

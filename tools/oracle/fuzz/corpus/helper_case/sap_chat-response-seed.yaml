@@ -1,0 +1,11 @@
+kind: helper
+name: sap_chat-response-seed
+call:
+  b5845:
+    operation: responses
+    calls:
+      - model: anthropic--claude-3.5-sonnet
+        response_format: {type: json_object}
+        raw_text: '{"final_result":{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"```json\n{}\n```"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}}'
+env: {}
+compare: {ignore: []}

@@ -10,9 +10,8 @@ description: 'Add the admission middleware and in-flight observations to the axu
   max_queued_requests_per_worker, admission_queue_timeout_seconds. max_in_flight_requests_per_worker is
   absent by default (disabled); max_queued_requests_per_worker defaults to the configured in-flight maximum;
   admission_queue_timeout_seconds defaults to 1.0. Invalid values warn and disable. Implement the owned
-  native service in crates/betterlite-server/src/admission_control.rs. Add ProbeOperation::AdmissionControl in tools/oracle/src/router_probes/mod.rs
-  and the corresponding B022 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
-  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  native service in crates/betterlite-server/src/admission_control.rs. B301 registers ProbeOperation::AdmissionControl and its Python entry as stubs, so fill only tools/oracle/src/router_probes/admission_control.rs and tools/oracle/litellm/probes/admission_control.py and leave mod.rs and registry.py as they are; the adapters only call
+  production services. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
   lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
   services instead of copying their algorithms. Function coverage in litellm/proxy/middleware/admission_control_middleware.py:
@@ -37,18 +36,15 @@ scope:
   paths:
   - crates/betterlite-server/src/admission_control.rs
   - crates/betterlite-server/src/admission_control/**
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/admission_control.rs
   - crates/betterlite-server/src/routing/admission_control/**
+  - crates/betterlite-server/src/server.rs
   - tools/oracle/src/router_probes/admission_control.rs
   - tools/oracle/src/router_probes/admission_control/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/admission_control.py
   - tools/oracle/cases/routing/admission-control/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/admission-control-*
@@ -139,9 +135,10 @@ oracle_cases:
 - tools/oracle/cases/routing/admission-control/invalid-settings-warning-disables.yaml
 - tools/oracle/cases/routing/admission-control/omitted-queue-equals-inflight.yaml
 - tools/oracle/cases/routing/admission-control/default-queue-timeout.yaml
+- tools/oracle/cases/routing/admission-control/scalar-root-exempt.yaml
 deviations: []
 out_of_scope:
-- Implementing a Prometheus exporter (B111) or new health endpoints (B130).
+- Implementing a Prometheus exporter (B111) or new health endpoints (B4444 to B4448, mounted by B8540).
 - Reordering middleware to bypass authentication.
 pitfalls:
 - Admission overload returns 503 with retry-after, whereas a deployment capacity rejection is 429.
@@ -151,6 +148,7 @@ pitfalls:
   a hard request error.
 - The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
   at the repository 300-line limit.
+- "Admission control sits between B4200's RootPaths::wrap (the outermost layer) and B122's request_stack size limit, as in LiteLLM, so wrap it inside the root path layer and outside the size limit."
 review_level: standard
 budget:
   max_changed_lines: 1500

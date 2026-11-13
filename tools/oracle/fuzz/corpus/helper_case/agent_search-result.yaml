@@ -1,0 +1,6 @@
+kind: helper
+name: agent_search-result-seed
+call:
+  b4783: {function: result, agent: {agent_id: a1, agent_name: alpha, agent_card_params: {}}, score: 0.5}
+env: {}
+compare: {ignore: []}

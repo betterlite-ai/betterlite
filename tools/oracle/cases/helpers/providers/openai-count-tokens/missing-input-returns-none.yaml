@@ -1,0 +1,5 @@
+kind: helper
+name: missing-input-returns-none
+call: {openai_count_tokens: {"count": {"model": "gpt-5", "messages": [{"role": "system", "content": "only"}], "system": "fallback", "api_key": "sk-deployment"}}}
+env: {}
+compare: {ignore: []}

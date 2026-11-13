@@ -32,7 +32,6 @@ mod cache;
 mod cli;
 mod config;
 mod context;
-mod core_ops;
 mod cost;
 mod db;
 mod error;
@@ -44,6 +43,7 @@ mod lens;
 mod logging;
 mod mcp;
 mod models;
+mod ocr;
 mod openai;
 mod openapi;
 mod oracle;
@@ -53,8 +53,8 @@ mod prometheus;
 mod prompts;
 mod provider;
 mod proxy;
+mod pyhost;
 mod rate_limit;
-mod redact;
 mod redis;
 mod reporting;
 mod roi;
@@ -62,7 +62,6 @@ mod router;
 mod sdk;
 mod secret_managers;
 mod secrets;
-mod server;
 mod streaming;
 mod tokenizer;
 mod vertex;
@@ -72,60 +71,20 @@ use std::collections::BTreeMap;
 use std::io::{self, Write as _};
 use std::path::Path;
 
+use betterlite_oracle_helper_api::group::Group;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
 use crate::OracleError;
 use crate::case::HelperCase;
 use crate::compare;
 use crate::process::sync_litellm;
 use answers::Answers;
-use python::run_python;
+use python::python_stdout;
 
 pub(crate) use crate::compare::helper::{HelperError, HelperOutput};
+pub(crate) use betterlite_oracle_helper_api::error::OrHelperError;
 
-type HelperResult = Result<serde_json::Value, Box<HelperError>>;
-
-trait Helper {
-    type Input: serde::de::DeserializeOwned;
-
-    fn run(input: &Self::Input) -> HelperResult;
-
-    fn decode_and_run(input: &serde_json::Value) -> HelperResult {
-        let decoded = serde_json::from_value(input.clone()).map_err(|error| {
-            Box::new(HelperError {
-                class: "InvalidInput".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })?;
-        Self::run(&decoded)
-    }
-
-    fn check(input: &serde_json::Value) -> Result<(), String> {
-        serde_json::from_value::<Self::Input>(input.clone())
-            .map(drop)
-            .map_err(|error| error.to_string())
-    }
-
-    fn not_built(operation: &str) -> HelperResult {
-        Err(Box::new(HelperError {
-            class: "NotBuilt".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: format!("the {operation} helper is not built yet"),
-        }))
-    }
-}
-
-struct Group {
-    invoke: fn(&str, &serde_json::Value) -> Option<HelperResult>,
-    check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
-}
-
-const GROUPS: [Group; 44] = [
+const GROUPS: [Group; 46] = [
     a2a::GROUP,
     anthropic::GROUP,
     auth::GROUP,
@@ -135,7 +94,7 @@ const GROUPS: [Group; 44] = [
     cli::GROUP,
     config::GROUP,
     context::GROUP,
-    core_ops::GROUP,
+    betterlite_oracle_core_ops::GROUP,
     cost::GROUP,
     db::GROUP,
     error::GROUP,
@@ -147,6 +106,7 @@ const GROUPS: [Group; 44] = [
     logging::GROUP,
     mcp::GROUP,
     models::GROUP,
+    ocr::GROUP,
     openai::GROUP,
     openapi::GROUP,
     oracle::GROUP,
@@ -156,8 +116,9 @@ const GROUPS: [Group; 44] = [
     prompts::GROUP,
     provider::GROUP,
     proxy::GROUP,
+    pyhost::GROUP,
     rate_limit::GROUP,
-    redact::GROUP,
+    betterlite_oracle_redact::GROUP,
     redis::GROUP,
     reporting::GROUP,
     roi::GROUP,
@@ -165,7 +126,7 @@ const GROUPS: [Group; 44] = [
     sdk::GROUP,
     secret_managers::GROUP,
     secrets::GROUP,
-    server::GROUP,
+    betterlite_oracle_server::GROUP,
     streaming::GROUP,
     tokenizer::GROUP,
     vertex::GROUP,
@@ -210,7 +171,7 @@ impl From<HelperCall> for BTreeMap<String, serde_json::Value> {
     }
 }
 
-pub(crate) enum HelperRun {
+pub enum HelperRun {
     Match,
     Difference,
 }
@@ -229,30 +190,60 @@ pub(crate) const fn left_side(self_check: bool) -> HelperLeft {
     }
 }
 
-pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun, OracleError> {
+pub fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun, OracleError> {
+    let (left, right) = run_pair(&case.call, &case.env, self_check)?;
+    let Some(difference) = compare::compare_helper(&left, &right, &case.compare.ignore) else {
+        writeln!(io::stdout().lock(), "PASS {}", case.name).map_err(OracleError::Output)?;
+        return Ok(HelperRun::Match);
+    };
+    let pointer = difference.pointer;
+    let (left_name, right_name) = match left_side(self_check) {
+        HelperLeft::Native => ("betterlite", "litellm"),
+        HelperLeft::Python => ("first litellm run", "second litellm run"),
+    };
+    let left_value = value_at(&left, &pointer);
+    let right_value = value_at(&right, &pointer);
+    writeln!(
+        io::stderr().lock(),
+        "FAIL {}: {pointer} ({})\n     {left_name}: {left_value}\n     {right_name}: {right_value}",
+        case.name,
+        difference.message
+    )
+    .map_err(OracleError::Output)?;
+    Ok(HelperRun::Difference)
+}
+
+fn value_at(output: &HelperOutput, pointer: &str) -> String {
+    serde_json::to_value(output)
+        .ok()
+        .and_then(|value| value.pointer(pointer).map(ToString::to_string))
+        .map_or_else(
+            || "absent".to_owned(),
+            |text| text.chars().take(400).collect(),
+        )
+}
+
+pub(crate) fn run_pair(
+    call: &HelperCall,
+    env: &BTreeMap<String, String>,
+    self_check: bool,
+) -> Result<(HelperOutput, HelperOutput), OracleError> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let (left, right) = match left_side(self_check) {
+    Ok(match left_side(self_check) {
         HelperLeft::Native => {
             let answers = Answers::from_env(&root)?;
-            (
-                invoke(&case.call),
-                answers.answer(&root, &case.call, &case.env)?,
-            )
+            (invoke(call), answers.answer(&root, call, env)?)
         }
         HelperLeft::Python => {
             sync_litellm(&root)?;
-            let first = run_python(&root, &case.call, &case.env)?;
-            (first, run_python(&root, &case.call, &case.env)?)
+            let [first, second] = [(), ()].map(|()| {
+                let stdout_output = python_stdout(&root, call, env)?;
+                serde_json::from_slice::<HelperOutput>(&stdout_output)
+                    .map_err(OracleError::HelperJson)
+            });
+            (first?, second?)
         }
-    };
-    if let Some(difference) = compare::compare_helper(&left, &right, &case.compare.ignore) {
-        let pointer = difference.pointer;
-        writeln!(io::stderr().lock(), "FAIL {}: {pointer}", case.name)
-            .map_err(OracleError::Output)?;
-        return Ok(HelperRun::Difference);
-    }
-    writeln!(io::stdout().lock(), "PASS {}", case.name).map_err(OracleError::Output)?;
-    Ok(HelperRun::Match)
+    })
 }
 
 pub(crate) fn invoke(call: &HelperCall) -> HelperOutput {
@@ -273,7 +264,8 @@ pub(crate) fn invoke(call: &HelperCall) -> HelperOutput {
     match result {
         Ok(value) => HelperOutput {
             ok: true,
-            value: Some(value),
+            // the Python side reads a null value as absent, so a Rust null goes out the same way
+            value: (!value.is_null()).then_some(value),
             error: None,
             warnings: Vec::new(),
             effects: Vec::new(),

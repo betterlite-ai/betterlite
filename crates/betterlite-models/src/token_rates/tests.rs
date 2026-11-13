@@ -321,10 +321,11 @@ fn batch_families_select_independent_thresholds() {
         ("input_cost_per_token_batches", "\"1\""),
         ("input_cost_per_token_above_1k_tokens_batches", "\"2\""),
         ("output_cost_per_token_batches", "\"3\""),
+        ("output_cost_per_token_above_1500_tokens_batches", "\"5\""),
     ]);
     let rates = get_batch_cost_rates(&prices, usage(2_000), None).expect("batch rates resolve");
     assert_eq!(rates.input, Some(Decimal::from(2_u8)));
-    assert_eq!(rates.output, Some(Decimal::from(3_u8)));
+    assert_eq!(rates.output, Some(Decimal::from(5_u8)));
 }
 
 #[test]
@@ -409,4 +410,227 @@ fn underscored_numeric_string_rate_parses() {
         calculate_cost_component(&prices, "input_cost_per_token", Some(Decimal::ONE)).unwrap(),
         Decimal::from(1_000_u16)
     );
+}
+
+#[rstest]
+#[case::reasoning_rate(
+    r#"{"range":[0,1000],"input_cost_per_token":"0.1","output_cost_per_reasoning_token":"0.7"}"#,
+    Decimal::new(7, 1)
+)]
+#[case::output_fallback(
+    r#"{"range":[0,1000],"input_cost_per_token":"0.1","output_cost_per_token":"0.5"}"#,
+    Decimal::new(5, 1)
+)]
+fn reasoning_uses_selected_tier_rate_before_model_rate(
+    #[case] tier_json: &str,
+    #[case] expected: Decimal,
+) {
+    let database = TimeZoneDatabase::from_env();
+    let prices = model(&[("output_cost_per_reasoning_token", "\"0.9\"")]);
+    let tier: Tier = serde_json::from_str(tier_json).expect("fixture tier parses");
+    let pricing = ModelPricing {
+        model: &prices,
+        tiered_pricing: slice::from_ref(&tier),
+        off_peak_pricing: None,
+    };
+    let rates = get_token_base_cost(&pricing, usage(1), &context(None, None, &database))
+        .expect("tier rates resolve");
+    assert_eq!(rates.reasoning_rate, expected);
+}
+
+#[test]
+fn reasoning_prefers_service_reasoning_key_over_service_output() {
+    let database = TimeZoneDatabase::from_env();
+    let prices = model(&[
+        ("output_cost_per_reasoning_token_priority", "\"0.8\""),
+        ("output_cost_per_token_priority", "\"0.4\""),
+        ("output_cost_per_reasoning_token", "\"0.9\""),
+    ]);
+    let pricing = ModelPricing {
+        model: &prices,
+        tiered_pricing: &[],
+        off_peak_pricing: None,
+    };
+    let rates = get_token_base_cost(
+        &pricing,
+        usage(1),
+        &context(Some("priority"), None, &database),
+    )
+    .expect("service rates resolve");
+    assert_eq!(rates.reasoning_rate, Decimal::new(8, 1));
+}
+
+#[test]
+fn malformed_price_on_crossed_threshold_keeps_that_threshold() {
+    let database = TimeZoneDatabase::from_env();
+    let prices = model(&[
+        ("input_cost_per_token", "\"0.000001\""),
+        ("input_cost_per_token_above_100_tokens", "\"garbage\""),
+        ("input_cost_per_token_above_50_tokens", "\"0.000003\""),
+        ("output_cost_per_token_above_100_tokens", "\"0.000008\""),
+    ]);
+    let pricing = ModelPricing {
+        model: &prices,
+        tiered_pricing: &[],
+        off_peak_pricing: None,
+    };
+    let rates = get_token_base_cost(&pricing, usage(200), &context(None, None, &database))
+        .expect("malformed price defaults");
+    assert_eq!(rates.input_rate, Decimal::new(1, 6));
+    assert_eq!(rates.output_rate, Decimal::new(8, 6));
+}
+
+#[test]
+fn crossed_threshold_overrides_every_rate() {
+    let database = TimeZoneDatabase::from_env();
+    let prices: ModelInfo = serde_json::from_str(r#"{"input_cost_per_token":"0.000001","output_cost_per_token":"0.000002","cache_read_input_token_cost":"0.000003","cache_creation_input_token_cost":"0.000004","cache_creation_input_token_cost_above_1hr":"0.000005","input_cost_per_token_above_100_tokens":"0.000011","output_cost_per_token_above_100_tokens":"0.000012","cache_read_input_token_cost_above_100_tokens":"0.000013","cache_creation_input_token_cost_above_100_tokens":"0.000014","cache_creation_input_token_cost_above_1hr_above_100_tokens":"0.000015"}"#).expect("fixture prices parse");
+    let pricing = ModelPricing {
+        model: &prices,
+        tiered_pricing: &[],
+        off_peak_pricing: None,
+    };
+    let rates = get_token_base_cost(&pricing, usage(200), &context(None, None, &database))
+        .expect("threshold rates resolve");
+    assert_eq!(
+        [
+            rates.input_rate,
+            rates.output_rate,
+            rates.cache_read_rate,
+            rates.cache_creation_rate,
+            rates.cache_creation_above_1hr_rate
+        ],
+        [
+            Decimal::new(11, 6),
+            Decimal::new(12, 6),
+            Decimal::new(13, 6),
+            Decimal::new(14, 6),
+            Decimal::new(15, 6)
+        ]
+    );
+}
+
+#[rstest]
+#[case::priority_key(
+    Some("priority"),
+    "input_cost_per_token_above_100_tokens_priority",
+    Decimal::new(3, 6)
+)]
+#[case::standard_fallback(
+    Some("priority"),
+    "input_cost_per_token_above_100_tokens",
+    Decimal::new(3, 6)
+)]
+#[case::flex_ignores_priority(
+    Some("flex"),
+    "input_cost_per_token_above_100_tokens_priority",
+    Decimal::ZERO
+)]
+fn service_tier_threshold_keys_follow_the_request_tier(
+    #[case] tier: Option<&str>,
+    #[case] key: &str,
+    #[case] expected: Decimal,
+) {
+    let database = TimeZoneDatabase::from_env();
+    let prices = model(&[
+        ("input_cost_per_token_priority", "\"0.000001\""),
+        (key, "\"0.000003\""),
+        ("output_cost_per_token", "\"0.000004\""),
+        ("output_cost_per_token_above_100_tokens", "\"0.000005\""),
+    ]);
+    let pricing = ModelPricing {
+        model: &prices,
+        tiered_pricing: &[],
+        off_peak_pricing: None,
+    };
+    let rates = get_token_base_cost(&pricing, usage(200), &context(tier, None, &database))
+        .expect("tier threshold resolves");
+    assert_eq!(rates.input_rate, expected);
+    if tier == Some("flex") {
+        assert_eq!(rates.output_rate, Decimal::new(4, 6));
+    }
+}
+
+#[test]
+fn highest_crossed_nonnull_threshold_wins() {
+    let database = TimeZoneDatabase::from_env();
+    let prices = model(&[
+        ("input_cost_per_token", "\"0.000001\""),
+        ("input_cost_per_token_above_100_tokens", "\"0.000002\""),
+        ("input_cost_per_token_above_200_tokens", "\"0.000003\""),
+        ("input_cost_per_token_above_250_tokens", "null"),
+    ]);
+    let pricing = ModelPricing {
+        model: &prices,
+        tiered_pricing: &[],
+        off_peak_pricing: None,
+    };
+    let rates = get_token_base_cost(&pricing, usage(300), &context(None, None, &database))
+        .expect("threshold resolves");
+    assert_eq!(rates.input_rate, Decimal::new(3, 6));
+}
+
+#[rstest]
+#[case::absent(None, Decimal::new(4, 5))]
+#[case::zero(Some("0"), Decimal::new(4, 5))]
+#[case::priced(Some("\"0.000002\""), Decimal::new(2, 6))]
+fn image_token_rate_stands_in_for_unpriced_output(
+    #[case] output: Option<&str>,
+    #[case] expected: Decimal,
+) {
+    let database = TimeZoneDatabase::from_env();
+    let mut entries = vec![("output_cost_per_image_token", "\"0.00004\"")];
+    if let Some(value) = output {
+        entries.push(("output_cost_per_token", value));
+    }
+    let prices = model(&entries);
+    let pricing = ModelPricing {
+        model: &prices,
+        tiered_pricing: &[],
+        off_peak_pricing: None,
+    };
+    let rates = get_token_base_cost(&pricing, usage(1), &context(None, None, &database))
+        .expect("image price resolves");
+    assert_eq!(rates.output_rate, expected);
+}
+
+#[rstest]
+#[case::openai_strict(None, Decimal::new(1, 6))]
+#[case::xai_inclusive(Some("xai"), Decimal::new(2, 6))]
+fn batch_threshold_matches_provider_rule(
+    #[case] provider: Option<&str>,
+    #[case] expected: Decimal,
+) {
+    let prices = model(&[
+        ("input_cost_per_token_batches", "\"0.000001\""),
+        (
+            "input_cost_per_token_above_1k_tokens_batches",
+            "\"0.000002\"",
+        ),
+    ]);
+    let rates =
+        get_batch_cost_rates(&prices, usage(1_000), provider).expect("batch price resolves");
+    assert_eq!(rates.input, Some(expected));
+}
+
+#[rstest]
+#[case::zero("0", Decimal::ZERO)]
+#[case::nonzero("\"0.000006\"", Decimal::new(6, 6))]
+fn model_one_hour_price_is_kept(#[case] value: &str, #[case] expected: Decimal) {
+    let database = TimeZoneDatabase::from_env();
+    let prices = model(&[
+        ("cache_creation_input_token_cost", "\"0.000002\""),
+        ("cache_creation_input_token_cost_above_1hr", value),
+    ]);
+    let off_peak: OffPeakBlock = serde_json::from_str(
+        r#"{"hours_utc":"00:00-00:00","cache_creation_input_token_cost":"0.0000001"}"#,
+    )
+    .expect("fixture off-peak block parses");
+    let pricing = ModelPricing {
+        model: &prices,
+        tiered_pricing: &[],
+        off_peak_pricing: Some(&off_peak),
+    };
+    let rates = get_token_base_cost(&pricing, usage(1), &context(None, None, &database))
+        .expect("cache rates resolve");
+    assert_eq!(rates.cache_creation_above_1hr_rate, expected);
 }

@@ -1,0 +1,7 @@
+kind: helper
+name: invalid_lifetime_text
+call:
+  xai_oauth_tokens: {"record": {"now": 1000, "payload": {"access_token": "a", "refresh_token": "r", "expires_in": "abc"}, "token_endpoint": "https://auth.x.ai/t", "fallback": null}}
+env: {}
+compare:
+  ignore: []

@@ -92,6 +92,8 @@ description: >-
   wiring lines; 790 planned, 800 maximum changed lines.
 scope:
   paths:
+  - "tools/oracle/helpers/pyrightconfig.json"
+  - "tools/oracle/helpers/b3937.py"
   - crates/betterlite-bedrock/Cargo.toml
   - crates/betterlite-bedrock/src/batch_status.rs
   - crates/betterlite-bedrock/src/batch_status/**
@@ -244,7 +246,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_status_cases::case_[0-9]+_errors_and_metadata$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_status.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_status.py tools/oracle/helpers/bedrock_services_batch_status)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -257,7 +259,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_status)"
       && grep -q 'decode_batch_status' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_batch_status.rs
-      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_batch_status_corpus$/)'
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_batch_status_corpus(::|$)/)'
   - id: case-retrieve-signed-request
     why: 'Require B198 is_bedrock_arn prefix or ValueError Invalid batch_id format. Expected ARN, got: {batch_id};
       split colon fewer than6 -> Invalid ARN format: {batch_id}; region not matching ^[a-z][a-z0-9-]*$ -> Invalid

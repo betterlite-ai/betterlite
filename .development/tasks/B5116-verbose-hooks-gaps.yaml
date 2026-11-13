@@ -1,0 +1,142 @@
+id: B5116
+title: Verbose hooks env bool and logger method tests
+description: >-
+  B2239 built the injected verbose logging hooks in crates/betterlite-logging/src/verbose_hooks.rs and the
+  litellm_settings.set_verbose setting in crates/betterlite-config/src/sections/verbose_hooks.rs. An Opus review after
+  merge found one behavior gap and a set of tests that can't fail on the behavior they name. This task closes both in
+  the same crates and the same verbose_hooks oracle helper.
+
+
+  Gap one. LiteLLM's get_config resolves every os.environ/ value before it reads litellm_settings
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6071
+  and https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5772-L5788).
+  get_secret reads the variable and returns a bool when str_to_bool reads it as true or false
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L354-L359),
+  and the litellm_settings loop sets litellm.set_verbose to that value
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6618-L6628).
+  resolve_setting in betterlite keeps the resolved text as JsonValue::String. So VERBOSE=true never passes the
+  set_verbose is True checks in utils_print_verbose and is_active, and VERBOSE=false turns on main_print_verbose's
+  console print, since a non-empty string is truthy. LiteLLM declares set_verbose as the bool False
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L33), so as
+  docs/compatibility.md says, the text behind an os.environ/ reference reads through the shared parser
+  betterlite_env::flag from B5090. Some(true) and Some(false) become JsonValue::Bool, an empty variable leaves the
+  default false, and any other text is a load error through the ConfigError variant B5090 adds for EnvError. A literal
+  YAML string such as 'true' or 'yes' is not an env value and stays a string, as in LiteLLM. On main the environment
+  case of verbose_hooks_config_cases pins VERBOSE=yes to json!("yes"); it changes to json!(true). No route reads
+  set_verbose yet, so config tests pin this gap and there is no oracle case for it.
+
+
+  Gap two. LiteLLM's utils.print_verbose sends DEBUG to verbose_logger.debug, INFO to info and ERROR to error
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L544-L559),
+  and main.print_verbose always calls debug
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8836-L8842).
+  The Python adapter reports each record's levelname, so its level comes from the method called. betterlite's code
+  picks the right method, but no test can see which one it called. FixtureLogger in
+  crates/betterlite-logging/src/verbose_hooks/tests.rs answers debug, info and error the same way, LogRecord.level is
+  copied from the log_level argument or hard-coded to "DEBUG", and the oracle adapter's FixtureLogger in
+  tools/oracle/src/helpers/logging/verbose_hooks.rs does the same. If utils_print_verbose sent INFO or ERROR to debug,
+  or main_print_verbose called info, then verbose_hooks_cases::case_1_main_verbose_guard,
+  verbose_hooks_cases::case_2_utils_verbose_levels, utils_error_level_logs_the_record_and_allows_the_console and the
+  utils-verbose-levels oracle case would all still pass. Both FixtureLoggers record the method they were called
+  through, the tests assert it, and the oracle adapter answers with the logs its FixtureLogger recorded, each level
+  named after the method, the way Python's handler does.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/verbose_hooks.rs
+    - crates/betterlite-config/src/sections/verbose_hooks/tests.rs
+    - crates/betterlite-logging/src/verbose_hooks/tests.rs
+    - tools/oracle/src/helpers/logging/verbose_hooks.rs
+    - tools/oracle/src/helpers/logging/verbose_hooks/tests.rs
+    - tools/oracle/cases/helpers/providers/verbose-hooks/utils-error-level.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6071
+    why: get_config resolves the os.environ/ values of the whole config before load_config reads litellm_settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5772-L5788
+    why: _resolved_config_value sends each os.environ/ string through get_secret.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L354-L359
+    why: Without a secret manager, get_secret reads os.environ and returns a bool when str_to_bool reads one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L134
+    why: str_to_bool, the LiteLLM reading that docs/compatibility.md replaces with betterlite_env::flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6618-L6628
+    why: The litellm_settings loop sets litellm.set_verbose to the resolved value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L33
+    why: set_verbose is declared as the bool False, the type an env value reads into.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L544-L559
+    why: utils.print_verbose sends DEBUG, INFO and ERROR to the logger method of the same name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8836-L8842
+    why: main.print_verbose always logs through verbose_logger.debug.
+dod:
+  - text: >-
+      litellm_settings.set_verbose: os.environ/VERBOSE reads VERBOSE through betterlite_env::flag. VERBOSE=true gives
+      json!(true), VERBOSE=False gives json!(false), VERBOSE=yes gives json!(true), an empty VERBOSE gives the default
+      json!(false), and VERBOSE=maybe is a load error whose message names VERBOSE and not the value. The literal YAML
+      string 'true' stays json!("true"). verbose_hooks_config_cases gains the cases environment_true,
+      environment_false, environment_empty and literal_true_string, its environment case expects json!(true), and
+      invalid_verbose_environment_is_named covers the load error. An unset VERBOSE stays MissingEnvironment.
+    proof:
+      - config-env-bool
+  - text: >-
+      FixtureLogger in crates/betterlite-logging/src/verbose_hooks/tests.rs records each method it is called through
+      in a Cell<Vec<&'static str>>, and verbose_hooks_cases asserts the calls. Expected gains calls:
+      case_1_main_verbose_guard and redacted_verbose_payload expect ["debug"], case_2_utils_verbose_levels expects
+      ["info"], and verbose_active expects none. New cases utils_debug_level and utils_error_level send DEBUG and
+      ERROR to utils_print_verbose and expect ["debug"] and ["error"] and the LogRecord level DEBUG and ERROR.
+      utils_error_level replaces utils_error_level_logs_the_record_and_allows_the_console, and
+      unknown_log_level_skips_the_logger_but_not_the_console also asserts that no method was called.
+    proof:
+      - logger-methods
+  - text: >-
+      The oracle adapter's FixtureLogger in tools/oracle/src/helpers/logging/verbose_hooks.rs records a LogRecord for
+      each call that succeeds, with the level named after the method (DEBUG, INFO or ERROR), and the main and utils
+      operations answer with those records as logs. fixture_logger_records_the_level_of_the_method_called calls info,
+      error and debug and expects the levels INFO, ERROR and DEBUG, and a failing logger records nothing. The new case
+      utils-error-level.yaml sends log_level ERROR, and the existing main and utils cases keep matching LiteLLM.
+    proof:
+      - adapter-logger-levels
+      - oracle
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-env-bool
+      why: an os.environ/ value for set_verbose stays a string instead of reading through betterlite_env::flag, or bad text loads
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::verbose_hooks_config_cases::case_[0-9]+_environment_true$/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::verbose_hooks_config_cases::case_[0-9]+_environment_false$/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::verbose_hooks_config_cases::case_[0-9]+_environment_empty$/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::verbose_hooks_config_cases::case_[0-9]+_literal_true_string$/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::invalid_verbose_environment_is_named$/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::verbose_hooks::/)'
+    - id: logger-methods
+      why: no logging test fails when a level calls the wrong logger method
+      run: '! grep -q "fn utils_error_level_logs_the_record_and_allows_the_console" crates/betterlite-logging/src/verbose_hooks/tests.rs && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E ''test(/::verbose_hooks_cases::case_[0-9]+_utils_debug_level$/)'' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E ''test(/::verbose_hooks_cases::case_[0-9]+_utils_error_level$/)'' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E ''test(/^verbose_hooks::/)'''
+    - id: adapter-logger-levels
+      why: the oracle adapter copies the level from its input instead of reporting the logger method called, or the ERROR case is missing
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/verbose-hooks/utils-error-level.yaml)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::fixture_logger_records_the_level_of_the_method_called$/)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::verbose_hooks::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/providers/verbose-hooks/utils-error-level.yaml
+  - tools/oracle/cases/helpers/providers/verbose-hooks/main-console-fails.yaml
+  - tools/oracle/cases/helpers/providers/verbose-hooks/main-logger-fails.yaml
+  - tools/oracle/cases/helpers/providers/verbose-hooks/main-truthy-set-verbose.yaml
+  - tools/oracle/cases/helpers/providers/verbose-hooks/main-verbose-guard.yaml
+  - tools/oracle/cases/helpers/providers/verbose-hooks/redacted-verbose-payload.yaml
+  - tools/oracle/cases/helpers/providers/verbose-hooks/utils-console-fails.yaml
+  - tools/oracle/cases/helpers/providers/verbose-hooks/utils-defaults.yaml
+  - tools/oracle/cases/helpers/providers/verbose-hooks/utils-falsey-logger-only.yaml
+  - tools/oracle/cases/helpers/providers/verbose-hooks/utils-logger-fails.yaml
+  - tools/oracle/cases/helpers/providers/verbose-hooks/utils-verbose-levels.yaml
+deviations: []
+out_of_scope:
+  - crates/betterlite-logging/src/verbose_hooks.rs. It already calls the right logger method for each level; only its tests change.
+  - An unset VERBOSE. LiteLLM's get_secret gives None, while betterlite's resolve_string fails with MissingEnvironment for every os.environ/ reference; missing_verbose_environment_is_named keeps pinning that, and no finding asked to change it.
+  - get_secret's secret manager branch. It belongs to the secret manager tasks, not to set_verbose.
+  - CapturingLogger in the logging tests. It only runs with DEBUG, so its info and error methods can stay as they are.
+  - tools/oracle/helpers/verbose_hooks.py. Its handler already reports record.levelname.
+  - Padded one-line functions in these files, such as default_log_level and default_set_verbose. They belong to B5094; this task does not touch .ast-grep/rules/.
+pitfalls:
+  - Only the text behind an os.environ/ reference goes through flag. A literal YAML string keeps today's reading, so 'true' and 'yes' stay strings, as LiteLLM's _check_for_os_environ_vars only touches os.environ/ values.
+  - Don't match "true" or "false" by hand in verbose_hooks.rs. docs/compatibility.md and .ast-grep/rules/no-python-habits.yml let env text become a bool only in betterlite-env. VERBOSE=yes reading as true and VERBOSE=maybe failing to load follow that doc, so worker.md says they are not deviations.
+  - flag's error message names the variable and never the value, so invalid_verbose_environment_is_named asserts that the message contains VERBOSE and not maybe.
+  - No one-line helper or wrapper around flag. Call it in resolve_setting, where the value is read.
+  - The oracle adapter is not test code, so it can't use unwrap, expect or a Mutex. Record through Cell take and set, like CapturingLogger in tools/oracle/src/helpers/server/assets.rs. No RefCell or Rc.
+  - Record only the calls that succeed. A failing logger records nothing, as Python's failing mock raises before the handler sees a record, and the logger-fails cases expect empty logs.
+  - verbose_hooks_cases reads result.logs[0]. Every new case logs once, so that index stays safe.
+  - B5094 also edits tools/oracle/src/helpers/logging/verbose_hooks/tests.rs. Merge main before you start.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

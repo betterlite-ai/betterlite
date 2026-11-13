@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-nested-ignorecase",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/aKé",
+      "allowed_routes": [
+        "/(?i:a(?a:k)(?-i:é))"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

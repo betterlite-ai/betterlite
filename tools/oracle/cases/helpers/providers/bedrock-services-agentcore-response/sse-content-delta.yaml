@@ -1,0 +1,24 @@
+kind: helper
+name: sse-content-delta
+call:
+  bedrock_services_agentcore_response:
+    status: 200
+    headers: [[content-type, text/event-stream]]
+    body: |-
+      data: {"event":{"contentBlockDelta":{"delta":{"text":"hello"}}}}
+      data: {"event":{}}
+      data: {"event":{"contentBlockDelta":{"delta":{"text":" world"}}}}
+    model: gpt-4
+    messages: [{role: user, content: hi}]
+    content: hello world
+    tokens: {prompt: 3, completion: 5}
+    response:
+      id: chatcmpl-fixture
+      object: chat.completion
+      created: 123
+      model: supplied
+      system_fingerprint: fp-fixture
+      choices: []
+      usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+env: {}
+compare: {ignore: []}

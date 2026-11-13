@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-permission-denied-error
+call: {"error_normalization": {"message": "ordinary", "class": "PermissionDeniedError", "status_code": 418}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,130 @@
+id: B8522
+title: Lakera v2 guard call and lifecycle hooks
+description: >-
+  Port the live part of litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py that no task builds yet: the
+  `LakeraAIGuardrail` class (constructor, config validation, the v2 guard call and the three lifecycle hooks) and the
+  module-level helpers it uses. B3779 already built the pure masking pieces in `lakera_pii` (crates/betterlite-guardrails/src/lakera_pii,
+  on main): `mask_pii_in_messages`, `is_only_pii_violation`, `blocked_error`, the `LakeraResponse` wire types and
+  `LakeraPiiError`. Call them, do not copy them. This task is the class that decides what to do with a Lakera verdict.
+
+  Code goes in crates/betterlite-guardrails/src/lakera_v2.rs and lakera_v2/ (guardrail.rs, advisory.rs, scope.rs,
+  hooks.rs, error.rs, tests.rs). Types from earlier tasks: `LakeraV2Args` (B3681, guardrail_initializers) is the
+  constructor input; `GuardrailBase`, `GuardrailFailure`, `inject_advisory_message` and `DEFAULT_ADVISORY_MESSAGE` are
+  B5471's (guardrail_base); `should_run_guardrail` is B3665's (guardrail_selection), and so are
+  `build_inspection_messages`, `apply_redacted_messages_back` and `has_non_string_content` from _content_utils.py;
+  `filter_messages_by_skip_flags`, `merge_guardrailed_scoped_messages`, `effective_skip_system_message_for_guardrail`
+  and `effective_skip_tool_message_for_guardrail` are B3663's; the invocation record that replaces
+  `add_standard_logging_guardrail_information_to_request_data` is B3664's (guardrail_records). Read those files for exact
+  names before you write code. Request bodies are `BTreeMap<String, GuardrailValue>`.
+
+  `LakeraV2Guardrail::new(args: LakeraV2Args, base: GuardrailBase, client: reqwest::Client, env: &dyn
+  EnvironmentLookup) -> Result<Self, LakeraV2Error>`. The HTTP client comes in from the caller (LiteLLM calls
+  `get_async_httpx_client` itself). api_key is the arg, else `LAKERA_API_KEY`, else the empty string. api_base is the
+  arg, else `LAKERA_API_BASE`, else "https://api.lakera.ai". payload, breakdown and dev_info default to true, on_flagged
+  to "block" (also when it is null). `supported_event_hooks` is pre_call, during_call and post_call. The constructor ends
+  with `validate_advisory_config`.
+
+  `validate_advisory_config(on_flagged, advisory_system_message, payload, breakdown)`: when on_flagged is
+  "inject_system_message" and a template is given, the template must hold a real `{reason}` format field (an escaped
+  `{{reason}}` does not count) and must format with only that field; when on_flagged is "inject_system_message",
+  payload and breakdown must both be true. The three error texts are LiteLLM's (L340-L359), copied exactly.
+  `update_in_memory_litellm_params` validates the prospective state first (the new on_flagged or the current one, the
+  new template, the new payload and breakdown or the current ones when null), then applies the base update, then sets
+  event_hook to the new mode or keeps the old one. A rejected update leaves the instance unchanged.
+
+  Helpers: `humanize_lakera_block_reasons(breakdown)` maps each detected item's `detector_type` prefix (before the
+  first "/") through prompt_injection and prompt_attack to "a potential prompt injection attempt", pii to "personally
+  identifiable information", moderated_content to "policy-violating content", anything else to the prefix with "_"
+  turned into spaces, drops duplicates in first-seen order, joins with ", ", and gives "a content safety concern" when
+  nothing is left. `build_advisory_message` formats the template (or DEFAULT_ADVISORY_MESSAGE) with that reason.
+  `pre_masking_scope_indices`, `apply_redacted_back_preserving_fields`, `has_combined_messages_and_input`,
+  `has_responses_instructions`, `breakdown_has_pii_violation`, `unmaskable_reason` (the five reasons in L200-L210, in
+  that order, None when masking is safe) and `build_lakera_inspection_messages` (the Responses `instructions` text
+  first as a system message, then build_inspection_messages) follow L85-L233.
+
+  `call_v2_guard(&self, messages, data, event)` posts {messages, project_id, payload, breakdown, metadata, dev_info} to
+  `{api_base}/v2/guard` with `Authorization: Bearer <key>` and the base timeout, and returns the decoded response with
+  an empty masked count map. It always records one invocation: status success with the response minus its `payload`
+  key, or guardrail_failed_to_respond with the error text, and the error is returned.
+
+  Hooks, each starting with should_run_guardrail for its event and returning the data unchanged when it is false:
+  `pre_call` (L520-L666), `during_call` (L668-L740) and `post_call` (L742-L819). Build the inspection messages, drop the
+  skipped roles, and stop with a warning when nothing is left. A flagged verdict follows on_flagged exactly as LiteLLM
+  does: PII-only and maskable masks in place; inject_system_message masks PII first and then injects the advisory, and
+  blocks when PII sits in content it cannot mask or the advisory could not be delivered; monitor logs and, for PII only,
+  masks only through `mask_unwritable_instructions_pii_in_place`; block returns B3779's `blocked_error` (status 400,
+  detail {"error": "Violated guardrail policy", "lakera_guardrail_response": ...}). during_call never masks and blocks
+  on PII in advisory mode. post_call scans the kept request messages plus each choice's role and content, writes masked
+  assistant content back by choice index for a PII-only verdict, and otherwise blocks only in block mode. Each hook's
+  result carries `applied_guardrail: Option<String>` (the guardrail name) where LiteLLM calls
+  `add_guardrail_to_applied_guardrails_header`, so the dispatcher adds the header.
+
+  Oracle: the helper operation for this task takes `function` and its input. `humanize_lakera_block_reasons` takes
+  `breakdown` and answers {"reason": "..."}; `validate_advisory_config` takes on_flagged, advisory_system_message,
+  payload and breakdown, the Python side builds a `LakeraAIGuardrail` with them (api_key "test"), and both answer
+  {"ok": true} or {"error": "<text>"}; `build_lakera_inspection_messages` takes `data` and answers {"messages": [...]}.
+  Cases: a breakdown with pii and prompt_attack items plus an undetected one; an escaped `{{reason}}` template in
+  advisory mode; a Responses body with instructions and input.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/lakera_v2.rs
+    - crates/betterlite-guardrails/src/lakera_v2/**
+    - tools/oracle/cases/helpers/lakera-v2/**
+    - tools/oracle/helpers/b8522.py
+    - tools/oracle/helpers/b8522/**
+    - tools/oracle/src/helpers/guardrails/b8522.rs
+    - tools/oracle/src/helpers/guardrails/b8522/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L43-L233
+    why: The detector phrases, the reason and template helpers, the masking scope and the inspection message builder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L236-L433
+    why: Constructor defaults, advisory validation and its error texts, the in-memory update and call_v2_guard with its record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L494-L819
+    why: The instructions-only masking path and the three hooks with their on_flagged branches.
+  - url: https://docs.litellm.ai/docs/proxy/guardrails/lakera_ai
+    why: User-facing config keys (on_flagged, payload, breakdown, advisory_system_message).
+
+dod:
+  - text: The constructor applies LiteLLM's defaults and env fallbacks, and advisory validation refuses the three invalid setups with LiteLLM's text, also on an in-memory update that then leaves the instance unchanged.
+    proof: [lakera-v2-tests, oracle]
+  - text: humanize_lakera_block_reasons, unmaskable_reason and build_lakera_inspection_messages give LiteLLM's output.
+    proof: [lakera-v2-tests, oracle]
+  - text: call_v2_guard sends the documented body and header and records one invocation without the payload key, also on failure.
+    proof: [lakera-v2-tests]
+  - text: Each hook follows the on_flagged branches for PII-only, mixed and non-PII verdicts, masks or blocks as LiteLLM does, and reports the applied guardrail name.
+    proof: [lakera-v2-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: lakera-v2-tests
+      why: a Lakera v2 default, branch, mask or record differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^lakera_v2::/)'
+
+deviations:
+  - what: The hooks return the applied guardrail name instead of writing the applied-guardrails header themselves.
+    why: The header is added by the request dispatcher, so a guardrail never touches the response headers.
+  - what: The HTTP client is a constructor argument.
+    why: Clients are built once by the caller; LiteLLM calls get_async_httpx_client inside the constructor.
+
+out_of_scope:
+  - "_mask_pii_in_messages, _is_only_pii_violation and _get_http_exception_for_blocked_guardrail: B3779 (lakera_pii)."
+  - "initialize_lakera_v2 and LakeraV2Args: B3681. Building the guardrail from its CallbackSpec in the registry: B3682."
+  - "should_run_guardrail and the _content_utils helpers: B3665. The message scope helpers: B3663. The invocation record: B3664."
+
+pitfalls:
+  - 'A template with "{{reason}}" contains the text "{reason}" but has no format field, so it is refused.'
+  - 'call_v2_guard pops "payload" from the logged copy because it holds the PII spans, and the response returned to the hook keeps it.'
+  - 'Lakera message_id values index the filtered inspection list, so masking writes back through pre_masking_scope_indices, and role checks compare lowercased roles.'
+  - 'Monitor mode still masks a PII-only verdict when only the instructions field stands in the way, and logs at error level when it cannot mask.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+
+oracle_cases:
+  - tools/oracle/cases/helpers/lakera-v2/humanize-reasons.yaml
+  - tools/oracle/cases/helpers/lakera-v2/escaped-reason-template.yaml
+  - tools/oracle/cases/helpers/lakera-v2/inspection-with-instructions.yaml

@@ -1,0 +1,18 @@
+kind: helper
+name: aws-secrets-replication-warns-on-failure
+env: {}
+compare: {ignore: []}
+call:
+  b4415:
+    env:
+      AWS_ACCESS_KEY_ID: AKIAORACLEEXAMPLE
+      AWS_SECRET_ACCESS_KEY: oracle-secret-key
+      AWS_REGION_NAME: us-east-1
+    manager: {replica_regions: [us-west-2], kms_key_id: null}
+    routes:
+      - route: "POST https://secretsmanager.us-east-1.amazonaws.com"
+        replies:
+          - {status: 200, body: '{"ARN":"arn:one"}'}
+          - {status: 500, body: '{"Message":"replication failed"}'}
+    steps:
+      - {op: async_write_secret, name: prod/db, value: s3cr3t}

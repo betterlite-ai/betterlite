@@ -191,14 +191,18 @@ fn credential_create_exact_missing_error(#[case] text: &str) {
     );
 }
 
-#[test]
-fn credential_create_wrong_shape_after_guard() {
-    invalid::<CreateCredentialItem>(
-        r#"{"credential_name":"c","credential_info":{},"credential_values":"nonempty"}"#,
-    );
-    invalid::<CreateCredentialItem>(
-        r#"{"credential_name":"c","credential_info":{},"credential_values":["nonempty"]}"#,
-    );
+#[rstest]
+#[case::text(r#"{"credential_name":"c","credential_info":{},"credential_values":"nonempty"}"#)]
+#[case::list(r#"{"credential_name":"c","credential_info":{},"credential_values":["nonempty"]}"#)]
+fn credential_create_wrong_shape_after_guard(#[case] text: &str) {
+    let value: super::JsonData = parse(text);
+    assert!(matches!(
+        CreateCredentialItem::try_from(value),
+        Err(ResourceRowsError::FieldShape {
+            field: "credential_values",
+            ..
+        })
+    ));
 }
 
 #[test]
@@ -379,6 +383,27 @@ fn organization_all_fields_nested_users() {
         Some("b")
     );
     assert_eq!(row.object_permission.unwrap().object_permission_id, "p");
+}
+
+#[test]
+fn organization_null_model_spend_stays_null() {
+    let row = organization(
+        r#"{"budget_id":"b","created_by":"c","updated_by":"u","spend":0,
+        "model_spend":null,"organization_id":null,"organization_alias":null,"metadata":null,
+        "users":null,"litellm_budget_table":null,"object_permission":null,
+        "object_permission_id":null}"#,
+    );
+    assert_eq!(row.model_spend.0, None);
+    assert_eq!(row.spend, Decimal::ZERO);
+    assert_eq!(row.organization_id, None);
+    assert_eq!(row.organization_alias, None);
+    assert_eq!(row.metadata, None);
+    assert!(row.users.is_none());
+    assert_eq!(row.litellm_budget_table, None);
+    assert_eq!(row.object_permission, None);
+    assert_eq!(row.object_permission_id, None);
+    let dumped = serde_json::to_value(&row).unwrap();
+    assert!(dumped["model_spend"].is_null());
 }
 
 #[test]
@@ -607,12 +632,8 @@ fn nested_object(depth: usize) -> String {
 
 #[test]
 fn native_nested_model_json_limits() {
-    let at_limit = serde_json::to_string(&nested_object(63)).unwrap();
-    let envelope = format!(
-        r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{at_limit}}}}}"#
-    );
-    decode_resource_rows(envelope.as_bytes()).unwrap();
-    let over_limit = serde_json::to_string(&nested_object(64)).unwrap();
+    assert_model_json_strings_decode_at_limit();
+    let over_limit = serde_json::to_string(&nested_object(65)).unwrap();
     let over_envelope = format!(
         r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{over_limit}}}}}"#
     );
@@ -621,6 +642,19 @@ fn native_nested_model_json_limits() {
         Err(ResourceRowsError::TooDeep)
     ));
     // 200 levels is past serde_json's own 128-level recursion limit, so only the iterative scan catches it.
+    let outer_at_limit = nested_object(62);
+    let outer_envelope = format!(
+        r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{outer_at_limit}}}}}"#
+    );
+    decode_resource_rows(outer_envelope.as_bytes()).unwrap();
+    let outer_over_limit = nested_object(63);
+    let outer_over_envelope = format!(
+        r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{outer_over_limit}}}}}"#
+    );
+    assert!(matches!(
+        decode_resource_rows(outer_over_envelope.as_bytes()),
+        Err(ResourceRowsError::TooDeep)
+    ));
     let past_serde_limit = serde_json::to_string(&nested_object(200)).unwrap();
     let past_serde_envelope = format!(
         r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{past_serde_limit}}}}}"#
@@ -629,6 +663,24 @@ fn native_nested_model_json_limits() {
         decode_resource_rows(past_serde_envelope.as_bytes()),
         Err(ResourceRowsError::TooDeep)
     ));
+}
+
+fn assert_model_json_strings_decode_at_limit() {
+    let at_limit = serde_json::to_string(&nested_object(64)).unwrap();
+    let params_envelope = format!(
+        r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{at_limit}}}}}"#
+    );
+    decode_resource_rows(params_envelope.as_bytes()).unwrap();
+    let params_row = format!(r#"{{"model_id":"m","model_name":"n","litellm_params":{at_limit}}}"#);
+    parse::<ProxyModelTable>(&params_row);
+    let info_envelope = format!(
+        r#"{{"kind":"model","row":{{"model_id":"m","model_name":"n","litellm_params":{{}},"model_info":{at_limit}}}}}"#
+    );
+    decode_resource_rows(info_envelope.as_bytes()).unwrap();
+    let info_row = format!(
+        r#"{{"model_id":"m","model_name":"n","litellm_params":{{}},"model_info":{at_limit}}}"#
+    );
+    parse::<ProxyModelTable>(&info_row);
 }
 
 #[test]

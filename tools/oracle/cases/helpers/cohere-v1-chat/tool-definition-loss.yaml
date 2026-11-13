@@ -1,0 +1,39 @@
+kind: helper
+name: cohere-v1-chat-tool-definition-loss
+call:
+  cohere_v1_chat:
+    function: request
+    requests:
+      - model: command-r
+        messages:
+          - {role: user, content: what is the weather?}
+        non_default_params:
+          tools:
+            - type: function
+              function:
+                name: get_current_weather
+                description: Get the current weather in a given location
+                parameters:
+                  type: object
+                  properties:
+                    location:
+                      type: string
+                      description: The city and state
+                    unit:
+                      type: string
+                      enum: [celsius, fahrenheit]
+                    detail:
+                      type: object
+                      properties:
+                        country: {type: string}
+                    free: {description: x}
+                  required: [location]
+            - type: function
+              function:
+                name: no_arguments
+                description: ""
+                parameters:
+                  properties: {}
+                  required: []
+compare: {ignore: []}
+env: {}

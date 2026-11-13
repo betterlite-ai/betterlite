@@ -1,0 +1,67 @@
+task: B4292
+deviations:
+  - what: >-
+      Evicted clients are held as Arc handles, tracked through Weak references and described by an injected EvictableClient trait
+      instead of Python weakref and attribute probing; connection idleness comes from the client's own typed lease accounting rather
+      than from inspecting httpcore pool entries or aiohttp connector state.
+    why: >-
+      Rust has no reference cycles and no duck typing, so ownership is Arc/Weak and every transport check is one trait method.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/evicted_client_closer.py#L92-L148
+  - what: >-
+      The event loop id appended to a cache key is the Tokio runtime handle id from Handle::try_current(), not
+      asyncio.get_running_loop() and not a task-local. No running runtime means the undecorated key, as no running loop does in
+      LiteLLM.
+    why: >-
+      One Tokio runtime is the native counterpart of one asyncio event loop, so every task of one runtime shares a key and tasks of
+      two runtimes do not.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/llm_caching_handler.py#L46-L56
+  - what: >-
+      Asynchronous closes are awaited by EvictedClientCloser::reap_async on the loop that scheduled them instead of being handed to
+      asyncio.create_task, and a synchronous reap leaves them queued for the next asynchronous one. Each awaited close is bounded by
+      CLOSE_TIMEOUT (30 seconds, or the value with_limits receives): a close that outlives it is abandoned and logged at debug.
+    why: >-
+      Betterlite spawns no detached tasks, so a close must be awaited by a caller the server owns, and a hung close must not stall
+      the request that triggered the reap; LiteLLM's background task has no bound because the caller never waits on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/evicted_client_closer.py#L263-L275
+  - what: >-
+      LLMClientCache::async_set_cache and async_get_cache decorate the key once. LiteLLM's InMemoryCache async adapters call the
+      overridden set_cache and get_cache through self, so an async accessor appends the loop id twice and addresses a different key
+      than the synchronous accessors.
+    why: >-
+      No LiteLLM caller uses the async accessors of LLMClientCache, and one decoration is what the class documents.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L179-L180
+  - what: >-
+      InMemoryCache.check_value_size has no counterpart for cached clients; a native client handle has no Python object size and the
+      cache never serializes it.
+    why: >-
+      Clients are typed Arc handles of bounded size, not arbitrary Python objects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L56-L91
+  - what: >-
+      DynamicLoggingCache calls the injected removal effect for a value it replaces under a live key, and a panicking effect is
+      caught and logged at debug level. LiteLLM's set_cache overwrites cache_dict without calling _remove_key, so a replaced logger
+      is never stopped.
+    why: >-
+      The replaced logger's flush task and export channel otherwise survive until process exit, a leak no working setup relies on;
+      B3945 fixed the same leak and both caches must behave alike.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L170
+  - what: >-
+      The Langfuse initialized-clients counter is not decremented by the cache. It is part of the removal effect an exporter injects,
+      because the native cache holds arbitrary values and does not import logger classes for an isinstance check.
+    why: >-
+      B3945's removal-effect design keeps exporter types out of the cache; the exporter can decrement its slot counter in the effect.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L38-L39
+  - what: >-
+      The LLM client cache, the logging client cache and the service trace id cache keep their values in typed native maps driven by
+      native InMemoryCache (LocalTtlCache) markers for expiry and capacity, instead of storing arbitrary Python objects in cache_dict;
+      InMemoryCache's per-item size check has no counterpart for them.
+    why: >-
+      LocalTtlCache holds typed CacheValue entries; a client, logger or trace id cannot be one, so the shared cache owns TTL,
+      eviction and expiry ordering, and the typed map holds the value. A native handle has no Python object size and is never
+      serialized.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L28-L46
+  - what: >-
+      The logging client cache key hashes a length-prefixed concatenation of the sorted credential names and values plus the service
+      name instead of json.dumps(sort_keys=True) text.
+    why: >-
+      The hash never leaves the process; a service_name credential is still replaced by the parameter, as LiteLLM's dict merge does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/specialty_caches/dynamic_logging_cache.py#L62-L65

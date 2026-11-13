@@ -103,6 +103,8 @@ fn status_classification_renders_the_matching_label(#[case] status: u16, #[case]
 
 #[rstest]
 #[case::status_422(422)]
+#[case::status_408(408)]
+#[case::status_504(504)]
 fn response_branches_answer_the_provider_status(#[case] status: u16) {
     let class = map_openrouter_exception(&input(Some(status), false));
     assert_eq!(class.metadata().status_code, status);

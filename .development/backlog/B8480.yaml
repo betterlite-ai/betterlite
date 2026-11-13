@@ -1,0 +1,14 @@
+id: B8480
+milestone: M4 keys, spend and management
+title: Reserve budget for a request and renew its lease
+status: todo
+depends_on: [B002, B746, B882, B3001, B3002, B3003, B3004, B3015]
+file: tasks/B8480-reservation-request.yaml
+covers:
+  - "litellm/proxy/spend_tracking/budget_reservation.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

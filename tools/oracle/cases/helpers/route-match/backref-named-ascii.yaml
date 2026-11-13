@@ -1,0 +1,15 @@
+{
+  "kind": "helper",
+  "name": "backref-named-ascii",
+  "call": {
+    "route_match": {
+      "function": "route_matches_pattern",
+      "route": "/kK",
+      "pattern": "/(?ai:(?P<letter>k)(?P=letter))"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

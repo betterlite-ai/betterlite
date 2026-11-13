@@ -1,0 +1,13 @@
+kind: helper
+name: zero_reset_immediate
+call:
+  duration:
+    calls:
+      - {function: reset, duration: "0d", now: "2024-01-15T10:00:00Z"}
+      - {function: reset, duration: "0w", now: "2024-01-15T10:00:00Z"}
+      - {function: reset, duration: "0h", now: "2024-01-15T10:00:00.500000Z"}
+      - {function: reset, duration: "0m", now: "2024-03-10T06:30:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "0s", now: "2024-11-03T06:00:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "0h", now: "2024-01-15T10:00:00Z", reset_time_of_day: "06:00:00"}
+env: {}
+compare: {ignore: []}

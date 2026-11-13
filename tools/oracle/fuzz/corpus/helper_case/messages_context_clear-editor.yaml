@@ -1,0 +1,14 @@
+kind: helper
+name: messages_context_clear-editor-seed
+call:
+  messages_context_clear:
+    action: editor
+    model: gpt-4o-mini
+    messages:
+      - {role: user, content: seeded}
+    tools: null
+    system: null
+    edit_spec: {}
+    counter: {mode: scripted, values: [100001, 80]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: moderation-flagged-no-hits
+call:
+  b5240:
+    function: "output_choices"
+    response: {"results": [{"flagged": true, "categories": {"hate": false}}]}
+env: {}
+compare:
+  ignore: []

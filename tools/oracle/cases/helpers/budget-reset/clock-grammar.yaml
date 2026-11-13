@@ -1,0 +1,53 @@
+kind: helper
+name: budget_reset_clock_grammar
+call:
+  budget_reset:
+    reset_now: "2024-01-01T10:00:00Z"
+    calendar_now: "2024-06-15T12:00:00Z"
+    calendar_timezone: null
+    calls:
+      - {function: parse_budget_reset_time, value: null}
+      - {function: parse_budget_reset_time, value: ""}
+      - {function: parse_budget_reset_time, value: "12:00"}
+      - {function: parse_budget_reset_time, value: "12:00:00"}
+      - {function: parse_budget_reset_time, value: "1:2"}
+      - {function: parse_budget_reset_time, value: "1:2:3"}
+      - {function: parse_budget_reset_time, value: "7:5:9"}
+      - {function: parse_budget_reset_time, value: "0:0"}
+      - {function: parse_budget_reset_time, value: "23:59:59"}
+      - {function: parse_budget_reset_time, value: "24:00"}
+      - {function: parse_budget_reset_time, value: "25:00"}
+      - {function: parse_budget_reset_time, value: "23:60"}
+      - {function: parse_budget_reset_time, value: "12:00:60"}
+      - {function: parse_budget_reset_time, value: "23:59:60"}
+      - {function: parse_budget_reset_time, value: " 12:00"}
+      - {function: parse_budget_reset_time, value: "12:00 "}
+      - {function: parse_budget_reset_time, value: "12:30pm"}
+      - {function: parse_budget_reset_time, value: "12:30 PM"}
+      - {function: parse_budget_reset_time, value: "12:00Z"}
+      - {function: parse_budget_reset_time, value: "12:00+05:00"}
+      - {function: parse_budget_reset_time, value: "12:00:00.5"}
+      - {function: parse_budget_reset_time, value: "12:00:00:00"}
+      - {function: parse_budget_reset_time, value: "12"}
+      - {function: parse_budget_reset_time, value: "12:"}
+      - {function: parse_budget_reset_time, value: "12::00"}
+      - {function: parse_budget_reset_time, value: ":12:00"}
+      - {function: parse_budget_reset_time, value: "+12:00"}
+      - {function: parse_budget_reset_time, value: "-12:00"}
+      - {function: parse_budget_reset_time, value: "٧:٥"}
+      - {function: parse_budget_reset_time, value: "٧"}
+      - {function: parse_budget_reset_time, value: "۶:۵"}
+      - {function: parse_budget_reset_time, value: "６:５"}
+      - {function: parse_budget_reset_time, value: "1٢:30"}
+      - {function: parse_budget_reset_time, value: "12:0٥"}
+      - {function: parse_budget_reset_time, value: "١٢:٣٠"}
+      - {function: parse_budget_reset_time, value: "12:٣٠"}
+      - {function: parse_budget_reset_time, value: "2٣:00"}
+      - {function: parse_budget_reset_time, value: "²:00"}
+      - {function: parse_budget_reset_time, value: "①:00"}
+      - {function: parse_budget_reset_time, value: 0}
+      - {function: parse_budget_reset_time, value: false}
+      - {function: parse_budget_reset_time, value: []}
+      - {function: parse_budget_reset_time, value: {}}
+env: {}
+compare: {ignore: []}

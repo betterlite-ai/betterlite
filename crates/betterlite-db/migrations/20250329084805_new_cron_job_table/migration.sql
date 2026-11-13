@@ -11,3 +11,4 @@ CREATE TABLE IF NOT EXISTS "LiteLLM_CronJob" (
 
     CONSTRAINT "LiteLLM_CronJob_pkey" PRIMARY KEY ("cronjob_id")
 );
+

@@ -1,0 +1,20 @@
+kind: helper
+name: e2b-run-output-in-encounter-order
+call:
+  b3516:
+    operation: run
+    container:
+      id: sbx_123
+      domain: custom.e2b.app
+      envd_access_token: envd-secret
+      traffic_access_token: traffic-secret
+    code: "print('hello')"
+    response_body: |
+      {"type":"stdout","text":"hello\n"}
+      {"type":"stderr","text":"warning\n"}
+      {"type":"number_of_executions","execution_count":1}
+      {"type":"result","data":{"text/plain":"hello"},"text":"'hello'"}
+      {"type":"error","name":"ValueError","value":"bad input","traceback":["line 1"]}
+env: {}
+compare:
+  ignore: []

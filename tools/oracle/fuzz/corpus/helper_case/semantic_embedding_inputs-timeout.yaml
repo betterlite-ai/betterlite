@@ -1,0 +1,9 @@
+kind: helper
+name: semantic_embedding_inputs-timeout-seed
+call:
+  b4310:
+    operation: timeout
+    configured: null
+    default_seconds: 5.0
+env: {}
+compare: {ignore: []}

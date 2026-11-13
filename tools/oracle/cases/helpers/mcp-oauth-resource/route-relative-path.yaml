@@ -1,0 +1,5 @@
+kind: helper
+name: "route-relative-path"
+call: {"b4654":{"function":"route_relative_path","original_path":"/litellm/foo/mcp","path":"/foo/mcp","root_path":"/litellm"}}
+env: {}
+compare: {"ignore":[]}

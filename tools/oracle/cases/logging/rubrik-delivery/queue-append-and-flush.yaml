@@ -1,0 +1,19 @@
+kind: helper
+name: rubrik-delivery-queue-append-and-flush
+call:
+  b3976:
+    environment: {RUBRIK_BATCH_SIZE: "3"}
+    init: {api_base: "https://rubrik.test", api_key: test-key}
+    replies:
+      - {status: 200, body: "{}"}
+      - {status: 200, body: "{}"}
+      - {status: 200, body: "{}"}
+    actions:
+      - {do: append, payload: {index: 0}}
+      - {do: append, payload: {index: 1}}
+      - {do: append, payload: {index: 2}}
+      - {do: append, payload: {index: 3}}
+      - {do: send_batch}
+      - {do: flush}
+env: {}
+compare: {ignore: []}

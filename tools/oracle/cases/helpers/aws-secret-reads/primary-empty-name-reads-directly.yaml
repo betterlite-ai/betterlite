@@ -1,0 +1,17 @@
+kind: helper
+name: aws-secret-reads-primary-empty-name-reads-directly
+env: {}
+compare: {ignore: []}
+call:
+  b4414:
+    env:
+      AWS_ACCESS_KEY_ID: AKIAORACLEEXAMPLE
+      AWS_SECRET_ACCESS_KEY: oracle-secret-key
+      AWS_REGION_NAME: us-east-1
+    routes:
+      - route: "POST https://secretsmanager.us-east-1.amazonaws.com"
+        replies:
+          - {status: 200, body: '{"SecretString":"direct-value"}'}
+    steps:
+      - {op: read, path: sync, secret: db, primary: ''}
+      - {op: read, path: async, secret: db, primary: ''}

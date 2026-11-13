@@ -1,0 +1,5 @@
+kind: helper
+name: request-optional-presence
+call: {openai_count_tokens: {"count": {"model": "gpt-5", "messages": [{"role": "system", "content": ""}, {"role": "user", "content": "hi"}, {"role": "assistant", "content": ""}], "system": "ignored", "tools": [], "api_key": "sk-deployment"}}}
+env: {}
+compare: {ignore: []}

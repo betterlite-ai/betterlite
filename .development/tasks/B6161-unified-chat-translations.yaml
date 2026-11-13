@@ -1,0 +1,138 @@
+id: B6161
+title: Registry adapters for chat, Responses and Anthropic guardrail handlers
+description: >-
+  Wrap the chat handler (B3667, B3668, B3669), the Responses handler (B3671, B3672, B3673) and the Anthropic
+  Messages handler (B3675, B3676, B3673) in three adapter types that implement B3661's `BaseTranslation`, and own
+  their call-type tables. Those tasks ship plain async functions generic over `G: GuardrailContract`, because
+  `apply_guardrail` returns `impl Future` and the trait cannot be a trait object. B3679's
+  `TranslationRegistry<T: BaseTranslation>` needs a value that implements the trait, so the glue lives here.
+
+  Code goes in crates/betterlite-server/src/guardrails/unified_chat.rs and unified_chat/. Files: chat.rs,
+  responses.rs, anthropic.rs, stamps.rs, undeliverable.rs and tables.rs. Types: `ChatTranslation`,
+  `ResponsesTranslation`, `AnthropicTranslation`. Each implements every method of `BaseTranslation` with the
+  signatures B3661 fixes. Do not change the trait.
+
+  Input and output. `process_input_messages` and `process_output_response` call the handler functions of the
+  matching task with the same arguments. Chat uses B3668. Responses uses B3671. Anthropic uses B3675, and its
+  `post_call_hook_response` uses B3675's `post_call_hook_response`; the other two keep B3661's default for that
+  method. `get_structured_messages` and `extract_request_tool_names` call the handler's own function where B3667,
+  B3671 or B3675 define one, and keep the default otherwise.
+
+  Streaming. This is the hard part. B3672 works on `&mut [serde_json::Value]`, B3676 on `&mut Vec<SseChunk>`
+  (B3673's `SseChunk` with `Bytes`, `Event` and `Other`), and chat (B3669) on its own chunk type. B3661 fixes the
+  stream item type of `BaseTranslation`; read it and use that type at the trait boundary. Convert inside the adapter
+  and nowhere else. If the item type is `serde_json::Value`, the Anthropic adapter turns each JSON object into
+  `SseChunk::Event`, each other value into `SseChunk::Other`, calls B3676, and writes the events back as `Value`
+  objects in place, keeping the vector length unless B3676 changes it. Add a round-trip test per conversion. Do not
+  add a second stream item type to B3679 or B3661.
+
+  Flags. `ResponsesTranslation` sets `delivers_ended_stream_rewrites` and `assembles_streamed_response` to true, as
+  B3671 says. Chat and Anthropic set them to whatever the pinned handler classes set; read the three
+  `guardrail_translation/handler.py` files and copy the values. The Responses and Anthropic adapters pass
+  `deliver_ended_stream_rewrites` to B3672 and B3676 from the flag, so the value has one source.
+
+  Guardrail name. B3672 takes `guardrail_name: Option<&str>` because `GuardrailContract` has no name accessor.
+  Every adapter takes the name from the same place: the argument B3661's trait passes to the streaming method. If
+  the trait has no such argument, stop and say so in the report; do not invent a second source. The adapter hands
+  that `Option<&str>` to B3672 unchanged and uses it for the Anthropic error below.
+
+  Undeliverable rewrites. B3672 returns `StreamSyncError::Undeliverable { guardrail_name, reason }` and B3676
+  returns `ProcessStreamError::Undeliverable` that already holds `UndeliverableStreamRewrite { guardrail_name, reason }`
+  (B3246, betterlite-core `guardrails/streaming_rewrite.rs`). `undeliverable.rs` converts the B3672 error into
+  B3246's `UndeliverableStreamRewrite`, keeping `guardrail_name` (use "unknown" when it is None, as B3672 does) and
+  `reason`, and the adapter returns it through whatever error type B3661's streaming method returns. Read B3246's
+  task and the code on main for the real struct; if it has no public constructor with these two fields, report that
+  in the blocker field and stop.
+
+  Block chunks and error items. `build_block_sse_chunks` and `build_stream_error_items` need a response id, a
+  message id and a created time that LiteLLM draws from random ids and the clock. B3673's functions take them as a
+  `BlockStamp { response_id, message_id, created_at }`. `stamps.rs` defines the trait `StampSource` with one method
+  returning a `BlockStamp`, and each adapter is generic over `S: StampSource` (no trait object); tests use a fixed source. B3680 passes the real one. The
+  adapter converts `GuardrailFailure` to the status code and message those functions take: `Http { status, detail }`
+  gives that status and detail, `ModifyResponse` gives 400 and its message, as LiteLLM's `handle_streaming_block`
+  does; read B3673's task for the exact parameter list.
+
+  Tables in tables.rs, with B207's `CallType` values in the order of the pinned files:
+  `CHAT_CALL_TYPES` = completion, acompletion; `RESPONSES_CALL_TYPES` = responses, aresponses;
+  `ANTHROPIC_CALL_TYPES` = anthropic_messages. `chat_completions` is true only for the two chat entries (B3679 uses
+  it to tell chat apart from other call types); this task exports the two chat names a second time as `CHAT_COMPLETIONS_CALL_TYPES` so B3680 can set the flag.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/unified_chat.rs
+    - crates/betterlite-server/src/guardrails/unified_chat/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/__init__.py
+    why: The chat call-type table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/__init__.py
+    why: The Responses call-type table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/__init__.py
+    why: The Anthropic Messages call-type table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py
+    why: The two class flags and the streaming signature of the chat handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py
+    why: The two class flags and the streaming signature of the Responses handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py
+    why: The two class flags, `post_call_hook_response` and the streaming signature of the Anthropic handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L382-L406
+    why: How a ModifyResponse or HTTP failure becomes block chunks and error items.
+
+dod:
+  - text: Three adapters implement every method of `BaseTranslation`, and their input and output methods call the matching B3668, B3671 and B3675 functions with the same arguments.
+    proof: [adapter-tests]
+  - text: The Responses adapter sets both class flags to true, passes the delivery flag to B3672, and the other two adapters carry the pinned handler values.
+    proof: [flag-tests]
+  - text: The Anthropic adapter converts the trait's stream items to `SseChunk` and back without losing events, and the Responses adapter edits its events in place.
+    proof: [stream-conversion-tests]
+  - text: B3672's undeliverable error becomes B3246's `UndeliverableStreamRewrite` with the same guardrail name ("unknown" when absent) and reason, and B3676's error passes through unchanged.
+    proof: [undeliverable-tests]
+  - text: Block chunks and error items use a stamp from the injected `StampSource` and the status and message of the guardrail failure.
+    proof: [stamp-tests]
+  - text: The chat, Responses and Anthropic tables list exactly the pinned call types in order, and only the chat entries carry the chat-completions flag.
+    proof: [table-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: adapter-tests
+      why: an adapter skips its handler or passes different arguments
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_chat::.*::tests::adapter_/)'
+    - id: flag-tests
+      why: a class flag has the wrong value or the delivery flag is not passed on
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_chat::.*::tests::flags_/)'
+    - id: stream-conversion-tests
+      why: a stream item is dropped, reordered or converted lossily
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_chat::.*::tests::stream_/)'
+    - id: undeliverable-tests
+      why: the undeliverable error loses its name, reason or the "unknown" fallback
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_chat::undeliverable::tests::/)'
+    - id: stamp-tests
+      why: block chunks or error items ignore the injected stamp or the failure's status and message
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_chat::.*::tests::stamp_/)'
+    - id: table-tests
+      why: a call type is missing, duplicated or flagged wrongly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_chat::tables::tests::table_/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - The chat, Responses and Anthropic handler functions; B3667, B3668, B3669, B3671, B3672, B3673, B3675 and B3676 own them.
+  - The `UndeliverableStreamRewrite` type itself; B3246 owns it.
+  - The registry fill, the translation enum, the real stamp source and the hooks; B3680 owns them.
+  - HTTP oracle cases for chat, Responses and Anthropic guardrails; B3680 adds them.
+
+pitfalls:
+  - "The two B3672 and B3676 errors differ: only B3672's is a local enum, so only it needs the conversion."
+  - "`guardrail_name` is None-able in B3672 and \"unknown\" is the fallback in the error text; do not pass an empty string."
+  - Chat completions are the only entries with `chat_completions` true; `anthropic_messages` is not one.
+  - Keep one conversion per direction for stream items; a second helper that does the same thing in another file fails review.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

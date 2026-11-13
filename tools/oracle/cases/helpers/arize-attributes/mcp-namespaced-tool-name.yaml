@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-namespaced-tool-name
+call:
+  b3861:
+    function: set_attributes
+    kwargs:
+      standard_logging_object:
+        call_type: call_mcp_tool
+        metadata:
+          mcp_tool_call_metadata:
+            name: ''
+            namespaced_tool_name: server/weather
+    response: null
+env: {}
+compare: {ignore: []}

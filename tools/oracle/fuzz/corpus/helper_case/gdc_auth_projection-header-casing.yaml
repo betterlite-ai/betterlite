@@ -1,0 +1,17 @@
+kind: helper
+name: gdc-auth-projection-header-casing-seed
+call:
+  gdc_auth_projection:
+    scenarios:
+      - config:
+          model_list:
+            - litellm_params: {vertex_project: project-a}
+        validations:
+          - api_key: '{"type":"gdch_service_account","format_version":"1","private_key_id":"key-id","private_key":"-----BEGIN EC PRIVATE KEY-----\nfixture\n-----END EC PRIVATE KEY-----\n","name":"service-identity","project":"credential-project","token_uri":"https://identity.example/authenticate"}'
+            base: "https://gateway.example"
+            deployment: 0
+            headers:
+              - {name: Authorization, value: "Bearer stale"}
+              - {name: x-goog-user-project, value: projects/stale}
+env: {}
+compare: {ignore: []}

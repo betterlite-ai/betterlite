@@ -1,0 +1,96 @@
+id: B7872
+title: Python create_batch and retrieve_batch with their async twins
+description: >-
+  Batch users call `litellm.create_batch(completion_window="24h", endpoint="/v1/chat/completions", input_file_id=...)` and
+  then `litellm.retrieve_batch(batch_id=...)` until the job ends. This task gives the wheel those four functions
+  (`create_batch`, `acreate_batch`, `retrieve_batch`, `aretrieve_batch`). Provider requests, timeout precedence and the
+  Bedrock and Vertex special cases are Rust (B1036, B1037). Python only collects arguments and builds the result.
+
+
+  Native side, the family `batch_calls`: `src/batch_calls.rs` with `register` that adds `NativeBatchSession` and
+  `NativeBatchError`. The session has `create`, `retrieve`, `acreate` and `aretrieve`, each taking `(payload_text, blobs)` and
+  returning JSON text. B7873 adds its own family `batch_listing` for list and cancel, so the two never share a file. The
+  architect writes the `lib.rs` lines. Conversion code is in `src/batch_calls/convert.rs`, with tests named `request_*` and
+  `error_*`.
+
+
+  Python side, `python/betterlite/batches/_create_retrieve.py`. Signatures follow batches/main.py L108-L170 and L379-L420.
+  `create_batch` takes `completion_window` (only "24h"), `endpoint` (eleven allowed paths from "/v1/chat/completions" to
+  "/v1/videos/extensions"), `input_file_id`, `custom_llm_provider` (default "openai"), `metadata`, `extra_headers`,
+  `extra_body`, `output_expires_after` and `**kwargs`. `retrieve_batch` takes `batch_id`, `custom_llm_provider` (default
+  "openai", with "anthropic" allowed), `metadata`, `extra_headers`, `extra_body`. A test compares `inspect.signature`. The
+  sync functions accept `acreate_batch=True` or `aretrieve_batch=True` and then return a coroutine. The result is
+  `LiteLLMBatch` (B167), whose `_hidden_params` hold the provider and the model id the way LiteLLM sets them.
+  `_resolve_timeout` (L68-L105) is the rule that picks the timeout from kwargs, the module `request_timeout` and the 600
+  second default: it is Rust's, and Python passes `timeout` through unchanged, as a number (an `httpx.Timeout` becomes the
+  largest of its four values in `to_call_payload`).
+scope:
+  paths:
+  - crates/betterlite-python/src/batch_calls.rs
+  - crates/betterlite-python/src/batch_calls/**
+  - crates/betterlite-python/python/betterlite/_native_batch_calls.pyi
+  - crates/betterlite-python/python/betterlite/batches/_create_retrieve.py
+  - crates/betterlite-python/tests/batch_server.py
+  - crates/betterlite-python/tests/test_batch_create_read.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L68-L170
+  why: _resolve_timeout and the create entry
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L171-L377
+  why: create_batch and its provider branches
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L378-L698
+  why: aretrieve_batch, retrieve_batch and the provider-less helper
+dod:
+- text: The four functions keep LiteLLM's signatures, and the `a` names are coroutine functions.
+  proof: [batch-signature]
+- text: A create call reaches the local server with the endpoint, window, file id and metadata, and returns the same `LiteLLMBatch` dump as LiteLLM.
+  proof: [batch-create]
+- text: A retrieve call returns the same batch, and `create_batch(acreate_batch=True)` and `retrieve_batch(aretrieve_batch=True)` return coroutines.
+  proof: [batch-retrieve]
+- text: A 404 raises the matching class with the native error as cause, and a `client` argument raises `UnsupportedCallArgument`.
+  proof: [batch-error]
+- text: The native register function and conversion have tests without an interpreter.
+  proof: [batch-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: batch-signature
+    why: A caller's keyword is refused.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_batch_create_read.py -k signature
+  - id: batch-create
+    why: The request body differs.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_batch_create_read.py -k create
+  - id: batch-retrieve
+    why: A batch reads back different.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_batch_create_read.py -k retrieve
+  - id: batch-error
+    why: An error class or client check is wrong.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_batch_create_read.py -k error
+  - id: batch-native
+    why: A field changes on the way.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^batch_calls::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Strict typing has to hold for the batch calls.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`client` is refused with `UnsupportedCallArgument` in all four functions."
+  why: A Python HTTP client can't drive the Rust one (B158).
+- what: This task has no helper oracle cases.
+  why: pytest runs both packages against one server and compares the objects.
+out_of_scope:
+- "`list_batches`, `alist_batches`, `cancel_batch`, `acancel_batch` and `_handle_async_invoke_status` are B7873."
+- "`_handle_retrieve_batch_providers_without_provider_config` L422-L557 is provider logic and belongs to B1037."
+- "litellm/batches/batch_utils.py (cost and usage of a finished batch) belongs to B1039 and B1040, and nothing in Python calls it."
+- "The `batches` package `main.py` is written in B7873."
+pitfalls:
+- "`create_batch` defaults `custom_llm_provider` to \"openai\", but `retrieve_batch` allows \"anthropic\" and the other providers do not, so each keeps its own Literal."
+- "`metadata` stays a `dict[str, str]` and is sent only when given, so None must not become an empty object."
+- "`output_expires_after` is a plain dict with `anchor` and `seconds` and goes through unchanged."
+- "`completion_window` is checked by type hints only, so \"48h\" reaches the provider and its error comes back as a native error."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

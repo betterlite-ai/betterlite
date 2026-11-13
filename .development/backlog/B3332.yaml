@@ -2,7 +2,7 @@ id: B3332
 milestone: M5 api families
 title: Video provider selection
 status: todo
-depends_on: [B3331, B525, B547, B1361, B1363]
+depends_on: [B3331, B525, B547, B1361, B1363, B1537, B1532, B8151, B5838]
 file: tasks/B3332-video-provider-selection.yaml
 covers:
   - "litellm/utils.py"

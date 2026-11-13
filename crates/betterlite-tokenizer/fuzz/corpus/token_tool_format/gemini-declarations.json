@@ -1,0 +1,1 @@
+[{"type":"gemini","function_declarations":[{"name":"list_orders","parameters":{"type":"object","properties":{"state":{"type":"string","enum":["open","closed"]}}}},{"name":"ping"}]}]

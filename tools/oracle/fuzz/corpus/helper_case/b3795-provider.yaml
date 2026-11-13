@@ -1,0 +1,10 @@
+# straiker_webhook_records: provider resolution from the declared provider and the model
+kind: helper
+name: b3795-provider-seed
+call:
+  b3795:
+    provider:
+      request_data: {custom_llm_provider: anthropic, model: claude-3-5-sonnet}
+      model: claude-3-5-sonnet
+env: {}
+compare: {ignore: []}

@@ -45,14 +45,13 @@ description: >-
   70 decoder fuzz/replay and 75 configuration/export lines, capped at 800.
 scope:
   paths:
-    - crates/betterlite-openai/src/{lib,compatible_image_hosts}.rs
     - crates/betterlite-openai/src/compatible_image_hosts.rs
     - crates/betterlite-openai/src/compatible_image_hosts/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/compatible_image_reply.rs
     - crates/betterlite-openai/fuzz/corpus/compatible_image_reply/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,compatible_images}.rs
+    - crates/betterlite-config/src/sections/compatible_image_credentials.rs
+    - crates/betterlite-config/src/sections/compatible_image_credentials/**
     - crates/betterlite-config/tests/compatible_image_settings.rs
     - tools/oracle/src/helpers/openai/compatible_image_record.rs
     - tools/oracle/src/helpers/openai/compatible_image_record/**
@@ -113,5 +112,6 @@ pitfalls:
   - An empty AIML data array suppresses otherwise usable output.choices images.
   - Supplying a CometAPI base ending in /v1 produces /v1/v1/images/generations.
   - Flux AIML's duplicate model or prompt options fail during TypedDict construction instead of overriding the argument.
+  - 'The base and key alias chains for both hosts live in the new compatible_image_credentials section stub under crates/betterlite-config/src/sections. Shape it like openai_credentials.rs, an ignored Raw and a convert that resolves every alias through EnvironmentLookup, not a YAML key.'
 budget: {max_changed_lines: 800, max_new_expects: 0}
 review_level: security

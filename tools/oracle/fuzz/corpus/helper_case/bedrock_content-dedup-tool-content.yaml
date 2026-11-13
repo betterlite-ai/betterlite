@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-content-dedup-tool-content-seed
+call:
+  bedrock_content:
+    function: deduplicate_tool_content
+    tool_content:
+      - {toolResult: {toolUseId: tu-1, content: [{text: first}]}}
+      - {cachePoint: {type: default}}
+      - {toolResult: {toolUseId: tu-1, content: [{text: second}]}}
+env: {}
+compare: {ignore: []}

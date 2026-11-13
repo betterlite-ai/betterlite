@@ -1,0 +1,8 @@
+kind: helper
+name: gigachat-reply-access-token-expires-at
+call:
+  b7325:
+    operation: reply
+    body: '{"access_token":"tok-2","expires_at":1735689600000}'
+env: {}
+compare: {ignore: []}

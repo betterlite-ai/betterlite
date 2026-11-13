@@ -1,0 +1,13 @@
+id: B8636
+milestone: M8 platform
+title: Production stream generator and router calls for responses, cursor and rerank routes
+status: todo
+depends_on: [B8631, B8632, B8633, B8635, B080, B940, B085]
+file: tasks/B8636-route-production-ports.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

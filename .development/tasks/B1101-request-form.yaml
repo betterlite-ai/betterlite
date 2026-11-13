@@ -86,23 +86,17 @@ description: >-
 
   compatibility_deviations exercises the transcription upload-size differences below; ordinary helper parity uses
   an unset configured limit and a body below the native safety cap.
+  This task adds no route or server state, so leave routes.rs and state.rs to B1100.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/api/request_form.rs
   - crates/betterlite-server/src/api/request_form/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/request_form.rs
   - crates/betterlite-core/src/api/request_form/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml

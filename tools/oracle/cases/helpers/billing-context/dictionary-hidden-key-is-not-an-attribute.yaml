@@ -1,0 +1,37 @@
+kind: helper
+name: billing-context-dictionary-hidden-key-is-not-an-attribute
+call:
+  billing_context:
+    calls:
+      - function: identity
+        identity:
+          model: request-model
+          custom_llm_provider: p
+          response:
+            kind: dictionary
+            model: dict-model
+            hidden_params:
+              provider_response_model: hidden-provider-model
+              region_name: r1
+              model: hidden-model
+      - function: identity
+        identity:
+          model: request-model
+          custom_llm_provider: p
+          response:
+            kind: object
+            model: null
+            hidden_params:
+              model: hidden-model
+      - function: identity
+        identity:
+          model: request-model
+          custom_llm_provider: p
+          response:
+            kind: object
+            model: null
+            hidden_params:
+              provider_response_model: hidden-provider-model
+              region_name: r1
+env: {}
+compare: {ignore: []}

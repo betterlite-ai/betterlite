@@ -1,0 +1,14 @@
+id: B7531
+milestone: M9 agents and mcp
+title: MCP OAuth client registration flows and ephemeral clients
+status: todo
+depends_on: [B4650, B4655, B4711, B4712, B4731, B6590, B6595, B6760, B6762, B6763, B4719, B7530]
+file: tasks/B7531-mcp-oauth-dcr-flows.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py"
+parent: B136
+split_from: B7321
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

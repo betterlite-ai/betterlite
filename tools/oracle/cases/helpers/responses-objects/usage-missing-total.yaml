@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "responses-objects-usage-missing-total",
+  "call": {
+    "responses_objects": {
+      "operation": "usage_cost",
+      "usage": {
+        "input_tokens": 3,
+        "output_tokens": 2
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

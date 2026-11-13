@@ -1,0 +1,31 @@
+kind: helper
+name: datadog-llm-privacy-stream-detection-model-params
+call:
+  b3936:
+    function: stream_detection
+    payload:
+      id: "chatcmpl-1"
+      trace_id: "trace-1"
+      session_id: "session-1"
+      call_type: "completion"
+      response_cost: 0.5
+      status: "success"
+      status_fields: {"llm_api_status": "success", "guardrail_status": "not_run"}
+      total_tokens: 5
+      prompt_tokens: 2
+      completion_tokens: 3
+      startTime: 1704067200.0
+      endTime: 1704067201.5
+      completionStartTime: 1704067200.5
+      response_time: 1.5
+      model_map_information: {}
+      model: "gpt-4o"
+      api_base: "https://api.openai.com"
+      metadata: {}
+      saved_cache_cost: 0.0
+      request_tags: []
+      model_parameters: {stream: true}
+      hidden_params: {}
+      standard_built_in_tools_params: null
+env: {}
+compare: {ignore: []}

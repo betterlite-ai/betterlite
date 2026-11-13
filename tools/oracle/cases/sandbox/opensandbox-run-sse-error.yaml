@@ -1,0 +1,26 @@
+kind: helper
+name: opensandbox-run-sse-error
+call:
+  b3517:
+    operation: run
+    url: http://sandbox.example/sandboxes/sbx_1/endpoints/44772/code
+    headers:
+      Content-Type: application/json
+      Accept: text/event-stream
+    body:
+      code: "raise RuntimeError('boom')"
+      context:
+        language: python
+    response_body: |
+      : keep-alive
+      event: message
+      id: 7
+      retry: 1000
+      data: {"type":"stdout","text":"before"}
+      data: {"type":"error","name":"RuntimeError","text":"boom","traceback":["a","b"]}
+      data: {"type":"error","error":{"ename":"Second","evalue":"ignored"}}
+      data: {"type":"execution_count","execution_count":"2"}
+      not json at all
+env: {}
+compare:
+  ignore: []

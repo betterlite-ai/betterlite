@@ -1,0 +1,25 @@
+kind: helper
+name: model-metadata-resolution-dynamic-provider-metadata
+call:
+  model_metadata_resolution:
+    scenario: dynamic_provider_metadata
+    fixture:
+      model_cost:
+        ollama/llama3.2: {litellm_provider: ollama, mode: chat, input_cost_per_token: 9}
+        openai/gpt-4o: {litellm_provider: openai, mode: chat, input_cost_per_token: 7}
+    queries:
+      - model: llama3.2
+        custom_llm_provider: ollama
+        api_base: "http://fixture-host:11434"
+        api_key: fixture-key
+        dynamic: {kind: value, body: {key: runtime, max_tokens: 32}}
+      - model: lemonade/gemma
+        custom_llm_provider: lemonade
+        dynamic: {kind: value, body: {key: "lemonade/gemma", max_tokens: 8}}
+      - {model: llama3.2, custom_llm_provider: ollama, dynamic: {kind: value, body: {}}}
+      - {model: llama3.2, custom_llm_provider: ollama, dynamic: {kind: error}}
+      - {model: llama3.2, custom_llm_provider: ollama, dynamic: {kind: none}}
+      - {model: gpt-4o, custom_llm_provider: openai, dynamic: {kind: value, body: {key: ignored}}}
+      - {model: ada, custom_llm_provider: ollama, dynamic: {kind: value, body: {key: rewritten}}}
+env: {}
+compare: {ignore: []}

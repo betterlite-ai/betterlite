@@ -1,0 +1,7 @@
+kind: helper
+name: json-provider-registry-sarvam-unused-headers
+call:
+  json_provider_registry:
+    source: '{"sarvam":{"base_url":"https://api.sarvam.ai/v1","api_key_env":"SARVAM_API_KEY","headers":{"api-subscription-key":"{api_key}"}}}'
+env: {}
+compare: {ignore: []}

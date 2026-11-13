@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-exceeded-budget
+call: {"error_normalization": {"message": "EXCEEDED the BUDGET", "status_code": 418}}
+env: {}
+compare: {ignore: []}

@@ -176,7 +176,7 @@ out_of_scope:
     Vertex GCS import; those are independent).
   - Provider constructor calls and their initialization state. B3460 and the provider subtasks own those.
   - The helper functions aingest, aquery, ingest, query, _execute_ingest_pipeline, _execute_query_pipeline,
-    and _suppressed_sub_call_billing from litellm/rag/main.py are owned by B3460.
+    and _suppressed_sub_call_billing from litellm/rag/main.py. B3460 owns aingest, ingest and _execute_ingest_pipeline, and B3461 owns aquery, query, _execute_query_pipeline and _suppressed_sub_call_billing.
 
 pitfalls:
   - The architect adds `pub mod rag;` to crates/betterlite-core/src/lib.rs and crates/betterlite-config/src/lib.rs before this task runs, since module tasks never edit lib.rs themselves.

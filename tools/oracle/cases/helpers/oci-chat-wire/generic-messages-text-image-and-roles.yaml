@@ -1,0 +1,22 @@
+kind: helper
+name: oci-chat-wire-generic-messages-text-image-and-roles
+call:
+  b5942:
+    function: generic_messages
+    messages:
+      - role: system
+        content: "be brief"
+      - role: user
+        content:
+          - type: text
+            text: "what is this"
+          - type: image_url
+            image_url: "https://example.com/a.png"
+          - type: image_url
+            image_url:
+              url: "https://example.com/b.png"
+              detail: HIGH
+      - role: assistant
+        content: "a cat"
+env: {}
+compare: {ignore: []}

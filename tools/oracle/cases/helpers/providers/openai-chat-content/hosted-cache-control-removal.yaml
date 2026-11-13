@@ -1,0 +1,73 @@
+kind: helper
+name: openai-chat-content-hosted-cache-control-removal
+call:
+  openai_chat_content:
+    transform_requests:
+      requests:
+        - model: gpt-4o
+          provider: openai
+          messages:
+            - role: system
+              content:
+                - type: text
+                  text: Hello
+                  cache_control: {type: ephemeral}
+                  nested:
+                    cache_control: {type: ephemeral}
+                    keep: 1
+                  items:
+                    - cache_control: {type: ephemeral}
+                      keep: 2
+              cache_control: {type: ephemeral}
+          optional_params:
+            tools:
+              - type: function
+                function:
+                  name: f
+                  parameters:
+                    type: object
+                    cache_control: {type: ephemeral}
+                    properties:
+                      id:
+                        type: string
+                        cache_control: {type: ephemeral}
+                  cache_control: {type: ephemeral}
+                cache_control: {type: ephemeral}
+        - model: gpt-4o
+          provider: openai
+          api_base: http://localhost:4000/v1
+          messages:
+            - role: system
+              content:
+                - type: text
+                  text: Hello
+                  cache_control: {type: ephemeral}
+                  nested:
+                    cache_control: {type: ephemeral}
+                    keep: 1
+                  items:
+                    - cache_control: {type: ephemeral}
+                      keep: 2
+              cache_control: {type: ephemeral}
+          optional_params:
+            tools:
+              - type: function
+                function:
+                  name: f
+                  parameters:
+                    type: object
+                    cache_control: {type: ephemeral}
+                    properties:
+                      id:
+                        type: string
+                        cache_control: {type: ephemeral}
+                  cache_control: {type: ephemeral}
+                cache_control: {type: ephemeral}
+        - model: some-oss-model
+          provider: groq
+          messages:
+            - role: user
+              content: Hello
+              cache_control: {type: ephemeral}
+env: {}
+compare: {ignore: []}

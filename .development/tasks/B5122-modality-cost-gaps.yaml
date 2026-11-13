@@ -1,0 +1,277 @@
+id: B5122
+title: Close the B1671 modality cost audit gaps
+description: >-
+  B1671 built betterlite-models::modality_cost. An Opus review after merge found nine places where a
+  test or oracle case can't fail on the behavior it names, or where a built branch has no test at all.
+  prompt.rs, completion.rs and input_cost.rs already do what LiteLLM does on every point below, so this
+  task changes only the three test files and the modality-cost oracle cases. Each rewritten or new test
+  and case must fail once the rule it names is broken in the code, and pass on today's code.
+
+
+  Gap one, cache order. LiteLLM gives the cache hit to audio first, then to text out of what audio left,
+  then to image out of what both left, each with a min cap
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L949-L960).
+  prompt/tests.rs's cache_allocates_audio_first_then_text_then_image caches 8 tokens against 3 audio and
+  4 text, so no cap binds and a text-first order returns the same 3, 2, 6 and 3. The oracle case
+  cache-audio-first-then-text-image.yaml has the same slack, with 10 cached tokens against 3 audio, 4 text
+  and 2 image. The test becomes a_short_cache_hit_reaches_audio_before_text_and_image with cached_tokens
+  5 and the same base and details. It expects cache_hit_audio_tokens 3, audio_tokens 2, text_tokens 8 and
+  image_tokens 4, where a text-first order gives 1, 4, 6 and 4. The case drops cached_tokens to 5, so
+  LiteLLM returns cache_hit_audio_tokens 3, audio_tokens 2, text_tokens 48 and image_tokens 5. Its prices
+  move to binary-exact values (input_cost_per_token and base 0.5, read 0.25, write 1, above-1hr 2), and
+  input_cost comes out as 27.75 on both sides.
+
+
+  Gap two, sign before the clamp. LiteLLM computes max((text_tokens or 0) - cached_text_tokens, 0), so a
+  negative reported count keeps its sign through the subtraction and only the result is clamped
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L961-L976).
+  negative_reported_modality_is_retained_through_subtraction sends text_tokens -5 with no cached share
+  and expects 0. A version that clamps before it subtracts gives the same 0. The test becomes
+  a_negative_cached_text_share_lifts_a_negative_reported_text_count: text_tokens -2, cached_tokens 0 and a
+  cached text share of -5 give text_tokens 3, where a clamp-first version gives 5.
+
+
+  Gap three, audio and image clamps. The same lines clamp audio and image at zero after their cached share
+  comes off. ordinary_modalities_clamp_at_zero_when_cache_exceeds_them checks text only, so deleting the
+  .max(0) on audio or image in prompt.rs passes every test and case. It becomes the rstest
+  each_ordinary_modality_clamps_at_zero_when_its_cache_share_exceeds_it with cases text, audio and image.
+  The audio case sends audio_tokens 2, a cached audio share of 9 and cached_tokens 9, and expects
+  audio_tokens 0 (an unclamped version gives -7). The image case does the same with the audio and text
+  shares at zero. The new oracle case overdrawn-modalities-clamp-after-signed-subtraction.yaml covers gaps
+  two and three together. prompt_tokens 40, cached_tokens 20, text_tokens -2, audio_tokens 2, image_tokens
+  2 and cached shares of 9 audio, -5 text and 9 image, at base 0.5 and read 0.25, give text_tokens 3,
+  audio_tokens 0, image_tokens 0, billable_input_tokens 20 and input_cost 6.5.
+
+
+  Gap four, negative unit counts. LiteLLM reads character_count and image_count with "or 0" and both
+  durations with "or 0.0", so a negative value comes back unchanged, unlike video_tokens and query_count
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L978-L999).
+  A nonzero image_count with a nonnull input_cost_per_image skips the image-token charge, and nonzero audio
+  seconds with a nonnull input_cost_per_audio_per_second skip the audio-token charge
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1099-L1115).
+  calculate_cost_component bills nothing for a quantity of zero or less
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L786-L801).
+  No test or case sends a negative one, so a .max(0) on any of them passes, and for image_count and audio
+  seconds it turns LiteLLM's skipped token charge into a charge. The new prompt test
+  negative_character_image_and_duration_fields_keep_their_sign sends character_count -2, image_count -1,
+  audio_length_seconds -1.5 and video_length_seconds -2.5 and gets all four back unchanged. The new
+  input_cost test negative_image_count_and_audio_seconds_still_suppress_their_token_charges prices image
+  and audio tokens and still bills only the text. The new case negative-unit-counts-suppress-token-charges.yaml
+  sends the same four fields with text_tokens 10, audio_tokens 2 and image_tokens 4. Its model_info sets
+  input_cost_per_image 1, input_cost_per_image_token 0.5, input_cost_per_audio_per_second 1,
+  input_cost_per_audio_token 0.25 and input_cost_per_character 1, at base 0.5 and every other rate 0.
+  LiteLLM's input_cost is 5. A clamped image_count gives 7, and clamped audio seconds give 5.5.
+
+
+  Gap five, video. LiteLLM bills video tokens at input_cost_per_video_token, falls back to
+  input_cost_per_token when that key is missing or null, and skips the charge when video seconds and a
+  nonnull input_cost_per_video_per_second are both present
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1117-L1124).
+  It bills video seconds at input_cost_per_video_per_second
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1152-L1158).
+  No unit test or case sends positive video_tokens or video_length_seconds. Deleting the video branch in
+  input_cost.rs, dropping its fallback or dropping its suppression passes everything today. Three new
+  input_cost tests and three new cases cover it, all with text_tokens 10, video_tokens 4 and base 0.5.
+  video_tokens_fall_back_to_the_generic_token_price_when_no_video_token_price_is_set and
+  video-tokens-fall-back-to-the-input-token-price.yaml set only input_cost_per_token 0.5 and expect
+  input_cost 7. a_free_per_second_video_price_with_positive_seconds_suppresses_the_video_token_charge and
+  free-video-seconds-suppress-video-token-cost.yaml send video_length_seconds 3 with
+  input_cost_per_video_per_second 0 and input_cost_per_video_token 0.5, and expect 5.
+  video_seconds_bill_at_the_per_second_price and video-seconds-bill-at-the-per-second-price.yaml send the
+  same with input_cost_per_video_per_second 0.25, and expect 5.75.
+
+
+  Gap six, service tier. LiteLLM builds both the cached audio read key and the audio token key with
+  _get_service_tier_cost_key, so service_tier flex reads cache_read_input_audio_token_cost_flex and
+  input_cost_per_audio_token_flex
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1088-L1104,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L253-L271).
+  Every calculate_input_cost test passes service_tier None, including
+  cached_audio_bills_at_the_service_aware_audio_read_rate_and_the_rest_at_the_ordinary_rate, and no case
+  sets service_tier. Dropping the tier from either key in input_cost.rs passes today. The new test
+  flex_tier_prices_cached_audio_and_audio_tokens_at_their_flex_keys passes Some("flex") and a model whose
+  _flex keys differ from the unsuffixed ones. The new case flex-tier-prices-audio-cache-and-tokens.yaml
+  sends service_tier flex, cached_tokens 4 that are all audio, audio_tokens 6 and text_tokens 10, at base 1
+  and read 0.125. Its model_info sets cache_read_input_audio_token_cost 0.5 with a _flex price of 0.25,
+  and input_cost_per_audio_token 1 with a _flex price of 0.5. LiteLLM's input_cost is 12, and dropping the
+  tier from either key gives 13.
+
+
+  Gap seven, signed completion counters. LiteLLM reads completion audio_tokens and image_tokens with
+  "or 0", keeps them signed, and counts them with video toward the excess that limits how much reasoning
+  comes off text
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1027-L1070,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1721-L1729).
+  completion/tests.rs's audio_and_image_counters_pass_through_unchanged uses only 7 and 2, and no
+  completion case or seed has an audio, image or negative counter. Clamping either one at zero, the way
+  video is clamped, passes today. The test becomes the rstest
+  signed_audio_and_image_counters_pass_through_and_count_toward_the_excess with cases positive (its
+  current 7 and 2), negative_audio and negative_image. negative_audio sends completion_tokens 5,
+  text_tokens 5, reasoning_tokens 5 and audio_tokens -3, and expects audio_tokens -3 and text_tokens 3,
+  where a clamped audio gives text_tokens 0. negative_image does the same with image_tokens -3. The new
+  case signed-audio-and-image-lower-the-reasoning-excess.yaml sends completion_tokens 5, text_tokens 5,
+  reasoning_tokens 5, audio_tokens -3 and image_tokens -1. LiteLLM returns text_tokens 4. A clamped audio
+  gives 1, a clamped image gives 3, and both clamped give 0.
+
+
+  Gap eight, TTL buckets. LiteLLM copies cache_creation_token_details through, then bills its 5m count at
+  cache_creation_cost and its 1h count at cache_creation_cost_above_1hr
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L942-L948,
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L892-L913).
+  cache_creation_token_details_pass_through_when_present only asserts is_some on an all-null record, and
+  ttl-record-empty-overrides-total-writes.yaml sends {}. A parser that kept the record but lost its counts
+  passes both. The test becomes cache_creation_ttl_buckets_pass_through_with_their_counts. It sends
+  ephemeral_5m_input_tokens Some(3) and ephemeral_1h_input_tokens Some(4) and compares the whole record
+  with assert_eq. The new case ttl-buckets-bill-at-their-own-prices.yaml sends prompt_tokens 50,
+  text_tokens 50, cache_creation_tokens 1000 and ephemeral_5m_input_tokens 3 with ephemeral_1h_input_tokens
+  4, at base 0.5, write 0.5 and above-1hr 2. LiteLLM returns the record unchanged and input_cost 34.5.
+scope:
+  paths:
+    - crates/betterlite-models/src/modality_cost/prompt/tests.rs
+    - crates/betterlite-models/src/modality_cost/completion/tests.rs
+    - crates/betterlite-models/src/modality_cost/input_cost/tests.rs
+    - tools/oracle/cases/helpers/modality-cost/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L932-L1016
+    why: parse_prompt_tokens_details, with the audio, text and image cache order, the signed subtraction before each clamp, and the or-zero unit counts and durations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1027-L1070
+    why: parse_completion_tokens_details, keeping audio and image signed and counting them toward the reasoning excess.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1721-L1729
+    why: text_tokens_without_nested_reasoning, the excess arithmetic the completion test and case pin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1073-L1173
+    why: _calculate_input_cost, with the tiered audio keys, the image and video token charges a per-unit price skips, the TTL write cost and the per-unit components.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L786-L842
+    why: calculate_cost_component bills nothing for a quantity of zero or less, and _get_cost_per_unit falls back from a missing tier key to the unsuffixed one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L892-L913
+    why: calculate_cache_writing_cost bills the 5m and 1h buckets at their own prices once a TTL record is present.
+dod:
+  - text: >-
+      prompt/tests.rs has a_short_cache_hit_reaches_audio_before_text_and_image (cached_tokens 5, expecting
+      cache_hit_audio_tokens 3, audio_tokens 2, text_tokens 8, image_tokens 4) in place of
+      cache_allocates_audio_first_then_text_then_image. cache-audio-first-then-text-image.yaml sends
+      cached_tokens 5 at binary-exact prices and matches LiteLLM's 3, 2, 48, 5 and input_cost 27.75. On
+      today's main the test name and the cached_tokens 5 line don't exist, and the old test and case pass
+      with text taking the cache first.
+    proof: [cache-order, modality-cost-module, oracle]
+  - text: >-
+      prompt/tests.rs has a_negative_cached_text_share_lifts_a_negative_reported_text_count (text_tokens -2,
+      cached_tokens 0, cached text share -5, expecting text_tokens 3) in place of
+      negative_reported_modality_is_retained_through_subtraction, and the new case
+      overdrawn-modalities-clamp-after-signed-subtraction.yaml matches LiteLLM's text_tokens 3. A clamp
+      before the subtraction gives 5 and fails both.
+    proof: [negative-text-share, modality-cost-module, oracle]
+  - text: >-
+      prompt/tests.rs has the rstest each_ordinary_modality_clamps_at_zero_when_its_cache_share_exceeds_it
+      with cases text, audio and image in place of ordinary_modalities_clamp_at_zero_when_cache_exceeds_them,
+      and overdrawn-modalities-clamp-after-signed-subtraction.yaml matches LiteLLM's audio_tokens 0 and
+      image_tokens 0. Deleting the .max(0) on audio or image in prompt.rs fails the matching case and the
+      oracle case.
+    proof: [modality-clamps, modality-cost-module, oracle]
+  - text: >-
+      prompt/tests.rs has negative_character_image_and_duration_fields_keep_their_sign and input_cost/tests.rs
+      has negative_image_count_and_audio_seconds_still_suppress_their_token_charges. The new case
+      negative-unit-counts-suppress-token-charges.yaml returns character_count -2, image_count -1,
+      audio_length_seconds -1.5 and video_length_seconds -2.5 unchanged and matches LiteLLM's input_cost 5.
+      A .max(0) on any of the four fields fails the prompt test and the case.
+    proof: [negative-unit-counts, modality-cost-module, oracle]
+  - text: >-
+      input_cost/tests.rs has video_tokens_fall_back_to_the_generic_token_price_when_no_video_token_price_is_set,
+      a_free_per_second_video_price_with_positive_seconds_suppresses_the_video_token_charge and
+      video_seconds_bill_at_the_per_second_price. The new cases video-tokens-fall-back-to-the-input-token-price.yaml,
+      free-video-seconds-suppress-video-token-cost.yaml and video-seconds-bill-at-the-per-second-price.yaml
+      match LiteLLM's input_cost 7, 5 and 5.75. Deleting the video branch, its input_cost_per_token fallback,
+      its per-second suppression or the per-second component each fails at least one of them.
+    proof: [video-pricing, modality-cost-module, oracle]
+  - text: >-
+      input_cost/tests.rs has flex_tier_prices_cached_audio_and_audio_tokens_at_their_flex_keys, calling
+      calculate_input_cost with Some("flex"). The new case flex-tier-prices-audio-cache-and-tokens.yaml sends
+      service_tier flex and matches LiteLLM's input_cost 12. Dropping the tier from the audio cache read key or
+      the audio token key gives 13 and fails both.
+    proof: [service-tier, modality-cost-module, oracle]
+  - text: >-
+      completion/tests.rs has the rstest signed_audio_and_image_counters_pass_through_and_count_toward_the_excess
+      with cases positive, negative_audio and negative_image in place of
+      audio_and_image_counters_pass_through_unchanged. The new case
+      signed-audio-and-image-lower-the-reasoning-excess.yaml matches LiteLLM's audio_tokens -3, image_tokens -1
+      and text_tokens 4. Clamping completion audio or image at zero fails the matching rstest case and the
+      oracle case.
+    proof: [signed-completion, modality-cost-module, oracle]
+  - text: >-
+      prompt/tests.rs has cache_creation_ttl_buckets_pass_through_with_their_counts, comparing the whole record
+      with 5m Some(3) and 1h Some(4), in place of cache_creation_token_details_pass_through_when_present. The
+      new case ttl-buckets-bill-at-their-own-prices.yaml matches LiteLLM's record and input_cost 34.5. A parser
+      that keeps the record but loses either count fails both.
+    proof: [ttl-buckets, modality-cost-module, oracle]
+checks:
+  optional: []
+  commands:
+    - id: cache-order
+      why: The cache allocation test and oracle case still pass when text takes the cache before audio.
+      run: |-
+        grep -qE '^ *cached_tokens: 5$' tools/oracle/cases/helpers/modality-cost/cache-audio-first-then-text-image.yaml && ! grep -q 'fn cache_allocates_audio_first_then_text_then_image' crates/betterlite-models/src/modality_cost/prompt/tests.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(=modality_cost::prompt::tests::a_short_cache_hit_reaches_audio_before_text_and_image)'
+    - id: negative-text-share
+      why: A clamp before the subtraction gives the same answer as the signed subtraction in every test.
+      run: |-
+        test -f tools/oracle/cases/helpers/modality-cost/overdrawn-modalities-clamp-after-signed-subtraction.yaml && ! grep -q 'fn negative_reported_modality_is_retained_through_subtraction' crates/betterlite-models/src/modality_cost/prompt/tests.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(=modality_cost::prompt::tests::a_negative_cached_text_share_lifts_a_negative_reported_text_count)'
+    - id: modality-clamps
+      why: No test drives audio or image below zero, so their clamps can go.
+      run: |-
+        test -f tools/oracle/cases/helpers/modality-cost/overdrawn-modalities-clamp-after-signed-subtraction.yaml && grep -q 'case::audio(' crates/betterlite-models/src/modality_cost/prompt/tests.rs && grep -q 'case::image(' crates/betterlite-models/src/modality_cost/prompt/tests.rs && ! grep -q 'fn ordinary_modalities_clamp_at_zero_when_cache_exceeds_them' crates/betterlite-models/src/modality_cost/prompt/tests.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^modality_cost::prompt::tests::each_ordinary_modality_clamps_at_zero_when_its_cache_share_exceeds_it::/)'
+    - id: negative-unit-counts
+      why: A clamp on character_count, image_count or a duration passes every test and turns a skipped token charge into a charge.
+      run: |-
+        test -f tools/oracle/cases/helpers/modality-cost/negative-unit-counts-suppress-token-charges.yaml && grep -q 'fn negative_character_image_and_duration_fields_keep_their_sign' crates/betterlite-models/src/modality_cost/prompt/tests.rs && grep -q 'fn negative_image_count_and_audio_seconds_still_suppress_their_token_charges' crates/betterlite-models/src/modality_cost/input_cost/tests.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(=modality_cost::prompt::tests::negative_character_image_and_duration_fields_keep_their_sign) | test(=modality_cost::input_cost::tests::negative_image_count_and_audio_seconds_still_suppress_their_token_charges)'
+    - id: video-pricing
+      why: The video token and video second branches have no test, so deleting them passes.
+      run: |-
+        test -f tools/oracle/cases/helpers/modality-cost/video-tokens-fall-back-to-the-input-token-price.yaml && test -f tools/oracle/cases/helpers/modality-cost/free-video-seconds-suppress-video-token-cost.yaml && test -f tools/oracle/cases/helpers/modality-cost/video-seconds-bill-at-the-per-second-price.yaml && grep -q 'fn video_tokens_fall_back_to_the_generic_token_price_when_no_video_token_price_is_set' crates/betterlite-models/src/modality_cost/input_cost/tests.rs && grep -q 'fn a_free_per_second_video_price_with_positive_seconds_suppresses_the_video_token_charge' crates/betterlite-models/src/modality_cost/input_cost/tests.rs && grep -q 'fn video_seconds_bill_at_the_per_second_price' crates/betterlite-models/src/modality_cost/input_cost/tests.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(=modality_cost::input_cost::tests::video_tokens_fall_back_to_the_generic_token_price_when_no_video_token_price_is_set) | test(=modality_cost::input_cost::tests::a_free_per_second_video_price_with_positive_seconds_suppresses_the_video_token_charge) | test(=modality_cost::input_cost::tests::video_seconds_bill_at_the_per_second_price)'
+    - id: service-tier
+      why: Every input cost test passes service_tier None, so dropping the tier from the audio keys passes.
+      run: |-
+        test -f tools/oracle/cases/helpers/modality-cost/flex-tier-prices-audio-cache-and-tokens.yaml && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(=modality_cost::input_cost::tests::flex_tier_prices_cached_audio_and_audio_tokens_at_their_flex_keys)'
+    - id: signed-completion
+      why: Completion audio and image are only tested positive, so clamping them at zero passes.
+      run: |-
+        test -f tools/oracle/cases/helpers/modality-cost/signed-audio-and-image-lower-the-reasoning-excess.yaml && grep -q 'case::negative_audio(' crates/betterlite-models/src/modality_cost/completion/tests.rs && grep -q 'case::negative_image(' crates/betterlite-models/src/modality_cost/completion/tests.rs && ! grep -q 'fn audio_and_image_counters_pass_through_unchanged' crates/betterlite-models/src/modality_cost/completion/tests.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^modality_cost::completion::tests::signed_audio_and_image_counters_pass_through_and_count_toward_the_excess::/)'
+    - id: ttl-buckets
+      why: The TTL test checks only is_some on an all-null record, so losing the 5m or 1h count passes.
+      run: |-
+        test -f tools/oracle/cases/helpers/modality-cost/ttl-buckets-bill-at-their-own-prices.yaml && ! grep -q 'fn cache_creation_token_details_pass_through_when_present' crates/betterlite-models/src/modality_cost/prompt/tests.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(=modality_cost::prompt::tests::cache_creation_ttl_buckets_pass_through_with_their_counts)'
+    - id: modality-cost-module
+      why: A rewritten fixture or helper in the three test files breaks a modality_cost test the other checks don't name.
+      run: |-
+        test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-models/src/modality_cost)" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^modality_cost::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/modality-cost/audio-rate-absent-versus-image-fallback.yaml
+  - tools/oracle/cases/helpers/modality-cost/cache-audio-first-then-text-image.yaml
+  - tools/oracle/cases/helpers/modality-cost/flex-tier-prices-audio-cache-and-tokens.yaml
+  - tools/oracle/cases/helpers/modality-cost/free-seconds-and-images-suppress-token-cost.yaml
+  - tools/oracle/cases/helpers/modality-cost/free-video-seconds-suppress-video-token-cost.yaml
+  - tools/oracle/cases/helpers/modality-cost/negative-unit-counts-suppress-token-charges.yaml
+  - tools/oracle/cases/helpers/modality-cost/overdrawn-modalities-clamp-after-signed-subtraction.yaml
+  - tools/oracle/cases/helpers/modality-cost/reasoning-nested-in-text-only-to-excess.yaml
+  - tools/oracle/cases/helpers/modality-cost/signed-audio-and-image-lower-the-reasoning-excess.yaml
+  - tools/oracle/cases/helpers/modality-cost/signed-counts-and-positive-video-query.yaml
+  - tools/oracle/cases/helpers/modality-cost/ttl-buckets-bill-at-their-own-prices.yaml
+  - tools/oracle/cases/helpers/modality-cost/ttl-record-empty-overrides-total-writes.yaml
+  - tools/oracle/cases/helpers/modality-cost/video-seconds-bill-at-the-per-second-price.yaml
+  - tools/oracle/cases/helpers/modality-cost/video-tokens-fall-back-to-the-input-token-price.yaml
+deviations: []
+out_of_scope:
+  - prompt.rs, completion.rs, input_cost.rs, cache_write.rs, pricing.rs and the cost_usage projection. They already match LiteLLM on all eight gaps, so this task changes no product code.
+  - The Rust and Python modality_cost adapters. They already take every field these cases send (service_tier, both TTL buckets, character_count, image_count, both durations, completion audio and image) and stay unchanged.
+  - The helper_case corpus seeds under tools/oracle/fuzz/corpus/helper_case/modality-cost-*. No finding asks for a new seed.
+  - Padded one-line functions belong to B5094. No such finding came up for B1671, and this task does not touch .ast-grep/rules/.
+pitfalls:
+  - LiteLLM sums Python floats and the adapter prints their repr, while the helper compare is exact, so a case priced at 0.00001 with cached_tokens 5 gives 0.0005550000000000002 on the LiteLLM side against betterlite's 0.000555; every rewritten and new case uses prices exact in binary (0.125, 0.25, 0.5, 1, 2).
+  - Durations go into a case as quoted strings ("3", "-1.5", "-2.5"), the way free-seconds-and-images-suppress-token-cost.yaml sends "2.5", and both adapters print them back normalized ("3", not "3.0").
+  - _get_cost_per_unit falls back from a missing _flex key to the unsuffixed key, so the flex test and case must set both keys at different prices, or a dropped tier can't show.
+  - calculate_cost_component returns zero for a quantity of zero or less, so a negative unit count moves input_cost only through the token charge it skips; the returned fields are what pin the sign.
+  - A negative cached text share leaves more cache for image (20 - 9 + 5 = 16 in the overdrawn case), so that case's image share of 9 comes off in full; that is LiteLLM's arithmetic, not a bug to fix.
+  - The checks grep for the rstest case names exactly, so the prompt cases use case::text, case::audio and case::image, and the completion cases use case::positive, case::negative_audio and case::negative_image.
+  - The five rewritten tests replace the old ones under new names; the checks fail while cache_allocates_audio_first_then_text_then_image, negative_reported_modality_is_retained_through_subtraction, ordinary_modalities_clamp_at_zero_when_cache_exceeds_them, audio_and_image_counters_pass_through_unchanged or cache_creation_token_details_pass_through_when_present still exists.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

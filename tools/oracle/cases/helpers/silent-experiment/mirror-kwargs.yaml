@@ -1,0 +1,19 @@
+kind: helper
+name: mirror-kwargs-isolates-the-shadow-call
+call:
+  b8440:
+    function: silent_kwargs
+    request:
+      model: gpt-4o
+      stream: true
+      temperature: 0.2
+      metadata:
+        litellm_parent_otel_span: {trace_id: "0af7651916cd43dd8448eb211c80319c"}
+        user: alice
+        model_group: primary
+      litellm_call_id: 3f2a9c
+      litellm_logging_obj: {call_type: completion}
+      standard_logging_object: {id: log-1}
+      proxy_server_request: {url: "http://localhost:4000/v1/chat/completions", method: POST}
+env: {}
+compare: {ignore: []}

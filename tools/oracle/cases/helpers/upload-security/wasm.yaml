@@ -1,0 +1,8 @@
+kind: helper
+name: upload-security-wasm
+call:
+  b3452:
+    content_hex: '0061736d'
+env: {}
+compare:
+  ignore: []

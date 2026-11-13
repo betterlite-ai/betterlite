@@ -5,7 +5,7 @@ description: >-
   then implement agent_policy and budget_snapshots as separate modules. These are the records that
   the resolved key carries; putting them in the higher-level agent registry or budget job would make
   the auth model depend on its own consumers. Own only the source ranges listed below, not agent
-  CRUD, kill-switch execution, identity verification or budget admission. B071/B141 compose them.
+  CRUD, kill-switch execution, identity verification or budget admission. B2325 and B4772, B4774 and B4778 compose them.
 
   AgentKillSwitchBearerAuth is frozen, forbids extra fields and requires type="bearer" and token.
   AgentKillSwitchApiKeyAuth likewise requires type="api_key" and api_key, with header_name default
@@ -23,10 +23,10 @@ description: >-
   It does not resolve DNS, inspect private addresses, reject userinfo, require a valid port, validate
   header syntax or fetch the URL. Match the Python split acceptance with a maintained URL parser,
   including accepted case/leading whitespace and malformed authority failures; do not silently
-  canonicalize the returned URL. B141 owns actual outbound requests and their configured limits.
+  canonicalize the returned URL. B4774 owns actual outbound requests and their configured limits.
 
   AgentCaller is frozen with user_id=None and team_id=None; extra fields are ignored. Preserve the
-  two header-name constants x-litellm-user-id and x-litellm-team-id here; reading headers is B141's
+  two header-name constants x-litellm-user-id and x-litellm-team-id here; reading headers is B4778's
   job. AgentKeySummary requires token, defaults key_alias/key_name to None and ignores extras.
   AgentResponse requires agent_id, agent_name and the open object agent_card_params. Its defaults
   are identity=None, identity_managed=false, enabled=true, execution_mode="autonomous",
@@ -44,7 +44,7 @@ description: >-
   client_id, issuer and revision; active defaults true, service_principal_id/last_authenticated_at
   default None, required_roles defaults empty tuple and required_scopes defaults to the one-element
   tuple user_impersonation. These identifiers are plain strings here: EntraIdentityConfig's UUID
-  normalization belongs to B141 and must not be applied to an already stored binding. Unknown
+  normalization belongs to B4770 and must not be applied to an already stored binding. Unknown
   fields are ignored. ManagedAgentContext is frozen and requires agent_id and mode
   autonomous/delegated; binding_revision, user_id and subject_oid default None. It does not accept
   mode=both or verify a signature. Empty identifiers remain empty.
@@ -155,11 +155,11 @@ deviations:
     why: The native numeric policy forbids floating-point storage; ordinary finite values retain source defaults and signs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L314-L339
 out_of_scope:
-  - B141 owns agents.py outside L187-L237/L291-L339, including AgentCard/AgentConfig/PatchAgentRequest,
-    AgentKillSwitchResult.succeeded, other response wrappers and A2A response normalization.
-  - B141 owns agent_identity.py outside the execution-mode alias, AgentIdentityBinding and ManagedAgentContext,
+  - B4770 owns agents.py outside L187-L237/L291-L339, including AgentCard/AgentConfig/PatchAgentRequest,
+    AgentKillSwitchResult.succeeded and the other response wrappers; B4771 owns the A2A response records and their normalization.
+  - B4770 owns agent_identity.py outside the execution-mode alias, AgentIdentityBinding and ManagedAgentContext,
     including EntraIdentityConfig.normalize_identifier/issuer and its other subject/status contracts.
-  - B071 owns spend_tracking/carried_budget_state.py snapshot capture and its admission/reset/ledger effects;
+  - B2325 built spend_tracking/carried_budget_state.py snapshot capture (betterlite_auth::budget_primitives::carried); the reservation parts (B3004, B8480) and reset parts (B3009 to B3013) own its admission and reset effects;
     this task owns every function in types/proxy/carried_budget_state.py.
   - B732 owns principals and auth-stage interfaces; later auth models reference these lower records.
 pitfalls:

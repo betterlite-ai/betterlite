@@ -1,0 +1,18 @@
+kind: helper
+name: login-form-banner-and-hint
+call:
+  login_form:
+    environment: {}
+    general_settings: {hide_default_credentials_hint: true}
+    show_deprecation_banner: true
+env: {}
+compare:
+  ignore:
+    - pointer: /value/texts/title
+      why: visible product text is rebranded to betterlite
+    - pointer: /value/texts/logo
+      why: visible product text is rebranded to betterlite
+    - pointer: /value/texts/subtitle
+      why: visible product text is rebranded to betterlite
+    - pointer: /value/texts/default_credentials
+      why: visible product text is rebranded to betterlite

@@ -1,0 +1,151 @@
+kind: helper
+name: managed-resource-ids-field-precedence
+call:
+  managed_resource_ids:
+    calls:
+      - {"function": "model_id", "value": "resource_id,r;vector_store_id,v;file_id,f"}
+      - {"function": "provider_resource_id", "value": "resource_id,r;vector_store_id,v;file_id,f"}
+      - {"function": "unified_uuid", "value": "resource_id,r;vector_store_id,v;file_id,f"}
+      - {"function": "target_model_names", "value": "resource_id,r;vector_store_id,v;file_id,f"}
+      - {"function": "resource_type", "value": "resource_id,r;vector_store_id,v;file_id,f"}
+      - {"function": "parse", "value": "resource_id,r;vector_store_id,v;file_id,f"}
+      - {"function": "model_id", "value": "file_id,f;vector_store_id,v;resource_id,r"}
+      - {"function": "provider_resource_id", "value": "file_id,f;vector_store_id,v;resource_id,r"}
+      - {"function": "unified_uuid", "value": "file_id,f;vector_store_id,v;resource_id,r"}
+      - {"function": "target_model_names", "value": "file_id,f;vector_store_id,v;resource_id,r"}
+      - {"function": "resource_type", "value": "file_id,f;vector_store_id,v;resource_id,r"}
+      - {"function": "parse", "value": "file_id,f;vector_store_id,v;resource_id,r"}
+      - {"function": "model_id", "value": "vector_store_id,v;file_id,f"}
+      - {"function": "provider_resource_id", "value": "vector_store_id,v;file_id,f"}
+      - {"function": "unified_uuid", "value": "vector_store_id,v;file_id,f"}
+      - {"function": "target_model_names", "value": "vector_store_id,v;file_id,f"}
+      - {"function": "resource_type", "value": "vector_store_id,v;file_id,f"}
+      - {"function": "parse", "value": "vector_store_id,v;file_id,f"}
+      - {"function": "model_id", "value": "file_id,f"}
+      - {"function": "provider_resource_id", "value": "file_id,f"}
+      - {"function": "unified_uuid", "value": "file_id,f"}
+      - {"function": "target_model_names", "value": "file_id,f"}
+      - {"function": "resource_type", "value": "file_id,f"}
+      - {"function": "parse", "value": "file_id,f"}
+      - {"function": "model_id", "value": "resource_id,one;resource_id,two"}
+      - {"function": "provider_resource_id", "value": "resource_id,one;resource_id,two"}
+      - {"function": "unified_uuid", "value": "resource_id,one;resource_id,two"}
+      - {"function": "target_model_names", "value": "resource_id,one;resource_id,two"}
+      - {"function": "resource_type", "value": "resource_id,one;resource_id,two"}
+      - {"function": "parse", "value": "resource_id,one;resource_id,two"}
+      - {"function": "model_id", "value": "resource_id,;resource_id,two"}
+      - {"function": "provider_resource_id", "value": "resource_id,;resource_id,two"}
+      - {"function": "unified_uuid", "value": "resource_id,;resource_id,two"}
+      - {"function": "target_model_names", "value": "resource_id,;resource_id,two"}
+      - {"function": "resource_type", "value": "resource_id,;resource_id,two"}
+      - {"function": "parse", "value": "resource_id,;resource_id,two"}
+      - {"function": "model_id", "value": "resource_id,;file_id,f"}
+      - {"function": "provider_resource_id", "value": "resource_id,;file_id,f"}
+      - {"function": "unified_uuid", "value": "resource_id,;file_id,f"}
+      - {"function": "target_model_names", "value": "resource_id,;file_id,f"}
+      - {"function": "resource_type", "value": "resource_id,;file_id,f"}
+      - {"function": "parse", "value": "resource_id,;file_id,f"}
+      - {"function": "model_id", "value": "llm_output_file_model_id,deploy"}
+      - {"function": "provider_resource_id", "value": "llm_output_file_model_id,deploy"}
+      - {"function": "unified_uuid", "value": "llm_output_file_model_id,deploy"}
+      - {"function": "target_model_names", "value": "llm_output_file_model_id,deploy"}
+      - {"function": "resource_type", "value": "llm_output_file_model_id,deploy"}
+      - {"function": "parse", "value": "llm_output_file_model_id,deploy"}
+      - {"function": "model_id", "value": ";model_id,m"}
+      - {"function": "provider_resource_id", "value": ";model_id,m"}
+      - {"function": "unified_uuid", "value": ";model_id,m"}
+      - {"function": "target_model_names", "value": ";model_id,m"}
+      - {"function": "resource_type", "value": ";model_id,m"}
+      - {"function": "parse", "value": ";model_id,m"}
+      - {"function": "model_id", "value": "model_id,m"}
+      - {"function": "provider_resource_id", "value": "model_id,m"}
+      - {"function": "unified_uuid", "value": "model_id,m"}
+      - {"function": "target_model_names", "value": "model_id,m"}
+      - {"function": "resource_type", "value": "model_id,m"}
+      - {"function": "parse", "value": "model_id,m"}
+      - {"function": "model_id", "value": "llm_output_file_id,x;model_id,m"}
+      - {"function": "provider_resource_id", "value": "llm_output_file_id,x;model_id,m"}
+      - {"function": "unified_uuid", "value": "llm_output_file_id,x;model_id,m"}
+      - {"function": "target_model_names", "value": "llm_output_file_id,x;model_id,m"}
+      - {"function": "resource_type", "value": "llm_output_file_id,x;model_id,m"}
+      - {"function": "parse", "value": "llm_output_file_id,x;model_id,m"}
+      - {"function": "model_id", "value": "model_id,;model_id,m"}
+      - {"function": "provider_resource_id", "value": "model_id,;model_id,m"}
+      - {"function": "unified_uuid", "value": "model_id,;model_id,m"}
+      - {"function": "target_model_names", "value": "model_id,;model_id,m"}
+      - {"function": "resource_type", "value": "model_id,;model_id,m"}
+      - {"function": "parse", "value": "model_id,;model_id,m"}
+      - {"function": "model_id", "value": "litellm_proxy:file;model_id,;x"}
+      - {"function": "provider_resource_id", "value": "litellm_proxy:file;model_id,;x"}
+      - {"function": "unified_uuid", "value": "litellm_proxy:file;model_id,;x"}
+      - {"function": "target_model_names", "value": "litellm_proxy:file;model_id,;x"}
+      - {"function": "resource_type", "value": "litellm_proxy:file;model_id,;x"}
+      - {"function": "parse", "value": "litellm_proxy:file;model_id,;x"}
+      - {"function": "model_id", "value": "model_id,one;model_id,two"}
+      - {"function": "provider_resource_id", "value": "model_id,one;model_id,two"}
+      - {"function": "unified_uuid", "value": "model_id,one;model_id,two"}
+      - {"function": "target_model_names", "value": "model_id,one;model_id,two"}
+      - {"function": "resource_type", "value": "model_id,one;model_id,two"}
+      - {"function": "parse", "value": "model_id,one;model_id,two"}
+      - {"function": "model_id", "value": "llm_output_file_model_id,deploy;model_id,m"}
+      - {"function": "provider_resource_id", "value": "llm_output_file_model_id,deploy;model_id,m"}
+      - {"function": "unified_uuid", "value": "llm_output_file_model_id,deploy;model_id,m"}
+      - {"function": "target_model_names", "value": "llm_output_file_model_id,deploy;model_id,m"}
+      - {"function": "resource_type", "value": "llm_output_file_model_id,deploy;model_id,m"}
+      - {"function": "parse", "value": "llm_output_file_model_id,deploy;model_id,m"}
+      - {"function": "model_id", "value": "a ;model_id,m"}
+      - {"function": "provider_resource_id", "value": "a ;model_id,m"}
+      - {"function": "unified_uuid", "value": "a ;model_id,m"}
+      - {"function": "target_model_names", "value": "a ;model_id,m"}
+      - {"function": "resource_type", "value": "a ;model_id,m"}
+      - {"function": "parse", "value": "a ;model_id,m"}
+      - {"function": "model_id", "value": "model_id"}
+      - {"function": "provider_resource_id", "value": "model_id"}
+      - {"function": "unified_uuid", "value": "model_id"}
+      - {"function": "target_model_names", "value": "model_id"}
+      - {"function": "resource_type", "value": "model_id"}
+      - {"function": "parse", "value": "model_id"}
+      - {"function": "model_id", "value": "xtarget_model_names,a,b;c"}
+      - {"function": "provider_resource_id", "value": "xtarget_model_names,a,b;c"}
+      - {"function": "unified_uuid", "value": "xtarget_model_names,a,b;c"}
+      - {"function": "target_model_names", "value": "xtarget_model_names,a,b;c"}
+      - {"function": "resource_type", "value": "xtarget_model_names,a,b;c"}
+      - {"function": "parse", "value": "xtarget_model_names,a,b;c"}
+      - {"function": "model_id", "value": "xunified_id,z"}
+      - {"function": "provider_resource_id", "value": "xunified_id,z"}
+      - {"function": "unified_uuid", "value": "xunified_id,z"}
+      - {"function": "target_model_names", "value": "xunified_id,z"}
+      - {"function": "resource_type", "value": "xunified_id,z"}
+      - {"function": "parse", "value": "xunified_id,z"}
+      - {"function": "model_id", "value": "x litellm_proxy:file"}
+      - {"function": "provider_resource_id", "value": "x litellm_proxy:file"}
+      - {"function": "unified_uuid", "value": "x litellm_proxy:file"}
+      - {"function": "target_model_names", "value": "x litellm_proxy:file"}
+      - {"function": "resource_type", "value": "x litellm_proxy:file"}
+      - {"function": "parse", "value": "x litellm_proxy:file"}
+      - {"function": "model_id", "value": "unified_id,a;unified_id,b"}
+      - {"function": "provider_resource_id", "value": "unified_id,a;unified_id,b"}
+      - {"function": "unified_uuid", "value": "unified_id,a;unified_id,b"}
+      - {"function": "target_model_names", "value": "unified_id,a;unified_id,b"}
+      - {"function": "resource_type", "value": "unified_id,a;unified_id,b"}
+      - {"function": "parse", "value": "unified_id,a;unified_id,b"}
+      - {"function": "model_id", "value": "target_model_names,a;target_model_names,b"}
+      - {"function": "provider_resource_id", "value": "target_model_names,a;target_model_names,b"}
+      - {"function": "unified_uuid", "value": "target_model_names,a;target_model_names,b"}
+      - {"function": "target_model_names", "value": "target_model_names,a;target_model_names,b"}
+      - {"function": "resource_type", "value": "target_model_names,a;target_model_names,b"}
+      - {"function": "parse", "value": "target_model_names,a;target_model_names,b"}
+      - {"function": "model_id", "value": "unified_id,;unified_id,second"}
+      - {"function": "provider_resource_id", "value": "unified_id,;unified_id,second"}
+      - {"function": "unified_uuid", "value": "unified_id,;unified_id,second"}
+      - {"function": "target_model_names", "value": "unified_id,;unified_id,second"}
+      - {"function": "resource_type", "value": "unified_id,;unified_id,second"}
+      - {"function": "parse", "value": "unified_id,;unified_id,second"}
+      - {"function": "model_id", "value": "bGxtX291dHB1dF9maWxlX21vZGVsX2lkLGRlcGxveTttb2RlbF9pZCxtO3Jlc291cmNlX2lkLHI="}
+      - {"function": "provider_resource_id", "value": "bGxtX291dHB1dF9maWxlX21vZGVsX2lkLGRlcGxveTttb2RlbF9pZCxtO3Jlc291cmNlX2lkLHI="}
+      - {"function": "unified_uuid", "value": "bGxtX291dHB1dF9maWxlX21vZGVsX2lkLGRlcGxveTttb2RlbF9pZCxtO3Jlc291cmNlX2lkLHI="}
+      - {"function": "target_model_names", "value": "bGxtX291dHB1dF9maWxlX21vZGVsX2lkLGRlcGxveTttb2RlbF9pZCxtO3Jlc291cmNlX2lkLHI="}
+      - {"function": "resource_type", "value": "bGxtX291dHB1dF9maWxlX21vZGVsX2lkLGRlcGxveTttb2RlbF9pZCxtO3Jlc291cmNlX2lkLHI="}
+      - {"function": "parse", "value": "bGxtX291dHB1dF9maWxlX21vZGVsX2lkLGRlcGxveTttb2RlbF9pZCxtO3Jlc291cmNlX2lkLHI="}
+env: {}
+compare: {ignore: []}

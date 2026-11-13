@@ -1,0 +1,44 @@
+kind: helper
+name: logging-fields-error-information-full
+call:
+  logging_fields:
+    function: payload_record
+    payload:
+      id: chatcmpl-1
+      trace_id: trace-1
+      session_id: session-1
+      call_type: completion
+      response_cost: 0.5
+      status: failure
+      status_fields: {llm_api_status: failure, guardrail_status: not_run}
+      total_tokens: 0
+      prompt_tokens: 0
+      completion_tokens: 0
+      startTime: 1704067200.0
+      endTime: 1704067201.5
+      completionStartTime: 1704067200.5
+      response_time: 1.0
+      model_map_information: {model_map_key: "", model_map_value: null}
+      model: gpt-4o
+      api_base: https://api.openai.com
+      metadata: {}
+      saved_cache_cost: 0.0
+      request_tags: []
+      model_parameters: {}
+      hidden_params: {}
+      error_information:
+        error_code: "500"
+        error_class: APIError
+        llm_provider: openai
+        traceback: tb
+        error_message: boom
+        error_provider_request_id: null
+        error_rate_limit_category: null
+        error_rate_limit_type: null
+        error_budget_entity_type: null
+        error_budget_entity_id: null
+        error_budget_limit: null
+        error_budget_spend: null
+        normalized_error: null
+env: {}
+compare: {ignore: []}

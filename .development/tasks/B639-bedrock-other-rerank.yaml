@@ -227,7 +227,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_rerank_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_rerank.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_rerank.py tools/oracle/helpers/bedrock_other_rerank)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -240,7 +240,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_rerank)"
       && grep -q 'decode_rerank_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_rerank.rs && cargo
-      nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_rerank_corpus$/)'
+      nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_rerank_corpus(::|$)/)'
   - id: case-rerank-transport-logging
     why: B249 pre_call receives input=data,empty api_key and complete_input_dict,stored endpoint_url,plain prepared
       headers. Truthy _is_async chooses a matching AsyncHTTPHandler or B173 BEDROCK client; sync uses a matching

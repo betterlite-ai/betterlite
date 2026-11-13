@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "adapter-dotted-i",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/İ",
+      "allowed_routes": [
+        "/(?i:i)"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

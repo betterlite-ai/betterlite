@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b4745_call_tool_cancellation","call":{"b4745":{"operation":"call_tool","settings":{"server_url":"https://mcp.example.com/mcp","timeout_ms":42000,"listing_ms":30000},"scenarios":[{"tool":"echo","cancel":true}]}},"env":{},"compare":{"ignore":[]}}

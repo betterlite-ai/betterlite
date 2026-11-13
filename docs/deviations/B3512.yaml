@@ -1,0 +1,35 @@
+task: B3512
+deviations:
+  - what: >-
+      A response body that matches the AgentCore runtime error envelope becomes the mapped runtime-error status from its own shape,
+      without LiteLLM's check that the response URL is the ARN's canonical invocations URL.
+    why: >-
+      B3511's DecisionsProviderConfig::transform_decisions_response receives only the response bytes, not the request URL, so the
+      canonical-URL gate cannot be applied here. A direct-HTTP Strands deployment whose 2xx reply carries {"error": {"code": ...}}
+      and no answers gets the mapped 400, 503 or 500 instead of LiteLLM's 500 unexpected-response error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/strands_decider/decisions/transformation.py#L142-L166
+  - what: >-
+      With no bearer token and no AWS credentials, betterlite leaves the AgentCore request unsigned and sends it,
+      where LiteLLM raises a credential error and dials nothing.
+    why: >-
+      DecisionsProviderConfig::sign_request has no error channel in B3511's contract, so a credential failure cannot be returned.
+      Credentials come from the call's litellm_params or from the ones injected into the config; the ambient AWS chain lives in
+      betterlite-bedrock (B590 and B594), which betterlite-openai cannot depend on, so it is not resolved here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L512-L525
+  - what: >-
+      An agentcore_runtime_session_id that is present but not text is logged by field name and the default sha256 session id is used,
+      where LiteLLM raises a pydantic validation error before the request.
+    why: >-
+      Same missing error channel: sign_request cannot return the validation failure, so the provider keeps the default session id
+      instead of failing the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/strands_decider/decisions/transformation.py#L99-L108
+  - what: >-
+      The AwsAuthParams keys aws_role_name, aws_profile_name, aws_session_name, aws_web_identity_token,
+      aws_sts_endpoint, aws_external_id and aws_session_tags are ignored: LiteLLM routes each to an STS assume-role,
+      profile or web-identity flow in BaseAWSLLM.get_credentials, while betterlite logs an error naming the key and
+      signs with the static key pair or the injected credentials.
+    why: >-
+      Those auth flows live in betterlite-bedrock's resolve_credentials (B594), which betterlite-openai cannot depend on.
+      A deployment can use aws_access_key_id with aws_secret_access_key or inject credentials through B590's BaseAWSLLM
+      provider instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L448-L510

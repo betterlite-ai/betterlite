@@ -1,0 +1,407 @@
+id: B4326
+title: Probe Redis health and expose cache administration operations
+description: >-
+  B4325 gives the cache a `RedisTransport`. This task adds the health and
+  administration methods that `RedisCache` and `RedisClusterCache` carry beside
+  their reads and writes. It adds the module `redis_cache_admin` to betterlite-redis.
+  The admin routes (B4309) and the cache setup (B360) call it.
+
+  Type. `RedisCacheAdmin::new(transport: Arc<RedisTransport>, store:
+  Arc<RedisClientStore>, factory: Arc<LiveClientFactory>, settings:
+  RedisConnectionSettings, namespace: Option<String>, hooks: Arc<dyn ServiceHooks>,
+  gate: Arc<dyn BreakerGate>)`, with no global. `RedisTransport` keeps no handle to
+  the store, the factory or the settings, so the caller passes the same three it gave
+  the transport. B5630 builds this type inside the RedisCache facade and passes the
+  namespace. This task declares no hook or breaker trait and does not depend on B393
+  or B012. B4325's module `redis_client_reuse` declares `ServiceHooks` with `fn
+  success(&self, event: &ServiceEvent)` and `fn failure(&self, event: &ServiceEvent,
+  error: &(dyn Error + Send + Sync))`, `ServiceEvent` with `call_type: &'static str`,
+  `duration: Duration` and `key: Option<String>`, and `BreakerGate` with `fn
+  enter(&self, name: &'static str) -> Result<BreakerAdmission, BreakerOpen>`, `fn
+  exit(&self, admission: BreakerAdmission)`, `fn record_failure(&self, error: &(dyn
+  Error + Send + Sync))` and `fn swallowed(&self, admission: &BreakerAdmission,
+  error: &(dyn Error + Send + Sync))`, plus `BreakerAdmission` and `BreakerOpen`. Import
+  them from there. B5630 implements them over B393 and B012. The hook pair is
+  `service_success_hook` and `service_failure_hook` with `ServiceTypes.REDIS`. Rust has
+  no call stack for `_get_call_stack_info`, so each ping takes the caller name as an
+  argument and puts it in the event's `key`. A test gate and a test hook in
+  `redis_cache_admin/tests/support.rs` record every call.
+
+  Guard rule. Only `delete_cache_keys` and `async_delete_cache` are guarded, and the
+  breaker name is the method name. Call `gate.enter(name)` first. An open breaker
+  returns its `BreakerOpen` error (as `RedisAdminError::Breaker`) and sends nothing. Run the body. On `Err` call
+  `gate.record_failure(&error)` and return the error. On `Ok` call `gate.exit(admission)`
+  once. `ping`, `sync_ping`, `disconnect`, `test_connection`, `delete_cache`, `client_list`,
+  `info`, `flush_cache` and `flushall` never touch the gate, because LiteLLM's guard
+  comment says health and teardown must always run.
+
+  Async ping. `async fn ping(&self, caller: Option<&str>) -> Result<bool,
+  RedisAdminError>` gets the client from `transport.async_client()` and sends PING
+  through the generic seam `ping_commands<C: AsyncRedisCommands>(commands: &C, hooks:
+  &dyn ServiceHooks, caller: Option<&str>) -> Result<bool, RedisAdminError>` in
+  `redis_cache_admin/health.rs`. The seam exists so tests and the oracle adapter call
+  it with a fake client. It times the call, records one event with `call_type`
+  `async_ping` and the caller as `key` (`Success` or `Failure`), and on failure logs at
+  error level "LiteLLM Redis Cache PING: - Got exception from REDIS : {error}" and
+  returns the error. The hook is sync, so no spawn is needed.
+
+  Sync ping. `fn sync_ping(&self, caller: Option<&str>) -> Result<bool,
+  RedisAdminError>` is blocking, for sync call sites only. It runs
+  `transport.sync_client.query::<String>(&redis::cmd("PING"))`, and the answer is
+  true when the reply is "PONG". It records `call_type` `sync_ping` with the same event
+  and log rules as `ping`, and it is not guarded.
+
+  Startup pings. `async fn setup_health_pings(self: &Arc<Self>)` is `_setup_health_pings`
+  and runs once after the cache is built. It spawns `ping(None)` with `tokio::spawn` and
+  drops the result, since `ping` already logged and recorded it. Then it runs the sync
+  probe in an awaited `spawn_blocking`. The sync probe is not `sync_ping`: LiteLLM
+  calls `redis_client.ping()` directly, so there is no success event and no caller.
+  On an error it logs at error level "Error connecting to Sync Redis client" with the
+  error text and records one `hooks.failure` event, `call_type` `redis_sync_ping`, duration
+  zero and `key` `None` (`_handle_sync_ping_error`). It returns `()` and never
+  fails, because startup must not stop on a bad Redis.
+
+  Delete. `async fn delete_cache_keys(&self, keys: &[String]) -> Result<(),
+  RedisAdminError>` is guarded as `delete_cache_keys`. It namespaces each key with
+  B4324's `check_and_fix_namespace` and sends one DEL with all of them through
+  `transport.async_client()`. `async fn async_delete_cache(&self, key: &str) ->
+  Result<i64, RedisAdminError>` is guarded as `async_delete_cache`, namespaces the
+  key, and returns the count DEL answered. `fn delete_cache(&self, key: &str) ->
+  Result<(), RedisAdminError>` is blocking and unguarded and sends DEL through
+  `transport.sync_client.query`. With an empty `keys` list, a `LiveAsyncClient::Cluster`
+  client returns `Ok(())` and sends nothing, because redis-py's cluster `delete()` does
+  that. Any other client sends a bare `DEL` and returns the server's error, the way
+  redis-py does on a plain client.
+
+  Server reads. All four are blocking, unguarded and go through
+  `transport.sync_client.query`. `fn client_list(&self) ->
+  Result<Vec<IndexMap<String, String>>, RedisAdminError>` sends `CLIENT LIST` and
+  parses the text with `parse_client_list`. `fn info(&self) -> Result<IndexMap<String,
+  InfoValue>, RedisAdminError>` sends `INFO` and parses the text with `parse_info`.
+  `fn flush_cache(&self)` and `fn flushall(&self)` both send `FLUSHALL`; LiteLLM keeps
+  two names with one body, so keep both public methods and let one call the other.
+  Both return `Result<(), RedisAdminError>`. The proxy's cache routes call these from
+  async handlers, so B4309 must wrap them in `spawn_blocking`.
+
+  Parsers, in `redis_cache_admin/info_parse.rs`. They port redis-py 8.1.0
+  `parse_info` and `parse_client_list` (`redis/_parsers/helpers.py` L35 and L889 in the
+  pinned virtualenv). `parse_info(text: &str) -> IndexMap<String, InfoValue>` walks
+  `text.lines()` and skips empty lines and lines that start with `#`. A line with a
+  colon splits on the first colon. A key `cmdstat_host` splits on the last colon
+  instead, since that key holds one. The key `module` appends its value to a list
+  under `modules`. A line with no colon appends to a list of lines under `__raw__`.
+  A value with no `,` and no `=` is an integer if it parses as `i64` and a float if it
+  holds a `.` and parses as `f64`, and text otherwise. A value with `,` and no `=` is a
+  list, split on `,` with empty items dropped and each item parsed the same way. A
+  value with `=` is a map. Split on `,`, drop empty items, split an item on its last
+  `=`, parse the part after it as a value, and give an item with no `=` the value
+  `true`. `InfoValue` is `Int(i64)`, `Float(f64)`, `Text(String)`, `List(Vec<InfoValue>)`,
+  `Map(IndexMap<String, InfoValue>)` and `Bool(bool)`, derives `Serialize` untagged, and
+  keeps the server's key order, so the INFO route can return it as JSON. A repeated
+  key keeps its first position and the last value, as a Python dict does.
+
+  `parse_client_list(text: &str) -> Result<Vec<IndexMap<String, String>>,
+  ClientListError>` walks `text.lines()`, splits each line on single spaces, and for a
+  token with `=` splits once on the first `=` into key and value. A token without `=`
+  is appended to the last value with a space in front, since an address on a Unix
+  socket can hold a space. A token without `=` before any key is
+  `ClientListError::OrphanToken`, where redis-py raises a KeyError. The error enum is
+  owned by `info_parse.rs`.
+
+  Disconnect. `async fn disconnect(&self)` is unguarded. It drops the entry
+  `transport.cache_key` from the store for the `Standalone` family (the pool
+  disconnect), then calls `transport.close_pubsub_client().await` and ignores its
+  error after logging it at debug level, "Error closing cached pub/sub Redis client:
+  {error}". The sync client has no close in B4325, so the third step has no counterpart
+  (see deviations).
+
+  Connection test. `async fn test_connection(&self) -> ConnectionTestResult` builds a
+  new record with `redis_client_factories::dispatch::build_client(&settings,
+  ClientKind::Async)`, opens it with `factory.open_async(&client, None)` (no pool, no
+  store), runs `ping`, and drops the client. It never returns `Err`. A build, open or
+  ping error becomes a failed result and is logged at error level as "Redis connection
+  test failed: {error}" (Cluster family: "Redis Cluster connection test failed:
+  {error}"). `ConnectionTestResult` has `status: ConnectionStatus` (`Success` or
+  `Failed`, serialized lowercase), `message: String` and `error: Option<String>`,
+  skipped when `None`. The pure function `connection_test_result(family:
+  RedisCacheFamily, ping: Result<bool, String>) -> ConnectionTestResult` in
+  `redis_cache_admin/connection_test.rs` holds the texts, so the oracle adapter
+  calls it. For `Standalone`: "Redis connection test successful", "Redis ping returned
+  False" and "Redis connection failed: {e}" with `error` set to `e`. For `Cluster`:
+  "Redis Cluster connection test successful", "Redis Cluster ping returned False" and
+  "Redis Cluster connection failed: {e}" with `error` set to `e`. A success or a false
+  ping has no `error` key.
+
+  `RedisAdminError` is a `thiserror` enum owned by this module. It wraps
+  `ClientReuseError` and `LiveClientError` with `#[from]` and holds `ClientList(#[from]
+  ClientListError)` and `Breaker(#[from] BreakerOpen)` for an open breaker. Its `Display` is what the
+  logs and events print.
+
+  Cargo. Add `indexmap` 2.14.2 with feature `serde` and `tracing` if the crate does
+  not already have it, to `crates/betterlite-redis/Cargo.toml`. Check the workspace
+  first and use `workspace = true` when the dependency is listed there.
+
+  Fuzz. Add the cargo-fuzz target `redis_info` at
+  `crates/betterlite-redis/fuzz/fuzz_targets/redis_info.rs`. It feeds
+  `String::from_utf8_lossy(data)` to `parse_info` and `parse_client_list` and must
+  not panic. Add its `[[bin]]` entry to `crates/betterlite-redis/fuzz/Cargo.toml`, seed
+  `crates/betterlite-redis/fuzz/corpus/redis_info/` with at least six files (a real
+  INFO sample with sections, a keyspace line, a `module:` line, a `cmdstat_host` line,
+  a CLIENT LIST with a space in `addr`, and an orphan token), and add the test
+  `replays_the_redis_info_corpus` that runs every file in that folder through both
+  parsers. The corpus folder is committed, so drop any line a `.gitignore` adds for it.
+
+  Tests live in `redis_cache_admin/tests/`, one file per group, and reuse the fake
+  server at `crate::redis_live_client::tests::fake_server` and the helpers of
+  `redis_client_reuse` tests. The oracle helper op `b4326` has four functions.
+  `parse_info` takes `text` and returns the dict as JSON. `parse_client_list` takes
+  `text` and returns the list, or `{error: "orphan_token"}`. `connection_test` takes
+  `family` (`standalone` or `cluster`), `ping` (`true`, `false` or `error`) and
+  `error_text`, and returns the result dict. `ping_events` takes `outcome` (`success`
+  or `error`) and `error_text` and returns `{result, error, events}`, where each event
+  is `{call_type, outcome, error}` with no duration and no key. The Python side for
+  `connection_test` builds `RedisCache` or `RedisClusterCache` with `object.__new__`,
+  sets `redis_kwargs`, and patches `litellm._redis.get_redis_async_client` to return a
+  stub whose `ping` returns or raises and whose `aclose` does nothing. For
+  `ping_events` it sets `service_logger_obj` to a recording stub and
+  `_async_commands` to a stub with a scripted `ping`, then awaits `ping()`. The Rust
+  side calls `connection_test_result` and `ping_commands` with a scripted client.
+
+scope:
+  paths:
+    - crates/betterlite-redis/src/redis_cache_admin.rs
+    - crates/betterlite-redis/src/redis_cache_admin/**
+    - crates/betterlite-redis/Cargo.toml
+    - crates/betterlite-redis/fuzz/Cargo.toml
+    - crates/betterlite-redis/fuzz/fuzz_targets/redis_info.rs
+    - crates/betterlite-redis/fuzz/corpus/redis_info/**
+    - tools/oracle/cases/helpers/redis-cache-admin/**
+    - "tools/oracle/fuzz/corpus/helper_case/redis_cache_admin-*"
+    - tools/oracle/helpers/b4326.py
+    - tools/oracle/helpers/b4326/**
+    - tools/oracle/src/helpers/redis/b4326.rs
+    - tools/oracle/src/helpers/redis/b4326/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L574-L601
+    why: The guard decorators and the comment that ping, disconnect and test_connection are never guarded.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L676-L732
+    why: The startup pings and the two ping error hooks with call types redis_async_ping and redis_sync_ping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1770-L1839
+    why: sync_ping and ping, their hook call types and the logged error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1841-L1881
+    why: delete_cache_keys, client_list, info, flush_cache, flushall and disconnect.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1883-L1931
+    why: test_connection, async_delete_cache and delete_cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cluster_cache.py#L59-L95
+    why: The Cluster class's own test_connection texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L165-L249
+    why: How the routes call client_list, info and flushall and what they do with the results.
+  - url: https://github.com/redis/redis-py/blob/v8.1.0/redis/_parsers/helpers.py
+    why: parse_info (L35) and parse_client_list (L889), the exact rules the Rust parsers copy.
+  - url: https://github.com/redis-rs/redis-rs/blob/redis-1.7.0/redis/src/cluster_handling/routing.rs
+    why: Which commands go to all primaries and how replies merge, for the cluster deviations.
+
+dod:
+  - text: >-
+      `ping` and `sync_ping` return the answer, record one event with `call_type`
+      `async_ping` or `sync_ping` and the given caller, and on an error log the PING
+      text, record a failure and return the error. A `false` answer is a success.
+    proof: [health-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `setup_health_pings` sends one async and one sync PING, records nothing on
+      success, records one `redis_sync_ping` failure with zero duration and no key
+      when the sync probe fails, and returns without error when both fail.
+    proof: [setup-tests]
+  - text: >-
+      `delete_cache_keys` and `async_delete_cache` namespace the keys, send one DEL,
+      go through the gate under their own names, send nothing when the breaker is
+      open, and report the error to the gate. `delete_cache` sends DEL without the
+      gate. An empty key list sends nothing on a Cluster client and a bare DEL on
+      any other.
+    proof: [delete-tests]
+  - text: >-
+      `client_list`, `info`, `flush_cache` and `flushall` send CLIENT LIST, INFO and
+      FLUSHALL (twice for the two flush names) through the sync client, never touch
+      the gate, and return the parsed result or the error.
+    proof: [server-tests]
+  - text: >-
+      `parse_info` matches redis-py for sections, ints, floats, text, lists, maps,
+      keyspace lines, repeated `module` lines, `cmdstat_host` and lines with no colon.
+      `parse_client_list` matches it for several clients and for a space inside a
+      value, and returns `OrphanToken` for a stray token.
+    proof: [info-parse-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `connection_test_result` and `test_connection` return the Standalone and Cluster
+      texts for success, a false ping and an error, with `error` only on failure. The
+      test never reads the store, never fails, and the opened client is dropped.
+    proof: [connection-test-tests, helper-python, helper-case-corpus, oracle]
+  - text: >-
+      `disconnect` removes the cached client for the Standalone family and the
+      shared pubsub client for both, keeps going when the pubsub close fails, and can
+      be called twice.
+    proof: [lifecycle-tests]
+  - text: >-
+      The parsers have a cargo-fuzz target `redis_info` with a seeded corpus, and
+      `replays_the_redis_info_corpus` runs every corpus file through both parsers
+      without a panic.
+    proof: [fuzz-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: health-tests
+      why: The ping events, the logged text or the returned answer is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_admin::tests::health::/)'
+    - id: setup-tests
+      why: The startup async and sync probes or the redis_sync_ping failure event is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_admin::tests::setup::/)'
+    - id: delete-tests
+      why: Key deletion, its guard or the empty-list rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_admin::tests::delete::/)'
+    - id: server-tests
+      why: CLIENT LIST, INFO or FLUSHALL is not sent or not parsed
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_admin::tests::server::/)'
+    - id: info-parse-tests
+      why: A rule of parse_info or parse_client_list is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_admin::tests::info_parse::/) - test(replays_the_redis_info_corpus)'
+    - id: connection-test-tests
+      why: The connection test result texts or its fresh-client rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_admin::tests::connection_test::/)'
+    - id: lifecycle-tests
+      why: Disconnect does not drop the cached clients or stops at a close error
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_cache_admin::tests::lifecycle::/)'
+    - id: fuzz-corpus
+      why: The redis_info fuzz target or its seeded corpus is missing, or replaying the corpus fails
+      run: >-
+        test -f crates/betterlite-redis/fuzz/fuzz_targets/redis_info.rs &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-redis/fuzz/corpus/redis_info)" &&
+        test "$(ls crates/betterlite-redis/fuzz/corpus/redis_info | wc -l)" -ge 6 &&
+        grep -q 'name = "redis_info"' crates/betterlite-redis/fuzz/Cargo.toml &&
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail -E 'test(replays_the_redis_info_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4326)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4326 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4326/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new cache admin cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/redis_cache_admin-*")" &&
+        grep -lE '^[[:space:]]+b4326:' tools/oracle/fuzz/corpus/helper_case/redis_cache_admin-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/redis-cache-admin/info-sections-and-scalars.yaml
+  - tools/oracle/cases/helpers/redis-cache-admin/info-lists-and-keyspace.yaml
+  - tools/oracle/cases/helpers/redis-cache-admin/info-modules-and-cmdstat-host.yaml
+  - tools/oracle/cases/helpers/redis-cache-admin/info-line-without-colon.yaml
+  - tools/oracle/cases/helpers/redis-cache-admin/client-list-two-clients.yaml
+  - tools/oracle/cases/helpers/redis-cache-admin/client-list-space-in-value.yaml
+  - tools/oracle/cases/helpers/redis-cache-admin/connection-test-standalone-success.yaml
+  - tools/oracle/cases/helpers/redis-cache-admin/connection-test-standalone-ping-false.yaml
+  - tools/oracle/cases/helpers/redis-cache-admin/connection-test-standalone-error.yaml
+  - tools/oracle/cases/helpers/redis-cache-admin/connection-test-cluster-success.yaml
+  - tools/oracle/cases/helpers/redis-cache-admin/connection-test-cluster-ping-false.yaml
+  - tools/oracle/cases/helpers/redis-cache-admin/connection-test-cluster-error.yaml
+  - tools/oracle/cases/helpers/redis-cache-admin/ping-events-success.yaml
+  - tools/oracle/cases/helpers/redis-cache-admin/ping-events-error.yaml
+
+deviations:
+  - what: >-
+      `disconnect` has no step that closes the sync Redis connection, and on the
+      Cluster family it leaves the per-instance async client open until the cache drops.
+    why: >-
+      B4325's `LiveSyncClient` has no close method and `RedisTransport` holds the Cluster client in a private cell. A dropped connection closes when its last clone is dropped.
+  - what: >-
+      `disconnect` does not force-close connections that a running request still
+      holds. LiteLLM's pool disconnect passes `inuse_connections=True`.
+    why: >-
+      Removing the store entry drops the cache's own reference, and an in-flight clone closes the connection as soon as it finishes. redis-rs has no pool to disconnect.
+  - what: >-
+      On a Cluster client, `sync_ping` and the startup sync probe reach every primary,
+      `info` takes the first node's reply, and `client_list` goes to whichever node
+      redis-rs picks. redis-py sends all three to the default node.
+    why: >-
+      `LiveSyncClient::query` takes no routing argument and redis-rs 1.7.0 routes PING and INFO to all primaries. A Cluster INFO then comes back as a map of node to text, and the first entry stands in for the default node.
+  - what: >-
+      FLUSHALL on a Cluster client reaches every primary in both clients.
+    why: >-
+      redis-py also sends FLUSHALL to all primaries on RedisCluster, so nothing differs. Listed because INFO and PING differ.
+  - what: >-
+      `parse_info` reads a number only when `i64` or `f64` parses it. A value that
+      Python's `int` or `float` accepts with underscores or surrounding spaces stays
+      text, and an integer past `i64` stays text.
+    why: >-
+      Redis writes plain decimal numbers in INFO, and `i64` is the type the INFO route returns. A server never sends the other forms.
+
+out_of_scope:
+  - "`_handle_async_ping_error` and the `no running event loop` branch of `_setup_health_pings`; there is no Rust counterpart. The spawn cannot fail, and Tokio is always running here. Its `redis_async_ping` call type is not built."
+  - "`RedisCircuitBreaker`, the guard decorators, `_enter_circuit_breaker`, `_exit_circuit_breaker` and `log_redis_failure`; B393 owns them and B5630 implements `BreakerGate` over it."
+  - "`_get_call_stack_info`, `check_and_fix_namespace` and `_get_cache_logic`; B4324 owns them. This task calls the namespace function and takes the caller as an argument."
+  - "`RedisCache.__init__` (which calls `_setup_health_pings`), the service logger object and the config keys that choose the namespace; B360 owns the config keys and B5630 builds this type inside the RedisCache facade."
+  - "`init_async_client`, `_async_commands`, `init_pubsub_client` and the MGET helpers on both cache classes; B4325 owns them."
+  - "`set_cache`, `async_set_cache`, the pipelines, `get_cache` and `batch_get_cache`; B4327 owns them."
+  - "`increment_cache`, `async_scan_iter`, `async_register_script` and the other counter methods; B4328 owns them."
+  - The list operations at L2053-L2420 of `litellm/caching/redis_cache.py`; B4329 owns them.
+  - "`ServiceLogging` in `litellm/_service_logger.py` and the `/cache/ping`, `/cache/redis/info` and `/cache/flushall` routes in `litellm/proxy/caching_routes.py`; B012 and B4309 own them and call this module."
+
+pitfalls:
+  - >-
+    `setup_health_pings` calls the client's own `ping()` and not `sync_ping`, so a
+    working Redis records no event for the sync probe and a failing one records
+    `redis_sync_ping`, never `sync_ping`.
+  - >-
+    Only `delete_cache_keys` and `async_delete_cache` are guarded. Giving `ping`,
+    `disconnect` or `test_connection` a gate call would stop health checks on an open
+    breaker.
+  - >-
+    `flush_cache` and `flushall` are two names for one FLUSHALL. The proxy route calls
+    `flushall`, so test both, and don't add a FLUSH ASYNC or a key filter.
+  - >-
+    `test_connection` returns a result for every failure, including a failed client
+    build. A `?` on any step lets an error escape to the route as a 500.
+  - >-
+    A `false` ping is a failed connection test but a plain `Ok(false)` from `ping`.
+    The two use different code paths in LiteLLM, so don't merge them.
+  - >-
+    `parse_info` splits `cmdstat_host` on the last colon only. Every other key splits
+    on the first colon, because a value such as `slave0:ip=10.0.0.1,port=6379` holds
+    colons and equals signs.
+  - >-
+    In a map value an item with no `=` is `true`, and an item with `=` splits on the
+    last `=`. A keyspace line `db0:keys=1,expires=0,avg_ttl=0` becomes a map of three
+    integers.
+  - >-
+    `parse_client_list` appends a no-equals token to the previous value with one
+    space, so a token cannot start a new key. Don't trim or collapse spaces inside a
+    value.
+  - >-
+    `LiveSyncClient::query` blocks, so every sync method here is for sync call sites,
+    and `setup_health_pings` must run the sync probe inside `spawn_blocking`.
+  - >-
+    Error text must not hold the password. Log and record the error's `Display`, never
+    the settings or the built record.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

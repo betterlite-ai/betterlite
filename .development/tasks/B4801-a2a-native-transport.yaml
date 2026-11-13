@@ -52,16 +52,16 @@ checks:
   commands:
     - id: client-creation-tests
       why: client creation and handle attachment tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^a2a_client_creation($|::)/)'
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^client::(.*::)?a2a_client_creation($|::)/)'
     - id: send-tests
       why: non-streaming send and final-message validation tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^native_send_behavior($|::)/)'
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^client::(.*::)?native_send_behavior($|::)/)'
     - id: retry-tests
       why: retry logic and localhost detection tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^native_send_retry($|::)/)'
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^client::(.*::)?native_send_retry($|::)/)'
     - id: config-tests
       why: timeout configuration tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^client_timeout($|::)/)'
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^client::(.*::)?client_timeout($|::)/)'
 oracle_cases: []
 deviations:
   - what: >-

@@ -1,0 +1,22 @@
+kind: helper
+name: cohere-v1-chat-seed-tools
+call:
+  cohere_v1_chat:
+    function: request
+    requests:
+      - model: command-r
+        messages:
+          - {role: user, content: seed tool question}
+        non_default_params:
+          tools:
+            - type: function
+              function:
+                name: seed_tool
+                description: A seed tool
+                parameters:
+                  properties:
+                    query: {type: string, description: Seed query}
+                    free: {description: Seed free}
+                  required: [query]
+compare: {ignore: []}
+env: {}

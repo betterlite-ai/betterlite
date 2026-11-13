@@ -1,0 +1,12 @@
+kind: helper
+name: reset_month
+call:
+  duration:
+    calls:
+      - {function: reset, duration: "1mo", now: "2024-01-15T10:00:00Z"}
+      - {function: reset, duration: "1mo", now: "2024-01-01T00:00:00Z"}
+      - {function: reset, duration: "1mo", now: "2024-12-15T10:00:00Z"}
+      - {function: reset, duration: "30d", now: "2024-01-15T10:00:00Z"}
+      - {function: reset, duration: "1mo", now: "2024-03-31T23:59:59Z"}
+env: {}
+compare: {ignore: []}

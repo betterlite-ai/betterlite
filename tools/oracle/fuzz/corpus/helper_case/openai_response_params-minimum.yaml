@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-params-seed-minimum
+call:
+  openai_response_params:
+    minimum_output_tokens:
+      probes:
+      - {model: gpt-4o, params: {max_output_tokens: 1}}
+env: {}
+compare: {ignore: []}

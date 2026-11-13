@@ -1,0 +1,206 @@
+id: B110
+title: Connect proxy tracing services and prove their HTTP behavior
+description: >-
+  Finish the OTel umbrella with application composition, not another implementation of its
+  callbacks or routes. B8910 owns logger construction and publication, B8911 owns receiver
+  lifetime, B8680 installs the HTTP SERVER-span layer and B3867 registers the seven trace paths.
+  Build betterlite-server::app::callbacks::telemetry with its own TelemetryError and adjacent
+  tests. The module takes explicit TelemetryInputs: B8742's live callback catalog, the single
+  B8910 logger runtime, B8911's optional started receiver, B198's request context and the
+  resolved config. No additional logger registry, environment snapshot, provider or auth
+  lookup is created. The architect adds the shared call sites and resource fields listed in
+  the report before dispatch; this task's scope contains only the implementation they call.
+
+  Expose start, mount and the auth/management adapters. start runs after B8742 finishes
+  init_callbacks, before the first request, and publishes B8910's selected provider only when
+  B3842's already resolved LITELLM_OTEL_V2 flag is true (default false). Publication failure
+  logs at debug and leaves the rest of the server running. It must see the catalog's existing
+  instances in construction order, including a Langfuse wrapper, rather than resolve otel
+  again and manufacture a second generic logger. The server span layer and the auth provider
+  accessor use this same runtime. B8911's receiver startup/close remain in the lifespan, not
+  in route constructors; provide its receiver to B3867's request state and its storage to
+  provide_storage. Implement B8911's factory/handle ports over B3867's receiver when a concrete
+  storage factory is supplied. Route assembly never runs schema initialization.
+
+  mount merges B3867's router exactly once inside the normal key-auth layers. It registers no
+  route itself. Paths are POST and GET /v1/traces, POST /v1/traces/query, GET
+  /v1/traces/query/help, GET /v1/traces/{trace_id}, GET
+  /v1/traces/{trace_id}/spans/{span_id}, and GET
+  /v1/traces/{trace_id}/spans/{span_id}/error; there are no /traces, /openai/v1/traces or
+  provider-prefixed aliases. B8610's aggregator and B8680's wrap keep their existing order.
+  The MCP mounts B8626, B8701 and B8728 are unrelated and must not be merged again.
+
+  Auth adapters supply B052/B757's existing hooks with the registered legacy or V2 logger.
+  Parent creation calls B8910's legacy create_litellm_proxy_request_started_span, or B3853's
+  V2 anchor capture; the latter reuses B8680's active SERVER span. B757 owns received-at,
+  idempotence, safe headers and route-attribute conditions. Route its phase and identity hooks
+  through B8910's optional runtime and its pre-call failure hook through B3853. B052 retains
+  the order: destinations inside auth, identity baggage after auth closes, then deferred body
+  failure. B8870, under B124, supplies the TenantDestinations adapter, and B124 owns its HTTP cases;
+  it calls B8910's fan_out_provider and is not rebuilt here. B3847 already implements
+  _get_parent_otel_span_from_kwargs for provider/cache callers. For management, implement
+  B1228's OTel transport using B3858's success/failure hooks; B1228 keeps its early skip when
+  V2 is enabled, request-body reading and sanitization. No span transport performs a second
+  authentication or changes a handler's status or response.
+
+  Add kind: http oracle cases through the booted proxy for the logging parts that previously had
+  only helper coverage. Use an OpenAI mock deployment named tracing-chat and the pinned
+  openai/gpt-4o model. Exercise POST /v1/chat/completions with legacy otel, V2 otel, V2
+  langfuse_otel without content capture, V2 Langfuse streaming with SPAN_AND_EVENT capture,
+  and V2 levo with LEVOAI_API_KEY, LEVOAI_ORG_ID, LEVOAI_WORKSPACE_ID and
+  LEVOAI_COLLECTOR_URL. Generic equality cases use the console exporter; vendor equality
+  cases use unreachable loopback endpoints and fixed dummy credentials, proving exporter
+  failure does not alter the client response without sending telemetry to a vendor. Configure
+  callback_settings.otel for generic overrides and the existing preset settings for vendor
+  callbacks. The client comparisons include successful bodies/chunks, provider failure,
+  missing key and malformed JSON with the correct status, error type, param, code and
+  content-type; ignore /error/message with the repository's wording reason. Dynamic ids and
+  timestamps may be ignored individually, never entire choices, errors or headers.
+
+  Build the production StreamOutputAssembler, B3857's port in betterlite-logging otel::content_projections, in telemetry
+  as the unit struct `LangfuseStreamAssembler`. assemble_sse calls B3669's assemble_anthropic_sse_stream on the frames
+  with restore_identity off and returns the ModelResponse serialized to an OtelModelValue object, or None when that gives
+  None. assemble_chat calls B2227's stream_chunk_builder with the chunks and messages and returns its chat ModelResponse
+  the same way, or None on its error. The shared call site that builds the B8910 runtime passes
+  `Arc::new(LangfuseStreamAssembler)`. Boot test tracing::messages_stream_root_output streams POST /v1/messages through
+  langfuse_otel with content capture on and asserts that the root observation output is the assembled assistant message
+  as LiteLLM's stream_output renders it; a raw stream without message_start stamps no output.
+
+  Native boot tests in telemetry/tests/ assert the exported spans, since the existing HTTP
+  oracle compares client/upstream traffic and does not collect OTLP exports. Drive the real
+  application against a mock provider and an injected recording exporter, not a hand-built
+  callback event. Prove one root and one LLM child in the same trace, remote traceparent
+  continuation, auth as a live phase, no phantom CLIENT span on auth/body rejection, retained
+  identity after the phase closes, Langfuse root IO before root close, one close after stream
+  completion and no duplicate legacy management span with V2 enabled. Test the transport
+  adapter separately with B1228's sanitized management payload and a recording B3858 sink.
+  A provider that fails export must not alter a successful chat response. Existing schema,
+  payload, mapper, capture and service tests remain with their parts; these tests prove their
+  composition. Do not add an oracle helper for mutable server state.
+
+  Trace-route HTTP cases cover all seven methods/paths with tracing disabled and a master
+  key, plus missing auth, enabled clickhouse with CLICKHOUSE_URL absent, query without a
+  configured master key, and /traces remaining absent. Compare ordinary JSON and OTLP/JSON
+  error content types separately and preserve Retry-After where returned. Ordinary HTTPException
+  bodies have detail, and OTLP/JSON errors have message, without OpenAI type/param/code fields;
+  ignore only /detail or /message for their error wording. The current oracle's parse_body
+  assumes UTF-8 except for application/octet-stream, so cover OTLP protobuf error bytes and
+  content-type in the native boot tests until a bounded protobuf comparison adapter is assigned.
+  Do not discard the whole protobuf body to make an equality case pass. No receiver returns B3867's 501;
+  a missing query secret retains its 503. B3867 owns successful ingest/query cases and all
+  receiver/parser behavior, so do not recreate its cases here. Test state handoff with an
+  injected working receiver: ingest must reach it, its storage must reach query handlers,
+  and the retained spend logger must close once after the server exits.
+
+  There is currently no concrete native ClickHouse trace store or native OTLP codec owner:
+  B3865/B3866/B3867 call it G2, and the bridge is excluded by litellm.yaml. Until the architect
+  assigns that prerequisite, production factory absence is an explicit warned unavailable
+  receiver, including with CLICKHOUSE_URL set; trace routes return 501 rather than accepting
+  and discarding spans. Record this temporary difference below. Never use an in-memory store
+  as production success. The injected receiver tests must still prove the complete lifetime
+  and mount. Allow about 250 adapter lines and 400 boot-test/fixture lines; the Python decision
+  and lifecycle functions were split into B8910/B8911 so catalog callers do not depend on this
+  server composition task. This module introduces no decoder or config key.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/callbacks/telemetry.rs
+    - crates/betterlite-server/src/app/callbacks/telemetry/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/cases/http/otel-composition/**
+    - tools/oracle/cases/http/trace-runtime/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1423-L1451
+    why: Own application invocation of the provider publication after callback initialization; B8910 owns its implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1571-L1577
+    why: Own receiver handoff to request state; B8911 owns enable selection and lifecycle, B8374 owns its position.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1330-L1359
+    why: B757's parent creation call site consumes this adapter; the function itself stays B757's.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3480-L3516
+    why: B052's ordering around destination seeding, phase closure, identity and deferred parse failure, exercised through HTTP.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L669-L752
+    why: B1228's sanitized event-to-transport boundary; B3858 implements the called legacy transport.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_endpoints.py#L97-L140
+    why: B3867's POST and GET /v1/traces decorators and unavailable/OTLP response behavior; composed without registration here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_endpoints.py#L155-L182
+    why: B3867's query-secret and scope dependencies, consumed without duplicating their authorization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_endpoints.py#L185-L211
+    why: B3867's query and query-help decorators and handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_endpoints.py#L214-L256
+    why: B3867's trace, span and span-error route decorators; no additional aliases exist.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/README.md#L116-L185
+    why: Documents shared-provider startup, root anchoring, boundary-open/async-close and service composition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/levo/README.md#L25-L100
+    why: Levo callback configuration and required headers, already implemented by B3850/B3863/B8746 and exercised here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/README.md#L1-L24
+    why: This exclusively claimed document describes Phoenix prompts, implemented by B3864, not missing tracing logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/AGENTS.md#L1-L6
+    why: Confirmed ingestion, tenant stamping and native storage boundaries belonging to B3865/B3867 and their missing G2 dependency.
+dod:
+  - text: Startup publishes the existing canonical callback's provider after catalog initialization, and real chat/stream/auth paths export one correctly parented trace with the expected Langfuse and identity timing.
+    proof: [tracing-boot-tests, oracle]
+  - text: >-
+      LangfuseStreamAssembler assembles raw Anthropic SSE frames and chat chunks, so a streamed /v1/messages response
+      stamps its assembled message as the Langfuse root output.
+    proof: [tracing-boot-tests]
+  - text: Auth and management adapters call their owned services without duplicate root creation, duplicate management emission or changes to the client error/success response.
+    proof: [adapter-tests, tracing-boot-tests, oracle]
+  - text: The seven trace routes are merged once with normal auth, receive the lifespan's optional receiver and storage, preserve unavailable responses, and do not gain aliases.
+    proof: [receiver-boot-tests, oracle]
+  - text: A missing native store is warned and returns 501 without accepting trace rows; an injected receiver reaches routes and closes its automatic spend logger once after serving.
+    proof: [receiver-boot-tests]
+checks:
+  optional: []
+  commands:
+    - id: tracing-boot-tests
+      why: HTTP requests never reach the real callback graph or export an orphaned, duplicated or incorrectly timed span.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::telemetry::tests::tracing::/)'
+    - id: adapter-tests
+      why: Auth or management ports remain empty, point at a second logger or ignore their V2 skip behavior.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::telemetry::tests::adapters::/)'
+    - id: receiver-boot-tests
+      why: Route composition, receiver lifetime, unavailable storage behavior or alias exclusion is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::callbacks::telemetry::tests::receiver::/)'
+oracle_cases:
+  - tools/oracle/cases/http/otel-composition/legacy-chat.yaml
+  - tools/oracle/cases/http/otel-composition/v2-chat.yaml
+  - tools/oracle/cases/http/otel-composition/langfuse-no-content.yaml
+  - tools/oracle/cases/http/otel-composition/langfuse-content-stream.yaml
+  - tools/oracle/cases/http/otel-composition/levo-chat.yaml
+  - tools/oracle/cases/http/otel-composition/provider-failure.yaml
+  - tools/oracle/cases/http/otel-composition/missing-key.yaml
+  - tools/oracle/cases/http/otel-composition/malformed-json.yaml
+  - tools/oracle/cases/http/trace-runtime/disabled-post-json.yaml
+  - tools/oracle/cases/http/trace-runtime/disabled-get-list.yaml
+  - tools/oracle/cases/http/trace-runtime/disabled-post-query.yaml
+  - tools/oracle/cases/http/trace-runtime/disabled-query-help.yaml
+  - tools/oracle/cases/http/trace-runtime/disabled-get-trace.yaml
+  - tools/oracle/cases/http/trace-runtime/disabled-get-span.yaml
+  - tools/oracle/cases/http/trace-runtime/disabled-get-span-error.yaml
+  - tools/oracle/cases/http/trace-runtime/missing-auth.yaml
+  - tools/oracle/cases/http/trace-runtime/enabled-missing-clickhouse-url.yaml
+  - tools/oracle/cases/http/trace-runtime/query-without-master-key.yaml
+  - tools/oracle/cases/http/trace-runtime/no-unversioned-alias.yaml
+deviations:
+  - what: Until a native ClickHouse trace backend and OTLP codec are assigned, a configured ClickHouse receiver without an injected backend warns and remains unavailable even when CLICKHOUSE_URL names a working store. Otherwise authorized receiver-dependent requests return HTTP 501, with B3867's detail JSON or OTLP message body and no OpenAI type/param/code fields; auth and missing-query-secret errors retain precedence.
+    why: The existing tasks leave the excluded native bridge unimplemented. Returning success with a fake store would lose trace data; the architect must assign the missing backend and remove this limitation before advertising enabled ingestion.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_runtime.py#L35-L66
+out_of_scope:
+  - B8910 owns the remaining logger.py factories/publication/accessor and runtime.py hooks; B3852 owns the inference/MCP callback methods and B3853 the remaining callback methods. No class is recreated by this composition.
+  - langfuse_logger.py's four methods and mount.py's naming/instrumentation policy are B8250; B8680 owns the actual server-span layer. The _RenameableSpan protocol has no runtime implementation to port.
+  - The otel, model, plumbing, agentops, levo, weave and tracing __init__.py files only re-export their existing owners' types (B3840-B3844, B3848, B3863 and B3867); they add no executable remainder.
+  - The Arize README's prompt-client/template/manager behavior is B3864, including its explicitly uncalled list/reload/test_connection helpers. Levo setup and delivery are B3850/B3863/B8746. The OTel README describes B3840-B3869/B8250/B8910 composition rather than another implementation.
+  - tracing/AGENTS.md's tenant stamping, confirmed ingest and query behavior stay B3865/B3866/B3867; native codec/storage G2 has no assigned owner and is the recorded limitation, not a new implementation hidden in this mount.
+  - docker-compose.tracing.yml and tracing-config.yaml are B5075. No deployment file is changed here.
+  - B8374/B8613 own the rest of proxy_server.py startup/shutdown, B8380-B8385/B8590 config operations, B8399 proxy logging, and B124's named route/config parts the remaining functions; this task owns only the two application handoffs referenced above.
+  - B052/B757 own auth ordering, B1228 management payload construction, B3858 legacy service/management methods, and B8870 under B124 tenant destination resolution/delivery integration. Existing B8626/B8701/B8728 MCP mounts and B8720's missing MCP carrier integration are not rebuilt here.
+pitfalls:
+  - Publishing before init_callbacks creates a second generic provider and separates HTTP roots from preset LLM spans.
+  - Attaching identity inside the auth phase loses it when that phase restores its context; destinations intentionally attach earlier.
+  - Trace query dependencies check the master key even when no receiver exists, so query-without-master-key must not be flattened to the ordinary unavailable response.
+  - A client HTTP response comparison alone cannot prove OTel export; the boot tests must inspect the actual recorder's span graph.
+  - The caller must merge the existing trace router once; registering its paths a second time panics during axum construction.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

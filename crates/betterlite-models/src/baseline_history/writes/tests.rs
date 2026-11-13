@@ -96,16 +96,72 @@ fn writes_for_an_incomplete_outcome_writes_nothing() {
 }
 
 #[test]
-fn writes_for_refreshes_a_hit_that_the_plan_no_longer_names() {
+fn writes_for_emits_a_refresh_before_the_marker_entry() {
     let mut history = BaselineHistory::default();
     history.entries.push(entry("stale", 50, 3600, 0.0, 10.0));
     let mut observation = observation("req-1", 5.0);
     observation.plan = Some(CountedPromptCachePlan {
         total_tokens: 100,
-        breakpoints: vec![breakpoint("stale", 3600, 50)],
+        breakpoints: vec![CountedBreakpoint {
+            fingerprint: "fresh".to_owned(),
+            ttl_seconds: 3600,
+            prefix_tokens: 80,
+            lookback_fingerprints: vec!["stale".to_owned(), "fresh".to_owned()],
+            content_fingerprint: "fresh".to_owned(),
+            lookback_content_fingerprints: vec!["fresh".to_owned()],
+        }],
+    });
+    let entries = writes_for(&history, &observation).expect("checked writes");
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0].fingerprint, "stale");
+    assert_eq!(entries[0].available_at.total_cmp(&5.0_f64), Ordering::Equal);
+    assert_eq!(
+        entries[0].expires_at.total_cmp(&3605.0_f64),
+        Ordering::Equal
+    );
+    assert_eq!(entries[1].fingerprint, "fresh");
+}
+
+#[test]
+fn writes_for_a_request_started_before_blocked_until_writes_nothing() {
+    let history = BaselineHistory {
+        blocked_until: 100.0,
+        first_at: None,
+        last_at: None,
+        equivalent: true,
+        uncertain_before: 0.0,
+        entries: Vec::new(),
+    };
+    let observation = observation("req-1", 50.0);
+    assert!(
+        writes_for(&history, &observation)
+            .expect("checked writes")
+            .is_empty()
+    );
+}
+
+#[test]
+fn writes_for_an_ambiguous_write_expires_at_the_longest_conflicting_ttl() {
+    let mut history = BaselineHistory::default();
+    let mut old = entry("old", 20, 3600, 0.0, 3600.0);
+    old.content_fingerprint = "c".to_owned();
+    history.entries.push(old);
+    let mut observation = observation("req-1", 5.0);
+    let mut marker = breakpoint("new", 300, 80);
+    marker.content_fingerprint = "c".to_owned();
+    marker.lookback_content_fingerprints = vec!["c".to_owned()];
+    observation.plan = Some(CountedPromptCachePlan {
+        total_tokens: 100,
+        breakpoints: vec![marker],
     });
     let entries = writes_for(&history, &observation).expect("checked writes");
     assert_eq!(entries.len(), 1);
+    assert!(entries[0].uncertain);
+    assert_eq!(entries[0].ttl_seconds, 300);
+    assert_eq!(
+        entries[0].expires_at.total_cmp(&3605.0_f64),
+        Ordering::Equal
+    );
 }
 
 #[test]

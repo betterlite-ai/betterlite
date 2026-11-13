@@ -1,0 +1,28 @@
+kind: helper
+name: provider-params-gpt5-supported
+call:
+  provider_params:
+    steps:
+      - function: supported_params
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: gpt-5
+          config: gpt5
+          capabilities: [catalog_model, tool_choice]
+      - function: supported_params
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: gpt-5.1
+          config: gpt5
+          capabilities: [catalog_model, tool_choice, none_reasoning_effort]
+      - function: supported_params
+        query:
+          provider: openai
+          call_type: chat_completion
+          model: gpt-5-search-api
+          config: gpt5
+          capabilities: [catalog_model, tool_choice, none_reasoning_effort]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,80 @@
+id: B8701
+title: Mount the /v1/mcp toolset routes
+description: >-
+  B4725 builds five toolset routes (POST, GET and PUT /v1/mcp/toolset, GET and DELETE /v1/mcp/toolset/{toolset_id})
+  as its toolset_routes router and stops; no B1100 entry merges them. This task builds the toolset state, implements
+  its ports and mounts the router through app::mcp::mount, inside the auth layers, since every route takes a key.
+  B4725's other router, session_routes (GET and DELETE /v1/mcp/sessions), reads the live sessions of the /mcp
+  transport, so B9950 mounts it once B8728 stores that transport in McpState; nothing here touches the session ports,
+  B8723's SessionRegistry or McpState's transport field.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/toolsets.rs and app/mcp/toolsets/ (a tests.rs beside each), plus
+  one line in app::mcp::mount (crates/betterlite-server/src/app/mcp.rs).
+
+
+  Toolset ports go to B4681's toolset storage (create, list, get, update, delete and granted_toolset_ids) over
+  `shared.db`, B4717's admin predicates, and a toolset cache invalidation over McpState's identity.union (B6591's
+  toolset cache, built by B8621), so a toolset change reaches the next allowed-server union. Read the state struct of
+  toolset_routes for the exact port list; every port gets a production implementation and none is left as a fake.
+  Make the admin predicate adapter pub(crate): B9950 reuses it for the full admin check of DELETE /v1/mcp/sessions.
+
+
+  Tests in app::mcp::toolsets:: : the router builds merged with the other MCP routers, each of the five paths
+  answers something other than 404 through tower's oneshot, and a toolset update reaches the union's cache
+  invalidation.
+
+
+  HTTP oracle cases. The toolset cases B4725 planned through the booted proxy move here, because its routes only
+  answer once this task mounts them. Write each listed case from .development/tasks/B4725-mcp-toolsets-and-sessions.yaml
+  (its description, pitfalls, DoD and case names). The four session cases and the empty session report belong to
+  B9950.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp.rs
+    - crates/betterlite-server/src/app/mcp/toolsets.rs
+    - crates/betterlite-server/src/app/mcp/toolsets/**
+    - tools/oracle/cases/http/toolset/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L3286-L3450
+    why: The five toolset routes and the cache invalidation after each write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3660-L3692
+    why: invalidate_toolset_cache, which the cache invalidation port stands for.
+dod:
+  - text: B4725's toolset router is merged once inside the auth layers.
+    proof: [toolset-route-tests, oracle]
+  - text: The toolset ports forward to B4681 and B4717, and a toolset write invalidates the union's toolset cache.
+    proof: [toolset-route-tests]
+  - text: The moved B4725 toolset cases match LiteLLM through the booted proxy.
+    proof: [toolset-route-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: toolset-route-tests
+      why: the router is not merged, a path is missing, or a port is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::toolsets::/)'
+    - id: toolset-route-cases
+      why: without the case files the oracle proof compares nothing for these routes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/toolset)"
+oracle_cases:
+  - tools/oracle/cases/http/toolset/post-create-admin-only-403.yaml
+  - tools/oracle/cases/http/toolset/post-duplicate-name-409.yaml
+  - tools/oracle/cases/http/toolset/get-list-grant-filtered.yaml
+  - tools/oracle/cases/http/toolset/get-detail-not-found-404.yaml
+  - tools/oracle/cases/http/toolset/get-detail-access-denied-403.yaml
+  - tools/oracle/cases/http/toolset/put-update-admin-only-403.yaml
+  - tools/oracle/cases/http/toolset/put-not-found-404.yaml
+  - tools/oracle/cases/http/toolset/put-duplicate-name-409.yaml
+  - tools/oracle/cases/http/toolset/delete-admin-only-403.yaml
+  - tools/oracle/cases/http/toolset/delete-not-found-404.yaml
+deviations: []
+out_of_scope:
+  - "Route behavior: B4725. Toolset storage: B4681."
+  - "The /v1/mcp/sessions routes over the live transport's SessionRegistry, their four cases and the empty report case: B9950."
+pitfalls:
+  - The toolset cache invalidation must hit the union's cache in McpState; a new cache leaves the old toolset visible for toolset_ttl_secs.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

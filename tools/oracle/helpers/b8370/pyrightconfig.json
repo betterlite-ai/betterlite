@@ -1,0 +1,6 @@
+{
+  "include": ["../b8370.py"],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}

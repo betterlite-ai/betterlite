@@ -1,0 +1,19 @@
+kind: helper
+name: explicit-region-precedence
+call:
+  bedrock_aws_endpoints:
+    llm_region_name:
+      cases:
+        - optional_params: {aws_region_name: eu-central-1}
+          model: 'arn:aws:bedrock:us-east-1:1:model/anthropic.claude'
+          model_id: other-model
+          environment:
+            AWS_REGION_NAME: ap-south-1
+            AWS_REGION: ap-northeast-1
+            AWS_DEFAULT_REGION: sa-east-1
+        - optional_params: {aws_region_name: us-west-2}
+        - optional_params: {aws_region_name: cn-north-1}
+          model: 'x'
+          model_id: 'y'
+env: {}
+compare: {ignore: []}

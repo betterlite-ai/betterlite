@@ -1,0 +1,8 @@
+task: B8022
+deviations:
+  - what: A fastCRW search reply larger than 16 MiB is refused with a size error before it is decoded.
+    why: LiteLLM reads the whole reply body into memory with no cap. A search reply is a short JSON document, so no working setup sends one near the limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fastcrw/search/transformation.py#L160
+  - what: A Firecrawl search reply larger than 16 MiB is refused with a size error before it is decoded.
+    why: LiteLLM reads the whole reply body into memory with no cap. A search reply is a short JSON document, so no working setup sends one near the limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/firecrawl/search/transformation.py#L173

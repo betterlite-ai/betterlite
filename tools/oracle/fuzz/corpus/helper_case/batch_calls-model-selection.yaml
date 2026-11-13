@@ -1,0 +1,1 @@
+{"kind":"helper","name":"batch-calls-model-selection","call":{"batch_calls":{"mode":"models","models":["m0","m1"],"results":[{"value":"first"},{"value":"second"}]}},"env":{},"compare":{"ignore":[]}}

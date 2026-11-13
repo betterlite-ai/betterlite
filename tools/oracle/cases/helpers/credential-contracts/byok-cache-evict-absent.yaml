@@ -1,0 +1,10 @@
+kind: helper
+name: byok-cache-evict-absent
+call:
+  b4650:
+    function: byok_cache_evict
+    user_id: user-evict-absent
+    server_id: server-evict
+    credential: null
+env: {}
+compare: {ignore: []}

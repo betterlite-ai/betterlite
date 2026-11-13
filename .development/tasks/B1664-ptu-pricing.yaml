@@ -4,7 +4,7 @@ description: >-
   Implement all of litellm_core_utils/ptu_pricing.py in betterlite-models::ptu_pricing, with
   its proxy feature-flag module represented by a re-export. Keep this below both router and
   server crates. Add betterlite-config::ptu_pricing for LITELLM_ENABLE_PTU_COST_ATTRIBUTION,
-  default false, using B129's secret-Boolean resolution; loads_ptu_cost_flag verifies real
+  default false, using B8500's secret-Boolean resolution; loads_ptu_cost_flag verifies real
   environment loading and exact-true enablement. Pass the resolved flag to pricing functions
   rather than consulting ambient process state. PtuTerms contains team ID, count, exact Decimal
   hourly rate and UTC start/optional end. Use B204's typed price fields and checked monetary

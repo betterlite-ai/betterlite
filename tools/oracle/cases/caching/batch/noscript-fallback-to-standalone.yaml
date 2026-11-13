@@ -1,0 +1,17 @@
+kind: helper
+name: caching-batch-noscript-fallback-to-standalone
+call:
+  b4330:
+    namespace: ns
+    default_ttl: 60
+    replies:
+      EVALSHA:
+        - {error: "NOSCRIPT No matching script. Please use EVAL."}
+        - {error: "NOSCRIPT No matching script. Please use EVAL."}
+        - {int: 7}
+      SCRIPT: [{simple: OK}]
+    steps:
+      - declare: {kind: script, source: "return 7", keys: [counter], args: []}
+      - await_all
+env: {}
+compare: {ignore: []}

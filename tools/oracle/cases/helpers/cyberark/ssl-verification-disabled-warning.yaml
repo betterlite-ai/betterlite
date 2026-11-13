@@ -1,0 +1,20 @@
+kind: helper
+name: cyberark-ssl-verification-disabled-warning
+env: {}
+compare: {ignore: []}
+call:
+  b4418:
+    env: {CYBERARK_API_KEY: key-1, CYBERARK_SSL_VERIFY: "false"}
+    routes:
+      - route: "POST http://127.0.0.1:8080/authn/default/admin/authenticate"
+        replies: [{status: 200, body: '{"protected":"abc"}'}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/db"
+        replies: [{status: 200, body: s3cret}]
+      - route: "POST http://127.0.0.1:8080/policies/default/policy/root"
+        replies: [{status: 201, body: ""}]
+      - route: "POST http://127.0.0.1:8080/secrets/default/variable/db"
+        replies: [{status: 201, body: ""}]
+    steps:
+      - {op: read, name: db}
+      - {op: write, name: db, value: v2}
+      - {op: sync_read, name: other}

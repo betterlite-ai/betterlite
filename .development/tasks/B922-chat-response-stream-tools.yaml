@@ -16,8 +16,6 @@ description: >-
   180 tests, 120 fixtures, 90 adapters and 25 wiring lines: 730 changed lines.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/chat_response_stream_tools.rs
   - crates/betterlite-core/src/api/chat_response_stream_tools/**
   - tools/oracle/src/helpers/core_ops/chat_response_stream_tools.rs
@@ -98,6 +96,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/chat-response-stream-tools/tool-delta-queue.yaml
 - tools/oracle/cases/helpers/chat-response-stream-tools/final-tool-completion.yaml
 - tools/oracle/cases/helpers/chat-response-stream-tools/hosted-search-reservation.yaml
+- tools/oracle/cases/helpers/chat-response-stream-tools/hosted-search-invalid-record.yaml
 - tools/oracle/cases/helpers/chat-response-stream-tools/reasoning-end-boundary.yaml
 deviations: []
 out_of_scope:

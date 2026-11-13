@@ -1,0 +1,11 @@
+# straiker_webhook_records: configured hook modes flatten tags and deduplicate
+kind: helper
+name: b3795-modes-seed
+call:
+  b3795:
+    configured_modes:
+      event_hook:
+        tags: {chat: post_call, mcp: [pre_call, during_mcp_call]}
+        default: pre_call
+env: {}
+compare: {ignore: []}

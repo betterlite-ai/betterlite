@@ -1,0 +1,17 @@
+task: B7323
+deviations:
+  - what: >-
+      get_custom_url takes the proxy base URL and the request root path as arguments instead of reading PROXY_BASE_URL
+      and the per-request root path itself.
+    why: >-
+      betterlite reads the environment only in the config crate and keeps no globals or per-request ContextVars. The
+      proxy base URL comes from the proxy_base_url section and the root path from B4200's get_request_root_path at the
+      call site, and the emitted URL is the same for the same values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8310-L8339
+  - what: >-
+      get_proxy_base_url is not a function here. PROXY_BASE_URL is read once by the proxy_base_url config section and
+      passed to get_custom_url.
+    why: >-
+      Environment reads live only in the config crate, and a process-wide reader any code can call is the global state
+      the rules forbid. The value, a set but empty string included, is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8342-L8346

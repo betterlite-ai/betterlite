@@ -1,0 +1,100 @@
+id: B7490
+title: MCP admission fallbacks, challenges and target resolution
+description: >-
+  An MCP request that fails LiteLLM admission sometimes gets an anonymous pass or an OAuth challenge instead of the plain error, and several admission arms first ask which MCP server the request targets. This task builds those decisions in betterlite-server, module mcp::admission_fallback, in crates/betterlite-server/src/mcp/admission_fallback.rs. B4673 owns process_mcp_request and calls everything here, so every name below is public and spelled as written. Each submodule has a tests.rs beside it.
+
+
+  The module takes the server registry as a plain reference. It reads no global and no config. ServerRegistry is B4731's (server_by_name already applies the client-IP filter and its alias, server_name, name pass order), MCPServer is B6590's, UserAPIKeyAuth is B2314's, and effective_oauth2_flow is B6760's. The caller (B4673) holds the registry read lock and passes the reference, the client IP text (B743 computes it, so this task never reads headers) and the route text (the request path with the root path stripped, which the caller computes).
+
+
+  targets. is_true_passthrough(registry, route, header_servers, client_ip) is _target_servers_are_true_passthrough. Take B4654's resolve_target_server_names(route, header_servers). An empty list gives false. Otherwise it is true only when every name resolves with registry.server_by_name(name, client_ip) to a server whose auth_type is true_passthrough. One unresolved name or one other auth type gives false. single_bridge_target(registry, route, header_servers, client_ip) is _single_dcr_bridge_delegate_target and returns Option<BridgeTarget<'_>>. BridgeTarget { requested_name: String, server: &MCPServer } keeps the exact spelling the caller used (alias or server_name). It gives None unless resolve_target_server_names returns exactly one name, that name resolves, the server's is_oauth_delegate is true and its is_dcr_bridge is true, and the server has a non-empty server_name or alias. Both flags are B6590 methods that return bool, so a partly filled record cannot pass by truthiness. is_passthrough_cold_start(registry, names, client_ip) is _is_mcp_passthrough_cold_start: false for an empty list, false when any name is unresolved or is not an is_oauth_passthrough server, else true. is_legacy_delegate_cold_start(registry, names, client_ip) is _is_legacy_delegate_cold_start: false for an empty list; for each name the server must resolve, have auth_type oauth2, have delegate_auth_to_upstream true, and its effective_oauth2_flow must not be client_credentials, else false.
+
+
+  challenge. has_client_supplied_mcp_auth(mcp_auth_header: Option<&str>, server_headers: &BTreeMap<String, BTreeMap<String, String>>) -> bool is _has_client_supplied_mcp_auth: true when the header is non-empty text or the map has at least one alias, even an alias with an empty inner map. ChallengeContext holds what the URL builders need and the caller fills it from the request: proxy_base_url: Option<String> (the normalized PROXY_BASE_URL), origin (B4654's request origin value), from_trusted_proxy: bool, server_root_path: String and the ASGI path values B4654's route_relative_request_path takes. ChallengeResponse { status: u16, detail: serde_json::Value, headers: Vec<(String, String)> } is the HTTPException LiteLLM raises; it is a value here and the route turns it into a response.
+
+
+  challenge_target(registry, route, header_servers, client_ip) -> Option<String> is _gateway_dcr_challenge_target: take B4654's cold_start_server_names(route, header_servers) (that is _parse_mcp_server_names_from_path), then the one name must resolve to a server whose advertises_gateway_authorization_server is true, and the function returns that name. is_dcr_challenge_scope(registry, route, header_servers, mcp_auth_header, server_headers, error_is_401, client_ip) -> bool is _is_gateway_dcr_challenge_scope. error_is_401 is the result of B4679's is_auth_admission_error on the caught error, so a false value gives false. A client-supplied MCP auth header (has_client_supplied_mcp_auth) gives false. A route for which B4654's extract_target_server_names_from_path returns no names (the aggregate /mcp endpoint) gives true. Any other route is true only when challenge_target gives Some. gateway_dcr_challenge(ctx, registry, route, header_servers, client_ip, invalid_token) -> ChallengeResponse is _gateway_dcr_challenge. With a challenge_target the resource_metadata URL is B4654's passthrough_resource_metadata_url for that name, otherwise it is the request base URL (B4654's get_request_base_url) + "/.well-known/oauth-protected-resource" + well_known_root_suffix + "/mcp". The response has status 401, detail {"error": "authentication_required", "message": "Authenticate with the gateway to use the MCP endpoint."} and one header, "WWW-Authenticate" with `Bearer error="invalid_token", resource_metadata="<url>"` when invalid_token is true, or `Bearer resource_metadata="<url>"` when it is false. bridge_invalid_token_challenge(ctx, requested_name) -> ChallengeResponse is _dcr_bridge_invalid_token_challenge: status 401, detail the plain string "Invalid or expired credential", and one header spelled in lowercase, "www-authenticate", whose value is B4654's passthrough_www_authenticate for requested_name with invalid_token true.
+
+
+  fallback. admission_failure_fallback(...) is _admission_failure_fallback. Inputs: registry, ctx, route, header_servers, mcp_auth_header, server_headers, error_is_401, client_ip, bearer_presented: bool and the original error value E. It returns Result<UserAPIKeyAuth, FallbackError<E>> with FallbackError being Challenge(ChallengeResponse) or Original(E). Steps in order. One, mcp_servers_from_path = cold_start_server_names. When it is Some, no client-supplied MCP auth is present, error_is_401 is true, and either is_passthrough_cold_start holds for the one name, or bearer_presented is false and is_legacy_delegate_cold_start holds, return Ok(UserAPIKeyAuth::default()) and log at debug "MCP pass-through cold start: deferring admission to route 401 emitter". Two, when is_dcr_challenge_scope holds, return Err(Challenge(gateway_dcr_challenge(..., invalid_token = bearer_presented))). Three, return Err(Original(error)) unchanged. The caller decides bearer_presented: true on the oauth2 arm, false on the no-credential arm.
+
+
+  Tests use a ServerRegistry built in memory with servers of every auth type this module reads, and no network. Cases that matter: a single-target path whose x-mcp-servers header names a second server (cold-start bypass refused), "all targets must be passthrough" with one non-passthrough neighbor, the lowercase header name on the bridge challenge against the capitalized one on the gateway challenge, and an alias that differs from server_name. The pure parts (has_client_supplied_mcp_auth, both challenge builders for the aggregate and a server-specific URL, is_dcr_challenge_scope for the aggregate route) also get helper oracle cases, since LiteLLM's functions take only a scope, strings and a manager the helper can seed. The cold-start and passthrough target checks read the server registry and have Rust tests only. The umbrella adds the HTTP cases when it registers the routes.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/admission_fallback.rs
+    - crates/betterlite-server/src/mcp/admission_fallback/**
+    - tools/oracle/cases/helpers/mcp-admission-fallback/**
+    - tools/oracle/helpers/b7490.py
+    - tools/oracle/helpers/b7490/**
+    - tools/oracle/src/helpers/server/b7490.rs
+    - tools/oracle/src/helpers/server/b7490/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L98-L173
+    why: _parse_mcp_server_names_from_path, _is_mcp_passthrough_cold_start and _is_legacy_delegate_cold_start.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L201-L205
+    why: _has_client_supplied_mcp_auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L233-L361
+    why: The challenge target, challenge scope, challenge response and the failure fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L739-L793
+    why: _target_servers_are_true_passthrough and _single_dcr_bridge_delegate_target.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L957-L976
+    why: _dcr_bridge_invalid_token_challenge, with its lowercase header name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L208-L236
+    why: The resource metadata URL and WWW-Authenticate strings the challenges embed (B4654 builds them).
+dod:
+  - text: >-
+      is_true_passthrough is true only when every resolved target is true_passthrough, and false for no target, an unresolved target or a mixed set.
+    proof: [fallback-tests]
+  - text: >-
+      single_bridge_target returns the target only for one name whose server has is_oauth_delegate and is_dcr_bridge both true and a server_name or alias, and keeps the requested spelling.
+    proof: [fallback-tests]
+  - text: >-
+      The two cold-start checks follow LiteLLM for passthrough servers, oauth2 delegates and client_credentials delegates.
+    proof: [fallback-tests]
+  - text: >-
+      has_client_supplied_mcp_auth, the gateway challenge and the bridge challenge return LiteLLM's status, detail, header name and header value for the aggregate URL, a server URL, and the invalid_token form.
+    proof: [fallback-tests, oracle]
+  - text: >-
+      admission_failure_fallback returns the anonymous auth, the gateway challenge or the original error in LiteLLM's order, and refuses the bypass when client MCP auth is present or the error is not a 401.
+    proof: [fallback-tests]
+checks:
+  optional: []
+  commands:
+    - id: fallback-tests
+      why: The target resolution, cold-start, challenge or fallback tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::admission_fallback::/)'
+deviations:
+  - what: The registry, the challenge context and the client IP are arguments, and the caught exception arrives as error_is_401 plus the original error value.
+    why: betterlite keeps no global manager and no Starlette request in these functions. LiteLLM reads global_mcp_server_manager and the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L311-L361
+out_of_scope:
+  - "process_mcp_request, _admit_dcr_bridge_delegate, _open_dcr_bridge_envelope, _admit_dcr_bridge_dual_credential, _admit_dcr_bridge_authorization, _admit_gateway_session, _run_pre_db_read_auth_checks, _reload_admitted_principal and reload_admitted_user: B4673, which calls this task."
+  - "extract_target_server_names_from_path, resolve_target_server_names, cold_start_server_names (_parse_mcp_server_names_from_path), the header parsers and the URL builders: B4654."
+  - "_is_litellm_auth_admission_error, _is_mcp_admitted_user_subject, _explicit_credential_matches_envelope and the scrub: B4679."
+  - "UnloadableEntitlementError, _as_list, _agent_capped_servers, MCPServerAccess: B4671 and the grant tasks."
+  - "get_mcp_server_by_name and the IP filter: B4731. The MCPServer record and its properties: B6590. effective_oauth2_flow: B6760. get_mcp_client_ip: B743."
+pitfalls:
+  - The gateway challenge writes the header name as "WWW-Authenticate" and the bridge challenge writes "www-authenticate", so each test asserts the exact spelling LiteLLM sent.
+  - The bridge challenge detail is a plain string and the gateway challenge detail is an object with error and message, so the two are not interchangeable.
+  - A header naming a server the path does not name refuses the cold-start bypass, because the path decides routing and a mismatch is a hostile or confused caller.
+  - is_passthrough_cold_start needs every name to be a passthrough server, so one other server in a co-targeted set closes the bypass for all of them.
+  - The legacy delegate bypass applies only when no bearer was presented, but the passthrough bypass applies either way.
+  - Aggregate /mcp is the only route with no path target that gets the gateway challenge; a named target that does not advertise gateway sign-in fails closed to the original error.
+  - A server_name or alias of None or empty makes single_bridge_target None, because egress finds the injected token only by those names.
+review_level: security
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-admission-fallback/client-auth-header-present.yaml
+  - tools/oracle/cases/helpers/mcp-admission-fallback/client-auth-empty-alias-map.yaml
+  - tools/oracle/cases/helpers/mcp-admission-fallback/client-auth-none.yaml
+  - tools/oracle/cases/helpers/mcp-admission-fallback/gateway-challenge-aggregate.yaml
+  - tools/oracle/cases/helpers/mcp-admission-fallback/gateway-challenge-invalid-token.yaml
+  - tools/oracle/cases/helpers/mcp-admission-fallback/gateway-challenge-root-path.yaml
+  - tools/oracle/cases/helpers/mcp-admission-fallback/bridge-challenge-alias.yaml
+  - tools/oracle/cases/helpers/mcp-admission-fallback/scope-aggregate-401.yaml
+  - tools/oracle/cases/helpers/mcp-admission-fallback/scope-not-401.yaml
+  - tools/oracle/cases/helpers/mcp-admission-fallback/scope-client-header.yaml
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

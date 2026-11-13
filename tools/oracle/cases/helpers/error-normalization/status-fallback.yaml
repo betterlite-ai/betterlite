@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-status-fallback
+call: {error_normalization: {message: other, proxy_type: null, class: null, status_code: 502, rate_limit_type: null}}
+env: {}
+compare: {ignore: []}

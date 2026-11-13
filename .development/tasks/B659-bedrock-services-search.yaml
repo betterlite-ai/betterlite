@@ -24,10 +24,10 @@ description: >-
   that prerequisite.
 
 
-  Named case contracts: configured_gateway_required: Choose truthy explicit api_base then B129 AGENTCORE_GATEWAY_URL
+  Named case contracts: configured_gateway_required: Choose truthy explicit api_base then B8500 AGENTCORE_GATEWAY_URL
   defaultNone; no automatic /mcp append or trim. Missing/empty -> ValueError AGENTCORE_GATEWAY_URL is not set. Set
   it to your AgentCore Gateway MCP endpoint (https://<gateway-id>.gateway.bedrock-agentcore.<region>.amazonaws.com/mcp)
-  or pass api_base. Constructor calls B091 BaseSearch and B590 BaseAWS; UI friendly name Web Search on Amazon Bedrock.
+  or pass api_base. Constructor calls B3270 BaseSearch and B590 BaseAWS; UI friendly name Web Search on Amazon Bedrock.
   mcp_request_headers: Overlay Content-Type application/json,Accept application/json, text/event-stream,MCP-Protocol-Version
   = truthy AGENTCORE_MCP_PROTOCOL_VERSION else2025-03-26; these override exact caller header keys. Stateless calls
   perform no MCP initialize handshake. websearch_tool_suffix: Select truthy optional.tool_name,AGENTCORE_SEARCH_TOOL_NAME,default
@@ -43,15 +43,15 @@ description: >-
   to '{api_base}': a bearer token or SigV4 signature would be readable in transit. Use an https gateway URL (plain
   http is allowed only for localhost). This check precedes credential lookup even if no credentials exist. gateway_bearer_trust:
   Match full parsed host against [a-z0-9-]+\.gateway\.bedrock-agentcore\.([a-z0-9-]+)\.amazonaws\.com (no China
-  suffix, no path/query spoof). Call B091 resolve_server_api_key explicit key then AGENTCORE_GATEWAY_TOKEN; default
+  suffix, no path/query spoof). Call B3270 resolve_server_api_key explicit key then AGENTCORE_GATEWAY_TOKEN; default
   trusted api_base equals caller URL only for this hostname match, configured base env AGENTCORE_GATEWAY_URL otherwise.
-  Explicit key bypasses server-secret destination check but not transport guard. Server key uses B091 lowercase
+  Explicit key bypasses server-secret destination check but not transport guard. Server key uses B3270 lowercase
   netloc trust including port/userinfo, and its exact refusal error. Truthy token overrides Authorization with Bearer
   and returns UTF-8 JSON without AWS signing. gateway_host_signing: Without bearer require matched gateway host
   OR _is_configured_gateway, which compares parsed hostname ONLY against AGENTCORE_GATEWAY_URL, ignoring port/scheme/path.
   Otherwise ValueError Refusing to send SigV4-signed AgentCore requests to '{api_base}': it is neither an AgentCore
   gateway hostname nor the host in AGENTCORE_GATEWAY_URL. Set AGENTCORE_GATEWAY_URL to authorize a custom gateway
-  hostname. This hostname comparison differs from B091 bearer netloc trust. gateway_signing_region: If optional.aws_region_name
+  hostname. This hostname comparison differs from B3270 bearer netloc trust. gateway_signing_region: If optional.aws_region_name
   is not None retain it verbatim, including empty. Otherwise region is regex capture for standard gateway host,
   else boto3.Session().region_name from AWS_DEFAULT_REGION/profile chain. Missing falsey configured region -> ValueError
   Cannot derive the SigV4 signing region from api_base '{api_base}' or the AWS configuration chain. Set aws_region_name
@@ -67,7 +67,7 @@ description: >-
 
 
   AGENTCORE_GATEWAY_TOKEN and deployment tool_name default None; the existing AGENTCORE_GATEWAY_URL/SEARCH_TOOL_NAME/MCP_PROTOCOL_VERSION
-  loaders test the defaults and precedence above. max_results is an API optional parameter from B091, not a new
+  loaders test the defaults and precedence above. max_results is an API optional parameter from B3270, not a new
   global setting. AWS_DEFAULT_REGION/profile inputs reuse B590 configuration and native AWS credential-chain policy;
   inject session-region lookup in oracle.
 
@@ -181,10 +181,10 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
-- text: 'configured_gateway_required: Choose truthy explicit api_base then B129 AGENTCORE_GATEWAY_URL defaultNone;
+- text: 'configured_gateway_required: Choose truthy explicit api_base then B8500 AGENTCORE_GATEWAY_URL defaultNone;
     no automatic /mcp append or trim. Missing/empty -> ValueError AGENTCORE_GATEWAY_URL is not set. Set it to your
     AgentCore Gateway MCP endpoint (https://<gateway-id>.gateway.bedrock-agentcore.<region>.amazonaws.com/mcp) or
-    pass api_base. Constructor calls B091 BaseSearch and B590 BaseAWS; UI friendly name Web Search on Amazon Bedrock.'
+    pass api_base. Constructor calls B3270 BaseSearch and B590 BaseAWS; UI friendly name Web Search on Amazon Bedrock.'
   proof:
   - case-configured-gateway-required
   - oracle
@@ -223,9 +223,9 @@ dod:
   - oracle
   - helper-python
 - text: 'gateway_bearer_trust: Match full parsed host against [a-z0-9-]+\.gateway\.bedrock-agentcore\.([a-z0-9-]+)\.amazonaws\.com
-    (no China suffix, no path/query spoof). Call B091 resolve_server_api_key explicit key then AGENTCORE_GATEWAY_TOKEN;
+    (no China suffix, no path/query spoof). Call B3270 resolve_server_api_key explicit key then AGENTCORE_GATEWAY_TOKEN;
     default trusted api_base equals caller URL only for this hostname match, configured base env AGENTCORE_GATEWAY_URL
-    otherwise. Explicit key bypasses server-secret destination check but not transport guard. Server key uses B091
+    otherwise. Explicit key bypasses server-secret destination check but not transport guard. Server key uses B3270
     lowercase netloc trust including port/userinfo, and its exact refusal error. Truthy token overrides Authorization
     with Bearer and returns UTF-8 JSON without AWS signing.'
   proof:
@@ -236,7 +236,7 @@ dod:
     parsed hostname ONLY against AGENTCORE_GATEWAY_URL, ignoring port/scheme/path. Otherwise ValueError Refusing
     to send SigV4-signed AgentCore requests to ''{api_base}'': it is neither an AgentCore gateway hostname nor the
     host in AGENTCORE_GATEWAY_URL. Set AGENTCORE_GATEWAY_URL to authorize a custom gateway hostname. This hostname
-    comparison differs from B091 bearer netloc trust.'
+    comparison differs from B3270 bearer netloc trust.'
   proof:
   - case-gateway-host-signing
   - oracle
@@ -264,7 +264,7 @@ checks:
   commands:
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_search.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_search.py tools/oracle/helpers/bedrock_services_search)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -299,10 +299,10 @@ checks:
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_search_secret_safe_failure$/)'
   - id: case-configured-gateway-required
-    why: Choose truthy explicit api_base then B129 AGENTCORE_GATEWAY_URL defaultNone; no automatic /mcp append or
+    why: Choose truthy explicit api_base then B8500 AGENTCORE_GATEWAY_URL defaultNone; no automatic /mcp append or
       trim. Missing/empty -> ValueError AGENTCORE_GATEWAY_URL is not set. Set it to your AgentCore Gateway MCP endpoint
       (https://<gateway-id>.gateway.bedrock-agentcore.<region>.amazonaws.com/mcp) or pass api_base. Constructor
-      calls B091 BaseSearch and B590 BaseAWS; UI friendly name Web Search on Amazon Bedrock.
+      calls B3270 BaseSearch and B590 BaseAWS; UI friendly name Web Search on Amazon Bedrock.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_configured_gateway_required$/)'
   - id: case-mcp-request-headers
     why: Overlay Content-Type application/json,Accept application/json, text/event-stream,MCP-Protocol-Version =
@@ -330,17 +330,17 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_https_or_loopback_only$/)'
   - id: case-gateway-bearer-trust
     why: Match full parsed host against [a-z0-9-]+\.gateway\.bedrock-agentcore\.([a-z0-9-]+)\.amazonaws\.com (no
-      China suffix, no path/query spoof). Call B091 resolve_server_api_key explicit key then AGENTCORE_GATEWAY_TOKEN;
+      China suffix, no path/query spoof). Call B3270 resolve_server_api_key explicit key then AGENTCORE_GATEWAY_TOKEN;
       default trusted api_base equals caller URL only for this hostname match, configured base env AGENTCORE_GATEWAY_URL
       otherwise. Explicit key bypasses server-secret destination check but not transport guard. Server key uses
-      B091 lowercase netloc trust including port/userinfo, and its exact refusal error. Truthy token overrides Authorization
+      B3270 lowercase netloc trust including port/userinfo, and its exact refusal error. Truthy token overrides Authorization
       with Bearer and returns UTF-8 JSON without AWS signing.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_gateway_bearer_trust$/)'
   - id: case-gateway-host-signing
     why: 'Without bearer require matched gateway host OR _is_configured_gateway, which compares parsed hostname
       ONLY against AGENTCORE_GATEWAY_URL, ignoring port/scheme/path. Otherwise ValueError Refusing to send SigV4-signed
       AgentCore requests to ''{api_base}'': it is neither an AgentCore gateway hostname nor the host in AGENTCORE_GATEWAY_URL.
-      Set AGENTCORE_GATEWAY_URL to authorize a custom gateway hostname. This hostname comparison differs from B091
+      Set AGENTCORE_GATEWAY_URL to authorize a custom gateway hostname. This hostname comparison differs from B3270
       bearer netloc trust.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_gateway_host_signing$/)'
   - id: case-gateway-signing-region

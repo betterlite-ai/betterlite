@@ -1,0 +1,18 @@
+kind: helper
+name: opensandbox-run-json-error
+call:
+  b3517:
+    operation: run
+    url: http://sandbox.example/sandboxes/sbx_1/endpoints/44772/code
+    headers:
+      Content-Type: application/json
+      Accept: text/event-stream
+    body:
+      code: "print('unreachable')"
+      context:
+        language: python
+    response_body: |
+      {"code":"invalid_request","message":"code is required"}
+env: {}
+compare:
+  ignore: []

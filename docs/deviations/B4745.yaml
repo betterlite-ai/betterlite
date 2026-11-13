@@ -1,0 +1,17 @@
+task: B4745
+deviations:
+  - what: >-
+      On cancellation, the tool call log message names the context (timeout after X
+      seconds for URL) but the full traceback is not propagated to the caller.
+    why: >-
+      Cancellation is expected control flow, not a failure to surface with a full
+      trace; the timeout context tells operators why the request did not complete.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L925-L927
+  - what: >-
+      The list_tools and call_tool failure lines name the error type, tool, server and
+      transport but not the exception's text; the traceback is debug-only.
+    why: >-
+      An exception's text can embed the upstream URL, which can carry a credential in
+      its query string; the manager's own pass-through path logs the type alone for
+      the same reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L852-L861

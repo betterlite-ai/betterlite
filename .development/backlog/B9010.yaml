@@ -1,0 +1,14 @@
+id: B9010
+milestone: M7 observability
+title: Prompt preview and dotprompt upload routes
+status: todo
+depends_on: [B4050, B4051, B4052, B2460, B1100, B1101, B1087, B884, B8610, B8802, B8803, B8633]
+file: tasks/B9010-prompt-tools.yaml
+covers:
+  - "litellm/proxy/prompts/prompt_endpoints.py"
+parent: B117
+split_from: B117
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

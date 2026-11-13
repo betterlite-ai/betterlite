@@ -127,7 +127,7 @@ out_of_scope:
     is not None.
   - B590 owns bedrock_bearer_token called at L960.
   - B595 owns run_aws_signing called at L959-960, L1222-1229.
-  - get_guardrail_dynamic_request_body_params is called at L932, owned by B104 (unresolved).
+  - get_guardrail_dynamic_request_body_params is called at L932, owned by B3665.
   - redact_nested_match_and_regex_keys is called at L1251, owned by U2 (unresolved).
   - _get_masked_values is called at L1235, owned by U5 (unresolved).
 

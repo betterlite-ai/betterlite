@@ -1,0 +1,8 @@
+kind: helper
+name: annotation-fallback
+call:
+  response_chat_content:
+    operation: annotation_fallback
+    annotations: [{kind: dict, value: {type: url_citation}}, {kind: model_dump_and_dict, value: {type: custom}}, {kind: legacy_dict, value: {type: legacy}}, {kind: unsupported, name: int}, {kind: raises, error: broken}]
+env: {}
+compare: {ignore: []}

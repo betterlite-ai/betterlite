@@ -1,0 +1,113 @@
+id: B8173
+title: AI21, MiniMax, ModelScope and Tencent chat configs
+description: >-
+  Build ai21_chat, minimax_chat, modelscope_chat, tencent_chat and tencent_cost in crates/betterlite-openai. They cover
+  litellm/llms/ai21/chat/transformation.py, litellm/llms/minimax/chat/transformation.py,
+  litellm/llms/modelscope/chat/transformation.py, litellm/llms/tencent/chat/transformation.py and
+  litellm/llms/tencent/cost_calculator.py. The three __init__.py files (minimax/chat, tencent, tencent/chat) only re-export.
+  Nothing reads an environment variable. The caller passes each env value as a plain argument. The OpenAI chat base (B668,
+  B503, B504) and the OpenAI-like cleanup (B1425) do the rest. This task adds only what each config overrides. The minimax
+  __init__.py and the text to speech parts belong to B8174.
+
+  ai21_chat. Ai21ChatConfig supports exactly these options, in this order: tools, response_format, max_tokens,
+  max_completion_tokens, temperature, stop, n, stream, seed, tool_choice. It does not use the OpenAI base list. Mapping and
+  everything else come from the OpenAI-like base.
+
+  minimax_chat. MinimaxChatConfig. The key is api_key, else the MINIMAX_API_KEY value, else the global key the caller passes.
+  The base is api_base, else the MINIMAX_API_BASE value, else https://api.minimax.io/v1. The URL rule: a base that ends in
+  /chat/completions is used as is. A base that ends in /v1 gets /chat/completions. A base that ends in "/" gets
+  v1/chat/completions. Any other base gets /v1/chat/completions. cache_control on message content is kept (the OpenAI base
+  strips it elsewhere). Supported options are the OpenAI base list plus reasoning_split, plus thinking when the model
+  supports reasoning. A failed capability lookup counts as "does not support", it is not an error.
+
+  modelscope_chat. ModelscopeChatConfig. Default base https://api-inference.modelscope.cn/v1, with the MODELSCOPE_API_BASE
+  value and the MODELSCOPE_API_KEY value taken from the caller. The URL appends /chat/completions unless the base already
+  ends with it. Before sending, a message whose content is a list made only of text parts becomes a plain string: the text
+  of the parts joined with an empty string. A message that has any non-text part keeps its list. Other messages are
+  untouched.
+
+  tencent_chat. TencentChatConfig. Default base https://tokenhub-intl.tencentcloudmaas.com/v1, with the TENCENT_API_BASE and
+  TENCENT_API_KEY values from the caller. URL: trim trailing "/" from the base. If it ends in /chat/completions use it as
+  is. Else add /v1 when it does not end in /v1, then add /chat/completions. Supported options are the OpenAI base list plus
+  thinking and reasoning_effort, only when the model supports reasoning for provider tencent. map_openai_params removes
+  thinking and reasoning_effort from the options and puts {"thinking": payload} into extra_body. A thinking dict is used as
+  the payload after the coercion below. A reasoning_effort string gives {type: "disabled"} when it is "none" and
+  {type: "enabled"} for any other value. When both are present, thinking wins. Coercion: a payload with type "enabled"
+  becomes type "adaptive" when the model's metadata says supports_adaptive_thinking is true. If budget_tokens is an integer
+  it stays, any other budget_tokens is dropped. Other payloads pass unchanged.
+
+  tencent_cost. cost_per_token(model, usage) calls the generic token cost function (B1672) with provider "tencent" and
+  returns the prompt cost and completion cost. It adds no rule of its own. The generic function is injected as a trait so this
+  crate does not depend on betterlite-provider.
+
+  Size. About 230 nonblank, non-comment LiteLLM lines. Plan 260 production, 320 tests, 60 adapters, 20 wiring lines. No split.
+scope:
+  paths:
+    - crates/betterlite-openai/src/ai21_chat.rs
+    - crates/betterlite-openai/src/ai21_chat/**
+    - crates/betterlite-openai/src/minimax_chat.rs
+    - crates/betterlite-openai/src/minimax_chat/**
+    - crates/betterlite-openai/src/modelscope_chat.rs
+    - crates/betterlite-openai/src/modelscope_chat/**
+    - crates/betterlite-openai/src/tencent_chat.rs
+    - crates/betterlite-openai/src/tencent_chat/**
+    - crates/betterlite-openai/src/tencent_cost.rs
+    - crates/betterlite-openai/src/tencent_cost/**
+    - tools/oracle/cases/helpers/small-chat/**
+    - tools/oracle/helpers/b8173.py
+    - tools/oracle/helpers/b8173/**
+    - tools/oracle/src/helpers/openai/b8173.rs
+    - tools/oracle/src/helpers/openai/b8173/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/tencent/chat/transformation.py
+    why: Reasoning options, thinking coercion, base and URL rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/minimax/chat/transformation.py
+    why: Key and base lookup, URL rules, supported options.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/modelscope/chat/transformation.py
+    why: Text-part flattening and URL rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ai21/chat/transformation.py
+    why: The fixed supported option list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/tencent/cost_calculator.py
+    why: Tencent cost is the generic function with provider tencent.
+dod:
+  - text: Each config lists the same supported options as LiteLLM, including the reasoning-gated ones for MiniMax and Tencent.
+    proof: [small-chat-tests, oracle]
+  - text: Tencent thinking and reasoning_effort land in extra_body.thinking with the pinned coercion.
+    proof: [small-chat-tests, oracle]
+  - text: The URL rules for MiniMax, ModelScope and Tencent match LiteLLM for every base shape.
+    proof: [small-chat-tests, oracle]
+  - text: ModelScope flattens text-only content lists and leaves mixed lists alone.
+    proof: [small-chat-tests, oracle]
+  - text: The new oracle cases exist and call this task's helper.
+    proof: [small-chat-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: small-chat-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^(ai21_chat|minimax_chat|modelscope_chat|tencent_chat|tencent_cost)::/)'
+      why: A plain OpenAI config would keep list content for ModelScope, miss extra_body.thinking for Tencent and use the wrong URL for a MiniMax base without /v1.
+    - id: small-chat-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/small-chat)" && /usr/bin/grep -rlE '^  b8173:' tools/oracle/cases/helpers/small-chat
+      why: Without cases that call the B8173 helper nothing compares these functions with LiteLLM.
+oracle_cases:
+  - tools/oracle/cases/helpers/small-chat/ai21-and-modelscope.yaml
+  - tools/oracle/cases/helpers/small-chat/minimax-url-and-params.yaml
+  - tools/oracle/cases/helpers/small-chat/tencent-thinking.yaml
+  - tools/oracle/cases/helpers/small-chat/tencent-url.yaml
+  - tools/oracle/cases/helpers/small-chat/tencent-cost.yaml
+deviations: []
+out_of_scope:
+  - B668, B503, B504 and B1425 own the shared OpenAI chat behavior. B2221 and B2219 own the model capability and metadata lookups. B1672 owns the generic cost function.
+  - B1430 owns the native Messages policies for Tencent and MiniMax. B8174 owns MiniMax speech and ModelScope images.
+  - B2230 and B5360 own picking a config from the provider name. B8312 owns wiring.
+pitfalls:
+  - Tencent removes thinking and reasoning_effort from the options and sends them only inside extra_body. They never stay top-level.
+  - When thinking and reasoning_effort are both set, thinking is the payload and reasoning_effort is dropped.
+  - Coercion to adaptive happens only for type "enabled" and only when the model metadata flag is true. A missing flag means false.
+  - MiniMax base "https://host/" gets v1/chat/completions without a second slash. A base "https://host/v1" gets /chat/completions. A base "https://host" gets /v1/chat/completions.
+  - The Tencent base is trimmed of trailing "/" before the suffix checks, MiniMax and ModelScope are not.
+  - ModelScope joins text parts with an empty string, not a space or newline.
+  - AI21 has its own fixed option list and does not inherit the OpenAI one.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

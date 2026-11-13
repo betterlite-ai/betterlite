@@ -1,0 +1,24 @@
+kind: helper
+name: anthropic-prompt-image-document
+call:
+  anthropic_prompt:
+    messages:
+      - role: user
+        content:
+          - {type: text, text: look}
+          - {type: image_url, image_url: {url: "https://example.test/pic.png"}}
+          - type: document
+            source: {type: text, media_type: text/plain, data: aGk=}
+            title: notes
+            cache_control: {type: ephemeral}
+          - type: file
+            file: {file_data: "data:application/pdf;base64,QUJD", format: application/pdf}
+            cache_control: {type: ephemeral}
+    model: invoke/anthropic.claude-3-5-sonnet
+    llm_provider: bedrock
+    modify_params: false
+    data_urls:
+      https://example.test/pic.png: "data:image/png;base64,QUJD"
+env: {}
+compare:
+  ignore: []

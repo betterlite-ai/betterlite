@@ -1,0 +1,8 @@
+task: B3240
+deviations:
+  - what: resolve_policy_guardrails returns the guardrail names sorted ascending.
+    why: LiteLLM builds the result from a set, whose iteration order changes between Python processes, so no caller can depend on it; a fixed order keeps tests and responses stable, and the oracle cases compare the names as a set.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_resolver.py#L123-L127
+  - what: Condition regexes run on fancy-regex, not Python re. A pattern fancy-regex cannot compile, either bare or inside the whole-value wrapper, or a match that exceeds its backtrack limit, counts as a plain non-match.
+    why: Python's re has no maintained Rust twin. Python raises re.error for a pattern that does not compile, which the evaluator already treats as a non-match, and runs a catastrophic pattern without a limit; betterlite refuses the runaway match instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/condition_evaluator.py#L99-L107

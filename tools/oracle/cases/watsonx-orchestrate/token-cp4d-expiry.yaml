@@ -1,0 +1,40 @@
+kind: helper
+name: watsonx-token-cp4d-expiry
+call:
+  b4807:
+    operation: token
+    steps:
+      - params: {cp4d_host: "https://cp4d.example.com", auth_mode: cp4d, api_key: key-1, username: alice}
+        at: 100
+        wall: 1000
+        answer: {token: tok-1, expiration: 1200}
+      - params: {cp4d_host: "https://cp4d.example.com", auth_mode: cp4d, api_key: key-1, username: alice}
+        at: 239
+        wall: 1139
+        answer: {token: tok-2, expiration: 1200}
+      - params: {cp4d_host: "https://cp4d.example.com", auth_mode: cp4d, api_key: key-1, username: alice}
+        at: 240
+        wall: 1140
+        answer: {token: tok-3, expiration: 1200}
+      - params: {cp4d_host: "https://cp4d.example.com", auth_mode: cp4d, api_key: key-2, username: alice}
+        at: 300
+        wall: 1000
+        answer: {token: tok-4, expiration: 1050}
+      - params: {cp4d_host: "https://cp4d.example.com", auth_mode: cp4d, api_key: key-2, username: alice}
+        at: 301
+        wall: 1001
+        answer: {token: tok-5, expiration: 1050}
+      - params: {cp4d_host: "https://cp4d.example.com", auth_mode: cp4d, api_key: key-3, username: alice}
+        at: 400
+        wall: 1000
+        answer: {token: tok-6}
+      - params: {cp4d_host: "https://cp4d.example.com", auth_mode: cp4d, api_key: key-3, username: alice}
+        at: 3939
+        wall: 1000
+        answer: {token: tok-7}
+      - params: {cp4d_host: "https://cp4d.example.com", auth_mode: cp4d, api_key: key-3, username: alice}
+        at: 3940
+        wall: 1000
+        answer: {token: tok-8}
+env: {}
+compare: {ignore: []}

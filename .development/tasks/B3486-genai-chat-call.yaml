@@ -39,7 +39,7 @@ checks:
   commands:
     - id: chat-call-tests
       why: Handler request preparation, stream detection, response transformation or error wrapping does not pass
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^genai::chat_call::/) and not test(/replays/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::genai::chat_call::(.*::)?genai::chat_call::/) and not test(/replays/)'
 oracle_cases: []
 deviations:
   - what: The handler is implemented as pure Rust functions accepting all parameters explicitly, not as methods on a stateful handler class.

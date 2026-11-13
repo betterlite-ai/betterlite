@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-context-window-exceeded-error
+call: {"error_normalization": {"message": "ordinary", "class": "ContextWindowExceededError", "status_code": 418}}
+env: {}
+compare: {ignore: []}

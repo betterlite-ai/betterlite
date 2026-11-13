@@ -218,7 +218,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_params_cases::case_[0-9]+_reasoning_summary_without_effort$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_response_params.py)" && uv
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_response_params.py tools/oracle/helpers/openai_response_params)" && uv
       run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -231,7 +231,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_response_params)"
       && grep -q 'decode_response_capability_error' crates/betterlite-openai/fuzz/fuzz_targets/openai_response_params.rs
-      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_response_params_corpus$/)'
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_response_params_corpus(::|$)/)'
   - id: case-responses-parameter-set
     why: Supported fields are input, model, extra_headers, extra_query, extra_body, timeout and include, instructions,
       max_output_tokens, metadata, parallel_tool_calls, previous_response_id, reasoning, store, background, stream,

@@ -1,0 +1,32 @@
+kind: helper
+name: database-tls-prisma-to-libpq
+call:
+  database_tls:
+    function: batch
+    calls:
+      - function: strip_prisma_query_params
+        url: "postgresql://u@h/db"
+      - function: strip_prisma_query_params
+        url: "postgresql://u@h/db?"
+      - function: strip_prisma_query_params
+        url: "postgresql://u@h/db?application_name=my%20app&connect_timeout=&schema=tenant&sslaccept="
+      - function: strip_prisma_query_params
+        url: "postgresql://u@h/db?application_name=my+app"
+      - function: strip_prisma_query_params
+        url: "postgresql://u@h/db?sslcert=ca.pem&sslmode=require"
+      - function: strip_prisma_query_params
+        url: "postgresql://u@h/db?sslcert=ca.pem&sslmode=require&sslaccept=accept_invalid_certs"
+      - function: strip_prisma_query_params
+        url: "postgresql://u@h/db?sslcert=ca.pem&sslmode=disable&sslaccept=strict"
+      - function: strip_prisma_query_params
+        url: "postgresql://u@h/db?sslcert=ca.pem&sslmode=prefer&sslaccept=strict&application_name=app"
+      - function: strip_prisma_query_params
+        url: "postgresql://u@h/db?sslcert=prisma-ca.pem&sslrootcert=explicit.pem&sslmode=require&sslaccept=strict"
+      - function: strip_prisma_query_params
+        url: "postgresql://u@h/db?sslmode=require&sslmode=disable&sslcert=ca.pem&sslaccept=strict&sslaccept=accept_invalid_certs"
+      - function: strip_prisma_query_params
+        url: "postgresql://u@h/db?sslcert=ca&sslaccept=&sslaccept=accept_invalid_certs"
+      - function: strip_prisma_query_params
+        url: "postgresql:///db?schema=tenant"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+id: B5832
+milestone: M3 providers
+title: Fireworks AI provider
+status: todo
+depends_on: [B6070, B6071, B6072, B2221, B2222, B2237, B507, B1138, B171]
+file: tasks/B5832-fireworks-completion-responses.yaml
+covers:
+  - "litellm/llms/fireworks_ai/completion/**"
+  - "litellm/llms/fireworks_ai/responses/**"
+parent: B041
+split_from: B041
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

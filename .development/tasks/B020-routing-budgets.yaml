@@ -9,9 +9,7 @@ description: 'Finish policy routing by filtering B016''s eligible pool against B
   without credentials or money rounding. Configuration boundary keys introduced or consumed here: optional_pre_call_checks.
   Pinned declaration defaults: optional_pre_call_checks=None. Resolve env values once in betterlite-config,
   never in router code. Implement the owned native service in crates/betterlite-router/src/routing_budgets.rs.
-  Add ProbeOperation::RoutingBudgets in tools/oracle/src/router_probes/mod.rs and the corresponding B020 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::RoutingBudgets and its Python entry as stubs, so fill only tools/oracle/src/router_probes/routing_budgets.rs and tools/oracle/litellm/probes/routing_budgets.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router_strategy/budget_limiter.py: _LiteLLMParamsDictView.__init__
@@ -25,7 +23,8 @@ description: 'Finish policy routing by filtering B016''s eligible pool against B
   (L715-L736), RouterBudgetLimiting._track_provider_remaining_budget_prometheus (L738-L751), RouterBudgetLimiting._get_current_provider_spend
   (L753-L777), RouterBudgetLimiting._get_current_provider_budget_reset_at (L779-L793), RouterBudgetLimiting._init_tag_budgets
   (L915-L935). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports.
+  B326 and B383 build only in their own modules, so this task also installs the B326 budget state in the server state, reads its B383 budget configuration and calls the B326 shutdown flush.'
 scope:
   paths:
   - crates/betterlite-router/src/routing_budgets.rs
@@ -42,9 +41,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_budgets.rs
   - tools/oracle/src/router_probes/routing_budgets/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/routing_budgets.py
   - tools/oracle/cases/routing/routing-budgets/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/routing-budgets-*
@@ -154,7 +150,7 @@ deviations:
   why: The accepted product decision removes licensing gates and ships all MIT features.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L915-L935
 out_of_scope:
-- Budget CRUD and account reservations (B059/B071).
+- Budget CRUD (B059) and account reservations (B8480 reserves budget for a request and renews its lease, B8481 installs settlement).
 - Prometheus exporter (B111).
 - 'litellm/router_strategy/budget_limiter.py: B326 owns: _sum_increments_by_key (L98-L103), RouterBudgetLimiting._increment_spend_in_current_window
   (L392-L412), RouterBudgetLimiting._get_redis_increment_queue_lock (L414-L415), RouterBudgetLimiting._detach_queued_increment_operations

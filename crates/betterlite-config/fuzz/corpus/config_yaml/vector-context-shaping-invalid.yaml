@@ -1,0 +1,2 @@
+litellm_settings:
+  vector_store_search_failure_mode: bogus

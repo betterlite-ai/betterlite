@@ -1,0 +1,35 @@
+{
+  "kind": "helper",
+  "name": "vendor-mapping-langfuse-usage-breakdown",
+  "call": {
+    "b3846": {
+      "function": "langfuse_llm_call",
+      "payload": {
+        "id": "call-2",
+        "model": "gpt-4o",
+        "custom_llm_provider": "openai",
+        "call_type": "completion",
+        "prompt_tokens": 20,
+        "completion_tokens": 10,
+        "total_tokens": 30,
+        "response_cost": 0.0025,
+        "metadata": {
+          "usage_object": {
+            "cache_creation_input_tokens": 3,
+            "prompt_tokens_details": {
+              "cached_tokens": 5
+            },
+            "completion_tokens_details": {
+              "reasoning_tokens": 2
+            }
+          }
+        }
+      },
+      "capture_content": false
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

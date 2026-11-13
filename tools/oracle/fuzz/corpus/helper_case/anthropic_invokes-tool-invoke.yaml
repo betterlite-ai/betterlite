@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-invokes-tool-invoke-seed
+call: {anthropic_invokes: {function: convert_to_anthropic_tool_invoke, tool_calls: [{id: call.seed, type: function, function: {name: seed, arguments: '{"seed": true}'}}], web_search_results: [], tool_results: []}}
+env: {}
+compare: {ignore: []}

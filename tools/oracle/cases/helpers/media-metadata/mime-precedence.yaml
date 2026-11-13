@@ -1,0 +1,15 @@
+kind: helper
+name: media-metadata-mime-precedence
+call:
+  media_metadata:
+    operation: extract_file_data
+    file_data:
+      kind: tuple3
+      filename: photo.png
+      content:
+        kind: bytes
+        content_base64: YWJj
+      content_type: application/custom
+env: {}
+compare:
+  ignore: []

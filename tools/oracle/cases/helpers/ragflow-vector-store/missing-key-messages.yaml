@@ -1,0 +1,29 @@
+kind: helper
+name: ragflow-missing-key-messages
+call:
+  b7814:
+    calls:
+      - call: auth_credentials
+        input: {api_key: null, env: {}}
+      - call: auth_credentials
+        input: {api_key: null, env: {RAGFLOW_API_KEY: env-key}}
+      - call: auth_credentials
+        input: {api_key: explicit-key, env: {RAGFLOW_API_KEY: env-key}}
+      - call: auth_credentials
+        input: {api_key: "", env: {}}
+      - call: validate_environment
+        input: {headers: {}, litellm_params: null, env: {}}
+      - call: validate_environment
+        input: {headers: {}, litellm_params: {api_key: null}, env: {}}
+      - call: validate_environment
+        input: {headers: {}, litellm_params: null, env: {RAGFLOW_API_KEY: env-key}}
+      - call: validate_environment
+        input: {headers: {}, litellm_params: {api_key: ""}, env: {RAGFLOW_API_KEY: env-key}}
+      - call: validate_environment
+        input: {headers: {X-Trace: t}, litellm_params: {api_key: explicit-key}, env: {RAGFLOW_API_KEY: env-key}}
+      - call: validate_environment
+        input: {headers: {Authorization: "Bearer stale", Content-Type: text/plain}, litellm_params: {api_key: explicit-key}, env: {}}
+      - call: validate_environment
+        input: {headers: {}, litellm_params: {api_key: ""}, env: {}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-tool-access-denied
+call: {"error_normalization": {"message": "timed out", "status_code": 418, "proxy_type": "tool_access_denied"}}
+env: {}
+compare: {ignore: []}

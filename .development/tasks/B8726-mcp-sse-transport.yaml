@@ -1,0 +1,52 @@
+id: B8726
+title: MCP legacy SSE transport
+description: >-
+  LiteLLM keeps the old two endpoint MCP transport for clients that predate streamable HTTP: GET /mcp/sse opens an event stream whose first event tells the client where to POST, and POST /mcp/sse/messages?session_id=... delivers each JSON-RPC message. server.py builds it as SseServerTransport("/sse/messages") from mcp.server.sse (sse_transport.py only re-exports it). This task ports that SDK class. Code goes in betterlite-server, module mcp::sse_transport (crates/betterlite-server/src/mcp/sse_transport.rs) with a tests.rs.
+
+
+  Source to port: tools/oracle/litellm/.venv/lib/python3.13/site-packages/mcp/server/sse.py (mcp 2.3.0). Copy its status codes, texts and the endpoint event exactly.
+
+  SseTransport::new(endpoint: &str) with endpoint "/sse/messages". Sessions live in a map owned by the value, keyed by a UUID4, each with the owner string it was opened by and the sender into its rmcp service.
+
+  1. connect<H: rmcp::ServerHandler>(&self, root_path, owner, handler: H) -> http::Response<axum::body::Body> is connect_sse plus serve_loop: create the session, start the rmcp service with serve_server (the client sends initialize itself on this transport), and answer the SSE stream. The first event is "endpoint" whose data is the root path (trailing slash removed) joined with the endpoint, URL quoted, then "?session_id=" and the id as 32 hex digits, as the SDK builds it. Every server message is an event "message" rendered with B8721's framing. When the client goes away the service stops and the session leaves the map.
+
+  2. post(&self, query, owner, body) -> http::Response<axum::body::Body> is handle_post_message, in the SDK's order: a missing session_id is 400 "session_id is required"; a value that is not a hex UUID is 400 "Invalid session ID"; an unknown session is 404 "Could not find session"; a session opened by another owner is answered as the SDK answers it (read the owner check in sse.py); a body that B8721's decode_message refuses is 400 "Could not parse message" after the SDK's error handling for that case; otherwise the message goes to the session's service and the answer is 202 "Accepted".
+
+  The owner string is B8724's owner_fingerprint of the caller. LiteLLM passes it as the AccessToken's token and client_id on the scope's user, which is how the SDK ties a session to its opener; here it is a plain argument.
+
+
+  Tests drive connect and post through tower's oneshot over a tiny axum Router with a fake rmcp handler.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/sse_transport.rs
+    - crates/betterlite-server/src/mcp/sse_transport/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/sse_transport.py#L1-L3
+    why: The re-export of the SDK class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L599-L599
+    why: The endpoint LiteLLM gives the transport.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2413-L2440
+    why: How handle_sse_mcp binds the owner and calls handle_post_message or connect_sse with serve_loop.
+dod:
+  - text: connect answers an SSE stream whose first event is the SDK's endpoint event with a 32 hex digit session id, then relays the service's messages, and drops the session when the client leaves.
+    proof: [sse-tests]
+  - text: post answers each SDK refusal with its status and text in the SDK's order, refuses another owner as the SDK does, and delivers a valid message with 202 "Accepted".
+    proof: [sse-tests]
+checks:
+  optional: []
+  commands:
+    - id: sse-tests
+      why: the endpoint event, a refusal, the owner check or message delivery differs from the SDK
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::sse_transport::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The checks before the transport (origin, version, auth, allowlist, toolset, challenges) and the /mcp/sse routes: B8727."
+pitfalls:
+  - "The endpoint in the first event includes the root path the request arrived under, so behind the /mcp mount the client is told a path under /mcp, not the bare /sse/messages."
+  - "A session id is checked for shape before lookup, so a malformed id is 400, not 404."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

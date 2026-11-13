@@ -151,7 +151,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::estimate_error($|::)/) - test(/replays_the_/)'
     - id: behavior-tests
       why: the required behavior tests fail or the filter selects no tests
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator_behavior($|::)/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_estimator::(.*::)?roi_estimator_behavior($|::)/) - test(/replays_the_/)'
 
 oracle_cases:
   - tools/oracle/cases/roi-estimator/metadata-evidence-mapping.yaml

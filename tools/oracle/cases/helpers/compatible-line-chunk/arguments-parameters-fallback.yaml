@@ -1,0 +1,13 @@
+kind: helper
+name: parameters_object_fills_absent_or_null_arguments
+call:
+  compatible_line_chunk:
+    mode: async
+    events:
+      - {kind: line, line: 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"f","parameters":{"unit":"c"}}}]}}]}'}
+      - {kind: line, line: 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"b","function":{"name":"f","arguments":null,"parameters":{"unit":"f"}}}]}}]}'}
+      - {kind: line, line: 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c","function":{"name":"f","arguments":"kept","parameters":{"unit":"k"}}}]}}]}'}
+      - {kind: line, line: 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"d","function":{"name":"f","parameters":"text"}}]}}]}'}
+env: {}
+compare:
+  ignore: []

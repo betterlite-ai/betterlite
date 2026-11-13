@@ -1,0 +1,79 @@
+id: B8400
+title: Proxy utility checks, projected spend and SMTP email
+description: >-
+  Port the small utils.py functions that proxy_server.py and the management routes call, and the SMTP sender that budget and invitation emails use. Code goes in crates/betterlite-server/src/proxy_helpers.rs and proxy_helpers/ (checks.rs, projected.rs, tests.rs), and crates/betterlite-logging/src/smtp_send.rs and smtp_send/ (the logging crate, so B4022's budget_email can call it), with the SMTP settings in a config section crates/betterlite-config/src/sections/smtp_transport.rs.
+
+  checks.rs. `error_message_str(err)` is `get_error_message_str` (L8128-L8145): an HTTP error gives its text detail, its map detail as JSON, else a message attribute (text or JSON); anything else gives its text. `check_team_models(team_id, team_config, request_data)` is `_is_valid_team_configs` (L7995-L8006): with all three present and `models` in the team config, a request model not in that list fails with "Invalid model for team {team_id}: {model}.  Valid models for team are: {models}\n" (two spaces, as LiteLLM writes it), and the models key is removed from the config. `premium_user_check(premium_user, feature)` is `_premium_user_check` (L8240-L8257): HTTP 403 `{"error": "This feature is only available for LiteLLM Enterprise users: {feature}. {not_premium_user}"}`, without the feature part when none is given. `prisma_client_or_throw(db, message)` is `get_prisma_client_or_throw` (L8369-L8377): HTTP 500 `{"error": message}` when there is no database.
+
+  projected.rs. `month_end_date(today)`, `is_projected_spend_over_limit(spend, soft_limit, today)` and `projected_spend_over_limit(spend, soft_limit, today)` (L7930-L7992). The daily rate is the spend itself on the first day of the month, else spend divided by (day minus 1); projection adds the rate times the days left to the month end. The second returns the projected spend and the date the limit is reached: today when the rate is 0 or less or nothing is left, else today plus remaining budget divided by rate days. `today` is passed in so tests do not depend on the clock.
+
+  smtp_send.rs. `send_email(settings, receiver, subject, html)` (L7012-L7116): fails with "Trying to use SMTP, but SMTP_SENDER_EMAIL is not set", then the receiver, subject and HTML checks with LiteLLM's messages, then "Trying to use SMTP, but SMTP_HOST is not set". Implicit TLS is used for port 465 or SMTP_USE_SSL exactly "True"; otherwise STARTTLS unless SMTP_TLS is exactly "False"; login only when both username and password are set; the send runs off the async runtime with SMTP_TIMEOUT. A send error is logged as "An error occurred while sending the email:{e}" and not returned, as LiteLLM does. Use the `lettre` crate for the SMTP client. Section `smtp_transport`: SMTP_HOST, SMTP_PORT (587), SMTP_USERNAME, SMTP_PASSWORD, SMTP_SENDER_EMAIL, SMTP_USE_SSL ("False"), SMTP_TLS ("True") and SMTP_TIMEOUT (30); the password is a secret and never logged.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-logging/Cargo.toml
+    - crates/betterlite-server/src/proxy_helpers.rs
+    - crates/betterlite-server/src/proxy_helpers/**
+    - crates/betterlite-logging/src/smtp_send.rs
+    - crates/betterlite-logging/src/smtp_send/**
+    - crates/betterlite-config/src/sections/smtp_transport.rs
+    - crates/betterlite-config/src/sections/smtp_transport/**
+    - tools/oracle/cases/helpers/proxy-helpers/**
+    - tools/oracle/helpers/b8400.py
+    - tools/oracle/helpers/b8400/**
+    - tools/oracle/src/helpers/logging/b8400.rs
+    - tools/oracle/src/helpers/logging/b8400/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7012-L7116
+    why: The SMTP connection choice and send_email.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7930-L8006
+    why: Month end, projected spend and the team model check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8128-L8145
+    why: get_error_message_str.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8240-L8257
+    why: _premium_user_check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8369-L8377
+    why: get_prisma_client_or_throw.
+  - url: https://docs.rs/lettre
+    why: The SMTP client crate.
+dod:
+  - text: error_message_str, check_team_models, premium_user_check and prisma_client_or_throw answer with LiteLLM's text and status.
+    proof: [helpers-tests, oracle]
+  - text: Projected spend uses LiteLLM's daily rate and reaches-limit date, including the first day of the month and December.
+    proof: [helpers-tests, oracle]
+  - text: send_email checks its settings in LiteLLM's order, picks implicit TLS or STARTTLS by the same rules, and logs a send error without returning it.
+    proof: [smtp-tests]
+  - text: The smtp_transport section reads every SMTP env var with LiteLLM's default.
+    proof: [config-tests]
+checks:
+  optional: []
+  commands:
+    - id: helpers-tests
+      why: a proxy check or projected spend function is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^proxy_helpers::/)'
+    - id: smtp-tests
+      why: the SMTP sender's checks or TLS choice is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^smtp_send::/)'
+    - id: config-tests
+      why: an SMTP setting is not read or has the wrong default
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::smtp_transport::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/proxy-helpers/error-message-str.yaml
+  - tools/oracle/cases/helpers/proxy-helpers/team-model-check.yaml
+  - tools/oracle/cases/helpers/proxy-helpers/month-end-date.yaml
+deviations:
+  - what: Projected spend takes today's date as an argument.
+    why: Tests need a fixed date; callers pass the server's local date, as date.today() does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7936-L7992
+out_of_scope:
+  - "Budget, invitation and alert email content: B4022 and B4023. Key format checks: B783. Root path and custom URL helpers: B2302, B4200 and B7323."
+pitfalls:
+  - lettre's default features pull native-tls, and deny.toml bans it. Turn the defaults off and enable lettre's rustls and tokio features; `cargo deny --locked check` proves the set.
+  - SMTP_USE_SSL and SMTP_TLS compare to the exact strings "True" and "False", so "true" does not turn implicit TLS on.
+  - check_team_models removes models from the team config even when the model is allowed.
+  - The sender check runs before the host check, so a missing SMTP_SENDER_EMAIL is reported even when SMTP_HOST is also missing.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

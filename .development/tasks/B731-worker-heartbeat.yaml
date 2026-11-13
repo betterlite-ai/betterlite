@@ -5,7 +5,7 @@ description: >-
   statements, count-row contract, constructor, beat, deregister and count_live_proxy_workers.
   Also implement the separate database_diagnostics module from proxy-extras/_logging.py for
   database-tool record formatting and settings. Keep these responsibilities in different source
-  files. B051 composes the services; B124 owns startup scheduling/shutdown and B130 owns the
+  files. B051 composes the services; B8372 owns startup scheduling, B8374 shutdown, and B4448 owns the
   no-Redis warning decision. None of those higher-level callers is imported here.
 
   Each heartbeat service captures one worker_id and hostname. A truthy supplied worker_id is
@@ -35,10 +35,10 @@ description: >-
   or query exceptions emit DEBUG "Live proxy worker count unavailable: %s" and return None,
   never zero or an HTTP 503. Do not add positivity validation absent from the source adapter.
 
-  B124 performs an initial awaited beat, then schedules every 60 seconds as
+  B8372 performs an initial awaited beat, then schedules every 60 seconds as
   proxy_worker_heartbeat_job with replacement enabled; it awaits deregistration before disconnect
   when both heartbeat and database exist. This task supplies the operations/constants, not a second
-  scheduler or shutdown hook. B130 uses count != 1, so unknown and zero both retain its warning.
+  scheduler or shutdown hook. B4448's show_no_redis_warning uses count != 1, so unknown and zero both retain its warning.
   Missing tables during a rolling migration follow the same best-effort DEBUG/None paths.
 
   For database-tool diagnostics, own JsonFormatter.formatTime/format, _is_json_enabled and the
@@ -105,11 +105,11 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L7-L43
     why: Actual flag fallback/read site, local timestamps, handler guard and LITELLM_LOG INFO default.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10616-L10626
-    why: B124 owns the initial beat and proxy_worker_heartbeat_job scheduling, using this task's interval.
+    why: B8372 owns the initial beat and proxy_worker_heartbeat_job scheduling, using this task's interval.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1122-L1134
-    why: B124 awaits deregistration before database disconnect.
+    why: B8374 awaits deregistration before database disconnect.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1666-L1676
-    why: B130 treats None/zero as not provably one worker; no HTTP error originates in census.
+    why: B4448 treats None/zero as not provably one worker; no HTTP error originates in census.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/dynamo_db.py#L1-L72
     why: Both deprecated DynamoDB methods have no production caller and remain unimplemented.
 dod:
@@ -172,7 +172,7 @@ out_of_scope:
   - dynamo_db.py DynamoDBWrapper.__init__ and set_env_vars_based_on_arn have no caller at the pin;
     no AWS calls, credential environment mutation or DynamoDB support are implemented here.
   - litellm_proxy_extras/__init__.py is empty; it contributes no initializer behavior.
-  - B124 owns job scheduling and shutdown invocation, B130 owns warning/HTTP presentation,
+  - B8372 owns job scheduling and B8374 shutdown invocation, B4448 owns warning/HTTP presentation,
     B051 installs database startup diagnostics, and B012 owns core logging outside proxy-extras.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as database_diagnostics in the db group. Replace the stub Op in tools/oracle/src/helpers/db/database_diagnostics.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/database_diagnostics.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

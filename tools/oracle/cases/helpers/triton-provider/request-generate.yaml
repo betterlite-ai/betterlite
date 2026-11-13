@@ -1,0 +1,29 @@
+kind: helper
+name: triton-provider-request-generate
+env: {}
+compare: {ignore: []}
+call:
+  b8154:
+    op: generate_request
+    env: {DEFAULT_MAX_TOKENS_FOR_TRITON: "123"}
+    requests:
+      - model: meta-llama/llama-2-7b-chat
+        messages: [{role: user, content: hi}]
+        options: {}
+      - model: meta-llama/llama-2-7b-chat
+        messages:
+          - {role: system, content: be brief}
+          - {role: user, content: hi}
+        options: {stream: true, max_tokens: 7, temperature: 0.5}
+      - model: mosaicml/mpt-7b-chat
+        messages: [{role: user, content: hi}]
+        options: {max_completion_tokens: 9}
+      - model: gryphe/mythomax-l2-13b
+        messages: [{role: user, content: hi}]
+        options: {max_tokens: null}
+      - model: unknown-model
+        messages: [{role: user, content: hi}]
+        options: {stream: null}
+      - model: mosaicml/mpt-7b
+        messages: [{role: user, content: hi}]
+        options: {}

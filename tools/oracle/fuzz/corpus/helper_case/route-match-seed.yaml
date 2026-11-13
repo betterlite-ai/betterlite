@@ -1,0 +1,9 @@
+kind: helper
+name: route-match-seed
+call:
+  route_match:
+    function: is_llm_api_route
+    route: /v1/chat/completions
+env: {}
+compare:
+  ignore: []

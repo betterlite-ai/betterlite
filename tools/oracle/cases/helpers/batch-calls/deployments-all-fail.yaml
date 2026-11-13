@@ -1,0 +1,10 @@
+kind: helper
+name: batch-calls-deployments-all-fail
+call:
+  batch_calls:
+    mode: deployments
+    models: [m0, m1]
+    results: [{error: unavailable}, {error: still unavailable}]
+    completion_order: [1, 0]
+env: {}
+compare: {ignore: []}

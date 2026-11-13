@@ -1,0 +1,16 @@
+kind: helper
+name: watsonx-auth-missing-project-and-space
+env: {}
+compare: {ignore: []}
+call:
+  b5970:
+    env: {}
+    routes: []
+    steps:
+      - {op: api_params, model: granite-13b, params: {}}
+      - {op: api_params, model: null, params: {}}
+      - {op: api_params, model: deployment/abc, params: {}}
+      - {op: credentials, params: {}, api_key: null, api_base: null}
+      - {op: credentials, params: {apikey: key}, api_key: null, api_base: null}
+      - {op: base_url, api_base: null}
+      - {op: credentials, params: {apikey: key, wx_credentials: {url: null}}, api_key: null, api_base: null}

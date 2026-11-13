@@ -1,0 +1,5 @@
+kind: helper
+name: bedrock-model-seed-no-fields
+call: {bedrock_model: {}}
+env: {}
+compare: {ignore: []}

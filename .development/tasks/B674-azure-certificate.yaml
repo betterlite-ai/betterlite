@@ -98,6 +98,7 @@ description: >-
   SDK protocol that LiteLLM delegates.
 scope:
   paths:
+  - deny.toml
   - crates/betterlite-azure/Cargo.toml
   - Cargo.toml
   - crates/betterlite-azure/src/azure_certificate.rs
@@ -243,7 +244,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_certificate)"
       && grep -q 'decode_certificate_material' crates/betterlite-azure/fuzz/fuzz_targets/azure_certificate.rs &&
-      cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_certificate_corpus$/)'
+      cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_certificate_corpus(::|$)/)'
   - id: credential-identity-isolation
     why: The credential identity isolation invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_certificate_credential_identity_isolation$/)'

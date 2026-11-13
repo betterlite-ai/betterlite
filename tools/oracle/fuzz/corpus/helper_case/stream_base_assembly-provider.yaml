@@ -1,0 +1,10 @@
+kind: helper
+name: stream-base-assembly-provider
+call:
+  stream_base_assembly:
+    function: assembled_provider_metadata
+    cases:
+      - {model: claude-3-5-sonnet, custom_llm_provider: anthropic, chunks: [{choices: []}], hidden_params: {start: 1}}
+      - {model: claude, custom_llm_provider: not-a-provider, chunks: [{choices: []}]}
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: responses-objects-output-text-join
+call:
+  responses_objects:
+    operation: output_text_join
+    response: {id: resp_a, created_at: 1, output: [{type: message, id: m_a, status: completed, role: assistant, content: [{type: output_text, text: a, annotations: []}, {type: output_text, text: null, annotations: []}, {type: output_text, text: b, annotations: []}]}]}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,1 @@
+{"success": {"value": {"id": "chat_a", "created": 1, "object": "chat.completion", "model": "gpt-4o-mini", "choices": [{"content": "hi", "finish_reason": "stop"}]}}}

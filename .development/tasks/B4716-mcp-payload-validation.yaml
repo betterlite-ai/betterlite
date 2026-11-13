@@ -1,0 +1,221 @@
+id: B4716
+title: MCP payload validation and connector conversion
+description: >-
+  Build the checks that every MCP server create and update payload goes through, and the converter that turns Anthropic connector definitions into create payloads. In LiteLLM these live in four places: the NewMCPServerRequest and UpdateMCPServerRequest models and their before-validators in proxy/_types.py (plus MCPApprovalStatus), the base validators in proxy/_experimental/mcp_server/utils.py (validate_mcp_server_name, validate_tool_display_names, normalize_server_name, validate_and_normalize_mcp_server_payload), the helpers at the top of proxy/management_endpoints/mcp_management_endpoints.py, and all of proxy/management_endpoints/mcp_connector_import.py. Nothing here touches the database or an HTTP framework. B4721 wires these into the routes and turns each typed error into the HTTP response.
+
+  Code goes in betterlite-mcp, two modules. server_payload (crates/betterlite-mcp/src/server_payload.rs, server_payload/request.rs, server_payload/names.rs, server_payload/rules.rs, each with a tests.rs beside it) and connector_import (crates/betterlite-mcp/src/connector_import.rs, connector_import/request.rs, connector_import/convert.rs, each with a tests.rs beside it). The config key goes in betterlite-config, section mcp_required_fields (crates/betterlite-config/src/sections/mcp_required_fields.rs with a tests.rs). B6590 already adds betterlite-db to the betterlite-mcp Cargo.toml, so this task adds no dependency. Do not add the key to the shared loader outside that file's own tests.
+
+  Rules and policy come in by constructor, never from the environment. PayloadRules { prefix_separator: String, stdio: StdioPolicy } holds the two values LiteLLM reads from env at call time: MCP_TOOL_PREFIX_SEPARATOR (default "-") and the stdio gate. StdioPolicy { enabled: bool, allowed_commands: BTreeSet<String> } is the result of is_mcp_stdio_enabled (LITELLM_ENABLE_MCP_STDIO equal to "true" after trim and lowercase) and MCP_STDIO_ALLOWED_COMMANDS (npx, uvx, python, python3, node, docker, deno, plus the comma list in LITELLM_MCP_STDIO_EXTRA_COMMANDS). The config section mcp_env_values (crates/betterlite-config/src/sections/mcp_env_values.rs with a tests.rs; no config section or planned task reads these three variables yet) reads MCP_TOOL_PREFIX_SEPARATOR, LITELLM_ENABLE_MCP_STDIO and LITELLM_MCP_STDIO_EXTRA_COMMANDS once, and an empty string counts as unset. It returns the parsed PayloadRules and StdioPolicy, and the constructors in this task take those parsed values. Do not add the section to the shared loader outside that file's own tests. B8620 passes both on. Tests build them as literals. The disabled-stdio message is MCP_STDIO_DISABLED_MESSAGE from proxy/_experimental/mcp_server/stdio_gate.py (read it for the exact text, it embeds the env var name).
+
+  Next to StdioPolicy in server_payload::rules, build `is_mcp_stdio_blocked` (transport: Option<&str>, policy: &StdioPolicy) -> bool, true when the transport is "stdio" and policy.enabled is false, and `warn_if_mcp_stdio_blocked` (server_name: Option<&str>, transport: Option<&str>, policy), which logs at warning "MCP server '{name}' will not start: {MCP_STDIO_DISABLED_MESSAGE}" when the first is true.
+
+  Errors. PayloadError (thiserror) has one variant per failure and its Display is exactly LiteLLM's error text, so B4721 can put it in {"detail":{"error": text}}. Variants: SeparatorInName, DisplayName, ToolPrefix, UpstreamTokenHeader, IdentifierConflict, UnknownRequiredFields, MissingRequiredFields. Document on the enum that all are HTTP 400 except UnknownRequiredFields, which is 500. RequestError is the error of the request models: Value(String) for a failed before-validator (the text without Pydantic's "Value error, " prefix) and Shape(serde_json::Error) for a type error in a field. Python's repr text inside messages (a quoted string, a list of strings, None) follows docs/compatibility.md.
+
+  server_payload::request. NewMCPServerRequest and UpdateMCPServerRequest, with LiteLLM's field names, types and defaults (read proxy/_types.py lines 1615 to 1791). Types come from existing code: MCPTransport, MCPAuth, MCPCredentials and MCPInfo from B2305 (betterlite-db mcp_stored_contracts), MCPEnvVar from B858, and the OAuth2Flow enum (client_credentials, authorization_code) from B6590's server_record, with no local copy. transport defaults to sse. auth_type is Option<MCPAuth> where absent and null are both None. Every Python dict[str, str] field (tool_name_to_display_name, tool_name_to_description, static_headers, env) uses OrderedMap, a small type in this module that keeps the order of the JSON keys: Deserialize through a visitor that pushes into a Vec of pairs and, for a repeated key, replaces the value in place (Python's dict keeps the first position and the last value). It serializes as a JSON object in the same order. NewMCPServerRequest also has approval_status (Option<String>), submitted_by (Option<String>) and submitted_at (Option<String>, kept as the raw text). MCPApprovalStatus (pending_review, active, rejected, draft, serialized in snake_case) is defined here with an as-string accessor. Derive Clone, Deserialize and Serialize on the requests, not Debug: implement Debug by hand printing only server_name, alias, transport and auth_type, since the payload carries secrets.
+
+  Construction is NewMCPServerRequest::from_value(value: serde_json::Value, stdio: &StdioPolicy) -> Result<Self, RequestError> and the same for UpdateMCPServerRequest. It runs LiteLLM's model_validator(mode="before") checks on the raw JSON object first, then deserializes the fields. Pydantic runs before-validators in reverse order of definition, so the order and the first failure are: for New, per_server_oauth_discovery, dcr_bridge, then transport fields; for Update, the same three. (validate_credentials_requirements does nothing and is not built.) A value that is not a JSON object skips all three and fails in the field step. The checks:
+  1. per_server_oauth_discovery (_reject_unsupported_per_server_oauth_discovery): only when per_server_oauth_discovery is truthy. New requires auth_type "oauth2" and oauth2_flow "authorization_code" present in the payload. Update accepts a missing auth_type or oauth2_flow key (the stored row decides later), but a key that is present must match, so a present null fails. delegate_auth_to_upstream truthy always fails. Failure text is _per_server_oauth_discovery_error. Also build is_per_server_oauth_discovery_eligible(auth_type, oauth2_flow, delegate) -> bool as a pub fn, it has callers in the update route.
+  2. dcr_bridge (validate_dcr_bridge_auth_type): only when dcr_bridge is truthy. auth_type must be true_passthrough or oauth_delegate. Update skips the check when the auth_type key is absent. The text embeds the value as Python repr (an absent auth_type prints None, "oauth2" prints 'oauth2').
+  3. transport fields (_validate_mcp_transport_fields): a missing transport key skips everything, including the url check. http or sse needs a truthy url or spec_path, else "url or spec_path is required for HTTP/SSE transport". stdio runs in this order: stdio gate off gives the disabled message, then no command gives "command is required for stdio transport", then no args gives "args is required for stdio transport", then the basename of the command (the part after the last "/") must be in allowed_commands, else "Command '<command>' is not in the allowed commands list for stdio transport. Allowed commands: <sorted list as a Python list repr>".
+
+  server_payload::names. Base and endpoint name validation. validate_mcp_server_name(name, separator) rejects a name containing the separator with "Server name cannot contain '<sep>'. Use an alternative character instead Found: <name>" (there is no period after "instead"). validate_tool_display_names rejects any non-empty display name that does not match ^[a-zA-Z0-9_-]+$ with LiteLLM's text, going through the map in request order and failing on the first. normalize_server_name replaces every space with an underscore. validate_tool_name is the mcp library's SEP-986 validator (mcp/shared/tool_name_validation.py at https://github.com/modelcontextprotocol/python-sdk): port validate_tool_name only, returning ToolNameValidation { is_valid, warnings } with the same warning texts and order, since the endpoint error embeds them. Do not port the logging functions. The entry point is validate_and_normalize_payload(payload: &mut impl NamedPayload, rules: &PayloadRules) -> Result<(), PayloadError>. NamedPayload is a trait with the four accessors it needs, implemented by both request types. Order, matching LiteLLM: server_name separator check, alias separator check (each only when non-empty), display names, then alias normalization (no alias but a server_name: alias becomes the normalized server_name; an alias present: it is normalized; else untouched). Then the endpoint steps on the normalized payload: validate_tool_name on server_name, then on alias (non-empty only), failing on the first invalid one with "Invalid MCP tool prefix '<value>' provided via <server_name or alias>" followed by a newline and the warnings joined with newlines. Last, upstream_token_header: when credentials carry a non-empty upstream_token_header it must pass validate_header_name from credential_contracts::header_carrier (a trimmed RFC 7230 token). The error is "Invalid upstream_token_header <repr>: must be a valid HTTP header name (RFC 7230 token, e.g. 'esb-oauth')". A whitespace-only value fails, an empty string is skipped.
+
+  server_payload::rules. stamp_omitted_oauth2_flow(&mut NewMCPServerRequest): only for auth_type oauth2 with no oauth2_flow. It sets client_credentials when token_url is non-empty, credentials hold a non-empty client_id and a non-empty client_secret, and authorization_url is empty or absent. Everything else becomes authorization_code, including delegate_auth_to_upstream. A flow the caller sent is never touched. validate_required_fields(payload: &NewMCPServerRequest, required: &[String]) -> Result<(), PayloadError> is _validate_mcp_required_fields without the proxy_server read: an empty list returns Ok first. Then every name must be a NewMCPServerRequest field, parsed through a strum EnumString enum NewServerField with one variant per field (snake_case, in LiteLLM's field order), and unknown names give UnknownRequiredFields with the list of unknown names in input order. Then the names whose field is absent are collected in input order, duplicates kept, and any gives MissingRequiredFields. Absent means: None; an empty string; an empty list; or auth_type equal to none. An empty dict (credentials, env, tool_name_to_display_name) and every bool or number, including false and 0, count as present. Write one match arm per field so the compiler checks the list. The mcp_required_fields config section holds the list (Vec<String>, default empty) from general_settings.mcp_required_fields and is exposed as config.sections.mcp_required_fields. A missing or null key is the empty list. identifier_conflict_message(conflict: &McpIdentifierConflict) -> String and the IdentifierConflict variant cover mcp_identifier_conflict_message and raise_mcp_identifier_conflict, with McpIdentifierConflict from B4711 (text: "An MCP server with <field> '<value>' already exists (server_id=<id>). MCP server names and aliases must be unique, case-insensitive."). warn_if_id_jag_server_outruns_sso(server_id: Option<&str>, auth_type: Option<&str>, gap: Option<&str>) logs one tracing warning "MCP server <server_id or None> is registered with auth_type=oauth2_id_jag, but <gap>." only when auth_type is oauth2_id_jag and gap is Some. The caller computes gap with B1617's id_jag_assertion_capture_gap, so this task does not call it. does_mcp_server_exist(server_ids: impl IntoIterator<Item = &str>, id: &str) -> bool is the last function of the file.
+
+  connector_import::request. The two accepted shapes. ConnectorEntry has name, type, url, authorization_token, headers, command, args (default empty), env (default empty) and description, all with LiteLLM's types, unknown keys ignored. authorization_token is also read as authorizationToken. ConnectorImportRequest has mcp_servers, also read as mcpServers. Pydantic's AliasChoices takes the first alias whose key is present in the input, even when its value is null, so deserialize into a raw struct that has both keys as optional fields and pick by key presence (serde's alias attribute would fail with a duplicate field error when both are sent). mcp_servers is either a JSON object (entries kept in key order with OrderedMap, entry per name) or a JSON array of entries, as an untagged enum. headers is a string-to-string map and a non-string value is a type error. The response models MCPConnectorImportResult (name, server_id, alias), MCPConnectorImportSkipped (name, reason), MCPConnectorImportFailure (name, error) and MCPConnectorImportResponse (imported, skipped, errors, in that field order) are Serialize structs here for B4721 to fill.
+
+  connector_import::convert. convert_connector_entries(request, stdio) -> Vec<ConnectorOutcome> with ConnectorOutcome { Converted(ConvertedConnector { name, request: NewMCPServerRequest }), Failed(ConnectorConversionError { name, error }) }, one outcome per entry, in order. A mapping converts each entry under its key. A list converts an entry that has a non-empty name under that name, and otherwise fails with name set to the url (or "entry <index>" when there is no url) and "Connector entries in list form must have a name." sanitize_connector_name replaces every character outside A-Za-z0-9_ (one underscore per Unicode scalar) with an underscore, collapses runs of underscores and trims underscores from both ends. Entry conversion in order: empty sanitized name gives "Connector name is empty after sanitization."; url and command both set gives "Connector cannot have both a url and a command."; a command builds a stdio request (server_name and alias are the sanitized name, description, approval_status active, transport stdio, command, args, env) through NewMCPServerRequest::from_value so the stdio validators run, and a validator failure becomes the error text "Value error, <message>" (that is Pydantic's first error msg); no url gives "Connector must have either a url or a command."; a type (lowercased, missing counts as empty) outside url, http, streamable_http, streamable-http, sse and the empty string gives "Unsupported connector type '<type as sent>'."; transport is sse for the type sse and http for the rest. Remote auth: the first header whose name lowercased is authorization supplies the value, and every such header is removed from the rest (an empty rest becomes None). A truthy authorization_token wins and gives bearer_token with credentials auth_value set to the token. Else no header value (or an empty one) gives auth_type none and no credentials. Else a value starting with "bearer " in any case gives bearer_token with the text after those seven characters (it may be empty), and anything else gives authorization with the whole value. The remote request has server_name, alias, description, approval_status active, transport, url, auth_type, credentials and static_headers set from the rest.
+
+  A decoder takes bytes from the outside, so connector_import::request has ConnectorImportRequest::from_slice(bytes) -> Result<Self, serde_json::Error> (JSON, no other format) and a cargo-fuzz target connector_import_request that feeds arbitrary bytes to it and converts whatever parses with a fixed StdioPolicy. It must never panic.
+
+  Tests use synthetic servers and names with the prefix test-. No route reaches this code at this commit (B4721 registers them), so the oracle cases are helper cases that call LiteLLM's pure functions: the base and endpoint validators with a stand-in payload, the two request models with the stdio env var set by the adapter, stamp_omitted_oauth2_flow, mcp_identifier_conflict_message, sanitize_connector_name and convert_connector_entries. _validate_mcp_required_fields reads proxy_server globals, so a helper cannot call it and it is covered by Rust tests only. B4721 adds the HTTP cases.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/server_payload.rs
+    - crates/betterlite-mcp/src/server_payload/**
+    - crates/betterlite-mcp/src/connector_import.rs
+    - crates/betterlite-mcp/src/connector_import/**
+    - crates/betterlite-mcp/fuzz/Cargo.toml
+    - crates/betterlite-mcp/fuzz/fuzz_targets/connector_import_request.rs
+    - crates/betterlite-mcp/fuzz/corpus/connector_import_request/**
+    - crates/betterlite-config/src/sections/mcp_required_fields.rs
+    - crates/betterlite-config/src/sections/mcp_required_fields/**
+    - crates/betterlite-config/src/sections/mcp_env_values.rs
+    - crates/betterlite-config/src/sections/mcp_env_values/**
+    - tools/oracle/cases/helpers/mcp-payload-validation/**
+    - tools/oracle/cases/helpers/mcp-connector-import/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-payload-validation-*
+    - tools/oracle/fuzz/corpus/helper_case/mcp-connector-import-*
+    - tools/oracle/helpers/b4716.py
+    - tools/oracle/helpers/b4716/**
+    - tools/oracle/src/helpers/mcp/b4716.rs
+    - tools/oracle/src/helpers/mcp/b4716/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1536-L1544
+    why: MCPApprovalStatus, including the draft value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1554-L1612
+    why: The dcr_bridge and per_server_oauth_discovery errors, the eligibility function and the transport field checks with the stdio rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1615-L1710
+    why: NewMCPServerRequest fields, defaults and its four before-validators in definition order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1712-L1791
+    why: UpdateMCPServerRequest fields and its three before-validators, which tolerate missing auth_type and oauth2_flow keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L144-L150
+    why: normalize_server_name replaces spaces with underscores.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L249-L296
+    why: The base validate_and_normalize_mcp_server_payload and its order of checks and alias defaulting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L502-L519
+    why: validate_mcp_server_name and its error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L597-L630
+    why: validate_tool_display_names, the pattern and the error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/stdio_gate.py#L7-L15
+    why: The stdio env var, the disabled message and is_mcp_stdio_enabled.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/stdio_gate.py#L22-L28
+    why: is_mcp_stdio_blocked and warn_if_mcp_stdio_blocked.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L210-L219
+    why: The default stdio allowed commands and the extra commands env var.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L95-L107
+    why: does_mcp_server_exist.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L249-L308
+    why: The tool prefix check, the upstream token header check, the endpoint validator order and the identifier conflict message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L310-L401
+    why: The ID-JAG warning, stamp_omitted_oauth2_flow and the required fields check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_connector_import.py#L20-L185
+    why: The whole connector converter, its models, name sanitizing and auth mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L303-L312
+    why: normalize_upstream_header_name, the grammar behind validate_header_name.
+  - url: https://github.com/modelcontextprotocol/python-sdk/blob/main/src/mcp/shared/tool_name_validation.py
+    why: validate_tool_name and its warning texts (SEP-986); only that function is ported.
+
+dod:
+  - text: Both request models carry LiteLLM's fields and defaults, keep dict key order, and run the before-validators in reverse definition order, with the stdio, dcr_bridge and per_server_oauth_discovery messages exact.
+    proof: [request-tests, oracle]
+  - text: Update tolerates a missing auth_type or oauth2_flow key where New does not, a missing transport skips the transport checks, and is_per_server_oauth_discovery_eligible matches LiteLLM.
+    proof: [request-tests, oracle]
+  - text: validate_and_normalize_payload checks the separator, display names, alias defaulting, tool prefix validity and upstream_token_header in LiteLLM's order with exact messages, and validate_tool_name returns LiteLLM's warnings.
+    proof: [names-tests, oracle]
+  - text: stamp_omitted_oauth2_flow picks client_credentials only for the machine-to-machine shape and never overwrites a sent flow.
+    proof: [rules-tests, oracle]
+  - text: validate_required_fields fails with the unknown-name error before the missing-name error, treats empty strings, empty lists and auth_type none as absent and empty dicts and false as present.
+    proof: [rules-tests]
+  - text: The identifier conflict message, the ID-JAG warning and does_mcp_server_exist behave as in LiteLLM.
+    proof: [rules-tests, oracle]
+  - text: is_mcp_stdio_blocked is true only for the stdio transport with the policy disabled, and warn_if_mcp_stdio_blocked logs the disabled message once for a blocked server and nothing otherwise.
+    proof: [rules-tests]
+  - text: The mcp_required_fields section loads general_settings.mcp_required_fields and defaults to the empty list.
+    proof: [config-tests]
+  - text: The mcp_env_values section reads the three MCP env variables once, treats an empty string as unset, and returns the parsed separator (default "-") and stdio policy.
+    proof: [config-tests]
+  - text: Connector requests parse the mapping and list shapes and both alias spellings, picking the first present key, and keep entry order.
+    proof: [import-request-tests, oracle]
+  - text: Connector conversion sanitizes names, rejects each invalid entry with LiteLLM's text, and maps authorization_token, Authorization headers and stdio entries to the same create payloads.
+    proof: [convert-tests, oracle]
+  - text: ConnectorImportRequest::from_slice has a cargo-fuzz target whose corpus replays without a panic.
+    proof: [import-corpus]
+  - text: The oracle helper adapter passes strict Python checks and the new helper cases replay through the shared parser.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: request-tests
+      why: the request models, their before-validators or the OrderedMap are missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_payload::request::tests::/)'
+    - id: names-tests
+      why: the name, prefix, display name or upstream header validation is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_payload::names::tests::/)'
+    - id: rules-tests
+      why: the oauth2 flow stamp, required fields, conflict message, warning or server lookup is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_payload::rules::tests::/)'
+    - id: config-tests
+      why: the mcp_required_fields or mcp_env_values section is missing or does not load its values
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_required_fields::/)'
+    - id: import-request-tests
+      why: the connector request parsing, alias choice or ordering is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^connector_import::request::tests::/) - test(/replays_the_/)'
+    - id: convert-tests
+      why: the connector name sanitizing, entry errors or auth mapping is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^connector_import::convert::tests::/)'
+    - id: import-corpus
+      why: the connector_import_request fuzz target, its added corpus or its replay test is missing or fails
+      run: >-
+        test -f crates/betterlite-mcp/fuzz/fuzz_targets/connector_import_request.rs &&
+        grep -q connector_import_request crates/betterlite-mcp/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-mcp/fuzz/corpus/connector_import_request)" &&
+        cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(replays_the_connector_import_request_corpus)'
+    - id: helper-python
+      why: the strict oracle adapter lint or type checks fail
+      run: >-
+        git diff --name-only "$GATE_BASE" -- tools/oracle/helpers | grep -q b4716 &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added payload and connector cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-payload-validation-*' 'tools/oracle/fuzz/corpus/helper_case/mcp-connector-import-*')" &&
+        grep -lE '^[[:space:]]+b4716:' tools/oracle/fuzz/corpus/helper_case/mcp-payload-validation-* tools/oracle/fuzz/corpus/helper_case/mcp-connector-import-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-payload-validation/separator-in-name.yaml
+  - tools/oracle/cases/helpers/mcp-payload-validation/display-name-pattern.yaml
+  - tools/oracle/cases/helpers/mcp-payload-validation/alias-defaults-from-name.yaml
+  - tools/oracle/cases/helpers/mcp-payload-validation/tool-prefix-invalid.yaml
+  - tools/oracle/cases/helpers/mcp-payload-validation/upstream-header-invalid.yaml
+  - tools/oracle/cases/helpers/mcp-payload-validation/new-http-needs-url.yaml
+  - tools/oracle/cases/helpers/mcp-payload-validation/new-stdio-gated.yaml
+  - tools/oracle/cases/helpers/mcp-payload-validation/new-stdio-command-rules.yaml
+  - tools/oracle/cases/helpers/mcp-payload-validation/new-dcr-bridge-auth-type.yaml
+  - tools/oracle/cases/helpers/mcp-payload-validation/new-discovery-eligibility.yaml
+  - tools/oracle/cases/helpers/mcp-payload-validation/update-partial-fields.yaml
+  - tools/oracle/cases/helpers/mcp-payload-validation/validator-order.yaml
+  - tools/oracle/cases/helpers/mcp-payload-validation/stamp-oauth2-flow.yaml
+  - tools/oracle/cases/helpers/mcp-payload-validation/identifier-conflict-message.yaml
+  - tools/oracle/cases/helpers/mcp-connector-import/sanitize-name.yaml
+  - tools/oracle/cases/helpers/mcp-connector-import/mapping-bearer-header.yaml
+  - tools/oracle/cases/helpers/mcp-connector-import/authorization-schemes.yaml
+  - tools/oracle/cases/helpers/mcp-connector-import/authorization-token-wins.yaml
+  - tools/oracle/cases/helpers/mcp-connector-import/list-form-names.yaml
+  - tools/oracle/cases/helpers/mcp-connector-import/stdio-entry.yaml
+  - tools/oracle/cases/helpers/mcp-connector-import/entry-errors.yaml
+  - tools/oracle/cases/helpers/mcp-connector-import/alias-spellings.yaml
+
+deviations:
+  - what: submitted_at on NewMCPServerRequest is kept as the raw string and not parsed as a datetime.
+    why: The create route always overwrites it, so a parsed value is never read; a malformed value is accepted here where LiteLLM answers 422.
+  - what: Rules and the stdio policy are passed in, where LiteLLM reads MCP_TOOL_PREFIX_SEPARATOR, LITELLM_ENABLE_MCP_STDIO and LITELLM_MCP_STDIO_EXTRA_COMMANDS from the environment at call time.
+    why: No module-level state or env reads in library code; the mcp_env_values config section reads the same variables once, so a user sees the same behavior until the process restarts.
+  - what: The required field list comes from the mcp_required_fields config section, where LiteLLM reads proxy_server.general_settings on every call.
+    why: Settings reach this crate as a config section; a change through the config update route takes effect when the section reloads.
+
+out_of_scope:
+  - "The routes that call these checks and turn PayloadError into HTTP bodies: B4721 (create, import, update, delete)."
+  - "Everything in mcp_management_endpoints.py after line 401: the public registry entries (B4720), temporary servers and draft lookup (B4718), credential redaction and inheritance (B4717), the other routes (B4719 to B4725)."
+  - "The rest of mcp_server/utils.py (tool prefixing, short prefixes, allowlist helpers): owners are the MCP tool and registry tasks, not this one."
+  - "id_jag_assertion_capture_gap: B1617. The caller passes its result to warn_if_id_jag_server_outruns_sso."
+  - "The conflict lookup that produces McpIdentifierConflict: B4711."
+  - "MCPServer, the runtime record: B6590."
+
+pitfalls:
+  - "Pydantic runs before-validators in reverse order of definition, so a payload that breaks both per_server_oauth_discovery and the stdio rule reports the discovery error."
+  - "A payload with no transport key skips the transport checks entirely, so an HTTP-shaped create without transport and without url still passes the before-validators."
+  - "stdio checks run gate, command, args, allowed list in that order, and the allowed list is matched on the basename of the command, so /usr/bin/node passes and npx.exe does not."
+  - "The display name pattern is ^[a-zA-Z0-9_-]+$ with Python's $, which also matches before one trailing newline, so 'abc\\n' passes. Mirror that, do not tighten it."
+  - "Alias normalization runs before validate_tool_name, so a server_name with a space gets an alias with an underscore but still fails the server_name check on the space."
+  - "validate_tool_name counts length in characters, and lists each invalid character once in first-seen order."
+  - "The unknown required field error is raised before any missing check and as a 500, but an empty mcp_required_fields returns before the unknown check."
+  - "Presence in validate_required_fields follows Python types: an empty env dict is present, an empty args list is absent, false and 0 are present, and auth_type 'none' is absent."
+  - "AliasChoices selects by key presence, so {\"mcp_servers\": null, \"mcpServers\": {...}} fails on the null instead of falling back."
+  - "Only the first Authorization-like header is read, but every header whose lowercase name is authorization is dropped from static_headers."
+  - "Bearer detection is case-insensitive on the seven characters 'bearer ', so 'Bearer' alone with no space is an authorization scheme, not bearer_token."
+  - "The Unsupported connector type text prints the type as sent, not lowercased, and an empty or missing type is accepted as a URL connector."
+  - "A list entry with a name is converted with its raw name in the outcome and only the sanitized name goes into server_name and alias."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

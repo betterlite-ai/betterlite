@@ -221,7 +221,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_unsupported_store_create$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_vector_stores.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_vector_stores.py tools/oracle/helpers/foundry_vector_stores)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -234,7 +234,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_vector_stores)"
       && grep -q 'decode_azure_search_reply' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_vector_stores.rs
-      && cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_vector_stores_corpus$/)'
+      && cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_vector_stores_corpus(::|$)/)'
   - id: case-azure-search-endpoint
     why: Truthy api_base is trimmed and returned; otherwise require truthy litellm_params.azure_search_service_name
       or the Azure AI Search service name is required diagnostic naming the setting/api_base. Construct https://<name>.search.windows.net

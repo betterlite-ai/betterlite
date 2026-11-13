@@ -1,0 +1,195 @@
+id: B131
+title: Gateway launch flags and pooler startup check
+description: >-
+  Port gateway/launch.py, the process LiteLLM's gateway image starts first (`python -m gateway.launch --workers N --host
+  0.0.0.0 --port 4000`), into the betterlite-gateway binary B4471 built. launch.py does three things before uvicorn
+  serves: it refuses to start when LITELLM_PGBOUNCER_ENABLED is on but no writer DATABASE_URL exists, it turns the
+  KEEPALIVE_TIMEOUT env var into uvicorn's `--timeout-keep-alive` unless that flag was passed, and it hands `--workers`
+  to uvicorn. B711 already decided that betterlite starts no in-container PgBouncer, so the pooler spawn itself is not
+  built here; the startup refusal, the two flags and their env fallbacks are.
+
+
+  Add the module `launch` to the gateway binary: `crates/betterlite-gateway/src/launch.rs` (private code may go in
+  `crates/betterlite-gateway/src/launch/`), declared with `mod launch;` in `crates/betterlite-gateway/src/main.rs`. It
+  owns its thiserror enum `LaunchError`. Define `LaunchFlags`, a `clap::Args` struct that B4471's `Cli` takes in with
+  `#[command(flatten)]`: `--workers <WORKERS>` as `Option<i64>` and `--timeout-keep-alive <SECONDS>` as `Option<i64>`, both
+  without a clap `env` attribute and without a clap default, since the env fallbacks below follow LiteLLM's rules and not
+  clap's. clap already takes both `--timeout-keep-alive 30` and `--timeout-keep-alive=30`, the two spellings
+  uvicorn_argv looks for.
+
+
+  `pub(crate) fn check_pooler(environment: &BTreeMap<String, String>) -> Result<(), LaunchError>` reproduces LiteLLM's
+  order. (1) Read B710's `betterlite_db::database_urls::settings::from_env(environment)`; its SettingsError becomes a
+  LaunchError. (2) Run B710's `validate_component_schemes(&settings)`, the guard apply_to_env runs first, so a
+  non-Postgres DATABASE_URL, DIRECT_URL or DATABASE_URL_READ_REPLICA fails with that error and not the pooler one. (3)
+  Read B711's `betterlite_db::database_tls::pool_policy::from_env(environment)`; its PoolSettingsError becomes a
+  LaunchError. When `settings.enabled` is false, return Ok. (4) Token auth is on when `iam_token_db_auth` or
+  `azure_postgresql_auth` is true. Under token auth LiteLLM either mints the writer URL or stops earlier with B712's
+  missing-variable error, so return Ok unless B712's `database_url_is_pooled` (betterlite_db::database_tokens, the port of
+  pgbouncer.py's predicate: LITELLM_PGBOUNCER_POOLED_DATABASE_URL equals the exact string "true") is true, in which case
+  LiteLLM keeps whatever DATABASE_URL holds and the presence test in step 5 decides. (5) The writer exists when the map
+  has the exact key `DATABASE_URL` (any value, the empty string too) or, under password auth, when B710's
+  `build_writer_url(&settings, AuthMode::Password)` returns Some; pass its DatabaseUrlError up. Otherwise return
+  `LaunchError::PoolerWithoutDatabase`, whose Display is exactly "in-container pgbouncer could not start:
+  LITELLM_PGBOUNCER_ENABLED is set but no DATABASE_URL could be assembled".
+
+
+  `pub(crate) fn resolve(flags: &LaunchFlags, environment: &BTreeMap<String, String>) -> Result<LaunchSettings,
+  LaunchError>`. Keep-alive: the flag when given, and then KEEPALIVE_TIMEOUT is never read; otherwise the exact key
+  KEEPALIVE_TIMEOUT when present, parsed with `trim().parse::<i64>()`; otherwise uvicorn's default 5.
+  `LaunchSettings.keep_alive_given` is true when the value came from the flag or the env var. A KEEPALIVE_TIMEOUT that
+  does not parse, the empty string included, is `LaunchError::InvalidKeepAlive { value }` with Display "Invalid value for
+  '--timeout-keep-alive': '<value>' is not a valid integer.", the text click prints when uvicorn rejects it. Workers: the
+  flag when given; otherwise the exact key WEB_CONCURRENCY parsed the same way, where a bad value is
+  `LaunchError::InvalidWebConcurrency { value }`; otherwise 1. A resolved 0 becomes 1, as uvicorn's `workers or 1` does.
+
+
+  Wire it in main.rs in this order, all before the config file is loaded and before the runtime starts: B4471's clap
+  parse and JSON logging setup, then `check_pooler` with the process environment map main.rs already builds, then
+  `resolve`, then one `tracing::warn!` per ignored setting, then B4471's config load and server start, unchanged. Exit
+  codes: PoolerWithoutDatabase and every settings, scheme, URL and WEB_CONCURRENCY error log one `tracing::error!` and
+  exit 1; InvalidKeepAlive logs one error line and exits 2, as click's usage error does. The pooler error's message field
+  reads "betterlite gateway: " followed by the Display text above. The warnings: when workers is above 1, a line with the
+  field `workers` and the message "betterlite-gateway serves every request from one process, so the workers setting has
+  no effect". The keep-alive value is not ignored: where the gateway builds B8610's ServerInputs, it sets
+  `listener.keep_alive_seconds` of B9550's ListenerOptions to the resolved value, an i64 passed as parsed. No log line
+  prints DATABASE_URL, DATABASE_PASSWORD or an assembled URL; the errors name variables, never values.
+
+
+  Tests: unit tests in `crates/betterlite-gateway/src/launch/tests.rs`, so their names start with `launch::tests::` and
+  hold the word pooler, keep_alive or workers. Process tests in `crates/betterlite-gateway/tests/gateway_launch.rs` start
+  the built binary through `env!("CARGO_BIN_EXE_betterlite-gateway")` with `env_clear()` and only the variables each case
+  sets, and pass `--config` a path that does not exist, so the process exits at B4471's config load right after this
+  task's code ran and no server starts; each name holds pooler, keep_alive or ignored. The unit cases cover: pooler off
+  with no database variables; on with `DATABASE_URL` set; on with `DATABASE_URL=""`; on with only a lowercase
+  `database_url` (fails, see pitfalls); on with DATABASE_HOST, DATABASE_USER and DATABASE_NAME; on with DATABASE_NAME
+  missing (fails); on with IAM_TOKEN_DB_AUTH=true and nothing else (passes); the same plus
+  LITELLM_PGBOUNCER_POOLED_DATABASE_URL=true (fails); on with `DIRECT_URL=mysql://h/db` and no DATABASE_URL (scheme
+  error, not the pooler error); LITELLM_PGBOUNCER_ENABLED=maybe (settings error). Keep-alive: flag 30 with
+  KEEPALIVE_TIMEOUT=abc gives 30; env 75 gives 75; neither gives 5 and keep_alive_given false; KEEPALIVE_TIMEOUT="" and
+  "abc" fail. Workers: flag 4; WEB_CONCURRENCY=3 without the flag; flag 0 gives 1; WEB_CONCURRENCY=x fails. Process cases:
+  the pooler refusal exits 1 with the message in a JSON line and without the DATABASE_PASSWORD value the case set; a
+  bad KEEPALIVE_TIMEOUT exits 2; `--workers 4 --timeout-keep-alive=30` with KEEPALIVE_TIMEOUT=abc prints the workers
+  warning with workers 4 and no keep-alive warning, then the config error. Budget: about 130 lines of implementation, 25 of
+  wiring and 250 of tests.
+scope:
+  paths:
+    - crates/betterlite-gateway/Cargo.toml
+    - crates/betterlite-gateway/src/main.rs
+    - crates/betterlite-gateway/src/launch.rs
+    - crates/betterlite-gateway/src/launch/**
+    - crates/betterlite-gateway/tests/gateway_launch.rs
+    - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/launch.py#L1-L77
+    why: The whole file this task ports; uvicorn_argv at L34-L39, pool_database_url at L42-L58 and main's order at L65-L73.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/Dockerfile#L125-L126
+    why: How the image starts launch.py, with `--workers "${NUM_WORKERS:-1}"` ahead of the CMD flags.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/aws/ecs.tf#L214
+    why: The command line operators pass, `--host 0.0.0.0 --port 4000 --workers N`; the GCP module at terraform/litellm/gcp/cloudrun.tf L150 does the same.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L394-L449
+    why: build_writer_url, including the token branch that raises on missing fields and returns None for a pooled URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L540-L620
+    why: apply_to_env runs the scheme guard first and writes DATABASE_URL only when it assembled one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L99-L131
+    why: PgBouncerSettings (enabled defaults to false) and PgBouncerError's reason.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L336-L342
+    why: export_pooled_database_url and database_url_is_pooled, the exact "true" marker.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/gateway/test_launch.py#L96-L125
+    why: LiteLLM's own expectations for keep-alive precedence and the missing-URL error.
+  - url: https://github.com/encode/uvicorn/blob/0.51.0/uvicorn/main.py#L111-L117
+    why: uvicorn's --workers option (int, no default) at the version LiteLLM locks.
+  - url: https://github.com/encode/uvicorn/blob/0.51.0/uvicorn/main.py#L283-L289
+    why: uvicorn's --timeout-keep-alive option, int with default 5.
+  - url: https://github.com/encode/uvicorn/blob/0.51.0/uvicorn/config.py#L267
+    why: '`workers or 1`, so 0 becomes 1.'
+  - url: https://github.com/encode/uvicorn/blob/0.51.0/uvicorn/config.py#L351-L352
+    why: WEB_CONCURRENCY fills workers only when the flag is absent, through a plain int().
+  - url: https://docs.rs/clap/latest/clap/_derive/index.html#flattening-hoisting-and-subcommands
+    why: "How B4471's Cli takes LaunchFlags in with #[command(flatten)]."
+dod:
+  - text: With LITELLM_PGBOUNCER_ENABLED on, no exact DATABASE_URL key and no writer URL B710 can assemble under password auth, the gateway logs the pooler error as one JSON line and exits 1 before loading its config; with the pooler off, a DATABASE_URL key present (empty included) or an assembled URL, it goes on.
+    proof: [launch-pooler-tests, launch-process-pooler]
+  - text: Token auth passes the check unless LITELLM_PGBOUNCER_POOLED_DATABASE_URL is exactly "true", and settings, pool settings and scheme errors win over the pooler error in LiteLLM's order.
+    proof: [launch-pooler-tests]
+  - text: The keep-alive timeout comes from --timeout-keep-alive in either spelling, else KEEPALIVE_TIMEOUT, else 5; a given flag means KEEPALIVE_TIMEOUT is never parsed; an empty or non-integer KEEPALIVE_TIMEOUT exits 2 with click's message.
+    proof: [launch-keep-alive-tests, launch-process-keep-alive]
+  - text: Workers come from --workers, else WEB_CONCURRENCY, else 1, with 0 read as 1 and a bad WEB_CONCURRENCY an exit 1 error.
+    proof: [launch-workers-tests]
+  - text: A workers value above 1 prints its one warning line, the resolved keep-alive timeout reaches ListenerOptions.keep_alive_seconds, and no line printed by this code holds a database URL or password.
+    proof: [launch-process-ignored, launch-process-pooler]
+  - text: The gateway's help lists --workers and --timeout-keep-alive next to B4471's --config, --host and --port, and B4471's shutdown, startup failure and JSON stderr tests still pass.
+    proof: [launch-flags-help]
+checks:
+  optional: []
+  commands:
+    - id: launch-pooler-tests
+      why: the pooler startup check, its order or its token-auth rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-gateway --no-tests=fail
+        -E 'test(/^launch::tests::.*pooler/)'
+    - id: launch-keep-alive-tests
+      why: the keep-alive precedence, default or env validation is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-gateway --no-tests=fail
+        -E 'test(/^launch::tests::.*keep_alive/)'
+    - id: launch-workers-tests
+      why: the workers flag, WEB_CONCURRENCY fallback or the zero rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-gateway --no-tests=fail
+        -E 'test(/^launch::tests::.*workers/)'
+    - id: launch-process-pooler
+      why: the built gateway does not refuse to start without a writer URL, uses the wrong exit code or leaks a secret
+      run: >-
+        cargo nextest run --locked -p betterlite-gateway --no-tests=fail
+        -E 'binary(gateway_launch) & test(/pooler/)'
+    - id: launch-process-keep-alive
+      why: a bad KEEPALIVE_TIMEOUT does not stop the built gateway with status 2
+      run: >-
+        cargo nextest run --locked -p betterlite-gateway --no-tests=fail
+        -E 'binary(gateway_launch) & test(/keep_alive/)'
+    - id: launch-process-ignored
+      why: the built gateway does not warn about the workers setting it ignores
+      run: >-
+        cargo nextest run --locked -p betterlite-gateway --no-tests=fail
+        -E 'binary(gateway_launch) & test(/ignored/)'
+    - id: launch-flags-help
+      why: the new flags are missing from the gateway's CLI, or the wiring broke B4471's startup behavior
+      run: |
+        gateway_help="$(cargo run --locked --quiet -p betterlite-gateway -- --help)" &&
+        grep -q -- '--workers' <<<"$gateway_help" && grep -q -- '--timeout-keep-alive' <<<"$gateway_help" &&
+        grep -q -- '--config' <<<"$gateway_help" && grep -q -- '--host' <<<"$gateway_help" && grep -q -- '--port' <<<"$gateway_help" &&
+        cargo nextest run --locked -p betterlite-gateway --no-tests=fail -E 'test(shutdown) | test(startup_failure) | test(stderr_json)'
+oracle_cases: []
+deviations:
+  - what: With LITELLM_PGBOUNCER_ENABLED on and a writer URL present, the gateway starts no PgBouncer, keeps DATABASE_URL as it is instead of switching it to the 127.0.0.1 pooler URL, and never sets LITELLM_PGBOUNCER_POOLED_DATABASE_URL; a missing or broken LITELLM_PGBOUNCER_BINARY therefore does not stop startup.
+    why: B711's recorded native-pool deviation; betterlite-gateway is one process, so there are no forked workers that would need one shared pooler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/launch.py#L42-L58
+  - what: --workers and WEB_CONCURRENCY are read and validated, and a value above 1 prints a warning; the gateway still serves from one process.
+    why: The binary runs one Tokio runtime (B4471); uvicorn's worker processes have no counterpart.
+    link: https://github.com/encode/uvicorn/blob/0.51.0/uvicorn/main.py#L111-L117
+  - what: The gateway accepts only --config, --host, --port, --workers and --timeout-keep-alive; any other uvicorn flag stops it with a usage error and status 2, and a bad --workers or --timeout-keep-alive flag fails at parse time, before the pooler check.
+    why: launch.py forwards all argv to uvicorn, but the image, Helm chart and Terraform modules at the pin pass only these flags.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/Dockerfile#L125-L126
+  - what: 'The pooler refusal is a JSON log line whose message starts with "betterlite gateway: ", not the plain stderr text starting "LiteLLM gateway: " that sys.exit prints.'
+    why: B4471 makes every gateway stderr line JSON, and product names in user-facing text are rebranded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/launch.py#L69-L70
+out_of_scope:
+  - "start_in_container_pgbouncer and export_pooled_database_url, which launch.py calls on its success path: replaced by B711's embedded-pooler deviation, see the first deviation."
+  - "DatabaseURLSettings.from_env().apply_to_env() as the startup step that installs the writer and reader URLs: B051 composes it with typed results. This task only reads the same settings to decide the refusal."
+  - "_serve and GATEWAY_APP (uvicorn.main with gateway.main:app): B4471 serves the filtered application."
+  - "NUM_WORKERS, which only the Dockerfile's shell entrypoint turns into --workers: B8233 records that it has no effect. USE_DDTRACE and PROMETHEUS_MULTIPROC_DIR in component_entrypoint.sh: B5070."
+  - "--keepalive_timeout and KEEPALIVE_TIMEOUT for the betterlite binary itself (proxy_cli.py): B121."
+  - "gateway/Dockerfile and backend/Dockerfile: B8233. docker/component_entrypoint.sh: B5070."
+pitfalls:
+  - launch.py tests `environ.get("DATABASE_URL") is None` on the real process environment, so look the key up exactly with `environment.get("DATABASE_URL")` and never through B710's case-folding EnvironmentSource; a lone lowercase `database_url` counts as a pinned URL for build_writer_url but still fails the check.
+  - An empty DATABASE_URL passes the check because only absence fails it, while an empty KEEPALIVE_TIMEOUT is not absence either and stops startup with status 2.
+  - When --timeout-keep-alive is given, uvicorn_argv returns argv unchanged, so a broken KEEPALIVE_TIMEOUT next to the flag must not fail.
+  - database_url_is_pooled compares LITELLM_PGBOUNCER_POOLED_DATABASE_URL with the exact string "true"; "True" or "1" is not pooled.
+  - Run check_pooler before the config file loads and before resolve, or a config typo or a bad KEEPALIVE_TIMEOUT hides the pooler error LiteLLM shows first.
+  - The process tests must clear the inherited environment, or a DATABASE_URL on the test host makes the refusal case pass for the wrong reason.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

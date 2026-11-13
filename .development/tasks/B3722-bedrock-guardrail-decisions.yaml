@@ -110,7 +110,7 @@ checks:
       run: grep -rlq 'bedrock_decisions:' tools/oracle/fuzz/corpus/helper_case/bedrock-decisions-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: bedrock-decisions-oracle
       why: Oracle cases exercising decision classification, status mapping and exception construction are missing or fail
-      run: test -d tools/oracle/cases/helpers/bedrock-decisions && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/bedrock-decisions)" && cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/bedrock-decisions
+      run: test -d tools/oracle/cases/helpers/bedrock-decisions && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/bedrock-decisions)" && cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/bedrock-decisions
 oracle_cases:
   - tools/oracle/cases/helpers/bedrock-decisions/blocked-action-raises-exception.yaml
   - tools/oracle/cases/helpers/bedrock-decisions/anonymized-action-does-not-raise.yaml
@@ -143,7 +143,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2100-L2118
 out_of_scope:
   - CustomGuardrail base class and add_standard_logging_guardrail_information_to_request_data method in litellm/integrations/custom_guardrail.py, owned by B164.
-  - Recursive redaction via redact_nested_match_and_regex_keys in litellm/litellm_core_utils/core_helpers.py, owned by B104; the calling site _redact_assessment_match_fields requires this function.
+  - Recursive redaction via redact_nested_match_and_regex_keys in litellm/litellm_core_utils/core_helpers.py, owned by B3688; the calling site _redact_assessment_match_fields requires this function.
   - ModifyResponseException construction in litellm/integrations, owned by B104; the calling site _get_http_exception_for_blocked_guardrail requires this wire type.
   - The ApplyGuardrail and InvokeGuardrailChecks request/response records are B3720's responsibility.
   - Chunking, splitting and content merging are B3720's responsibility.

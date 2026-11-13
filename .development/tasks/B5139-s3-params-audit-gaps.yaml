@@ -1,0 +1,215 @@
+id: B5139
+title: Close the B3992 S3 v2 parameter audit gaps
+description: >-
+  B3992 built S3 v2 parameter resolution and event construction in crates/betterlite-logging/src/s3_v2.
+  An Opus review after merge found four gaps there. This task closes one behavior gap and three test
+  gaps in the same crate, through the same b3992 oracle helper operation and in the same case folder,
+  tools/oracle/cases/logging/s3-v2-params.
+
+
+  Gap one. LiteLLM's _init_s3_params copies the parameter source into a plain dict and reads each
+  setting with params.get, so it ignores any other key in litellm.s3_callback_params or in an audit
+  source (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L297-L310).
+  s3_flush_interval and s3_batch_size are such keys. LiteLLM takes them only as constructor arguments
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L128-L165).
+  betterlite keeps such a key a load error on purpose. Source in
+  crates/betterlite-logging/src/s3_v2/source.rs keeps #[serde(default, deny_unknown_fields)], as rule
+  no-silent-drops and the 2026-10-24 decision in .development/README.md ask: config keys betterlite does
+  not support stop startup with a list of them. No test proves that error today, so removing
+  deny_unknown_fields passes every check. A new rstest unknown_source_keys_fail_to_load in
+  s3_v2_params.rs decodes {"s3_bucket_name":"qa-logs","s3_flush_interval":3} and
+  {"s3_bucket_name":"qa-logs","s3_batch_size":512} as Source and asserts that each one fails with an
+  error naming that key. It gets no oracle case, since LiteLLM loads that config.
+
+
+  Gap two. LiteLLM reads DEFAULT_S3_MAX_CONCURRENT_UPLOADS with int(os.getenv(..., "16"))
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L63)
+  and uses it as both the constructor default and the fallback of resolve_s3_max_concurrent_uploads
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L352-L356).
+  _resolve_positive_int rejects a configured value below 1 but hands the fallback back unchecked
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L53-L73).
+  With the variable set to 0 the limit is 0, and asyncio.Semaphore(0)
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L213-L221)
+  makes every upload in _upload_bounded wait forever
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L715-L720).
+  The operator sees logs pile up and never reach S3, with no error. betterlite copies this today:
+  default_uploads in crates/betterlite-logging/src/s3_v2/parameters.rs takes Some(Ok(limit)) => limit,
+  so a parsed 0 comes back as 0. No working setup relies on that hang, so Max decided a parsed 0 is
+  handled like a negative value: a warning naming DEFAULT_S3_MAX_CONCURRENT_UPLOADS and the limit 16.
+  It gets a new entry in docs/deviations/B3992.yaml. The test invalid_upload_default_uses_builtin_limit
+  in crates/betterlite-logging/src/s3_v2/tests/s3_v2_params.rs has only the malformed and negative
+  cases and never checks the warning. It gains a zero case, and every case checks the warning.
+
+
+  Gap three. LiteLLM resolves s3_verify with an explicit None check, so a source false beats a
+  constructor true and a source null falls back to the constructor
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L304-L324,
+  line 308). The value then reaches the httpx client as ssl_verify
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L224-L230).
+  In the same lines, s3_region_name, s3_api_version, s3_endpoint_url and the eight s3_aws_* credential
+  fields take the source value when it is set and the constructor value otherwise. connection.rs
+  resolves all of them, but neither the summary function in tools/oracle/src/helpers/logging/b3992.rs
+  nor _FIELDS in tools/oracle/helpers/b3992.py reports verify or any credential, and no case sets
+  region, api version or endpoint url. Dropping the source's s3_verify at connection.rs:69, or swapping
+  two names in the credential destructuring at connection.rs:128-129, passes every check today. The fix
+  adds verify and a credentials object with the eight fields (aws_access_key_id,
+  aws_secret_access_key, aws_session_token, aws_session_name, aws_profile_name, aws_role_name,
+  aws_web_identity_token, aws_sts_endpoint) to both summaries, exposing the test secrets only there. Two
+  new params cases set every one of these fields to a distinct value in the global source and in the
+  constructor: one where the global source wins and sets s3_verify false over a constructor true, and
+  one where the global source leaves them out and sets s3_verify null, so the constructor values come
+  through.
+
+
+  Gap four. LiteLLM lets the constructor win for s3_log_prompts_only and s3_partition_granularity and
+  reads the source only when the constructor value is None
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L338-L344).
+  That is the reverse of every other field. constructor_flags_and_encryption_precedence asserts the
+  constructor's granularity wins, but its source JSON sets no s3_partition_granularity. If
+  connection.rs:80-83 read the source first, the result would still be the constructor's "hour" and the
+  test would pass. The fix adds "s3_partition_granularity":"day" to that source JSON, so a source-first
+  order returns Some(Text("day")) and the assertion fails. Neither summary reports the two fields and no
+  case sets a constructor granularity, so both summaries also gain log_prompts_only and
+  partition_granularity, and two new params cases pin both orders against LiteLLM.
+scope:
+  paths:
+    - crates/betterlite-logging/src/s3_v2/parameters.rs
+    - crates/betterlite-logging/src/s3_v2/tests/s3_v2_params.rs
+    - tools/oracle/helpers/b3992.py
+    - tools/oracle/src/helpers/logging/b3992.rs
+    - tools/oracle/cases/logging/s3-v2-params/**
+    - docs/deviations/B3992.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L297-L310
+    why: The parameter source is copied into a dict and read key by key with params.get, so keys it does not name are ignored.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L128-L165
+    why: The S3Logger constructor, where s3_flush_interval and s3_batch_size are keyword arguments only, never read from the parameter source.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L63
+    why: DEFAULT_S3_MAX_CONCURRENT_UPLOADS read with int(os.getenv(..., "16")), the constructor default and fallback for the upload limit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3.py#L53-L73
+    why: _resolve_positive_int rejects a configured bound below 1 but returns the fallback as given, so a fallback of 0 survives.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L352-L356
+    why: The upload limit takes the source value, else the constructor argument, with DEFAULT_S3_MAX_CONCURRENT_UPLOADS as fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L213-L230
+    why: The upload limit becomes asyncio.Semaphore(limit), and s3_verify becomes the httpx client's ssl_verify.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L715-L720
+    why: _upload_bounded waits on the semaphore before every upload, so a limit of 0 blocks forever.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L304-L324
+    why: Precedence for bucket, region, api version, endpoint url, use_ssl, verify and the eight s3_aws_* credential fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L338-L344
+    why: s3_log_prompts_only and s3_partition_granularity are constructor first, the reverse of every other field.
+dod:
+  - text: >-
+      The new rstest unknown_source_keys_fail_to_load in s3_v2_params.rs has one case with
+      s3_flush_interval and one with s3_batch_size next to s3_bucket_name. Each asserts that decoding
+      Source fails with an error whose text names that key. On today's main no such test exists, so
+      dropping deny_unknown_fields from source.rs fails nothing; with the test in place it fails both
+      cases. source.rs keeps deny_unknown_fields.
+    proof: [unknown-source-keys, s3-params-tests]
+  - text: >-
+      DEFAULT_S3_MAX_CONCURRENT_UPLOADS=0 resolves max_concurrent_uploads to 16 and logs a WARN line
+      naming the variable. invalid_upload_default_uses_builtin_limit gains a zero case ("0") and checks
+      for that WARN line in every case. The zero case fails on today's main, where the limit is 0 and
+      nothing is logged.
+    proof: [zero-upload-default, s3-params-tests]
+  - text: >-
+      Both b3992 summaries report verify and a credentials object with the eight credential fields.
+      The new cases connection-fields-from-global.yaml (every field set in both sources, global wins,
+      s3_verify false over a constructor true) and connection-fields-from-constructor.yaml (global sets
+      only the bucket and s3_verify null, constructor values come through) match LiteLLM. On today's
+      main neither case exists and no summary reads these fields, so a dropped s3_verify or a swapped
+      credential pair goes unseen.
+    proof: [connection-cases, helper-python, s3-params-oracle, oracle]
+  - text: >-
+      constructor_flags_and_encryption_precedence's source JSON sets "s3_partition_granularity":"day",
+      so the test fails if connection.rs reads the source first. Both summaries report log_prompts_only
+      and partition_granularity, and the new cases constructor-granularity-wins.yaml (constructor hour
+      and false over global day and true) and global-granularity-without-constructor.yaml (constructor
+      sets neither, global day and true come through) match LiteLLM.
+    proof: [granularity-precedence, s3-params-tests, helper-python, s3-params-oracle, oracle]
+  - text: >-
+      docs/deviations/B3992.yaml keeps its six entries and gains one: a zero
+      DEFAULT_S3_MAX_CONCURRENT_UPLOADS falls back to 16 with a warning. It links s3_v2.py#L213-L221
+      and says LiteLLM's Semaphore(0) blocks every upload with no error.
+    proof: [deviation-entries]
+checks:
+  optional: []
+  commands:
+    - id: s3-params-tests
+      why: every S3 v2 parameter and event test, the fuzz corpus replay included, must still pass with the zero fallback and the new tests
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_v2_params::/)'
+    - id: s3-params-oracle
+      why: every case in the s3-v2-params folder must still match LiteLLM once both summaries report more fields
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_s3_v2_params_case_corpus)'
+    - id: helper-python
+      why: the b3992 Python adapter must stay lint and type clean after the summary change
+      run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3992.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: unknown-source-keys
+      why: nothing fails if Source stops rejecting a key it does not model, such as s3_flush_interval or s3_batch_size
+      run: >-
+        grep -q 'deny_unknown_fields' crates/betterlite-logging/src/s3_v2/source.rs &&
+        grep -q 's3_flush_interval' crates/betterlite-logging/src/s3_v2/tests/s3_v2_params.rs &&
+        grep -q 's3_batch_size' crates/betterlite-logging/src/s3_v2/tests/s3_v2_params.rs &&
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_v2_params::unknown_source_keys_fail_to_load::case_[0-9]+/)'
+    - id: zero-upload-default
+      why: a zero DEFAULT_S3_MAX_CONCURRENT_UPLOADS still gives an upload limit of 0, or the zero case is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_v2_params::invalid_upload_default_uses_builtin_limit::case_[0-9]+_zero$/)'
+    - id: connection-cases
+      why: verify and the credential fields are resolved but no summary or case compares them with LiteLLM
+      run: >-
+        test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/logging/s3-v2-params/connection-fields-from-global.yaml tools/oracle/cases/logging/s3-v2-params/connection-fields-from-constructor.yaml | wc -l)" = "2" &&
+        grep -q '"verify"' tools/oracle/helpers/b3992.py && grep -q '"verify"' tools/oracle/src/helpers/logging/b3992.rs &&
+        grep -q '"aws_web_identity_token"' tools/oracle/helpers/b3992.py && grep -q '"aws_web_identity_token"' tools/oracle/src/helpers/logging/b3992.rs
+    - id: granularity-precedence
+      why: the granularity precedence test passes with a source-first order, or no case pins the constructor-first order
+      run: >-
+        grep -q '"s3_partition_granularity":"day"' crates/betterlite-logging/src/s3_v2/tests/s3_v2_params.rs &&
+        test "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/logging/s3-v2-params/constructor-granularity-wins.yaml tools/oracle/cases/logging/s3-v2-params/global-granularity-without-constructor.yaml | wc -l)" = "2" &&
+        grep -q '"partition_granularity"' tools/oracle/helpers/b3992.py && grep -q '"partition_granularity"' tools/oracle/src/helpers/logging/b3992.rs &&
+        grep -q '"log_prompts_only"' tools/oracle/helpers/b3992.py && grep -q '"log_prompts_only"' tools/oracle/src/helpers/logging/b3992.rs
+    - id: deviation-entries
+      why: the zero fallback is not recorded as a difference from LiteLLM
+      run: >-
+        grep -q 's3_v2.py#L213-L221' docs/deviations/B3992.yaml &&
+        test "$(grep -c '^  - what:' docs/deviations/B3992.yaml)" = "7"
+oracle_cases:
+  - tools/oracle/cases/logging/s3-v2-params/connection-fields-from-global.yaml
+  - tools/oracle/cases/logging/s3-v2-params/connection-fields-from-constructor.yaml
+  - tools/oracle/cases/logging/s3-v2-params/constructor-granularity-wins.yaml
+  - tools/oracle/cases/logging/s3-v2-params/global-granularity-without-constructor.yaml
+  - tools/oracle/cases/logging/s3-v2-params/coerced-options.yaml
+  - tools/oracle/cases/logging/s3-v2-params/constructor-null-retry.yaml
+  - tools/oracle/cases/logging/s3-v2-params/empty-audit.yaml
+  - tools/oracle/cases/logging/s3-v2-params/injected-upload-defaults.yaml
+  - tools/oracle/cases/logging/s3-v2-params/invalid-bounds.yaml
+  - tools/oracle/cases/logging/s3-v2-params/invalid-retry-age-fallback.yaml
+  - tools/oracle/cases/logging/s3-v2-params/parameter-precedence-override-global.yaml
+  - tools/oracle/cases/logging/s3-v2-params/queue-and-retry-defaults.yaml
+  - tools/oracle/cases/logging/s3-v2-params/retry-disabled.yaml
+  - tools/oracle/cases/logging/s3-v2-params/source-null-retry.yaml
+  - tools/oracle/cases/logging/s3-v2-params/use-ssl-override.yaml
+deviations:
+  - what: A DEFAULT_S3_MAX_CONCURRENT_UPLOADS value of 0 falls back to an upload limit of 16 with a warning, instead of a limit of 0.
+    why: LiteLLM builds asyncio.Semaphore(0) from it, so every upload waits forever and logs never reach S3 with no error; no working setup relies on that hang.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L213-L221
+out_of_scope:
+  - Padded one-line functions anywhere in s3_v2 or the b3992 adapter belong to B5094. It clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task does not touch .ast-grep/rules/.
+  - B3990 owns resolve_bound and the other S3 option resolvers in crates/betterlite-logging/src/s3_transport/options.rs. They already reject a configured 0 the way _resolve_positive_int does, so they stay unchanged.
+  - B3994 owns the upload semaphore, _upload_bounded and the batch upload path. This task only changes the limit they are built from.
+  - B002 owns loading litellm.s3_callback_params from the config file and resolving os.environ/ markers.
+  - source.rs, connection.rs and the rest of s3_v2 apart from parameters.rs keep their code. Gaps one, three and four only add tests and summary fields around behavior that is already right.
+pitfalls:
+  - In unknown_source_keys_fail_to_load, assert that the error text contains the key name, such as s3_flush_interval, and not serde's whole message, since its list of expected fields changes whenever Source gains a field.
+  - The zero fallback goes in default_uploads in parameters.rs, as a match arm next to the negative one, not in resolve_bound.
+  - s3_log_prompts_only and s3_partition_granularity are constructor first while every other field is source first; the new cases pin that, so don't change connection.rs to make them match the rest.
+  - Build the credentials object in its own function in b3992.rs so summary() stays under 40 lines, and mirror it in b3992.py with a _CREDENTIAL_FIELDS tuple under the same "credentials" key and the same field names.
+  - Call expose_secret only inside the oracle summary; Credentials gets no Serialize impl and its Debug stays redacted, so credentials_are_redacted_and_markers_are_preserved keeps passing.
+  - Give each credential field its own value in each source (global-access-key-id, constructor-access-key-id and so on), so a swapped pair in the destructuring at connection.rs:128-129 changes the summary.
+  - Changing b3992.py changes the oracle cache key of every case in s3-v2-params, so every case gets a fresh LiteLLM answer; run the whole folder, not only the new cases.
+  - The zero-fallback test captures its warning with a writer like Captured in crates/betterlite-logging/src/s3_transport/options/tests.rs under tracing::subscriber::with_default; tracing-subscriber is already a dev-dependency of betterlite-logging.
+  - docs/deviations/B3992.yaml keeps its task line and six entries; add the new entry after them and leave the first entry's constants.py link as it is.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

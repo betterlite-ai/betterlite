@@ -1,0 +1,5 @@
+kind: helper
+name: modeled-error-status
+call: {"bedrock_event_frames": {"operation": "stream", "params": {"chunks": ["000000770000005d3b0aceff0f3a657863657074696f6e2d7479706507001376616c69646174696f6e457863657074696f6e0d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056572726f72706c61696e20746578748240d945"], "response_headers": {"content-type": "application/vnd.amazon.eventstream", "x-amzn-requestid": "req-1"}, "shape_loaded": true}}}
+env: {}
+compare: {ignore: []}

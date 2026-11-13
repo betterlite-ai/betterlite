@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-absent-with-status
+call: {"error_normalization": {"message": "timed out", "status_code": 408, "error_present": false}}
+env: {}
+compare: {ignore: []}

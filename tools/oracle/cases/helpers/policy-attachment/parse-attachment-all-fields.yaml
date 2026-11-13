@@ -1,0 +1,17 @@
+kind: helper
+name: parse-attachment-all-fields
+call:
+  b3241:
+    policy_memory_matching_attachment:
+      action: parse_attachment
+      attachment:
+        policy: gpt4-safety
+        scope: team
+        teams: [team-a]
+        keys: [key-a]
+        models: [gpt-4]
+        tags: [prod]
+        priority: 7
+        default: true
+env: {}
+compare: {ignore: []}

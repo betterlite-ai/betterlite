@@ -1,0 +1,49 @@
+kind: helper
+name: stream-chunk-shaping-processed-chunk
+call:
+  b5652:
+    state:
+      model: gpt-4
+      provider: openai
+      response_id: chatcmpl-fixed
+      created: 1700000000
+      system_fingerprint: fp-1
+      base_hidden_params: {model_id: m1}
+    repeated_chunk_limit: 100
+    steps:
+      - op: returns
+        completion: {content: hello}
+        chunk: {id: chatcmpl-fixed, created: 1700000000, model: gpt-4, choices: [{index: 0, delta: {}}]}
+      - op: returns
+        completion: {content: " world"}
+        chunk: {id: chatcmpl-fixed, created: 1700000000, model: gpt-4, choices: [{index: 0, delta: {}}]}
+      - op: returns
+        completion: {content: hi, index: 4}
+        chunk: {id: chatcmpl-fixed, created: 1700000000, model: gpt-4, choices: [{index: 0, delta: {}}]}
+        response: {provider_specific_fields: {a: 1}}
+      - op: set_state
+        patch: {received_finish_reason: stop, holding_chunk: HELD}
+      - op: returns
+        completion: {content: ""}
+        chunk: {id: chatcmpl-fixed, created: 1700000000, model: gpt-4, choices: [{index: 0, delta: {}}]}
+      - op: returns
+        completion: {content: ""}
+        chunk: {id: chatcmpl-fixed, created: 1700000000, model: gpt-4, choices: [{index: 0, delta: {}}]}
+      - op: returns
+        completion: {}
+        chunk: {id: chatcmpl-fixed, created: 1700000000, model: gpt-4, choices: [{index: 0, delta: {}}], usage: {prompt_tokens: 1, completion_tokens: 2}}
+      - op: set_state
+        patch: {sent_last_chunk: false, received_finish_reason: max_tokens}
+      - op: returns
+        completion: {content: ""}
+        chunk: {id: chatcmpl-fixed, created: 1700000000, model: gpt-4, choices: [{index: 0, delta: {}}]}
+        response:
+          original_chunk: {id: orig, created: 5, model: gpt-4, system_fingerprint: fp-orig, service_tier: scale, choices: [{index: 0, delta: {content: orig-content}, finish_reason: length}]}
+      - op: returns
+        completion: {content: hi}
+        chunk: {id: chatcmpl-fixed, created: 1700000000, model: gpt-4, choices: [{index: 0, delta: {}}]}
+        response:
+          original_chunk: {id: orig, created: 5, model: gpt-4, system_fingerprint: fp-orig, service_tier: scale, citations: [{type: url_citation}], choices: [{index: 1, delta: {content: orig-content}, finish_reason: length}]}
+env: {}
+compare:
+  ignore: []

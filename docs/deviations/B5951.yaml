@@ -1,0 +1,17 @@
+task: B5951
+deviations:
+  - what: A failed validation is a typed SapModelError that carries the field path and betterlite's own message, not a pydantic ValidationError with its repr text.
+    why: Pydantic's error text is a Python library detail, and the status a caller sees for it is an open question in the planning notes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/models.py#L8-L24
+  - what: An error inside a union variant (a message kind, an entity kind, a filter config) names the path where the union was read, not the field inside the variant, because serde's untagged enums drop the variant's own error. The modules union restarts the path inside each module, so the masking, filtering, translation and grounding rules keep their field paths.
+    why: Serde reports one generic message when no untagged variant matches; rebuilding pydantic's per-variant error list would mean hand-writing the union deserializers, which the no-custom-serde rule forbids.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/models.py#L118
+  - what: Strings are not coerced into numbers or booleans, and a float is not accepted where the model declares an int.
+    why: docs/compatibility.md leaves pydantic's lax coercion of undeclared input types out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/models.py#L147-L148
+  - what: 'When several union variants validate, betterlite takes the first in the declared order, while pydantic''s smart union scores the variants. A Template response_format of {"json_schema": {"name": "n"}} with no type dumps as {} in betterlite and as the json_schema object in LiteLLM; a template message without a role and with parts flattens to one string in betterlite.'
+    why: The task fixes the declared order as the rule, and pydantic-core's scoring is a Python runtime habit docs/compatibility.md keeps out. LiteLLM's own chat transform always writes a role and a response_format type, so its working path never reaches an ambiguous input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/models.py#L118
+  - what: The count, overlap and chunk-size fields are signed 64-bit integers, so a JSON integer outside that range is rejected where Python's int is unbounded.
+    why: An integer wider than 64 bits has no bounded representation in the typed model; no SAP orchestration setup sends a chunk count or overlap near 2^63.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/models.py#L556

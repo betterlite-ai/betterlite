@@ -1,0 +1,19 @@
+kind: helper
+name: emit-once-scopes
+call:
+  b3854:
+    function: emit_once
+    calls:
+      - {handler: {class_name: OpenTelemetry, instance: 1}, scope: [{Text: success}]}
+      - {handler: {class_name: OpenTelemetry, instance: 1}, scope: [{Text: success}]}
+      - {handler: {class_name: OtherLogger, instance: 1}, scope: [{Text: success}]}
+      - {handler: {class_name: OpenTelemetry, instance: 2}, scope: [{Text: success}]}
+      - {handler: {class_name: OpenTelemetry, instance: 3}, scope: [{List: [{Int: 1}, {Int: 2}]}]}
+      - {handler: {class_name: OpenTelemetry, instance: 3}, scope: [{List: [{Int: 2}, {Int: 1}]}]}
+      - {handler: {class_name: OpenTelemetry, instance: 4}, scope: [{Set: [{Int: 1}, {Int: 2}]}]}
+      - {handler: {class_name: OpenTelemetry, instance: 4}, scope: [{Set: [{Int: 2}, {Int: 1}]}]}
+      - {handler: {class_name: OpenTelemetry, instance: 5}, scope: [{Map: {name: {Text: pii}, mode: {Text: pre}}}]}
+      - {handler: {class_name: OpenTelemetry, instance: 5}, scope: [{Map: {mode: {Text: pre}, name: {Text: pii}}}]}
+      - {handler: {class_name: OpenTelemetry, instance: 5}, scope: [{Map: {name: {Text: pii}}}]}
+env: {}
+compare: {ignore: []}

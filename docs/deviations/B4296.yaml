@@ -1,0 +1,28 @@
+task: B4296
+deviations:
+  - what: >-
+      litellm_params never joins the cache key material, even when litellm.enable_caching_on_provider_specific_optional_params
+      is true.
+    why: >-
+      is_litellm_owned_kwarg returns false for litellm_params, so with the feature flag on LiteLLM folds the whole
+      deployment dict into the key material and every request whose deployment carries an api_key or api_base hashes
+      differently. betterlite models litellm_params as a typed field outside the ordered request params, and no working
+      setup can rely on a key that changes whenever a deployment's credentials rotate. Cache entries simply stay
+      shared across credential rotations instead of being split.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L386-L392
+  - what: >-
+      litellm.enable_caching_on_provider_specific_optional_params is a field of CacheKeySettings rather than a
+      module-level global, and betterlite loads no configuration value for it.
+    why: >-
+      LiteLLM exposes it as a runtime toggle in __init__.py. Betterlite passes the flag into key derivation from the
+      caller, so a proxy can set it once at startup; nothing reads litellm_settings for it and no request can change
+      it mid-flight.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L397
+  - what: >-
+      The cache key material keeps Python's str text for values, so the material format is pinned: changing the JSON
+      rendering, the parameter order or the numeric formatting changes the SHA-256 for identical input.
+    why: >-
+      get_cache_key hashes the concatenated "param: str(value)" text, so a cache key is only reusable by an
+      implementation that renders the same text. A future change to value rendering silently misses every entry
+      cached before it; flush or version the namespace when changing it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L374-L404

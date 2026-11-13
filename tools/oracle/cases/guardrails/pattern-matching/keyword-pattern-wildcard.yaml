@@ -1,0 +1,1 @@
+{"kind":"helper","name":"keyword-pattern-wildcard","call":{"b3693":{"function":"keyword","keyword":"se*ret","texts":["secret","seret","seXXret","SEZRET","se\nret"]}},"env":{},"compare":{"ignore":[]}}

@@ -2,7 +2,7 @@ id: B345
 milestone: M2 routing
 title: Shadow evaluation request and access validation
 status: todo
-depends_on: [B343, B052, B060, B118, B301, B361]
+depends_on: [B343, B052, B060, B4080, B301, B361]
 file: tasks/B345-shadow-eval-validation.yaml
 covers:
   - "litellm/types/management_endpoints/auto_router_endpoints.py"

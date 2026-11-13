@@ -1,0 +1,24 @@
+kind: helper
+name: langfuse-settings-flush-at
+call:
+  b3900:
+    function: read
+    reading: flush_at
+    steps:
+      - environment: {}
+      - environment:
+          LANGFUSE_FLUSH_AT: "1"
+      - environment:
+          LANGFUSE_FLUSH_AT: "100000"
+      - environment:
+          LANGFUSE_FLUSH_AT: " 64 "
+      - environment:
+          LANGFUSE_FLUSH_AT: "100001"
+      - environment:
+          LANGFUSE_FLUSH_AT: "0"
+      - environment:
+          LANGFUSE_FLUSH_AT: ""
+      - environment:
+          LANGFUSE_FLUSH_AT: "many"
+env: {}
+compare: {ignore: []}

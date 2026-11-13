@@ -5,10 +5,10 @@ use crate::facts::{
 };
 use serde::de::IgnoredAny;
 
-mod constructors;
+pub mod constructors;
 mod tests;
 
-use self::constructors::{Constructor, constructor};
+use self::constructors::{Constructor, ExceptionName, Lookup, lookup};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
@@ -29,7 +29,7 @@ pub enum ParseError {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LitellmExceptionFacts {
-    pub name: String,
+    pub name: ExceptionName,
     pub message: String,
     pub model: String,
     pub provider: String,
@@ -56,26 +56,27 @@ pub fn extract_exception(
     }) else {
         return Ok(None);
     };
-    let Some(shape) = constructor(exception_name) else {
-        return Ok(None);
-    };
-    let (accepted_response, accepted_body) = match shape {
-        Constructor::Response => (response, None),
-        Constructor::BodyResponse => (response, body),
-        Constructor::Plain => (None, None),
-        Constructor::MissingArguments => {
+    let name = match lookup(exception_name) {
+        None => return Ok(None),
+        Some(Lookup::Buildable(name)) => name,
+        Some(Lookup::MissingArguments) => {
             return Err(ParseError::Constructor {
                 name: exception_name.to_owned(),
             });
         }
-        Constructor::NoSignature => {
+        Some(Lookup::NoSignature) => {
             return Err(ParseError::Signature {
                 name: exception_name.to_owned(),
             });
         }
     };
+    let (accepted_response, accepted_body) = match name.constructor() {
+        Constructor::Response => (response, None),
+        Constructor::BodyResponse => (response, body),
+        Constructor::Plain => (None, None),
+    };
     Ok(Some(LitellmExceptionFacts {
-        name: exception_name.to_owned(),
+        name,
         message: bounded_text(error_text),
         model: bounded_text(model),
         provider: bounded_text(provider),

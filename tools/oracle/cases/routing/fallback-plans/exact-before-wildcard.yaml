@@ -1,0 +1,83 @@
+kind: probe
+name: fallback-exact-before-wildcard
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {"*": [backup]}
+            - {gpt-4: [claude]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: gpt-4
+          lookup_model_group: gpt-4
+        config:
+          fallbacks:
+            - {gpt-4: [claude]}
+            - {"*": [backup]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: other
+          lookup_model_group: other
+        config:
+          fallbacks:
+            - {"*": [backup]}
+            - {gpt-4: [claude]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: later
+          lookup_model_group: later
+        config:
+          fallbacks:
+            - {"*": [backup]}
+            - {later: [specific]}
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: anything
+          lookup_model_group: anything
+        config:
+          fallbacks:
+            - {gpt-4: [claude]}
+          context_window_fallbacks:
+            - long-ctx
+          max_fallbacks: 5
+        request: {}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      fallback_plans:
+        state:
+          model: multi
+          lookup_model_group: multi
+        config:
+          fallbacks:
+            - {gpt-4: [claude]}
+          context_window_fallbacks:
+            - {multi: [first], other: [second]}
+          max_fallbacks: 5
+        request: {}

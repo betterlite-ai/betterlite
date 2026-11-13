@@ -140,12 +140,13 @@ where
     }
 }
 
-fn resolve_fields<Value, const N: usize>(
+fn resolve_fields<Value, IsBlank, const N: usize>(
     fields: [(&Option<Value>, &Option<Value>); N],
-    is_blank: impl Fn(&Value) -> bool,
+    is_blank: IsBlank,
 ) -> [Option<Value>; N]
 where
     Value: Clone,
+    IsBlank: Fn(&Value) -> bool,
 {
     let mut resolved: [Option<Value>; N] = array::from_fn(|_| None);
     for (slot, (provided, fallback)) in resolved.iter_mut().zip(fields) {

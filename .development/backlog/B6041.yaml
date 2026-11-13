@@ -1,0 +1,14 @@
+id: B6041
+milestone: M12 python
+title: Python embedding and aembedding
+status: todo
+depends_on: [B6040, B006]
+file: tasks/B6041-python-embeddings.yaml
+covers:
+  - "litellm/main.py"
+parent: B159
+split_from: B159
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,6 @@
+kind: helper
+name: vector-store-index-list-rejects-bad-nested-timestamp
+call:
+  vector_store_records: {operation: invalid_index_list_literal, record: {data: [{id: i, index_name: n, litellm_params: {vector_store_index: n, vector_store_name: n}, created_at: garbage}]}}
+env: {}
+compare: {ignore: []}

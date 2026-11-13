@@ -1,0 +1,8 @@
+kind: helper
+name: responses-usage-typed-response-object
+call:
+  responses_usage:
+    typed_object: true
+    usage: {input_tokens: 2, output_tokens: 3, total_tokens: 5, cost: 0.125, input_tokens_details: {cached_tokens: 2}, output_tokens_details: {reasoning_tokens: 1}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: text-completion-transport-null-model-seed
+call:
+  text_completion_transport:
+    provider: openai
+    request:
+      model: null
+      messages: [{role: user, content: hello}]
+      api_key: sk-fixture
+      api_base: https://api.openai.com/v1
+      timeout: 600.0
+      organization: org-fixture
+      optional_params: {}
+      headers: null
+      acompletion: false
+    answer: {buffered: {id: cmpl-1, object: text_completion, created: 1700000000, model: gpt-3.5-turbo-instruct, choices: [{text: hi there, index: 0, logprobs: null, finish_reason: stop}], usage: {prompt_tokens: 3, completion_tokens: 2, total_tokens: 5}}}
+env: {}
+compare: {ignore: []}

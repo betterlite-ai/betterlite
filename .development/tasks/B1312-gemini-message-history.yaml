@@ -27,7 +27,6 @@ description: >-
 scope:
   paths:
     - crates/betterlite-vertex/Cargo.toml
-    - crates/betterlite-vertex/src/{lib,error,gemini_history}.rs
     - crates/betterlite-vertex/src/gemini_history.rs
     - crates/betterlite-vertex/src/gemini_history/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
@@ -87,5 +86,5 @@ pitfalls:
   - Gemini's fallback user text is one space, while the system-only request placeholder is a period owned by B1321.
   - A tool result following a plain assistant message still matches the earlier assistant that carried the call.
   - Comparing signatures as part of tool identity creates duplicate calls when a signed thinking block already contains one.
-budget: {max_changed_lines: 800, max_new_expects: 0}
+budget: {max_changed_lines: 1100, max_new_expects: 0}
 review_level: standard

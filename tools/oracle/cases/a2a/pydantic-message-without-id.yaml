@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-message-without-id
+call: {b4805: {operation: transform, response: {result: {message: {parts: [{kind: data, data: {x: 1}}]}}}}}
+env: {}
+compare: {ignore: []}

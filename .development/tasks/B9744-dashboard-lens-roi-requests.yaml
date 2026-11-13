@@ -1,0 +1,170 @@
+id: B9744
+title: Verify Lens administration and ROI forms without inventing tracing availability
+description: >-
+  Preserve the Lens and ROI pages taken in by B9090. B4503/B8682 already own every browser Lens
+  route, B3158/B3161/B8588/B8677 every ROI route, and B9030 adds the Lens database lifecycle
+  cases. This task closes only page-form coverage gaps and corrects the worker deployment
+  instructions. B147-route-audit.md records method, query, body, response fields and owners.
+  No Lens worker protocol, trace reader, GitHub client or ROI algorithm is implemented here.
+  Use the booted HTTP oracle with B9740's independent current-schema fixture and B5076's Prisma
+  setup. The same typed seed reaches two separate databases. Keep master-key, internal-user
+  and admin-viewer credentials distinct and compare the actual role-error envelope.
+
+  Reuse the on-main models/list-shared-name.yaml for Lens's bare GET /models; B9735 owns the
+  shared /model_group/info selector request. lens-analysis-key-and-worker.yaml starts with
+  GET /key/list with page=1,size=25,return_full_object=true,substring_matching=true,
+  include_team_keys=true,include_created_by_keys=true,status=active and a selected key_alias.
+  POST /key/generate uses key_alias Lens analysis, models [ui-review], max_budget=10,
+  budget_duration 1mo, metadata purpose lens. Capture token_id, not the raw key, and GET
+  /key/info?key=<token_id>. POST /lens/workers/register sends name Lens worker explicitly
+  with analysis_key_id=<token_id>; capture worker.id and the one-time token separately.
+  Generate a second analysis key through the same form, PUT /lens/workers/{id}/billing-key,
+  GET /lens for the masked public worker, then DELETE the worker with no body. B9030 already
+  covers the register-with-omitted-name and generic rotation/revoke protocol; this flow tests
+  the UI's generation-to-hash-to-worker handoff. Cleanup POST /key/delete uses keys:[hash]
+  only once /lens confirms the key is unreferenced. The component's failed-registration path
+  must preserve a key if that confirmation itself fails, rather than deleting potentially
+  active billing credentials. This error ordering is a component proof, not a new server rule.
+
+  lens-full-settings-and-preview.yaml sends the complete LensSetup form: source requests,
+  service and agent_name empty, filters [],lookback_hours=24,sample_size=null,sample_percent=100,
+  team_id empty,execution_ids [], a chosen name/model and trimmed nonempty context,
+  monthly_budget=100,enabled=false,interval_minutes=30,
+  concurrency=8,checks containing the form's id/instruction/enabled fields. Use a fixed UUID
+  for the client-generated check id in the HTTP fixture. POST /lens and PUT /lens/{id} must
+  preserve those values; change the name and budget through a full edit then reload /lens.
+  B9030 already tests runs {}, cancel {}, first-page history and missing finding feedback;
+  do not duplicate those standalone cases. Send GET /lens/{id}/runs?offset=50 to prove the
+  page's next-history request and GET the captured queued job through the history detail path.
+  POST /lens/preview/sample uses ActivityScope's own body, not Settings copied blindly:
+  offset=0,as_of=<fixed ISO>,lookback_hours=24 and settings containing selection fields,
+  execution_ids [],name Preview,model preview,checks [{id:preview,instruction:Preview recorded activity}].
+  GET /lens/{id}/executions/{execution_id}?offset=0 uses encodeURIComponent's encoding of
+  a valid requests execution id from lensData.evidenceTarget/parse_execution. The production
+  storage port is absent, so preview/evidence return their 501 unavailable response. Creating
+  a queued administrative record is not evidence that a scan ran or findings were generated.
+
+  roi-settings-presence-and-reset.yaml GETs /roi-calculator/settings, PUTs the full form with
+  github_api_url pointing to the local mock, repos [],estimator_model ui-review,
+  estimator_prompt,backfill_days=30 and update_interval_minutes=360, plus dummy github_token
+  and estimator_key values. GET again and assert has_github_token/has_estimator_key but no
+  secrets. The next PUT omits both secrets, proving unchanged values survive; another sends
+  explicit null to clear them. After clearing credentials, save repos [example/gateway]; this
+  cannot start a ready analysis and gives reset a nonempty repository selection to clear.
+  B3158's partial get/put/error cases do not prove this full-form
+  presence sequence. PUT /roi-calculator/identity-map sends github_login with mixed case and
+  an email string, then email null to remove the normalized mapping; read identity_map/report.
+  POST /roi-calculator/setup/reset has no body and is followed by settings/report/sync reads,
+  proving it clears selected repos and retains an empty live report and other saved settings.
+  Do not infer that reset erases every secret or restores every default. Include a viewer
+  denial for the same well-typed settings form, comparing the existing permission behavior.
+
+  roi-demo-and-idle-cancel.yaml loads GET /roi-calculator/report?mode=demo, checks the sample
+  summary/people/pulls/metrics consumed by the page, then GET /roi-calculator/sync and DELETE
+  /roi-calculator/sync with no body. B8677 already plans live-empty report, status without
+  credentials, bodyless start-not-ready, repository search/default and connection tests;
+  reuse those instead of adding equal cases. Demo dates derive from today's UTC date, not
+  the component's local date. Ignore only synced_at's timestamp; retain deterministic sample
+  metrics, identities and date-derived values. Never ignore people or
+  pulls arrays. Keep repos empty until both secrets have been cleared so settings edits cannot
+  trigger a real GitHub/estimator job.
+  Success with live repository data remains B3161/B8588's existing backend work, not fabricated
+  browser data. ROI CSV is generated locally; there is no CSV proxy route to create.
+
+  Add 53-lens-roi-pages.patch with preimage/postimage hashes. Replace WorkerSetup's upstream
+  ghcr.io/berriai/litellm-lens-worker digest with betterlite-lens-worker:local and visible
+  instructions to build via packaging/lens/compose.build.yaml before running it. Use B8232's
+  real compose files and preserve LITELLM_URL,LENS_WORKER_TOKEN, shell quoting, read-only/tmpfs,
+  dropped capabilities and no-new-privileges; do not advertise a nonexistent published image.
+  Replace product-only branding/paid advertisements within these page sources while keeping
+  protocol field names, readOnly/admin checks and the activityReady/worker-connected gates.
+  There is no premium capability flag to force on. In particular B8682 binds storage=None
+  even if CLICKHOUSE_URL is set; the page must honestly display unavailable recorded activity,
+  with New investigation and Connect worker gated as the retained state requires. Do not
+  substitute a browser mock or in-memory backend to make that limitation look resolved.
+
+  ui/dashboard/tests/lens-roi renders the retained LensView, LensSetup, WorkerSetup,
+  ROICalculatorView and ROISettingsPanel with real apiClient request construction. Tests
+  lensFormAndBillingHash, lensFailedRegistrationDoesNotDeleteUnknownKey, lensUnavailableActivity,
+  workerCommandUsesLocalBuild, roiSecretPresenceAndBodylessActions and roiDemoAndCsv prove
+  the forms, one-time secret handling, error/cancellation states, displayed fields and local
+  download. A mocked available activity response is allowed only in the component form unit
+  test to reach its serialization; B147's browser test uses the real disabled service.
+  Select the affected retained integration/unit tests through upstream-tests.json. Native
+  HTTP comparison retains statuses/content types, auth type/param/code and full stable JSON;
+  only individually identified generated ids, credentials and timestamps are ignored.
+  This is roughly 500 HTTP lines and 80 patch lines plus tests, with zero translated backend
+  or retained React functions.
+scope:
+  paths:
+    - ui/dashboard/patches/53-lens-roi-pages.patch
+    - ui/dashboard/patches/53-lens-roi-pages.json
+    - ui/dashboard/tests/lens-roi/**
+    - tools/oracle/cases/ui/lens-roi/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/lens/_components/LensSetup.tsx#L64-L139
+    why: Full form defaults, trimmed fields and enabled/concurrency/check serialization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/lens/_components/ActivityScope.tsx#L88-L113
+    why: Preview is a distinct body with explicit as_of and nested selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/lens/_components/AnalysisKey.tsx#L170-L185
+    why: The generated token_id is the worker billing reference, not the returned secret key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/lens/_components/WorkerSetup.tsx#L23-L44
+    why: Existing pinned upstream image and hardened, shell-quoted deployment command.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/lens/_components/WorkerSetup.tsx#L102-L147
+    why: Registration/billing handoff and conditional cleanup after failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/roi-calculator/_components/ROISettingsPanel.tsx#L70-L166
+    why: Full settings fields, absent versus cleared credentials, repositories and bodyless connection/reset actions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L146-L345
+    why: B4503 owns every administration decorator in these HTTP flows; B8682 supplies real production ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py#L557-L584
+    why: Evidence's encoded execution id and unavailable source reader, not a new page-only route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L320-L388
+    why: B3158 settings reads/writes keep secret-presence semantics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L419-L537
+    why: B8588 owns bodyless sync operations, report mode and identity update.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L620-L652
+    why: Setup reset empties selected repos and the report, rather than resetting every saved credential.
+dod:
+  - text: The actual Lens key form hands a stored hash to worker registration, full investigation edits preserve fields, and unavailable activity is never presented as a completed scan.
+    proof: [lens-roi-http-cases, oracle, lens-roi-components]
+  - text: ROI form omissions, secret clearing, identity changes, reset, demo report and idle cancellation match real HTTP and the fields rendered by the retained page.
+    proof: [lens-roi-http-cases, oracle, lens-roi-components]
+  - text: Worker instructions use B8232's local image build while preserving deployment hardening and one-time credential handling.
+    proof: [lens-roi-components]
+checks:
+  optional: []
+  commands:
+    - id: lens-roi-http-cases
+      why: The new form/bodyless request combinations have no booted-proxy oracle evidence.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/ui/lens-roi)" &&
+        ! grep -rlq '^kind: helper$' tools/oracle/cases/ui/lens-roi
+    - id: lens-roi-components
+      why: A retained Lens/ROI component misserializes credentials, reports unavailable work as successful or emits the upstream worker image.
+      run: bash tools/dashboard/build.sh check ui/dashboard/tests/lens-roi
+oracle_cases:
+  - tools/oracle/cases/models/list-shared-name.yaml
+  - tools/oracle/cases/ui/lens-roi/lens-analysis-key-and-worker.yaml
+  - tools/oracle/cases/ui/lens-roi/lens-full-settings-and-preview.yaml
+  - tools/oracle/cases/ui/lens-roi/roi-settings-presence-and-reset.yaml
+  - tools/oracle/cases/ui/lens-roi/roi-demo-and-idle-cancel.yaml
+deviations:
+  - what: Worker setup instructs operators to build and run betterlite-lens-worker:local instead of pulling BerriAI's pinned Python image.
+    why: B8232 supplies a native local build and no betterlite release-image location has been assigned.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/app/(dashboard)/lens/_components/WorkerSetup.tsx#L23-L44
+  - what: Lens recorded-activity controls stay unavailable with production storage=None, including when CLICKHOUSE_URL is supplied.
+    why: This consumes B8682's explicit temporary storage deviation; a page task cannot silently manufacture a trace store or successful scan.
+out_of_scope:
+  - Every unchanged function in the covered Lens and ROI source trees is retained by B9090; B9091 performs the npm build and B147 performs the real-browser checks.
+  - B4503/B8682 own administration and production ports, B4505 worker HTTP, B9030 the existing database cases and B8232 the actual worker image/loop.
+  - B3158/B3161/B8588/B8677 own all ROI endpoints, synchronization, GitHub and estimator behavior; B055/B777/B778/B782 own key APIs and B007/B060 model selectors.
+  - Full ClickHouse tracing and Lens execution need the native storage prerequisite recorded by B110/B8682; this plan neither assigns it again nor treats disabled responses as success.
+pitfalls:
+  - Lens worker registration consumes token_id, while the one-time worker token is a different secret with a different authorization role.
+  - An unavailable activity service legitimately disables the new-investigation button before any form POST can be sent.
+  - ROI reset retains saved settings other than selected repositories and does not imply credential deletion.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

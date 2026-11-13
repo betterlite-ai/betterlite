@@ -1,0 +1,8 @@
+task: B595
+deviations:
+  - what: A caller-supplied Date header is dropped and the request is signed with X-Amz-Date instead of LiteLLM's SignedHeaders=date form.
+    why: botocore reformats a supplied Date and signs it in place of X-Amz-Date; the maintained aws-sigv4 crate only signs the X-Amz-Date form, and the task forbids handwritten SigV4 cryptography. A Bedrock client never sends Date itself, so no working setup depends on the Date form.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1629-L1655
+  - what: sign_aws_json_post with no region returns a typed SigningError instead of raising TypeError from the join of the credential scope.
+    why: LiteLLM passes the region through to botocore, whose None region fails with TypeError; a typed error keeps the same failure outcome without an unhandled exception, and no working setup omits the region.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1733-L1749

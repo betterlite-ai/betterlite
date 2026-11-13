@@ -1,0 +1,12 @@
+kind: helper
+name: stream-chunk-shaping-processed-seed
+call:
+  b5652:
+    state: {model: gpt-4, provider: openai}
+    repeated_chunk_limit: 100
+    steps:
+      - op: returns
+        completion: {content: hello}
+        chunk: {id: c, created: 1, model: gpt-4, choices: [{index: 0, delta: {}}]}
+env: {}
+compare: {ignore: []}

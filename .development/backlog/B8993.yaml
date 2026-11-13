@@ -1,0 +1,13 @@
+id: B8993
+milestone: M6 guardrails
+title: Responses and Anthropic guardrail stream HTTP parity
+status: blocked
+depends_on: [B080, B081, B8636, B8632, B8804, B6370, B3246, B3247, B8399, B3771, B8990, B8666]
+file: tasks/B8993-native-stream-guardrail-http.yaml
+covers: []
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: "waits for a planned change: stream guardrails must keep raw frames (a lossless GuardrailStreamItem through B3661 to B8632), B104's report"
+pr: null

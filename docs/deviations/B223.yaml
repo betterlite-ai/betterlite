@@ -1,0 +1,26 @@
+task: B223
+deviations:
+  - what: >-
+      A file content block whose file has neither file_data nor file_id is refused with the typed
+      FileMessageError::MissingSource, which the caller answers with 400; LiteLLM raises a bare
+      Exception from the same branch.
+    why: >-
+      A file block with no source is malformed client input, so a 4xx belongs. LiteLLM's unhandled
+      Exception surfaces as a 500 and no working setup relies on that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1983
+  - what: >-
+      A file_data value that is not a base64 data URL is refused with the typed image error that the
+      caller answers with 400; LiteLLM catches the same parse failure and raises a bare Exception.
+    why: >-
+      The payload is client input and a 4xx names the failure; the 500 LiteLLM returns hides which
+      field was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L823
+  - what: >-
+      A tool call list over 1024 entries, a web_search_results or tool_results list over 1024
+      entries, or server results that would copy more than 8 MiB into the output are refused with a
+      typed error; LiteLLM converts whatever list it is given.
+    why: >-
+      The bounded-inputs rule forbids work and allocation proportional to untrusted input without a
+      cap. A repeated srvtoolu_ call with one matching result would otherwise clone that result once
+      per call, so the cap bounds the copied bytes as well as the three list lengths.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1744

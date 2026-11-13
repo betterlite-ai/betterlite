@@ -1,0 +1,12 @@
+kind: helper
+name: usage-parse-repeated-header
+call:
+  b3605:
+    operation: parse_usage
+    headers:
+      - [x-litellm-response-cost, "0.5"]
+      - [x-litellm-response-cost, "0.5"]
+      - [x-litellm-total-tokens, "1"]
+      - [x-litellm-total-tokens, "2"]
+env: {}
+compare: {ignore: []}

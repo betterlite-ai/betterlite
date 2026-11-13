@@ -1,0 +1,14 @@
+kind: helper
+name: gemini-metadata-duplicate-chunks
+call:
+  gemini_metadata:
+    call: duplicate_chunks
+    chunks:
+      - vertex_ai_grounding_metadata: [{n: 1}, {n: 2}]
+      - vertex_ai_grounding_metadata: [{n: 1}, {n: 2}]
+      - vertex_ai_grounding_metadata: [{n: 1}]
+      - vertex_ai_citation_metadata: single
+      - vertex_ai_citation_metadata: {citations: []}
+      - vertex_ai_url_context_metadata: [{urlMetadata: []}, {urlMetadata: []}]
+env: {}
+compare: {ignore: []}

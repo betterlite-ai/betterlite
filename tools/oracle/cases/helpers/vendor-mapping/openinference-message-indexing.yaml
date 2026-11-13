@@ -1,0 +1,63 @@
+{
+  "kind": "helper",
+  "name": "vendor-mapping-openinference-message-indexing",
+  "call": {
+    "b3846": {
+      "function": "openinference_llm_call",
+      "payload": {
+        "id": "call-4",
+        "model": "gpt-4o",
+        "custom_llm_provider": "openai",
+        "call_type": "completion",
+        "prompt_tokens": 10,
+        "completion_tokens": 4,
+        "total_tokens": 14,
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "hello "
+              },
+              {
+                "type": "image_url",
+                "image_url": {
+                  "url": "https://example.com/x.png"
+                }
+              },
+              {
+                "type": "text",
+                "text": "world"
+              }
+            ]
+          },
+          {
+            "content": "no role"
+          }
+        ],
+        "response": {
+          "id": "resp-4",
+          "model": "gpt-4o-2024",
+          "choices": [
+            {
+              "message": {
+                "role": "assistant",
+                "content": "done"
+              },
+              "finish_reason": "stop"
+            },
+            {
+              "finish_reason": "length"
+            }
+          ]
+        }
+      },
+      "capture_content": true
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

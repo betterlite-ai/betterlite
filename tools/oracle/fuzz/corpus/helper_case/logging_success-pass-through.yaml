@@ -1,0 +1,18 @@
+kind: helper
+name: logging-success-pass-through-seed
+call:
+  logging_success:
+    operations:
+      - operation: handler
+        probes:
+          - mode: async
+            stream: true
+            call_type: pass_through_endpoint
+            litellm_params: {acompletion: true}
+            result: {kind: other, value: {object: pass_through}}
+            start_time: "2024-01-01T00:00:00+00:00"
+            end_time: "2024-01-01T00:00:01+00:00"
+            assembler_returns_none: true
+            loggers: [{name: langfuse}]
+env: {}
+compare: {ignore: []}

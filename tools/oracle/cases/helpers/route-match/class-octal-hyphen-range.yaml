@@ -1,0 +1,17 @@
+{
+  "kind": "helper",
+  "name": "class-octal-hyphen-range",
+  "call": {
+    "route_match": {
+      "function": "check_route_access",
+      "route": "/models/0",
+      "allowed_routes": [
+        "/models/[\\055-a]"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

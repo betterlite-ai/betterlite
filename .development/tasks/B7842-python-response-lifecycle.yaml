@@ -1,0 +1,128 @@
+id: B7842
+title: Python get, delete, cancel, list-input-items and compact response functions
+description: >-
+  Add the ten functions `get_responses`, `aget_responses`, `delete_responses`, `adelete_responses`, `cancel_responses`,
+  `acancel_responses`, `list_input_items`, `alist_input_items`, `compact_responses` and `acompact_responses` to the
+  `betterlite` package. The Rust owners hold the logic: B933 (get and list input items), B1116 (delete and cancel) and B934
+  (compact). This task wires them to Python and returns `ResponsesAPIResponse` and `DeleteResponseResult` (both from B7840).
+  `list_input_items` returns a plain dict, as in LiteLLM.
+
+
+  Native side, the family `response_lifecycle`, in `crates/betterlite-python`. It follows B5659's shape:
+  `src/response_lifecycle.rs` has `pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()>` that adds the class
+  `NativeResponseLifecycleSession` and the exception `NativeResponseLifecycleError` (made with `pyo3::create_exception!`). The
+  architect writes the `mod` and `register` lines in `src/lib.rs` and the import in the `.pyi` package, so never edit
+  `lib.rs`. The session takes the JSON settings text. Its methods are `get_response`, `delete_response`, `cancel_response`,
+  `list_input_items` and `compact_response`, each with an `a`-prefixed twin that returns an awaitable through `future_into_py`.
+  Each takes `(payload_text, blobs)` as B6040's `to_call_payload` builds it and returns the result as JSON text. The blocking
+  methods run on the tokio runtime inside `py.detach`. Read B933, B1116 and B934 for the exact Rust entry names and the error
+  JSON keys B5659 lists. Conversions sit in `src/response_lifecycle/convert.rs` and need no interpreter, with tests that start
+  with `request_` and `error_`.
+
+
+  Python side, the package `python/betterlite/_response_lifecycle/` with files under 300 lines and an explicit `__all__`. The
+  architect writes one star line in `python/betterlite/__init__.py`, and `python/betterlite/responses/main.py` (made by B7841)
+  gains the ten names through a re-export line in this task. Use `to_call_payload`, `call_native`, `acall_native`,
+  `read_settings` and `proxy_headers` from B6040's `_endpoints` package and do not write a second copy.
+
+
+  Signatures follow litellm/responses/main.py. The get, delete and cancel functions are (L1461, L1522, L1613, L1688, L1928, L1989):
+  `(response_id, extra_headers=None, extra_query=None, extra_body=None, timeout=None, custom_llm_provider=None, **kwargs)`.
+  `list_input_items` is (L1793, L1850): `(response_id, after=None, before=None, include=None, limit=20, order="desc",
+  extra_headers=None, timeout=None, custom_llm_provider=None, **kwargs)` and takes no `extra_query` or `extra_body`.
+  `compact_responses` is (L2080, L2158): `(input, model, instructions=None, previous_response_id=None, extra_headers=None,
+  extra_query=None, extra_body=None, timeout=None, custom_llm_provider=None, **kwargs)`. A test compares `inspect.signature`
+  with LiteLLM's for each of the ten.
+
+
+  The sync functions accept `adelete_responses=True`, `aget_responses=True`, `acancel_responses=True`, `alist_input_items=True`
+  and `acompact_responses=True` in `kwargs`, pop the one that fits (the source tests it with `is True`) and return a coroutine
+  when it is set. The async functions set that flag and run the sync one. An id that LiteLLM decodes in Python
+  (`ResponsesAPIRequestUtils._decode_responses_api_response_id`) is decoded in Rust, so Python sends the raw `response_id` and
+  `custom_llm_provider` as they came. `client` and `shared_session` in `kwargs` raise B158's `UnsupportedCallArgument`, through
+  `to_call_payload`. A `litellm_logging_obj` in `kwargs` is dropped. `read_settings` supplies `api_key`, `api_base` and
+  `openai_key`, read at call time.
+
+
+  Results: `get`, `cancel` and `compact` give a `ResponsesAPIResponse` built from the JSON, with
+  `_hidden_params["custom_llm_provider"]` set from the JSON. `delete` gives a `DeleteResponseResult`. `list_input_items` gives
+  `json.loads` of the text. A provider error raises the class from B158's table in `_completion/errors.py`, with the native error
+  as `__cause__`.
+
+
+  Tests use `tests/responses_server.py` from B7841 and compare each result with LiteLLM's `model_dump()` (dict equality for
+  `list_input_items`). They check the request the server saw: method, path, query string for `after`, `before`, `include`,
+  `limit` and `order`, and the body of compact.
+scope:
+  paths:
+  - crates/betterlite-python/Cargo.toml
+  - crates/betterlite-python/src/response_lifecycle.rs
+  - crates/betterlite-python/src/response_lifecycle/**
+  - crates/betterlite-python/python/betterlite/_native_response_lifecycle.pyi
+  - crates/betterlite-python/python/betterlite/_response_lifecycle/**
+  - crates/betterlite-python/python/betterlite/responses/main.py
+  - crates/betterlite-python/tests/test_response_lifecycle.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1461-L2285
+  why: The ten public signatures, the async flags they pop and the id decoding.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1793-L1927
+  why: list_input_items and its query parameters.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L2080-L2285
+  why: The compact functions and their body fields.
+- url: https://github.com/PyO3/pyo3-async-runtimes
+  why: The future_into_py bridge.
+dod:
+- text: All ten functions keep LiteLLM's signatures.
+  proof: [lifecycle-signature]
+- text: Get, delete, cancel, list and compact send the same method, path, query and body as LiteLLM and return the same `model_dump()` or dict.
+  proof: [lifecycle-calls]
+- text: The async functions run on the event loop, and each sync function returns a coroutine when its async flag is True.
+  proof: [lifecycle-async]
+- text: A provider 401 or 404 raises the right class with the native error as cause, and `client` is refused.
+  proof: [lifecycle-error]
+- text: The native register function adds the session and the error class, and conversion has tests without an interpreter.
+  proof: [lifecycle-native]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: lifecycle-signature
+    why: A renamed or reordered parameter breaks positional callers.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_response_lifecycle.py -k signature
+  - id: lifecycle-calls
+    why: A route, query name or body field differs from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_response_lifecycle.py -k "get or delete or cancel or list or compact"
+  - id: lifecycle-async
+    why: An async call blocks the loop or a sync flag returns the wrong type.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_response_lifecycle.py -k "async or coroutine"
+  - id: lifecycle-error
+    why: A provider error shows up as a generic exception, or a client is dropped silently.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_response_lifecycle.py -k "error or client"
+  - id: lifecycle-native
+    why: The native conversion drops a field of the request or the error.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^response_lifecycle::convert::tests::(request_|error_)/)'
+  - id: python-lint
+    why: Untyped dicts and ignores creep in at the native boundary.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`client` and `shared_session` raise `UnsupportedCallArgument`."
+  why: A Python HTTP client can't drive the Rust call, and ignoring it could send a request past a caller's proxy or custom TLS.
+- what: The response id is decoded in Rust, so Python never calls `_decode_responses_api_response_id`.
+  why: The Rust owners already decode it, and a second decode would drift.
+out_of_scope:
+- The Rust get, delete, cancel, list and compact logic is B933, B1116 and B934.
+- The create functions, the retry wrappers and the test server are B7841. The result classes are B7840.
+- The error table and `UnsupportedCallArgument` are B158, and the payload, runner and settings helpers are B6040.
+pitfalls:
+- '`list_input_items` has no `extra_query` and no `extra_body`. Do not add them, or the signature test fails.'
+- 'Pop the async flag from `kwargs` before the payload is built, or it reaches Rust as a request field.'
+- '`order` defaults to "desc" and `limit` to 20, and both are always sent, as the LiteLLM source sends them.'
+- 'The result of `delete_responses` is a `DeleteResponseResult`, not a `ResponsesAPIResponse`.'
+- 'Appending the re-export line to `responses/main.py` must not remove the names B7841 put there.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,1 @@
+{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"a","thinking_blocks":[7]}],"model":"claude-sonnet-4-5","llm_provider":"anthropic","modify_params":false}

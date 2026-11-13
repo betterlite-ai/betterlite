@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-results-image-chunk
+call:
+  anthropic_results:
+    function: anthropic_image_chunk
+    openai_image_url: "data:image\\/png;base64,AAA"
+    data_urls: {}
+env: {}
+compare:
+  ignore: []

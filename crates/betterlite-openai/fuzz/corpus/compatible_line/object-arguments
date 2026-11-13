@@ -1,0 +1,1 @@
+data: {"choices":[{"delta":{"tool_calls":[{"index":1,"id":"t","function":{"name":"f","parameters":{"a":1}}}]}}]}

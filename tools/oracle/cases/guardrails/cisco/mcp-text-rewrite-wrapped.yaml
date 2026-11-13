@@ -1,0 +1,5 @@
+kind: helper
+name: mcp-text-rewrite-wrapped
+call: {b3761: {function: rewrite_wrapped_text, response: {mcp_tool_call_response: [{type: text, text: old}], hidden_params: {}}, text: new}}
+env: {}
+compare: {ignore: []}

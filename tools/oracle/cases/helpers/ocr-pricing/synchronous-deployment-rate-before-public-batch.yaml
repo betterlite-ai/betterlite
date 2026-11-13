@@ -9,6 +9,6 @@ call:
     usage: {pages_processed: 5, pages_processed_annotation: 3}
     catalog:
       key: openai/fixture-missing
-      entry: {annotation_cost_per_page_batches: 4}
+      entry: {annotation_cost_per_page_batches: 4, ocr_cost_per_page_batches: 99}
 compare: {ignore: []}
 env: {}

@@ -1,0 +1,5 @@
+kind: helper
+name: "passthrough-metadata-url"
+call: {"b4654":{"function":"metadata_url","base_url":"https://base.example.com","route_path":"/foo/mcp","server_name":"foo","server_root_path":"/litellm"}}
+env: {"SERVER_ROOT_PATH":"/litellm"}
+compare: {"ignore":[]}

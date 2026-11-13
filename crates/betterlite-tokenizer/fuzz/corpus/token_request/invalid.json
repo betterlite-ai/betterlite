@@ -1,0 +1,1 @@
+{"model":"gpt-3.5-turbo","messages":[{"role":"assistant","tool_calls":{"a":1}}],"tools":"nope","text":5}

@@ -1,0 +1,8 @@
+kind: helper
+name: watsonx-result-extract-nested-data
+call:
+  b4807:
+    operation: result_text
+    result: {last_message: {content: [{text: ""}]}, result: {data: {message: {content: [{text: nested}]}}}, results: raw}
+env: {}
+compare: {ignore: []}

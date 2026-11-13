@@ -40,7 +40,6 @@ scope:
     - crates/betterlite-config/src/saml_assertion.rs
     - crates/betterlite-config/src/saml_assertion/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/saml-assertion-*
-    - tools/oracle/cases/sso/saml-callback/**
     - tools/oracle/fixtures/multipart-oracle/saml-callback/**
     - tools/oracle/helpers/b1626.py
     - tools/oracle/helpers/b1626/**
@@ -55,12 +54,14 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2170-L2221
     why: SAML callback decorator, prerequisite order and RelayState handling.
 dod:
+  - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; B8770 mounts them through B063 and proves them over HTTP.
+    proof: [saml-assertion-tests]
   - text: Signed HTTP logins succeed while invalid signatures, wrong browser binding and repeated assertions fail before session issuance.
-    proof: [saml-assertion-tests, oracle]
+    proof: [saml-assertion-tests]
   - text: Attribute precedence, unsolicited policy and replay TTL/cache effects match the source, without a free-user-count gate.
-    proof: [saml-assertion-tests, saml-assertion-config, oracle]
+    proof: [saml-assertion-tests, saml-assertion-config]
   - text: Oversize forms, malformed base64 and hostile XML reach bounded production decoders and replay without panic.
-    proof: [saml-assertion-tests, saml-assertion-corpora, oracle]
+    proof: [saml-assertion-tests, saml-assertion-corpora]
 checks:
   optional: [mutants]
   commands:
@@ -73,17 +74,7 @@ checks:
     - id: saml-assertion-corpora
       why: Form/XML decoder and SAML policy configuration lack branch-added corpus data.
       run: test -f crates/betterlite-auth/fuzz/fuzz_targets/saml_assertion_input.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/saml_assertion_input)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/saml-assertion-*')" && cargo nextest run --locked -p betterlite-auth -p betterlite-config --no-tests=fail -E 'test(replays_the_saml_assertion_input_corpus) | test(replays_the_config_yaml_corpus)'
-oracle_cases:
-  - tools/oracle/cases/sso/saml-callback/signed-browser-login.yaml
-  - tools/oracle/cases/sso/saml-callback/unsigned-wrong-key-and-expired.yaml
-  - tools/oracle/cases/sso/saml-callback/wrong-audience-and-destination.yaml
-  - tools/oracle/cases/sso/saml-callback/subject-confirmation-request-id.yaml
-  - tools/oracle/cases/sso/saml-callback/wrong-browser-cookie.yaml
-  - tools/oracle/cases/sso/saml-callback/reused-assertion.yaml
-  - tools/oracle/cases/sso/saml-callback/unsolicited-disabled-without-redis.yaml
-  - tools/oracle/cases/sso/saml-callback/attribute-overrides-and-nameid-fallback.yaml
-  - tools/oracle/cases/sso/saml-callback/missing-and-oversize-form.yaml
-  - tools/oracle/cases/sso/saml-callback/relative-relay-state-ignored.yaml
+oracle_cases: []
 deviations:
   - what: A valid SAML login is not refused because the database contains more users than LiteLLM's free-tier allowance.
     why: The README explicitly removes license checks and user/team caps; prove this with native count-boundary tests outside equality cases.

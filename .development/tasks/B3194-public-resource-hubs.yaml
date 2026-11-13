@@ -5,14 +5,15 @@ description: >-
   `betterlite-server::public_endpoints::resource_hubs`. Each route returns an unauthenticated
   projection of a resource registry filtered by an allowlist setting.
 
-  Agent hub returns agents from the global agent registry where the agent's ID intersects
-  `litellm.public_agent_groups` (a set of allowed agent IDs, default empty, loaded through B002).
+  Agent hub returns agents from the agent registry where `ids_for_agent(agent_id)` is NOT disjoint from
+  `litellm.public_agent_groups` (a set of allowed agent IDs, default empty), so an agent is public when the two share a member.
   Each agent card gets a public URL built from the request base and the agent ID. Return empty
-  list if the allowlist is None (feature disabled). MCP hub returns MCP servers where each
-  server's `server_id` is in `litellm.public_mcp_servers` (a tuple of allowed IDs, default empty).
-  Both read their source registries from globals: `global_agent_registry.get_public_agent_list()`
-  (owned by B4777, called without auth) and `global_mcp_server_manager.get_public_mcp_servers()`
-  (owned by B2305, called without auth).
+  list if the allowlist is None (feature disabled). MCP hub returns the servers `get_public_mcp_servers` selects:
+  with the strict hub flag on, those whose `server_id` is in `litellm.public_mcp_servers`; with it off (legacy), also
+  servers that are available on the public internet without being listed. Both read their source registries
+  through the composition (the agent registry of B4776, `get_public_agent_list` and `ids_for_agent`, and the MCP registry
+  of B4731, `get_public_mcp_servers`), called without auth. The public_agent_groups and public_mcp_servers values
+  are supplied by composition (B077 passes the live settings), never read from a global here.
 
   Skill hub returns enabled Claude Code plugins from the database, extracting each
   plugin's manifest JSON into a PluginListItem. Manifest is stored as JSON text or parsed
@@ -20,7 +21,7 @@ description: >-
   homepage, domain, namespace) from the parsed manifest using .get() with defaults. Timestamps
   are stringified. Collect all items into ListPluginsResponse with count. Raise HTTP 500 on
   any exception (parse failure, database error, Prisma lookup failure, type error). Load
-  prisma_client through the _get_prisma_client callback from B000's Anthropic endpoints module.
+  prisma_client through the _get_prisma_client callback of B1140's Claude plugin and skill policy.
 
   Load `litellm_settings.public_agent_groups` (default None, type: set[str] or None) and
   `litellm_settings.public_mcp_servers` (default None, type: tuple[str, ...] or None) through B002.
@@ -61,8 +62,8 @@ dod:
   - text: Agent hub returns agents from the global registry filtered by public_agent_groups allowlist,
       with a public URL per agent, or empty list when the allowlist is None.
     proof: [resource-hub-tests, oracle]
-  - text: MCP hub returns MCP servers filtered by public_mcp_servers allowlist, with server_id
-      membership tested explicitly.
+  - text: MCP hub returns the servers B4731 selects, the public_mcp_servers allowlist members in strict mode and
+      also unlisted public-internet servers when the strict flag is off.
     proof: [resource-hub-tests, oracle]
   - text: Skill hub returns enabled plugins with manifests fully parsed and all string fields
       extracted using .get(), timestamps stringified, and HTTP 500 raised on any exception
@@ -105,11 +106,11 @@ oracle_cases:
 deviations: []
 
 out_of_scope:
-  - B4777 owns `global_agent_registry.get_public_agent_list()` and `ids_for_agent()` (litellm/proxy/agent_endpoints/agent_registry.py);
+  - B4776 owns the agent registry's `get_public_agent_list()` and `ids_for_agent()` (litellm/proxy/agent_endpoints/agent_registry.py);
     B3194 calls them to retrieve and filter agents.
-  - B136 owns `global_mcp_server_manager.get_public_mcp_servers()` (litellm/proxy/_experimental/mcp_server/mcp_server_manager.py);
+  - B4731 owns `global_mcp_server_manager.get_public_mcp_servers()` (litellm/proxy/_experimental/mcp_server/mcp_server_manager.py), including the strict-whitelist flag;
     B3194 calls it to retrieve and filter MCP servers.
-  - B000 or the Anthropic endpoints module owns `_get_prisma_client` (litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py);
+  - B1140 owns `_get_prisma_client` (litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py);
     B3194 uses it to fetch the prisma client for plugin table queries.
   - B002 owns loading config keys `litellm_settings.public_agent_groups` and `litellm_settings.public_mcp_servers`;
     B3194 reads them to filter registries.
@@ -125,14 +126,14 @@ pitfalls:
     failure, PluginListItem validation failure, type mismatch) raises HTTP 500, it is not
     handled gracefully.
   - >-
-    Agent allowlist filtering uses set.isdisjoint(): if the agent's ID set and the allowlist
-    have no common members, the agent is public. An incorrect boolean logic (e.g., all() or
-    any() instead of isdisjoint) would expose non-public agents to unauthenticated callers.
+    Agent publication requires NOT isdisjoint: the agent is public only when its ID set and the allowlist
+    share at least one member. Inverting this (publishing agents with no common member) would expose
+    every non-public agent to unauthenticated callers.
   - Timestamps extracted from plugin.created_at and plugin.updated_at are None or datetime;
     stringify them with str() to match the response model type.
   - >-
-    MCP server filtering checks server_id membership explicitly; the is_public field in the
-    response is always true for servers returned from get_public_mcp_servers, and the
+    MCP selection belongs to B4731's get_public_mcp_servers and, with the strict flag off, includes servers that are not in
+    the explicit allowlist; the is_public field in the response is always true for returned servers, and the
     is_public_explicit field records whether the server_id was in the explicit allowlist.
 
 review_level: security

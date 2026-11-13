@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-content-assistant-continuation
+call:
+  bedrock_content:
+    function: assistant_message_or_continue
+    message:
+      role: assistant
+      content:
+        - {type: text, text: " "}
+    assistant_continue_message: {role: assistant, content: [{type: text, text: Carry on.}]}
+    modify_params: false
+env: {}
+compare:
+  ignore: []

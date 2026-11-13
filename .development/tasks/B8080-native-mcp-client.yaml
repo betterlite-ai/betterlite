@@ -1,0 +1,138 @@
+id: B8080
+title: Native MCP client calls in the Python crate
+description: >-
+  The Python `MCPClient` has to reach the Rust MCP client. This task adds the native bridge for it to crates/betterlite-python:
+  a client class, a session class and an error type. It holds no MCP logic. It moves JSON text across the language boundary and
+  runs futures, the same way B5659 does for completion. Read B5659's task file first and follow its family rules: this is the
+  `mcp` family, it owns `src/mcp.rs`, `src/mcp/**` and `python/betterlite/_native_mcp.pyi`, and `src/mcp.rs` has one
+  `pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()>`. B5369 declares the `mcp` family in `lib.rs` and `_native.pyi` with a stub `register` that this task fills. This task also adds the `betterlite-mcp` dependency to the crate Cargo.toml.
+
+
+  `NativeMcpClient` is a `#[pyclass]` built from one JSON text with the keys `server_url` (default ""), `transport_type`
+  ("http" default, "sse" or "stdio"), `auth_type` (null or a `MCPAuth` value such as "bearer_token", "basic", "api_key",
+  "authorization" or "token"), `auth_value` (a string or a map of header names to values), `auth_header_name`, `timeout`
+  (null means B4740's `LITELLM_MCP_CLIENT_TIMEOUT`, 60.0), `stdio_config` (`command`, `args`, `env`), `extra_headers`,
+  `ssl_verify` (a bool or a CA file path) and `protocol_version` ("auto" default or a legacy version such as "2025-03-26").
+  It builds B4741's client settings and B4744's session runner. It is created once and shared by clones of the Python
+  `MCPClient`, so it holds no static. Its methods are all awaitables made with `pyo3_async_runtimes::tokio::future_into_py`
+  (LiteLLM's `MCPClient` is async only): `list_tools(raise_on_error)` calls B4745, `call_tool(request)` takes JSON with `name`,
+  `arguments`, `allow_input_required` (a bool) and `raise_on_error`, `list_prompts(raise_on_error)`, `get_prompt(request)`,
+  `list_resources(raise_on_error)`, `list_resource_templates(raise_on_error)` and `read_resource(url)` call B4746,
+  `discovery_auth_fingerprint()` and `update_auth_value(json)` call B4741, and `instructions()` returns B4744's stripped
+  initialize instructions or None. Each gives JSON text in MCP's wire shape (`inputSchema`, `isError`, `nextCursor`).
+
+
+  `NativeMcpSession` is what Python's `run_with_session` hands to a user's operation. B4744 runs an operation inside a session
+  it opens and closes, so the session handle cannot just be returned. Use one spawned task per session: it calls B4744's
+  session runner with an operation that waits on an `mpsc` channel of commands (list one tools page, call one tool) and answers
+  each on a oneshot, and it ends when `aclose()` sends the stop command or the handle is dropped. Then B4744's close order and
+  its 5-second and 1-second bounds still apply. `NativeMcpClient.open_session()` returns the awaitable for it, and a failure to
+  initialize arrives there. The session has `list_tools_page(cursor)`, `call_tool(request)`, `load_tools(format, listing_deadline)` ("mcp" or
+  "openai", B4740's `load_mcp_tools`, with B4740's default deadline when `listing_deadline` is null) and `call_openai_tool(tool_call_json)` (B4740's `call_openai_tool`) and `aclose()`.
+  Calling a method after `aclose()` raises `NativeMcpError` with type "RuntimeError".
+
+
+  Four pure functions call B4740 with JSON text: `tool_to_openai(tool)`, `tool_to_responses(tool)`, `tool_to_anthropic(tool)` and
+  `normalize_input_schema(schema)`, which are LiteLLM's `transform_mcp_tool_to_openai_tool`,
+  `transform_mcp_tool_to_openai_responses_api_tool`, `transform_mcp_tool_to_anthropic_tool` and `_normalize_mcp_input_schema`,
+  and `tool_call_to_mcp(tool_call)`, which is `transform_openai_tool_call_request_to_mcp_tool_call_request`. They need no client.
+
+
+  Two things cannot be JSON. The sampling, elicitation and logging callbacks and the `aws_auth` and `resolved_auth` objects of
+  LiteLLM's constructor are Python objects that Rust cannot call, so Python refuses them in B8082 and this bridge never sees
+  them. AWS signing is chosen by `auth_type` "aws_sigv4" plus keys in `auth_value`, as B4742 reads them; if B4742 wants more
+  than a string map, report the gap as a blocker.
+
+
+  `NativeMcpError` comes from `pyo3::create_exception!` with `Exception` as base. Its one argument is JSON text with `type`
+  ("McpError", "TimeoutError", "RuntimeError", "ValueError" or "CancelledError"), `message`, `code` and `data`. `McpError`
+  keeps the JSON-RPC code unchanged (B4744: errors relayed with their original code, -32022 for a rejected protocol version),
+  and SDK read timeouts become "TimeoutError" as B4743's `as_mcp_read_timeout` decides. Conversions between JSON text and SDK
+  types sit in `src/mcp/convert.rs` and need no interpreter, so `cargo nextest` covers them. Test names there start with
+  `request_`, `result_` and `error_`. `python/betterlite/_native_mcp.pyi` types everything above.
+
+
+  The Python tests run the wheel against `tests/mcp_server.py`, a small server written with `http.server` that answers
+  streamable-HTTP JSON-RPC POSTs (`initialize`, `notifications/initialized`, `tools/list` with two pages, `tools/call`,
+  `prompts/list`, `prompts/get`, `resources/list`, `resources/templates/list`, `resources/read`) with
+  `Content-Type: application/json`, can answer 401 or a JSON-RPC error on demand, and records every request header. It uses no
+  `mcp` import, so the Rust side is tested without LiteLLM's SDK. B8082 reuses it.
+scope:
+  paths:
+  - crates/betterlite-python/src/mcp.rs
+  - crates/betterlite-python/src/mcp/**
+  - crates/betterlite-python/python/betterlite/_native_mcp.pyi
+  - crates/betterlite-python/Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-python/tests/mcp_server.py
+  - crates/betterlite-python/tests/test_native_mcp.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L376-L430
+  why: The constructor arguments the settings JSON must carry.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L677-L718
+  why: run_with_session is what the session handle stands in for.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L817-L1225
+  why: The list, call, prompt and resource methods the client class forwards.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L27-L66
+  why: The transport, auth and protocol value names for the settings JSON.
+dod:
+- text: A settings or request JSON turns into the Rust client settings and arguments, and malformed text gives an error with no panic.
+  proof: [mcp-native-request]
+- text: Every Rust MCP error and result turns into `NativeMcpError` JSON or result JSON with the wire field names.
+  proof: [mcp-native-result]
+- text: "`NativeMcpClient` lists tools across pages, calls a tool, lists and gets prompts, lists and reads resources and returns the fingerprint against a local server, with the credential header sent."
+  proof: [mcp-native-calls]
+- text: The five pure functions give B4740's tool shapes, a normalized schema and an MCP call request from an OpenAI tool call.
+  proof: [mcp-native-transforms]
+- text: A session opened with `open_session()` lists, calls and closes, answers in order, and a call after `aclose()` raises.
+  proof: [mcp-native-session]
+- text: A 401, a JSON-RPC error and a slow server reach Python as `NativeMcpError` with the right type, code and data.
+  proof: [mcp-native-errors]
+- text: The stubs pass strict basedpyright, and the Python tests pass ruff.
+  proof: [python-lint]
+- text: >-
+    This task adds the `betterlite-mcp` dependency and any other crate it uses to Cargo.toml, and no unused dependency.
+  proof: [mcp-native-request]
+checks:
+  optional: []
+  commands:
+  - id: mcp-native-request
+    why: Settings or arguments change on the way in.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^mcp::convert::tests::request_/)'
+  - id: mcp-native-result
+    why: A field name or an error code gets lost on the way out.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^mcp::convert::tests::(result|error)_/)'
+  - id: mcp-native-calls
+    why: A client method is not wired to its Rust operation.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_mcp.py -k client_calls
+  - id: mcp-native-transforms
+    why: A tool reaches a model with a schema it rejects.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_mcp.py -k transforms
+  - id: mcp-native-session
+    why: The session handle leaks its connection or answers out of order.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_mcp.py -k session
+  - id: mcp-native-errors
+    why: A failing server looks like a success or a generic error.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_mcp.py -k errors
+  - id: python-lint
+    why: Stubs that drift from the native names break every typed caller.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Sampling, elicitation and logging callbacks, and `aws_auth` and `resolved_auth` objects, are not accepted by the native client.
+  why: Rust cannot call a Python function in the middle of a session, and an `httpx2.Auth` object cannot drive the Rust transport. AWS signing is picked by `auth_type`.
+out_of_scope:
+- The Python `MCPClient`, `load_mcp_tools` and `call_openai_tool` functions and the result classes are B8082.
+- The MCP client logic itself is B4740, B4741, B4742, B4743, B4744, B4745 and B4746. This task only calls their public items. If one is missing, stop and report a blocker.
+- A2A natives are B8081.
+pitfalls:
+- The session task must not hold the command receiver across a `tool call` await in a way that stops `aclose`, so select on the stop command and the work together.
+- A dropped `NativeMcpSession` has to end its task, or the stdio subprocess outlives its owner, which the repository process rule forbids.
+- '`raise_on_error` false means B4745 already swallowed the error and returned an empty list or `error_tool_result`, so do not turn that result into `NativeMcpError` again.'
+- '`auth_value` may be a string or a map, and `basic` strings pass through B4741 unchanged, so do not encode them here.'
+- The extra-header shadowing rule of B4741 depends on `auth_header_name`, so pass it even when `auth_value` is null.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

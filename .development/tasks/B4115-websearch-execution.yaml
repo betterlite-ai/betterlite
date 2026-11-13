@@ -43,6 +43,7 @@ description: >-
     web_search_tool_result blocks. Calls B4113's WebSearchTransformation.format_search_response
     to format results as text. Raises exceptions on provider/authorization/network failures;
     _short_circuit_search_outcome catches and converts to SearchFailed.
+    The Rust signature is `execute_search(&self, query, kwargs, rich) -> Result<(String, Option<SearchResponse>), SearchFailure>`.
 
   - `_create_empty_search_result()` returns ("No search query provided", None) for tool calls
     without queries.
@@ -156,7 +157,7 @@ checks:
   commands:
     - id: websearch-execution-tests
       why: the task-specific behavior test is absent or fails
-      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^websearch_execution(::|$)/) - test(/replays_the_.*_corpus/)'
+      run: cargo nextest run --locked -p betterlite-websearch --no-tests=fail -E 'test(/^execution::(.*::)?websearch_execution(::|$)/) - test(/replays_the_.*_corpus/)'
 
 oracle_cases:
   - tools/oracle/cases/chat/websearch-short-circuit-native.yaml
@@ -209,4 +210,4 @@ pitfalls:
 review_level: standard
 budget:
   max_changed_lines: 1500
-  max_new_expects: 0
+  max_new_expects: 1

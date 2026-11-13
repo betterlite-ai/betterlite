@@ -2,10 +2,9 @@ id: B109
 milestone: M6 guardrails
 title: Tool permission and MCP guardrails
 status: todo
-depends_on: [B3810, B3811, B3812, B3813, B3814, B3815, B3816, B3817, B3818, B189]
-file: null
-covers:
-  - "litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/{__init__,mcp_jwt_signer}.py"
+depends_on: [B8521, B8666, B8613, B8399, B3683, B3680, B004, B6370, B081, B8626, B8624, B830, B062, B055, B8464, B9850, B6765]
+file: tasks/B109-tool-mcp-guardrail-http.yaml
+covers: []
 parent: null
 split_from: null
 resolution: null

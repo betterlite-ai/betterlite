@@ -1,0 +1,5 @@
+task: B179
+deviations:
+  - what: Message continuation rejects input or output lists above 1024 messages with named InputTooLong or OutputTooLong errors.
+    why: The task requires bounded lists and named failures; the cap bounds allocation and work before provider dispatch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L365-L487

@@ -1,0 +1,1 @@
+{"kind":"helper","name":"batch-calls-ordered-messages","call":{"batch_calls":{"mode":"messages","results":[{"value":"first"},{"value":"second"}]}},"env":{},"compare":{"ignore":[]}}

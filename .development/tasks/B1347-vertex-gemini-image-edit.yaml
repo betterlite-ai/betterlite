@@ -21,7 +21,6 @@ description: >-
   Budget 210 implementation, 170 tests and 110 oracle lines, capped at 550.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,vertex_gemini_edit}.rs
     - crates/betterlite-vertex/src/vertex_gemini_edit.rs
     - crates/betterlite-vertex/src/vertex_gemini_edit/**
     - tools/oracle/src/helpers/vertex/gemini_edit.rs

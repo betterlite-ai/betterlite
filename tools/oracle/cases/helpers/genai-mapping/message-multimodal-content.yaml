@@ -1,0 +1,41 @@
+{
+  "kind": "helper",
+  "name": "genai-mapping-message-multimodal-content",
+  "call": {
+    "b3845": {
+      "function": "messages",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            { "type": "text", "text": "describe" },
+            {
+              "type": "image_url",
+              "image_url": { "url": "https://example.com/a.png" }
+            }
+          ]
+        },
+        {
+          "role": "assistant",
+          "content": "plain text",
+          "tool_calls": [
+            {
+              "id": "t1",
+              "type": "function",
+              "function": { "name": "f", "arguments": "{}" }
+            }
+          ],
+          "tool_call_id": "t1"
+        },
+        {
+          "id": "m-3",
+          "content": "no role"
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

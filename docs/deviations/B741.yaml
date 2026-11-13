@@ -1,0 +1,5 @@
+task: B741
+deviations:
+  - what: general_settings.public_routes works without premium_user.
+    why: betterlite has no paid tier; configured exact and terminal-star entries are enabled deliberately.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L621-L665

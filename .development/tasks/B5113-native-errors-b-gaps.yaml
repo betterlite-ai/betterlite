@@ -1,0 +1,208 @@
+id: B5113
+title: Aleph Alpha re-raise answer and native error phrase order tests
+description: >-
+  B242 ported LiteLLM's nlp_cloud, together_ai, aleph_alpha, ollama and vllm error mappers into
+  crates/betterlite-error/src/native_errors_b/. An Opus review after merge found one behavior gap and
+  three groups of tests that can't fail. This task fixes them in that module, in the native_errors_b
+  oracle adapter and in the native-errors-b case folder. native.rs and dispatch.rs don't change.
+
+
+  Gap one. LiteLLM's _map_aleph_alpha_exception re-raises the original exception in two places: when
+  it has a status_code other than 401, 400, 429 or 500 (L1859), and when it has no status_code at all
+  (L1860) (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1830-L1860).
+  exception_type sets exception_mapping_worked to False before the provider chain and never sets it on
+  this path, so its outer handler turns the re-raised exception into APIConnectionError with
+  llm_provider "" and model ""
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2711-L2737).
+  APIConnectionError always has status 500, and its type and param are None because the openai base
+  class gets no body
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L853-L872).
+  map_aleph_alpha_exception in aleph_alpha.rs returns None on both paths today. dispatch then hands
+  the input to the catchall, so an Aleph Alpha 404 answers NotFound 404, and a missing status answers
+  ApiConnection, both with the request's model and "aleph_alpha" as provider. LiteLLM answers status
+  500 with an empty model and provider in both cases. The fix makes both paths return
+  Some(ErrorClass::ApiConnection) with model Some(String::new()) and provider Some(String::new()).
+  That is the identity unmappable_identity in dispatch.rs already builds for the same outer handler.
+  The review suggested ErrorClass::Unclassified, as B241's Cohere port uses for its own re-raise. That
+  would still differ from LiteLLM: Unclassified's metadata writes type and param as the string "None",
+  while APIConnectionError has null. This copies a fallback LiteLLM chose on purpose, so it needs no
+  deviation. The message stays betterlite's own. The comment above map_aleph_alpha_exception that
+  says both paths fall through as None goes.
+
+
+  Gap two. The oracle adapter hides gap one. _run_aleph_alpha in tools/oracle/helpers/native_errors_b.py
+  catches the re-raised _ProviderCauseError and returns None, the same answer a mapper gives when
+  nothing matched. So branch-1830.yaml (status_code 999) compares None with None and passes on main.
+  The adapter returns the outer handler's answer there instead, _result_for_family("api_connection",
+  "", "", 500), and its link comment cites L2711-L2737 next to L1859-L1860. branch-1830.yaml then gets
+  the /value/result/message ignore that every classified case in the folder has. A new case,
+  aleph-alpha-missing-status.yaml, sends status_code null to the native_errors_b operation to cover the
+  L1860 path. Two more cases call the full dispatch through the native_error operation, so the status
+  500 and the empty model and provider a client sees are checked against LiteLLM's real exception_type
+  and not only against the adapter: aleph-alpha-dispatch-unmatched-status.yaml (kind raw,
+  custom_llm_provider aleph_alpha, status_code 404) and aleph-alpha-dispatch-missing-status.yaml (the
+  same with no status_code). Both fail on main.
+
+
+  Gap three. ollama.rs runs LiteLLM's four text checks in its elif order: "no such file or directory"
+  gives BadRequest, "Failed to establish a new connection" gives ServiceUnavailable, "Invalid response
+  object from API" gives BadRequest, and "Read timed out" gives Timeout
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1877-L1903).
+  Every rstest row in ollama/tests.rs and every ollama case holds one phrase, so swapping any two of
+  the four if blocks still passes. New rows and cases hold two phrases and expect the class of the
+  phrase LiteLLM checks first. "no such file or directory; Failed to establish a new connection" is
+  bad_request. "Failed to establish a new connection; Invalid response object from API" is
+  service_unavailable. "Invalid response object from API, Read timed out" is bad_request. "Failed to
+  establish a new connection: Read timed out" is service_unavailable. The three neighbor pairs pin the
+  whole order, and the fourth is the pair the review named.
+
+
+  Gap four. The same holds for DETAIL_CANDIDATES in nlp_cloud.rs, where LiteLLM checks "Input text
+  length should not exceed" at L1636 before "value is not a valid" at L1643
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1635-L1657).
+  It also holds for TEXT_CANDIDATES in aleph_alpha.rs, where "This is longer than the model's maximum
+  context length" at L1816 comes before "InvalidToken" at L1823
+  (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1816-L1829).
+  Each row holds one phrase, so swapping the two entries passes every test. One row and one case for
+  each mapper send both phrases and expect context_window_exceeded: "detail: Input text length should
+  not exceed 512; value is not a valid integer" for nlp_cloud, and "This is longer than the model's
+  maximum context length; InvalidToken" for aleph_alpha.
+
+
+  Tests on main that can't fail. In aleph_alpha/tests.rs the rstest rows
+  status_present_but_unmatched_falls_through and no_status_code_falls_through expect None, and
+  unmatched_status_and_missing_status_never_panic asserts is_none for status 999 and for no status.
+  All three pin the gap one bug. The two rows become status_present_but_unmatched_reraises and
+  no_status_code_reraises, both expecting "api_connection", and the family() helper gets an
+  ErrorClass::ApiConnection arm. The test becomes unmatched_and_missing_status_answer_the_outer_api_connection
+  and asserts ApiConnection with model Some(""), provider Some("") and metadata status 500 for status
+  404, status 999 and no status. branch-1830.yaml compares None with None until gap two lands. The
+  single-phrase rows in ollama/tests.rs, nlp_cloud/tests.rs and aleph_alpha/tests.rs stay. The new
+  rows from gaps three and four pass on main because today's order is right, so their checks first
+  require the new row names and case files, and fail on main that way.
+scope:
+  paths:
+    - crates/betterlite-error/src/native_errors_b/aleph_alpha.rs
+    - crates/betterlite-error/src/native_errors_b/aleph_alpha/tests.rs
+    - crates/betterlite-error/src/native_errors_b/nlp_cloud/tests.rs
+    - crates/betterlite-error/src/native_errors_b/ollama/tests.rs
+    - tools/oracle/helpers/native_errors_b.py
+    - tools/oracle/cases/helpers/native-errors-b/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1806-L1860
+    why: _map_aleph_alpha_exception, with its two text checks ahead of the status chain and the two re-raises at L1859 and L1860.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2358-L2370
+    why: exception_type returns early for an exception LiteLLM already mapped and sets exception_mapping_worked to False before any provider mapper runs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2610-L2619
+    why: The aleph_alpha arm of the provider chain calls the mapper with no exception_mapping_worked = True in front of it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2711-L2737
+    why: The outer handler that turns an unmapped re-raise into APIConnectionError with llm_provider "" and model "".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L853-L872
+    why: APIConnectionError fixes status_code at 500 and passes no body to openai.APIConnectionError, so type, param and code are None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1625-L1657
+    why: _map_nlp_cloud_exception checks "Input text length should not exceed" before "value is not a valid" inside its "detail" branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1863-L1903
+    why: _map_ollama_exception and the elif order of its four text checks.
+dod:
+  - text: >-
+      map_aleph_alpha_exception returns ErrorClass::ApiConnection with model Some("") and provider
+      Some("") for a status other than 401, 400, 429 and 500 and for a missing status, so its metadata
+      answers status 500 with type and param null. The rows status_present_but_unmatched_reraises and
+      no_status_code_reraises and the test unmatched_and_missing_status_answer_the_outer_api_connection
+      replace the three tests that expected None, and the native and dispatch tests still pass.
+    proof:
+      - aleph-alpha-reraise
+      - oracle
+  - text: >-
+      _run_aleph_alpha in the native_errors_b adapter answers the re-raise with the api_connection shape
+      and an empty model and provider instead of None. branch-1830.yaml ignores /value/result/message,
+      and aleph-alpha-missing-status.yaml, aleph-alpha-dispatch-unmatched-status.yaml and
+      aleph-alpha-dispatch-missing-status.yaml match LiteLLM.
+    proof:
+      - aleph-alpha-reraise-cases
+      - helper-python
+      - oracle
+  - text: >-
+      ollama/tests.rs has the rows no_such_file_before_connection_refused,
+      connection_refused_before_invalid_response, invalid_response_before_read_timed_out and
+      connection_refused_before_read_timed_out, each with two phrases, and the four matching ollama
+      cases match LiteLLM. Swapping any two of the four checks in ollama.rs fails a row.
+    proof:
+      - ollama-phrase-order
+      - oracle
+  - text: >-
+      nlp_cloud/tests.rs has the row context_window_before_invalid_value and aleph_alpha/tests.rs has
+      the row context_window_before_invalid_token, each sending both phrases and expecting
+      context_window_exceeded, and nlp-cloud-context-before-invalid-value.yaml and
+      aleph-alpha-context-before-token.yaml match LiteLLM. Swapping the two DETAIL_CANDIDATES or the two
+      TEXT_CANDIDATES entries fails a row.
+    proof:
+      - detail-phrase-order
+      - oracle
+checks:
+  optional: [mutants]
+  commands:
+    - id: aleph-alpha-reraise
+      why: an unmatched or missing Aleph Alpha status still returns None, or a test that pinned None is still there
+      run: >-
+        list=$(cargo nextest list --locked -p betterlite-error -E 'test(/^native_errors_b::aleph_alpha::tests::/)' --message-format oneline) &&
+        for name in 'native_errors_b_behavior_tests_behavior::case_[0-9]+_status_present_but_unmatched_reraises' 'native_errors_b_behavior_tests_behavior::case_[0-9]+_no_status_code_reraises' unmatched_and_missing_status_answer_the_outer_api_connection; do grep -qE " native_errors_b::aleph_alpha::tests::${name}$" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+        ! grep -qE 'falls_through|never_panic' crates/betterlite-error/src/native_errors_b/aleph_alpha/tests.rs &&
+        cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^native_errors_b::aleph_alpha::/) | test(/^native::/) | test(/^dispatch::/)'
+    - id: aleph-alpha-reraise-cases
+      why: the adapter is unchanged, branch-1830 has no message ignore, or a re-raise case is missing
+      run: >-
+        for case in branch-1830 aleph-alpha-missing-status aleph-alpha-dispatch-unmatched-status aleph-alpha-dispatch-missing-status; do test -f "tools/oracle/cases/helpers/native-errors-b/$case.yaml" || { echo "missing case $case"; exit 1; }; done &&
+        grep -q 'pointer: /value/result/message' tools/oracle/cases/helpers/native-errors-b/branch-1830.yaml &&
+        grep -q 'native_error:' tools/oracle/cases/helpers/native-errors-b/aleph-alpha-dispatch-unmatched-status.yaml &&
+        grep -q 'native_error:' tools/oracle/cases/helpers/native-errors-b/aleph-alpha-dispatch-missing-status.yaml &&
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/native_errors_b.py)"
+    - id: helper-python
+      why: the changed adapter fails ruff or basedpyright
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: ollama-phrase-order
+      why: a reorder of the four Ollama text checks still passes every row, or a two-phrase case is missing
+      run: >-
+        for case in ollama-no-such-file-before-connection ollama-connection-before-invalid-response ollama-invalid-response-before-read-timeout ollama-connection-before-read-timeout; do test -f "tools/oracle/cases/helpers/native-errors-b/$case.yaml" || { echo "missing case $case"; exit 1; }; done &&
+        list=$(cargo nextest list --locked -p betterlite-error -E 'test(/^native_errors_b::ollama::tests::/)' --message-format oneline) &&
+        for row in no_such_file_before_connection_refused connection_refused_before_invalid_response invalid_response_before_read_timed_out connection_refused_before_read_timed_out; do grep -qE " native_errors_b::ollama::tests::native_errors_b_behavior_tests_behavior::case_[0-9]+_${row}$" <<< "$list" || { echo "missing row $row"; exit 1; }; done &&
+        cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^native_errors_b::ollama::/)'
+    - id: detail-phrase-order
+      why: swapping the nlp_cloud DETAIL_CANDIDATES or the aleph_alpha TEXT_CANDIDATES entries still passes every row, or a two-phrase case is missing
+      run: >-
+        for case in nlp-cloud-context-before-invalid-value aleph-alpha-context-before-token; do test -f "tools/oracle/cases/helpers/native-errors-b/$case.yaml" || { echo "missing case $case"; exit 1; }; done &&
+        list=$(cargo nextest list --locked -p betterlite-error -E 'test(/^native_errors_b::(nlp_cloud|aleph_alpha)::tests::/)' --message-format oneline) &&
+        for name in 'nlp_cloud::tests::native_errors_b_behavior_tests_behavior::case_[0-9]+_context_window_before_invalid_value' 'aleph_alpha::tests::native_errors_b_behavior_tests_behavior::case_[0-9]+_context_window_before_invalid_token'; do grep -qE " native_errors_b::${name}$" <<< "$list" || { echo "missing row $name"; exit 1; }; done &&
+        cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/^native_errors_b::(nlp_cloud|aleph_alpha)::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/native-errors-b/branch-1830.yaml
+  - tools/oracle/cases/helpers/native-errors-b/aleph-alpha-missing-status.yaml
+  - tools/oracle/cases/helpers/native-errors-b/aleph-alpha-dispatch-unmatched-status.yaml
+  - tools/oracle/cases/helpers/native-errors-b/aleph-alpha-dispatch-missing-status.yaml
+  - tools/oracle/cases/helpers/native-errors-b/aleph-alpha-context-before-token.yaml
+  - tools/oracle/cases/helpers/native-errors-b/nlp-cloud-context-before-invalid-value.yaml
+  - tools/oracle/cases/helpers/native-errors-b/ollama-no-such-file-before-connection.yaml
+  - tools/oracle/cases/helpers/native-errors-b/ollama-connection-before-invalid-response.yaml
+  - tools/oracle/cases/helpers/native-errors-b/ollama-invalid-response-before-read-timeout.yaml
+  - tools/oracle/cases/helpers/native-errors-b/ollama-connection-before-read-timeout.yaml
+deviations: []
+out_of_scope:
+  - Padded one-line functions in these files. They belong to B5094, and B5094 clears the no-one-line-functions and no-padded-one-line-functions legacy lists. This task does not touch .ast-grep/rules/.
+  - The fixed status per error class. B5102 owns it and has merged.
+  - native.rs and dispatch.rs, both B186's. Neither changes, since dispatch_native returns the mapper's class before the catchall runs once the mapper answers Some.
+  - The Cohere re-raise in crates/betterlite-error/src/native_errors_a/cohere.rs. It returns Unclassified with model and provider None, so its type and param read "None" and its model and provider read null, where LiteLLM's APIConnectionError has null and "". That mapper is B241's and stays with B241's own audit fix.
+pitfalls:
+  - The re-raise answer carries an empty model and provider, Some(String::new()), not the request's model and "aleph_alpha", because LiteLLM's outer handler builds APIConnectionError(llm_provider="", model="").
+  - ErrorClass::Unclassified is no stand-in here, since its metadata writes type and param as the string "None" where APIConnectionError has null.
+  - map_aleph_alpha_exception keeps its Option<ErrorClass> return type even though every path now returns Some, because the aleph_alpha entry in native.rs's table expects an Option and native.rs is out of scope.
+  - The text checks still run before the status chain, so "InvalidToken supplied" with status 500 stays bad_request and error_str_predicate_wins_over_a_competing_status_code keeps passing.
+  - aleph-alpha-context-before-token.yaml sends message "boom" like branch-1816.yaml, since LiteLLM's text branches read original_exception.message unguarded and _ProviderCauseError leaves message unset when a case sends null.
+  - The two aleph_alpha dispatch cases go through native_error, whose result has no message field, so their compare.ignore stays empty; the native_errors_b cases keep the /value/result/message ignore.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

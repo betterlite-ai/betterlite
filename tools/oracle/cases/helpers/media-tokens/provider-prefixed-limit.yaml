@@ -1,0 +1,12 @@
+kind: helper
+name: media-tokens-provider-prefixed-limit
+call:
+  media_tokens:
+    calls:
+      - function: modified_max_tokens
+        model: openai/gpt-3.5-turbo
+        base_model: openai/gpt-3.5-turbo
+        messages: []
+        user_max_tokens: 5000
+env: {}
+compare: {ignore: []}

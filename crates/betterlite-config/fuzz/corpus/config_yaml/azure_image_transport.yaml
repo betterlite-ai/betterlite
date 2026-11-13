@@ -1,0 +1,6 @@
+environment_variables:
+  AZURE_OPERATION_POLLING_TIMEOUT: '130'
+model_list:
+  - model_name: azure-image
+    litellm_params:
+      model: azure/dall-e-3

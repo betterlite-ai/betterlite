@@ -1,0 +1,5 @@
+kind: helper
+name: custom-base-bearer-opt-in
+call: {anthropic_credentials: {function: api_key_header, api_key: sk-custom-key, api_base: "https://custom.example/v1", use_bearer_for_custom_base: true}}
+env: {}
+compare: {ignore: []}

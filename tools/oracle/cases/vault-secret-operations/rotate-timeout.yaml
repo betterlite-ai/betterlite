@@ -1,0 +1,20 @@
+kind: helper
+name: vault-secret-operations-rotate-timeout
+# betterlite returns {"status": "error", "message": "Timeout error occurred"} here; LiteLLM words
+# its inner handler differently, so only the status compares and messages stay out of the contract.
+env: {}
+compare: {ignore: []}
+call:
+  b4417:
+    env:
+      HCP_VAULT_TOKEN: token
+    routes:
+      - route: "GET http://127.0.0.1:8200/v1/secret/data/OLD_KEY"
+        replies:
+          - {timeout: true}
+    steps:
+      - op: rotate
+        current: OLD_KEY
+        new: NEW_KEY
+        value: new-secret
+        timeout: 5

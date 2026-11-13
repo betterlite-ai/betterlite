@@ -1,0 +1,15 @@
+id: B9773
+milestone: M10 admin ui
+title: Budget and tag page HTTP acceptance
+status: todo
+depends_on: [B1703, B829, B1603, B1604, B850, B1630, B860, B5076, B9735]
+file: tasks/B9773-dashboard-budget-tag-http.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/{budgets,tag-management}/**"
+  - "ui/litellm-dashboard/src/components/tag_management/**"
+parent: B150
+split_from: B150
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,18 @@
+id: B9693
+milestone: M10 admin ui
+title: Model hub, public hub, make-public and skill toggle page requests
+status: todo
+depends_on: [B860, B5076, B060, B8595, B8675, B4784, B8647, B4720, B8625, B993, B992, B077, B3193, B3194, B839, B8676, B4786, B4721, B8627]
+file: tasks/B9693-dashboard-model-hub-requests.yaml
+covers:
+  - "ui/litellm-dashboard/src/app/{model_hub,model_hub_table}/**"
+  - "ui/litellm-dashboard/src/app/(dashboard)/model-hub-table/**"
+  - "ui/litellm-dashboard/src/components/{AIHub,publicModelHub,claude_code_plugins}/**"
+  - "ui/litellm-dashboard/src/components/{public_model_hub,PublicModelHubTableColumns}.*"
+  - "ui/litellm-dashboard/src/components/public_model_hub.test.*"
+parent: B146
+split_from: B146
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

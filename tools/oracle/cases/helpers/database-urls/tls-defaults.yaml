@@ -1,0 +1,50 @@
+kind: helper
+name: database-urls-tls-defaults
+call:
+  database_urls:
+    function: batch
+    calls:
+      - function: tls_params
+        settings:
+          database_host: db.example
+          database_user: user
+          database_name: name
+      - function: tls_params
+        settings:
+          database_sslrootcert: /certs/root.pem
+      - function: tls_params
+        settings:
+          database_sslmode: require
+          database_sslrootcert: root.pem
+      - function: tls_params
+        settings:
+          database_sslmode: ""
+          database_sslrootcert: root.pem
+      - function: tls_params
+        settings:
+          database_sslmode: ""
+          database_sslrootcert: ""
+      - function: build_writer_url
+        settings:
+          database_host: db.example
+          database_user: user
+          database_name: name
+          database_sslrootcert: /certs/root.pem
+      - function: build_writer_url
+        settings:
+          database_host: db.example
+          database_user: user
+          database_name: name
+          database_schema: "tenant&sslmode="
+          database_sslmode: require
+          database_sslrootcert: /certs/root.pem
+      - function: build_writer_url
+        settings:
+          database_host: db.example
+          database_user: user
+          database_name: name
+          database_schema: "tenant&sslmode=require&sslrootcert=pinned.pem"
+          database_sslmode: require
+          database_sslrootcert: /certs/root.pem
+env: {}
+compare: {ignore: []}

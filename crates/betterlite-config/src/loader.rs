@@ -1,36 +1,37 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::num::{ParseFloatError, ParseIntError};
-
+use betterlite_models::call_helpers::drop_params::drop_params_env_flag;
 use secrecy::SecretString;
 use serde::de::DeserializeOwned;
+use std::collections::{BTreeMap, BTreeSet};
+use std::num::{ParseFloatError, ParseIntError};
+use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::providers::bedrock::request_policy::metadata_fields;
-use crate::raw::{
-    RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
-};
-use crate::resolve::{
-    parse_float, parse_integer, resolve_number as number, resolve_secret, resolve_string,
-};
+use crate::raw::{RawConfig, RawGeneral, RawLiteLlm, RawNumber, RawRouter};
+use crate::resolve::{parse_float, parse_integer, resolve_number as number, resolve_secret};
 use crate::secret_codec::general_settings;
 use crate::sections::{RawSections, Sections};
-use crate::types::{
-    Config, GeneralSettings, LiteLlmParams, LiteLlmSettings, ModelDeployment, ModelInfo,
-    ProxyTrust, RouterSettings,
-};
-
+use crate::types::{Config, GeneralSettings, LiteLlmSettings, ProxyTrust, RouterSettings};
+mod deployment;
+use deployment::convert_deployment;
 pub trait EnvironmentLookup {
     fn lookup(&self, name: &str) -> Option<String>;
+    fn system_home(&self) -> Option<PathBuf> {
+        None
+    }
 }
-
 impl EnvironmentLookup for BTreeMap<String, String> {
     fn lookup(&self, name: &str) -> Option<String> {
         self.get(name).cloned()
     }
 }
-
 #[derive(Debug, Error)]
 pub enum ConfigError {
+    #[error(transparent)]
+    Environment {
+        #[from]
+        source: betterlite_env::EnvError,
+    },
     #[error("invalid YAML: {source}")]
     Yaml {
         #[source]
@@ -55,14 +56,27 @@ pub enum ConfigError {
     #[error("invalid scalar at {path}")]
     InvalidScalar { path: String, value: bool },
 }
+
+impl ConfigError {
+    #[must_use]
+    pub const fn category(&self) -> &'static str {
+        match self {
+            Self::Yaml { .. } => "yaml",
+            Self::Unsupported { .. } => "unsupported_key",
+            Self::MissingEnvironment { .. } => "missing_environment",
+            Self::InvalidFloat { .. } => "invalid_float",
+            Self::InvalidInteger { .. } => "invalid_integer",
+            Self::InvalidScalar { .. } => "invalid_scalar",
+            Self::Environment { .. } => "environment",
+        }
+    }
+}
+
 pub struct ConfigLoader<L> {
     pub lookup: L,
 }
 
-impl<L> ConfigLoader<L>
-where
-    L: EnvironmentLookup,
-{
+impl<L: EnvironmentLookup> ConfigLoader<L> {
     pub fn load(&self, source: &str) -> Result<Config, ConfigError> {
         let (raw, core_ignored) = parse_view::<RawConfig>(source)?;
         let mut ignored = vec![core_ignored];
@@ -71,7 +85,16 @@ where
         if !paths.is_empty() {
             return Err(ConfigError::Unsupported { paths });
         }
-        let sections = raw_sections.convert(&self.lookup)?;
+        // LiteLLM's env fallback warns and turns the flag on, unlike the request-level flag which warns and off
+        let drop_params =
+            drop_params_env_flag(self.lookup.lookup("LITELLM_DROP_PARAMS").as_deref());
+        if drop_params.warned {
+            tracing::warn!("LITELLM_DROP_PARAMS is not a flag value, treating it as on");
+        }
+        let sections = raw_sections.convert(&DropParamsLookup {
+            lookup: &self.lookup,
+            enabled: drop_params.enabled,
+        })?;
         convert(raw, sections, &self.lookup)
     }
 }
@@ -116,11 +139,28 @@ pub(crate) fn unknown_paths(views: &[BTreeSet<String>]) -> Vec<String> {
         .map(|path| (*path).to_owned())
         .collect()
 }
+type Lookup<'lookup> = &'lookup dyn EnvironmentLookup;
 
-fn convert<L>(raw: RawConfig, sections: Sections, lookup: &L) -> Result<Config, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+// sections read the drop-params env through this lookup, so the loader resolves it once, warn-and-on included
+struct DropParamsLookup<'lookup, L> {
+    lookup: &'lookup L,
+    enabled: bool,
+}
+
+impl<L: EnvironmentLookup> EnvironmentLookup for DropParamsLookup<'_, L> {
+    fn lookup(&self, name: &str) -> Option<String> {
+        if name == "LITELLM_DROP_PARAMS" {
+            return Some(self.enabled.to_string());
+        }
+        self.lookup.lookup(name)
+    }
+
+    fn system_home(&self) -> Option<PathBuf> {
+        self.lookup.system_home()
+    }
+}
+
+fn convert(raw: RawConfig, sections: Sections, lookup: Lookup<'_>) -> Result<Config, ConfigError> {
     let mut model_list = Vec::with_capacity(raw.model_list.len());
     for (index, deployment) in raw.model_list.into_iter().enumerate() {
         model_list.push(convert_deployment(deployment, index, lookup)?);
@@ -134,80 +174,7 @@ where
         sections,
     })
 }
-
-fn convert_deployment<L>(
-    raw: RawDeployment,
-    index: usize,
-    lookup: &L,
-) -> Result<ModelDeployment, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let litellm_params = convert_params(raw.litellm_params, index, lookup)?;
-    let model_info = convert_info(raw.model_info, index, lookup)?;
-    let model_name = resolve_string(
-        raw.model_name,
-        &format!("model_list.{index}.model_name"),
-        lookup,
-    )?;
-    Ok(ModelDeployment {
-        model_name,
-        litellm_params,
-        model_info,
-    })
-}
-
-fn convert_params<L>(raw: RawParams, index: usize, lookup: &L) -> Result<LiteLlmParams, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let prefix = format!("model_list.{index}.litellm_params");
-    let optional = |value: Option<String>, path: &str| {
-        value
-            .map(|text| resolve_string(text, path, lookup))
-            .transpose()
-    };
-    let model = optional(raw.model, &format!("{prefix}.model"))?;
-    let api_base = optional(raw.api_base, &format!("{prefix}.api_base"))?;
-    let api_key = resolve_secret(raw.api_key, &format!("{prefix}.api_key"), lookup)?;
-    let api_version = optional(raw.api_version, &format!("{prefix}.api_version"))?;
-    let float = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_float);
-    let integer = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_integer);
-    let timeout = float(raw.timeout, &format!("{prefix}.timeout"))?;
-    let stream_timeout = float(raw.stream_timeout, &format!("{prefix}.stream_timeout"))?;
-    let max_retries = integer(raw.max_retries, &format!("{prefix}.max_retries"))?;
-    let rpm = integer(raw.rpm, &format!("{prefix}.rpm"))?;
-    let tpm = integer(raw.tpm, &format!("{prefix}.tpm"))?;
-    let weight = integer(raw.weight, &format!("{prefix}.weight"))?;
-    Ok(LiteLlmParams {
-        model,
-        api_base,
-        api_key,
-        api_version,
-        timeout,
-        stream_timeout,
-        max_retries,
-        rpm,
-        tpm,
-        weight,
-    })
-}
-
-fn convert_info<L>(raw: RawInfo, index: usize, lookup: &L) -> Result<ModelInfo, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let id = raw
-        .id
-        .map(|text| resolve_string(text, &format!("model_list.{index}.model_info.id"), lookup))
-        .transpose()?;
-    Ok(ModelInfo { id })
-}
-
-fn convert_general<L>(raw: RawGeneral, lookup: &L) -> Result<GeneralSettings, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn convert_general(raw: RawGeneral, lookup: Lookup<'_>) -> Result<GeneralSettings, ConfigError> {
     let master_key = resolve_secret(raw.master_key, "general_settings.master_key", lookup)?;
     Ok(general_settings(
         raw.encryption_algorithm,
@@ -216,10 +183,7 @@ where
     ))
 }
 
-fn convert_router<L>(raw: RawRouter, lookup: &L) -> Result<RouterSettings, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn convert_router(raw: RawRouter, lookup: Lookup<'_>) -> Result<RouterSettings, ConfigError> {
     let integer = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_integer);
     let float = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_float);
     let num_retries = integer(raw.num_retries, "router_settings.num_retries")?;
@@ -236,16 +200,18 @@ where
     })
 }
 
-fn convert_litellm<L>(raw: RawLiteLlm, lookup: &L) -> Result<LiteLlmSettings, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSettings, ConfigError> {
     let retries_path = "litellm_settings.num_retries";
     let timeout_path = "litellm_settings.request_timeout";
     let num_retries = number(raw.num_retries, retries_path, lookup, parse_integer)?;
     let request_timeout = number(raw.request_timeout, timeout_path, lookup, parse_float)?;
     let (modify_params, default_max_tokens) = environment_defaults(raw.modify_params, lookup)?;
     Ok(LiteLlmSettings {
+        ssl_verify: raw.ssl_verify,
+        ssl_certificate: raw.ssl_certificate,
+        http2: raw.http2,
+        ssl_ecdh_curve: raw.ssl_ecdh_curve,
+        ssl_security_level: raw.ssl_security_level,
         num_retries,
         request_timeout,
         drop_params: raw.drop_params,
@@ -259,36 +225,30 @@ where
     })
 }
 
-fn environment_defaults<L>(configured: Option<bool>, lookup: &L) -> Result<(bool, i64), ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    // LiteLLM reads bool(os.getenv(...)), so every nonempty value, "false" included, turns it on
-    let modify_params = configured.unwrap_or_else(|| {
-        lookup
-            .lookup("LITELLM_MODIFY_PARAMS")
-            .is_some_and(|value| !value.is_empty())
-    });
-    let default_max_tokens = lookup
-        .lookup("DEFAULT_MAX_TOKENS")
-        .map_or(Ok(4096), |text| {
-            text.trim()
-                .parse::<i64>()
-                .map_err(|source| ConfigError::InvalidInteger {
-                    path: "DEFAULT_MAX_TOKENS".to_owned(),
-                    source,
-                })
-        })?;
+fn environment_defaults(
+    configured: Option<bool>,
+    lookup: Lookup<'_>,
+) -> Result<(bool, i64), ConfigError> {
+    let modify_params = match configured {
+        Some(value) => value,
+        None => betterlite_env::flag(
+            "LITELLM_MODIFY_PARAMS",
+            &lookup.lookup("LITELLM_MODIFY_PARAMS").unwrap_or_default(),
+        )?
+        .unwrap_or(false),
+    };
+    let default_max_tokens = betterlite_env::number::<i64>(
+        "DEFAULT_MAX_TOKENS",
+        &lookup.lookup("DEFAULT_MAX_TOKENS").unwrap_or_default(),
+    )?
+    .unwrap_or(4096);
     Ok((modify_params, default_max_tokens))
 }
 
-fn convert_environment<L>(
+fn convert_environment(
     values: BTreeMap<String, Option<String>>,
-    lookup: &L,
-) -> Result<BTreeMap<String, Option<SecretString>>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
+    lookup: Lookup<'_>,
+) -> Result<BTreeMap<String, Option<SecretString>>, ConfigError> {
     let resolved = values
         .into_iter()
         .map(|(key, value)| {

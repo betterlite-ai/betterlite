@@ -28,6 +28,7 @@ scope:
   paths:
     - crates/betterlite-guardrails/src/pangea.rs
     - crates/betterlite-guardrails/src/pangea/tests.rs
+    - crates/betterlite-guardrails/src/pangea/**
     - tools/oracle/helpers/b3785.py
     - tools/oracle/helpers/b3785/**
     - tools/oracle/src/helpers/guardrails/b3785.rs
@@ -60,17 +61,17 @@ dod:
   - text: When PANGEA_API_KEY is not found in the environment or config, the guardrail raises PangeaGuardrailMissingSecrets with the message "Pangea API Key not found. Set PANGEA_API_KEY environment variable or pass it in litellm_params."
     proof: [pangea-missing-api-key]
   - text: For text completions, the guardrail transforms the prompt to a user message, sends it to Pangea, and updates the prompt if result.transformed=true.
-    proof: [pangea-text-completion-transform, oracle-text-completion-input-transform]
+    proof: [pangea-text-completion-transform, oracle]
   - text: For chat messages, the guardrail sends input messages to Pangea with event_type="input" and updates them if result.transformed=true.
-    proof: [oracle-request-input-transform]
+    proof: [oracle]
   - text: For responses, the guardrail sends input messages and choices to Pangea with event_type="output" and updates response.choices if result.transformed=true.
-    proof: [oracle-response-output-transform]
+    proof: [oracle]
   - text: When Pangea returns result.blocked=true, the guardrail raises HTTPException with status 400 and error detail including "Violated Pangea guardrail policy".
-    proof: [oracle-request-blocked, oracle-response-blocked]
+    proof: [oracle]
   - text: On other backend exceptions, the guardrail raises HTTPException with status 500.
-    proof: [oracle-backend-error]
+    proof: [oracle]
   - text: The guardrail supports pre_call and post_call event hooks.
-    proof: [oracle-event-hooks]
+    proof: [oracle]
   - text: Applied-guardrail headers are added for both input and output hooks.
     proof: [pangea-unit-tests]
   - text: The configuration model has api_key, api_base, pangea_input_recipe, and pangea_output_recipe fields with the documented defaults and description.
@@ -93,27 +94,6 @@ checks:
     - id: pangea-unit-tests
       why: unit tests for payload construction or transformation handling fail
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^pangea::/)'
-    - id: oracle-text-completion-input-transform
-      why: the oracle comparison fails for a text completion input transformation
-      run: cargo gate run B3785 --only oracle
-    - id: oracle-request-input-transform
-      why: the oracle comparison fails for a request input transformation
-      run: cargo gate run B3785 --only oracle
-    - id: oracle-response-output-transform
-      why: the oracle comparison fails for a response output transformation
-      run: cargo gate run B3785 --only oracle
-    - id: oracle-request-blocked
-      why: the oracle comparison fails for a blocked request
-      run: cargo gate run B3785 --only oracle
-    - id: oracle-response-blocked
-      why: the oracle comparison fails for a blocked response
-      run: cargo gate run B3785 --only oracle
-    - id: oracle-backend-error
-      why: the oracle comparison fails for backend error handling
-      run: cargo gate run B3785 --only oracle
-    - id: oracle-event-hooks
-      why: the oracle comparison fails for any event hook type
-      run: cargo gate run B3785 --only oracle
 oracle_cases:
   - tools/oracle/cases/guardrails/pangea-text-completion-input-allowed.yaml
   - tools/oracle/cases/guardrails/pangea-text-completion-input-transformed.yaml

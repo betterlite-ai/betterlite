@@ -1,0 +1,17 @@
+kind: helper
+name: openai-workload-identity-static-key-disables-wif
+env: {}
+compare: {ignore: []}
+call:
+  openai_workload_identity:
+    resolve:
+      probes:
+        - {api_key: sk-explicit, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {api_key: "   ", env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token, OPENAI_API_KEY: sk-env}}
+        - {api_key: "   ", env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token, OPENAI_API_KEY: "   "}}
+        - {api_key: "", env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token, OPENAI_API_KEY: ""}}
+        - {env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token, OPENAI_API_KEY: sk-env}}
+        - {api_key: "\t\n", env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token, OPENAI_API_KEY: " sk-padded "}}
+        - {api_key:  sk-padded, env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}
+        - {env: {OPENAI_IDENTITY_PROVIDER_ID: idp, OPENAI_SERVICE_ACCOUNT_ID: sa, OPENAI_IDENTITY_TOKEN_FILE: /run/token}}

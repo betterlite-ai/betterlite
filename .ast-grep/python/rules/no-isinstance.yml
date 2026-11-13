@@ -1,0 +1,18 @@
+id: no-isinstance
+language: python
+severity: error
+message: a runtime type check means the value had no real type; take helper input as a TypedDict (oracle cases send the declared types), bring a LiteLLM value in with pydantic's TypeAdapter(T).validate_json(value.model_dump_json()) into a TypedDict, match a real union with class patterns, and catch an exception by its class in its own except clause
+rule:
+  any:
+    - kind: call
+      has:
+        field: function
+        kind: identifier
+        regex: ^(isinstance|issubclass)$
+    - kind: comparison_operator
+      has:
+        kind: call
+        has:
+          field: function
+          kind: identifier
+          regex: ^type$

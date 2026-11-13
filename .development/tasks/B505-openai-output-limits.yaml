@@ -250,7 +250,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::output_limits_cases::case_[0-9]+_openai_422_drop_retry$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_output_limits.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_output_limits.py tools/oracle/helpers/openai_output_limits)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
@@ -263,7 +263,7 @@ checks:
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_output_limits)"
       && grep -q 'decode_rejected_fields' crates/betterlite-openai/fuzz/fuzz_targets/openai_output_limits.rs &&
-      cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_output_limits_corpus$/)'
+      cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_output_limits_corpus(::|$)/)'
   - id: case-malformed-nested-error-failure
     why: A truthy non-object decoded message raises its attribute-access failure; after a dictionary first detail
       item a later nondictionary item also fails rather than being silently skipped. Invalid HTTP response JSON

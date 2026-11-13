@@ -1,0 +1,10 @@
+kind: helper
+name: byok-cache-evict-stored
+call:
+  b4650:
+    function: byok_cache_evict
+    user_id: user-evict-stored
+    server_id: server-evict
+    credential: stored-key
+env: {}
+compare: {ignore: []}

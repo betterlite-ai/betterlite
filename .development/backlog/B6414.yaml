@@ -1,0 +1,15 @@
+id: B6414
+milestone: M3 providers
+title: Meta Muse Voice realtime transcription
+status: todo
+depends_on: [B1004, B1123, B171]
+file: tasks/B6414-meta-muse-realtime.yaml
+covers:
+  - "litellm/llms/meta/**"
+  - "litellm/types/llms/meta.py"
+parent: B039
+split_from: B039
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -106,9 +106,9 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L375-L379
 out_of_scope:
   - Lifecycle hook entry points (apply_guardrail decorator, async_pre_call_hook, async_post_call_success_hook
-    wrapper logic); B107 orchestrates when Akto guardrails are invoked.
+    wrapper logic); B9451 owns the Akto apply_guardrail and hook entry points.
   - The check-versus-ingest lifecycle decision (whether to combine guardrails=true with ingest_data=true);
-    B107 controls that behavior.
+    B9451 controls that behavior.
   - Other guardrail providers (AIM, Cisco, etc.); each gets its own task.
 pitfalls:
   - >-

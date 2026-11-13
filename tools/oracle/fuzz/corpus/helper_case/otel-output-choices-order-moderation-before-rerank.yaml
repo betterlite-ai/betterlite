@@ -1,0 +1,9 @@
+kind: helper
+name: order-moderation-before-rerank
+call:
+  b5240:
+    function: "output_choices"
+    response: {"results": [{"flagged": false, "index": 0, "relevance_score": 0.5}]}
+env: {}
+compare:
+  ignore: []

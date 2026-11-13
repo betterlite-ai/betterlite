@@ -1,0 +1,7 @@
+kind: helper
+name: get-app-routes-basic
+call:
+  b4262: {"function":"get_app_routes","route":{"path":"/chat","methods":["POST"],"name":"chat","endpoint":"set"},"endpoint_name":"handler"}
+env: {}
+compare:
+  ignore: []

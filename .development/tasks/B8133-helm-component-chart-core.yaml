@@ -1,0 +1,93 @@
+id: B8133
+title: Component Helm chart foundation
+description: >-
+  Create the foundation of the component chart betterlite in packaging/helm/betterlite, the port of LiteLLM's helm/litellm chart that runs the gateway, the backend and the UI as three separate Deployments: Chart.yaml (name betterlite, description naming the three components, type application, version 0.1.0, appVersion "0.1.0", no dependencies), .helmignore, values.yaml, templates/_helpers.tpl, templates/serviceaccount.yaml, templates/gateway/configmap.yaml, templates/NOTES.txt and tests/values/required.yaml. B8134 adds the workloads and B8135 the ingress, scaling and monitoring templates; they only read the values and helpers written here, so values.yaml holds every key the whole chart reads, with LiteLLM's defaults: nameOverride, fullnameOverride, imagePullSecrets, ingress (enabled false, controller alb, extraPaths), serviceAccounts.gateway|backend|ui (create false; automount true, true, false), migrationJob (enabled true, hooks.helm enabled true weight "0", hooks.argocd enabled false, backoffLimit 4, ttlSecondsAfterFinished 120, activeDeadlineSeconds 1800, serviceAccountName, automountServiceAccountToken false, image), masterKey (secretName litellm-master-key-secret, secretKey master-key), database.writer and database.reader (host, port 5432, dbname, schema, useIAMAuth, useAzureEntraAuth, passwordSecret name litellm-writer-secret or litellm-reader-secret with usernameKey username and passwordKey password, sslMode, sslRootCert), database.connectionPool (enabled false, maxDbConnections 20, maxClientConn 1000), redis (cluster false, host, port 6379, passwordSecret), and the gateway, backend and ui blocks (ports 4000, 4001 and 3000, probes, resources, hpa, pdb, scheduling lists, image repositories ghcr.io/betterlite-ai/betterlite-gateway, betterlite-backend and betterlite-ui, tag empty meaning Chart.AppVersion). The gateway block also holds config (create true, proxy_config), numWorkers 1, metricsServer, serviceMonitor and collector. Use the same keys and nesting as LiteLLM and put no billingMetrics block in it.
+  helpers.tpl names (rename litellm.* to betterlite.*): name, fullname, gateway|backend|ui.fullname (suffix -gateway, -backend, -ui, 63 characters at most), commonLabels, the three selectorLabels, the three serviceAccountName helpers (create true gives <fullname> unless a name is set, create false gives the name or "default"), migrations.serviceAccountName (migrationJob.serviceAccountName wins; else "default" when serviceAccounts.backend.create, else the backend name), podLabels (fails with "<component>.podLabels cannot set <key>: it is part of the Deployment's immutable selector" for app.kubernetes.io/name, instance or component), serverEnv, connectionPoolEnv, pdb, envFrom, ingress.pathType, gateway.prometheusMultiprocDir (/tmp/litellm_prometheus_multiproc), gateway.collectorSocketDir and gateway.collectorEnv.
+  serverEnv is the longest helper. Master key from masterKey.secretName (required, key default master-key) as LITELLM_MASTER_KEY, LITELLM_LOG from the component, DATABASE_HOST, DATABASE_PORT, DATABASE_USER, DATABASE_NAME, DATABASE_SCHEMA, DATABASE_SSLMODE and DATABASE_SSLROOTCERT from database.writer (host, dbname and passwordSecret.name are required with LiteLLM's messages), DATABASE_PASSWORD from the Secret unless useIAMAuth (IAM_TOKEN_DB_AUTH=true) or useAzureEntraAuth (AZURE_POSTGRESQL_AUTH=true), and a failure when both are true. The chart never builds DATABASE_URL, since a raw password in a URL breaks on reserved characters. The reader block renders only when database.reader.host is set, with the *_READ_REPLICA names, and fails when a token mode is on for the reader but not for the writer. DISABLE_SCHEMA_UPDATE=true always follows, then REDIS_HOST, REDIS_PORT, REDIS_PASSWORD and, when redis.cluster, REDIS_CLUSTER_NODES as a JSON list with one host and port, then the component's extraEnv.
+  gateway/configmap.yaml renders <gateway fullname>-config with config.yaml from gateway.config.proxy_config when gateway.enabled and gateway.config.create. serviceaccount.yaml renders one ServiceAccount per component whose serviceAccounts.<name>.create is true and whose component is enabled, with annotations and automountServiceAccountToken. NOTES.txt lists the three Services and how to port-forward to each. tests/values/required.yaml sets the minimum values for a lint (database.writer.host, dbname and passwordSecret, masterKey) and is passed to helm lint -f.
+  Billable-request metering (billingMetrics) is LiteLLM Enterprise only and is not built.
+scope:
+  paths:
+    - packaging/helm/betterlite/Chart.yaml
+    - packaging/helm/betterlite/.helmignore
+    - packaging/helm/betterlite/values.yaml
+    - packaging/helm/betterlite/templates/_helpers.tpl
+    - packaging/helm/betterlite/templates/serviceaccount.yaml
+    - packaging/helm/betterlite/templates/gateway/configmap.yaml
+    - packaging/helm/betterlite/templates/NOTES.txt
+    - packaging/helm/betterlite/tests/values/required.yaml
+    - packaging/helm/betterlite/tests/serviceaccount_tests.yaml
+    - packaging/helm/betterlite/tests/gateway_config_tests.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/values.yaml#L1-L631
+    why: All keys and defaults with the reasoning in comments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/_helpers.tpl#L1-L498
+    why: All named templates, including serverEnv.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/serviceaccount.yaml
+    why: One ServiceAccount per component.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/configmap.yaml
+    why: Gateway config rendering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/NOTES.txt
+    why: Post-install notes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/tests/values/required.yaml
+    why: Minimum lint values.
+dod:
+  - text: Chart.yaml names the chart betterlite, and the chart lints with the required values once the later tasks add templates.
+    proof: [chart-metadata]
+  - text: One ServiceAccount renders per enabled component with create true, named by the helper rules, with annotations and its own automount setting, and none when create is false.
+    proof: [serviceaccount-suite]
+  - text: The gateway ConfigMap renders proxy_config only when the gateway is enabled and gateway.config.create is true.
+    proof: [config-suite]
+  - text: The helpers fail on a podLabels key that matches a selector label.
+    proof: [pod-labels-check]
+  - text: No billingMetrics key or LITELLM_BILLING_METRICS variable is in the chart.
+    proof: [no-billing]
+checks:
+  optional: []
+  commands:
+    - id: chart-metadata
+      why: Chart.yaml or the minimum values file is missing or wrong
+      run: |-
+        grep -q '^name: betterlite$' packaging/helm/betterlite/Chart.yaml &&
+        grep -q 'secretName' packaging/helm/betterlite/tests/values/required.yaml &&
+        sh packaging/helm/tests/helm_checks.sh lint packaging/helm/betterlite packaging/helm/betterlite/tests/values/required.yaml
+    - id: serviceaccount-suite
+      why: a ServiceAccount behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite tests/serviceaccount_tests.yaml
+    - id: config-suite
+      why: a gateway ConfigMap behavior is missing
+      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite tests/gateway_config_tests.yaml
+    - id: pod-labels-check
+      why: the podLabels selector guard is missing
+      run: grep -q "cannot set" packaging/helm/betterlite/templates/_helpers.tpl && grep -q "immutable selector" packaging/helm/betterlite/templates/_helpers.tpl
+    - id: no-billing
+      why: enterprise billing metering was ported, or the chart does not exist
+      run: test -f packaging/helm/betterlite/values.yaml && ! grep -rqi 'billing' packaging/helm/betterlite
+oracle_cases: []
+deviations:
+  - what: Default image repositories are ghcr.io/betterlite-ai/betterlite-gateway, betterlite-backend and betterlite-ui, and the migrations Job uses the betterlite-backend image.
+    why: The migrate command is part of the betterlite binary set (B1232), so no separate migrations image exists.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/values.yaml#L128-L150
+  - what: The billingMetrics block is not ported.
+    why: Enterprise-only metering.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/_helpers.tpl#L26-L81
+out_of_scope:
+  - Deployments, Services and the migrations Job belong to B8134; ingress, HPAs, PDBs and monitors belong to B8135.
+  - The route allowlists the ingress mirrors belong to B4470.
+  - The cross-chart suite count belongs to B152.
+pitfalls:
+  - >-
+    tests/values/required.yaml is a values file and not a suite; the glob tests/*.yaml does not reach into tests/values/, and B152 counts suites with that same glob.
+  - >-
+    Reader token auth is checked against the writer's flag, because the proxy turns on token URL building with one global switch.
+  - >-
+    A pdb of maxUnavailable 0 is valid and must not fall back to 1; "set" means non-nil and not the empty string.
+  - >-
+    The gateway selector and the metrics Service both use the component label; do not reuse the backend label.
+  - >-
+    DISABLE_SCHEMA_UPDATE is emitted for the Job as well as the pods; the Job command ignores it.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

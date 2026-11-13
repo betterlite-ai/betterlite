@@ -1,0 +1,14 @@
+task: B3693
+deviations:
+  - what: Pattern text, custom regex sources, blocked-word files, and generated masking output are bounded to one MiB.
+    why: Prevent unbounded allocations and pathological file reads; matching also retains the regex engine's backtracking limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L819
+  - what: Duplicate blocked-word keys emit a warning while retaining the last entry.
+    why: Preserve the resulting lookup without silently replacing configuration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L810
+  - what: "A custom regex with a \\N{...} named Unicode escape fails to compile with the same error as any other invalid pattern, inside a character class too, where Python re resolves the name."
+    why: "The only maintained Unicode name crate, unicode_names2, is licensed under Unicode-DFS-2016, which deny.toml does not allow, and a hand-written name table is out of proportion for guardrail patterns. B4350 made the same call for cache bodies."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L732-L770
+  - what: 'An ASCII-scoped backreference still uses Unicode case folding when another part of the custom regex needs Unicode mode: Unicode-scoped case folding, a wide class, dot, or an ASCII complement category. For example, \w(?a:(é)\1) matches xéÉ in betterlite but not in Python re with IGNORECASE.'
+    why: fancy-regex has one engine-wide Unicode setting. The translator can disable Unicode folding for ASCII-scoped backreferences only when no other part of the pattern requires Unicode matching or case folding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L750

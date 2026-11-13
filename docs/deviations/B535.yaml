@@ -1,0 +1,8 @@
+task: B535
+deviations:
+  - what: A negative AZURE_OPERATION_POLLING_TIMEOUT becomes zero seconds; LiteLLM keeps the negative integer and every pending poll times out on its first check.
+    why: betterlite reads the environment string into a Duration, which cannot hold a negative value, and a negative polling timeout is outside the range a working Azure image setup configures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L505
+  - what: Each pause between operation polls is capped at the time left before the polling deadline. After a capped pause betterlite sends the poll LiteLLM would send, returns its operation when the status is succeeded or failed, and returns the 408 timeout when it is still running. LiteLLM sleeps for the full retry-after before that poll.
+    why: One retry-after of 86400 from Azure holds the request for a day in LiteLLM, far past the configured timeout, and no working setup relies on waiting that long. A retry-after that fits in the time left is slept in full, as in LiteLLM, and a terminal status on the last poll still succeeds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L935

@@ -1,0 +1,14 @@
+id: B6413
+milestone: M3 providers
+title: SambaNova chat and embedding configs
+status: todo
+depends_on: [B668, B503, B504, B2202, B2214, B2221, B006, B184, B171]
+file: tasks/B6413-sambanova.yaml
+covers:
+  - "litellm/llms/sambanova/**"
+parent: B039
+split_from: B039
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

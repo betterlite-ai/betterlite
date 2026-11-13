@@ -1,0 +1,129 @@
+id: B153
+title: Homebrew formula for the lite CLI
+description: >-
+  Write the Homebrew formula that installs betterlite's thin client, the `lite` binary, plus the README that explains how to publish it, and a Ruby test that proves the formula's shape without Homebrew and without a release.
+  LiteLLM ships the same thing as packaging/homebrew/lite.rb: a tap formula named Lite that installs the `lite` command (lite login, lite claude, lite models list) and not the proxy server. betterlite does the same, but the formula builds a Rust crate instead of a Python sdist, so the Python parts (Language::Python::Virtualenv, python@3.13, virtualenv_create, pip install of the cli extra) are replaced by cargo.
+  B134 owns the binary: it adds a [[bin]] named "lite" to crates/betterlite-cli/Cargo.toml. This task writes no Rust.
+
+
+  packaging/homebrew/lite.rb has one class, `class Lite < Formula`, with these fields in this order.
+  desc is "Thin client for the betterlite proxy: lite login, lite claude/codex/opencode" (Homebrew's audit wants no leading article and no trailing period, and under 80 characters).
+  homepage is https://github.com/betterlite-ai/betterlite.
+  url is https://github.com/betterlite-ai/betterlite/archive/refs/tags/vREPLACE_AT_RELEASE.tar.gz and sha256 is the string REPLACE_AT_RELEASE, because a formula can only point at a published tag archive and no tag exists yet. Homebrew reads the version from the tag in the url, and cargo builds exactly that checkout, so url, sha256 and the crate version move together.
+  license "MIT". depends_on "rust" => :build.
+  def install runs exactly one build command: system "cargo", "install", *std_cargo_args(path: "crates/betterlite-cli"). std_cargo_args already adds --locked and --root, so the formula adds neither. The binary lands in bin/lite, so no install_symlink is needed.
+  test do runs shell_output("#{bin}/lite --help") and assert_match "login" on it, the same smoke test LiteLLM uses. It must not pass --version, because B134's --version asks the proxy for its version over the network.
+  The formula has no python, pip, virtualenv, curl, wget or git clone anywhere, and its install step downloads nothing: the source comes from the url, and the crates come from Cargo.lock during cargo install.
+  The default features of betterlite-cli stay on (os-keyring is off by default), so the formula passes no --features flag. Credentials are then stored the way B4574's default path does it; turning on the OS keyring in the tap build is an open question in the notes, not part of this task.
+
+
+  packaging/homebrew/README.md is the runbook, in plain prose, adapted from LiteLLM's README of the same name. It states what `lite.rb` is and that it is the source of truth that gets copied into the tap repo betterlite-ai/homebrew-betterlite as Formula/lite.rb. It gives the install line `brew install betterlite-ai/betterlite/lite` and says the command gives the user `lite` without the proxy server (the server is the `betterlite` binary, installed from the container image or cargo). It has a short section on why this is a tap and not homebrew-core: the formula builds from a git tag and has a moving release cadence, and homebrew-core needs its own review. Then a numbered release runbook:
+  1. Tag a release vX.Y.Z whose workspace version in Cargo.toml is X.Y.Z, and push the tag.
+  2. Compute the checksum of the tag archive with `curl -fsSL https://github.com/betterlite-ai/betterlite/archive/refs/tags/vX.Y.Z.tar.gz | sha256sum`.
+  3. Replace REPLACE_AT_RELEASE in the url with X.Y.Z, and in sha256 with the checksum.
+  4. Copy lite.rb to Formula/lite.rb in the tap repo, then run `brew install --build-from-source ./Formula/lite.rb`, `brew test lite` and `brew audit --strict --new lite`.
+  5. Commit and push the tap repo.
+  The README says plainly that steps 4 and 5 are the only proof of a real Homebrew build and need a published tag, so they are not part of CI.
+
+
+  packaging/homebrew/tests/formula_test.rb is the CI proof. It is a plain Ruby script (Ruby 3 standard library only, no gems, no Homebrew install) that prints exactly one line, "ok", when every case passes, and prints the failing case name to stderr and exits 1 otherwise. It takes an optional first argument, the name of one case, and runs only that case; with no argument it runs all of them. The cases, by name:
+  syntax: the script loads lite.rb with Ruby's own parser (RubyVM::InstructionSequence.compile_file) and fails on a syntax error.
+  metadata: with a stub `Formula` base class defined before `load`, the formula class is named Lite and inherits from it. The stub records the class-level calls desc, homepage, url, sha256, license and depends_on. The test then asserts: desc is 1 to 79 characters, does not end with ".", does not start with "A ", "An " or "The ", and contains "lite"; homepage is exactly the repo URL above; license is "MIT"; depends_on was called with {"rust" => :build} and with nothing else; url is a github.com/betterlite-ai/betterlite/archive/refs/tags/v...tar.gz URL.
+  install: the stub gives the formula instance `std_cargo_args(path:)` returning ["--jobs", "1", "--locked", "--root", "/stub/prefix", "--path", path], records every `system` call, and offers `bin`, `buildpath` and `libexec` as plain Pathnames under /stub. The test calls install and asserts exactly one system call, equal to ["cargo", "install", "--jobs", "1", "--locked", "--root", "/stub/prefix", "--path", "crates/betterlite-cli"]. It also asserts that crates/betterlite-cli/Cargo.toml exists relative to the repository root (the script finds the root with `git rev-parse --show-toplevel`) and that the file has a line equal to name = "lite" inside a [[bin]] table, so the formula can never name a crate that does not build `lite`.
+  test_block: the stub's `test` class method stores the block, and the stub's `shell_output` records its argument and returns "Usage: lite [OPTIONS] COMMAND\nlogin\n", `assert_match` records its pattern and subject. The test runs the stored block on an instance and asserts the recorded command is "/stub/bin/lite --help" (bin is /stub/bin) and the recorded pattern is "login" and the subject is the returned text.
+  release_lockstep: reads the url and sha256 recorded by the stub. Passes when both still hold the placeholder (url contains vREPLACE_AT_RELEASE and sha256 equals REPLACE_AT_RELEASE), or when both are real (url has v followed by digits.digits.digits and sha256 is exactly 64 lowercase hex characters). A mix, such as a real url with the placeholder checksum, fails. This is the check that catches a half-done release step.
+  no_python: the text of lite.rb contains none of python, pip, virtualenv, curl, wget, "git clone" (case-insensitive).
+  readme: README.md contains the install line, the tap repo name betterlite-ai/homebrew-betterlite, the words homebrew-core, all five runbook commands named above (the curl and sha256sum line, brew install --build-from-source, brew test lite, brew audit --strict) and the sentence saying steps 4 and 5 need a published tag.
+scope:
+  paths:
+    - packaging/homebrew/lite.rb
+    - packaging/homebrew/README.md
+    - packaging/homebrew/tests/formula_test.rb
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/packaging/homebrew/lite.rb#L1-L33
+    why: The formula being ported, with its placeholder url and sha256, python@3.13 virtualenv install and the lite --help smoke test.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/packaging/homebrew/README.md#L1-L26
+    why: The install line, the tap-versus-homebrew-core reasoning and the five-step release runbook to adapt.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml#L94-L100
+    why: The cli extra the Python formula installed; betterlite's equivalent is the betterlite-cli crate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml#L190-L192
+    why: The lite console script the formula exposes, which B134 turns into the [[bin]] named lite.
+  - url: https://docs.brew.sh/Formula-Cookbook#std_cargo_args
+    why: std_cargo_args, which already carries --locked and --root, and the rust build dependency pattern.
+  - url: https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap
+    why: Tap naming, where betterlite-ai/homebrew-betterlite maps to the betterlite-ai/betterlite tap.
+dod:
+  - text: lite.rb, README.md and tests/formula_test.rb exist, and lite.rb parses as Ruby.
+    proof: [files-exist, formula-syntax]
+  - text: The formula class is Lite, with the desc, homepage, MIT license, rust build dependency and GitHub tag-archive url the task names.
+    proof: [formula-metadata]
+  - text: install runs one cargo install of crates/betterlite-cli with std_cargo_args, and that crate declares a [[bin]] named lite.
+    proof: [formula-install]
+  - text: The test block runs lite --help and matches "login".
+    proof: [formula-test-block]
+  - text: url and sha256 are either both the release placeholder or both real values, never a mix.
+    proof: [formula-lockstep]
+  - text: The formula carries no Python, pip, virtualenv or download step.
+    proof: [formula-no-python]
+  - text: The README has the install line, the tap name, the homebrew-core reasoning, the release runbook and the note that the real Homebrew build needs a published tag.
+    proof: [readme-runbook]
+checks:
+  optional: []
+  commands:
+    - id: files-exist
+      why: One of the three files is missing.
+      run: >-
+        test -f packaging/homebrew/lite.rb &&
+        test -f packaging/homebrew/README.md &&
+        test -f packaging/homebrew/tests/formula_test.rb
+    - id: formula-syntax
+      why: lite.rb is not valid Ruby.
+      run: ruby packaging/homebrew/tests/formula_test.rb syntax | grep -qx ok
+    - id: formula-metadata
+      why: The formula class, desc, homepage, license, build dependency or url differs from the task.
+      run: ruby packaging/homebrew/tests/formula_test.rb metadata | grep -qx ok
+    - id: formula-install
+      why: install does not run the single cargo install of crates/betterlite-cli, or that crate has no lite binary.
+      run: ruby packaging/homebrew/tests/formula_test.rb install | grep -qx ok
+    - id: formula-test-block
+      why: The formula's test block does not run lite --help and match login.
+      run: ruby packaging/homebrew/tests/formula_test.rb test_block | grep -qx ok
+    - id: formula-lockstep
+      why: url and sha256 are in different states, one placeholder and one real.
+      run: ruby packaging/homebrew/tests/formula_test.rb release_lockstep | grep -qx ok
+    - id: formula-no-python
+      why: The formula still carries a Python, pip, virtualenv or download step.
+      run: ruby packaging/homebrew/tests/formula_test.rb no_python | grep -qx ok
+    - id: readme-runbook
+      why: The README misses the install line, tap name, homebrew-core reasoning or a runbook step.
+      run: ruby packaging/homebrew/tests/formula_test.rb readme | grep -qx ok
+oracle_cases: []
+deviations:
+  - what: The formula builds the Rust crate crates/betterlite-cli from a GitHub tag archive with cargo; LiteLLM builds the PyPI sdist into a Python 3.13 virtualenv.
+    why: betterlite has no Python package and no PyPI release; the tag archive is the only published source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/packaging/homebrew/lite.rb#L23-L28
+  - what: The tap is betterlite-ai/homebrew-betterlite, installed with brew install betterlite-ai/betterlite/lite, instead of BerriAI/homebrew-litellm.
+    why: The LiteLLM name and org belong to Berri AI (rules.yaml litellm-boundaries). The tap owner is our assumption and is listed as an open question.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/packaging/homebrew/README.md#L3-L9
+  - what: The formula builds with default cargo features, so the OS keyring support of betterlite-cli is off.
+    why: The Linux keyring feature vendors a D-Bus library and slows the Homebrew build; LiteLLM's formula has no equivalent switch to copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/packaging/homebrew/lite.rb#L26-L27
+out_of_scope:
+  - B134 owns the lite binary, its [[bin]] table and its --help output; this task only checks that the table exists.
+  - A real brew install --build-from-source, brew test and brew audit need Homebrew and a published tag. They are the release runbook's steps 4 and 5 and cannot run in CI, so no check calls brew.
+  - Creating the tap repository, tagging a release and filling in the real url and sha256 are release steps done by a person after this task merges.
+  - A formula for the betterlite server binary and the container images (B5071 and the other docker tasks) are separate; LiteLLM's packaging/** has only the lite formula.
+pitfalls:
+  - The url tag is vREPLACE_AT_RELEASE, so Homebrew cannot fetch it yet; the Ruby test must never run brew or open a URL, and must load the formula only after the stub Formula class exists.
+  - std_cargo_args in real Homebrew returns an array that already holds --locked and --root, so adding either by hand to the cargo call duplicates the flag and makes cargo fail.
+  - Homebrew formula files may not start with a comment in this repository because the no-file-start-comments hook refuses it; the class line is the first line, and explanations go in README.md.
+  - In the stub, `depends_on "rust" => :build` arrives as one Hash argument, while `depends_on "x"` arrives as a String; record both forms without raising.
+  - The stub `test` is a class method taking a block, but the formula calls it with `test do ... end` at class level, so define it with def self.test(&block); do not confuse it with an instance method named test.
+  - The placeholder check must treat a 64-character sha256 with uppercase letters as invalid, because Homebrew's audit rejects it.
+  - crates/betterlite-cli/Cargo.toml has no [[bin]] table until B134 merges, so the install case reads the file at run time and the task depends on B134.
+  - Write the files with LF endings and a final newline; the end-of-file-fixer hook runs on .rb and .md files.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

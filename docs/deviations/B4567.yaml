@@ -1,0 +1,5 @@
+task: B4567
+deviations:
+  - what: The bundled codex_base_instructions.md is byte-identical to LiteLLM's asset except for one trailing space removed from the end of line 151.
+    why: The repository's trailing-whitespace hook removes trailing spaces from every committed text file, and the prompt the Codex agent receives differs only by that invisible space.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/codex_base_instructions.md#L151

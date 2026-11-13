@@ -6,7 +6,7 @@ description: >-
   model/provider with api_base or base_url and api_key, then replace the explicit key whenever dynamic_api_key
   is non-None, even empty. Named language,prompt,response_format,timestamp_granularities,temperature,user
   default None; timeout=600,max_retries defaults OpenAI's 2 independently of litellm.num_retries. Remove tags,
-  pop atranscription=false/client=None, filter nondefault options through B157 and map with B175. Log client
+  pop atranscription=false/client=None, filter nondefault options through B5362 and map with B175. Log client
   string when logging exists, then update environment with optional_params={} and metadata default None.
 
   B157's provider config selector controls native transport. OpenAI and compatibles use B515 unless config
@@ -22,6 +22,7 @@ description: >-
   HTTPHandler/AsyncHTTPHandler clients and receives extra_headers; generic native HTTP applies the same client
   filter but passes headers={}. Bedrock gets file/key/base/provider/extra_headers/options/timeout and the
   selected sync/async method. A remaining non-None config goes through B2453; no selected response is a ValueError.
+  The IBMWatsonX selection constructs B9220's WatsonxTranscription from B8331's production environment and auth inputs.
 
   Both sync results and awaited async results get B1001 duration only when public duration is None. Store it
   solely in _hidden_params.audio_transcription_duration, including zero. Existing public duration=0 suppresses
@@ -37,13 +38,11 @@ description: >-
   and B1001's bounded audio-duration decoder handle external bytes.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/transcription_call.rs
   - crates/betterlite-core/src/api/transcription_call/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/transcription-call-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/transcription_call.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/transcription_call.py
   - tools/oracle/cases/sdk-http/transcription-call/**
@@ -124,7 +123,7 @@ oracle_cases:
 - tools/oracle/cases/sdk-http/transcription-call/transcription-async-results.yaml
 deviations: []
 out_of_scope:
-- B1122 owns every transcription base-contract method; B1001 audio extraction/duration; B175 get_optional_params_transcription; B157 get_non_default_transcription_params and ProviderConfigManager.get_provider_audio_transcription_config.
+- B1122 owns every transcription base-contract method; B1001 audio extraction/duration; B175 get_optional_params_transcription; B5362 get_non_default_transcription_params; B157 owns ProviderConfigManager.get_provider_audio_transcription_config.
 - B515 and B539 own OpenAI/Azure execution, B047 Riva/Soniox, B642 Bedrock and B2453 generic native HTTP. Downstream implementations are injected B010 operations rather than backward dependencies.
 - B1083/B1084 own aspeech/speech; B158 retains other general main.py SDK facade methods and provider umbrellas retain their _complete_* functions. The cached transcription converter is owned here in full.
 pitfalls:

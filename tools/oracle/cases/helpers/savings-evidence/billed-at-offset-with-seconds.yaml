@@ -1,0 +1,8 @@
+kind: helper
+name: billed-at-offset-with-seconds
+call:
+  savings_evidence:
+    operation: billed_at
+    text: "2024-03-01T10:00:00+02:00:30"
+compare: {ignore: []}
+env: {}

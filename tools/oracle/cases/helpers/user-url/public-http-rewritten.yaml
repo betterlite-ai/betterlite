@@ -1,0 +1,11 @@
+kind: helper
+name: user-url-public-http-rewritten
+call:
+  b5082:
+    call: validate_url
+    url: "http://93.184.216.34:8080/a/b;p?c=1#top"
+    user_url_allowed_hosts: []
+    ssl_verify: true
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,41 @@
+kind: helper
+name: predibase-reply-error-cases
+env: {}
+compare: {ignore: []}
+call:
+  b5846:
+    op: reply
+    replies:
+      - body: not json
+        model: model
+      - body: '[1,2]'
+        model: model
+      - body: '"hi"'
+        model: model
+      - body: '{"foo":1}'
+        model: model
+      - body: '{}'
+        model: model
+      - body: '{"generated_text":null}'
+        model: model
+      - body: '{"generated_text":5}'
+        model: model
+      - body: '{"error":"boom"}'
+        model: model
+        status: 502
+      - body: '{"error":{"message":"boom"}}'
+        model: model
+      - body: '{"error":null}'
+        model: model
+      - body: '{"error":"boom","generated_text":"x"}'
+        model: model
+        status: 200
+      - body: '{"generated_text":"x","details":{"tokens":[]}}'
+        model: model
+      - body: '{"generated_text":"x","details":{"finish_reason":"stop","tokens":[{"logprob":"x"}]}}'
+        model: model
+      - body: '{"generated_text":"x","details":{"finish_reason":"stop","tokens":[{}]}}'
+        model: model
+      - body: '{"generated_text":"x","details":{"finish_reason":"stop","best_of_sequences":[{"generated_text":"b","finish_reason":"stop"}]}}'
+        model: model
+        options: {best_of: 2}

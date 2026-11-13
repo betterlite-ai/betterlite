@@ -1,0 +1,24 @@
+kind: helper
+name: openai-decisions-settings
+call:
+  openai_decisions:
+    settings:
+      - api_base: null
+        api_key: null
+        globals: {api_base: litellm-base, api_key: litellm-key, openai_key: openai-key}
+        env: {}
+      - api_base: explicit
+        api_key: explicit-key
+        globals: {api_base: litellm-base, api_key: litellm-key, openai_key: openai-key}
+        env: {OPENAI_BASE_URL: env-base, OPENAI_API_KEY: env-key}
+      - globals: {api_key: litellm-key}
+        env: {OPENAI_BASE_URL: env-base, OPENAI_API_KEY: env-key}
+      - globals: {openai_key: openai-key}
+        env: {OPENAI_BASE_URL: env-base, OPENAI_API_KEY: env-key}
+      - env: {OPENAI_BASE_URL: env-base, OPENAI_API_KEY: env-key}
+      - env: {OPENAI_BASE_URL: "", OPENAI_API_BASE: legacy-base, OPENAI_API_KEY: env-key}
+      - env: {}
+      - api_base: explicit-base
+        env: {}
+env: {}
+compare: {ignore: []}

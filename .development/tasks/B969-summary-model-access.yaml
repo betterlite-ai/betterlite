@@ -23,8 +23,6 @@ description: >-
   705 total. Tests live under api::summary_model_access in core and config.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/summary_model_access.rs
   - crates/betterlite-core/src/api/summary_model_access/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/summary-model-access-*

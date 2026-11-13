@@ -57,10 +57,19 @@ impl Helper for Op {
                 Ok(format!("{model}:{content}"))
             })
             .map(to_value),
-            Family::Claude => builtin::claude(messages).map(to_value),
-            Family::Claude21 => builtin::claude_2_1(messages).map(to_value),
+            Family::Claude => {
+                builtin::families::anthropic(messages, builtin::families::Style::Claude)
+                    .map(to_value)
+            }
+            Family::Claude21 => {
+                builtin::families::anthropic(messages, builtin::families::Style::Claude21)
+                    .map(to_value)
+            }
             Family::Granite => builtin::granite(messages).map(to_value),
-            Family::Titan => builtin::titan(messages).map(to_value),
+            Family::Titan => {
+                builtin::families::anthropic(messages, builtin::families::Style::Titan)
+                    .map(to_value)
+            }
         };
         match outcome {
             Ok(Ok(value)) => Ok(value),
