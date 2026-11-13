@@ -1,10 +1,10 @@
 #![no_main]
 
 use betterlite_core::api::api_boundaries::ApiLimits;
+use betterlite_core::api::transcription_protocol::audio::decode_pcm16_append;
 use betterlite_core::api::transcription_protocol::{
     // ast-grep-ignore: no-long-names
     RealtimeTranscriptionProtocolError as ProtocolError,
-    decode_pcm16_append,
     // ast-grep-ignore: no-long-names
     parse_transcription_session_update as parse_update,
 };

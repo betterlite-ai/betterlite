@@ -1,10 +1,6 @@
 mod json;
 mod tests;
 
-use base64::{
-    Engine as _, alphabet,
-    engine::{GeneralPurpose, GeneralPurposeConfig},
-};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Serialize;
@@ -14,6 +10,7 @@ use thiserror::Error;
 use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimitError, ApiLimits, EventBoundary};
 use json::{field, present};
 
+pub mod audio;
 pub mod events;
 pub mod usage;
 
@@ -21,12 +18,6 @@ pub type JsonObject = IndexMap<String, Json>;
 
 const SESSION_UPDATE_EVENT_TYPES: [&str; 2] = ["session.update", "transcription_session.update"];
 const SUPPORTED_TRANSCRIPTION_KEYS: [&str; 2] = ["model", "language"];
-
-// binascii's strict mode, which b64decode(validate=True) uses, requires canonical padding and ignores nonzero trailing bits
-const STRICT_BASE64: GeneralPurpose = GeneralPurpose::new(
-    &alphabet::STANDARD,
-    GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
-);
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 // ast-grep-ignore: no-long-names
@@ -288,26 +279,4 @@ where
         Some(format) => Ok(Some(ga_audio_format(format)?)),
         None => Ok(None),
     }
-}
-
-pub fn decode_pcm16_append<E>(
-    audio: Option<&Json>,
-    max_encoded_bytes: Option<usize>,
-) -> Result<Vec<u8>, E>
-where
-    E: From<ProtocolError>,
-{
-    let Some(Json::Text(text)) = audio else {
-        return Err(E::from(ProtocolError::AudioNotString));
-    };
-    if max_encoded_bytes.is_some_and(|limit| text.chars().count() > limit) {
-        return Err(E::from(ProtocolError::AudioBacklog));
-    }
-    let decoded = STRICT_BASE64
-        .decode(text.as_bytes())
-        .map_err(|_| ProtocolError::InvalidBase64)?;
-    if !decoded.len().is_multiple_of(2) {
-        return Err(E::from(ProtocolError::IncompleteSamples));
-    }
-    Ok(decoded)
 }

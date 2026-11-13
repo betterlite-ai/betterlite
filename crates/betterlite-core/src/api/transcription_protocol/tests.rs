@@ -10,6 +10,7 @@ use serde_json::Number;
 
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 
+use super::audio::decode_pcm16_append;
 use super::events::{
     EventIdSource, SpeechEventType, UuidEventIds, completed_event, delta_event, error_event,
     speech_event, transcription_session, transcription_session_created_event,
@@ -17,8 +18,7 @@ use super::events::{
 use super::usage::{InputTokenDetails, TokenUsage, TranscriptionUsage, duration_usage};
 use super::{
     RealtimeTranscriptionProtocolError, TranscriptionAudioFormat, TranscriptionLayout,
-    TranscriptionSessionUpdate, decode_pcm16_append, json_object,
-    parse_transcription_session_update,
+    TranscriptionSessionUpdate, json_object, parse_transcription_session_update,
 };
 
 fn parse(payload: &str) -> Result<TranscriptionSessionUpdate, RealtimeTranscriptionProtocolError> {
