@@ -20,7 +20,7 @@ pub struct MappedTools {
 pub fn map_tools(
     tools: &[Object],
     include_server_side: bool,
-    tool_config: Option<ToolConfig>,
+    mut tool_config: Option<ToolConfig>,
     settings: &Settings,
 ) -> Result<MappedTools, GeminiToolsError> {
     let mut collected = Collected::default();
@@ -31,15 +31,14 @@ pub fn map_tools(
     }
     let conflicts = collected.resolve_search_conflict(include_server_side);
     let warnings = conflicts.saturating_add(collected.invalid);
-    let mut config = tool_config;
     if let Some(retrieval) = collected.retrieval.take() {
-        config
+        tool_config
             .get_or_insert_with(ToolConfig::default)
             .retrieval_config = Some(retrieval);
     }
     Ok(MappedTools {
         tools: collected.assemble(),
-        tool_config: config,
+        tool_config,
         warnings,
     })
 }
@@ -84,13 +83,12 @@ impl Collected {
             self.record(slot, special_value(&transformed, wire_name)?);
             return Ok(());
         }
-        match declaration(tool, settings)? {
-            Some(found) => self.declarations.push(found),
-            None => {
-                tracing::warn!("invalid tool, no function declaration or native tool matches it");
-                self.invalid = self.invalid.saturating_add(1);
-            }
-        }
+        let Some(found) = declaration(tool, settings)? else {
+            tracing::warn!("invalid tool, no function declaration or native tool matches it");
+            self.invalid = self.invalid.saturating_add(1);
+            return Ok(());
+        };
+        self.declarations.push(found);
         Ok(())
     }
     fn record(&mut self, slot: Slot, value: Option<Object>) {
