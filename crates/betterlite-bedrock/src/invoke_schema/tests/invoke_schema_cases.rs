@@ -31,13 +31,13 @@ enum Scenario {
 #[case::native_output_format_support(Scenario::NativeOutputFormatSupport)]
 fn invoke_schema_cases(#[case] scenario: Scenario) {
     match scenario {
-        Scenario::InlineOutputSchema => inline_output_schema(),
-        Scenario::OutputConfigUnsupportedKeys => output_config_unsupported_keys(),
-        Scenario::CustomToolField => custom_tool_field(),
-        Scenario::EagerStreamingRemoved => eager_streaming_removed(),
-        Scenario::SchemaCustomTypes => schema_custom_types(),
-        Scenario::MissingToolName => missing_tool_name(),
-        Scenario::NativeOutputFormatSupport => native_output_format_support(),
+        Scenario::InlineOutputSchema => test_inline_output_schema(),
+        Scenario::OutputConfigUnsupportedKeys => test_output_config_unsupported_keys(),
+        Scenario::CustomToolField => test_custom_tool_field(),
+        Scenario::EagerStreamingRemoved => test_eager_streaming_removed(),
+        Scenario::SchemaCustomTypes => test_schema_custom_types(),
+        Scenario::MissingToolName => test_missing_tool_name(),
+        Scenario::NativeOutputFormatSupport => test_native_output_format_support(),
     }
 }
 
@@ -97,7 +97,7 @@ fn user_message(content: Json) -> Json {
     object(&[("role", text("user")), ("content", content)])
 }
 
-fn inline_output_schema() {
+fn test_inline_output_schema() {
     let tokio_runtime = runtime();
     let (guard, warnings) = capture_warnings();
     tokio_runtime.block_on(async {
@@ -286,7 +286,7 @@ fn inline_output_schema() {
     drop(guard);
 }
 
-fn output_config_unsupported_keys() {
+fn test_output_config_unsupported_keys() {
     let tokio_runtime = runtime();
     let (guard, warnings) = capture_warnings();
     tokio_runtime.block_on(async {
@@ -384,7 +384,7 @@ fn output_config_unsupported_keys() {
     drop(guard);
 }
 
-fn custom_tool_field() {
+fn test_custom_tool_field() {
     let tokio_runtime = runtime();
     tokio_runtime.block_on(async {
         // absent, null, empty and non-list tools stay untouched
@@ -450,7 +450,7 @@ fn custom_tool_field() {
     });
 }
 
-fn eager_streaming_removed() {
+fn test_eager_streaming_removed() {
     let tokio_runtime = runtime();
     tokio_runtime.block_on(async {
         let mut body = object(&[("model", text("m"))]);
@@ -510,7 +510,7 @@ fn eager_streaming_removed() {
     });
 }
 
-fn schema_custom_types() {
+fn test_schema_custom_types() {
     let tokio_runtime = runtime();
     tokio_runtime.block_on(async {
         let mut schema = object(&[
@@ -616,7 +616,7 @@ fn schema_custom_types() {
     });
 }
 
-fn missing_tool_name() {
+fn test_missing_tool_name() {
     let tokio_runtime = runtime();
     tokio_runtime.block_on(async {
         for tools in [Json::Null, text("tools"), object(&[("a", flag(true))])] {
@@ -632,6 +632,7 @@ fn missing_tool_name() {
                 object(&[("name", Json::Null)]),
                 object(&[("name", text(""))]),
                 object(&[("name", text("   "))]),
+                object(&[("name", text("\u{1c}\u{2003}"))]),
                 object(&[("name", text(" name "))]),
                 object(&[("name", Json::Number(0.into()))]),
                 object(&[("name", flag(false))]),
@@ -662,24 +663,28 @@ fn missing_tool_name() {
             tools.get(3),
             Some(&object(&[("name", text("litellm_unnamed_tool_3"))]))
         );
-        assert_eq!(tools.get(4), Some(&object(&[("name", text(" name "))])));
         assert_eq!(
-            tools.get(5),
+            tools.get(4),
+            Some(&object(&[("name", text("litellm_unnamed_tool_4"))]))
+        );
+        assert_eq!(tools.get(5), Some(&object(&[("name", text(" name "))])));
+        assert_eq!(
+            tools.get(6),
             Some(&object(&[("name", Json::Number(0.into()))]))
         );
-        assert_eq!(tools.get(6), Some(&object(&[("name", flag(false))])));
-        assert_eq!(tools.get(7), Some(&text("junk")));
+        assert_eq!(tools.get(7), Some(&object(&[("name", flag(false))])));
+        assert_eq!(tools.get(8), Some(&text("junk")));
         assert_eq!(
-            tools.get(8),
+            tools.get(9),
             Some(&object(&[
                 ("input_schema", type_object()),
-                ("name", text("litellm_unnamed_tool_8")),
+                ("name", text("litellm_unnamed_tool_9")),
             ]))
         );
     });
 }
 
-fn native_output_format_support() {
+fn test_native_output_format_support() {
     let tokio_runtime = runtime();
     let (guard, warnings) = capture_warnings();
     tokio_runtime.block_on(async {

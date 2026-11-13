@@ -18,6 +18,7 @@ call:
             - {name: null}
             - {name: ""}
             - {name: "   "}
+            - {name: "\x1c\u2003"}
             - {name: " name "}
             - {name: 0}
             - {name: false}

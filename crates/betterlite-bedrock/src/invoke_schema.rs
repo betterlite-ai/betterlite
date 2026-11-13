@@ -166,27 +166,23 @@ pub async fn strip_unsupported_config_keys<Capabilities>(
     tracing::warn!(
         "Bedrock Invoke: stripping unsupported `output_config` keys for model={model}: neither `supports_output_config` nor any `supports_*_reasoning_effort` flag is set in model_prices_and_context_window.json. Add the capability flag to the model JSON entry if this model accepts `output_config`."
     );
-    let preserved = output_config.get(FORMAT).cloned();
-    match preserved {
+    match output_config.get(FORMAT) {
+        None | Some(Json::Null) => {
+            body.shift_remove(OUTPUT_CONFIG);
+        }
         Some(format) => {
             let mut fields = Object::new();
-            fields.insert(FORMAT.to_owned(), format);
+            fields.insert(FORMAT.to_owned(), format.clone());
             body.insert(OUTPUT_CONFIG.to_owned(), Json::Object(fields));
-        }
-        None => {
-            body.shift_remove(OUTPUT_CONFIG);
         }
     }
 }
 
 pub fn normalize_tool_custom_field(body: &mut Object) {
-    let Some(Json::List(tools)) = body.get_mut(TOOLS) else {
+    let Some(tools) = tool_objects(body) else {
         return;
     };
-    for tool in tools {
-        let Json::Object(fields) = tool else {
-            continue;
-        };
+    for fields in tools {
         let Some(Json::Object(custom)) = fields.shift_remove(CUSTOM) else {
             continue;
         };
@@ -244,21 +240,32 @@ pub fn normalize_schema_custom_types(schema: &mut Json) {
 }
 
 pub fn normalize_tool_schema_types(body: &mut Object) {
-    let Some(Json::List(tools)) = body.get_mut(TOOLS) else {
+    let Some(tools) = tool_objects(body) else {
         return;
     };
-    for tool in tools {
-        let Json::Object(fields) = tool else {
-            continue;
-        };
+    for fields in tools {
         if let Some(schema) = fields.get_mut("input_schema") {
             normalize_schema_custom_types(schema);
         }
     }
 }
 
+fn tools_of(body: &mut Object) -> Option<&mut Vec<Json>> {
+    match body.get_mut(TOOLS) {
+        Some(Json::List(tools)) => Some(tools),
+        _ => None,
+    }
+}
+
+fn tool_objects(body: &mut Object) -> Option<impl Iterator<Item = &mut Object>> {
+    Some(tools_of(body)?.iter_mut().filter_map(|tool| match tool {
+        Json::Object(fields) => Some(fields),
+        _ => None,
+    }))
+}
+
 pub fn ensure_tool_names(body: &mut Object) {
-    let Some(Json::List(tools)) = body.get_mut(TOOLS) else {
+    let Some(tools) = tools_of(body) else {
         return;
     };
     for (index, tool) in tools.iter_mut().enumerate() {
@@ -267,7 +274,10 @@ pub fn ensure_tool_names(body: &mut Object) {
         };
         let blank = match fields.get(NAME) {
             None | Some(Json::Null) => true,
-            Some(Json::Text(name)) => name.trim().is_empty(),
+            // Python's str.strip also trims the separators U+001C to U+001F
+            Some(Json::Text(name)) => name.chars().all(|character| {
+                character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character)
+            }),
             Some(_) => false,
         };
         if blank {
