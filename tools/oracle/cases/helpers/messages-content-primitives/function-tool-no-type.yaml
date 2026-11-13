@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-function-tool-no-type
+call: {"messages_content_primitives": {"operation": "is_openai_function_tool", "tool": {"function": {}}}}
+env: {}
+compare: {ignore: []}

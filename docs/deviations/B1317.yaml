@@ -1,0 +1,11 @@
+task: B1317
+deviations:
+  - what: "TTL seconds normalize with checked decimal arithmetic, where LiteLLM multiplies and rounds a binary float. An input whose exact decimal value sits on the tenth-place tie can normalize to another nanosecond: 0.0000000005s is rejected here and becomes 0.000000001s there, 1.9999999995s becomes 2s here and 1.999999999s there. The 9999-12-31T23:59:59Z horizon also compares exact decimal seconds where LiteLLM's total_seconds() carries float error."
+    why: "The task pins checked decimal arithmetic for the TTL decoder; a float cannot hold nine decimal places next to the horizon, and no LiteLLM setup can rely on which way binary rounding falls."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/transformation.py#L102-L106
+  - what: "A TTL with a trailing newline, such as \"3600s\\n\", is rejected, where Python's `$` anchor lets re.match accept it."
+    why: "The pinned grammar ends at the s/m/h unit, and a newline is not part of a TTL any caller writes on purpose."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/transformation.py#L91
+  - what: "A Vertex cached-content request carries a project and a location; betterlite does not reproduce LiteLLM's f-string, which writes the literal \"None\" into the model path when vertex_project or vertex_location is None."
+    why: "The cachedContents API cannot serve a request built on the literal None, so the caller resolves both values before the body is built."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/transformation.py#L191-L192

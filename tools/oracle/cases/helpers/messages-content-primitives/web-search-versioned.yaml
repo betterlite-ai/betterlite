@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-web-search-versioned
+call: {"messages_content_primitives": {"operation": "is_web_search_tool", "tool": {"type": "web_search_20260209"}}}
+env: {}
+compare: {ignore: []}

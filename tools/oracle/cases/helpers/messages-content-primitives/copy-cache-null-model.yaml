@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-copy-cache-null-model
+call: {"messages_content_primitives": {"operation": "copy_cache_control", "source": {"cache_control": {"type": "ephemeral", "ttl": "1h"}}, "target": {"type": "text"}, "model": null}}
+env: {}
+compare: {ignore: []}

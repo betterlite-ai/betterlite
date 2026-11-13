@@ -1,0 +1,13 @@
+kind: helper
+name: studio-files-create-uri-id
+call:
+  studio_files:
+    calls:
+      - function: replies
+        shape: create
+        timezone: UTC
+        bodies:
+          - '{"file":{"name":"files/name-id","uri":"https://generativelanguage.googleapis.com/v1beta/files/uri-id","sizeBytes":"12","createTime":"2024-01-02T03:04:05.123456Z","displayName":"report.pdf","mimeType":"application/pdf","state":"ACTIVE","source":"UPLOADED"}}'
+          - '{"file":{"uri":"uri-only","sizeBytes":"0","createTime":"2024-01-02T03:04:05.1+05:30","displayName":"notes.txt"}}'
+env: {}
+compare: {ignore: []}
