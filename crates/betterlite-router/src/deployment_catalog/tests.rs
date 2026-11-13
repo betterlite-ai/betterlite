@@ -184,7 +184,7 @@ fn answer(
     }
 }
 
-// flags: admin specific for_request ghost alias=a>b map=a>b fallback=m provider=p reservation=text group=ids no_access=ids no_reserve=ids
+// flags: team=id admin specific for_request ghost alias=a>b map=a>b fallback=m provider=p reservation=text group=ids no_access=ids no_reserve=ids
 fn lookup(rows: &[Row], model: &str, team: Option<&str>, flags: &str) -> String {
     let mut catalog = built(rows);
     let (mut view, mut aliases, mut map) = (View::default(), BTreeMap::new(), BTreeMap::new());
@@ -201,6 +201,7 @@ fn lookup(rows: &[Row], model: &str, team: Option<&str>, flags: &str) -> String 
         let (key, value) = token.split_once('=').unwrap_or((token, ""));
         match key {
             "admin" => request.authority.proxy_admin = true,
+            "team" => request.authority.team_id = Some(value),
             "specific" => request.specific_deployment = true,
             "for_request" => for_request = true,
             "ghost" => catalog
@@ -328,122 +329,106 @@ fn deployment_catalog_behaviors(
 }
 
 #[rstest]
-#[case::unknown_model(BASE, "nope", None, "", r#"NoHealthyDeployments { model: "nope" }"#)]
-#[case::only_markers(&MARKERS[..1], "g", None, "", r#"OnlyStrategyMarkers { model: "g" }"#)]
-#[case::only_markers_by_litellm_model(&MARKERS[..1], "auto_router/x", None, "specific", r#"OnlyStrategyMarkers { model: "auto_router/x" }"#)]
+#[case::unknown_model(BASE, "nope", "", r#"NoHealthyDeployments { model: "nope" }"#)]
+#[case::only_markers(&MARKERS[..1], "g", "", r#"OnlyStrategyMarkers { model: "g" }"#)]
+#[case::only_markers_by_litellm_model(&MARKERS[..1], "auto_router/x", "specific", r#"OnlyStrategyMarkers { model: "auto_router/x" }"#)]
 #[case::two_teams_are_ambiguous(
     TWO_TEAMS,
     "shared",
-    None,
     "admin",
     r#"AmbiguousTeams { model: "shared" }"#
 )]
 #[case::two_teams_are_ambiguous_for_a_request(
     TWO_TEAMS,
     "shared",
-    None,
     "for_request admin",
     r#"AmbiguousTeams { model: "shared" }"#
 )]
 #[case::no_authority_no_team_names(
     TEAM,
     "team-gpt",
-    None,
     "",
     r#"NoHealthyDeployments { model: "team-gpt" }"#
 )]
 #[case::other_team_cannot_see_it(
     TEAM,
     "team-gpt",
-    Some("t2"),
-    "",
+    "team=t2",
     r#"NoHealthyDeployments { model: "team-gpt" }"#
 )]
-#[case::empty_team_id_is_no_team(
-    TEAM,
-    "team-gpt",
-    Some(""),
-    "admin",
-    "team-gpt|pool|t1d@openai/m|"
-)]
+#[case::empty_team_id_is_no_team(TEAM, "team-gpt", "team= admin", "team-gpt|pool|t1d@openai/m|")]
 #[case::access_filter_blocks_the_fallback(
     BASE,
     "claude",
-    None,
     "no_access=c fallback=gpt-4o",
     r#"NoHealthyDeployments { model: "claude" }"#
 )]
 #[case::access_filter_blocks_the_fallback_after_the_litellm_retry(
     BASE,
     "anthropic/claude",
-    None,
     "no_access=c fallback=gpt-4o",
     r#"NoHealthyDeployments { model: "anthropic/claude" }"#
 )]
 #[case::missing_fallback_names_itself(
     BASE,
     "nope",
-    None,
     "fallback=also-missing",
     r#"NoHealthyDeployments { model: "also-missing" }"#
 )]
 #[case::reservation_message_passes_through(
     BASE,
     "gpt-4o",
-    None,
     "reservation=held",
     r#"Reserved { message: "held" }"#
 )]
 #[case::reserved_id_is_a_bad_request(
     BASE,
     "c",
-    None,
     "no_reserve=c",
     r#"NoHealthyDeployments { model: "anthropic/claude" }"#
 )]
 #[case::unindexed_wildcard_candidate(
     BASE,
     "ghost-1",
-    None,
     "ghost",
     r#"UnindexedCandidate { model_id: Some("ghost") }"#
 )]
 #[case::empty_alias_target_rewrites_nothing(
     BASE,
     "gpt",
-    None,
     "alias=gpt>",
     r#"NoHealthyDeployments { model: "gpt" }"#
 )]
 #[case::wildcard_match_skips_the_alias_map(
     WILDCARD,
     "gpt-5",
-    None,
     "map=gpt-5>zzz",
     "gpt-5|pool|w@openai/gpt-5|"
 )]
 #[case::registered_wildcard_name_is_a_plain_name(
     WILDCARD,
     "gpt-*",
-    None,
     "",
     "gpt-*|pool|w@openai/gpt-*|"
 )]
 #[case::alias_map_applies_to_the_fallback(
     BASE,
     "nope",
-    None,
     "fallback=claude map=claude>c3",
     "c3|pool|c@anthropic/claude|ModelAliasMap:claude>c3"
 )]
-#[case::wildcard_needs_a_provider_for_the_prefixed_lookup(&[("openai/*", "w", "openai/*", "", "")], "gpt-5", None, "", r#"NoHealthyDeployments { model: "gpt-5" }"#)]
-#[case::team_wildcard_needs_its_team(&[("internal", "t1d", "openai/m", "t1", "tm-*")], "tm-5", None, "", r#"NoHealthyDeployments { model: "tm-5" }"#)]
+#[case::wildcard_needs_a_provider_for_the_prefixed_lookup(&[("openai/*", "w", "openai/*", "", "")], "gpt-5", "", r#"NoHealthyDeployments { model: "gpt-5" }"#)]
+#[case::team_wildcard_needs_its_team(&[("internal", "t1d", "openai/m", "t1", "tm-*")], "tm-5", "", r#"NoHealthyDeployments { model: "tm-5" }"#)]
 fn deployment_catalog_boundaries(
-    #[case] rows: &[Row],
-    #[case] model: &str,
-    #[case] team: Option<&str>,
-    #[case] flags: &str,
+    #[case] catalog: &[Row],
+    #[case] requested: &str,
+    #[case] options: &str,
     #[case] expected: &str,
 ) {
-    assert_eq!(lookup(rows, model, team, flags), expected);
+    // a lookup reads one snapshot and changes nothing, so asking twice answers the same
+    let outcomes = [(); 2].map(|()| lookup(catalog, requested, None, options));
+    assert!(
+        outcomes.iter().all(|outcome| outcome == expected),
+        "{requested} with {options:?} gave {outcomes:?}"
+    );
 }
