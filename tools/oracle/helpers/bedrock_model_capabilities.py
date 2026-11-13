@@ -1,9 +1,12 @@
 import os
+from collections.abc import Callable
 from typing import Literal, NotRequired, TypedDict
 
 import litellm
 from litellm.llms.bedrock.common_utils import (
-    bedrock_converse_supports_parallel_tool_use_config,
+    bedrock_converse_supports_parallel_tool_use_config as parallel_tool_gate,
+)
+from litellm.llms.bedrock.common_utils import (
     bedrock_converse_supports_strict_tools,
     bedrock_model_accepts_cache_points,
     bedrock_supports_openai_responses,
@@ -13,6 +16,12 @@ from litellm.llms.bedrock.common_utils import (
     normalize_bedrock_opus_output_config_effort,
 )
 from pydantic import JsonValue
+
+# the flag gates above a try that turns a malformed entry into a raised marker
+FLAG_LOOKUPS: dict[str, Callable[[str], bool]] = {
+    "parallel_tools": parallel_tool_gate,
+    "extended_cache_ttl": is_claude_4_5_on_bedrock,
+}
 
 
 class MantleCase(TypedDict):
@@ -74,6 +83,8 @@ class ExtendedCacheTtl(TypedDict):
     models: list[str]
 
 
+FlagCall = CachePointUnknownModel | ParallelTools | ExtendedCacheTtl
+
 Input = (
     MantleApiBase
     | NativeResponses
@@ -119,12 +130,19 @@ def native_responses(call: NativeResponses) -> JsonValue:
     return {"results": results}
 
 
-def cache_points(call: CachePointUnknownModel) -> JsonValue:
+def model_flag(call: FlagCall) -> JsonValue:
     litellm.model_cost = call["model_cost"]
     results: list[JsonValue] = []
+    if call["function"] == "cache_point_unknown_model":
+        for model in call["models"]:
+            try:
+                results.append(bedrock_model_accepts_cache_points(model))
+            except AttributeError:
+                results.append({"raised": True})
+        return {"results": results}
     for model in call["models"]:
         try:
-            results.append(bedrock_model_accepts_cache_points(model))
+            results.append(FLAG_LOOKUPS[call["function"]](model))
         except AttributeError:
             results.append({"raised": True})
     return {"results": results}
@@ -158,47 +176,15 @@ def effort_ceiling(call: EffortCeiling) -> JsonValue:
     return {"results": results}
 
 
-def parallel_tools(call: ParallelTools) -> JsonValue:
-    litellm.model_cost = call["model_cost"]
-    results: list[JsonValue] = []
-    for model in call["models"]:
-        try:
-            results.append(bedrock_converse_supports_parallel_tool_use_config(model))
-        except AttributeError:
-            results.append({"raised": True})
-    return {"results": results}
-
-
-def extended_cache_ttl(call: ExtendedCacheTtl) -> JsonValue:
-    litellm.model_cost = call["model_cost"]
-    results: list[JsonValue] = []
-    for model in call["models"]:
-        try:
-            results.append(is_claude_4_5_on_bedrock(model))
-        except AttributeError:
-            results.append({"raised": True})
-    return {"results": results}
-
-
-def run_catalog_capability(
-    call: ToolSearch | EffortCeiling | ParallelTools | ExtendedCacheTtl,
-) -> JsonValue:
-    if call["function"] == "tool_search":
-        return tool_search(call)
-    if call["function"] == "effort_ceiling":
-        return effort_ceiling(call)
-    if call["function"] == "parallel_tools":
-        return parallel_tools(call)
-    return extended_cache_ttl(call)
-
-
 def run(input_value: Input) -> JsonValue:
     if input_value["function"] == "mantle_api_base":
         return mantle_api_base(input_value)
     if input_value["function"] == "native_responses":
         return native_responses(input_value)
-    if input_value["function"] == "cache_point_unknown_model":
-        return cache_points(input_value)
     if input_value["function"] == "strict_tools_fallback":
         return strict_tools(input_value)
-    return run_catalog_capability(input_value)
+    if input_value["function"] == "tool_search":
+        return tool_search(input_value)
+    if input_value["function"] == "effort_ceiling":
+        return effort_ceiling(input_value)
+    return model_flag(input_value)
