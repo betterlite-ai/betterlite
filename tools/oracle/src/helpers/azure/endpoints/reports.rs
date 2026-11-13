@@ -7,11 +7,12 @@ use betterlite_azure::endpoints::projection::{
 use secrecy::ExposeSecret;
 use serde_json::{Value, json};
 
-use super::fixture::Sources;
+use super::ClientStep;
+use super::fixture::{Cache, Sources};
 
 pub(super) fn initialize_report(
     inputs: &AzureClientInputs<'_>,
-    provider_was_passed: bool,
+    step: &ClientStep,
     sources: &Sources,
 ) -> Value {
     let calls = sources.calls();
@@ -23,24 +24,27 @@ pub(super) fn initialize_report(
         "endpoint": endpoint_json(&inputs.endpoint),
         "api_key": inputs.api_key.as_ref().map(ExposeSecret::expose_secret),
         "azure_ad_token": inputs.azure_ad_token.as_ref().map(ExposeSecret::expose_secret),
-        "provider": provider_kind(provider_was_passed, &calls),
+        "provider": provider_kind(step.provider.is_some(), &calls),
         "calls": calls,
     })
 }
 
 pub(super) fn client_report(
     outcome: &ClientOutcome<'_>,
-    cache_owned: Option<bool>,
-    calls: &[Value],
+    cache: &Cache,
+    sources: &Sources,
 ) -> Value {
     let mut map = serde_json::Map::new();
     map.insert("source".to_owned(), json!(source_name(outcome.source)));
     map.insert("kind".to_owned(), json!(kind_name(outcome.kind)));
     map.insert("custom_query".to_owned(), json!(&outcome.custom_query));
-    map.insert("cache_owned".to_owned(), json!(cache_owned));
+    map.insert(
+        "cache_owned".to_owned(),
+        json!(cache.sets.last().map(|(_, _, owned)| *owned)),
+    );
     map.insert("identity".to_owned(), identity_json(&outcome.identity));
     map.insert("inputs".to_owned(), inputs_json(outcome.inputs.as_ref()));
-    map.insert("calls".to_owned(), json!(calls));
+    map.insert("calls".to_owned(), json!(sources.calls()));
     Value::Object(map)
 }
 
@@ -97,13 +101,9 @@ fn azure_json(inputs: &AzureClientInputs<'_>) -> Value {
 }
 
 fn v1_json(inputs: &OpenAiV1ClientInputs<'_>) -> Value {
-    json!({
-        "key": key_json(inputs.key.as_ref()),
-        "base_url": &inputs.base_url,
-        "timeout": inputs.timeout,
-        "max_retries": inputs.max_retries,
-        "http_client": {"is_async": inputs.http_client.is_async, "shared": inputs.http_client.shared},
-    })
+    let http = &inputs.http_client;
+    json!({"key": key_json(inputs.key.as_ref()), "base_url": &inputs.base_url, "timeout": inputs.timeout,
+        "max_retries": inputs.max_retries, "http_client": {"is_async": http.is_async, "shared": http.shared}})
 }
 
 fn key_json(key: Option<&V1Key<'_>>) -> Value {

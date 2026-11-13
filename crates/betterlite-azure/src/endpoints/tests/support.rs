@@ -96,6 +96,8 @@ pub(crate) enum SourceCall {
     },
 }
 
+type Reply<'data> = Result<Arc<dyn CallableTokenProvider + 'data>, SourceFailure>;
+
 #[derive(Default)]
 pub(crate) struct Sources {
     scripts: BTreeMap<&'static str, Script>,
@@ -136,20 +138,14 @@ impl Sources {
         }
     }
 
-    fn token_provider(
-        &self,
-        call: SourceCall,
-    ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
+    fn token_provider(&self, call: SourceCall) -> Reply<'_> {
         self.scripted(call)
             .map(|token| provider(Script::Token(token)))
     }
 }
 
 impl CredentialSources for Sources {
-    fn client_secret(
-        &self,
-        record: &ClientSecretRecord,
-    ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
+    fn client_secret(&self, record: &ClientSecretRecord) -> Reply<'_> {
         self.token_provider(SourceCall::ClientSecret {
             tenant_id: record.tenant_id.clone(),
             client_id: record.client_id.clone(),
@@ -157,10 +153,7 @@ impl CredentialSources for Sources {
         })
     }
 
-    fn username_password(
-        &self,
-        record: &UsernamePasswordRecord,
-    ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
+    fn username_password(&self, record: &UsernamePasswordRecord) -> Reply<'_> {
         self.token_provider(SourceCall::UsernamePassword {
             client_id: record.client_id.clone(),
             username: record.username.clone(),
@@ -168,10 +161,7 @@ impl CredentialSources for Sources {
         })
     }
 
-    fn sdk_refresh(
-        &self,
-        scope: &str,
-    ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
+    fn sdk_refresh(&self, scope: &str) -> Reply<'_> {
         self.token_provider(SourceCall::Refresh {
             scope: scope.to_owned(),
         })

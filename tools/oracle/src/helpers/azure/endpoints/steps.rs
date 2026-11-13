@@ -4,9 +4,7 @@ use betterlite_azure::endpoints::get_client::initialize_request;
 use betterlite_azure::endpoints::get_client::{GetClientRequest, get_azure_openai_client};
 use betterlite_azure::endpoints::initialize::{EndpointError, initialize_azure_sdk_client};
 use betterlite_azure::endpoints::projection::{ClientKind, SuppliedClient};
-use betterlite_config::sections::azure_endpoints::{
-    AZURE_DEFAULT_API_VERSION, DEFAULT_MAX_RETRIES, Settings,
-};
+use betterlite_config::sections::azure_endpoints::Settings;
 use serde_json::{Value, json};
 
 use crate::helpers::{HelperError, HelperResult};
@@ -18,16 +16,34 @@ use super::{ClientStep, CloudflareStep, Defaults, DynamicStep, Input, SuppliedKi
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::DefaultApiVersion(steps) | Input::AzureInitializerCredentials(steps) => {
-            initialize_steps(steps)
+            run_steps(steps, initialize_step)
         }
-        Input::CloudflareBaseModel(steps) => cloudflare_steps(steps),
+        Input::CloudflareBaseModel(steps) => run_steps(steps, cloudflare_step),
         Input::SeparateTokenClientIdentity(steps)
         | Input::AzureSdkClientMode(steps)
-        | Input::AzureV1ClientProjection(steps) => client_steps(steps),
+        | Input::AzureV1ClientProjection(steps) => run_steps(steps, client_step),
         Input::DynamicApiVersion(steps) => Ok(json!({
             "steps": steps.iter().map(dynamic_step).collect::<Vec<Value>>()
         })),
     }
+}
+
+fn run_steps<S>(steps: &[S], one: fn(&S) -> Result<Value, EndpointError>) -> HelperResult {
+    steps
+        .iter()
+        .map(one)
+        .collect::<Result<Vec<Value>, _>>()
+        .map(|reports| json!({"steps": reports}))
+        .map_err(|error| {
+            Box::new(HelperError {
+                class: error.class().to_owned(),
+                status: error.status(),
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })
 }
 
 fn dynamic_step(step: &DynamicStep) -> Value {
@@ -42,65 +58,52 @@ fn dynamic_step(step: &DynamicStep) -> Value {
     }
 }
 
-fn settings(configured: Option<&Defaults>) -> Settings {
-    configured.map_or_else(
-        || Settings {
-            default_max_retries: DEFAULT_MAX_RETRIES,
-            azure_default_api_version: AZURE_DEFAULT_API_VERSION.to_owned(),
-        },
-        |values| Settings {
+impl From<&Defaults> for Settings {
+    fn from(values: &Defaults) -> Self {
+        Self {
             default_max_retries: values.default_max_retries,
             azure_default_api_version: values.azure_default_api_version.clone(),
-        },
-    )
-}
-
-fn initialize_steps(steps: &[ClientStep]) -> HelperResult {
-    let mut reports = Vec::with_capacity(steps.len());
-    for step in steps {
-        reports.push(initialize_step(step)?);
+        }
     }
-    Ok(json!({"steps": reports}))
 }
 
-fn initialize_step(step: &ClientStep) -> Result<Value, Box<HelperError>> {
-    let sources = Sources::new(&step.sources);
-    let settings = settings(step.defaults.as_ref());
-    let request = initialize_request(&client_request(step, &settings, &sources));
-    let mut refresh = RefreshProviderCache::new(&sources);
-    let inputs = initialize_azure_sdk_client(&request, &mut refresh)
-        .map_err(|error| endpoint_error(&error))?;
-    Ok(reports::initialize_report(
-        &inputs,
-        step.provider.is_some(),
-        &sources,
-    ))
+struct Prepared {
+    sources: Sources,
+    settings: Settings,
 }
 
-fn client_steps(steps: &[ClientStep]) -> HelperResult {
-    let mut reports = Vec::with_capacity(steps.len());
-    for step in steps {
-        reports.push(client_step(step)?);
+impl Prepared {
+    fn new(step: &ClientStep) -> Self {
+        Self {
+            sources: Sources::new(&step.sources),
+            settings: step
+                .defaults
+                .as_ref()
+                .map_or_else(Settings::default, Settings::from),
+        }
     }
-    Ok(json!({"steps": reports}))
 }
 
-fn client_step(step: &ClientStep) -> Result<Value, Box<HelperError>> {
-    let sources = Sources::new(&step.sources);
-    let settings = settings(step.defaults.as_ref());
-    let request = client_request(step, &settings, &sources);
-    let mut refresh = RefreshProviderCache::new(&sources);
+fn initialize_step(step: &ClientStep) -> Result<Value, EndpointError> {
+    let prep = Prepared::new(step);
+    let request = initialize_request(&client_request(step, &prep));
+    let mut refresh = RefreshProviderCache::new(&prep.sources);
+    let inputs = initialize_azure_sdk_client(&request, &mut refresh)?;
+    Ok(reports::initialize_report(&inputs, step, &prep.sources))
+}
+
+fn client_step(step: &ClientStep) -> Result<Value, EndpointError> {
+    let prep = Prepared::new(step);
+    let mut refresh = RefreshProviderCache::new(&prep.sources);
     let mut cache = Cache::for_choice(step.cached);
-    let outcome = get_azure_openai_client(&request, &mut cache, &mut refresh)
-        .map_err(|error| endpoint_error(&error))?;
-    let owned = cache.sets.last().map(|(_, _, owned)| *owned);
-    Ok(reports::client_report(&outcome, owned, &sources.calls()))
+    let request = client_request(step, &prep);
+    let client = get_azure_openai_client(&request, &mut cache, &mut refresh)?;
+    Ok(reports::client_report(&client, &cache, &prep.sources))
 }
 
 fn client_request<'data>(
     step: &'data ClientStep,
-    settings: &'data Settings,
-    sources: &'data Sources,
+    prepared: &'data Prepared,
 ) -> GetClientRequest<'data> {
     GetClientRequest {
         api_key: step.api_key.clone(),
@@ -114,11 +117,11 @@ fn client_request<'data>(
         model: None,
         is_async: step.is_async,
         params: step.params.clone(),
-        settings,
+        settings: &prepared.settings,
         environment: &step.environment,
         refresh_enabled: step.refresh,
         session: step.session.session(),
-        sources,
+        sources: &prepared.sources,
     }
 }
 
@@ -138,15 +141,7 @@ const fn supplied_kind(kind: SuppliedKind) -> ClientKind {
     }
 }
 
-fn cloudflare_steps(steps: &[CloudflareStep]) -> HelperResult {
-    let mut reports = Vec::with_capacity(steps.len());
-    for step in steps {
-        reports.push(cloudflare_step(step)?);
-    }
-    Ok(json!({"steps": reports}))
-}
-
-fn cloudflare_step(step: &CloudflareStep) -> Result<Value, Box<HelperError>> {
+fn cloudflare_step(step: &CloudflareStep) -> Result<Value, EndpointError> {
     let sources = Sources::new(&step.sources);
     let provider = step
         .provider
@@ -169,18 +164,6 @@ fn cloudflare_step(step: &CloudflareStep) -> Result<Value, Box<HelperError>> {
         environment: &step.environment,
         sources: &sources,
     };
-    let outcome =
-        init_cloudflare_gateway_client(&request).map_err(|error| endpoint_error(&error))?;
+    let outcome = init_cloudflare_gateway_client(&request)?;
     Ok(reports::cloudflare_report(&outcome, &sources.calls()))
-}
-
-fn endpoint_error(error: &EndpointError) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: error.class().to_owned(),
-        status: error.status(),
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
 }

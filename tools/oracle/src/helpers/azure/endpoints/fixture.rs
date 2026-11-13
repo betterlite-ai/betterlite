@@ -81,16 +81,16 @@ impl Sources {
             .clone()
     }
 
-    fn scripted(&self, source: Source, call: Value) -> Result<String, SourceFailure> {
+    fn scripted(&self, request: &Request<'_>) -> Result<String, SourceFailure> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(call);
-        let (script, default_token) = match source {
-            Source::ClientSecret => (&self.scripts.client_secret, "client-secret-token"),
-            Source::UsernamePassword => (&self.scripts.username_password, "username-token"),
-            Source::Refresh => (&self.scripts.refresh, "refresh-token"),
-            Source::Oidc => (&self.scripts.oidc, "oidc-token"),
+            .push(request.call());
+        let (script, default_token) = match request {
+            Request::ClientSecret(_) => (&self.scripts.client_secret, "client-secret-token"),
+            Request::UsernamePassword(_) => (&self.scripts.username_password, "username-token"),
+            Request::Refresh(_) => (&self.scripts.refresh, "refresh-token"),
+            Request::Oidc(_) => (&self.scripts.oidc, "oidc-token"),
         };
         match script {
             None => Ok(default_token.to_owned()),
@@ -106,12 +106,8 @@ impl Sources {
         }
     }
 
-    fn token_provider(
-        &self,
-        source: Source,
-        call: Value,
-    ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
-        let token = self.scripted(source, call)?;
+    fn token_provider(&self, request: &Request<'_>) -> Reply<'_> {
+        let token = self.scripted(request)?;
         let provider: Arc<dyn CallableTokenProvider> = Arc::new(Provider {
             script: Script::Token { token },
         });
@@ -119,55 +115,55 @@ impl Sources {
     }
 }
 
-#[derive(Clone, Copy)]
-enum Source {
-    ClientSecret,
-    UsernamePassword,
-    Refresh,
-    Oidc,
+type Reply<'data> = Result<Arc<dyn CallableTokenProvider + 'data>, SourceFailure>;
+
+enum Request<'data> {
+    ClientSecret(&'data ClientSecretRecord),
+    UsernamePassword(&'data UsernamePasswordRecord),
+    Refresh(&'data str),
+    Oidc(&'data OidcExchangeInput),
 }
 
-impl CredentialSources for Sources {
-    fn client_secret(
-        &self,
-        record: &ClientSecretRecord,
-    ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
-        self.token_provider(
-            Source::ClientSecret,
-            json!({
+impl Request<'_> {
+    fn call(&self) -> Value {
+        match self {
+            Self::ClientSecret(record) => json!({
                 "source": "client_secret",
                 "tenant_id": record.tenant_id,
                 "client_id": record.client_id,
                 "client_secret": record.client_secret.expose_secret(),
                 "scope": record.scope,
             }),
-        )
-    }
-
-    fn username_password(
-        &self,
-        record: &UsernamePasswordRecord,
-    ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
-        self.token_provider(
-            Source::UsernamePassword,
-            json!({
+            Self::UsernamePassword(record) => json!({
                 "source": "username_password",
                 "client_id": record.client_id,
                 "azure_username": record.username,
                 "azure_password": record.password.expose_secret(),
                 "scope": record.scope,
             }),
-        )
+            Self::Refresh(scope) => json!({"source": "refresh", "scope": scope}),
+            Self::Oidc(input) => json!({
+                "source": "oidc",
+                "azure_ad_token": input.azure_ad_token.expose_secret(),
+                "azure_client_id": input.azure_client_id,
+                "azure_tenant_id": input.azure_tenant_id,
+                "scope": input.scope,
+            }),
+        }
+    }
+}
+
+impl CredentialSources for Sources {
+    fn client_secret(&self, record: &ClientSecretRecord) -> Reply<'_> {
+        self.token_provider(&Request::ClientSecret(record))
     }
 
-    fn sdk_refresh(
-        &self,
-        scope: &str,
-    ) -> Result<Arc<dyn CallableTokenProvider + '_>, SourceFailure> {
-        self.token_provider(
-            Source::Refresh,
-            json!({"source": "refresh", "scope": scope}),
-        )
+    fn username_password(&self, record: &UsernamePasswordRecord) -> Reply<'_> {
+        self.token_provider(&Request::UsernamePassword(record))
+    }
+
+    fn sdk_refresh(&self, scope: &str) -> Reply<'_> {
+        self.token_provider(&Request::Refresh(scope))
     }
 
     fn default_credential(&self, _scope: &str) -> Option<Arc<dyn CallableTokenProvider + '_>> {
@@ -175,17 +171,7 @@ impl CredentialSources for Sources {
     }
 
     fn oidc(&self, input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        self.scripted(
-            Source::Oidc,
-            json!({
-                "source": "oidc",
-                "azure_ad_token": input.azure_ad_token.expose_secret(),
-                "azure_client_id": input.azure_client_id,
-                "azure_tenant_id": input.azure_tenant_id,
-                "scope": input.scope,
-            }),
-        )
-        .map(SecretString::from)
+        self.scripted(&Request::Oidc(input)).map(SecretString::from)
     }
 }
 
