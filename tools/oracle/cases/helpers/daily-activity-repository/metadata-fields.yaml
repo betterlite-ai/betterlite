@@ -1,0 +1,23 @@
+kind: helper
+name: metadata-fields
+call:
+  daily_activity_repository:
+    cases:
+      metadata_fields_and_exists_flag:
+        function: "metadata_row"
+        token: "key"
+        key_alias: "alias"
+        team_id: "team"
+        user_id: "user"
+        metadata: {"tags": ["z", "a"]}
+        key_exists: true
+      metadata_email_initially_null:
+        function: "metadata_row"
+        token: "deleted"
+        key_alias: null
+        team_id: null
+        user_id: null
+        metadata: null
+        key_exists: false
+env: {}
+compare: {ignore: []}
