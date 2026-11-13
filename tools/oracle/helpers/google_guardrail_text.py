@@ -81,30 +81,25 @@ class SseResult(TypedDict):
     text: str | None
 
 
-class RunResult(TypedDict):
-    calls: list[JsonValue]
+class Guarded(TypedDict):
+    replacement: NotRequired[Replacement]
+    request_data: NotRequired[Record]
+    user_api_key_dict: NotRequired[Record]
 
 
-class RequestCall(TypedDict):
+class RequestCall(Guarded):
     function: Literal["request"]
     data: Record
-    replacement: NotRequired[Replacement]
 
 
-class ResponseCall(TypedDict):
+class ResponseCall(Guarded):
     function: Literal["response"]
     response: Record
-    replacement: NotRequired[Replacement]
-    request_data: NotRequired[Record]
-    user_api_key_dict: NotRequired[Record]
 
 
-class StreamCall(TypedDict):
+class StreamCall(Guarded):
     function: Literal["stream"]
     frames: list[JsonValue]
-    replacement: NotRequired[Replacement]
-    request_data: NotRequired[Record]
-    user_api_key_dict: NotRequired[Record]
 
 
 class TextChunk(TypedDict):
@@ -144,78 +139,74 @@ class RecordingGuardrail:
         input_type: Literal["request", "response"],
         logging_obj: Logging | None = None,
     ) -> GuardrailInputs:
-        del logging_obj
-        self.calls.append(
-            {
-                "texts": list(inputs["texts"]),
-                "model": inputs.get("model"),
-                "input_type": input_type,
-                "request_data": deepcopy(request_data),
-            }
-        )
-        if self.replacement is None:
-            return inputs
-        return {"texts": self.replacement}
+        recorded: RecordedCall = {
+            "texts": list(inputs["texts"]),
+            "model": inputs.get("model"),
+            "input_type": input_type,
+            "request_data": deepcopy(request_data),
+        }
+        self.calls.append(recorded)
+        if logging_obj is not None:
+            raise ValueError("the helper never passes a logging object")
+        return inputs if self.replacement is None else {"texts": self.replacement}
 
 
 def result(guardrail: RecordingGuardrail, data: JsonValue) -> JsonValue:
     if not guardrail.calls:
-        skipped: CallResult = {
-            "called": False,
-            "call_count": 0,
-            "texts": None,
-            "model": None,
-            "input_type": None,
-            "request_data": None,
-            "data": data,
-        }
-        return JSON.validate_python(skipped)
+        return JSON.validate_python(
+            CallResult(
+                called=False,
+                call_count=0,
+                texts=None,
+                model=None,
+                input_type=None,
+                request_data=None,
+                data=data,
+            )
+        )
     recorded = guardrail.calls[0]
-    called: CallResult = {
-        "called": True,
-        "call_count": len(guardrail.calls),
-        "texts": recorded["texts"],
-        "model": recorded["model"],
-        "input_type": recorded["input_type"],
-        "request_data": recorded["request_data"],
-        "data": data,
-    }
-    return JSON.validate_python(called)
-
-
-def request_case(call: RequestCall) -> JsonValue:
-    guardrail = RecordingGuardrail(call.get("replacement"))
-    data = deepcopy(call["data"])
-    asyncio.run(HANDLER.process_input_messages(data=data, guardrail_to_apply=guardrail))
-    return result(guardrail, data)
-
-
-def response_case(call: ResponseCall) -> JsonValue:
-    guardrail = RecordingGuardrail(call.get("replacement"))
-    response = deepcopy(call["response"])
-    asyncio.run(
-        HANDLER.process_output_response(
-            response=response,
-            guardrail_to_apply=guardrail,
-            user_api_key_dict=call.get("user_api_key_dict"),
-            request_data=call.get("request_data"),
+    return JSON.validate_python(
+        CallResult(
+            called=True,
+            call_count=len(guardrail.calls),
+            texts=recorded["texts"],
+            model=recorded["model"],
+            input_type=recorded["input_type"],
+            request_data=recorded["request_data"],
+            data=data,
         )
     )
-    return result(guardrail, response)
 
 
-def stream_case(call: StreamCall) -> JsonValue:
+def guarded_case(call: RequestCall | ResponseCall | StreamCall) -> JsonValue:
     guardrail = RecordingGuardrail(call.get("replacement"))
-    frames = list(call["frames"])
-    asyncio.run(
-        HANDLER.process_output_streaming_response(
-            responses_so_far=frames,
-            guardrail_to_apply=guardrail,
-            user_api_key_dict=call.get("user_api_key_dict"),
-            request_data=call.get("request_data"),
-        )
-    )
-    return result(guardrail, frames)
+    match call["function"]:
+        case "request":
+            data = deepcopy(call["data"])
+            asyncio.run(HANDLER.process_input_messages(data=data, guardrail_to_apply=guardrail))
+            return result(guardrail, data)
+        case "response":
+            response = deepcopy(call["response"])
+            asyncio.run(
+                HANDLER.process_output_response(
+                    response=response,
+                    guardrail_to_apply=guardrail,
+                    user_api_key_dict=call.get("user_api_key_dict"),
+                    request_data=call.get("request_data"),
+                )
+            )
+            return result(guardrail, response)
+        case _:
+            frames = deepcopy(call["frames"])
+            asyncio.run(
+                HANDLER.process_output_streaming_response(
+                    responses_so_far=frames,
+                    guardrail_to_apply=guardrail,
+                    user_api_key_dict=call.get("user_api_key_dict"),
+                    request_data=call.get("request_data"),
+                )
+            )
+            return result(guardrail, frames)
 
 
 def chunk_value(chunk: SseChunk) -> str | bytes:
@@ -240,17 +231,13 @@ def sse_case(call: SseCall) -> JsonValue:
 
 
 def resolve(call: Call) -> JsonValue:
-    match call["function"]:
-        case "request":
-            return request_case(call)
-        case "response":
-            return response_case(call)
-        case "stream":
-            return stream_case(call)
-        case _:
-            return sse_case(call)
+    if call["function"] == "sse":
+        return sse_case(call)
+    return guarded_case(call)
 
 
 def run(input_value: Input) -> JsonValue:
-    outcome: RunResult = {"calls": [resolve(call) for call in input_value["calls"]]}
+    outcome: dict[str, list[JsonValue]] = {
+        "calls": [resolve(call) for call in input_value["calls"]]
+    }
     return JSON.validate_python(outcome)

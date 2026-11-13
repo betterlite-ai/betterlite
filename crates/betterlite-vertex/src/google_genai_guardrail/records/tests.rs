@@ -8,8 +8,7 @@ use rstest::rstest;
 
 use crate::google_genai_guardrail::callbacks::merged_request_data;
 use crate::google_genai_guardrail::records::{
-    RequestLocation, ResponseLocation, SystemSource, project_request, request_locations,
-    request_texts, response_locations, response_texts, write_request_texts, write_response_texts,
+    Location, SystemSource, project_request, request_texts, response_texts, write_texts,
 };
 use crate::google_genai_guardrail::sse::{accumulated_stream_text, decode_google_guardrail_sse};
 use crate::google_native_content::request::GenerateContentRequest;
@@ -43,8 +42,12 @@ fn json(source: &str) -> Json {
     r#"{"config":{"system_instruction":{"parts":[{"text":"snake"}]}}}"#,
     &["snake"]
 )]
+#[case::config_snake_after_a_null_camel(
+    r#"{"config":{"systemInstruction":null,"system_instruction":{"parts":[{"text":"snake"}]}}}"#,
+    &["snake"]
+)]
 fn request_system_instruction_precedence(#[case] source: &str, #[case] expected: &[&str]) {
-    assert_eq!(request_texts(&object(source)), expected.to_vec());
+    assert_eq!(request_texts(&object(source)).1, expected.to_vec());
 }
 
 #[rstest]
@@ -59,7 +62,7 @@ fn request_system_instruction_precedence(#[case] source: &str, #[case] expected:
 )]
 #[case::no_contents(r#"{"model":"gemini"}"#, &[])]
 fn contents_are_one_object_or_a_list(#[case] source: &str, #[case] expected: &[&str]) {
-    assert_eq!(request_texts(&object(source)), expected.to_vec());
+    assert_eq!(request_texts(&object(source)).1, expected.to_vec());
 }
 
 #[test]
@@ -68,17 +71,17 @@ fn request_text_locations_place_the_system_instruction_first() {
         r#"{"model":"gemini","systemInstruction":{"parts":[{"text":"sys"},{"text":""}]},"contents":[{"parts":[{"text":"one"},{"inlineData":{}}]},{"parts":[{"text":"two"}]}]}"#,
     );
     assert_eq!(
-        request_locations(&data),
+        request_texts(&data).0,
         vec![
-            RequestLocation::System {
+            Location::System {
                 source: SystemSource::RootCamel,
                 part: 0,
             },
-            RequestLocation::Content {
+            Location::Content {
                 content: 0,
                 part: 0,
             },
-            RequestLocation::Content {
+            Location::Content {
                 content: 1,
                 part: 0,
             },
@@ -91,8 +94,8 @@ fn request_write_back_rewrites_only_located_text_fields() {
     let mut data = object(
         r#"{"model":"gemini","systemInstruction":{"role":"system","parts":[{"text":"sys"},{"inlineData":{"mimeType":"image/png"}}]},"contents":[{"role":"user","parts":[{"text":"one"},{"text":""}]},{"parts":[{"text":"two"}]}]}"#,
     );
-    let locations = request_locations(&data);
-    write_request_texts(
+    let locations = request_texts(&data).0;
+    write_texts(
         &mut data,
         &locations,
         &["SYS".to_owned(), "ONE".to_owned(), "TWO".to_owned()],
@@ -110,21 +113,21 @@ fn response_write_back_visits_every_candidate() {
     let mut response = object(
         r#"{"candidates":[{"content":{"parts":[{"text":"a"},{"inlineData":{}},{"text":""}]},"finishReason":"STOP"},{"content":{"parts":[{"text":"b"}]}}]}"#,
     );
-    let locations = response_locations(&response);
+    let locations = response_texts(&response).0;
     assert_eq!(
         locations,
         vec![
-            ResponseLocation::Candidate {
+            Location::Candidate {
                 candidate: 0,
                 part: 0,
             },
-            ResponseLocation::Candidate {
+            Location::Candidate {
                 candidate: 1,
                 part: 0,
             },
         ]
     );
-    write_response_texts(&mut response, &locations, &["A".to_owned(), "B".to_owned()]);
+    write_texts(&mut response, &locations, &["A".to_owned(), "B".to_owned()]);
     assert_eq!(
         Json::Object(response),
         json(
@@ -142,8 +145,8 @@ fn mismatched_replacement_lengths_do_not_write(#[case] replacement: Vec<String>)
         r#"{"candidates":[{"content":{"parts":[{"text":"a"}]}},{"content":{"parts":[{"text":"b"}]}}]}"#,
     );
     let original = Json::Object(response.clone());
-    let locations = response_locations(&response);
-    write_response_texts(&mut response, &locations, &replacement);
+    let locations = response_texts(&response).0;
+    write_texts(&mut response, &locations, &replacement);
     assert_eq!(Json::Object(response), original);
 }
 
@@ -266,7 +269,7 @@ fn the_projected_native_request_reads_like_the_wire_body() {
     };
     let projected = project_request(&request);
     assert_eq!(
-        request_texts(&projected),
+        request_texts(&projected).1,
         vec!["instruction".to_owned(), "question".to_owned()]
     );
 }
@@ -292,7 +295,7 @@ fn response_texts_read_every_candidate_part() {
         r#"{"candidates":[{"content":{"parts":[{"text":"a"},{"inlineData":{}}]}},{"content":{"parts":[{"text":"b"},{"text":""}]}}]}"#,
     );
     assert_eq!(
-        response_texts(&response),
+        response_texts(&response).1,
         vec!["a".to_owned(), "b".to_owned()]
     );
 }

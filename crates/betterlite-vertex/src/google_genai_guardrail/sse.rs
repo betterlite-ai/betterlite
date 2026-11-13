@@ -41,23 +41,18 @@ fn decode_lossy(bytes: &[u8]) -> String {
 
 #[must_use]
 pub fn decode_google_guardrail_sse(chunks: &[&[u8]]) -> Vec<String> {
-    let mut joined = String::new();
-    for chunk in chunks {
-        joined.push_str(&decode_lossy(chunk));
-    }
+    let joined: String = chunks.iter().map(|chunk| decode_lossy(chunk)).collect();
     let mut texts = Vec::new();
     for line in joined.split(|character| LINE_BOUNDARIES.contains(&character)) {
-        let Some(payload) = line.strip_prefix("data:") else {
+        let Some(payload) = line.strip_prefix("data:").map(str::trim) else {
             continue;
         };
-        let payload = payload.trim();
         if payload.is_empty() || payload == "[DONE]" {
             continue;
         }
-        let Ok(Json::Object(object)) = serde_json::from_str::<Json>(payload) else {
-            continue;
-        };
-        texts.extend(response_texts(&object));
+        if let Ok(Json::Object(object)) = serde_json::from_str::<Json>(payload) {
+            texts.extend(response_texts(&object).1);
+        }
     }
     texts
 }
@@ -65,22 +60,14 @@ pub fn decode_google_guardrail_sse(chunks: &[&[u8]]) -> Vec<String> {
 // LiteLLM reads every object chunk first, then scans the raw frames joined in their own order
 #[must_use]
 pub fn accumulated_stream_text(frames: &[Json]) -> String {
-    let mut object_texts = String::new();
-    let mut raw_chunks: Vec<&[u8]> = Vec::new();
+    let mut objects = String::new();
+    let mut raw: Vec<&[u8]> = Vec::new();
     for frame in frames {
         match frame {
-            Json::Object(object) => {
-                for text in response_texts(object) {
-                    object_texts.push_str(&text);
-                }
-            }
-            Json::Text(text) => raw_chunks.push(text.as_bytes()),
+            Json::Object(object) => objects.push_str(&response_texts(object).1.concat()),
+            Json::Text(text) => raw.push(text.as_bytes()),
             Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {}
         }
     }
-    let mut accumulated = object_texts;
-    for text in decode_google_guardrail_sse(&raw_chunks) {
-        accumulated.push_str(&text);
-    }
-    accumulated
+    objects + &decode_google_guardrail_sse(&raw).concat()
 }

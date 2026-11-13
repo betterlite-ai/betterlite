@@ -4,10 +4,7 @@ use std::pin::Pin;
 
 use betterlite_prompts::arguments::json::{Json, Object};
 
-use super::records::{
-    request_locations, request_texts, response_locations, response_texts, write_request_texts,
-    write_response_texts,
-};
+use super::records::{Location, request_texts, response_texts, write_texts};
 use super::sse::accumulated_stream_text;
 
 pub type ApplyFuture<'call, Failure> =
@@ -73,7 +70,6 @@ pub fn merged_request_data(
     merged
 }
 
-// LiteLLM passes the model forward only when the value is a string
 fn model_value(object: &Object) -> Option<String> {
     if let Some(Json::Text(model)) = object.get("model") {
         return Some(model.clone());
@@ -81,31 +77,39 @@ fn model_value(object: &Object) -> Option<String> {
     None
 }
 
+async fn apply<Guardrail: GenaiGuardrail>(
+    guardrail: &mut Guardrail,
+    inputs: GuardrailInputs,
+    request_data: &Object,
+    input_type: InputType,
+) -> Result<Option<Vec<String>>, Guardrail::Failure> {
+    guardrail
+        .apply_guardrail(
+            inputs,
+            GuardrailCall {
+                request_data,
+                input_type,
+            },
+        )
+        .await
+}
+
 pub async fn process_request<Guardrail: GenaiGuardrail>(
     data: &mut Object,
     guardrail: &mut Guardrail,
 ) -> Result<(), Guardrail::Failure> {
-    let texts = request_texts(data);
+    let (locations, texts) = request_texts(data);
     if texts.is_empty() {
         tracing::debug!("Google GenAI guardrail: no request text found, skipping");
         return Ok(());
     }
-    let locations = request_locations(data);
     let inputs = GuardrailInputs {
         texts,
         model: model_value(data),
     };
-    let returned = guardrail
-        .apply_guardrail(
-            inputs,
-            GuardrailCall {
-                request_data: data,
-                input_type: InputType::Request,
-            },
-        )
-        .await?;
+    let returned = apply(guardrail, inputs, data, InputType::Request).await?;
     if let Some(returned) = returned {
-        write_request_texts(data, &locations, &returned);
+        write_texts(data, &locations, &returned);
     }
     Ok(())
 }
@@ -116,12 +120,11 @@ pub async fn process_response<Guardrail: GenaiGuardrail>(
     user_metadata: &Object,
     guardrail: &mut Guardrail,
 ) -> Result<(), Guardrail::Failure> {
-    let texts = response_texts(response);
+    let (locations, texts) = response_texts(response);
     if texts.is_empty() {
         tracing::debug!("Google GenAI guardrail: no response text found, skipping");
         return Ok(());
     }
-    let locations = response_locations(response);
     let merged = merged_request_data(
         request_data,
         user_metadata,
@@ -132,17 +135,9 @@ pub async fn process_response<Guardrail: GenaiGuardrail>(
         texts,
         model: model_value(&merged),
     };
-    let returned = guardrail
-        .apply_guardrail(
-            inputs,
-            GuardrailCall {
-                request_data: &merged,
-                input_type: InputType::Response,
-            },
-        )
-        .await?;
+    let returned = apply(guardrail, inputs, &merged, InputType::Response).await?;
     if let Some(returned) = returned {
-        write_response_texts(response, &locations, &returned);
+        write_texts(response, &locations, &returned);
     }
     Ok(())
 }
@@ -153,29 +148,22 @@ pub async fn process_stream<Guardrail: GenaiGuardrail>(
     user_metadata: &Object,
     guardrail: &mut Guardrail,
 ) -> Result<(), Guardrail::Failure> {
+    let context = Json::List(frames.to_vec());
+    let merged = merged_request_data(request_data, user_metadata, "responses_so_far", context);
     let accumulated = accumulated_stream_text(frames);
     if accumulated.is_empty() {
         return Ok(());
     }
-    let merged = merged_request_data(
-        request_data,
-        user_metadata,
-        "responses_so_far",
-        Json::List(frames.to_vec()),
-    );
-    let inputs = GuardrailInputs {
-        texts: vec![accumulated],
-        model: None,
-    };
-    guardrail
-        .apply_guardrail(
-            inputs,
-            GuardrailCall {
-                request_data: &merged,
-                input_type: InputType::Response,
-            },
-        )
-        .await?;
+    apply(
+        guardrail,
+        GuardrailInputs {
+            texts: vec![accumulated],
+            model: None,
+        },
+        &merged,
+        InputType::Response,
+    )
+    .await?;
     Ok(())
 }
 

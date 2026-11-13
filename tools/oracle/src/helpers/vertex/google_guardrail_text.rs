@@ -17,7 +17,6 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 pub(crate) struct Op;
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     calls: Vec<Call>,
 }
@@ -32,39 +31,37 @@ enum Call {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+struct Guarded {
+    #[serde(default)]
+    replacement: Option<Vec<String>>,
+    #[serde(default)]
+    request_data: Option<Object>,
+    #[serde(default)]
+    user_api_key_dict: Option<Object>,
+}
+
+#[derive(Debug, Deserialize)]
 struct RequestCall {
     data: Object,
-    #[serde(default)]
-    replacement: Option<Vec<String>>,
+    #[serde(flatten)]
+    guarded: Guarded,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct ResponseCall {
     response: Object,
-    #[serde(default)]
-    replacement: Option<Vec<String>>,
-    #[serde(default)]
-    request_data: Option<Object>,
-    #[serde(default)]
-    user_api_key_dict: Option<Object>,
+    #[serde(flatten)]
+    guarded: Guarded,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct StreamCall {
     frames: Vec<Json>,
-    #[serde(default)]
-    replacement: Option<Vec<String>>,
-    #[serde(default)]
-    request_data: Option<Object>,
-    #[serde(default)]
-    user_api_key_dict: Option<Object>,
+    #[serde(flatten)]
+    guarded: Guarded,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 struct SseCall {
     chunks: Vec<SseChunk>,
 }
@@ -89,7 +86,6 @@ impl SseChunk {
 #[error("the recording guardrail cannot fail")]
 struct NeverFails;
 
-#[derive(Debug, Clone)]
 struct RecordedCall {
     texts: Vec<String>,
     model: Option<String>,
@@ -116,10 +112,7 @@ impl GenaiGuardrail for Recorder {
             input_type: call.input_type,
             request_data: call.request_data.clone(),
         });
-        let replacement = match self.replacement.clone() {
-            Some(replacement) => replacement,
-            None => inputs.texts,
-        };
+        let replacement = self.replacement.clone().unwrap_or(inputs.texts);
         Box::pin(async move { Ok(Some(replacement)) })
     }
 }
@@ -153,61 +146,55 @@ fn failure<Error: Display>(error: Error) -> Box<HelperError> {
 
 fn resolve(runtime: &tokio::runtime::Runtime, call: &Call) -> HelperResult {
     match call {
-        Call::Request(given) => request_case(runtime, given),
-        Call::Response(given) => response_case(runtime, given),
-        Call::Stream(given) => stream_case(runtime, given),
+        Call::Request(given) => {
+            let mut recorder = Recorder {
+                replacement: given.guarded.replacement.clone(),
+                calls: Vec::new(),
+            };
+            let mut data = given.data.clone();
+            runtime
+                .block_on(process_request(&mut data, &mut recorder))
+                .map_err(failure)?;
+            result(&recorder, &Json::Object(data))
+        }
+        Call::Response(given) => {
+            let mut recorder = Recorder {
+                replacement: given.guarded.replacement.clone(),
+                calls: Vec::new(),
+            };
+            let metadata = given.guarded.user_api_key_dict.clone().unwrap_or_default();
+            let mut record = GenerateContentResponse {
+                wire: given.response.clone(),
+            };
+            runtime
+                .block_on(process_response(
+                    &mut record.wire,
+                    given.guarded.request_data.as_ref(),
+                    &metadata,
+                    &mut recorder,
+                ))
+                .map_err(failure)?;
+            result(&recorder, &Json::Object(record.wire))
+        }
+        Call::Stream(given) => {
+            let frames = given.frames.clone();
+            let metadata = given.guarded.user_api_key_dict.clone().unwrap_or_default();
+            let mut recorder = Recorder {
+                replacement: given.guarded.replacement.clone(),
+                calls: Vec::new(),
+            };
+            runtime
+                .block_on(process_stream(
+                    &frames,
+                    given.guarded.request_data.as_ref(),
+                    &metadata,
+                    &mut recorder,
+                ))
+                .map_err(failure)?;
+            result(&recorder, &Json::List(frames))
+        }
         Call::Sse(given) => sse_case(given),
     }
-}
-
-fn request_case(runtime: &tokio::runtime::Runtime, call: &RequestCall) -> HelperResult {
-    let mut data = call.data.clone();
-    let mut recorder = Recorder {
-        replacement: call.replacement.clone(),
-        calls: Vec::new(),
-    };
-    runtime
-        .block_on(process_request(&mut data, &mut recorder))
-        .map_err(failure)?;
-    result(&recorder, Json::Object(data))
-}
-
-fn response_case(runtime: &tokio::runtime::Runtime, call: &ResponseCall) -> HelperResult {
-    let mut record = GenerateContentResponse {
-        wire: call.response.clone(),
-    };
-    let user_metadata = call.user_api_key_dict.clone().unwrap_or_default();
-    let mut recorder = Recorder {
-        replacement: call.replacement.clone(),
-        calls: Vec::new(),
-    };
-    runtime
-        .block_on(process_response(
-            &mut record.wire,
-            call.request_data.as_ref(),
-            &user_metadata,
-            &mut recorder,
-        ))
-        .map_err(failure)?;
-    result(&recorder, Json::Object(record.wire))
-}
-
-fn stream_case(runtime: &tokio::runtime::Runtime, call: &StreamCall) -> HelperResult {
-    let frames = call.frames.clone();
-    let user_metadata = call.user_api_key_dict.clone().unwrap_or_default();
-    let mut recorder = Recorder {
-        replacement: call.replacement.clone(),
-        calls: Vec::new(),
-    };
-    runtime
-        .block_on(process_stream(
-            &frames,
-            call.request_data.as_ref(),
-            &user_metadata,
-            &mut recorder,
-        ))
-        .map_err(failure)?;
-    result(&recorder, Json::List(frames))
 }
 
 fn sse_case(call: &SseCall) -> HelperResult {
@@ -219,8 +206,8 @@ fn sse_case(call: &SseCall) -> HelperResult {
     Ok(json!({ "text": texts.concat() }))
 }
 
-fn result(recorder: &Recorder, data: Json) -> HelperResult {
-    if recorder.calls.is_empty() {
+fn result(recorder: &Recorder, data: &Json) -> HelperResult {
+    let Some(call) = recorder.calls.first() else {
         return Ok(json!({
             "called": false,
             "call_count": 0,
@@ -228,10 +215,9 @@ fn result(recorder: &Recorder, data: Json) -> HelperResult {
             "model": null,
             "input_type": null,
             "request_data": null,
-            "data": &data,
+            "data": data,
         }));
-    }
-    let call = &recorder.calls[0];
+    };
     Ok(json!({
         "called": true,
         "call_count": recorder.calls.len(),
@@ -239,6 +225,6 @@ fn result(recorder: &Recorder, data: Json) -> HelperResult {
         "model": &call.model,
         "input_type": call.input_type.as_str(),
         "request_data": &call.request_data,
-        "data": &data,
+        "data": data,
     }))
 }
