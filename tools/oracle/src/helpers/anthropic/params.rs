@@ -1,4 +1,5 @@
 use betterlite_anthropic::anthropic_capability_catalog::{CatalogSources, DropParams};
+use betterlite_anthropic::params::error::ParamsError;
 use betterlite_anthropic::params::output_config::{
     OutputConfigRequest, apply as apply_output_config,
 };
@@ -106,14 +107,38 @@ async fn run_steps(
     Ok(Value::Array(answers))
 }
 
-fn helper_error(error: &betterlite_anthropic::params::error::ParamsError) -> Box<HelperError> {
+// LiteLLM prefixes the exception's own name onto the message it carries
+fn helper_error(error: &ParamsError) -> Box<HelperError> {
+    let class = match error {
+        ParamsError::Speed(_) | ParamsError::Sampling(_) | ParamsError::ForcedTool(_) => {
+            "UnsupportedParamsError"
+        }
+        ParamsError::Base(_)
+        | ParamsError::Context(_)
+        | ParamsError::Effort(_)
+        | ParamsError::Options(_)
+        | ParamsError::Reasoning(_)
+        | ParamsError::Schema(_)
+        | ParamsError::Thinking(_)
+        | ParamsError::Tools(_)
+        | ParamsError::UserId(_)
+        | ParamsError::NotNumber { .. }
+        | ParamsError::NotList { .. }
+        | ParamsError::NotAnObject
+        | ParamsError::OutOfRange { .. }
+        | ParamsError::NotBool { .. }
+        | ParamsError::InvalidEffort { .. }
+        | ParamsError::EffortUnsupported { .. }
+        | ParamsError::Encode(_)
+        | ParamsError::Decode(_) => "BadRequestError",
+    };
     Box::new(HelperError {
-        class: "BadRequestError".to_owned(),
+        class: class.to_owned(),
         status: error.status_code(),
         error_type: None,
         param: None,
         code: None,
-        message: error.to_string(),
+        message: format!("litellm.{class}: {error}"),
     })
 }
 

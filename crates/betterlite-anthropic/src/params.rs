@@ -3,6 +3,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
+use betterlite_openai::base_helpers::thinking_request;
 use indexmap::IndexMap;
 
 use crate::anthropic_capability_catalog::{CatalogSources, DropParams};
@@ -41,22 +42,9 @@ where
     Source: DynamicMetadataSource,
     Transport: ModelInfoClient,
 {
-    let thinking_enabled = thinking::thinking_enabled(non_default_params);
+    let thinking_enabled = thinking_request(&value::base_params(non_default_params)?).thinking;
     for (param, value) in non_default_params {
         match param.as_str() {
-            "max_tokens" => max_tokens::apply(optional_params, value, "max_tokens")?,
-            "max_completion_tokens" => {
-                max_tokens::apply(optional_params, value, "max_completion_tokens")?;
-            }
-            "tools" => tools::apply_tools(optional_params, value)?,
-            "tool_choice" | "parallel_tool_calls" => {
-                tools::apply_tool_choice(request, non_default_params, optional_params)?;
-            }
-            "stream" => options::apply_stream(optional_params, value),
-            "stop" => options::apply_stop(optional_params, value, request.drop.global)?,
-            "temperature" | "top_p" => {
-                options::apply_sampling(request, optional_params, param, value)?
-            }
             "response_format" => {
                 tools::apply_response_format(
                     request,
@@ -81,11 +69,7 @@ where
                 thinking::apply_reasoning_effort(request, optional_params, value, environment)
                     .await?;
             }
-            "web_search_options" => tools::apply_web_search(optional_params, value)?,
-            "extra_headers" => {
-                optional_params.insert("extra_headers".to_owned(), value.clone());
-            }
-            _ => {}
+            _ => options::apply_plain(request, non_default_params, optional_params, param, value)?,
         }
     }
     thinking::update_max_tokens(request, non_default_params, optional_params)

@@ -8,15 +8,45 @@ use crate::capabilities::speed::{SpeedDecision, SpeedParam, SpeedRequest, maybe_
 use crate::option_primitives::context_management::map_context_management;
 use crate::option_primitives::map_stop_sequences;
 use crate::option_primitives::user_id::UserIdPolicy;
-use crate::params::ParamsRequest;
 use crate::params::error::ParamsError;
-use crate::params::value;
+use crate::params::{ParamsRequest, max_tokens, tools, value};
 
 // Only a literal true streams; any other value, false included, stays unmapped
 pub fn apply_stream(optional_params: &mut IndexMap<String, Json>, value: &Json) {
     if matches!(value, Json::Bool(true)) {
         optional_params.insert("stream".to_owned(), Json::Bool(true));
     }
+}
+
+// The parameters whose mapping needs no await, in the arms LiteLLM's loop gives them
+pub fn apply_plain(
+    request: &ParamsRequest<'_>,
+    non_default_params: &IndexMap<String, Json>,
+    optional_params: &mut IndexMap<String, Json>,
+    param: &str,
+    value: &Json,
+) -> Result<(), ParamsError> {
+    match param {
+        "max_tokens" => max_tokens::apply(optional_params, "max_tokens", value)?,
+        "max_completion_tokens" => {
+            max_tokens::apply(optional_params, "max_completion_tokens", value)?;
+        }
+        "tools" => tools::apply_tools(optional_params, value)?,
+        "tool_choice" | "parallel_tool_calls" => {
+            tools::apply_tool_choice(request, non_default_params, optional_params)?;
+        }
+        "stream" => apply_stream(optional_params, value),
+        "stop" | "user" | "context_management" | "cache_control" => {
+            apply_small(optional_params, param, value, request.drop.global)?;
+        }
+        "temperature" | "top_p" | "speed" => apply_gated(request, optional_params, param, value)?,
+        "web_search_options" => tools::apply_web_search(optional_params, value)?,
+        "extra_headers" => {
+            optional_params.insert("extra_headers".to_owned(), value.clone());
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 // The projections LiteLLM maps without a model gate: stop, user, context_management, cache_control

@@ -3,7 +3,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::fixture::{Fixture, Session, Warnings, capture_warnings};
+use super::fixture::{Fixture, Session, capture_warnings};
 use crate::anthropic_capability_catalog::DropParams;
 use crate::capabilities::speed::DROP_UNSUPPORTED_SPEED_WARNING;
 use crate::params::error::ParamsError;
@@ -14,15 +14,41 @@ use crate::params::{DEFAULT_MAX_TOKENS, ParamsRequest, map_openai_params};
 
 const MODELS: &str = r#"{
     "native-model": {"litellm_provider": "anthropic", "supports_native_structured_output": true},
-    "fallback-model": {"litellm_provider": "anthropic"},
     "adaptive-model": {"litellm_provider": "anthropic", "supports_adaptive_thinking": true},
-    "effort-model": {"litellm_provider": "anthropic", "supports_output_config": true, "supports_max_reasoning_effort": true},
+    "effort-model": {"litellm_provider": "anthropic", "supports_output_config": true, "supports_max_reasoning_effort": true, "supports_xhigh_reasoning_effort": true},
     "plain-model": {"litellm_provider": "anthropic"},
     "fast-model": {"litellm_provider": "anthropic", "supports_speed": true},
     "no-forced-tools": {"litellm_provider": "anthropic", "supports_forced_tool_use": false}
 }"#;
 
 const FORMAT: &str = r#"{"type":"json_schema","json_schema":{"schema":{"type":"object"}}}"#;
+const FORMAT_ONLY: &str = r#"{"format":{"type":"json_schema"}}"#;
+const EFFORT_AND_FORMAT: &str = r#"{"effort":"high","format":{"type":"json_schema"}}"#;
+const NONE: DropParams = DropParams {
+    global: false,
+    call: false,
+};
+const GLOBAL: DropParams = DropParams {
+    global: true,
+    call: false,
+};
+const PER_CALL: DropParams = DropParams {
+    global: false,
+    call: true,
+};
+
+// model, request, optional params before the call, optional params after it
+type MapCase = (&'static str, &'static str, &'static str, &'static str);
+
+// model, global drop, output_config sent, optional params after, body after, warns
+type OutputCase = (
+    &'static str,
+    bool,
+    &'static str,
+    &'static str,
+    &'static str,
+    bool,
+);
 
 fn json(source: &str) -> Json {
     serde_json::from_str(source).expect("case JSON")
@@ -37,18 +63,14 @@ fn params(source: &str) -> IndexMap<String, Json> {
     }
 }
 
-const fn flags(call: bool, global: bool) -> DropParams {
-    DropParams { global, call }
-}
-
-async fn mapped(
-    fixture: &Fixture,
+async fn try_map(
     model: &str,
-    non_default: &str,
+    requested: &str,
     initial: &str,
     drop: DropParams,
 ) -> Result<IndexMap<String, Json>, ParamsError> {
-    let mut session = Session::new(fixture);
+    let fixture = Fixture::new(MODELS, "{}");
+    let mut session = Session::new(&fixture);
     let catalogs = fixture.catalogs();
     let budgets = Settings::default();
     let request = ParamsRequest {
@@ -59,11 +81,10 @@ async fn mapped(
         default_max_tokens: DEFAULT_MAX_TOKENS,
         catalogs: &catalogs,
     };
-    let requested = params(non_default);
     let mut optional = params(initial);
     map_openai_params(
         &request,
-        &requested,
+        &params(requested),
         &mut optional,
         &mut session.environment(),
     )
@@ -71,38 +92,40 @@ async fn mapped(
     Ok(optional)
 }
 
-async fn assert_map(fixture: &Fixture, model: &str, requested: &str, expected: &str) {
-    let mapped = mapped(fixture, model, requested, "{}", flags(false, false))
+async fn map_with(model: &str, requested: &str, drop: DropParams) -> IndexMap<String, Json> {
+    try_map(model, requested, "{}", drop)
         .await
-        .expect("maps");
-    assert_eq!(Json::Object(mapped), json(expected));
+        .expect("the request maps")
 }
 
-async fn refused(fixture: &Fixture, model: &str, requested: &str) -> ParamsError {
-    match mapped(fixture, model, requested, "{}", flags(false, false)).await {
+async fn refused(model: &str, requested: &str) -> ParamsError {
+    match try_map(model, requested, "{}", NONE).await {
         Ok(mapped) => panic!("expected an error, mapped {mapped:?}"),
         Err(error) => error,
     }
 }
 
-async fn dropped_map(
-    fixture: &Fixture,
-    model: &str,
-    requested: &str,
-    drop: DropParams,
-) -> IndexMap<String, Json> {
-    mapped(fixture, model, requested, "{}", drop)
-        .await
-        .expect("maps")
+async fn check_maps(cases: &[MapCase]) {
+    for (model, requested, initial, expected) in cases {
+        let mapped = try_map(model, requested, initial, NONE)
+            .await
+            .expect("the request maps");
+        assert_eq!(
+            Json::Object(mapped),
+            json(expected),
+            "{model} {requested} {initial}"
+        );
+    }
 }
 
-async fn output_configs(
-    fixture: &Fixture,
+// the optional params and the body after _apply_output_config, a missing config reading null
+async fn output_run(
     model: &str,
     global_drop: bool,
     source: &str,
-) -> (Json, Json) {
-    let mut session = Session::new(fixture);
+) -> Result<(Json, Json), ParamsError> {
+    let fixture = Fixture::new(MODELS, "{}");
+    let mut session = Session::new(&fixture);
     let catalogs = fixture.catalogs();
     let request = OutputConfigRequest {
         model,
@@ -118,394 +141,472 @@ async fn output_configs(
         &mut session.environment(),
         &catalogs,
     )
-    .await
-    .expect("applies");
-    let data_config = data.get("output_config").cloned().unwrap_or(Json::Null);
-    let optional_config = optional.get("output_config").cloned().unwrap_or(Json::Null);
-    (optional_config, data_config)
-}
-
-async fn refused_output(fixture: &Fixture, model: &str, source: &str) -> ParamsError {
-    let mut session = Session::new(fixture);
-    let catalogs = fixture.catalogs();
-    let request = OutputConfigRequest {
-        model,
-        provider: "anthropic",
-        global_drop: false,
+    .await?;
+    let read = |fields: &IndexMap<String, Json>| {
+        fields.get("output_config").cloned().unwrap_or(Json::Null)
     };
-    let mut data = params(source);
-    let mut optional = params(source);
-    match apply_output_config(
-        &request,
-        &mut data,
-        &mut optional,
-        &mut session.environment(),
-        &catalogs,
-    )
-    .await
-    {
-        Ok(()) => panic!("expected an error for {source}"),
-        Err(error) => error,
-    }
+    Ok((read(&optional), read(&data)))
 }
 
-fn config_of(source: &str) -> Json {
-    match json(source) {
-        Json::Object(fields) => fields.get("output_config").cloned().unwrap_or(Json::Null),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Json::Null,
-    }
-}
-
-fn first_warning(warnings: &Warnings) -> Option<String> {
-    warnings.messages().first().cloned()
-}
-
-async fn max_token_option_precedence() {
-    let fixture = Fixture::new(MODELS, "{}");
-    assert_map(
-        &fixture,
+const MAX_TOKEN_CASES: [MapCase; 13] = [
+    (
         "plain-model",
         r#"{"max_tokens":100,"max_completion_tokens":50}"#,
+        "{}",
         r#"{"max_tokens":50}"#,
-    )
-    .await;
-    assert_map(
-        &fixture,
+    ),
+    (
         "plain-model",
         r#"{"max_completion_tokens":50,"max_tokens":100}"#,
+        "{}",
         r#"{"max_tokens":100}"#,
-    )
-    .await;
-    assert_map(
-        &fixture,
+    ),
+    (
         "plain-model",
         r#"{"max_tokens":-3}"#,
+        "{}",
         r#"{"max_tokens":-3}"#,
-    )
-    .await;
-    assert_map(
-        &fixture,
+    ),
+    (
         "plain-model",
         r#"{"max_tokens":0}"#,
+        "{}",
         r#"{"max_tokens":0}"#,
-    )
-    .await;
-    assert_map(
-        &fixture,
+    ),
+    (
         "plain-model",
         r#"{"max_tokens":true}"#,
+        "{}",
         r#"{"max_tokens":true}"#,
-    )
-    .await;
-    assert_map(
-        &fixture,
+    ),
+    (
+        "plain-model",
+        r#"{"max_tokens":1.5}"#,
+        "{}",
+        r#"{"max_tokens":2}"#,
+    ),
+    (
         "plain-model",
         r#"{"max_tokens":2.5}"#,
+        "{}",
         r#"{"max_tokens":2}"#,
-    )
-    .await;
-    assert_map(
-        &fixture,
+    ),
+    (
         "plain-model",
-        r#"{"max_tokens":3.5}"#,
+        r#"{"max_completion_tokens":3.5}"#,
+        "{}",
         r#"{"max_tokens":4}"#,
-    )
-    .await;
-    assert_map(
-        &fixture,
+    ),
+    (
         "plain-model",
         r#"{"max_tokens":0.4}"#,
+        "{}",
         r#"{"max_tokens":1}"#,
-    )
-    .await;
-    assert_map(&fixture, "plain-model", r#"{"seed":7}"#, "{}").await;
-    assert_map(
-        &fixture,
+    ),
+    ("plain-model", r#"{"seed":7}"#, "{}", "{}"),
+    (
         "plain-model",
         r#"{"thinking":{"type":"enabled","budget_tokens":1000}}"#,
+        "{}",
         r#"{"thinking":{"type":"enabled","budget_tokens":1000},"max_tokens":5096}"#,
-    )
-    .await;
-    assert_map(
-        &fixture,
+    ),
+    (
         "plain-model",
         r#"{"thinking":{"type":"enabled","budget_tokens":1000},"max_tokens":2000}"#,
+        "{}",
         r#"{"thinking":{"type":"enabled","budget_tokens":1000},"max_tokens":2000}"#,
-    )
-    .await;
-    let refused = refused(&fixture, "plain-model", r#"{"max_tokens":"many"}"#).await;
-    assert!(matches!(
-        refused,
-        ParamsError::NotNumber {
-            field: "max_tokens"
-        }
-    ));
+    ),
+    (
+        "plain-model",
+        r#"{"thinking":{"type":"enabled","budget_tokens":1000},"max_completion_tokens":2000}"#,
+        "{}",
+        r#"{"thinking":{"type":"enabled","budget_tokens":1000},"max_tokens":2000}"#,
+    ),
+];
+
+async fn max_token_option_precedence() {
+    check_maps(&MAX_TOKEN_CASES).await;
+    for field in ["max_tokens", "max_completion_tokens"] {
+        let request = format!(r#"{{"{field}":"many"}}"#);
+        let error = refused("plain-model", &request).await;
+        assert!(
+            matches!(error, ParamsError::NotNumber { field: named } if named == field),
+            "{error:?}"
+        );
+    }
 }
 
-async fn reasoning_none_clears_thinking() {
-    let fixture = Fixture::new(MODELS, "{}");
-    let cleared = mapped(
-        &fixture,
+const REASONING_CASES: [MapCase; 8] = [
+    (
         "plain-model",
         r#"{"reasoning_effort":"none"}"#,
-        r#"{"thinking":{"type":"enabled","budget_tokens":1024},"output_config":{"effort":"high"}}"#,
-        flags(false, false),
-    )
-    .await
-    .expect("maps");
-    assert!(cleared.is_empty(), "{cleared:?}");
-    assert_map(
-        &fixture,
+        r#"{"thinking":{"type":"enabled","budget_tokens":1024},"output_config":{"effort":"high","format":{"type":"json_schema"}}}"#,
+        "{}",
+    ),
+    (
         "plain-model",
         r#"{"reasoning_effort":{"effort":"low"}}"#,
-        r#"{"thinking":{"type":"enabled","budget_tokens":1024}}"#,
-    )
-    .await;
-    assert_map(&fixture, "plain-model", r#"{"reasoning_effort":42}"#, "{}").await;
-    assert_map(&fixture, "adaptive-model", r#"{"reasoning_effort":"minimal"}"#, r#"{"output_config":{"effort":"low"},"thinking":{"type":"adaptive","display":"summarized"}}"#).await;
-    let legacy = refused(&fixture, "plain-model", r#"{"reasoning_effort":"bogus"}"#).await;
-    assert!(matches!(legacy, ParamsError::Reasoning(_)));
-    let adaptive = refused(
-        &fixture,
+        "{}",
+        r#"{"thinking":{"type":"enabled","budget_tokens":1024},"max_tokens":5120}"#,
+    ),
+    (
+        "plain-model",
+        r#"{"reasoning_effort":"high"}"#,
+        "{}",
+        r#"{"thinking":{"type":"enabled","budget_tokens":4096},"max_tokens":8192}"#,
+    ),
+    ("plain-model", r#"{"reasoning_effort":42}"#, "{}", "{}"),
+    (
+        "plain-model",
+        r#"{"reasoning_effort":{"level":"low"}}"#,
+        "{}",
+        "{}",
+    ),
+    (
         "adaptive-model",
-        r#"{"reasoning_effort":"bogus"}"#,
-    )
-    .await;
-    assert!(matches!(adaptive, ParamsError::Effort(_)));
+        r#"{"reasoning_effort":"minimal"}"#,
+        r#"{"output_config":{"format":{"type":"json_schema"}}}"#,
+        r#"{"thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"low"}}"#,
+    ),
+    (
+        "adaptive-model",
+        r#"{"reasoning_effort":"xhigh"}"#,
+        "{}",
+        r#"{"thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"xhigh"}}"#,
+    ),
+    (
+        "adaptive-model",
+        r#"{"reasoning_effort":"none"}"#,
+        r#"{"output_config":{"effort":"max"}}"#,
+        "{}",
+    ),
+];
+
+async fn reasoning_none_clears_thinking() {
+    check_maps(&REASONING_CASES).await;
+    let legacy = refused("plain-model", r#"{"reasoning_effort":"bogus"}"#).await;
+    assert!(matches!(legacy, ParamsError::Reasoning(_)), "{legacy:?}");
+    assert_eq!(legacy.status_code(), Some(400));
+    let adaptive = refused("adaptive-model", r#"{"reasoning_effort":"bogus"}"#).await;
+    assert!(matches!(adaptive, ParamsError::Effort(_)), "{adaptive:?}");
     assert_eq!(adaptive.status_code(), Some(400));
 }
 
-async fn output_format_with_effort_drop_warning() {
-    let fixture = Fixture::new(MODELS, "{}");
-    let (guard, warnings) = capture_warnings();
-    let (optional, data) = output_configs(
-        &fixture,
+const OUTPUT_CASES: [OutputCase; 9] = [
+    (
         "plain-model",
         true,
         r#"{"output_config":{"effort":"high","format":{"type":"json_schema"}}}"#,
-    )
-    .await;
-    drop(guard);
-    assert_eq!(optional, json(r#"{"format":{"type":"json_schema"}}"#));
-    assert_eq!(data, json(r#"{"format":{"type":"json_schema"}}"#));
-    assert_eq!(
-        first_warning(&warnings),
-        Some(DROP_OUTPUT_CONFIG_WARNING.replacen("%s", "plain-model", 1))
-    );
-    let (kept, _) = output_configs(
-        &fixture,
-        "effort-model",
+        FORMAT_ONLY,
+        FORMAT_ONLY,
+        true,
+    ),
+    (
+        "plain-model",
         true,
         r#"{"output_config":{"effort":"high"}}"#,
-    )
-    .await;
-    assert_eq!(kept, json(r#"{"effort":"high"}"#));
-    let (format_only, _) = output_configs(
-        &fixture,
+        "null",
+        "null",
+        true,
+    ),
+    (
+        "plain-model",
+        true,
+        r#"{"output_config":{"format":null,"effort":"high"}}"#,
+        "null",
+        "null",
+        true,
+    ),
+    (
         "plain-model",
         true,
         r#"{"output_config":{"format":{"type":"json_schema"}}}"#,
-    )
-    .await;
-    assert_eq!(format_only, json(r#"{"format":{"type":"json_schema"}}"#));
-    for source in [
+        FORMAT_ONLY,
+        FORMAT_ONLY,
+        false,
+    ),
+    (
+        "effort-model",
+        true,
+        r#"{"output_config":{"effort":"high","format":{"type":"json_schema"}}}"#,
+        EFFORT_AND_FORMAT,
+        EFFORT_AND_FORMAT,
+        false,
+    ),
+    (
+        "plain-model",
+        false,
+        r#"{"output_config":{"effort":"high","format":{"type":"json_schema"}}}"#,
+        EFFORT_AND_FORMAT,
+        EFFORT_AND_FORMAT,
+        false,
+    ),
+    (
+        "plain-model",
+        true,
         r#"{"output_config":null}"#,
+        "null",
+        "null",
+        false,
+    ),
+    (
+        "plain-model",
+        true,
         r#"{"output_config":{}}"#,
-        r#"{"output_config":"x"}"#,
         "{}",
-    ] {
-        let (missing, _) = output_configs(&fixture, "plain-model", true, source).await;
-        assert_eq!(missing, Json::Null, "{source}");
+        "{}",
+        false,
+    ),
+    (
+        "plain-model",
+        true,
+        r#"{"output_config":"x"}"#,
+        r#""x""#,
+        r#""x""#,
+        false,
+    ),
+];
+
+async fn output_format_with_effort_drop_warning() {
+    for (model, global, source, optional, data, warns) in OUTPUT_CASES {
+        let (guard, warnings) = capture_warnings();
+        let result = output_run(model, global, source).await.expect("applies");
+        drop(guard);
+        assert_eq!(result, (json(optional), json(data)), "{model} {source}");
+        let expected = warns.then(|| DROP_OUTPUT_CONFIG_WARNING.replacen("%s", model, 1));
+        assert_eq!(warnings.messages().first().cloned(), expected, "{source}");
     }
-    assert!(
-        mapped(
-            &fixture,
-            "plain-model",
-            r#"{"output_config":{"effort":"xhigh"}}"#,
-            "{}",
-            flags(true, false)
-        )
+    let (absent, _) = output_run("plain-model", true, "{}")
         .await
-        .expect("maps")
-        .is_empty()
-    );
+        .expect("applies");
+    assert_eq!(absent, Json::Null);
 }
 
-async fn invalid_output_effort() {
-    let fixture = Fixture::new(MODELS, "{}");
-    let invalid = refused_output(
-        &fixture,
+// model, output_config sent, the value the error names
+const BAD_EFFORTS: [(&str, &str, &str); 3] = [
+    (
         "effort-model",
         r#"{"output_config":{"effort":"bogus"}}"#,
-    )
-    .await;
-    assert!(matches!(invalid, ParamsError::InvalidEffort { .. }));
-    assert_eq!(invalid.status_code(), Some(400));
-    let unsupported = refused_output(
-        &fixture,
+        "'bogus'",
+    ),
+    ("effort-model", r#"{"output_config":{"effort":5}}"#, "5"),
+    ("plain-model", r#"{"output_config":{"effort":""}}"#, "''"),
+];
+
+// model, output_config sent, the level the message names
+const UNSUPPORTED_EFFORTS: [(&str, &str, &str); 2] = [
+    (
         "plain-model",
         r#"{"output_config":{"effort":"xhigh","format":{"type":"json_schema"}}}"#,
-    )
-    .await;
-    assert!(matches!(unsupported, ParamsError::EffortUnsupported { .. }));
-    assert_eq!(unsupported.status_code(), Some(400));
-    for level in ["high", "medium", "low", "xhigh", "max"] {
-        let source = format!(r#"{{"output_config":{{"effort":"{level}","note":"kept"}}}}"#);
-        let (kept, data) = output_configs(&fixture, "effort-model", false, &source).await;
-        assert_eq!(kept, config_of(&source), "{level}");
-        assert_eq!(data, config_of(&source), "{level}");
+        "xhigh",
+    ),
+    (
+        "plain-model",
+        r#"{"output_config":{"effort":"max"}}"#,
+        "max",
+    ),
+];
+
+async fn invalid_output_effort() {
+    for (model, source, value) in BAD_EFFORTS {
+        let error = output_run(model, false, source).await.expect_err(source);
+        assert!(
+            matches!(&error, ParamsError::InvalidEffort { value: named } if named == value),
+            "{source}: {error:?}"
+        );
+        assert_eq!(error.status_code(), Some(400));
     }
+    for (model, source, level) in UNSUPPORTED_EFFORTS {
+        let error = output_run(model, false, source).await.expect_err(source);
+        let expected =
+            format!("effort='{level}' is not supported by this model. Got model: {model}");
+        assert!(
+            matches!(&error, ParamsError::EffortUnsupported { message } if *message == expected),
+            "{source}: {error:?}"
+        );
+        assert_eq!(error.status_code(), Some(400));
+    }
+    for level in ["high", "medium", "low", "xhigh", "max"] {
+        let config = format!(r#"{{"effort":"{level}","note":"kept"}}"#);
+        let source = format!(r#"{{"output_config":{config}}}"#);
+        let kept = output_run("effort-model", false, &source)
+            .await
+            .expect("a supported effort");
+        assert_eq!(kept, (json(&config), json(&config)), "{level}");
+    }
+    let format_only = r#"{"output_config":{"format":{"type":"json_schema"}}}"#;
+    let kept = output_run("plain-model", false, format_only)
+        .await
+        .expect("a format needs no effort capability");
+    assert_eq!(kept, (json(FORMAT_ONLY), json(FORMAT_ONLY)));
 }
 
 async fn speed_drop_policy() {
-    let fixture = Fixture::new(MODELS, "{}");
-    let refused = refused(&fixture, "plain-model", r#"{"speed":"fast"}"#).await;
-    assert!(matches!(refused, ParamsError::Speed(_)));
-    assert_eq!(refused.status_code(), Some(400));
-    assert!(
-        dropped_map(
-            &fixture,
-            "plain-model",
+    let error = refused("plain-model", r#"{"speed":"fast"}"#).await;
+    assert!(matches!(error, ParamsError::Speed(_)), "{error:?}");
+    assert_eq!(error.status_code(), Some(400));
+    for policy in [PER_CALL, GLOBAL] {
+        let (guard, warnings) = capture_warnings();
+        let mapped = map_with("plain-model", r#"{"speed":"fast"}"#, policy).await;
+        drop(guard);
+        assert!(mapped.is_empty(), "{mapped:?}");
+        assert_eq!(
+            warnings.messages().first().cloned(),
+            Some(DROP_UNSUPPORTED_SPEED_WARNING.replacen("%s", "plain-model", 1))
+        );
+    }
+    check_maps(&[
+        (
+            "fast-model",
             r#"{"speed":"fast"}"#,
-            flags(true, false)
-        )
-        .await
-        .get("speed")
-        .is_none()
-    );
-    assert!(
-        dropped_map(
-            &fixture,
-            "plain-model",
+            "{}",
             r#"{"speed":"fast"}"#,
-            flags(false, true)
-        )
-        .await
-        .get("speed")
-        .is_none()
-    );
-    assert_map(
-        &fixture,
-        "fast-model",
-        r#"{"speed":"fast"}"#,
-        r#"{"speed":"fast"}"#,
-    )
+        ),
+        ("plain-model", r#"{"speed":5}"#, "{}", "{}"),
+    ])
     .await;
-    assert_map(&fixture, "plain-model", r#"{"speed":5}"#, "{}").await;
 }
 
-async fn adaptive_to_legacy_cap() {
-    let fixture = Fixture::new(MODELS, "{}");
-    assert_map(
-        &fixture,
+const ADAPTIVE_CASES: [MapCase; 8] = [
+    (
         "plain-model",
         r#"{"thinking":{"type":"adaptive"},"max_tokens":100000}"#,
-        r#"{"thinking":{"type":"enabled","budget_tokens":2048}}"#,
-    )
-    .await;
-    assert_map(
-        &fixture,
+        "{}",
+        r#"{"thinking":{"type":"enabled","budget_tokens":2048},"max_tokens":100000}"#,
+    ),
+    (
         "plain-model",
-        r#"{"thinking":{"type":"adaptive"},"max_completion_tokens":3000}"#,
-        r#"{"thinking":{"type":"enabled","budget_tokens":2999}}"#,
-    )
-    .await;
-    assert_map(
-        &fixture,
+        r#"{"thinking":{"type":"adaptive"},"max_tokens":1500}"#,
+        "{}",
+        r#"{"thinking":{"type":"enabled","budget_tokens":1499},"max_tokens":1500}"#,
+    ),
+    (
+        "plain-model",
+        r#"{"thinking":{"type":"adaptive"},"max_tokens":1025}"#,
+        "{}",
+        r#"{"thinking":{"type":"enabled","budget_tokens":1024},"max_tokens":1025}"#,
+    ),
+    (
+        "plain-model",
+        r#"{"thinking":{"type":"adaptive"},"max_completion_tokens":1500,"max_tokens":100000}"#,
+        "{}",
+        r#"{"thinking":{"type":"enabled","budget_tokens":1499},"max_tokens":100000}"#,
+    ),
+    (
+        "plain-model",
+        r#"{"thinking":{"type":"adaptive"},"max_completion_tokens":0,"max_tokens":1500}"#,
+        "{}",
+        r#"{"thinking":{"type":"enabled","budget_tokens":1499},"max_tokens":1500}"#,
+    ),
+    (
+        "plain-model",
+        r#"{"thinking":{"type":"adaptive"}}"#,
+        "{}",
+        r#"{"thinking":{"type":"enabled","budget_tokens":2048},"max_tokens":6144}"#,
+    ),
+    (
         "adaptive-model",
         r#"{"thinking":{"type":"adaptive"},"max_tokens":1000}"#,
-        r#"{"thinking":{"type":"adaptive"}}"#,
-    )
-    .await;
-    assert_map(&fixture, "adaptive-model", r#"{"thinking":{"type":"enabled","budget_tokens":2048}}"#, r#"{"thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"medium"}}"#).await;
-    let (guard, warnings) = capture_warnings();
-    assert_map(
-        &fixture,
-        "plain-model",
-        r#"{"thinking":{"type":"adaptive"},"max_tokens":1000}"#,
         "{}",
-    )
-    .await;
-    drop(guard);
-    assert_eq!(
-        first_warning(&warnings),
-        Some(DROP_ADAPTIVE_THINKING_WARNING.replacen("%s", "plain-model", 1))
-    );
+        r#"{"thinking":{"type":"adaptive"},"max_tokens":1000}"#,
+    ),
+    (
+        "adaptive-model",
+        r#"{"thinking":{"type":"enabled","budget_tokens":2048}}"#,
+        "{}",
+        r#"{"thinking":{"type":"adaptive"},"output_config":{"effort":"medium"}}"#,
+    ),
+];
+
+async fn adaptive_to_legacy_cap() {
+    check_maps(&ADAPTIVE_CASES).await;
+    for limit in [1000, 1024] {
+        let (guard, warnings) = capture_warnings();
+        let request = format!(r#"{{"thinking":{{"type":"adaptive"}},"max_tokens":{limit}}}"#);
+        let mapped = map_with("plain-model", &request, NONE).await;
+        drop(guard);
+        let expected = json(&format!(r#"{{"max_tokens":{limit}}}"#));
+        assert_eq!(Json::Object(mapped), expected, "{limit}");
+        assert_eq!(
+            warnings.messages().first().cloned(),
+            Some(DROP_ADAPTIVE_THINKING_WARNING.replacen("%s", "plain-model", 1))
+        );
+    }
 }
 
+const REWRITE_REQUEST: &str = r#"{"tools":[{"type":"function","function":{"name":"a","parameters":{"type":"object","properties":{}}}}],"tool_choice":"required","parallel_tool_calls":false,"stream":true,"stop":"END","temperature":0.5,"top_p":0.9,"user":"user-1","extra_headers":{"x":"1"},"cache_control":{"type":"ephemeral"},"context_management":[{"type":"compaction","compact_threshold":1000}]}"#;
+
+const REWRITTEN: [(&str, &str); 8] = [
+    (
+        "tool_choice",
+        r#"{"type":"any","disable_parallel_tool_use":true}"#,
+    ),
+    ("stream", "true"),
+    ("stop_sequences", r#"["END"]"#),
+    ("temperature", "0.5"),
+    ("top_p", "0.9"),
+    ("metadata", r#"{"user_id":"user-1"}"#),
+    ("extra_headers", r#"{"x":"1"}"#),
+    ("cache_control", r#"{"type":"ephemeral"}"#),
+];
+
 async fn parameter_body_rewrites() {
-    let fixture = Fixture::new(MODELS, "{}");
-    let requested = r#"{"tools":[{"type":"function","function":{"name":"a","parameters":{"type":"object","properties":{}}}}],"tool_choice":"required","parallel_tool_calls":false,"stream":true,"stop":"END","temperature":0.5,"top_p":0.9,"user":"user-1","extra_headers":{"x":"1"},"cache_control":{"type":"ephemeral"},"context_management":[{"type":"compaction","compact_threshold":1000}]}"#;
-    let mapped = mapped(
-        &fixture,
-        "plain-model",
-        requested,
-        "{}",
-        flags(false, false),
-    )
-    .await
-    .expect("maps");
-    assert_eq!(
-        mapped.get("tool_choice"),
-        Some(&json(r#"{"type":"any","disable_parallel_tool_use":true}"#))
-    );
-    assert_eq!(body.get("stop_sequences"), Some(&json(r#"["END"]"#)));
-    assert_eq!(
-        mapped.get("metadata"),
-        Some(&json(r#"{"user_id":"user-1"}"#))
-    );
-    assert_eq!(
-        mapped.get("cache_control"),
-        Some(&json(r#"{"type":"ephemeral"}"#))
-    );
-    assert!(matches!(body.get("tools"), Some(Json::List(items)) if items.len() == 1));
+    let mapped = map_with("plain-model", REWRITE_REQUEST, NONE).await;
+    for (key, value) in REWRITTEN {
+        assert_eq!(mapped.get(key), Some(&json(value)), "{key}");
+    }
+    assert!(matches!(mapped.get("tools"), Some(Json::List(tools)) if tools.len() == 1));
+    assert!(matches!(
+        mapped.get("context_management"),
+        Some(Json::Object(_))
+    ));
+    assert_eq!(mapped.len(), 10, "{mapped:?}");
+    check_maps(&[
+        ("plain-model", r#"{"stream":false,"user":"someone@example.com","extra_headers":null,"cache_control":"ephemeral"}"#, "{}", r#"{"extra_headers":null}"#),
+        ("plain-model", r#"{"stop":["END","  "]}"#, "{}", r#"{"stop_sequences":["END","  "]}"#),
+    ])
+    .await;
+    let stopped = map_with("plain-model", r#"{"stop":["END","  "]}"#, GLOBAL).await;
+    assert_eq!(stopped.get("stop_sequences"), Some(&json(r#"["END"]"#)));
+    let search = r#"{"web_search_options":{"search_context_size":"low"}}"#;
+    let searched = try_map("plain-model", search, r#"{"tools":[{"name":"a"}]}"#, NONE)
+        .await
+        .expect("the search tool appends");
+    assert!(matches!(searched.get("tools"), Some(Json::List(tools)) if tools.len() == 2));
+}
+
+fn format_request(extra: &str) -> String {
+    format!(r#"{{{extra}"response_format":{FORMAT}}}"#)
 }
 
 async fn structured_format_selection() {
-    let fixture = Fixture::new(MODELS, "{}");
-    let native = format!(r#"{{"response_format":{FORMAT}}}"#);
-    let native_map = mapped(&fixture, "native-model", &native, "{}", flags(false, false))
-        .await
-        .expect("maps");
-    assert_eq!(native_map.get("json_mode"), Some(&Json::Bool(true)));
-    assert!(matches!(
-        native_map.get("output_format"),
-        Some(Json::Object(_))
-    ));
-    let fallback = mapped(
-        &fixture,
-        "fallback-model",
-        &native,
-        "{}",
-        flags(false, false),
-    )
-    .await
-    .expect("maps");
-    assert_eq!(
-        fallback.get("tool_choice"),
-        Some(&json(r#"{"name":"json_tool_call","type":"tool"}"#))
-    );
+    let native = map_with("native-model", &format_request(""), NONE).await;
+    assert_eq!(native.get("json_mode"), Some(&Json::Bool(true)));
+    assert!(matches!(native.get("output_format"), Some(Json::Object(_))));
+    assert!(native.get("tools").is_none());
+    let text = r#"{"response_format":{"type":"text"}}"#;
+    let native_text = map_with("native-model", text, NONE).await;
+    assert_eq!(Json::Object(native_text), json(r#"{"json_mode":true}"#));
+    let fallback = map_with("plain-model", &format_request(""), NONE).await;
+    let forced = json(r#"{"name":"json_tool_call","type":"tool"}"#);
+    assert_eq!(fallback.get("tool_choice"), Some(&forced));
     assert_eq!(fallback.get("json_mode"), Some(&Json::Bool(true)));
-    let thinking = mapped(
-        &fixture,
-        "fallback-model",
-        &format!(r#"{{"reasoning_effort":"low","response_format":{FORMAT}}}"#),
-        "{}",
-        flags(false, false),
-    )
-    .await
-    .expect("maps");
+    assert!(matches!(fallback.get("tools"), Some(Json::List(tools)) if tools.len() == 1));
+    let thinking = format_request(r#""reasoning_effort":"low","#);
+    let thinking = map_with("plain-model", &thinking, NONE).await;
     assert!(thinking.get("tool_choice").is_none());
-    let no_forced = mapped(
-        &fixture,
-        "no-forced-tools",
-        &native,
-        "{}",
-        flags(false, false),
-    )
-    .await
-    .expect("maps");
-    assert!(no_forced.get("tool_choice").is_none());
+    assert!(matches!(thinking.get("tools"), Some(Json::List(tools)) if tools.len() == 1));
+    let unforced = map_with("no-forced-tools", &format_request(""), NONE).await;
+    assert!(unforced.get("tool_choice").is_none());
+    assert_eq!(unforced.get("json_mode"), Some(&Json::Bool(true)));
+    let plain_text = map_with("plain-model", text, NONE).await;
+    assert!(plain_text.is_empty(), "{plain_text:?}");
+    let later = format_request(r#""tool_choice":"auto","#);
+    let replaced = map_with("plain-model", &later, NONE).await;
+    assert_eq!(
+        replaced.get("tool_choice"),
+        Some(&json(r#"{"type":"auto"}"#))
+    );
 }
 
 #[derive(Clone, Copy)]
@@ -521,21 +622,21 @@ enum Scenario {
 }
 
 #[rstest]
-#[case::case_1_max_token_option_precedence(Scenario::MaxTokenOptionPrecedence)]
-#[case::case_2_reasoning_none_clears_thinking(Scenario::ReasoningNoneClearsThinking)]
-#[case::case_3_output_format_with_effort_drop_warning(Scenario::OutputFormatWithEffortDropWarning)]
-#[case::case_4_invalid_output_effort(Scenario::InvalidOutputEffort)]
-#[case::case_5_speed_drop_policy(Scenario::SpeedDropPolicy)]
-#[case::case_6_adaptive_to_legacy_cap(Scenario::AdaptiveToLegacyCap)]
-#[case::case_7_parameter_body_rewrites(Scenario::ParameterBodyRewrites)]
-#[case::case_8_structured_format_selection(Scenario::StructuredFormatSelection)]
+#[case::max_token_option_precedence(Scenario::MaxTokenOptionPrecedence)]
+#[case::reasoning_none_clears_thinking(Scenario::ReasoningNoneClearsThinking)]
+#[case::output_format_with_effort_drop_warning(Scenario::OutputFormatWithEffortDropWarning)]
+#[case::invalid_output_effort(Scenario::InvalidOutputEffort)]
+#[case::speed_drop_policy(Scenario::SpeedDropPolicy)]
+#[case::adaptive_to_legacy_cap(Scenario::AdaptiveToLegacyCap)]
+#[case::parameter_body_rewrites(Scenario::ParameterBodyRewrites)]
+#[case::structured_format_selection(Scenario::StructuredFormatSelection)]
 #[tokio::test]
 async fn params_cases(#[case] scenario: Scenario) {
     match scenario {
         Scenario::MaxTokenOptionPrecedence => max_token_option_precedence().await,
         Scenario::ReasoningNoneClearsThinking => reasoning_none_clears_thinking().await,
         Scenario::OutputFormatWithEffortDropWarning => {
-            output_format_with_effort_drop_warning().await
+            output_format_with_effort_drop_warning().await;
         }
         Scenario::InvalidOutputEffort => invalid_output_effort().await,
         Scenario::SpeedDropPolicy => speed_drop_policy().await,

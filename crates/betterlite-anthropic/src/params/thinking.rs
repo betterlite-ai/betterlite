@@ -6,11 +6,9 @@ use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource
 use betterlite_openai::base_helpers::add_thinking_max_tokens;
 use indexmap::IndexMap;
 
-use crate::anthropic_capability_catalog::EffortThresholds;
 use crate::anthropic_capability_catalog::capability::supports_model_capability;
-use crate::anthropic_capability_catalog::thinking::{
-    OptionalParams, ThinkingRequest, translate_legacy_thinking,
-};
+use crate::anthropic_capability_catalog::thinking::{ThinkingRequest, translate_legacy_thinking};
+use crate::anthropic_capability_catalog::{EffortThresholds, OptionalParams};
 use crate::capabilities::budget::cap_thinking_to_max_tokens;
 use crate::capabilities::effort::EffortError;
 use crate::capabilities::reasoning::{ReasoningRequest, map_reasoning_effort};
@@ -29,31 +27,6 @@ const fn effort_level(effort: &str) -> Option<&'static str> {
         "xhigh" => Some("xhigh"),
         "max" => Some("max"),
         _ => None,
-    }
-}
-
-// The base policy's is_thinking_enabled: a true flag, type "enabled", or any reasoning_effort
-#[must_use]
-pub fn thinking_enabled(non_default_params: &IndexMap<String, Json>) -> bool {
-    let thinking = non_default_params.get("thinking");
-    let enabled_type = matches!(
-        thinking
-            .and_then(value::as_object)
-            .and_then(|fields| fields.get("type")),
-        Some(Json::Text(kind)) if kind == "enabled"
-    );
-    matches!(thinking, Some(Json::Bool(true)))
-        || enabled_type
-        || non_default_params
-            .get("reasoning_effort")
-            .is_some_and(|effort| !matches!(effort, Json::Null))
-}
-
-const fn thresholds(budgets: &Settings) -> EffortThresholds {
-    EffortThresholds {
-        medium: budgets.medium,
-        high: budgets.high,
-        xhigh: budgets.xhigh,
     }
 }
 
@@ -169,7 +142,11 @@ where
     let thinking_request = ThinkingRequest {
         model: request.model,
         custom_llm_provider: request.provider,
-        thresholds: thresholds(request.budgets),
+        thresholds: EffortThresholds {
+            medium: request.budgets.medium,
+            high: request.budgets.high,
+            xhigh: request.budgets.xhigh,
+        },
     };
     translate_legacy_thinking(
         &thinking_request,
