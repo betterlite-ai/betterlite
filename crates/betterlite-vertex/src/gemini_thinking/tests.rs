@@ -384,36 +384,25 @@ fn non_pcm16_audio_is_refused(#[case] format: &str) {
 }
 
 #[rstest]
-#[case::snake_flag(r#"{"include_server_side_tool_invocations": true}"#, "{}")]
-#[case::camel_flag(r#"{"includeServerSideToolInvocations": true}"#, "{}")]
-#[case::existing_camel("{}", r#"{"includeServerSideToolInvocations": true}"#)]
-#[case::existing_snake("{}", r#"{"include_server_side_tool_invocations": true}"#)]
-fn server_tool_flags_are_applied_before_conversion(
+#[case::snake_flag(r#"{"include_server_side_tool_invocations": true}"#, "{}", true)]
+#[case::camel_flag(r#"{"includeServerSideToolInvocations": true}"#, "{}", true)]
+#[case::existing_camel("{}", r#"{"includeServerSideToolInvocations": true}"#, true)]
+#[case::existing_snake("{}", r#"{"include_server_side_tool_invocations": true}"#, true)]
+#[case::both_false(r#"{"include_server_side_tool_invocations": false}"#, "{}", false)]
+#[case::absent("{}", "{}", false)]
+fn server_tool_flags_apply_only_when_a_flag_is_true(
     #[case] non_default_params: &str,
     #[case] optional_params: &str,
+    #[case] applied: bool,
 ) {
     let mut mapped_params = object(optional_params);
 
     apply_server_tool_flags(&object(non_default_params), &mut mapped_params);
 
     assert_eq!(
-        mapped_params.get("include_server_side_tool_invocations"),
-        Some(&Json::Bool(true))
+        mapped_params.contains_key("include_server_side_tool_invocations"),
+        applied
     );
-}
-
-#[rstest]
-#[case::both_false(r#"{"include_server_side_tool_invocations": false}"#, "{}")]
-#[case::absent("{}", "{}")]
-fn a_false_server_tool_flag_is_not_applied(
-    #[case] non_default_params: &str,
-    #[case] optional_params: &str,
-) {
-    let mut mapped_params = object(optional_params);
-
-    apply_server_tool_flags(&object(non_default_params), &mut mapped_params);
-
-    assert!(!mapped_params.contains_key("include_server_side_tool_invocations"));
 }
 
 #[test]

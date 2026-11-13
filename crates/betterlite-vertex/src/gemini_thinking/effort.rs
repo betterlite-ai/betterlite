@@ -8,18 +8,14 @@ pub fn map_effort_to_budget(
     model: Option<&str>,
     budgets: &ThinkingBudgets,
 ) -> Result<ThinkingConfig, GeminiThinkingError> {
-    let (thinking_budget, include_thoughts) = match effort {
-        "minimal" => (minimal_budget(model, budgets), true),
-        "low" => (budgets.low, true),
-        "medium" => (budgets.medium, true),
-        "high" => (budgets.high, true),
-        "disable" => (budgets.disable, false),
-        "none" => (0, false),
-        other => {
-            return Err(GeminiThinkingError::UnsupportedEffort {
-                effort: other.to_owned(),
-            });
-        }
+    let include_thoughts = include_thoughts(effort)?;
+    let thinking_budget = match effort {
+        "minimal" => minimal_budget(model, budgets),
+        "low" => budgets.low,
+        "medium" => budgets.medium,
+        "high" => budgets.high,
+        "disable" => budgets.disable,
+        _ => 0,
     };
     Ok(ThinkingConfig {
         include_thoughts: Some(include_thoughts),
@@ -33,19 +29,14 @@ pub fn map_effort_to_level(
     model: Option<&str>,
     support: &dyn MinimalEffortSupport,
 ) -> Result<ThinkingConfig, GeminiThinkingError> {
-    let supports_minimal =
+    let include_thoughts = include_thoughts(effort)?;
+    let minimal =
         model.is_some_and(|name| !name.is_empty() && supports_minimal_level(name, support));
-    let (thinking_level, include_thoughts) = match effort {
-        "minimal" => (minimal_level(supports_minimal), true),
-        "low" => (ThinkingLevel::Low, true),
-        "medium" => (ThinkingLevel::Medium, true),
-        "high" => (ThinkingLevel::High, true),
-        "disable" | "none" => (minimal_level(supports_minimal), false),
-        other => {
-            return Err(GeminiThinkingError::UnsupportedEffort {
-                effort: other.to_owned(),
-            });
-        }
+    let thinking_level = match effort {
+        "low" => ThinkingLevel::Low,
+        "medium" => ThinkingLevel::Medium,
+        "high" => ThinkingLevel::High,
+        _ => minimal_level(minimal),
     };
     Ok(ThinkingConfig {
         include_thoughts: Some(include_thoughts),
@@ -59,6 +50,16 @@ pub fn supports_minimal_level(model: &str, support: &dyn MinimalEffortSupport) -
     is_gemini_3_or_newer(model)
         && model.to_lowercase().contains("flash")
         && !support.disables_minimal(model)
+}
+
+fn include_thoughts(effort: &str) -> Result<bool, GeminiThinkingError> {
+    match effort {
+        "minimal" | "low" | "medium" | "high" => Ok(true),
+        "disable" | "none" => Ok(false),
+        other => Err(GeminiThinkingError::UnsupportedEffort {
+            effort: other.to_owned(),
+        }),
+    }
 }
 
 fn minimal_budget(model: Option<&str>, budgets: &ThinkingBudgets) -> i64 {

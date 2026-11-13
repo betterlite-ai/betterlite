@@ -78,20 +78,16 @@ pub(super) fn run(input: &Input) -> Value {
     let results: Vec<Value> = input
         .steps
         .iter()
-        .map(|step| answer(step, &fixture))
+        .map(|step| match step.op {
+            Operation::ReasoningEffort => reasoning_effort(step, &fixture),
+            Operation::Thinking => thinking_answer(step, &fixture),
+            Operation::Format => format_answer(step),
+            Operation::Modalities => json!(map_response_modalities(&step.modalities)),
+            Operation::Audio => audio_answer(step),
+            Operation::ServerFlags => server_flags(step),
+        })
         .collect();
     json!({"results": results})
-}
-
-fn answer(step: &Step, fixture: &Fixture<'_>) -> Value {
-    match step.op {
-        Operation::ReasoningEffort => reasoning_effort(step, fixture),
-        Operation::Thinking => thinking_answer(step, fixture),
-        Operation::Format => format_answer(step),
-        Operation::Modalities => json!(map_response_modalities(&step.modalities)),
-        Operation::Audio => audio_answer(step),
-        Operation::ServerFlags => server_flags(step),
-    }
 }
 
 fn reasoning_effort(step: &Step, fixture: &Fixture<'_>) -> Value {
