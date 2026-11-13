@@ -329,7 +329,11 @@ fn key_hash_preserves_prehashed_identifier() {
     let key = KeyHash::from(prehashed);
     assert_eq!(key.expose_secret(), prehashed);
     assert_eq!(key, KeyHash::from(prehashed));
-    assert!(!format!("{key:?}").contains("0123456789abcdef"));
+    assert_ne!(
+        key,
+        KeyHash::from("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdee")
+    );
+    assert_eq!(format!("{key:?}"), "[REDACTED]");
 }
 
 #[test]
@@ -363,6 +367,24 @@ fn native_token_record_field_limits() {
 #[rstest]
 fn replays_the_token_record_corpus(#[files("fuzz/corpus/token_record/*")] path: PathBuf) {
     drop(decode_token_record(&fs::read(path).unwrap()));
+}
+
+#[test]
+fn quoted_braces_stay_outside_the_depth_count() {
+    let escaped = format!("{{\"k\":\"\\\"{}\"}}", "{".repeat(64));
+    let key = convert(&[("config", text(&escaped))]);
+    assert!(key.config.0.contains_key("k"));
+    let repeated = format!(
+        "{}{}{}{}",
+        "[".repeat(64),
+        "]".repeat(64),
+        "[".repeat(64),
+        "]".repeat(64)
+    );
+    assert!(matches!(
+        error_of(&[("budget_limits", text(&repeated))]),
+        TokenDecodeError::Model { .. }
+    ));
 }
 
 const ADDED_COLUMNS: &str = r#"
@@ -820,6 +842,51 @@ async fn database_errors_propagate_and_rows_unchanged() {
     let repository = direct(&client);
     assert_invalid_record_error(&repository).await;
     assert_sql_error_leaves_row(&repository, &pool).await;
+    close(fixture, pool).await;
+}
+
+#[tokio::test]
+async fn postgres_find_many_filters_and_limits() {
+    let (fixture, pool) = database().await;
+    seed(&pool, "one").await;
+    seed(&pool, "two").await;
+    seed(&pool, "three").await;
+    let client = TestClient { pool: pool.clone() };
+    let table = direct(&client).table().unwrap();
+    let filter = TokenFilter(vec![(
+        TokenColumn::Token,
+        TokenValue::Text(String::from("one")),
+    )]);
+    let filtered = table.find_many(&filter, Some(1)).await.unwrap();
+    assert_eq!(filtered.len(), 1);
+    let unfiltered = table
+        .find_many(&TokenFilter(Vec::new()), None)
+        .await
+        .unwrap();
+    assert_eq!(unfiltered.len(), 3);
+    close(fixture, pool).await;
+}
+
+#[tokio::test]
+async fn postgres_update_and_delete_respect_the_filter() {
+    let (fixture, pool) = database().await;
+    seed(&pool, "target").await;
+    seed(&pool, "keep").await;
+    let client = TestClient { pool: pool.clone() };
+    let table = direct(&client).table().unwrap();
+    let write = TokenWrite(BTreeMap::from([(
+        TokenColumn::KeyAlias,
+        TokenValue::Text(String::from("changed")),
+    )]));
+    table.update(&token_filter("target"), &write).await.unwrap();
+    let kept = table.find_unique(&key("keep")).await.unwrap().unwrap();
+    let JsonData::Object(kept_fields) = &kept.0 else {
+        panic!("the kept row is not an object");
+    };
+    assert_eq!(kept_fields.get("key_alias"), Some(&JsonData::Null));
+    table.delete(&token_filter("target")).await.unwrap();
+    assert!(table.find_unique(&key("target")).await.unwrap().is_none());
+    assert!(table.find_unique(&key("keep")).await.unwrap().is_some());
     close(fixture, pool).await;
 }
 
