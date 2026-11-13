@@ -1,0 +1,8 @@
+kind: helper
+name: rewrite-field-by-item-type
+call:
+  b3670:
+    function: item_rewrite_field
+    item: {"type": "function_call_output", "call_id": "c1", "output": "r"}
+env: {}
+compare: {ignore: []}
