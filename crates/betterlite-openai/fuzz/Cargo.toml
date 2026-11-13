@@ -106,6 +106,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "deepinfra_payload"
+path = "fuzz_targets/deepinfra_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "device_reply"
 path = "fuzz_targets/device_reply.rs"
 test = false
