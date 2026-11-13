@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use indexmap::IndexMap;
+use std::collections::BTreeMap;
 
 use crate::api::responses_provider_contract::config::ResponsesProviderConfig as _;
 use crate::api::responses_provider_contract::error::{BaseLlmException, ResponsesContractError};
@@ -163,15 +164,20 @@ fn a_failed_validation_keeps_the_output_and_usage_that_parse() {
 }
 
 #[test]
-fn a_failed_validation_zeroes_a_mistyped_usage() {
-    let upstream = response(200, r#"{"id":7,"created_at":5,"usage":"bad"}"#);
+fn a_failed_validation_resets_a_mistyped_usage_reasoning_and_text() {
+    let upstream = response(
+        200,
+        r#"{"id":7,"created_at":5,"usage":"bad","reasoning":"bad","text":5}"#,
+    );
     let reply = crate::manus_responses::reply::transform(
         &plain_config(),
         &upstream,
         &mut ResponsesLogging::default(),
     )
-    .expect("a mistyped usage is still returned");
+    .expect("mistyped fields are still returned");
     assert_eq!(reply.usage.map(|usage| usage.total_tokens), Some(0));
+    assert_eq!(reply.reasoning, Some(BTreeMap::new()));
+    assert_eq!(reply.text, Some(BTreeMap::new()));
 }
 
 #[test]
