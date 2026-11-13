@@ -157,18 +157,18 @@ async fn a_pass_waits_for_the_check_and_increment_lock() {
 }
 
 #[rstest]
-#[case::one_second_before_the_end(59, 2)]
-#[case::exactly_at_the_window_size(60, 1)]
-#[case::past_the_window_size(61, 1)]
+#[case::one_second_before_the_end(41, 2)]
+#[case::exactly_at_the_window_size(40, 1)]
+#[case::past_the_window_size(39, 1)]
 #[tokio::test]
 async fn a_window_expires_once_the_elapsed_time_reaches_its_size(
-    #[case] elapsed: i64,
+    #[case] window_start: i64,
     #[case] counter: i64,
 ) {
     let cache = FakeCache::new(Some(RedisCacheKind::Standalone));
     cache.seed(
         &window_key(),
-        CacheCounterValue::Text((100 - elapsed).to_string()),
+        CacheCounterValue::Text(window_start.to_string()),
     );
     cache.seed(&counter_key(), CacheCounterValue::Int(1));
     let store = store_with(Arc::clone(&cache));
