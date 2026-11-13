@@ -91,12 +91,16 @@ impl AzureHttp {
 }
 
 fn password_exchange(request: &PasswordRequest) -> io::Result<Exchange<'_>> {
+    let method = request_method(request.method);
+    let query = request.query.clone();
+    let headers = header_map(request.headers.clone())?;
+    let body = form_body(&request.form);
     Ok(Exchange {
-        method: request_method(request.method),
+        method,
         url: &request.url,
-        query: request.query.clone(),
-        headers: header_map(request.headers.clone())?,
-        body: form_body(&request.form),
+        query,
+        headers,
+        body,
         deadline: TOKEN_TIMEOUT,
     })
 }
