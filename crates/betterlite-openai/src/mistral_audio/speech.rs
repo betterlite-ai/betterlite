@@ -41,6 +41,13 @@ const AUDIO_BASE64: GeneralPurpose = GeneralPurpose::new(
     GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
 );
 
+fn copy_strings(source: &Object, names: [&'static str; 2], target: &mut Object) {
+    for name in names {
+        if let Some(Value::String(text)) = source.get(name) {
+            target.insert(name.to_owned(), Value::String(text.clone()));
+        }
+    }
+}
 #[must_use]
 pub fn map_openai_params(
     optional_params: &Object,
@@ -52,11 +59,11 @@ pub fn map_openai_params(
         .and_then(|value| SpeechVoice::deserialize(value).ok());
     let mapped_voice = resolve_voice(voice).or_else(|| resolve_voice(kwarg_voice.as_ref()));
     let mut mapped_params = Object::new();
-    for name in ["response_format", "ref_audio"] {
-        if let Some(Value::String(text)) = optional_params.get(name) {
-            mapped_params.insert((*name).to_owned(), Value::String(text.clone()));
-        }
-    }
+    copy_strings(
+        optional_params,
+        ["response_format", "ref_audio"],
+        &mut mapped_params,
+    );
     (mapped_voice, mapped_params)
 }
 fn resolve_voice(voice: Option<&SpeechVoice>) -> Option<String> {
@@ -73,8 +80,7 @@ fn resolve_voice(voice: Option<&SpeechVoice>) -> Option<String> {
     if text.is_empty() {
         return None;
     }
-    let lowered = text.to_lowercase();
-    Some(alias(&lowered).map_or_else(|| text.to_owned(), str::to_owned))
+    Some(alias(&text.to_lowercase()).map_or_else(|| text.to_owned(), str::to_owned))
 }
 pub fn validate_environment(
     headers: &IndexMap<String, String>,
@@ -85,8 +91,10 @@ pub fn validate_environment(
         .or(settings.api_key.as_ref())
         .ok_or(MistralAudioError::MissingApiKey)?;
     let mut merged = headers.clone();
-    let bearer = format!("Bearer {}", key.expose_secret());
-    merged.insert(String::from("Authorization"), bearer);
+    merged.insert(
+        String::from("Authorization"),
+        format!("Bearer {}", key.expose_secret()),
+    );
     merged.insert(
         String::from("Content-Type"),
         String::from("application/json"),
@@ -109,17 +117,14 @@ pub fn request_body(
     voice: Option<&str>,
     optional_params: &Object,
 ) -> TextToSpeechRequestData {
-    let mut body = Object::new();
-    body.insert(String::from("model"), Value::String(model.to_owned()));
-    body.insert(String::from("input"), Value::String(input.to_owned()));
+    let mut body = Object::from_iter([
+        (String::from("model"), Value::String(model.to_owned())),
+        (String::from("input"), Value::String(input.to_owned())),
+    ]);
     if let Some(voice_id) = voice {
         body.insert(String::from("voice_id"), Value::String(voice_id.to_owned()));
     }
-    for name in ["response_format", "ref_audio"] {
-        if let Some(Value::String(text)) = optional_params.get(name) {
-            body.insert((*name).to_owned(), Value::String(text.clone()));
-        }
-    }
+    copy_strings(optional_params, ["response_format", "ref_audio"], &mut body);
     TextToSpeechRequestData {
         dict_body: Some(body),
         ssml_body: None,

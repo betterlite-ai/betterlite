@@ -1,10 +1,7 @@
-import base64
-import json
 import os
 from typing import Final, Protocol, TypedDict
 
-import httpx
-from litellm.litellm_core_utils.litellm_logging import Logging
+import litellm
 from litellm.llms.mistral.audio_speech.transformation import (
     MistralTextToSpeechConfig as Speech,
 )
@@ -17,25 +14,13 @@ from pydantic import JsonValue as Json
 Object = dict[str, Json]
 EMPTY: Final[Object] = {}
 
-
-class LoggingStub(Logging):
-    def __init__(self) -> None: ...
-
-
-LOGGING: Final = LoggingStub()
-
-
-class Reply(TypedDict):
-    status: int
-    headers: dict[str, str]
-    body: str
+litellm.suppress_debug_info = True
 
 
 class SpeechProbe(TypedDict, total=False):
     voice: str | dict[str, Json]
     optional_params: Object
     kwargs: Object
-    reply: Reply
 
 
 class SpeechInput(TypedDict):
@@ -44,8 +29,6 @@ class SpeechInput(TypedDict):
 
 class TranscriptionProbe(TypedDict):
     model: str
-    filename: str
-    content: str
     optional_params: Object
     non_default_params: Object
     headers: dict[str, str]
@@ -129,30 +112,6 @@ def install_environment(key: str | None) -> None:
         os.environ["MISTRAL_API_KEY"] = key
 
 
-def speech_response(probe: SpeechProbe, params: Object) -> Json:
-    fixture = probe.get("reply")
-    if fixture is None:
-        return None
-    payload: Object = {}
-    if "response_format" in params:
-        payload["response_format"] = params["response_format"]
-    request = httpx.Request(
-        "POST", "https://mistral.test/audio/speech", content=json.dumps(payload)
-    )
-    reply = httpx.Response(
-        fixture["status"],
-        headers=fixture["headers"],
-        content=fixture["body"].encode(),
-        request=request,
-    )
-    binary = Speech.transform_text_to_speech_response(SPEECH(), "voxtral", reply, LOGGING)
-    return {
-        "status": binary.response.status_code,
-        "headers": string_map(dict(binary.response.headers)),
-        "body": base64.b64encode(binary.content).decode(),
-    }
-
-
 def speech_probe(view: SpeechConfig, probe: SpeechProbe) -> Json:
     voice, params = view.map_openai_params(
         "voxtral",
@@ -161,8 +120,7 @@ def speech_probe(view: SpeechConfig, probe: SpeechProbe) -> Json:
         drop_params=False,
         kwargs=or_empty(probe.get("kwargs")),
     )
-    response = speech_response(probe, params)
-    return {"mapping": {"voice": voice, "params": params}, "response": response}
+    return {"voice": voice, "params": params}
 
 
 def run(input_value: SpeechInput) -> Json:

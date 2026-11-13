@@ -3,11 +3,11 @@ name: voxtral-speech-voice-alias-and-mapping-priority
 call:
   voxtral_speech:
     probes:
-      - {voice: Alloy, kwargs: {voice_id: echo}, environment_api_key: environment-key}
-      - {voice: {name: Echo}, environment_api_key: environment-key}
-      - {voice: {voice_id: 5, id: custom-Voice}, environment_api_key: environment-key}
-      - {kwargs: {voice_id: NOVA}, environment_api_key: environment-key}
-      - {voice: "  Fable  ", environment_api_key: environment-key}
-      - {voice: {voice_id: Alloy, id: Echo, name: Onyx}, environment_api_key: environment-key}
+      - {voice: Alloy, kwargs: {voice_id: echo}}
+      - {voice: {name: Echo}}
+      - {voice: {voice_id: 5, id: custom-Voice}}
+      - {kwargs: {voice_id: NOVA}}
+      - {voice: "  Fable  "}
+      - {voice: {voice_id: Alloy, id: Echo, name: Onyx}}
 env: {}
 compare: {ignore: []}

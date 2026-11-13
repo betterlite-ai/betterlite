@@ -3,13 +3,13 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
 
-use super::super::error::MistralAudioError;
-use super::super::reply::REPLY_LIMIT;
-use super::super::speech::{
+use super::super::super::error::MistralAudioError;
+use super::super::super::reply::REPLY_LIMIT;
+use super::super::super::speech::{
     DEFAULT_BASE, OPENAI_PARAMS, complete_url, decode_voxtral_reply, map_openai_params,
     request_body, validate_environment,
 };
-use super::{object, response, speech_request};
+use super::super::{object, response, speech_request};
 use crate::api::speech_provider_contract::SpeechVoice;
 
 fn settings(api_key: Option<&str>) -> Settings {

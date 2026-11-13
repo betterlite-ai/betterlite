@@ -1,8 +1,7 @@
 #![cfg(test)]
 
 mod corpus;
-mod speech;
-mod transcription;
+mod mistral_audio;
 
 use betterlite_http::proxy::UpstreamResponse;
 use http::{HeaderMap, HeaderName, HeaderValue};

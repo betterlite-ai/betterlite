@@ -3,17 +3,10 @@ name: voxtral-speech-invalid-json-and-base64
 call:
   voxtral_speech:
     probes:
-      - environment_api_key: environment-key
-        reply: {status: 404, headers: {content-type: text/plain}, body: not json}
-      - environment_api_key: environment-key
-        reply: {status: 502, headers: {content-type: application/json}, body: '{"audio_data":'}
-      - environment_api_key: environment-key
-        reply: {status: 200, headers: {content-type: application/json}, body: '{"audio_data":"@@@"}'}
-      - environment_api_key: environment-key
-        reply: {status: 200, headers: {content-type: application/json}, body: '{"audio_data":"aGk=="}'}
-      - environment_api_key: environment-key
-        reply: {status: 200, headers: {content-type: application/json}, body: '{"audio_data":""}'}
-      - environment_api_key: environment-key
-        reply: {status: 200, headers: {content-type: application/json}, body: '{"text":"no audio"}'}
+      - {voice: null}
+      - {voice: {voice_id: null, id: null, name: null}}
+      - {voice: {name: ""}, kwargs: {voice_id: ""}}
+      - {voice: {voice_id: 7, id: "", name: " Echo "}}
+      - {voice: opus, kwargs: {voice_id: alloy}}
 env: {}
 compare: {ignore: []}

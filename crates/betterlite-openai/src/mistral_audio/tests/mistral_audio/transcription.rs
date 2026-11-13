@@ -3,13 +3,13 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
 
-use super::super::error::MistralAudioError;
-use super::super::reply::REPLY_LIMIT;
-use super::super::transcription::{
+use super::super::super::error::MistralAudioError;
+use super::super::super::reply::REPLY_LIMIT;
+use super::super::super::transcription::{
     DEFAULT_BASE, OPENAI_PARAMS, complete_url, decode_voxtral_transcript, map_openai_params,
     transcription_request, validate_environment,
 };
-use super::{object, response};
+use super::super::{object, response};
 use crate::api::audio_file_input::ProcessedAudioFile;
 use crate::api::transcription_contract::TranscriptionResponse;
 
