@@ -34,43 +34,33 @@ pub(crate) struct Input {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Encode {
+    #[serde(alias = "video_id", alias = "character_id")]
+    id: String,
+    provider: String,
+    model_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Decode {
+    encoded: String,
+    capture_debug: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
 pub(crate) enum Call {
-    EncodeVideoId {
-        video_id: String,
-        provider: String,
-        model_id: Option<String>,
-    },
-    DecodeVideoId {
-        encoded: String,
-        capture_debug: bool,
-    },
-    ExtractOriginalVideoId {
-        encoded: String,
-        capture_debug: bool,
-    },
-    EncodeCharacterId {
-        character_id: String,
-        provider: String,
-        model_id: Option<String>,
-    },
-    DecodeCharacterId {
-        encoded: String,
-        capture_debug: bool,
-    },
-    ExtractOriginalCharacterId {
-        encoded: String,
-        capture_debug: bool,
-    },
-    RewriteCharacters {
-        request: Map<String, Value>,
-    },
-    AddImageToFiles {
-        fixture: Fixture,
-    },
-    VideoFileTuple {
-        fixture: Fixture,
-    },
+    EncodeVideoId(Encode),
+    DecodeVideoId(Decode),
+    ExtractOriginalVideoId(Decode),
+    EncodeCharacterId(Encode),
+    DecodeCharacterId(Decode),
+    ExtractOriginalCharacterId(Decode),
+    RewriteCharacters { request: Map<String, Value> },
+    AddImageToFiles { fixture: Fixture },
+    VideoFileTuple { fixture: Fixture },
 }
 
 fn render_part(part: &MultipartPart<'_>) -> Value {
@@ -154,70 +144,55 @@ fn observed<T, F: FnOnce() -> T>(logs: &Logs, capture: bool, work: F) -> (T, boo
     (value, logged)
 }
 
+fn decoded_video(logs: &Logs, decode: &Decode) -> Value {
+    let (decoded, logged) = observed(logs, decode.capture_debug, || {
+        decode_video_id_with_provider(&decode.encoded)
+    });
+    json!({
+        "custom_llm_provider": decoded.custom_llm_provider,
+        "model_id": decoded.model_id,
+        "video_id": decoded.video_id,
+        "logged": logged,
+    })
+}
+
+fn decoded_character(logs: &Logs, decode: &Decode) -> Value {
+    let (decoded, logged) = observed(logs, decode.capture_debug, || {
+        decode_character_id(&decode.encoded)
+    });
+    json!({
+        "custom_llm_provider": decoded.custom_llm_provider,
+        "model_id": decoded.model_id,
+        "character_id": decoded.character_id,
+        "logged": logged,
+    })
+}
+
+fn extracted<F: FnOnce(&str) -> String>(logs: &Logs, decode: &Decode, extract: F) -> Value {
+    let (id, logged) = observed(logs, decode.capture_debug, || extract(&decode.encoded));
+    json!({"id": id, "logged": logged})
+}
+
 fn run_call(call: &Call, logs: &Logs) -> Value {
     match call {
-        Call::EncodeVideoId {
-            video_id,
-            provider,
-            model_id,
-        } => json!(encode_video_id_with_provider(
-            video_id,
-            provider,
-            model_id.as_deref()
+        Call::EncodeVideoId(encode) => json!(encode_video_id_with_provider(
+            &encode.id,
+            &encode.provider,
+            encode.model_id.as_deref()
         )),
-        Call::DecodeVideoId {
-            encoded,
-            capture_debug,
-        } => {
-            let (decoded, logged) = observed(logs, *capture_debug, || {
-                decode_video_id_with_provider(encoded)
-            });
-            json!({
-                "custom_llm_provider": decoded.custom_llm_provider,
-                "model_id": decoded.model_id,
-                "video_id": decoded.video_id,
-                "logged": logged,
-            })
-        }
-        Call::ExtractOriginalVideoId {
-            encoded,
-            capture_debug,
-        } => {
-            let (video_id, logged) = observed(logs, *capture_debug, || {
-                decode_video_id_with_provider(encoded).video_id
-            });
-            json!({"id": video_id, "logged": logged})
-        }
-        Call::EncodeCharacterId {
-            character_id,
-            provider,
-            model_id,
-        } => json!(encode_character_id(
-            character_id,
-            provider,
-            model_id.as_deref()
+        Call::DecodeVideoId(decode) => decoded_video(logs, decode),
+        Call::ExtractOriginalVideoId(decode) => extracted(logs, decode, |encoded| {
+            decode_video_id_with_provider(encoded).video_id
+        }),
+        Call::EncodeCharacterId(encode) => json!(encode_character_id(
+            &encode.id,
+            &encode.provider,
+            encode.model_id.as_deref()
         )),
-        Call::DecodeCharacterId {
-            encoded,
-            capture_debug,
-        } => {
-            let (decoded, logged) = observed(logs, *capture_debug, || decode_character_id(encoded));
-            json!({
-                "custom_llm_provider": decoded.custom_llm_provider,
-                "model_id": decoded.model_id,
-                "character_id": decoded.character_id,
-                "logged": logged,
-            })
-        }
-        Call::ExtractOriginalCharacterId {
-            encoded,
-            capture_debug,
-        } => {
-            let (character_id, logged) = observed(logs, *capture_debug, || {
-                decode_character_id(encoded).character_id
-            });
-            json!({"id": character_id, "logged": logged})
-        }
+        Call::DecodeCharacterId(decode) => decoded_character(logs, decode),
+        Call::ExtractOriginalCharacterId(decode) => extracted(logs, decode, |encoded| {
+            decode_character_id(encoded).character_id
+        }),
         Call::RewriteCharacters { request } => {
             let mut rewritten = request.clone();
             rewrite_character_ids(&mut rewritten);

@@ -21,6 +21,21 @@ call:
       - op: decode_video_id
         encoded: video_YTtiO2M-
         capture_debug: true
+      - op: decode_video_id
+        encoded: vid_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnA7bW9kZWxfaWQ6bTt2aWRlb19pZDp2
+        capture_debug: true
+      - op: decode_character_id
+        encoded: char_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnA7bW9kZWxfaWQ6bTtjaGFyYWN0ZXJfaWQ6Yw==
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_YQ
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_YWI
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_YQ---
+        capture_debug: true
       - op: decode_character_id
         encoded: ''
         capture_debug: true

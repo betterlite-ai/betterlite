@@ -78,50 +78,49 @@ fn character_id_roundtrip() {
     );
 }
 
+const UNPREFIXED_VIDEO: &str =
+    "vid_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnA7bW9kZWxfaWQ6bTt2aWRlb19pZDp2";
+const UNPREFIXED_CHARACTER: &str =
+    "char_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnA7bW9kZWxfaWQ6bTtjaGFyYWN0ZXJfaWQ6Yw==";
+
 fn invalid_id_fallback() {
-    let empty_capture = Capture::default();
-    let empty = empty_capture.captured(|| decode_video_id_with_provider(""));
-    assert_eq!(empty.video_id, "");
-    assert!(empty.custom_llm_provider.is_none());
-    assert!(empty_capture.events().is_empty());
-    let prefix_capture = Capture::default();
-    let wrong_prefix = prefix_capture.captured(|| decode_video_id_with_provider("vid_abc"));
-    assert_eq!(wrong_prefix.video_id, "vid_abc");
-    assert!(prefix_capture.events().is_empty());
-    let separator_capture = Capture::default();
-    let unseparated = separator_capture
-        .captured(|| decode_character_id(&format!("character_{}", STANDARD.encode("plain"))));
-    assert_eq!(
-        unseparated.character_id,
-        format!("character_{}", STANDARD.encode("plain"))
-    );
-    assert!(unseparated.custom_llm_provider.is_none());
-    assert!(separator_capture.events().is_empty());
-    let short_capture = Capture::default();
-    let two_fields = short_capture
-        .captured(|| decode_video_id_with_provider(&format!("video_{}", STANDARD.encode("a;b"))));
-    assert_eq!(
-        two_fields.video_id,
-        format!("video_{}", STANDARD.encode("a;b"))
-    );
-    assert!(two_fields.model_id.is_none());
-    assert!(short_capture.events().is_empty());
-    let base64_capture = Capture::default();
-    let bad_base64 = base64_capture.captured(|| decode_video_id_with_provider("video_AAAAA"));
-    assert_eq!(bad_base64.video_id, "video_AAAAA");
-    assert_eq!(base64_capture.events().len(), 1);
-    let skipped_capture = Capture::default();
-    let skipped = skipped_capture.captured(|| decode_video_id_with_provider("video_YTtiO2M-"));
-    assert_eq!(skipped.video_id, "video_YTtiO2M-");
-    assert_eq!(skipped_capture.events().len(), 1);
-    let utf8_capture = Capture::default();
-    let bad_utf8 = utf8_capture.captured(|| decode_video_id_with_provider("video_/w=="));
-    assert_eq!(bad_utf8.video_id, "video_/w==");
-    assert_eq!(utf8_capture.events().len(), 1);
-    let character_capture = Capture::default();
-    let character = character_capture.captured(|| decode_character_id("character_/w=="));
-    assert_eq!(character.character_id, "character_/w==");
-    assert_eq!(character_capture.events().len(), 1);
+    let two_fields = format!("video_{}", STANDARD.encode("a;b"));
+    let video_cases = [
+        ("", 0),
+        ("vid_abc", 0),
+        (UNPREFIXED_VIDEO, 0),
+        (two_fields.as_str(), 0),
+        ("video_YQ", 0),
+        ("video_YWI", 0),
+        ("video_YQ---", 0),
+        ("video_AAAAA", 1),
+        ("video_YTtiO2M-", 1),
+        ("video_/w==", 1),
+    ];
+    for (encoded, debug_events) in video_cases {
+        let capture = Capture::default();
+        let decoded = capture.captured(|| decode_video_id_with_provider(encoded));
+        assert_eq!(decoded.video_id, encoded);
+        assert!(decoded.custom_llm_provider.is_none(), "{encoded}");
+        assert!(decoded.model_id.is_none(), "{encoded}");
+        assert_eq!(capture.events().len(), debug_events, "{encoded}");
+    }
+    let unseparated = format!("character_{}", STANDARD.encode("plain"));
+    let character_cases = [
+        ("", 0),
+        (UNPREFIXED_CHARACTER, 0),
+        (unseparated.as_str(), 0),
+        ("character_AAAAA", 1),
+        ("character_/w==", 1),
+    ];
+    for (encoded, debug_events) in character_cases {
+        let capture = Capture::default();
+        let decoded = capture.captured(|| decode_character_id(encoded));
+        assert_eq!(decoded.character_id, encoded);
+        assert!(decoded.custom_llm_provider.is_none(), "{encoded}");
+        assert!(decoded.model_id.is_none(), "{encoded}");
+        assert_eq!(capture.events().len(), debug_events, "{encoded}");
+    }
 }
 
 fn input_reference_string_png() {
@@ -140,72 +139,62 @@ fn input_reference_string_png() {
     );
 }
 
+fn added_image(body: MediaBody<'_>) -> (String, &'static str) {
+    let mut files = Vec::new();
+    add_image_to_files(&mut files, "input_reference", body);
+    let part = files.first().expect("image part");
+    (part.filename.clone(), part.content_type)
+}
+
+fn earlier_field_is_kept() {
+    let mut reader = ProbeReader::new(PNG, 3, None);
+    let mut files = vec![MultipartPart {
+        field: "prompt".to_owned(),
+        filename: String::new(),
+        content_type: "text/plain",
+        body: MediaBody::Text("keep"),
+    }];
+    add_image_to_files(
+        &mut files,
+        "input_reference",
+        MediaBody::Stream {
+            name: Some("ref.png"),
+            reader: &mut reader,
+        },
+    );
+    assert_eq!(files.len(), 2);
+    assert_eq!(files.first().expect("earlier field").field, "prompt");
+    let (filename, content_type) = {
+        let part = files.last().expect("image part");
+        (part.filename.clone(), part.content_type)
+    };
+    drop(files);
+    assert_eq!(filename, "ref.png");
+    assert_eq!(content_type, "image/png");
+    assert_eq!(reader.position(), 3);
+}
+
 fn multipart_input_file() {
-    {
-        let mut reader = ProbeReader::new(PNG, 3, None);
-        let mut files = vec![MultipartPart {
-            field: "prompt".to_owned(),
-            filename: String::new(),
-            content_type: "text/plain",
-            body: MediaBody::Text("keep"),
-        }];
-        add_image_to_files(
-            &mut files,
-            "input_reference",
-            MediaBody::Stream {
-                name: Some("ref.png"),
-                reader: &mut reader,
-            },
-        );
-        assert_eq!(files.len(), 2);
-        assert_eq!(files.first().expect("earlier field").field, "prompt");
-        let (filename, content_type) = {
-            let part = files.last().expect("image part");
-            (part.filename.clone(), part.content_type)
-        };
-        drop(files);
-        assert_eq!(filename, "ref.png");
-        assert_eq!(content_type, "image/png");
-        assert_eq!(reader.position(), 3);
-    }
-    {
-        let mut reader = ProbeReader::new(JPEG, 0, None);
-        let mut files = Vec::new();
-        add_image_to_files(
-            &mut files,
-            "input_reference",
-            MediaBody::Stream {
-                name: None,
-                reader: &mut reader,
-            },
-        );
-        let part = files.first().expect("image part");
-        assert_eq!(part.filename, "input_reference.png");
-        assert_eq!(part.content_type, "image/jpeg");
-        assert!(matches!(&part.body, MediaBody::Stream { name: None, .. }));
-    }
-    {
-        let mut files = Vec::new();
-        add_image_to_files(&mut files, "input_reference", MediaBody::Bytes(JPEG));
-        let part = files.first().expect("image part");
-        assert_eq!(part.filename, "input_reference.png");
-        assert_eq!(part.content_type, "image/jpeg");
-        assert!(matches!(&part.body, MediaBody::Bytes(bytes) if *bytes == JPEG));
-    }
-    {
-        let mut files = Vec::new();
-        add_image_to_files(&mut files, "input_reference", MediaBody::Bytes(GIF));
-        assert_eq!(files.first().expect("part").content_type, "image/gif");
-    }
-    {
-        let mut files = Vec::new();
-        add_image_to_files(&mut files, "input_reference", MediaBody::Bytes(WEBP));
-        assert_eq!(files.first().expect("part").content_type, "image/webp");
-    }
-    {
-        let mut files = Vec::new();
-        add_image_to_files(&mut files, "input_reference", MediaBody::Bytes(HEIC));
-        assert_eq!(files.first().expect("part").content_type, "image/heic");
+    earlier_field_is_kept();
+    let mut unnamed = ProbeReader::new(JPEG, 0, None);
+    let jpeg_stream = MediaBody::Stream {
+        name: None,
+        reader: &mut unnamed,
+    };
+    assert_eq!(
+        added_image(jpeg_stream),
+        ("input_reference.png".to_owned(), "image/jpeg")
+    );
+    assert_eq!(
+        added_image(MediaBody::Bytes(JPEG)),
+        ("input_reference.png".to_owned(), "image/jpeg")
+    );
+    for (bytes, expected) in [
+        (GIF, "image/gif"),
+        (WEBP, "image/webp"),
+        (HEIC, "image/heic"),
+    ] {
+        assert_eq!(added_image(MediaBody::Bytes(bytes)).1, expected);
     }
 }
 
@@ -280,7 +269,7 @@ fn decode_permissive_fields() {
 
 fn character_list_rewrite() {
     let encoded = encode_character_id("char-1", "openai", Some("sora-2"));
-    let request = json!({
+    let mut request = json!({
         "model": "sora-2",
         "prompt": "make a video",
         "seconds": "4",
@@ -291,34 +280,18 @@ fn character_list_rewrite() {
             "raw",
             3
         ]
+    })
+    .as_object()
+    .cloned()
+    .expect("object");
+    rewrite_character_ids(&mut request);
+    let expected = json!({
+        "model": "sora-2",
+        "prompt": "make a video",
+        "seconds": "4",
+        "characters": [{"id": "char-1", "role": "hero"}, {"role": "plain"}, {"id": 7}, "raw", 3]
     });
-    let mut request_map = request.as_object().cloned().expect("object");
-    rewrite_character_ids(&mut request_map);
-    assert_eq!(request_map.get("model"), Some(&json!("sora-2")));
-    assert_eq!(request_map.get("prompt"), Some(&json!("make a video")));
-    assert_eq!(request_map.get("seconds"), Some(&json!("4")));
-    let characters = request_map
-        .get("characters")
-        .and_then(Value::as_array)
-        .expect("list");
-    assert_eq!(
-        characters.first().and_then(|item| item.get("id")),
-        Some(&json!("char-1"))
-    );
-    assert_eq!(
-        characters.first().and_then(|item| item.get("role")),
-        Some(&json!("hero"))
-    );
-    assert_eq!(
-        characters.get(1).and_then(|item| item.get("role")),
-        Some(&json!("plain"))
-    );
-    assert_eq!(
-        characters.get(2).and_then(|item| item.get("id")),
-        Some(&json!(7))
-    );
-    assert_eq!(characters.get(3), Some(&json!("raw")));
-    assert_eq!(characters.get(4), Some(&json!(3)));
+    assert_eq!(Value::Object(request), expected);
     let mut plain = json!({"model": "m", "characters": "none"})
         .as_object()
         .cloned()
@@ -327,150 +300,74 @@ fn character_list_rewrite() {
     assert_eq!(plain.get("characters"), Some(&json!("none")));
 }
 
-fn video_filename_mime() {
-    {
-        let mut reader = ProbeReader::new(b"no signature", 0, None);
+fn streamed_video(
+    name: Option<&str>,
+    data: &[u8],
+    position: usize,
+    failure: Option<Failure>,
+) -> (String, &'static str, usize) {
+    let mut reader = ProbeReader::new(data, position, failure);
+    let (filename, content_type) = {
         let part = video_file_tuple(
             MediaBody::Stream {
-                name: Some("clip.webm"),
+                name,
                 reader: &mut reader,
             },
             "video",
         );
-        assert_eq!(part.field, "video");
-        assert_eq!(part.filename, "clip.webm");
-        assert_eq!(part.content_type, "video/webm");
-    }
+        (part.filename.clone(), part.content_type)
+    };
+    (filename, content_type, reader.position())
+}
+
+fn ftyp_after_ten_bytes() -> Vec<u8> {
     let mut ftyp = vec![0_u8; 80];
     ftyp.get_mut(10..14)
         .expect("range")
         .copy_from_slice(b"ftyp");
-    {
-        let mut reader = ProbeReader::new(&ftyp, 0, None);
-        let part = video_file_tuple(
-            MediaBody::Stream {
-                name: Some("clip.png"),
-                reader: &mut reader,
-            },
-            "video",
-        );
-        assert_eq!(part.content_type, "video/mp4");
-    }
-    {
-        let mut reader = ProbeReader::new(b"no ftyp", 0, None);
-        let part = video_file_tuple(
-            MediaBody::Stream {
-                name: Some("clip.png"),
-                reader: &mut reader,
-            },
-            "video",
-        );
-        assert_eq!(part.content_type, "video/mp4");
-    }
-    {
-        let part = video_file_tuple(MediaBody::Bytes(b"no name"), "video");
+    ftyp
+}
+
+fn video_filename_mime() {
+    assert_eq!(
+        streamed_video(Some("clip.webm"), b"no signature", 0, None),
+        ("clip.webm".to_owned(), "video/webm", 0)
+    );
+    let ftyp = ftyp_after_ten_bytes();
+    assert_eq!(
+        streamed_video(Some("clip.png"), &ftyp, 0, None).1,
+        "video/mp4"
+    );
+    assert_eq!(
+        streamed_video(Some("clip.png"), b"no ftyp", 0, None).1,
+        "video/mp4"
+    );
+    let named_empty = streamed_video(Some(""), b"", 0, None);
+    assert_eq!(
+        (named_empty.0.as_str(), named_empty.1),
+        ("input_video.mp4", "video/mp4")
+    );
+    for body in [MediaBody::Bytes(b"no name"), MediaBody::Text("a string")] {
+        let part = video_file_tuple(body, "video");
+        assert_eq!(part.field, "video");
         assert_eq!(part.filename, "input_video.mp4");
         assert_eq!(part.content_type, "video/mp4");
-    }
-    {
-        let part = video_file_tuple(MediaBody::Text("a string"), "video");
-        assert_eq!(part.filename, "input_video.mp4");
-        assert_eq!(part.content_type, "video/mp4");
-    }
-    {
-        let mut reader = ProbeReader::new(b"", 0, None);
-        let part = video_file_tuple(
-            MediaBody::Stream {
-                name: Some(""),
-                reader: &mut reader,
-            },
-            "video",
-        );
-        assert_eq!(part.filename, "input_video.mp4");
     }
 }
 
 fn video_probe_cursor() {
-    let mut ftyp = vec![0_u8; 80];
-    ftyp.get_mut(10..14)
-        .expect("range")
-        .copy_from_slice(b"ftyp");
-    {
-        let mut reader = ProbeReader::new(&ftyp, 3, None);
-        let content_type = video_file_tuple(
-            MediaBody::Stream {
-                name: Some("clip.bin"),
-                reader: &mut reader,
-            },
-            "video",
-        )
-        .content_type;
-        assert_eq!(content_type, "video/mp4");
-        assert_eq!(reader.position(), 3);
-    }
-    {
-        let mut reader = ProbeReader::new(&ftyp, 2, None);
-        let content_type = video_file_tuple(
-            MediaBody::Stream {
-                name: Some("clip.bin"),
-                reader: &mut reader,
-            },
-            "video",
-        )
-        .content_type;
-        assert_eq!(content_type, "video/mp4");
-        assert_eq!(reader.position(), 2);
-    }
-    {
-        let mut reader = ProbeReader::new(&ftyp, 3, Some(Failure::Tell));
-        let content_type = video_file_tuple(
-            MediaBody::Stream {
-                name: Some("clip.bin"),
-                reader: &mut reader,
-            },
-            "video",
-        )
-        .content_type;
-        assert_eq!(content_type, "video/mp4");
-        assert_eq!(reader.position(), 3);
-    }
-    {
-        let mut reader = ProbeReader::new(&ftyp, 3, Some(Failure::Seek));
-        let content_type = video_file_tuple(
-            MediaBody::Stream {
-                name: Some("clip.bin"),
-                reader: &mut reader,
-            },
-            "video",
-        )
-        .content_type;
-        assert_eq!(content_type, "video/mp4");
-        assert_eq!(reader.position(), 3);
-    }
-    {
-        let mut reader = ProbeReader::new(&ftyp, 3, Some(Failure::Read));
-        let content_type = video_file_tuple(
-            MediaBody::Stream {
-                name: Some("clip.bin"),
-                reader: &mut reader,
-            },
-            "video",
-        )
-        .content_type;
-        assert_eq!(content_type, "video/mp4");
-        assert_eq!(reader.position(), 0);
-    }
-    {
-        let mut reader = ProbeReader::new(&ftyp, 3, Some(Failure::Restore));
-        let content_type = video_file_tuple(
-            MediaBody::Stream {
-                name: Some("clip.bin"),
-                reader: &mut reader,
-            },
-            "video",
-        )
-        .content_type;
-        assert_eq!(content_type, "video/mp4");
-        assert_eq!(reader.position(), 64);
+    let ftyp = ftyp_after_ten_bytes();
+    let cases = [
+        (3, None, 3),
+        (2, None, 2),
+        (3, Some(Failure::Tell), 3),
+        (3, Some(Failure::Seek), 3),
+        (3, Some(Failure::Read), 0),
+        (3, Some(Failure::Restore), 64),
+    ];
+    for (position, failure, after) in cases {
+        let (_, content_type, cursor) = streamed_video(Some("clip.bin"), &ftyp, position, failure);
+        assert_eq!(content_type, "video/mp4", "{failure:?}");
+        assert_eq!(cursor, after, "{failure:?} from {position}");
     }
 }

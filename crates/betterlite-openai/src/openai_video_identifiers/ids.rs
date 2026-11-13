@@ -67,7 +67,7 @@ fn decode_base64_text(encoded: &str) -> Option<String> {
         }
     }
     let leftover = data.len().checked_rem(4)?;
-    if leftover == 1 || (leftover != 0 && leftover.checked_add(pads)? < 4) {
+    if leftover != 0 && leftover.checked_add(pads)? < 4 {
         return None;
     }
     let bytes = ID_BASE64.decode(data.as_bytes()).ok()?;
