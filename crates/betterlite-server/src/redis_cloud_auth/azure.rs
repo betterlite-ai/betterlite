@@ -1,0 +1,110 @@
+use std::sync::Arc;
+
+use betterlite_azure::azure_client_secret::ClientSecretError;
+use betterlite_azure::azure_default_chain::error::DefaultChainError;
+use betterlite_azure::azure_managed_identity::error::ManagedIdentityError;
+use betterlite_config::sections::redis_credentials::azure::{
+    AzureCredential, AzureSettings, AzureToken, AzureTokenFetcher,
+};
+use secrecy::{ExposeSecret as _, SecretString};
+use thiserror::Error;
+
+pub trait AzureGrants: Send + Sync {
+    fn client_secret(
+        &self,
+        tenant_id: &str,
+        client_id: &str,
+        client_secret: &SecretString,
+        scope: &str,
+    ) -> Result<SecretString, AzureGrantError>;
+
+    fn managed_identity(
+        &self,
+        client_id: &str,
+        scope: &str,
+    ) -> Result<SecretString, AzureGrantError>;
+
+    fn default_credential(&self, scope: &str) -> Result<SecretString, AzureGrantError>;
+}
+
+#[derive(Debug, Error)]
+pub enum AzureGrantError {
+    #[error("the Azure AD client secret credential could not produce a token: {source}")]
+    ClientSecret {
+        #[source]
+        source: ClientSecretError,
+    },
+    #[error("the Azure AD managed identity credential could not produce a token: {source}")]
+    ManagedIdentity {
+        #[source]
+        source: ManagedIdentityError,
+    },
+    #[error("the Azure AD default credential could not produce a token: {source}")]
+    Default {
+        #[source]
+        source: DefaultChainError,
+    },
+    #[error("the Azure AD {kind} credential needs {fields}")]
+    MissingSettings {
+        kind: &'static str,
+        fields: &'static str,
+    },
+    #[error("the Azure AD {kind} credential could not be built: {message}")]
+    Build { kind: &'static str, message: String },
+}
+
+pub struct AzureRedisTokens {
+    pub settings: AzureSettings,
+    pub grants: Arc<dyn AzureGrants>,
+}
+
+impl AzureTokenFetcher for AzureRedisTokens {
+    type Error = AzureGrantError;
+
+    fn fetch_token(
+        &self,
+        credential: AzureCredential,
+        scope: &str,
+    ) -> Result<AzureToken, Self::Error> {
+        let token = match credential {
+            AzureCredential::ClientSecret => {
+                let tenant_id = self.settings.tenant_id.as_ref().ok_or_else(|| {
+                    AzureGrantError::MissingSettings {
+                        kind: "client secret",
+                        fields: "tenant_id",
+                    }
+                })?;
+                let client_id = self.settings.client_id.as_ref().ok_or_else(|| {
+                    AzureGrantError::MissingSettings {
+                        kind: "client secret",
+                        fields: "client_id",
+                    }
+                })?;
+                let client_secret = self.settings.client_secret.as_ref().ok_or_else(|| {
+                    AzureGrantError::MissingSettings {
+                        kind: "client secret",
+                        fields: "client_secret",
+                    }
+                })?;
+                self.grants.client_secret(
+                    tenant_id.expose_secret(),
+                    client_id.expose_secret(),
+                    client_secret,
+                    scope,
+                )?
+            }
+            AzureCredential::ManagedIdentity => {
+                let client_id = self.settings.client_id.as_ref().ok_or_else(|| {
+                    AzureGrantError::MissingSettings {
+                        kind: "managed identity",
+                        fields: "client_id",
+                    }
+                })?;
+                self.grants
+                    .managed_identity(client_id.expose_secret(), scope)?
+            }
+            AzureCredential::Default => self.grants.default_credential(scope)?,
+        };
+        Ok(AzureToken { token })
+    }
+}

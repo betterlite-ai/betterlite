@@ -1,0 +1,89 @@
+use std::collections::BTreeMap;
+use std::io;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use betterlite_azure::azure_arc_identity::{ArcHost, ArcPlatform};
+use betterlite_azure::azure_client_secret::transport::Clock as TokenClock;
+use betterlite_azure::azure_managed_identity::runtime::Scheduler;
+use betterlite_azure::oidc_exchange::transport::Clock as OidcClock;
+
+pub struct ProductionClock;
+
+impl ProductionClock {
+    fn unix_seconds() -> i64 {
+        let elapsed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO)
+            .as_secs();
+        i64::try_from(elapsed).unwrap_or(i64::MAX)
+    }
+}
+
+impl TokenClock for ProductionClock {
+    fn now_unix_seconds(&self) -> i64 {
+        Self::unix_seconds()
+    }
+}
+
+impl OidcClock for ProductionClock {
+    fn now_unix_seconds(&self) -> f64 {
+        let elapsed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or(Duration::ZERO);
+        elapsed.as_secs_f64()
+    }
+}
+
+pub struct ThreadScheduler;
+
+impl Scheduler for ThreadScheduler {
+    fn sleep(&self, delay: Duration) {
+        std::thread::sleep(delay);
+    }
+}
+
+pub struct ProductionHost {
+    pub environment: BTreeMap<String, String>,
+}
+
+impl ProductionHost {
+    fn variable(&self, name: &str) -> String {
+        self.environment.get(name).cloned().unwrap_or_default()
+    }
+}
+
+impl ArcHost for ProductionHost {
+    fn platform(&self) -> ArcPlatform {
+        if cfg!(target_os = "linux") {
+            ArcPlatform::Linux
+        } else if cfg!(target_os = "windows") {
+            ArcPlatform::Windows
+        } else {
+            ArcPlatform::Other(std::env::consts::OS.to_owned())
+        }
+    }
+
+    fn environment(&self, name: &str) -> Option<String> {
+        self.environment.get(name).cloned()
+    }
+
+    fn program_data(&self) -> String {
+        self.variable("ProgramData")
+    }
+
+    fn program_files(&self) -> String {
+        self.variable("ProgramFiles")
+    }
+
+    fn file_size(&self, path: &str) -> io::Result<u64> {
+        std::fs::metadata(path).map(|metadata| metadata.len())
+    }
+
+    fn read_text(&self, path: &str) -> io::Result<String> {
+        std::fs::read_to_string(path)
+    }
+
+    fn now_unix_seconds(&self) -> i64 {
+        ProductionClock::unix_seconds()
+    }
+}

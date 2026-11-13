@@ -1,0 +1,147 @@
+const SERVICE_ACCOUNT: &str = "projects/-/serviceAccounts/sa@project.iam.gserviceaccount.com";
+
+fn gcp_fetcher(base: String, adc: Arc<dyn AdcTokenSource>) -> Arc<IamTokenFetcher> {
+    Arc::new(IamTokenFetcher {
+        runtime: Handle::current(),
+        http: proxied_client(),
+        base,
+        adc,
+    })
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn gcp_the_request_carries_the_service_account_body_and_bearer() {
+    let server = iam_server(200, r#"{"accessToken":"iam-token"}"#).await;
+    let fetcher = gcp_fetcher(
+        format!("{}/", server.base),
+        Arc::new(FixedAdc {
+            token: Some("adc-token"),
+        }),
+    );
+    let token = tokio::task::spawn_blocking(move || {
+        GcpTokenFetcher::fetch(fetcher.as_ref(), SERVICE_ACCOUNT)
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(token.expose_secret(), "iam-token");
+    let seen = server.seen.lock().unwrap().clone();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, "POST");
+    assert_eq!(
+        seen[0].path,
+        "/v1/projects/-/serviceAccounts/sa@project.iam.gserviceaccount.com:generateAccessToken"
+    );
+    assert_eq!(seen[0].authorization.as_deref(), Some("Bearer adc-token"));
+    assert_eq!(seen[0].content_type.as_deref(), Some("application/json"));
+    let body: serde_json::Value = serde_json::from_str(&seen[0].body).unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({"scope": ["https://www.googleapis.com/auth/cloud-platform"]})
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn gcp_a_non_success_status_names_the_status() {
+    let server = iam_server(403, r#"{"error":"denied"}"#).await;
+    let fetcher = gcp_fetcher(
+        server.base.clone(),
+        Arc::new(FixedAdc {
+            token: Some("adc-token"),
+        }),
+    );
+    let error = tokio::task::spawn_blocking(move || {
+        GcpTokenFetcher::fetch(fetcher.as_ref(), SERVICE_ACCOUNT)
+    })
+    .await
+    .unwrap()
+    .unwrap_err();
+    match error {
+        IamTokenError::Status { status } => assert_eq!(status, 403),
+        other => panic!("expected the status error, got {other}"),
+    }
+    assert_eq!(server.seen.lock().unwrap().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn gcp_a_malformed_reply_is_an_error() {
+    let server = iam_server(200, "not json").await;
+    let fetcher = gcp_fetcher(
+        server.base.clone(),
+        Arc::new(FixedAdc {
+            token: Some("adc-token"),
+        }),
+    );
+    let error = tokio::task::spawn_blocking(move || {
+        GcpTokenFetcher::fetch(fetcher.as_ref(), SERVICE_ACCOUNT)
+    })
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert!(matches!(error, IamTokenError::Reply { .. }));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn gcp_an_adc_failure_is_reported_before_the_request() {
+    let server = iam_server(200, r#"{"accessToken":"iam-token"}"#).await;
+    let fetcher = gcp_fetcher(server.base.clone(), Arc::new(FixedAdc { token: None }));
+    let error = tokio::task::spawn_blocking(move || {
+        GcpTokenFetcher::fetch(fetcher.as_ref(), SERVICE_ACCOUNT)
+    })
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert!(matches!(error, IamTokenError::Adc { .. }));
+    assert!(server.seen.lock().unwrap().is_empty());
+}
+
+#[test]
+fn gcp_decode_reads_the_access_token() {
+    let token = decode_iam_token(br#"{"accessToken":"ya29.fixture"}"#).unwrap();
+    assert_eq!(token.expose_secret(), "ya29.fixture");
+}
+
+#[test]
+fn gcp_decode_accepts_an_empty_access_token() {
+    let token = decode_iam_token(br#"{"accessToken":""}"#).unwrap();
+    assert_eq!(token.expose_secret(), "");
+}
+
+#[test]
+fn gcp_decode_rejects_a_missing_access_token() {
+    assert!(matches!(
+        decode_iam_token(b"{}"),
+        Err(IamTokenError::MissingToken)
+    ));
+}
+
+#[test]
+fn gcp_decode_rejects_a_non_string_access_token() {
+    assert!(matches!(
+        decode_iam_token(br#"{"accessToken":42}"#),
+        Err(IamTokenError::Reply { .. })
+    ));
+}
+
+#[test]
+fn gcp_decode_rejects_truncated_json() {
+    assert!(matches!(
+        decode_iam_token(br#"{"accessToken":"ya29"#),
+        Err(IamTokenError::Reply { .. })
+    ));
+}
+
+#[rstest::rstest]
+fn replays_the_gcp_iam_token_corpus(#[files("fuzz/corpus/gcp_iam_token/*")] path: PathBuf) {
+    let body = fs::read(&path).unwrap();
+    let decoded = decode_iam_token(&body);
+    let Some(name) = path.file_name().and_then(OsStr::to_str) else {
+        return;
+    };
+    if name.starts_with("valid-") {
+        assert!(decoded.is_ok(), "{name}");
+    }
+    if name.starts_with("invalid-") {
+        assert!(decoded.is_err(), "{name}");
+    }
+}
