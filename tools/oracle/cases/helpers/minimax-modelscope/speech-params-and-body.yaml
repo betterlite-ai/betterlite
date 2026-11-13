@@ -1,0 +1,74 @@
+kind: helper
+name: minimax-speech-params-and-body
+call:
+  b8174:
+    steps:
+      - kind: speech_params
+        voice: alloy
+      - kind: speech_params
+        voice: echo
+      - kind: speech_params
+        voice: shimmer
+      - kind: speech_params
+        voice: custom-voice
+      - kind: speech_params
+        voice: ALLOY
+      - kind: speech_params
+        voice: "  nova  "
+      - kind: speech_params
+        voice: ""
+      - kind: speech_params
+      - kind: speech_params
+        params: {voice_id: nova}
+      - kind: speech_params
+        voice: alloy
+        params: {voice_id: custom-voice}
+      - kind: speech_params
+        voice: {voice_id: fable}
+      - kind: speech_params
+        voice: {id: onyx, name: nova}
+      - kind: speech_params
+        voice: {}
+      - kind: speech_params
+        params: {response_format: pcm}
+      - kind: speech_params
+        params: {response_format: flac}
+      - kind: speech_params
+        params: {response_format: opus}
+      - kind: speech_params
+        params: {speed: 0.2}
+      - kind: speech_params
+        params: {speed: 0.5}
+      - kind: speech_params
+        params: {speed: 1.25}
+      - kind: speech_params
+        params: {speed: 2}
+      - kind: speech_params
+        params: {speed: 7}
+      - kind: speech_params
+        params: {instructions: "speak slowly", language_boost: auto}
+      - kind: speech_params
+        params: {extra_body: {language_boost: auto, speed: 2, ignored: null}, speed: 0.75}
+      - kind: speech_body
+        model: speech-01
+        input: hello
+      - kind: speech_body
+        model: speech-01
+        input: hello
+        voice: alloy
+        params: {response_format: wav, speed: 1.5}
+      - kind: speech_body
+        model: speech-01
+        input: hello
+        voice: shimmer
+        params: {vol: 3.0, pitch: -4, sample_rate: 16000, bitrate: 64000, channel: 2, output_format: url}
+      - kind: speech_body
+        model: speech-01
+        input: hello
+        params: {extra_body: {language_boost: auto, text: replaced}}
+      - kind: speech_body
+        model: speech-01
+        input: hello
+        voice: ""
+env: {}
+compare: {ignore: []}

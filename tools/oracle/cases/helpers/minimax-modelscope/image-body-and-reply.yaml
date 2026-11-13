@@ -1,0 +1,31 @@
+kind: helper
+name: modelscope-image-body-and-reply
+call:
+  b8174:
+    steps:
+      - kind: image_body
+        model: Qwen/Qwen-Image
+        prompt: a cat
+        params: {n: 2, size: 1024x1024, user: null}
+      - kind: image_body
+        model: Qwen/Qwen-Image
+        prompt: a cat
+        params: {n: 1, _internal: hidden, _: true}
+      - kind: image_reply
+        status: 200
+        created: 1700000000
+        body: '{"created": 5, "data": [{"url": "https://example/1.png", "b64_json": null, "revised_prompt": "a cat"}, {"url": "https://example/2.png"}]}'
+      - kind: image_reply
+        status: 200
+        created: 1700000000
+        body: '{"created": 5}'
+      - kind: image_reply
+        status: 200
+        created: 1700000000
+        body: '{"data": [{"b64_json": "aGk="}]}'
+      - kind: image_reply
+        status: 403
+        created: 1700000000
+        body: 'oops'
+env: {}
+compare: {ignore: []}

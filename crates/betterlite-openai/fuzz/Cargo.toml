@@ -344,6 +344,20 @@ doc = false
 bench = false
 
 [[bin]]
+name = "minimax_speech_reply"
+path = "fuzz_targets/minimax_speech_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "modelscope_image_reply"
+path = "fuzz_targets/modelscope_image_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vercel_ai_gateway_reply"
 path = "fuzz_targets/vercel_ai_gateway_reply.rs"
 test = false

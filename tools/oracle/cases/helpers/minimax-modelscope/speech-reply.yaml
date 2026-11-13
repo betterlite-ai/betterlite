@@ -1,0 +1,39 @@
+kind: helper
+name: minimax-speech-reply
+call:
+  b8174:
+    steps:
+      - kind: speech_reply
+        status: 200
+        headers: {content-type: audio/mpeg}
+        body: '{"status": 0, "data": {"audio": "48656c6c6f"}}'
+      - kind: speech_reply
+        status: 200
+        headers: {content-type: audio/wav}
+        body: '{"data": {"audio": "SGVsbG8="}}'
+      - kind: speech_reply
+        status: 200
+        body: '{"data": {"audio": "48 65 6c\n6c6f"}}'
+      - kind: speech_reply
+        status: 200
+        body: '{"audio_file": "48656c6c6f"}'
+      - kind: speech_reply
+        status: 200
+        body: '{"data": {"audio": "4869"}, "audio_file": "427965"}'
+      - kind: speech_reply
+        status: 200
+        body: '{"status": 0, "data": {"audio": "4869"}}'
+      - kind: speech_reply
+        status: 401
+        body: '{"status": 2, "ced": "invalid api key"}'
+      - kind: speech_reply
+        status: 400
+        body: '{"status": 2}'
+      - kind: speech_reply
+        status: 400
+        body: '{"status": 2, "ced": ""}'
+      - kind: speech_reply
+        status: 400
+        body: '{"status": 2, "ced": null}'
+env: {}
+compare: {ignore: []}
