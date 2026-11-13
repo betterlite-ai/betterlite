@@ -1,11 +1,22 @@
 import logging
-from typing import TypedDict
+from logging.handlers import MemoryHandler
+from typing import Protocol, TypedDict
 
 from litellm.llms.vertex_ai.gemini.vertex_and_google_ai_studio_gemini import (
     VertexGeminiConfig,
 )
 from pydantic import JsonValue as Json
-from typing_extensions import override
+
+
+class ParamMapper(Protocol):
+    def map_openai_params(
+        self,
+        *,
+        non_default_params: dict[str, Json],
+        optional_params: dict[str, Json],
+        model: str,
+        drop_params: bool,
+    ) -> dict[str, Json]: ...
 
 
 class Call(TypedDict):
@@ -23,14 +34,25 @@ class Input(TypedDict):
     settings: dict[str, str]
 
 
-class WarningCapture(logging.Handler):
-    def __init__(self) -> None:
-        super().__init__(level=logging.WARNING)
-        self.messages: list[str] = []
-
-    @override
-    def emit(self, record: logging.LogRecord) -> None:
-        self.messages.append(record.getMessage())
+def count_warnings(
+    config: ParamMapper,
+    non_default: dict[str, Json],
+    optional_params: dict[str, Json],
+) -> int:
+    capture = MemoryHandler(capacity=1000, flushLevel=logging.CRITICAL)
+    capture.setLevel(logging.WARNING)
+    logger = logging.getLogger("LiteLLM")
+    logger.addHandler(capture)
+    try:
+        config.map_openai_params(
+            non_default_params=non_default,
+            optional_params=optional_params,
+            model="gemini-2.5-pro",
+            drop_params=False,
+        )
+    finally:
+        logger.removeHandler(capture)
+    return len(capture.buffer)
 
 
 def run(input_value: Input) -> Json:
@@ -46,23 +68,11 @@ def run(input_value: Input) -> Json:
         "service_tier": call["service_tier"],
         "include_server_side_tool_invocations": call["server_side_invocations"],
     }
-    capture = WarningCapture()
-    logger = logging.getLogger("LiteLLM")
-    logger.addHandler(capture)
-    try:
-        VertexGeminiConfig().map_openai_params(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1086-L1240
-            non_default_params=non_default,
-            optional_params=optional_params,
-            model="gemini-2.5-pro",
-            drop_params=False,
-        )
-    finally:
-        logger.removeHandler(capture)
-    output: dict[str, Json] = {
+    warnings = count_warnings(VertexGeminiConfig(), non_default, optional_params)
+    return {
         "tools": optional_params.get("tools"),
         "tool_choice": optional_params.get("tool_choice"),
         "toolConfig": optional_params.get("toolConfig"),
         "service_tier": optional_params.get("service_tier"),
-        "warnings": len(capture.messages),
+        "warnings": warnings,
     }
-    return output
