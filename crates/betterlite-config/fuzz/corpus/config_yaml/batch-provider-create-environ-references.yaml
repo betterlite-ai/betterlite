@@ -1,0 +1,4 @@
+litellm_settings:
+  api_base: os.environ/BATCH_PROVIDER_BASE
+  api_key: os.environ/BATCH_PROVIDER_KEY
+model_list: []
