@@ -68,46 +68,44 @@ pub fn decode_studio_file_metadata(
             limit: METADATA_BODY_LIMIT,
         });
     }
-    let fields = match shape {
-        MetadataShape::Create => create_fields(bytes)?,
-        MetadataShape::Retrieve => retrieve_fields(bytes)?,
-    };
-    object(fields, local)
+    object(fields(bytes, shape)?, local)
 }
 
-// A create reply wraps the record in `{"file": ...}`; its id is the provider uri.
-fn create_fields(bytes: &[u8]) -> Result<Fields, StudioFilesError> {
-    let metadata: CreateEnvelope = serde_json::from_slice(bytes)?;
-    Ok(Fields {
-        uri: metadata.file.uri,
-        size: Some(metadata.file.size_bytes),
-        created: metadata.file.create_time,
-        name: metadata.file.display_name,
-        status: FileStatus::Uploaded,
-        details: None,
-    })
-}
-
-// A retrieve reply is the record itself; uri, displayName and sizeBytes fall back to empty.
-fn retrieve_fields(bytes: &[u8]) -> Result<Fields, StudioFilesError> {
-    let metadata: RetrieveMetadata = serde_json::from_slice(bytes)?;
-    let status = match metadata.state.as_deref() {
-        Some("ACTIVE") => FileStatus::Processed,
-        Some("FAILED") => FileStatus::Error,
-        _ => FileStatus::Uploaded,
-    };
-    Ok(Fields {
-        uri: metadata.uri.unwrap_or_default(),
-        size: metadata.size_bytes,
-        created: metadata.create_time,
-        name: metadata.display_name.unwrap_or_default(),
-        status,
-        details: if status == FileStatus::Error {
-            Some(error_details(metadata.error.as_ref())?)
-        } else {
-            None
-        },
-    })
+// Create wraps the record in `{"file": ...}` and requires every field; retrieve defaults the optional ones.
+fn fields(bytes: &[u8], shape: MetadataShape) -> Result<Fields, StudioFilesError> {
+    match shape {
+        MetadataShape::Create => {
+            let metadata: CreateEnvelope = serde_json::from_slice(bytes)?;
+            Ok(Fields {
+                uri: metadata.file.uri,
+                size: Some(metadata.file.size_bytes),
+                created: metadata.file.create_time,
+                name: metadata.file.display_name,
+                status: FileStatus::Uploaded,
+                details: None,
+            })
+        }
+        MetadataShape::Retrieve => {
+            let metadata: RetrieveMetadata = serde_json::from_slice(bytes)?;
+            let status = match metadata.state.as_deref() {
+                Some("ACTIVE") => FileStatus::Processed,
+                Some("FAILED") => FileStatus::Error,
+                _ => FileStatus::Uploaded,
+            };
+            Ok(Fields {
+                uri: metadata.uri.unwrap_or_default(),
+                size: metadata.size_bytes,
+                created: metadata.create_time,
+                name: metadata.display_name.unwrap_or_default(),
+                status,
+                details: if status == FileStatus::Error {
+                    Some(error_details(metadata.error.as_ref())?)
+                } else {
+                    None
+                },
+            })
+        }
+    }
 }
 
 fn object(fields: Fields, local: &LocalTimeContext) -> Result<FileObject, StudioFilesError> {
