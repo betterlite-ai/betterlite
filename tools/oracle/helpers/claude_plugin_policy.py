@@ -4,12 +4,12 @@ from typing import Literal, TypeAlias, TypedDict
 from litellm.models.object_permission import LiteLLM_ObjectPermissionTable
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
 from litellm.proxy.anthropic_endpoints.claude_code_endpoints.claude_code_marketplace import (
+    _require_proxy_admin,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L265-L274
     _validate_plugin_source,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L193-L246
 )
 from litellm.proxy.anthropic_endpoints.claude_code_endpoints.claude_code_skill_access import (
     skill_visibility,
 )
-from litellm.proxy.common_utils.resource_ownership import is_proxy_admin
 from pydantic import JsonValue
 from starlette.exceptions import HTTPException
 
@@ -66,7 +66,7 @@ def answer(call: Call) -> JsonValue:
         case "validate_source":
             return validate_answer(call)
         case "require_admin":
-            return {"ok": is_proxy_admin(caller_of(call["caller"])), "status": None, "value": None}
+            return admin_answer(call)
         case "visibility":
             return visibility_answer(call)
 
@@ -79,8 +79,17 @@ def validate_answer(call: ValidateCall) -> JsonValue:
     return {"ok": True, "status": None, "value": None}
 
 
+def admin_answer(call: AdminCall) -> JsonValue:
+    try:
+        _require_proxy_admin(caller_of(call["caller"]))
+    except HTTPException as error:
+        return {"ok": False, "status": error.status_code, "value": None}
+    return {"ok": True, "status": None, "value": None}
+
+
 def visibility_answer(call: VisibilityCall) -> JsonValue:
-    visibility = skill_visibility(caller_of(call["caller"]))
+    raw = call["caller"]
+    visibility = skill_visibility(None if raw is None else caller_of(raw))
     records = [SkillRecord(entry["name"], entry["enabled"]) for entry in call["plugins"]]
     allowed: list[JsonValue] = [
         record.name for record in records if visibility.allows(record)
@@ -97,9 +106,7 @@ def visibility_answer(call: VisibilityCall) -> JsonValue:
     }
 
 
-def caller_of(raw: Caller | None) -> UserAPIKeyAuth | None:
-    if raw is None:
-        return None
+def caller_of(raw: Caller) -> UserAPIKeyAuth:
     return UserAPIKeyAuth(
         user_role=role_of(raw["user_role"]),
         object_permission=permission_of(raw["key_skills"]),

@@ -65,11 +65,14 @@ fn answer(call: &Call) -> Value {
                 "value": null,
             }),
         },
-        Call::RequireAdmin { caller } => json!({
-            "ok": require_proxy_admin(Some(&plugin_caller(caller))).is_ok(),
-            "status": null,
-            "value": null,
-        }),
+        Call::RequireAdmin { caller } => match require_proxy_admin(Some(&plugin_caller(caller))) {
+            Ok(()) => json!({ "ok": true, "status": null, "value": null }),
+            Err(error) => json!({
+                "ok": false,
+                "status": error.fields().status_code,
+                "value": null,
+            }),
+        },
         Call::Visibility { caller, plugins } => visibility_answer(caller.as_ref(), plugins),
     }
 }
