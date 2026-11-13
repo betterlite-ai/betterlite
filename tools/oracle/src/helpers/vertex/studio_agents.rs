@@ -118,20 +118,21 @@ fn reply_value(call: &Call) -> HelperResult {
         headers: &headers,
         body: call.body.as_bytes(),
     };
-    if matches!(call.function, Function::Delete) {
-        let deleted = decode_studio_agent_delete(&response, &call.name).map_err(fail)?;
-        return Ok(json!(deleted));
+    match (call.function, call.operation) {
+        (Function::Delete, _) => decode_studio_agent_delete(&response, &call.name)
+            .map(|deleted| json!(deleted))
+            .map_err(fail),
+        (_, Some(operation)) => decode_studio_agent_payload(&response, operation, &call.name)
+            .map(|decoded| match decoded.payload {
+                AgentPayload::Agent(agent) => {
+                    json!({ "agent": agent, "warnings": decoded.warnings })
+                }
+                AgentPayload::Agents(page) => json!(page),
+                AgentPayload::Versions(page) => json!(page),
+            })
+            .map_err(fail),
+        (_, None) => Err("a reply names its operation").or_value_error(),
     }
-    let operation = call
-        .operation
-        .ok_or("a reply names its operation")
-        .or_value_error()?;
-    let decoded = decode_studio_agent_payload(&response, operation, &call.name).map_err(fail)?;
-    Ok(match decoded.payload {
-        AgentPayload::Agent(agent) => json!({ "agent": agent, "warnings": decoded.warnings }),
-        AgentPayload::Agents(page) => json!(page),
-        AgentPayload::Versions(page) => json!(page),
-    })
 }
 
 fn fail(error: StudioAgentError) -> Box<HelperError> {
