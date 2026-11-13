@@ -204,15 +204,15 @@ fn extract_fields_returns_an_empty_string_without_matches() {
 }
 
 #[rstest]
-#[case::empty_single_value(r#"{"a": ""}"#, "a", "")]
-#[case::empty_list_value(r#"{"a": []}"#, "a", "")]
-#[case::list_with_an_empty_item(r#"{"a": ["", "x"]}"#, "a", "x")]
+#[case::empty_single_value(r#"{"a": "", "b": "x"}"#, &["a", "b"], "x")]
+#[case::empty_list_value(r#"{"a": []}"#, &["a"], "")]
+#[case::list_with_an_empty_item(r#"{"a": ["", "x"]}"#, &["a"], "x")]
 fn extract_fields_leaves_empty_values_out(
     #[case] source: &str,
-    #[case] field: &str,
+    #[case] fields: &[&str],
     #[case] expected: &str,
 ) {
-    assert_eq!(extract_fields(&json(source), &names(&[field])), expected);
+    assert_eq!(extract_fields(&json(source), &names(fields)), expected);
 }
 
 #[test]

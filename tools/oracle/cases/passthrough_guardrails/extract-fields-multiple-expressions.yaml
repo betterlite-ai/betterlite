@@ -9,5 +9,8 @@ call:
       - function: extract_fields
         data: {query: "hello", tags: []}
         expressions: [tags, query]
+      - function: extract_fields
+        data: {a: "", b: "x"}
+        expressions: [a, b]
 env: {}
 compare: {ignore: []}
