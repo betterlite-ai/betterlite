@@ -1,0 +1,25 @@
+kind: helper
+name: batch-enqueued-reserve-fallback-seed
+call:
+  batch_enqueued_reserve:
+    tokens: 250
+    principal:
+      api_key: sk-seed
+      team_id: team-seed
+      metadata:
+        batch_enqueued_token_limit: 400
+      team_metadata:
+        batch_enqueued_token_limit: 900
+    redis:
+      reserve:
+        - redis unavailable
+      refund: []
+    memory:
+      seed:
+        'batch_enqueued_tokens:api_key:sk-seed': 100
+        'batch_enqueued_tokens:team:team-seed': 50
+      read:
+        - 'batch_enqueued_tokens:api_key:sk-seed'
+        - 'batch_enqueued_tokens:team:team-seed'
+env: {}
+compare: {ignore: []}

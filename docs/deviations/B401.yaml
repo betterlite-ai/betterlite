@@ -1,0 +1,8 @@
+task: B401
+deviations:
+  - what: The error for an invalid tag_regex pattern names the model and the pattern and leaves out the regex engine's own message text.
+    why: Python's re module has no Rust counterpart, so its message text cannot be reproduced. The pattern is checked with the dialect betterlite uses for tag matching.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9041-L9051
+  - what: A max_retries given as text must fit a signed 64-bit integer, and text beyond that is rejected as not an integer.
+    why: Python integers have no size limit, but a retry count that large cannot be used and the typed setting holds an i64.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L484-L489

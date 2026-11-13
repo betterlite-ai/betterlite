@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-image-part-empty-data
+call: {"messages_content_primitives": {"operation": "tool_result_image_part", "image_source": {"type": "base64", "data": ""}}}
+env: {}
+compare: {ignore: []}

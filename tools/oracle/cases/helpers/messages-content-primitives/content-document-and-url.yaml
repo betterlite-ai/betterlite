@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-content-document-and-url
+call: {"messages_content_primitives": {"operation": "tool_result_content", "raw_content": [{"type": "document", "source": {"type": "url", "url": "https://image.test/a"}}, {"type": "image", "source": {"type": "base64", "data": "YWJj"}}]}}
+env: {}
+compare: {ignore: []}
