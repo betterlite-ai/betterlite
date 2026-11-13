@@ -166,6 +166,20 @@ fn a_null_deployment_id_is_kept_as_null() {
 }
 
 #[test]
+fn a_false_deployment_id_is_kept_as_false() {
+    assert_eq!(
+        wire(&record(
+            r#"{"metadata": {}, "model_info": {"id": false}}"#,
+            1,
+            false
+        )),
+        json(
+            r#"{"metadata": {"litellm_gateway_injected_cache": false}, "model_info": {"id": false}}"#
+        )
+    );
+}
+
+#[test]
 fn a_numeric_deployment_id_stays_a_number() {
     assert_eq!(
         wire(&record(
