@@ -265,3 +265,42 @@ pub(crate) fn number_field(record: &GuardrailValue, name: &str) -> Option<f64> {
     }
     None
 }
+
+pub(crate) const USER_MESSAGES: &str = r#"{"messages": [{"role": "user", "content": "hello"}]}"#;
+
+pub(crate) fn anonymizing_settings() -> NomaSettings {
+    let mut settings = settings();
+    settings.anonymize_input = true;
+    settings
+}
+
+pub(crate) fn monitoring_settings() -> NomaSettings {
+    let mut settings = settings();
+    settings.monitor_mode = true;
+    settings.anonymize_input = true;
+    settings
+}
+
+pub(crate) fn response_of(record: &GuardrailValue) -> &GuardrailValue {
+    let GuardrailValue::Object(fields) = record else {
+        panic!("the record is not an object");
+    };
+    let Some(scan_response) = fields.get("guardrail_response") else {
+        panic!("the record has no guardrail_response");
+    };
+    scan_response
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct CapturedLog(pub(crate) Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for CapturedLog {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
