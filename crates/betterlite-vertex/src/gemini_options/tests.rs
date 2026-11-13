@@ -651,31 +651,27 @@ const BASE_PARAMS: [&str; 22] = [
     "service_tier",
 ];
 
-fn expected_params(penalties: bool, thinking: bool) -> Vec<&'static str> {
-    let mut expected = BASE_PARAMS.to_vec();
-    if penalties {
-        expected.extend(["frequency_penalty", "presence_penalty"]);
-    }
-    if thinking {
-        expected.extend(["reasoning_effort", "thinking"]);
-    }
-    expected
-}
-
 #[rstest]
-#[case::older_model("gemini-2.5-pro", false, true, false)]
-#[case::reasoning_model("gemini-2.5-pro", true, true, true)]
-#[case::gemini_three("gemini-3-pro-preview", false, false, true)]
-#[case::the_preview_model("gemini-2.5-pro-preview-06-05", false, false, false)]
+#[case::older_model("gemini-2.5-pro", false, &["frequency_penalty", "presence_penalty"])]
+#[case::reasoning_model(
+    "gemini-2.5-pro",
+    true,
+    &["frequency_penalty", "presence_penalty", "reasoning_effort", "thinking"]
+)]
+#[case::gemini_three("gemini-3-pro-preview", false, &["reasoning_effort", "thinking"])]
+#[case::the_preview_model("gemini-2.5-pro-preview-06-05", false, &[])]
 fn supported_parameters_follow_the_model(
     #[case] model: &str,
     #[case] reasoning: bool,
-    #[case] penalties: bool,
-    #[case] thinking: bool,
+    #[case] extras: &[&str],
 ) {
-    let supported = supported_openai_params(model, &Catalog(reasoning));
+    let mut expected = BASE_PARAMS.to_vec();
+    expected.extend_from_slice(extras);
 
-    assert_eq!(supported, expected_params(penalties, thinking));
+    assert_eq!(
+        supported_openai_params(model, &Catalog(reasoning)),
+        expected
+    );
 }
 
 #[test]
