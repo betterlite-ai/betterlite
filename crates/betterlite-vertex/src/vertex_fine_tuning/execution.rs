@@ -39,13 +39,8 @@ impl TuningExecutionError {
     pub const fn status_code(&self) -> u16 {
         match self {
             Self::Http { status, .. } => *status,
-            Self::Credentials(_)
-            | Self::Target(_)
-            | Self::VertexUrl(_)
-            | Self::Url(_)
-            | Self::Header(_)
-            | Self::Transport(_)
-            | Self::Record(_) => 500,
+            Self::Credentials(_) | Self::Target(_) | Self::VertexUrl(_) | Self::Url(_) => 500,
+            Self::Header(_) | Self::Transport(_) | Self::Record(_) => 500,
         }
     }
 }
@@ -61,10 +56,7 @@ pub trait TuningTransport: Send + Sync {
 impl TuningTransport for ProxiedClient {
     // LiteLLM's httpx handlers follow redirects, so the tuning POST re-checks each hop too
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
-        self.send_following(request)
-            .await?
-            .buffered(self.limits.body_bytes)
-            .await
+        self.send_following(request).await?.buffered(self.limits.body_bytes).await
     }
 }
 

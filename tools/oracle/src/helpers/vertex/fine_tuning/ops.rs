@@ -18,14 +18,12 @@ pub(crate) enum Input {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct RequestCall {
     data: FineTuneCreate,
     original_hyperparameters: OriginalHyperparameters,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct ResponseCall {
     zone: String,
     response: Value,
@@ -55,10 +53,11 @@ fn request_outcome(call: &RequestCall) -> Value {
 
 fn response_outcome(call: &ResponseCall) -> Result<Value, Box<HelperError>> {
     let zone = TimeZone::get(&call.zone).or_value_error()?;
-    let local = LocalTimeContext { zone };
     let bytes = serde_json::to_vec(&call.response).or_value_error()?;
-    Ok(match decode_vertex_tuning_job(&bytes, &local) {
-        Ok(job) => json!({"ok": true, "job": job}),
-        Err(_error) => json!({"ok": false}),
-    })
+    Ok(
+        match decode_vertex_tuning_job(&bytes, &LocalTimeContext { zone }) {
+            Ok(job) => json!({"ok": true, "job": job}),
+            Err(_error) => json!({"ok": false}),
+        },
+    )
 }

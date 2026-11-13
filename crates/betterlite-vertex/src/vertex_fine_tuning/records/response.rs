@@ -49,7 +49,6 @@ struct VertexTuningJob {
 
 #[derive(Debug, Serialize)]
 struct OpenAiHyperparameters {
-    batch_size: Option<i64>,
     learning_rate_multiplier: Option<f64>,
     n_epochs: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,11 +76,11 @@ pub fn decode_vertex_tuning_job(
     local: &LocalTimeContext,
 ) -> Result<FineTuneJob, TuningRecordError> {
     let response: VertexTuningJob =
-        serde_json::from_slice(bytes).map_err(|source| TuningRecordError::Json { source })?;
+        serde_json::from_slice(bytes).map_err(|source| TuningRecordError::Json(source))?;
     let record = openai_record(&response, local)?;
     let encoded =
-        serde_json::to_vec(&record).map_err(|source| TuningRecordError::Json { source })?;
-    decode_fine_tune_job(&encoded, false).map_err(|source| TuningRecordError::Job { source })
+        serde_json::to_vec(&record).map_err(|source| TuningRecordError::Json(source))?;
+    decode_fine_tune_job(&encoded, false).map_err(|source| TuningRecordError::Job(source))
 }
 
 fn openai_record(
@@ -109,7 +108,14 @@ fn openai_record(
         organization_id: String::new(),
         result_files: Vec::new(),
         seed: 0,
-        status: job_status(state),
+        status: match state.as_deref() {
+            Some("JOB_STATE_RUNNING") => JobStatus::Running,
+            Some("JOB_STATE_SUCCEEDED") => JobStatus::Succeeded,
+            Some("JOB_STATE_FAILED") => JobStatus::Failed,
+            Some("JOB_STATE_CANCELLED") => JobStatus::Cancelled,
+            // LiteLLM starts at queued, so pending, null and every state it does not know stay there
+            _ => JobStatus::Queued,
+        },
         training_file: spec
             .and_then(|spec| spec.training_dataset_uri.clone())
             .unwrap_or_default(),
@@ -119,7 +125,6 @@ fn openai_record(
 
 fn openai_hyperparameters(values: Option<&ResponseHyperparameters>) -> OpenAiHyperparameters {
     OpenAiHyperparameters {
-        batch_size: None,
         learning_rate_multiplier: values.and_then(|values| values.learning_rate_multiplier),
         // LiteLLM pops epoch_count with a default of 0, and a null value stays null
         n_epochs: match values.and_then(|values| values.epoch_count) {
@@ -128,16 +133,5 @@ fn openai_hyperparameters(values: Option<&ResponseHyperparameters>) -> OpenAiHyp
             Some(Some(count)) => Some(count),
         },
         adapter_size: values.and_then(|values| values.adapter_size),
-    }
-}
-
-fn job_status(state: &Option<String>) -> JobStatus {
-    match state.as_deref() {
-        Some("JOB_STATE_RUNNING") => JobStatus::Running,
-        Some("JOB_STATE_SUCCEEDED") => JobStatus::Succeeded,
-        Some("JOB_STATE_FAILED") => JobStatus::Failed,
-        Some("JOB_STATE_CANCELLED") => JobStatus::Cancelled,
-        // LiteLLM starts at queued, so pending, null and every state it does not know stay there
-        _ => JobStatus::Queued,
     }
 }

@@ -19,7 +19,6 @@ class RequestCall(TypedDict):
 
 
 class ResponseCall(TypedDict):
-    zone: str
     response: ResponseTuningJob
 
 

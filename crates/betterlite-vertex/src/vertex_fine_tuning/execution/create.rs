@@ -38,7 +38,6 @@ pub struct TuningCreateRequest<'request> {
     pub project: Option<&'request str>,
     pub location: Option<&'request str>,
     pub api_base: Option<&'request str>,
-    pub model: &'request str,
     pub local: &'request LocalTimeContext,
     // LiteLLM ignores the caller's timeout for tuning jobs; the field keeps the call site uniform
     pub timeout: Option<Duration>,
@@ -57,7 +56,7 @@ where
     let (access, prepared) = resolve_target(request, make_lookup).await?;
     let job = to_vertex_request(request.data, request.original_hyperparameters)?;
     let body = serde_json::to_vec(&job)
-        .map_err(|source| TuningExecutionError::Record(TuningRecordError::Json { source }))?;
+        .map_err(|source| TuningExecutionError::Record(TuningRecordError::Json(source)))?;
     post_tuning_job(transport, request, &prepared, &access.project, body).await
 }
 
@@ -80,7 +79,7 @@ where
         request.catalog,
         &TokenUrlInput {
             provider: TargetProvider::Vertex,
-            model: request.model,
+            model: "",
             auth_token: Some(&access.token),
             gemini_api_key: None,
             project: Some(access.project.as_str()),
@@ -105,10 +104,17 @@ async fn post_tuning_job<T>(
 where
     T: TuningTransport,
 {
+    let Some(location) = request.location else {
+        return Err(TuningExecutionError::VertexUrl(
+            VertexUrlError::LocationRequired,
+        ));
+    };
+    let base = get_vertex_base_url(Some(location))?;
+    let text = format!("{base}/v1/projects/{project}/locations/{location}/tuningJobs");
     let headers = cache_headers(prepared, &BTreeMap::new())?;
     let outbound = OutboundRequest {
         method: Method::POST,
-        url: tuning_url(request.location, project)?,
+        url: Url::parse(&text).map_err(TuningExecutionError::Url)?,
         query: Vec::new(),
         headers,
         body: RequestBody::Json(body),
@@ -125,15 +131,4 @@ where
         });
     }
     decode_vertex_tuning_job(&reply.body, request.local).map_err(TuningExecutionError::Record)
-}
-
-fn tuning_url(location: Option<&str>, project: &str) -> Result<Url, TuningExecutionError> {
-    let Some(location) = location else {
-        return Err(TuningExecutionError::VertexUrl(
-            VertexUrlError::LocationRequired,
-        ));
-    };
-    let base = get_vertex_base_url(Some(location))?;
-    let text = format!("{base}/v1/projects/{project}/locations/{location}/tuningJobs");
-    Url::parse(&text).map_err(TuningExecutionError::Url)
 }

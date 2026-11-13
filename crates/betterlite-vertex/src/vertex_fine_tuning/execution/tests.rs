@@ -118,7 +118,6 @@ impl Fixture {
             project: Some("proj"),
             location: Some("us-central1"),
             api_base,
-            model: "",
             local: &self.local,
             timeout,
         }

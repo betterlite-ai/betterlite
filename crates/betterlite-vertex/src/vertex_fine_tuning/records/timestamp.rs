@@ -3,8 +3,6 @@ use jiff::civil;
 
 use crate::provider_metadata::timestamp::{LocalTimeContext, decode_vertex_timestamp};
 
-const NANOSECONDS_PER_MICROSECOND: i32 = 1_000;
-
 #[must_use]
 pub fn created_at(create_time: Option<&str>, local: &LocalTimeContext) -> i64 {
     let Some(text) = create_time else {
@@ -40,17 +38,5 @@ fn local_created_at(text: &str, local: &LocalTimeContext) -> Option<i64> {
         })
         .ok()?;
     // CPython keeps microseconds, and the shared decoder applies the injected zone the way mktime does
-    let micros = datetime
-        .subsec_nanosecond()
-        .checked_div(NANOSECONDS_PER_MICROSECOND)?;
-    let formatted = format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{micros:06}Z",
-        datetime.year(),
-        datetime.month(),
-        datetime.day(),
-        datetime.hour(),
-        datetime.minute(),
-        datetime.second(),
-    );
-    decode_vertex_timestamp(formatted.as_bytes(), local).ok()
+    decode_vertex_timestamp(format!("{datetime:.6}Z").as_bytes(), local).ok()
 }

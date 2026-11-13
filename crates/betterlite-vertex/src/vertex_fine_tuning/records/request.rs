@@ -47,8 +47,6 @@ pub struct VertexTuningJobCreate {
     pub tuned_model_display_name: Option<String>,
 }
 
-// the value's JSON text and whether it arrived as text, since LiteLLM tests truthiness before int()/float()
-type HyperparameterText = Option<(String, bool)>;
 
 pub fn to_vertex_request(
     create: &FineTuneCreate,
@@ -84,7 +82,7 @@ pub fn to_vertex_request(
 }
 
 fn hyperparameter<T>(
-    value: HyperparameterText,
+    value: Option<(String, bool)>,
     field: &'static str,
 ) -> Result<Option<T>, TuningRecordError>
 where
