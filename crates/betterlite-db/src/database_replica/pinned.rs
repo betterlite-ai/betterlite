@@ -1,3 +1,5 @@
+use std::sync::atomic::Ordering;
+
 use crate::database_replica::client::{Attribute, DatabaseClient};
 use crate::database_replica::routing::{Route, RouteError, RoutingDatabase};
 
@@ -25,7 +27,12 @@ where
     Client: DatabaseClient,
 {
     match database {
-        WriterPinnedClient::Routed(routing) if !routing.availability.writer_unavailable() => {
+        WriterPinnedClient::Routed(routing)
+            if !routing
+                .availability
+                .writer_unavailable
+                .load(Ordering::SeqCst) =>
+        {
             WriterPinnedClient::Writer(&routing.writer)
         }
         WriterPinnedClient::Writer(writer) => WriterPinnedClient::Writer(writer),

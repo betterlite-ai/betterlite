@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::sync::atomic::Ordering;
+
 use rstest::rstest;
 
 use crate::database_replica::availability::ReadTarget;
@@ -18,8 +20,20 @@ fn routed<'fixture>(fixture: &'fixture Fixture, name: &str) -> Route<'fixture, F
 #[test]
 fn initial_availability_flags() {
     let fixture = Fixture::new();
-    assert!(!fixture.routing.availability.reader_unavailable());
-    assert!(!fixture.routing.availability.writer_unavailable());
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .writer_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert_eq!(fixture.routing.read_target(), ReadTarget::Reader);
 }
 
@@ -83,13 +97,21 @@ fn read_target_ignores_writer_flag() {
     let fixture = Fixture::new();
     fixture.writer().add_direct("query_raw");
     fixture.reader().add_direct("query_raw");
-    fixture.routing.availability.mark_writer_unavailable();
+    fixture
+        .routing
+        .availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
     assert_eq!(fixture.routing.read_target(), ReadTarget::Reader);
     assert_eq!(
         routed(&fixture, "query_raw").select("query_raw").side,
         Side::Reader
     );
-    fixture.routing.availability.mark_reader_unavailable();
+    fixture
+        .routing
+        .availability
+        .reader_unavailable
+        .store(true, Ordering::SeqCst);
     assert_eq!(fixture.routing.read_target(), ReadTarget::Writer);
     assert_eq!(
         routed(&fixture, "query_raw").select("query_raw").side,
@@ -104,9 +126,17 @@ fn retained_accessor_observes_reader_flip() {
     fixture.reader().add_model("VerificationToken");
     let route = routed(&fixture, "VerificationToken");
     assert_eq!(route.select("find_many").side, Side::Reader);
-    fixture.routing.availability.mark_reader_unavailable();
+    fixture
+        .routing
+        .availability
+        .reader_unavailable
+        .store(true, Ordering::SeqCst);
     assert_eq!(route.select("find_many").side, Side::Writer);
-    fixture.routing.availability.clear_reader_unavailable();
+    fixture
+        .routing
+        .availability
+        .reader_unavailable
+        .store(false, Ordering::SeqCst);
     assert_eq!(route.select("find_many").side, Side::Reader);
 }
 
@@ -118,7 +148,11 @@ fn already_bound_method_keeps_target() {
     let route = routed(&fixture, "VerificationToken");
     let bound = route.select("count");
     assert_eq!(bound.side, Side::Reader);
-    fixture.routing.availability.mark_reader_unavailable();
+    fixture
+        .routing
+        .availability
+        .reader_unavailable
+        .store(true, Ordering::SeqCst);
     assert_eq!(bound.side, Side::Reader);
     assert_eq!(route.select("count").side, Side::Writer);
 }
@@ -170,7 +204,11 @@ fn writer_pin_snapshot() {
     fixture.reader().add_model("VerificationToken");
     let pinned = pin_writer(WriterPinnedClient::Routed(&fixture.routing));
     assert!(matches!(pinned, WriterPinnedClient::Writer(_)));
-    fixture.routing.availability.mark_writer_unavailable();
+    fixture
+        .routing
+        .availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
     assert!(matches!(pinned, WriterPinnedClient::Writer(_)));
     assert_eq!(
         pinned
@@ -191,7 +229,11 @@ fn degraded_writer_pin_allows_replica_read() {
     let fixture = Fixture::new();
     fixture.writer().add_model("VerificationToken");
     fixture.reader().add_model("VerificationToken");
-    fixture.routing.availability.mark_writer_unavailable();
+    fixture
+        .routing
+        .availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
     let pinned = pin_writer(WriterPinnedClient::Routed(&fixture.routing));
     assert!(matches!(pinned, WriterPinnedClient::Routed(_)));
     assert_eq!(
@@ -202,7 +244,11 @@ fn degraded_writer_pin_allows_replica_read() {
             .side,
         Side::Reader
     );
-    fixture.routing.availability.mark_writer_recovered();
+    fixture
+        .routing
+        .availability
+        .writer_unavailable
+        .store(false, Ordering::SeqCst);
     assert!(matches!(pinned, WriterPinnedClient::Routed(_)));
     assert!(matches!(
         pin_writer(WriterPinnedClient::Routed(&fixture.routing)),
@@ -245,7 +291,11 @@ fn raw_writer_pin_never_falls_back() {
         writer_wrapper(WriterPinnedClient::Routed(&fixture.routing)).side(),
         Side::Writer
     );
-    fixture.routing.availability.mark_writer_unavailable();
+    fixture
+        .routing
+        .availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
     assert_eq!(
         writer_wrapper(WriterPinnedClient::Routed(&fixture.routing)).side(),
         Side::Writer
@@ -255,11 +305,35 @@ fn raw_writer_pin_never_falls_back() {
 #[test]
 fn mark_writer_only() {
     let fixture = Fixture::new();
-    fixture.routing.availability.mark_writer_unavailable();
-    fixture.routing.availability.mark_reader_unavailable();
-    fixture.routing.availability.mark_writer_recovered();
-    assert!(!fixture.routing.availability.writer_unavailable());
-    assert!(fixture.routing.availability.reader_unavailable());
+    fixture
+        .routing
+        .availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
+    fixture
+        .routing
+        .availability
+        .reader_unavailable
+        .store(true, Ordering::SeqCst);
+    fixture
+        .routing
+        .availability
+        .writer_unavailable
+        .store(false, Ordering::SeqCst);
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .writer_unavailable
+            .load(Ordering::SeqCst)
+    );
+    assert!(
+        fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert_eq!(fixture.routing.read_target(), ReadTarget::Writer);
     assert!(fixture.events().is_empty());
     assert!(fixture.captured.contents().is_empty());

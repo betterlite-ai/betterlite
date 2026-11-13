@@ -13,9 +13,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio::time::{sleep, timeout};
 use tokio_postgres::NoTls;
 
-use crate::database_refresh::handle::PoolTransport;
+use crate::database_refresh::handle::{PoolFuture, PoolTransport};
 use crate::database_replica::availability::Availability;
-use crate::database_replica::client::{Attribute, ClientFuture, DatabaseClient, DatabaseLifecycle};
+use crate::database_replica::client::{Attribute, DatabaseClient, DatabaseLifecycle};
 use crate::database_replica::routing::RoutingDatabase;
 
 const MODEL: &str = "ReplicaRow";
@@ -214,7 +214,7 @@ impl DatabaseLifecycle for NativeClient {
         *self.connected.lock().unwrap()
     }
 
-    fn connect(&self, timeout: Option<Duration>) -> ClientFuture<'_, (), NativeError> {
+    fn connect(&self, timeout: Option<Duration>) -> PoolFuture<'_, (), NativeError> {
         Box::pin(async move {
             open(&self.pool(), timeout).await?;
             *self.connected.lock().unwrap() = true;
@@ -222,7 +222,7 @@ impl DatabaseLifecycle for NativeClient {
         })
     }
 
-    fn disconnect(&self, _timeout: Option<Duration>) -> ClientFuture<'_, (), NativeError> {
+    fn disconnect(&self, _timeout: Option<Duration>) -> PoolFuture<'_, (), NativeError> {
         Box::pin(async move {
             self.pool().close();
             *self.connected.lock().unwrap() = false;
@@ -235,7 +235,7 @@ impl DatabaseLifecycle for NativeClient {
         url: &'database SecretString,
         transport: Option<&'database PoolTransport>,
         _expected_generation: Option<u64>,
-    ) -> ClientFuture<'database, bool, NativeError> {
+    ) -> PoolFuture<'database, bool, NativeError> {
         Box::pin(async move {
             let replacement = pool_for(url.expose_secret(), transport)?;
             open(&replacement, None).await?;
@@ -249,11 +249,11 @@ impl DatabaseLifecycle for NativeClient {
         })
     }
 
-    fn start_refresh(&self) -> ClientFuture<'_, (), NativeError> {
+    fn start_refresh(&self) -> PoolFuture<'_, (), NativeError> {
         Box::pin(async { Ok(()) })
     }
 
-    fn stop_refresh(&self) -> ClientFuture<'_, (), NativeError> {
+    fn stop_refresh(&self) -> PoolFuture<'_, (), NativeError> {
         Box::pin(async { Ok(()) })
     }
 }

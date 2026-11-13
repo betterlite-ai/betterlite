@@ -10,9 +10,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::Notify;
 use tracing::subscriber::{DefaultGuard, set_default};
 
-use crate::database_refresh::handle::PoolTransport;
+use crate::database_refresh::handle::{PoolFuture, PoolTransport};
 use crate::database_replica::availability::Availability;
-use crate::database_replica::client::{Attribute, ClientFuture, DatabaseClient, DatabaseLifecycle};
+use crate::database_replica::client::{Attribute, DatabaseClient, DatabaseLifecycle};
 use crate::database_replica::routing::RoutingDatabase;
 
 use super::logs::{CapturedLogs, capture_logs};
@@ -269,7 +269,7 @@ impl FakeClient {
         }
     }
 
-    fn perform(&self, action: Action) -> ClientFuture<'_, (), FakeError> {
+    fn perform(&self, action: Action) -> PoolFuture<'_, (), FakeError> {
         Box::pin(async move {
             let side = self.side.name();
             self.log.record(format!("{side}:{}", action.event()));
@@ -309,12 +309,12 @@ impl DatabaseLifecycle for FakeClient {
         self.state().connected
     }
 
-    fn connect(&self, timeout: Option<Duration>) -> ClientFuture<'_, (), FakeError> {
+    fn connect(&self, timeout: Option<Duration>) -> PoolFuture<'_, (), FakeError> {
         self.state().timeouts.push(timeout);
         self.perform(Action::Connect)
     }
 
-    fn disconnect(&self, timeout: Option<Duration>) -> ClientFuture<'_, (), FakeError> {
+    fn disconnect(&self, timeout: Option<Duration>) -> PoolFuture<'_, (), FakeError> {
         self.state().timeouts.push(timeout);
         self.perform(Action::Disconnect)
     }
@@ -324,7 +324,7 @@ impl DatabaseLifecycle for FakeClient {
         url: &'database SecretString,
         transport: Option<&'database PoolTransport>,
         expected_generation: Option<u64>,
-    ) -> ClientFuture<'database, bool, FakeError> {
+    ) -> PoolFuture<'database, bool, FakeError> {
         Box::pin(async move {
             let side = self.side.name();
             self.log.record(format!("{side}:recreate"));
@@ -349,11 +349,11 @@ impl DatabaseLifecycle for FakeClient {
         })
     }
 
-    fn start_refresh(&self) -> ClientFuture<'_, (), FakeError> {
+    fn start_refresh(&self) -> PoolFuture<'_, (), FakeError> {
         self.perform(Action::StartRefresh)
     }
 
-    fn stop_refresh(&self) -> ClientFuture<'_, (), FakeError> {
+    fn stop_refresh(&self) -> PoolFuture<'_, (), FakeError> {
         self.perform(Action::StopRefresh)
     }
 }

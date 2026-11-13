@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::sync::atomic::Ordering;
+
 use crate::database_replica::client::DatabaseLifecycle as _;
 use crate::database_replica::pinned::{WriterPinnedClient, pin_writer, writer_wrapper};
 
@@ -19,7 +21,10 @@ async fn postgres_reader_dispatch() {
         .attribute("ReplicaRow")
         .expect("the model attribute routes");
     assert_eq!(route.select("find_many").notes().await, ["reader"]);
-    routing.availability.mark_reader_unavailable();
+    routing
+        .availability
+        .reader_unavailable
+        .store(true, Ordering::SeqCst);
     let writer_route = routing
         .attribute("ReplicaRow")
         .expect("the model attribute routes");
@@ -60,7 +65,10 @@ async fn postgres_degraded_writer_model_read() {
     let case = replica_case("writer", "reader").await;
     let routing = routing_over(&case);
     routing.writer.pool().close();
-    routing.availability.mark_writer_unavailable();
+    routing
+        .availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
     assert!(!routing.is_connected());
     let pinned = pin_writer(WriterPinnedClient::Routed(&routing));
     assert!(matches!(pinned, WriterPinnedClient::Routed(_)));
@@ -82,8 +90,18 @@ async fn postgres_reader_failure_preserves_writer_commit() {
         .await
         .expect("the writer replacement succeeds");
     assert!(recreated);
-    assert!(routing.availability.reader_unavailable());
-    assert!(!routing.availability.writer_unavailable());
+    assert!(
+        routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
+    assert!(
+        !routing
+            .availability
+            .writer_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert_eq!(routing.writer.model().notes().await, ["committed"]);
     Box::pin(close_replica_case(case, &routing)).await;
 }

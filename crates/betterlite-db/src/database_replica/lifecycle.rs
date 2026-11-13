@@ -1,11 +1,12 @@
 use std::error::Error;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use secrecy::{ExposeSecret as _, SecretString};
 use tracing::{info, warn};
 
-use crate::database_refresh::handle::PoolTransport;
-use crate::database_replica::client::{ClientFuture, DatabaseClient, DatabaseLifecycle};
+use crate::database_refresh::handle::{PoolFuture, PoolTransport};
+use crate::database_replica::client::{DatabaseClient, DatabaseLifecycle};
 use crate::database_replica::routing::RoutingDatabase;
 
 #[derive(Debug, thiserror::Error)]
@@ -39,15 +40,17 @@ where
         self.writer.is_connected()
     }
 
-    fn connect(&self, timeout: Option<Duration>) -> ClientFuture<'_, (), Client::Error> {
+    fn connect(&self, timeout: Option<Duration>) -> PoolFuture<'_, (), Client::Error> {
         Box::pin(async move {
+            let writer_flag = &self.availability.writer_unavailable;
+            let reader_flag = &self.availability.reader_unavailable;
             let writer_error = if self.writer.is_connected() {
                 None
             } else {
                 self.writer.connect(timeout).await.err()
             };
             if writer_error.is_none() {
-                self.availability.mark_writer_recovered();
+                writer_flag.store(false, Ordering::SeqCst);
                 info!("[writer] DB connected");
             }
             let reader_error = if self.reader.is_connected() {
@@ -56,21 +59,21 @@ where
                 self.reader.connect(timeout).await.err()
             };
             if reader_error.is_none() {
-                self.availability.clear_reader_unavailable();
+                reader_flag.store(false, Ordering::SeqCst);
                 info!("[reader] DB connected");
             }
             match (writer_error, reader_error) {
                 (None, None) => Ok(()),
                 (Some(error), Some(_reader_error)) => Err(error),
                 (None, Some(error)) => {
-                    self.availability.mark_reader_unavailable();
+                    reader_flag.store(true, Ordering::SeqCst);
                     warn!(
                         "Failed to connect to read replica DB: {error}. Falling back to the writer for reads until the reader is reachable."
                     );
                     Ok(())
                 }
                 (Some(error), None) => {
-                    self.availability.mark_writer_unavailable();
+                    writer_flag.store(true, Ordering::SeqCst);
                     warn!(
                         "Failed to connect to primary (writer) DB: {error}. Serving reads from the read replica; writes will fail until the writer recovers."
                     );
@@ -80,7 +83,7 @@ where
         })
     }
 
-    fn disconnect(&self, timeout: Option<Duration>) -> ClientFuture<'_, (), Client::Error> {
+    fn disconnect(&self, timeout: Option<Duration>) -> PoolFuture<'_, (), Client::Error> {
         Box::pin(async move {
             let writer = disconnect_client(&self.writer, timeout).await;
             let reader = disconnect_client(&self.reader, timeout).await;
@@ -96,7 +99,7 @@ where
         url: &'database SecretString,
         transport: Option<&'database PoolTransport>,
         expected_generation: Option<u64>,
-    ) -> ClientFuture<'database, bool, Client::Error> {
+    ) -> PoolFuture<'database, bool, Client::Error> {
         Box::pin(async move {
             let writer_recreated = self
                 .writer
@@ -105,11 +108,18 @@ where
             if !writer_recreated {
                 return Ok(false);
             }
-            self.availability.mark_writer_recovered();
+            self.availability
+                .writer_unavailable
+                .store(false, Ordering::SeqCst);
             match recreate_reader(self, transport).await {
-                Ok(()) => self.availability.clear_reader_unavailable(),
+                Ok(()) => self
+                    .availability
+                    .reader_unavailable
+                    .store(false, Ordering::SeqCst),
                 Err(error) => {
-                    self.availability.mark_reader_unavailable();
+                    self.availability
+                        .reader_unavailable
+                        .store(true, Ordering::SeqCst);
                     warn!(
                         "Failed to recreate reader Prisma client: {error}. Reads will fall back to the writer until the reader recovers."
                     );
@@ -119,14 +129,14 @@ where
         })
     }
 
-    fn start_refresh(&self) -> ClientFuture<'_, (), Client::Error> {
+    fn start_refresh(&self) -> PoolFuture<'_, (), Client::Error> {
         Box::pin(async move {
             self.writer.start_refresh().await?;
             self.reader.start_refresh().await
         })
     }
 
-    fn stop_refresh(&self) -> ClientFuture<'_, (), Client::Error> {
+    fn stop_refresh(&self) -> PoolFuture<'_, (), Client::Error> {
         Box::pin(async move {
             self.writer.stop_refresh().await?;
             self.reader.stop_refresh().await

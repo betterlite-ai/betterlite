@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::sync::atomic::Ordering;
 
 use secrecy::SecretString;
 
@@ -58,7 +59,9 @@ impl<Accessor> RoutedActions<'_, Accessor> {
     // the flag is read here on every lookup, so a degraded reader reroutes without rebuilding the accessor
     #[must_use]
     pub fn select(&self, method: &str) -> &Accessor {
-        if MODEL_READ_METHODS.contains(&method) && !self.availability.reader_unavailable() {
+        if MODEL_READ_METHODS.contains(&method)
+            && !self.availability.reader_unavailable.load(Ordering::SeqCst)
+        {
             &self.reader
         } else {
             &self.writer
@@ -79,7 +82,7 @@ where
 {
     #[must_use]
     pub fn read_target(&self) -> ReadTarget {
-        if self.availability.reader_unavailable() {
+        if self.availability.reader_unavailable.load(Ordering::SeqCst) {
             ReadTarget::Writer
         } else {
             ReadTarget::Reader

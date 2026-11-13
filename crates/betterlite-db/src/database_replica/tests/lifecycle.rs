@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::sync::atomic::Ordering;
+
 use std::time::Duration;
 
 use rstest::rstest;
@@ -23,8 +25,20 @@ async fn writer_then_reader_connect() {
     assert_eq!(fixture.events(), ["writer:connect", "reader:connect"]);
     assert_eq!(fixture.writer().timeouts(), [None]);
     assert_eq!(fixture.reader().timeouts(), [None]);
-    assert!(!fixture.routing.availability.reader_unavailable());
-    assert!(!fixture.routing.availability.writer_unavailable());
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .writer_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert!(fixture.informed("[writer] DB connected"));
     assert!(fixture.informed("[reader] DB connected"));
 }
@@ -33,7 +47,11 @@ async fn writer_then_reader_connect() {
 async fn already_connected_logs_success() {
     let fixture = Fixture::new();
     fixture.writer().set_connected(true);
-    fixture.routing.availability.mark_writer_unavailable();
+    fixture
+        .routing
+        .availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
     fixture
         .routing
         .connect(None)
@@ -41,7 +59,13 @@ async fn already_connected_logs_success() {
         .expect("the reader connects");
     assert!(!fixture.has_event("writer:connect"));
     assert!(fixture.has_event("reader:connect"));
-    assert!(!fixture.routing.availability.writer_unavailable());
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .writer_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert!(fixture.informed("[writer] DB connected"));
 }
 
@@ -62,14 +86,30 @@ async fn connect_timeout_forwarded() {
 async fn reader_failure_warns_and_falls_back() {
     let fixture = Fixture::new();
     fixture.reader().script_connect(Step::Fail);
-    fixture.routing.availability.mark_writer_unavailable();
+    fixture
+        .routing
+        .availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
     fixture
         .routing
         .connect(None)
         .await
         .expect("a degraded reader is not fatal");
-    assert!(fixture.routing.availability.reader_unavailable());
-    assert!(!fixture.routing.availability.writer_unavailable());
+    assert!(
+        fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .writer_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert_eq!(fixture.routing.read_target(), ReadTarget::Writer);
     assert!(fixture.warned(
         "Failed to connect to read replica DB: connect failed. Falling back to the writer for reads until the reader is reachable."
@@ -80,14 +120,30 @@ async fn reader_failure_warns_and_falls_back() {
 async fn writer_failure_warns_and_serves_reader() {
     let fixture = Fixture::new();
     fixture.writer().script_connect(Step::Fail);
-    fixture.routing.availability.mark_reader_unavailable();
+    fixture
+        .routing
+        .availability
+        .reader_unavailable
+        .store(true, Ordering::SeqCst);
     fixture
         .routing
         .connect(None)
         .await
         .expect("a degraded writer is not fatal while the reader connects");
-    assert!(fixture.routing.availability.writer_unavailable());
-    assert!(!fixture.routing.availability.reader_unavailable());
+    assert!(
+        fixture
+            .routing
+            .availability
+            .writer_unavailable
+            .load(Ordering::SeqCst)
+    );
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert_eq!(fixture.routing.read_target(), ReadTarget::Reader);
     assert!(fixture.warned(
         "Failed to connect to primary (writer) DB: connect failed. Serving reads from the read replica; writes will fail until the writer recovers."
@@ -105,8 +161,20 @@ async fn both_fail_raise_original_writer_without_flag_rewrite() {
         .await
         .expect_err("both sides failing is fatal");
     assert_eq!(error, FakeError::Connect);
-    assert!(!fixture.routing.availability.writer_unavailable());
-    assert!(!fixture.routing.availability.reader_unavailable());
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .writer_unavailable
+            .load(Ordering::SeqCst)
+    );
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
 }
 
 #[tokio::test]
@@ -119,8 +187,20 @@ async fn connect_cancel_stops_sequence() {
     )
     .await;
     assert!(!fixture.has_event("reader:connect"));
-    assert!(!fixture.routing.availability.writer_unavailable());
-    assert!(!fixture.routing.availability.reader_unavailable());
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .writer_unavailable
+            .load(Ordering::SeqCst)
+    );
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
 }
 
 #[tokio::test]
@@ -188,8 +268,16 @@ async fn disconnect_cancel_propagates() {
 #[tokio::test]
 async fn refresh_start_stop_order() {
     let fixture = Fixture::new();
-    fixture.routing.availability.mark_writer_unavailable();
-    fixture.routing.availability.mark_reader_unavailable();
+    fixture
+        .routing
+        .availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
+    fixture
+        .routing
+        .availability
+        .reader_unavailable
+        .store(true, Ordering::SeqCst);
     fixture
         .routing
         .start_refresh()
@@ -236,8 +324,13 @@ async fn refresh_failure_stops_sequence() {
 async fn stale_writer_generation_skips_reader() {
     let fixture = Fixture::new();
     fixture.writer().script_recreate(RecreateStep::Stale);
-    fixture.routing.availability.mark_writer_unavailable();
-    fixture.routing.availability.mark_reader_unavailable();
+    let availability = &fixture.routing.availability;
+    availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
+    availability
+        .reader_unavailable
+        .store(true, Ordering::SeqCst);
     let url = secret(WRITER_URL);
     let recreated = fixture
         .routing
@@ -246,8 +339,8 @@ async fn stale_writer_generation_skips_reader() {
         .expect("a stale generation is not an error");
     assert!(!recreated);
     assert!(!fixture.has_event("reader:recreate"));
-    assert!(fixture.routing.availability.writer_unavailable());
-    assert!(fixture.routing.availability.reader_unavailable());
+    assert!(availability.writer_unavailable.load(Ordering::SeqCst));
+    assert!(availability.reader_unavailable.load(Ordering::SeqCst));
     assert_eq!(
         fixture.writer().recreates(),
         [RecreateCall {
@@ -262,8 +355,16 @@ async fn stale_writer_generation_skips_reader() {
 async fn writer_recreate_error_preserves_flags() {
     let fixture = Fixture::new();
     fixture.writer().script_recreate(RecreateStep::Fail);
-    fixture.routing.availability.mark_writer_unavailable();
-    fixture.routing.availability.mark_reader_unavailable();
+    fixture
+        .routing
+        .availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
+    fixture
+        .routing
+        .availability
+        .reader_unavailable
+        .store(true, Ordering::SeqCst);
     let url = secret(WRITER_URL);
     let error = fixture
         .routing
@@ -271,8 +372,20 @@ async fn writer_recreate_error_preserves_flags() {
         .await
         .expect_err("the writer failure surfaces");
     assert_eq!(error, FakeError::Recreate);
-    assert!(fixture.routing.availability.writer_unavailable());
-    assert!(fixture.routing.availability.reader_unavailable());
+    assert!(
+        fixture
+            .routing
+            .availability
+            .writer_unavailable
+            .load(Ordering::SeqCst)
+    );
+    assert!(
+        fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert!(!fixture.has_event("reader:recreate"));
 }
 
@@ -305,7 +418,13 @@ async fn token_reader_fresh_url() {
             generation: None,
         }]
     );
-    assert!(!fixture.routing.availability.reader_unavailable());
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
 }
 
 #[rstest]
@@ -323,7 +442,13 @@ async fn falsey_token_reader_exact_error(#[case] minted: Option<&str>) {
         .await
         .expect("the writer replacement still returns true");
     assert!(recreated);
-    assert!(fixture.routing.availability.reader_unavailable());
+    assert!(
+        fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert!(!fixture.has_event("reader:recreate"));
     assert!(fixture.warned(
         "Failed to recreate reader Prisma client: Failed to generate fresh RDS IAM token for read replica. Reads will fall back to the writer until the reader recovers."
@@ -343,7 +468,13 @@ async fn missing_password_reader_exact_error(#[case] reader_url: Option<&str>) {
         .await
         .expect("the writer replacement still returns true");
     assert!(recreated);
-    assert!(fixture.routing.availability.reader_unavailable());
+    assert!(
+        fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert!(!fixture.has_event("reader:recreate"));
     assert!(fixture.warned(
         "Failed to recreate reader Prisma client: DATABASE_URL_READ_REPLICA not set; cannot recreate read replica client. Reads will fall back to the writer until the reader recovers."
@@ -354,7 +485,11 @@ async fn missing_password_reader_exact_error(#[case] reader_url: Option<&str>) {
 async fn reader_recreate_error_after_writer_success() {
     let fixture = Fixture::new();
     fixture.reader().script_recreate(RecreateStep::Fail);
-    fixture.routing.availability.mark_writer_unavailable();
+    fixture
+        .routing
+        .availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
     let url = secret(WRITER_URL);
     let recreated = fixture
         .routing
@@ -362,8 +497,20 @@ async fn reader_recreate_error_after_writer_success() {
         .await
         .expect("the writer replacement still returns true");
     assert!(recreated);
-    assert!(!fixture.routing.availability.writer_unavailable());
-    assert!(fixture.routing.availability.reader_unavailable());
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .writer_unavailable
+            .load(Ordering::SeqCst)
+    );
+    assert!(
+        fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert!(fixture.has_event("writer:recreate"));
     assert!(fixture.has_event("reader:recreate"));
     assert!(fixture.warned(
@@ -375,7 +522,11 @@ async fn reader_recreate_error_after_writer_success() {
 async fn reader_recreate_cancel_not_swallowed() {
     let fixture = Fixture::new();
     fixture.reader().script_recreate(RecreateStep::Blocked);
-    fixture.routing.availability.mark_writer_unavailable();
+    fixture
+        .routing
+        .availability
+        .writer_unavailable
+        .store(true, Ordering::SeqCst);
     let url = secret(WRITER_URL);
     cancel_after_started(
         fixture.routing.recreate(&url, None, None),
@@ -383,8 +534,20 @@ async fn reader_recreate_cancel_not_swallowed() {
     )
     .await;
     assert!(fixture.has_event("writer:recreate"));
-    assert!(!fixture.routing.availability.reader_unavailable());
-    assert!(!fixture.routing.availability.writer_unavailable());
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .writer_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert!(
         !fixture
             .captured
@@ -404,7 +567,13 @@ async fn token_reader_mint_error_degrades() {
         .await
         .expect("the writer replacement still returns true");
     assert!(recreated);
-    assert!(fixture.routing.availability.reader_unavailable());
+    assert!(
+        fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert!(!fixture.has_event("reader:recreate"));
     assert!(fixture.warned(
         "Failed to recreate reader Prisma client: the read replica credential could not be minted: mint failed. Reads will fall back to the writer until the reader recovers."
@@ -414,7 +583,11 @@ async fn token_reader_mint_error_degrades() {
 #[tokio::test]
 async fn reader_recovery_clears_flag() {
     let fixture = Fixture::new();
-    fixture.routing.availability.mark_reader_unavailable();
+    fixture
+        .routing
+        .availability
+        .reader_unavailable
+        .store(true, Ordering::SeqCst);
     let url = secret(WRITER_URL);
     let recreated = fixture
         .routing
@@ -422,7 +595,13 @@ async fn reader_recovery_clears_flag() {
         .await
         .expect("both sides recreate");
     assert!(recreated);
-    assert!(!fixture.routing.availability.reader_unavailable());
+    assert!(
+        !fixture
+            .routing
+            .availability
+            .reader_unavailable
+            .load(Ordering::SeqCst)
+    );
     assert_eq!(
         fixture.reader().recreates(),
         [RecreateCall {
