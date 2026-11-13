@@ -4,9 +4,10 @@ use betterlite_core::api::messages_stream_split::errors::{
     StreamFailure, error_status_and_message,
 };
 use betterlite_core::api::messages_stream_split::{
-    AsyncChunkSplitter, ChunkSplitter, next_split_chunk,
+    AsyncChunkSource as _, AsyncChunkSplitter, ChunkSource as _, ChunkSplitter,
 };
 use betterlite_models::decisions::Json;
+use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use serde::Serialize;
 
 use super::projection::{ChunkView, StatusView, chunk_view};
@@ -63,8 +64,18 @@ impl Run {
 
     fn into_view(self) -> SplitterView {
         match self {
-            Self::Sync(run) => splitter_view(&run.splitter.source, run.collected),
-            Self::Async(run) => splitter_view(&run.splitter.source, run.collected),
+            Self::Sync(run) => splitter_view(
+                run.splitter.chunks(),
+                run.splitter.messages(),
+                &run.splitter.source,
+                run.collected,
+            ),
+            Self::Async(run) => splitter_view(
+                run.splitter.chunks(),
+                run.splitter.messages(),
+                &run.splitter.source,
+                run.collected,
+            ),
         }
     }
 }
@@ -74,17 +85,19 @@ fn status_view(failure: &StreamFailure) -> StatusView {
     StatusView { status, message }
 }
 
-fn splitter_view(source: &ScriptedSource, collected: Collected) -> SplitterView {
+fn splitter_view(
+    chunks_attr: Option<&[StreamChunk]>,
+    messages_attr: Option<&[Json]>,
+    source: &ScriptedSource,
+    collected: Collected,
+) -> SplitterView {
     SplitterView {
         pulls: source.pulls,
         pieces: collected.pieces,
         ended: collected.ended,
         error: collected.error,
-        chunks: source
-            .chunks_attr
-            .as_ref()
-            .map(|chunks| chunks.iter().map(chunk_view).collect()),
-        messages: source.messages_attr.as_deref().map(<[Json]>::to_vec),
+        chunks: chunks_attr.map(|chunks| chunks.iter().map(chunk_view).collect()),
+        messages: messages_attr.map(<[Json]>::to_vec),
         source: source.chunks.iter().map(chunk_view).collect(),
     }
 }
@@ -140,7 +153,7 @@ async fn drive(step: &SplitStep, failure: Option<&StreamFailure>) -> SplitView {
                     Some(Err(error)) => state.collected.error = Some(status_view(&error)),
                     None => state.collected.ended = true,
                 },
-                Run::Async(state) => match next_split_chunk(&mut state.splitter).await {
+                Run::Async(state) => match state.splitter.next_chunk().await {
                     Ok(Some(piece)) => state.collected.pieces.push(chunk_view(&piece)),
                     Ok(None) => state.collected.ended = true,
                     Err(error) => state.collected.error = Some(status_view(&error)),

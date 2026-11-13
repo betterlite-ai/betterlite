@@ -41,17 +41,56 @@ pub struct ChunkSplitter<S> {
     pub buffer: VecDeque<StreamChunk>,
 }
 
+impl<S: ChunkSource> ChunkSource for ChunkSplitter<S> {
+    fn next_chunk(&mut self) -> Result<Option<StreamChunk>, errors::StreamFailure> {
+        next_piece(&mut self.source, &mut self.buffer)
+    }
+
+    fn chunks(&self) -> Option<&[StreamChunk]> {
+        self.source.chunks()
+    }
+
+    fn messages(&self) -> Option<&[Json]> {
+        self.source.messages()
+    }
+}
+
 impl<S: ChunkSource> Iterator for ChunkSplitter<S> {
     type Item = Result<StreamChunk, errors::StreamFailure>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        next_piece(&mut self.source, &mut self.buffer).transpose()
+        <Self as ChunkSource>::next_chunk(self).transpose()
     }
 }
 
 pub struct AsyncChunkSplitter<S> {
     pub source: S,
     pub buffer: VecDeque<StreamChunk>,
+}
+
+#[async_trait]
+impl<S> AsyncChunkSource for AsyncChunkSplitter<S>
+where
+    S: AsyncChunkSource + Send,
+{
+    async fn next_chunk(&mut self) -> Result<Option<StreamChunk>, errors::StreamFailure> {
+        if let Some(piece) = self.buffer.pop_front() {
+            return Ok(Some(piece));
+        }
+        let Some(chunk) = self.source.next_chunk().await? else {
+            return Ok(None);
+        };
+        self.buffer.extend(split::split_chunk(&chunk));
+        Ok(self.buffer.pop_front())
+    }
+
+    fn chunks(&self) -> Option<&[StreamChunk]> {
+        self.source.chunks()
+    }
+
+    fn messages(&self) -> Option<&[Json]> {
+        self.source.messages()
+    }
 }
 
 fn next_piece<S>(
@@ -69,20 +108,4 @@ where
     };
     buffer.extend(split::split_chunk(&chunk));
     Ok(buffer.pop_front())
-}
-
-pub async fn next_split_chunk<S>(
-    splitter: &mut AsyncChunkSplitter<S>,
-) -> Result<Option<StreamChunk>, errors::StreamFailure>
-where
-    S: AsyncChunkSource + Send,
-{
-    if let Some(piece) = splitter.buffer.pop_front() {
-        return Ok(Some(piece));
-    }
-    let Some(chunk) = splitter.source.next_chunk().await? else {
-        return Ok(None);
-    };
-    splitter.buffer.extend(split::split_chunk(&chunk));
-    Ok(splitter.buffer.pop_front())
 }

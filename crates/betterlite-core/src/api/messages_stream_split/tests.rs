@@ -15,7 +15,7 @@ use super::errors::{
     INCOMPLETE_STREAM_MESSAGE, StreamFailure, error_status_and_message, mid_stream_error_sse_event,
 };
 use super::split::split_chunk;
-use super::{AsyncChunkSource, AsyncChunkSplitter, ChunkSource, ChunkSplitter, next_split_chunk};
+use super::{AsyncChunkSource, AsyncChunkSplitter, ChunkSource, ChunkSplitter};
 
 const LIMITS: WireDecodeLimits = WireDecodeLimits {
     max_json_bytes: 0x0001_0000,
@@ -75,6 +75,7 @@ struct TestSource {
     failure: Option<StreamFailure>,
     chunks_attr: Option<Vec<StreamChunk>>,
     messages_attr: Option<Vec<Json>>,
+    pulled: Vec<StreamChunk>,
     pulls: usize,
 }
 
@@ -85,6 +86,7 @@ impl TestSource {
             failure: None,
             chunks_attr: None,
             messages_attr: None,
+            pulled: Vec::new(),
             pulls: 0,
         }
     }
@@ -95,6 +97,7 @@ impl TestSource {
             failure: Some(failure),
             chunks_attr: None,
             messages_attr: None,
+            pulled: Vec::new(),
             pulls: 0,
         }
     }
@@ -102,6 +105,7 @@ impl TestSource {
     fn pull(&mut self) -> Result<Option<StreamChunk>, StreamFailure> {
         self.pulls = self.pulls.saturating_add(1);
         if let Some(chunk) = self.chunks.pop_front() {
+            self.pulled.push(chunk.clone());
             return Ok(Some(chunk));
         }
         self.failure.clone().map_or(Ok(None), Err)
@@ -589,25 +593,27 @@ fn splitter_pull_and_attributes_forwards_stream_attributes() {
     source.chunks_attr = Some(vec![text_chunk("Hello", "null")]);
     source.messages_attr = Some(vec![Json::Null]);
     let split = splitter(source);
-    assert_eq!(
-        ChunkSource::chunks(&split.source).map(<[StreamChunk]>::len),
-        Some(1)
-    );
-    assert_eq!(
-        ChunkSource::messages(&split.source).map(<[Json]>::len),
-        Some(1)
-    );
+    assert_eq!(split.chunks().map(<[StreamChunk]>::len), Some(1));
+    assert_eq!(split.messages().map(<[Json]>::len), Some(1));
     let bare = splitter(TestSource::new(Vec::new()));
-    assert!(ChunkSource::chunks(&bare.source).is_none());
-    assert!(ChunkSource::messages(&bare.source).is_none());
+    assert!(bare.chunks().is_none());
+    assert!(bare.messages().is_none());
 }
 
 #[test]
 fn splitter_pull_and_attributes_default_stream_attributes_are_absent() {
-    assert!(ChunkSource::chunks(&BareSource).is_none());
-    assert!(ChunkSource::messages(&BareSource).is_none());
-    assert!(AsyncChunkSource::chunks(&BareSource).is_none());
-    assert!(AsyncChunkSource::messages(&BareSource).is_none());
+    let sync_split = ChunkSplitter {
+        source: BareSource,
+        buffer: VecDeque::new(),
+    };
+    assert!(sync_split.chunks().is_none());
+    assert!(sync_split.messages().is_none());
+    let async_split = AsyncChunkSplitter {
+        source: BareSource,
+        buffer: VecDeque::new(),
+    };
+    assert!(async_split.chunks().is_none());
+    assert!(async_split.messages().is_none());
 }
 
 #[test]
@@ -617,12 +623,12 @@ fn splitter_pull_and_attributes_leaves_source_chunks_unchanged() {
     let mut split = splitter(TestSource::new(vec![combined]));
     let _first = split.next();
     let _second = split.next();
-    let source_chunk = split
+    let pulled = split
         .source
-        .chunks
-        .front()
-        .expect("the source still holds its chunk");
-    assert_eq!(*source_chunk, before);
+        .pulled
+        .first()
+        .expect("the source handed out its chunk");
+    assert_eq!(*pulled, before);
 }
 
 #[test]
@@ -647,19 +653,13 @@ fn splitter_pull_and_attributes_drains_the_buffer_in_async_mode() {
     let combined = text_chunk("Hello", "\"stop\"");
     let mut split = async_splitter(TestSource::new(vec![combined]));
     current_thread().block_on(async {
-        let content = next_split_chunk(&mut split)
-            .await
-            .expect("a piece")
-            .expect("a chunk");
+        let content = split.next_chunk().await.expect("a piece").expect("a chunk");
         assert_eq!(delta(&content).content.as_deref(), Some("Hello"));
         assert_eq!(split.source.pulls, 1);
-        let finish = next_split_chunk(&mut split)
-            .await
-            .expect("a piece")
-            .expect("a chunk");
+        let finish = split.next_chunk().await.expect("a piece").expect("a chunk");
         assert_eq!(only_choice(&finish).finish_reason.as_deref(), Some("stop"));
         assert_eq!(split.source.pulls, 1);
-        assert!(next_split_chunk(&mut split).await.expect("end").is_none());
+        assert!(split.next_chunk().await.expect("end").is_none());
         assert_eq!(split.source.pulls, 2);
     });
 }
@@ -671,7 +671,8 @@ fn splitter_pull_and_attributes_propagates_an_async_failure() {
     };
     let mut split = async_splitter(TestSource::failing(failure));
     current_thread().block_on(async {
-        let error = next_split_chunk(&mut split)
+        let error = split
+            .next_chunk()
             .await
             .expect_err("the failure propagates");
         assert_eq!(
@@ -687,14 +688,8 @@ fn splitter_pull_and_attributes_async_attributes_match_the_source() {
     source.chunks_attr = Some(Vec::new());
     source.messages_attr = Some(Vec::new());
     let split = async_splitter(source);
-    assert_eq!(
-        AsyncChunkSource::chunks(&split.source).map(<[StreamChunk]>::len),
-        Some(0)
-    );
-    assert_eq!(
-        AsyncChunkSource::messages(&split.source).map(<[Json]>::len),
-        Some(0)
-    );
+    assert_eq!(split.chunks().map(<[StreamChunk]>::len), Some(0));
+    assert_eq!(split.messages().map(<[Json]>::len), Some(0));
 }
 
 // delta_and_error_literals
