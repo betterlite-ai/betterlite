@@ -71,7 +71,7 @@ pub(super) struct ScriptedHook {
 }
 
 impl ScriptedHook {
-    pub(super) fn new(replace: BTreeMap<String, String>) -> Self {
+    pub(super) const fn new(replace: BTreeMap<String, String>) -> Self {
         Self { replace }
     }
 }
