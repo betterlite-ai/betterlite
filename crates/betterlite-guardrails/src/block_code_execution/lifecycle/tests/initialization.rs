@@ -1,0 +1,172 @@
+use std::sync::Arc;
+
+use betterlite_config::sections::content_filter_records::BlockCodeAction;
+use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
+use betterlite_guardrails::block_code_execution::initializer::{
+    InitializerError, initialize_guardrail,
+};
+
+use crate::block_code_execution::support::{FakeRegistry, guardrail_entry, litellm_params};
+
+#[test]
+fn an_empty_name_is_rejected() {
+    let params = litellm_params(r#"{"guardrail": "block_code_execution", "mode": "pre_call"}"#);
+    let entry = guardrail_entry("", params);
+    let mut registry = FakeRegistry::default();
+    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
+        .expect_err("a name is required");
+    assert!(matches!(error, InitializerError::MissingGuardrailName));
+    assert_eq!(
+        error.to_string(),
+        "Block Code Execution guardrail requires a guardrail_name"
+    );
+    assert!(registry.callbacks.is_empty());
+}
+
+#[test]
+fn the_full_configuration_reaches_the_guardrail() {
+    let params = litellm_params(
+        r#"{
+            "guardrail": "block_code_execution",
+            "mode": ["pre_call", "post_call"],
+            "blocked_languages": ["python", "bash"],
+            "action": "mask",
+            "confidence_threshold": 2.5,
+            "detect_execution_intent": false,
+            "default_on": true
+        }"#,
+    );
+    let entry = guardrail_entry("mine", params);
+    let mut registry = FakeRegistry::default();
+    let instance = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
+        .expect("initializes");
+    let settings = &instance.base.settings;
+    assert_eq!(settings.guardrail_name.as_deref(), Some("mine"));
+    assert_eq!(
+        settings.event_hook,
+        Some(LitellmParamsMode::Many(vec![
+            "pre_call".to_owned(),
+            "post_call".to_owned()
+        ]))
+    );
+    assert!(settings.default_on);
+    assert_eq!(
+        instance.blocked_languages,
+        Some(vec!["python".to_owned(), "bash".to_owned()])
+    );
+    assert!(!instance.block_all);
+    assert_eq!(instance.scanner.action, BlockCodeAction::Mask);
+    assert_eq!(
+        instance.scanner.detector.confidence_threshold.to_bits(),
+        1.0_f64.to_bits()
+    );
+    assert!(!instance.scanner.detect_execution_intent);
+}
+
+#[test]
+fn defaults_apply_when_the_settings_are_absent() {
+    let params = litellm_params(r#"{"guardrail": "block_code_execution", "mode": "pre_call"}"#);
+    let entry = guardrail_entry("mine", params);
+    let mut registry = FakeRegistry::default();
+    let instance = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
+        .expect("initializes");
+    assert!(instance.blocked_languages.is_none());
+    assert!(instance.block_all);
+    assert_eq!(instance.scanner.action, BlockCodeAction::Block);
+    assert_eq!(
+        instance.scanner.detector.confidence_threshold.to_bits(),
+        0.5_f64.to_bits()
+    );
+    assert!(instance.scanner.detect_execution_intent);
+    assert!(!instance.base.settings.default_on);
+    assert_eq!(
+        instance.base.settings.event_hook,
+        Some(LitellmParamsMode::One("pre_call".to_owned()))
+    );
+}
+
+#[test]
+fn the_instance_is_registered_as_a_callback() {
+    let params = litellm_params(r#"{"guardrail": "block_code_execution", "mode": "pre_call"}"#);
+    let entry = guardrail_entry("registered", params);
+    let mut registry = FakeRegistry::default();
+    let instance = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
+        .expect("initializes");
+    assert_eq!(registry.callbacks.len(), 1);
+    assert!(Arc::ptr_eq(&registry.callbacks[0], &instance));
+}
+
+#[test]
+fn a_tagged_mode_is_rejected() {
+    let params = litellm_params(
+        r#"{"guardrail": "block_code_execution", "mode": {"tags": {"a": "pre_call"}}}"#,
+    );
+    let entry = guardrail_entry("mine", params);
+    let mut registry = FakeRegistry::default();
+    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
+        .expect_err("a tagged mode names no event hook");
+    assert!(matches!(
+        error,
+        InitializerError::InvalidParam { ref field } if field == "mode"
+    ));
+}
+
+#[test]
+fn a_non_boolean_intent_flag_is_rejected() {
+    let params = litellm_params(
+        r#"{"guardrail": "block_code_execution", "mode": "pre_call", "detect_execution_intent": "true"}"#,
+    );
+    let entry = guardrail_entry("mine", params);
+    let mut registry = FakeRegistry::default();
+    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
+        .expect_err("a string is not a boolean");
+    assert!(matches!(
+        error,
+        InitializerError::InvalidParam { ref field } if field == "detect_execution_intent"
+    ));
+}
+
+#[test]
+fn a_non_list_blocked_languages_is_rejected() {
+    let params = litellm_params(
+        r#"{"guardrail": "block_code_execution", "mode": "pre_call", "blocked_languages": "python"}"#,
+    );
+    let entry = guardrail_entry("mine", params);
+    let mut registry = FakeRegistry::default();
+    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
+        .expect_err("a string is not a list");
+    assert!(matches!(
+        error,
+        InitializerError::InvalidParam { ref field } if field == "blocked_languages"
+    ));
+}
+
+#[test]
+fn a_numeric_string_confidence_threshold_is_read() {
+    let params = litellm_params(
+        r#"{"guardrail": "block_code_execution", "mode": "pre_call", "confidence_threshold": "0.7"}"#,
+    );
+    let entry = guardrail_entry("mine", params);
+    let mut registry = FakeRegistry::default();
+    let instance = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
+        .expect("a numeric string is read");
+    assert_eq!(
+        instance.scanner.detector.confidence_threshold.to_bits(),
+        0.7_f64.to_bits()
+    );
+}
+
+#[test]
+fn an_unreadable_confidence_threshold_is_rejected() {
+    let params = litellm_params(
+        r#"{"guardrail": "block_code_execution", "mode": "pre_call", "confidence_threshold": "high"}"#,
+    );
+    let entry = guardrail_entry("mine", params);
+    let mut registry = FakeRegistry::default();
+    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
+        .expect_err("a word is not a number");
+    assert!(matches!(
+        error,
+        InitializerError::InvalidParam { ref field } if field == "confidence_threshold"
+    ));
+}
