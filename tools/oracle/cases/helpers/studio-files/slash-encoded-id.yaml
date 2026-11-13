@@ -1,0 +1,17 @@
+kind: helper
+name: studio-files-slash-encoded-id
+call:
+  studio_files:
+    calls:
+      - function: targets
+        file_ids:
+          - files/files/abc
+          - /files/nested/id/
+          - a/b c
+          - https://h/v1beta/xfiles/abc
+          - https://h/v1beta/files/a%20b
+          - https://h/v1beta/files/abc;v=1
+        api_key: params-key
+        api_base: https://studio.example
+env: {}
+compare: {ignore: []}

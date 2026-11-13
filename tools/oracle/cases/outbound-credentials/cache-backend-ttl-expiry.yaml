@@ -1,0 +1,42 @@
+{
+  "kind": "helper",
+  "name": "cache-backend-ttl-expiry",
+  "call": {
+    "b4656": {
+      "function": "store",
+      "kind": "cache",
+      "operations": [
+        {
+          "op": "set",
+          "user_id": "user",
+          "server_id": "server",
+          "now_ms": 1000000,
+          "ttl_ms": 10000,
+          "token": {
+            "access_token": "access-secret",
+            "expires_at_ms": null,
+            "refresh_token": null,
+            "scopes": [],
+            "identity_binding_proof": null
+          }
+        },
+        {
+          "op": "get",
+          "user_id": "user",
+          "server_id": "server",
+          "now_ms": 1009999
+        },
+        {
+          "op": "get",
+          "user_id": "user",
+          "server_id": "server",
+          "now_ms": 1010000
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
