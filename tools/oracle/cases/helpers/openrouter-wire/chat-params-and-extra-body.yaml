@@ -1,0 +1,12 @@
+kind: helper
+name: openrouter-wire-chat-params-and-extra-body
+call:
+  b6080:
+    op: supported
+    models:
+      - openai/gpt-4o
+      - anthropic/claude-3.5-sonnet
+      - z-ai/glm-4.5
+env: {}
+compare:
+  ignore: []

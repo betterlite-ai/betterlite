@@ -1,0 +1,17 @@
+kind: helper
+name: openrouter-wire-chat-cache-control-move
+call:
+  b6080:
+    op: error_class
+    cases:
+      - message: "KeyError: 'delta', Got unexpected response from OpenRouter: {}"
+        status: 400
+        headers:
+          Content-Type: application/json
+      - message: "Message: rate limited, Metadata: {}, User ID:"
+        status: 429
+        headers:
+          Retry-After: "5"
+env: {}
+compare:
+  ignore: []

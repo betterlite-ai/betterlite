@@ -1,0 +1,11 @@
+kind: helper
+name: openrouter-wire-chat-request-usage-include
+call:
+  b6080:
+    op: supported
+    models:
+      - openai/gpt-3.5-turbo-16k
+      - mistralai/mistral-large
+env: {}
+compare:
+  ignore: []

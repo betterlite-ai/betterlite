@@ -351,6 +351,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openrouter_embedding_reply"
+path = "fuzz_targets/openrouter_embedding_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "ragflow_vector_store"
 path = "fuzz_targets/ragflow_vector_store.rs"
 test = false

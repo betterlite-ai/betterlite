@@ -1,0 +1,16 @@
+kind: helper
+name: openrouter-wire-stream-chunks-and-errors
+call:
+  b6080:
+    op: error_class
+    cases:
+      - message: 'Message: rate limited, Metadata: {"headers":{}}, User ID: u1'
+        status: 429
+        headers: {}
+      - message: "Message: upstream failed, Metadata: {}, User ID:"
+        status: 502
+        headers:
+          Content-Type: application/json
+env: {}
+compare:
+  ignore: []
