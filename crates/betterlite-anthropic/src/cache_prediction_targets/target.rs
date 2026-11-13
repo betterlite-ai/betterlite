@@ -52,23 +52,23 @@ pub struct NativePredictionTarget {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum UnsupportedPredictionTarget {
     #[error("the deployment configures options native cache prediction cannot observe")]
-    UnsupportedDeploymentConfig,
+    DeploymentConfiguration,
     #[error("the deployment's endpoint is not Anthropic's public messages endpoint")]
-    UnsupportedProviderEndpoint,
+    ProviderEndpoint,
     #[error("the deployment does not resolve to the Anthropic provider")]
-    UnsupportedProvider,
+    Provider,
     #[error("the deployment has no usable Anthropic API key")]
-    UnsupportedProviderCredentials,
+    ProviderCredentials,
 }
 
 impl UnsupportedPredictionTarget {
     #[must_use]
     pub const fn reason(self) -> &'static str {
         match self {
-            Self::UnsupportedDeploymentConfig => "unsupported_deployment_configuration",
-            Self::UnsupportedProviderEndpoint => "unsupported_provider_endpoint",
-            Self::UnsupportedProvider => "unsupported_provider",
-            Self::UnsupportedProviderCredentials => "unsupported_provider_credentials",
+            Self::DeploymentConfiguration => "unsupported_deployment_configuration",
+            Self::ProviderEndpoint => "unsupported_provider_endpoint",
+            Self::Provider => "unsupported_provider",
+            Self::ProviderCredentials => "unsupported_provider_credentials",
         }
     }
 }
@@ -87,7 +87,7 @@ pub fn resolve_prediction_target(
     ensure_supported_options(params)?;
     let api_base = configured_api_base(params, settings)?;
     if !PUBLIC_ENDPOINTS.contains(&api_base.as_str()) {
-        return Err(UnsupportedPredictionTarget::UnsupportedProviderEndpoint);
+        return Err(UnsupportedPredictionTarget::ProviderEndpoint);
     }
     resolve_anthropic_target(params, settings, resolution, api_base)
 }
@@ -115,11 +115,14 @@ pub fn supported_provider_key(api_key: &str) -> bool {
 }
 
 #[must_use]
-pub fn supported_baseline_recipient<Builder: MessagesUrl>(
+pub fn supported_baseline_recipient<Builder>(
     target: &NativePredictionTarget,
     wire: &WireRequest<'_>,
     messages_url: &Builder,
-) -> bool {
+) -> bool
+where
+    Builder: MessagesUrl,
+{
     let Some(presented) = wire.headers.get(API_KEY_HEADER) else {
         return false;
     };
@@ -140,7 +143,7 @@ fn ensure_supported_options(params: &JsonObject) -> Result<(), UnsupportedPredic
     if params.iter().any(|(key, value)| {
         configured_option(key, value) && !DEPLOYMENT_OPTIONS.contains(&key.as_str())
     }) {
-        return Err(UnsupportedPredictionTarget::UnsupportedDeploymentConfig);
+        return Err(UnsupportedPredictionTarget::DeploymentConfiguration);
     }
     Ok(())
 }
@@ -161,10 +164,11 @@ fn configured_api_base(
     settings: &AnthropicSettings,
 ) -> Result<String, UnsupportedPredictionTarget> {
     match params.get("api_base") {
-        None | Some(Json::Null) => Ok(settings.api_base.clone()),
         Some(Json::Text(base)) if !base.is_empty() => Ok(base.to_owned()),
-        Some(Json::Text(_)) => Ok(settings.api_base.clone()),
-        Some(_) => Err(UnsupportedPredictionTarget::UnsupportedProviderEndpoint),
+        None | Some(Json::Null | Json::Text(_)) => Ok(settings.api_base.clone()),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(UnsupportedPredictionTarget::ProviderEndpoint)
+        }
     }
 }
 
@@ -188,12 +192,12 @@ fn resolved_model(
     resolution: &ResolutionContext<'_>,
 ) -> Result<String, UnsupportedPredictionTarget> {
     let Some(Json::Text(model)) = params.get("model") else {
-        return Err(UnsupportedPredictionTarget::UnsupportedProvider);
+        return Err(UnsupportedPredictionTarget::Provider);
     };
     let custom_llm_provider = match params.get("custom_llm_provider") {
         None | Some(Json::Null) => None,
         Some(Json::Text(provider)) => Some(provider.as_str()),
-        Some(_) => return Err(UnsupportedPredictionTarget::UnsupportedProvider),
+        Some(_) => return Err(UnsupportedPredictionTarget::Provider),
     };
     let request = ResolutionRequest {
         model: model.as_str(),
@@ -202,10 +206,10 @@ fn resolved_model(
         api_key: None,
     };
     let Ok(resolved) = resolve(&request, resolution) else {
-        return Err(UnsupportedPredictionTarget::UnsupportedProvider);
+        return Err(UnsupportedPredictionTarget::Provider);
     };
     if resolved.provider.slug() != ANTHROPIC_PROVIDER {
-        return Err(UnsupportedPredictionTarget::UnsupportedProvider);
+        return Err(UnsupportedPredictionTarget::Provider);
     }
     Ok(resolved.model)
 }
@@ -217,17 +221,17 @@ fn resolved_api_key(
     let explicit = match params.get("api_key") {
         None | Some(Json::Null) => None,
         Some(Json::Text(key)) => Some(key.as_str()),
-        Some(_) => return Err(UnsupportedPredictionTarget::UnsupportedProviderCredentials),
+        Some(_) => return Err(UnsupportedPredictionTarget::ProviderCredentials),
     };
-    let api_key = explicit
+    let candidate = explicit
         .filter(|key| !key.is_empty())
         .map(SecretString::from)
         .or_else(|| settings.api_key.clone());
-    let Some(api_key) = api_key else {
-        return Err(UnsupportedPredictionTarget::UnsupportedProviderCredentials);
+    let Some(api_key) = candidate else {
+        return Err(UnsupportedPredictionTarget::ProviderCredentials);
     };
     if !supported_provider_key(api_key.expose_secret()) {
-        return Err(UnsupportedPredictionTarget::UnsupportedProviderCredentials);
+        return Err(UnsupportedPredictionTarget::ProviderCredentials);
     }
     Ok(api_key)
 }

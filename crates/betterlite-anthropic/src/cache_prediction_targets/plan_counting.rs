@@ -5,6 +5,7 @@ use betterlite_models::decisions::Json;
 use futures_util::future::join_all;
 use secrecy::SecretString;
 
+use crate::cache_plan::wire::{Block, Content, PlanRequest};
 use crate::cache_plan::{PromptCachePlan, UnsupportedCachePlan};
 use crate::cache_prediction_targets::counting::TokenCounter;
 
@@ -26,7 +27,10 @@ where
     let Ok(body) = serde_json::from_str::<Json>(plan.full_body.get()) else {
         return Err(UnsupportedCachePlan::UnsupportedPromptShape);
     };
-    if has_thinking_block(&body) && !thinking.preserves_thinking_cache(model).await {
+    let Ok(request) = serde_json::from_str::<PlanRequest>(plan.full_body.get()) else {
+        return Err(UnsupportedCachePlan::UnsupportedPromptShape);
+    };
+    if has_thinking_block(&request) && !thinking.preserves_thinking_cache(model).await {
         return Err(UnsupportedCachePlan::UnsupportedThinkingCache);
     }
     let Some(total) = counter.count(model, api_key, &body).await else {
@@ -49,12 +53,15 @@ where
     })
 }
 
-async fn count_prefixes<Counter: TokenCounter>(
+async fn count_prefixes<Counter>(
     model: &str,
     api_key: &SecretString,
     plan: &PromptCachePlan,
     counter: &Counter,
-) -> Result<Vec<i64>, UnsupportedCachePlan> {
+) -> Result<Vec<i64>, UnsupportedCachePlan>
+where
+    Counter: TokenCounter,
+{
     let mut prefixes = Vec::with_capacity(plan.breakpoints.len());
     for marker in &plan.breakpoints {
         let Ok(prefix) = serde_json::from_str::<Json>(marker.prefix_body.get()) else {
@@ -70,10 +77,10 @@ async fn count_prefixes<Counter: TokenCounter>(
     .await;
     let mut known = Vec::with_capacity(counts.len());
     for count in counts {
-        let Some(count) = count else {
+        let Some(tokens) = count else {
             return Err(UnsupportedCachePlan::TokenCountUnavailable);
         };
-        known.push(count);
+        known.push(tokens);
     }
     Ok(known)
 }
@@ -94,26 +101,14 @@ fn counted_breakpoints(plan: &PromptCachePlan, counts: Vec<i64>) -> Vec<CountedB
 }
 
 // LiteLLM reads the request positions so a thinking block anywhere in the prompt gates the count
-fn has_thinking_block(body: &Json) -> bool {
-    let Json::Object(fields) = body else {
-        return false;
-    };
-    let Some(Json::List(messages)) = fields.get("messages") else {
-        return false;
-    };
-    messages.iter().any(|message| {
-        let Json::Object(message) = message else {
-            return false;
-        };
-        let Some(Json::List(blocks)) = message.get("content") else {
-            return false;
-        };
-        blocks.iter().any(|block| {
-            matches!(
-                block,
-                Json::Object(fields)
-                    if matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "thinking")
-            )
-        })
+fn has_thinking_block(request: &PlanRequest) -> bool {
+    request.messages.iter().any(|message| {
+        matches!(
+            &message.content,
+            Content::Blocks(blocks)
+                if blocks
+                    .iter()
+                    .any(|block| matches!(block, Block::Thinking(_)))
+        )
     })
 }

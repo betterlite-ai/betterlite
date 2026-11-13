@@ -155,16 +155,20 @@ async fn count_prompt_tokens_rejects_an_invalid_body(#[case] body: &str) {
 }
 
 #[rstest]
-#[case::upstream_error(&[(400, b"bad")])]
-#[case::missing_input_tokens(&[(200, b"{}")])]
-#[case::fractional_input_tokens(&[(200, br#"{"input_tokens":1.5}"#)])]
-#[case::boolean_input_tokens(&[(200, br#"{"input_tokens":true}"#)])]
-#[case::negative_input_tokens(&[(200, br#"{"input_tokens":-1}"#)])]
-#[case::text_input_tokens(&[(200, br#"{"input_tokens":"3"}"#)])]
-#[case::response_not_an_object(&[(200, b"[1]")])]
+#[case::upstream_error(400, b"bad")]
+#[case::missing_input_tokens(200, b"{}")]
+#[case::fractional_input_tokens(200, br#"{"input_tokens":1.5}"#)]
+#[case::boolean_input_tokens(200, br#"{"input_tokens":true}"#)]
+#[case::negative_input_tokens(200, br#"{"input_tokens":-1}"#)]
+#[case::text_input_tokens(200, br#"{"input_tokens":"3"}"#)]
+#[case::response_not_an_object(200, b"[1]")]
 #[tokio::test]
-async fn count_prompt_tokens_returns_none_on_a_provider_failure(#[case] replies: &[(u16, &[u8])]) {
-    let (count, _handler) = count_with(Script::replying(replies), &json(MINIMAL), None).await;
+async fn count_prompt_tokens_returns_none_on_a_provider_failure(
+    #[case] status: u16,
+    #[case] payload: &[u8],
+) {
+    let script = Script::replying(&[(status, payload)]);
+    let (count, _handler) = count_with(script, &json(MINIMAL), None).await;
     assert_eq!(count, None);
 }
 

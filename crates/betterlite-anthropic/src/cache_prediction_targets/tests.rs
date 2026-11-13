@@ -68,7 +68,7 @@ fn deployment_config_extra_option_accepts_the_deployment_options() {
 fn deployment_config_extra_option_is_rejected(#[case] json: &str) {
     assert_eq!(
         resolve(json).expect_err("rejected"),
-        UnsupportedPredictionTarget::UnsupportedDeploymentConfig
+        UnsupportedPredictionTarget::DeploymentConfiguration
     );
 }
 
@@ -89,19 +89,19 @@ fn deployment_config_extra_option_allows_a_false_default(#[case] json: &str) {
 #[test]
 fn deployment_config_extra_option_reasons_are_the_litellm_strings() {
     assert_eq!(
-        UnsupportedPredictionTarget::UnsupportedDeploymentConfig.reason(),
+        UnsupportedPredictionTarget::DeploymentConfiguration.reason(),
         "unsupported_deployment_configuration"
     );
     assert_eq!(
-        UnsupportedPredictionTarget::UnsupportedProviderEndpoint.reason(),
+        UnsupportedPredictionTarget::ProviderEndpoint.reason(),
         "unsupported_provider_endpoint"
     );
     assert_eq!(
-        UnsupportedPredictionTarget::UnsupportedProvider.reason(),
+        UnsupportedPredictionTarget::Provider.reason(),
         "unsupported_provider"
     );
     assert_eq!(
-        UnsupportedPredictionTarget::UnsupportedProviderCredentials.reason(),
+        UnsupportedPredictionTarget::ProviderCredentials.reason(),
         "unsupported_provider_credentials"
     );
 }
@@ -123,7 +123,7 @@ fn endpoint_non_public_rejects_a_configured_base(#[case] api_base: &str) {
     );
     assert_eq!(
         resolve(&json).expect_err("rejected"),
-        UnsupportedPredictionTarget::UnsupportedProviderEndpoint
+        UnsupportedPredictionTarget::ProviderEndpoint
     );
 }
 
@@ -142,7 +142,7 @@ fn endpoint_non_public_reads_the_settings_base() {
     let configured = settings("https://configured.test", None);
     assert_eq!(
         resolve_with(NATIVE_KEY, &configured).expect_err("rejected"),
-        UnsupportedPredictionTarget::UnsupportedProviderEndpoint
+        UnsupportedPredictionTarget::ProviderEndpoint
     );
     let public = settings("https://api.anthropic.com/v1/messages", None);
     assert_eq!(
@@ -162,7 +162,7 @@ fn endpoint_non_public_runs_before_the_provider_check() {
     let json = r#"{"model":"openai/gpt-4o","api_key":"sk-ant-api03-x","api_base":"https://configured.test"}"#;
     assert_eq!(
         resolve(json).expect_err("rejected"),
-        UnsupportedPredictionTarget::UnsupportedProviderEndpoint
+        UnsupportedPredictionTarget::ProviderEndpoint
     );
 }
 
@@ -176,7 +176,7 @@ fn endpoint_non_public_runs_before_the_provider_check() {
 fn provider_not_anthropic_rejects_another_provider(#[case] json: &str) {
     assert_eq!(
         resolve(json).expect_err("rejected"),
-        UnsupportedPredictionTarget::UnsupportedProvider
+        UnsupportedPredictionTarget::Provider
     );
 }
 
@@ -194,7 +194,7 @@ fn provider_not_anthropic_rejects_a_text_model_family() {
     let json = r#"{"model":"anthropic/claude-2","api_key":"sk-ant-api03-x"}"#;
     assert_eq!(
         resolve(json).expect_err("rejected"),
-        UnsupportedPredictionTarget::UnsupportedProvider
+        UnsupportedPredictionTarget::Provider
     );
 }
 
@@ -203,7 +203,7 @@ fn provider_not_anthropic_rejects_a_non_string_provider() {
     let json = r#"{"model":"claude-x","custom_llm_provider":5,"api_key":"sk-ant-api03-x"}"#;
     assert_eq!(
         resolve(json).expect_err("rejected"),
-        UnsupportedPredictionTarget::UnsupportedProvider
+        UnsupportedPredictionTarget::Provider
     );
 }
 
@@ -211,7 +211,7 @@ fn provider_not_anthropic_rejects_a_non_string_provider() {
 fn credentials_missing_or_oauth_rejects_a_missing_key() {
     assert_eq!(
         resolve(r#"{"model":"anthropic/claude-x"}"#).expect_err("rejected"),
-        UnsupportedPredictionTarget::UnsupportedProviderCredentials
+        UnsupportedPredictionTarget::ProviderCredentials
     );
 }
 
@@ -223,7 +223,7 @@ fn credentials_missing_or_oauth_rejects_a_missing_key() {
 fn credentials_missing_or_oauth_rejects_the_key(#[case] json: &str) {
     assert_eq!(
         resolve(json).expect_err("rejected"),
-        UnsupportedPredictionTarget::UnsupportedProviderCredentials
+        UnsupportedPredictionTarget::ProviderCredentials
     );
 }
 
@@ -280,7 +280,7 @@ fn credentials_missing_or_oauth_rejects_an_empty_settings_key() {
     let json = r#"{"model":"anthropic/claude-x"}"#;
     assert_eq!(
         resolve_with(json, &settings).expect_err("rejected"),
-        UnsupportedPredictionTarget::UnsupportedProviderCredentials
+        UnsupportedPredictionTarget::ProviderCredentials
     );
 }
 
@@ -306,7 +306,7 @@ fn resolve_baseline_rejects_unsupported_options() {
         r#"{"model":"anthropic/claude-x","api_key":"sk-ant-api03-x","api_version":"2024-01-01"}"#;
     assert_eq!(
         baseline(json).expect_err("rejected"),
-        UnsupportedPredictionTarget::UnsupportedDeploymentConfig
+        UnsupportedPredictionTarget::DeploymentConfiguration
     );
 }
 
@@ -315,7 +315,7 @@ fn resolve_baseline_rejects_a_non_anthropic_provider() {
     let json = r#"{"model":"openai/gpt-4o","api_key":"sk-ant-api03-x","api_base":"https://configured.test"}"#;
     assert_eq!(
         baseline(json).expect_err("rejected"),
-        UnsupportedPredictionTarget::UnsupportedProvider
+        UnsupportedPredictionTarget::Provider
     );
 }
 
@@ -324,7 +324,7 @@ fn resolve_baseline_rejects_missing_credentials() {
     let json = r#"{"model":"anthropic/claude-x","api_base":"https://configured.test"}"#;
     assert_eq!(
         baseline(json).expect_err("rejected"),
-        UnsupportedPredictionTarget::UnsupportedProviderCredentials
+        UnsupportedPredictionTarget::ProviderCredentials
     );
 }
 
