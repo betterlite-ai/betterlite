@@ -18,7 +18,7 @@ deviations:
   - what: The first failing page or body request ends the fetch. Later pages and bodies are not requested.
     why: Python requests every remaining page and every wanted body and then reports the first failure, which costs requests the report cannot use. The reported error is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L147-L156
-  - what: A proxy error reads "GET <path> failed with HTTP <status>: <first 500 characters of the body>", and a connection failure names the path and carries its cause.
+  - what: 'A proxy error reads "GET <path> failed with HTTP <status>: <first 500 characters of the body>", and a connection failure names the path and carries its cause.'
     why: The text comes from the requests library in Python. betterlite reports the status and body of its own client with typed errors.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L137-L141
   - what: A response of the wrong shape reports "Unexpected <path> response" with the serde message.
