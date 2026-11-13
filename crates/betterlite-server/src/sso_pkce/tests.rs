@@ -475,6 +475,7 @@ async fn a_corrupt_entry_is_deleted_before_the_strict_error() {
         .await
         .unwrap_err();
     assert!(matches!(&error, PkceError::UnexpectedShape { .. }));
+    assert!(error.to_string().contains("(list)"));
     assert_eq!(error.code(), "401");
     assert_eq!(cache.deletes(), vec!["pkce_verifier:state".to_owned()]);
     assert!(written(&log).contains("unrecognized format"));
