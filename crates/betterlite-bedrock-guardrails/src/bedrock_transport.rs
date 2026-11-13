@@ -36,6 +36,8 @@ mod normalize_checks;
 mod normalize_checks_error;
 #[path = "bedrock_transport/post_call/tests.rs"]
 mod post_call;
+#[path = "bedrock_transport/proxied_transport/tests.rs"]
+mod proxied_transport;
 #[path = "bedrock_transport/region_resolution/tests.rs"]
 mod region_resolution;
 #[path = "bedrock_transport/sigv4_override/tests.rs"]

@@ -6,7 +6,6 @@ use betterlite_bedrock::aws_endpoints::region::non_llm_region_name;
 use betterlite_bedrock::aws_settings::AuthError;
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::aws_settings::{AuthParams, pop_aws_auth_params};
-use betterlite_bedrock::credentials::AwsCredentialResolver;
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -42,16 +41,6 @@ pub trait CredentialSource: Send + Sync {
         settings: AwsSettings,
         region: String,
     ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send;
-}
-
-impl CredentialSource for AwsCredentialResolver<'_> {
-    async fn resolve(
-        &self,
-        settings: AwsSettings,
-        region: String,
-    ) -> Result<Credentials, CredentialError> {
-        self.resolve_credentials(&settings, Some(&region)).await
-    }
 }
 
 pub async fn load_credentials<C: CredentialSource>(

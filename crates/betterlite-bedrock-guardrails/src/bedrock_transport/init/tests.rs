@@ -3,6 +3,8 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use rstest::rstest;
+
 use betterlite_config::sections::content_filter_records::ConfidenceThreshold;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
@@ -80,6 +82,21 @@ fn init_rejects_the_two_api_paths_together() {
     );
 }
 
+#[rstest]
+#[case::identifier_only(Some("gr-1"), None)]
+#[case::version_only(None, Some("1"))]
+fn init_rejects_checks_with_either_half_of_the_identity(
+    #[case] identifier: Option<&str>,
+    #[case] version: Option<&str>,
+) {
+    let mut init = guardrail_init();
+    init.guardrail_identifier = identifier.map(str::to_owned);
+    init.guardrail_version = version.map(str::to_owned);
+    init.checks = Some(sample_checks());
+    let error = BedrockGuardrail::__init__(init).expect_err("both API paths");
+    assert!(matches!(error, BedrockGuardrailError::BothApiPaths));
+}
+
 #[test]
 fn init_accepts_checks_without_an_identifier() {
     let mut init = guardrail_init();
@@ -136,6 +153,19 @@ fn init_does_not_warn_when_checks_have_no_masking() {
     init.checks = Some(sample_checks());
     BedrockGuardrail::__init__(init).expect("the guardrail");
     assert!(captured.warnings().is_empty());
+}
+
+#[test]
+fn init_logs_the_initialization_at_debug_level() {
+    let (captured, _guard) = capture();
+    BedrockGuardrail::__init__(guardrail_init()).expect("the guardrail");
+    let debug_messages: Vec<String> = captured
+        .entries()
+        .into_iter()
+        .filter(|entry| entry.level == tracing::Level::DEBUG)
+        .map(|entry| entry.message)
+        .collect();
+    assert_eq!(debug_messages, vec!["Bedrock Guardrail initialized"]);
 }
 
 #[test]
