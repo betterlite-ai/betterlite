@@ -183,11 +183,11 @@ fn accepts_only_runs_that_do_not_end_on_a_model_turn(#[case] source: &str, #[cas
 
 #[rstest]
 #[case::first_valid(
-    r#"[{"role":"system","content":[{"type":"text","text":"s","cache_control":{"type":"ephemeral","ttl":"invalid"}}]},{"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral","ttl":"5m"}}]},{"role":"user","content":[{"type":"text","text":"b","cache_control":{"type":"ephemeral","ttl":"1h"}}]}"#,
+    r#"[{"role":"system","content":[{"type":"text","text":"s","cache_control":{"type":"ephemeral","ttl":"invalid"}}]},{"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral","ttl":"5m"}}]},{"role":"user","content":[{"type":"text","text":"b","cache_control":{"type":"ephemeral","ttl":"1h"}}]}]"#,
     Some("300s")
 )]
 #[case::second_part(
-    r#"[{"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral","ttl":"0s"}},{"type":"text","text":"b","cache_control":{"type":"ephemeral","ttl":"1.5s"}}]}"#,
+    r#"[{"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral","ttl":"0s"}},{"type":"text","text":"b","cache_control":{"type":"ephemeral","ttl":"1.5s"}}]}]"#,
     Some("1.5s")
 )]
 #[case::message_level_ttl(
@@ -195,7 +195,7 @@ fn accepts_only_runs_that_do_not_end_on_a_model_turn(#[case] source: &str, #[cas
     None
 )]
 #[case::unmarked_ttl(
-    r#"[{"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral"}}]},{"role":"user","content":[{"type":"text","text":"b","cache_control":{"type":"persistent","ttl":"1h"}}]}"#,
+    r#"[{"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral"}}]},{"role":"user","content":[{"type":"text","text":"b","cache_control":{"type":"persistent","ttl":"1h"}}]}]"#,
     None
 )]
 fn extracts_the_first_valid_ttl(#[case] source: &str, #[case] expected: Option<&str>) {

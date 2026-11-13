@@ -3,6 +3,8 @@ use serde::Deserialize;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
+mod tests;
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Raw {
