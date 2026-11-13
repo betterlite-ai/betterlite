@@ -93,7 +93,7 @@ fn caller_headers_win_only_on_an_exact_name() {
     assert_eq!(
         resolved,
         headers(&[
-            ("Authorization", "Bearer key"),
+            ("Authorization", "Bearer mine"),
             ("accept", "application/json"),
             ("authorization", "Bearer old"),
         ])
