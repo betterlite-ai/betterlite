@@ -425,6 +425,42 @@ fn cleaning_removes_strict_and_false_additional_properties_recursively() {
 }
 
 #[test]
+fn cleaning_keeps_property_names_that_match_removed_keys() {
+    let mut tool = parse::<Object>(
+        r#"{
+            "strict": true,
+            "parameters": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["strict", "properties"],
+                "properties": {
+                    "strict": {"type": "boolean", "strict": true},
+                    "properties": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {"strict": {"type": "string"}}
+                    }
+                }
+            }
+        }"#,
+    );
+    remove_unsupported_fields(&mut tool);
+    assert_eq!(
+        as_json(&tool),
+        parse::<Json>(
+            r#"{"parameters": {
+                "type": "object",
+                "required": ["strict", "properties"],
+                "properties": {
+                    "strict": {"type": "boolean"},
+                    "properties": {"type": "object", "properties": {"strict": {"type": "string"}}}
+                }
+            }}"#
+        )
+    );
+}
+
+#[test]
 fn function_parameters_are_shaped_for_vertex() {
     let input: Vec<Object> = parse(
         r#"[{"type": "function", "function": {

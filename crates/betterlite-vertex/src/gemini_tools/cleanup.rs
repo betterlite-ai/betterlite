@@ -4,11 +4,15 @@ pub fn remove_unsupported_fields(tool: &mut Object) {
     if tool.get("additionalProperties") == Some(&Json::Bool(false)) {
         tool.shift_remove("additionalProperties");
     }
-    if tool.contains_key("strict") {
-        tool.shift_remove("strict");
-    }
-    for value in tool.values_mut() {
-        strip_value(value);
+    tool.shift_remove("strict");
+    for (key, value) in tool.iter_mut() {
+        if let Json::Object(properties) = value
+            && key == "properties"
+        {
+            properties.values_mut().for_each(strip_value);
+        } else {
+            strip_value(value);
+        }
     }
 }
 

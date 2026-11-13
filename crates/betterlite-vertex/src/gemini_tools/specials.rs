@@ -1,6 +1,7 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 
 use super::records::{LatLng, RetrievalConfig};
+use super::tool_lookup::tool_value;
 
 #[must_use]
 pub fn transform_type(tool: &Object) -> Object {
@@ -23,12 +24,8 @@ fn without_type(tool: &Object) -> Object {
 }
 #[must_use]
 pub fn extract_maps(config: &Object) -> (Object, Option<RetrievalConfig>) {
-    let latitude = config
-        .get("latitude")
-        .filter(|value| !matches!(value, Json::Null));
-    let longitude = config
-        .get("longitude")
-        .filter(|value| !matches!(value, Json::Null));
+    let latitude = tool_value(config, "latitude");
+    let longitude = tool_value(config, "longitude");
     let language_code = config
         .get("languageCode")
         .filter(|value| !matches!(value, Json::Null));

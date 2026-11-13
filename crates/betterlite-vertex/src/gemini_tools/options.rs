@@ -5,21 +5,18 @@ use super::records::{CallingMode, FunctionCallingConfig, Tool, ToolConfig};
 
 pub fn map_tool_choice(value: &Json) -> Result<ToolConfig, GeminiToolsError> {
     match value {
-        Json::Text(text) => match text.as_str() {
-            "none" => Ok(ToolConfig::from(FunctionCallingConfig {
-                mode: CallingMode::None,
+        Json::Text(text) => {
+            let mode = match text.as_str() {
+                "none" => CallingMode::None,
+                "required" => CallingMode::Any,
+                "auto" => CallingMode::Auto,
+                _ => return Err(GeminiToolsError::UnsupportedToolChoice),
+            };
+            Ok(ToolConfig::from(FunctionCallingConfig {
+                mode,
                 allowed_function_names: None,
-            })),
-            "required" => Ok(ToolConfig::from(FunctionCallingConfig {
-                mode: CallingMode::Any,
-                allowed_function_names: None,
-            })),
-            "auto" => Ok(ToolConfig::from(FunctionCallingConfig {
-                mode: CallingMode::Auto,
-                allowed_function_names: None,
-            })),
-            _ => Err(GeminiToolsError::UnsupportedToolChoice),
-        },
+            }))
+        }
         Json::Object(choice) => {
             let name = match choice.get("function") {
                 None | Some(Json::Null) => String::new(),
