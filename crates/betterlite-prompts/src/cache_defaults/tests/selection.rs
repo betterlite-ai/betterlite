@@ -295,7 +295,11 @@ fn a_non_claude_code_user_agent_is_not_one_shot(#[case] user_agent: &str) {
 #[case::two_values("x-anthropic-billing-header: cc_is_subagent=true; cc_is_subagent=true")]
 #[case::missing_equals("x-anthropic-billing-header: cc_is_subagent")]
 #[case::blank_value("x-anthropic-billing-header: cc_is_subagent=")]
-fn a_system_without_the_subagent_marker_is_not_one_shot(#[case] text: &str) {
+#[case::newline_in_value("x-anthropic-billing-header: cc_is_subagent=\ntrue")]
+#[case::carriage_return_in_value("x-anthropic-billing-header: cc_is_subagent=\rtrue")]
+#[case::empty_key_then_marker("x-anthropic-billing-header: =x; cc_is_subagent=true")]
+#[case::empty_value_then_marker("x-anthropic-billing-header: a=; cc_is_subagent=true")]
+fn a_malformed_billing_header_is_not_one_shot(#[case] text: &str) {
     let setup = Setup {
         system: Some(SystemPrompt::Text(text.to_owned())),
         kwargs: object(CLAUDE_CODE_HEADERS),

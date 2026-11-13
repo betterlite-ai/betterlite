@@ -323,6 +323,22 @@ fn the_openai_dialect_marks_blocks_and_sets_explicit_mode() {
 }
 
 #[test]
+fn the_openai_dialect_is_not_stamped_when_nothing_was_added() {
+    let params = r#"{"cache_control_injection_points": [{"location": "message", "role": "user", "index": 0, "control": null}]}"#;
+    let mut injection = Inject {
+        model: Some(OPENAI_MODEL.to_owned()),
+        messages: messages(MARKED_USER),
+        system: None,
+        params: object(params),
+        api_base: Some("https://api.openai.com/v1".to_owned()),
+        ..Inject::claude()
+    };
+    let facts = Facts::routed(OPENAI_MODEL, "openai").with_flag(OPENAI_MODEL, true);
+    run_injection(&mut injection, &facts);
+    assert_eq!(wire(&injection.params), json("{}"));
+}
+
+#[test]
 fn an_existing_prompt_cache_options_is_not_overwritten() {
     let params = r#"{"cache_control_injection_points": [{"location": "message", "role": "user", "index": 0, "control": null}], "prompt_cache_options": {"mode": "implicit"}}"#;
     let mut injection = Inject {

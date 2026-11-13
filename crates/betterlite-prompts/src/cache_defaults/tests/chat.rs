@@ -96,6 +96,52 @@ fn router_projection_stands_down_on_a_client_mark() {
     );
 }
 
+#[test]
+fn router_projection_stands_down_on_a_marked_system_argument() {
+    let conversation = messages(USER);
+    let models = [GROUP.to_owned()];
+    let aliases = aliases(MODEL);
+    let kwargs = object(
+        r#"{"system": [{"type": "text", "text": "be nice", "cache_control": {"type": "ephemeral"}}]}"#,
+    );
+    let projection = RouterProjection {
+        messages: &conversation,
+        models: &models,
+        tools: None,
+        enable_prompt_caching: None,
+        request_kwargs: &kwargs,
+        alias_map: &aliases,
+        policy: policy(true, None),
+    };
+    assert_eq!(
+        wire(&messages_with_defaults(&projection, &Facts::claude())),
+        json(USER)
+    );
+}
+
+#[test]
+fn router_projection_reads_the_one_shot_marker_from_the_request_kwargs() {
+    let conversation = messages(USER);
+    let models = [GROUP.to_owned()];
+    let aliases = aliases(MODEL);
+    let kwargs = object(
+        r#"{"proxy_server_request": {"headers": {"User-Agent": "claude-cli/2.0.1"}}, "system": "x-anthropic-billing-header: cc_is_subagent=true"}"#,
+    );
+    let projection = RouterProjection {
+        messages: &conversation,
+        models: &models,
+        tools: None,
+        enable_prompt_caching: None,
+        request_kwargs: &kwargs,
+        alias_map: &aliases,
+        policy: policy(true, None),
+    };
+    assert_eq!(
+        wire(&messages_with_defaults(&projection, &Facts::claude())),
+        json(USER)
+    );
+}
+
 struct Seeding {
     model: String,
     params: Object,
