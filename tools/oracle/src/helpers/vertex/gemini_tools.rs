@@ -48,10 +48,10 @@ fn map_sources(call: &Call, settings: &Settings) -> Result<Sources, Box<HelperEr
     let mut tools: Option<Vec<Tool>> = None;
     let mut tool_config = call.tool_config.clone();
     let mut warnings = 0_usize;
-    for source in [&call.tools, &call.functions] {
-        if source.is_empty() {
-            continue;
-        }
+    let lists = [&call.tools, &call.functions]
+        .into_iter()
+        .filter(|source| !source.is_empty());
+    for source in lists {
         let mapped = map_tools(source, call.server_side_invocations, tool_config, settings)
             .or_value_error()?;
         warnings = warnings.saturating_add(mapped.warnings);
@@ -65,11 +65,7 @@ fn map_sources(call: &Call, settings: &Settings) -> Result<Sources, Box<HelperEr
     })
 }
 fn measure(call: &Call, settings: &Settings) -> Result<Value, Box<HelperError>> {
-    let Sources {
-        mut tools,
-        tool_config,
-        mut warnings,
-    } = map_sources(call, settings)?;
+    let mut sources = map_sources(call, settings)?;
     let tool_choice = call
         .tool_choice
         .as_ref()
@@ -77,23 +73,26 @@ fn measure(call: &Call, settings: &Settings) -> Result<Value, Box<HelperError>> 
         .transpose()
         .map_err(|error| choice_failure(&error))?;
     if let Some(options) = &call.web_search_options {
-        tools
+        sources
+            .tools
             .get_or_insert_with(Vec::new)
             .push(map_web_search_options(options));
     }
-    if let Some(existing) = &mut tools {
-        warnings = warnings.saturating_add(usize::from(drop_mixed_search_tools(
-            existing,
-            call.server_side_invocations,
-        )));
+    if let Some(existing) = &mut sources.tools {
+        sources.warnings = sources
+            .warnings
+            .saturating_add(usize::from(drop_mixed_search_tools(
+                existing,
+                call.server_side_invocations,
+            )));
     }
     let service_tier = call.service_tier.as_deref().map(map_service_tier);
     Ok(json!({
-        "tools": tools,
+        "tools": sources.tools,
         "tool_choice": tool_choice,
-        "toolConfig": tool_config,
+        "toolConfig": sources.tool_config,
         "service_tier": service_tier,
-        "warnings": warnings,
+        "warnings": sources.warnings,
     }))
 }
 fn choice_failure(error: &GeminiToolsError) -> Box<HelperError> {

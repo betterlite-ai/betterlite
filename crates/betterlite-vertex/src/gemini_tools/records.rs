@@ -20,11 +20,9 @@ pub enum Tool {
         enterprise_web_search: Object,
     },
     CodeExecution {
-        #[serde(rename = "code_execution")]
         code_execution: Object,
     },
     UrlContext {
-        #[serde(rename = "url_context")]
         url_context: Object,
     },
     GoogleMaps {
@@ -65,10 +63,7 @@ impl From<FunctionCallingConfig> for ToolConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionCallingConfig {
     pub mode: CallingMode,
-    #[serde(
-        rename = "allowed_function_names",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub allowed_function_names: Option<Vec<String>>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

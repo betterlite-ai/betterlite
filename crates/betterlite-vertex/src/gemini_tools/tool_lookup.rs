@@ -15,9 +15,10 @@ pub fn underscore_name(name: &str) -> String {
 }
 #[must_use]
 pub fn tool_value<'tool>(tool: &'tool Object, name: &str) -> Option<&'tool Json> {
+    let snake_name = underscore_name(name);
     let camel = tool.get(name).filter(|value| !matches!(value, Json::Null));
     let snake = tool
-        .get(&underscore_name(name))
+        .get(&snake_name)
         .filter(|value| !matches!(value, Json::Null));
     camel.or(snake)
 }

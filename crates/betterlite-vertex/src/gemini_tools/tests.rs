@@ -373,7 +373,7 @@ fn tool_choice_rejects_unsupported_values(#[case] choice: &str) {
 fn tool_choice_rejects_a_function_that_is_not_an_object() {
     assert!(matches!(
         map_tool_choice(&parse::<Json>(r#"{"function": "f"}"#)),
-        Err(GeminiToolsError::ToolChoiceField { field: "function" })
+        Err(GeminiToolsError::ToolChoice("function"))
     ));
 }
 
@@ -381,7 +381,7 @@ fn tool_choice_rejects_a_function_that_is_not_an_object() {
 fn tool_choice_rejects_a_function_name_that_is_not_a_string() {
     assert!(matches!(
         map_tool_choice(&parse::<Json>(r#"{"function": {"name": 5}}"#)),
-        Err(GeminiToolsError::ToolChoiceField { field: "name" })
+        Err(GeminiToolsError::ToolChoice("name"))
     ));
 }
 
@@ -585,15 +585,15 @@ fn declaration_error(source: &str) -> GeminiToolsError {
 fn a_missing_function_name_is_rejected() {
     assert!(matches!(
         declaration_error(r#"[{"type": "function", "function": {"description": "d"}}]"#),
-        GeminiToolsError::FunctionField { field: "name" }
+        GeminiToolsError::Declaration("name")
     ));
     assert!(matches!(
         declaration_error(r#"[{"type": "function", "function": {"name": null}}]"#),
-        GeminiToolsError::FunctionField { field: "name" }
+        GeminiToolsError::Declaration("name")
     ));
     assert!(matches!(
         declaration_error(r#"[{"type": "function", "function": {"name": 5}}]"#),
-        GeminiToolsError::FunctionField { field: "name" }
+        GeminiToolsError::Declaration("name")
     ));
 }
 
@@ -601,9 +601,7 @@ fn a_missing_function_name_is_rejected() {
 fn a_description_that_is_not_a_string_is_rejected() {
     assert!(matches!(
         declaration_error(r#"[{"type": "function", "function": {"name": "f", "description": 5}}]"#),
-        GeminiToolsError::FunctionField {
-            field: "description",
-        }
+        GeminiToolsError::Declaration("description")
     ));
 }
 
@@ -613,17 +611,13 @@ fn parameters_that_are_not_a_schema_are_rejected() {
         declaration_error(
             r#"[{"type": "function", "function": {"name": "f", "parameters": [1]}}]"#
         ),
-        GeminiToolsError::FunctionField {
-            field: "parameters",
-        }
+        GeminiToolsError::Declaration("parameters")
     ));
     assert!(matches!(
         declaration_error(
             r#"[{"type": "function", "function": {"name": "f", "parameters": "abc"}}]"#
         ),
-        GeminiToolsError::FunctionField {
-            field: "parameters",
-        }
+        GeminiToolsError::Declaration("parameters")
     ));
 }
 
@@ -636,10 +630,7 @@ fn a_function_that_is_not_an_object_is_rejected() {
         &Settings::default(),
     )
     .unwrap_err();
-    assert!(matches!(
-        error,
-        GeminiToolsError::FunctionField { field: "function" }
-    ));
+    assert!(matches!(error, GeminiToolsError::Declaration("function")));
 }
 
 #[rstest]

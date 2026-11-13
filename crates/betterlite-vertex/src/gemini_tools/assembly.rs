@@ -29,13 +29,13 @@ pub fn map_tools(
         cleanup::remove_unsupported_fields(&mut cleaned);
         collected.add(&cleaned, settings)?;
     }
-    let warnings = collected
-        .resolve_search_conflict(include_server_side)
-        .saturating_add(collected.invalid);
+    let conflicts = collected.resolve_search_conflict(include_server_side);
+    let warnings = conflicts.saturating_add(collected.invalid);
     let mut config = tool_config;
     if let Some(retrieval) = collected.retrieval.take() {
-        let merged = config.get_or_insert_with(ToolConfig::default);
-        merged.retrieval_config = Some(retrieval);
+        config
+            .get_or_insert_with(ToolConfig::default)
+            .retrieval_config = Some(retrieval);
     }
     Ok(MappedTools {
         tools: collected.assemble(),
@@ -77,49 +77,41 @@ struct Collected {
 }
 impl Collected {
     fn add(&mut self, tool: &Object, settings: &Settings) -> Result<(), GeminiToolsError> {
-        let payload = function_payload(tool, settings)?;
         let transformed = specials::transform_type(tool);
         if let Some(name) = single_key(&transformed)
             && let Some((wire_name, slot)) = special_slot(name)
         {
-            match special_value(&transformed, wire_name)? {
-                Some(options) => self.record(slot, options),
-                None => self.record_absent(slot),
-            }
+            self.record(slot, special_value(&transformed, wire_name)?);
             return Ok(());
         }
-        match payload {
-            Some(function) => self.declarations.push(declaration(&function)?),
+        match declaration(tool, settings)? {
+            Some(found) => self.declarations.push(found),
             None => self.invalid = self.invalid.saturating_add(1),
         }
         Ok(())
     }
-    fn record(&mut self, slot: Slot, options: Object) {
-        if slot == Slot::GoogleMaps {
-            let (cleaned, retrieval) = specials::extract_maps(&options);
-            self.retrieval = retrieval;
-            self.specials.insert(slot, cleaned);
-        } else if slot == Slot::ComputerUse {
-            let transformed = specials::transform_computer_use(&options);
-            self.specials.insert(slot, transformed);
-        } else {
-            self.specials.insert(slot, options);
-        }
-    }
-    fn record_absent(&mut self, slot: Slot) {
-        match slot {
-            // LiteLLM gives a computerUse tool with no config Gemini's defaults
-            Slot::ComputerUse => {
-                self.specials.insert(slot, Object::new());
+    fn record(&mut self, slot: Slot, value: Option<Object>) {
+        match (slot, value) {
+            (Slot::GoogleMaps, Some(options)) => {
+                let (cleaned, retrieval) = specials::extract_maps(&options);
+                self.retrieval = retrieval;
+                self.specials.insert(slot, cleaned);
             }
             // LiteLLM leaves an earlier googleMaps tool alone when a later one is null
-            Slot::GoogleMaps => {}
+            (Slot::GoogleMaps, None) => {}
+            (Slot::ComputerUse, Some(options)) => {
+                let transformed = specials::transform_computer_use(&options);
+                self.specials.insert(slot, transformed);
+            }
+            // LiteLLM gives a computerUse tool with no config Gemini's defaults
+            (Slot::ComputerUse, None) => {
+                self.specials.insert(slot, Object::new());
+            }
+            (_, Some(options)) => {
+                self.specials.insert(slot, options);
+            }
             // every other special assigns the null over the earlier value, so no tool is emitted
-            Slot::GoogleSearch
-            | Slot::GoogleSearchRetrieval
-            | Slot::EnterpriseWebSearch
-            | Slot::CodeExecution
-            | Slot::UrlContext => {
+            (_, None) => {
                 self.specials.remove(&slot);
             }
         }
@@ -180,37 +172,13 @@ const fn tool_for(slot: Slot, options: Object) -> Tool {
 fn single_key(tool: &Object) -> Option<&str> {
     let mut keys = tool.keys();
     let name = keys.next()?;
-    if keys.next().is_some() {
-        return None;
-    }
-    Some(name.as_str())
+    keys.next().is_none().then_some(name.as_str())
 }
 fn special_slot(name: &str) -> Option<(&'static str, Slot)> {
     SPECIALS
         .iter()
         .find(|(camel, _)| name == *camel || name == underscore_name(camel))
         .map(|(camel, slot)| (*camel, *slot))
-}
-fn function_payload(
-    tool: &Object,
-    settings: &Settings,
-) -> Result<Option<Object>, GeminiToolsError> {
-    if let Some(function) = tool.get("function") {
-        let mut payload = function
-            .as_object()
-            .cloned()
-            .ok_or(GeminiToolsError::FunctionField { field: "function" })?;
-        // LiteLLM shapes parameters only on the tools list; the functions list reaches Gemini as the caller wrote it
-        let shaped = match payload.get("parameters") {
-            Some(Json::Object(parameters)) => Some(shape_tool_parameters(parameters, settings)?),
-            Some(_) | None => None,
-        };
-        if let Some(parameters) = shaped {
-            payload.insert("parameters".to_owned(), Json::Object(parameters));
-        }
-        return Ok(Some(payload));
-    }
-    Ok(tool.contains_key("name").then(|| tool.clone()))
 }
 fn special_value(tool: &Object, name: &'static str) -> Result<Option<Object>, GeminiToolsError> {
     tool_value(tool, name).map_or(Ok(None), |value| {
@@ -221,18 +189,33 @@ fn special_value(tool: &Object, name: &'static str) -> Result<Option<Object>, Ge
             .ok_or(GeminiToolsError::ToolValue { tool: name })
     })
 }
-fn declaration(function: &Object) -> Result<FunctionDeclaration, GeminiToolsError> {
+fn declaration(
+    tool: &Object,
+    settings: &Settings,
+) -> Result<Option<FunctionDeclaration>, GeminiToolsError> {
+    let function = match tool.get("function") {
+        Some(function) => {
+            let mut payload = function
+                .as_object()
+                .cloned()
+                .ok_or(GeminiToolsError::Declaration("function"))?;
+            // LiteLLM shapes parameters only on the tools list; the functions list reaches Gemini as the caller wrote it
+            if let Some(Json::Object(parameters)) = payload.get("parameters") {
+                let shaped = shape_tool_parameters(parameters, settings)?;
+                payload.insert("parameters".to_owned(), Json::Object(shaped));
+            }
+            payload
+        }
+        None if tool.contains_key("name") => tool.clone(),
+        None => return Ok(None),
+    };
     let Some(Json::Text(name)) = function.get("name") else {
-        return Err(GeminiToolsError::FunctionField { field: "name" });
+        return Err(GeminiToolsError::Declaration("name"));
     };
     let description = match function.get("description") {
         Some(Json::Text(text)) => Some(text.clone()),
         Some(Json::Null) | None => None,
-        Some(_) => {
-            return Err(GeminiToolsError::FunctionField {
-                field: "description",
-            });
-        }
+        Some(_) => return Err(GeminiToolsError::Declaration("description")),
     };
     let parameters = match function.get("parameters") {
         Some(Json::Object(parameters)) => Some(Json::Object(parameters.clone())),
@@ -241,17 +224,13 @@ fn declaration(function: &Object) -> Result<FunctionDeclaration, GeminiToolsErro
             Json::Text("object".to_owned()),
         )]))),
         Some(Json::Null) | None => None,
-        Some(_) => {
-            return Err(GeminiToolsError::FunctionField {
-                field: "parameters",
-            });
-        }
+        Some(_) => return Err(GeminiToolsError::Declaration("parameters")),
     };
-    Ok(FunctionDeclaration {
+    Ok(Some(FunctionDeclaration {
         name: name.clone(),
         description,
         parameters,
-    })
+    }))
 }
 fn shape_tool_parameters(
     parameters: &Object,
@@ -263,5 +242,5 @@ fn shape_tool_parameters(
         false,
         settings,
     )
-    .map_err(|source| GeminiToolsError::Shape { source })
+    .map_err(GeminiToolsError::Shape)
 }

@@ -26,13 +26,9 @@ pub fn map_tool_choice(value: &Json) -> Result<ToolConfig, GeminiToolsError> {
                 Some(Json::Object(function)) => match function.get("name") {
                     None | Some(Json::Null) => String::new(),
                     Some(Json::Text(name)) => name.clone(),
-                    Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-                        return Err(GeminiToolsError::ToolChoiceField { field: "name" });
-                    }
+                    Some(_) => return Err(GeminiToolsError::ToolChoice("name")),
                 },
-                Some(Json::Text(_) | Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
-                    return Err(GeminiToolsError::ToolChoiceField { field: "function" });
-                }
+                Some(_) => return Err(GeminiToolsError::ToolChoice("function")),
             };
             Ok(ToolConfig::from(FunctionCallingConfig {
                 mode: CallingMode::Any,
