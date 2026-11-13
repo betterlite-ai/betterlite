@@ -20,8 +20,9 @@ pub enum PreCallFailure {
 }
 
 #[derive(Debug, Clone, Error, PartialEq, Eq)]
-#[error("{failure}")]
+#[error("the pre-call step failed")]
 pub struct PreCallError {
+    #[source]
     pub failure: PreCallFailure,
     pub data: Map<String, Value>,
 }

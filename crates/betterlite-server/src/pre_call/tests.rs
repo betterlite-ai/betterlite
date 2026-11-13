@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use async_trait::async_trait;
 use rstest::rstest;
 use serde_json::{Map, Value, json};
+use strum::VariantArray as _;
 
 use crate::pre_call::failure::PreCallFailure;
 use crate::pre_call::key::PreCallKey;
@@ -88,17 +89,17 @@ fn object(value: &Value) -> Map<String, Value> {
     RouteType::CreateRealtimeTranscription
 )]
 fn route_type_round_trips(#[case] text: &str, #[case] expected: RouteType) {
-    assert_eq!(RouteType::parse(text).unwrap(), expected);
+    assert_eq!(text.parse::<RouteType>().unwrap(), expected);
     assert_eq!(expected.as_str(), text);
 }
 
 #[test]
 fn every_route_type_text_parses_back_to_itself() {
-    assert_eq!(RouteType::ALL.len(), 97);
+    assert_eq!(RouteType::VARIANTS.len(), 97);
     assert!(
-        RouteType::ALL
+        RouteType::VARIANTS
             .iter()
-            .all(|route| { RouteType::parse(route.as_str()).as_ref() == Ok(route) })
+            .all(|route| { route.as_str().parse::<RouteType>().as_ref() == Ok(route) })
     );
 }
 
@@ -108,8 +109,10 @@ fn every_route_type_text_parses_back_to_itself() {
 #[case::missing_underscore("arealtime")]
 #[case::case_differs("Acompletion")]
 fn route_type_rejects_unknown_text(#[case] text: &str) {
-    let error = RouteType::parse(text).unwrap_err();
-    assert_eq!(error.0, text);
+    assert_eq!(
+        text.parse::<RouteType>(),
+        Err(strum::ParseError::VariantNotFound)
+    );
 }
 
 #[rstest]

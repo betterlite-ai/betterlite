@@ -187,9 +187,9 @@ pub fn apply_overrides(data: &mut Map<String, Value>, overrides: &CliOverrides) 
         ("request_timeout", overrides.request_timeout),
     ];
     for (name, value) in numbers {
-        let number = value.filter(|seconds| seconds.classify() != FpCategory::Zero);
-        if let Some(float) = number.and_then(Number::from_f64) {
-            data.insert(name.to_owned(), Value::Number(float));
+        let setting = value.filter(|setting| setting.classify() != FpCategory::Zero);
+        if let Some(number) = setting.and_then(Number::from_f64) {
+            data.insert(name.to_owned(), Value::Number(number));
         }
     }
     if let Some(tokens) = overrides.max_tokens.filter(|tokens| *tokens != 0) {
@@ -228,9 +228,12 @@ pub fn write_queue_time(data: &mut Map<String, Value>, bucket: &str, start: f64)
         .get("proxy_server_request")
         .and_then(|request| request.get("arrival_time"))
         .and_then(Value::as_f64);
-    // float_arithmetic is denied; a fused multiply-add computes start - arrival
-    let queue_time = arrival.and_then(|seconds| Number::from_f64(seconds.mul_add(-1.0_f64, start)));
-    let Some(seconds) = queue_time else {
+    #[expect(
+        clippy::float_arithmetic,
+        reason = "LiteLLM's queue time is the f64 timestamp difference start - arrival_time"
+    )]
+    let difference = arrival.and_then(|arrival| Number::from_f64(start - arrival));
+    let Some(queue_time) = difference else {
         return;
     };
     let entry = data
@@ -240,6 +243,6 @@ pub fn write_queue_time(data: &mut Map<String, Value>, bucket: &str, start: f64)
         *entry = Value::Object(Map::new());
     }
     if let Value::Object(fields) = entry {
-        fields.insert("queue_time_seconds".to_owned(), Value::Number(seconds));
+        fields.insert("queue_time_seconds".to_owned(), Value::Number(queue_time));
     }
 }

@@ -52,7 +52,10 @@ impl Helper for Op {
 }
 
 fn stream_usage(input: &Input) -> HelperResult {
-    let route = RouteType::parse(&input.route_type).map_err(|error| value_error(error.0))?;
+    let route = input
+        .route_type
+        .parse::<RouteType>()
+        .map_err(|error| value_error(format!("unknown route type {error}")))?;
     let updates = stream_usage_updates(&input.data, input.always_include, route, || input.supports);
     Ok(Value::Object(updates))
 }
