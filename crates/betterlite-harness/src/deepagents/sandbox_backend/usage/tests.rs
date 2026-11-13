@@ -49,12 +49,12 @@ fn message_with(usage: MessageUsage, reported_cost: Option<Decimal>) -> Message 
     Message {
         kind: MessageKind::Ai,
         content: Content::Empty,
-        reasoning_content: None,
+        reasoning_content: String::new(),
         tool_calls: Vec::new(),
         tool_call_id: String::new(),
         name: None,
         is_error: false,
-        usage: Some(usage),
+        usage,
         reported_cost,
     }
 }

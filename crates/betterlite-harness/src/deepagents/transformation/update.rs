@@ -34,7 +34,7 @@ pub struct Interrupt {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct InterruptValue {
-    pub action_requests: Option<Vec<ActionRequest>>,
+    pub action_requests: Vec<ActionRequest>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -68,14 +68,6 @@ pub fn decision(allowed: bool, reason: &str) -> HitlDecision {
     HitlDecision::Reject {
         message: reason.to_owned(),
     }
-}
-
-#[must_use]
-pub fn approval_requests(value: &InterruptValue) -> Vec<ActionRequest> {
-    if let Some(requests) = &value.action_requests {
-        return requests.clone();
-    }
-    Vec::new()
 }
 
 #[must_use]

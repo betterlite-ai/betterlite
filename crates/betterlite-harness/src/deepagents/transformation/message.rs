@@ -56,12 +56,12 @@ pub struct Message {
     pub kind: MessageKind,
     pub content: Content,
     // LangChain keeps reasoning deltas in additional_kwargs.reasoning_content
-    pub reasoning_content: Option<String>,
+    pub reasoning_content: String,
     pub tool_calls: Vec<ToolCall>,
     pub tool_call_id: String,
     pub name: Option<String>,
     pub is_error: bool,
-    pub usage: Option<MessageUsage>,
+    pub usage: MessageUsage,
     // LangChain's response_metadata.response_cost when litellm already priced the call
     pub reported_cost: Option<Decimal>,
 }
@@ -83,10 +83,8 @@ pub fn content_text(content: &Content) -> String {
 
 #[must_use]
 pub fn reasoning_text(message: &Message) -> String {
-    if let Some(reasoning) = &message.reasoning_content
-        && !reasoning.is_empty()
-    {
-        return reasoning.clone();
+    if !message.reasoning_content.is_empty() {
+        return message.reasoning_content.clone();
     }
     let Content::Blocks(blocks) = &message.content else {
         return String::new();

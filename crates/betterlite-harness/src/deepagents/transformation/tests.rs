@@ -15,15 +15,15 @@ use crate::types::{Capability, Harness, JsonObject, PermissionMode};
 use super::config::{DeepAgentsHarnessConfig, recursion_limit};
 use super::gateway::{chat_model_kwargs, gateway_headers};
 use super::message::{
-    Content, ContentBlock, Message, MessageKind, ToolCall, content_text, final_ai_text,
-    reasoning_text, stream_events, tool_call_event,
+    Content, ContentBlock, Message, MessageKind, MessageUsage, ToolCall, content_text,
+    final_ai_text, reasoning_text, stream_events, tool_call_event,
 };
 use super::tools::{
     AllowedDecision, blocked_tools, interrupt_config, native_tool_name, normalized_tool_name,
 };
 use super::update::{
     ActionRequest, HitlDecision, Interrupt, InterruptValue, TurnState, Update, UpdateEntry,
-    approval_requests, decision, interrupts_in, structured_json, update_events,
+    decision, interrupts_in, structured_json, update_events,
 };
 use super::{
     BASE_RECURSION_LIMIT, DEEPAGENTS_STEPS_PER_TURN, DEFAULT_RECURSION_LIMIT, EVENT_NODES,
@@ -50,12 +50,12 @@ fn plain_message(kind: MessageKind, content: Content) -> Message {
     Message {
         kind,
         content,
-        reasoning_content: None,
+        reasoning_content: String::new(),
         tool_calls: Vec::new(),
         tool_call_id: String::new(),
         name: None,
         is_error: false,
-        usage: None,
+        usage: MessageUsage::default(),
         reported_cost: None,
     }
 }
@@ -86,7 +86,7 @@ fn interrupt(id: &str) -> Interrupt {
     Interrupt {
         id: id.to_owned(),
         value: InterruptValue {
-            action_requests: None,
+            action_requests: Vec::new(),
         },
     }
 }
@@ -230,7 +230,7 @@ fn reasoning_text_prefers_reasoning_content_over_blocks() {
         MessageKind::Ai,
         Content::Blocks(vec![ContentBlock::Reasoning("block".to_owned())]),
     );
-    message.reasoning_content = Some("delta".to_owned());
+    message.reasoning_content = "delta".to_owned();
     assert_eq!(reasoning_text(&message), "delta");
 }
 
@@ -244,7 +244,7 @@ fn reasoning_text_falls_back_to_reasoning_blocks() {
             ContentBlock::Reasoning("second".to_owned()),
         ]),
     );
-    message.reasoning_content = Some(String::new());
+    message.reasoning_content = String::new();
     assert_eq!(reasoning_text(&message), "firstsecond");
 }
 
@@ -260,7 +260,7 @@ fn stream_events_yields_reasoning_before_text() {
         MessageKind::AiMessageChunk,
         Content::Text("hello".to_owned()),
     );
-    chunk.reasoning_content = Some("think".to_owned());
+    chunk.reasoning_content = "think".to_owned();
     let events = stream_events(&chunk);
     assert_eq!(events.len(), 2);
     let Event::Reasoning { delta } = &events[0] else {
@@ -460,25 +460,24 @@ fn turn_state_accumulates_interrupts_across_updates() {
 }
 
 #[test]
-fn approval_requests_reads_the_action_requests() {
+fn interrupt_values_carry_their_action_requests() {
     let value = InterruptValue {
-        action_requests: Some(vec![ActionRequest {
+        action_requests: vec![ActionRequest {
             name: "write_file".to_owned(),
             args: json_object(r#"{"path":"a"}"#),
-        }]),
+        }],
     };
-    let requests = approval_requests(&value);
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0].name, "write_file");
-    assert_eq!(requests[0].args, json_object(r#"{"path":"a"}"#));
+    assert_eq!(value.action_requests.len(), 1);
+    assert_eq!(value.action_requests[0].name, "write_file");
+    assert_eq!(
+        value.action_requests[0].args,
+        json_object(r#"{"path":"a"}"#)
+    );
 }
 
 #[test]
-fn approval_requests_is_empty_without_action_requests() {
-    let value = InterruptValue {
-        action_requests: None,
-    };
-    assert!(approval_requests(&value).is_empty());
+fn an_interrupt_value_without_action_requests_is_empty() {
+    assert!(InterruptValue::default().action_requests.is_empty());
 }
 
 #[test]

@@ -81,7 +81,7 @@ pub(crate) fn record_llm_usage(
         let Some(message) = generation.message.as_ref() else {
             continue;
         };
-        let tokens = message.usage.unwrap_or_default();
+        let tokens = message.usage;
         ledger.usage.input_tokens = ledger
             .usage
             .input_tokens
