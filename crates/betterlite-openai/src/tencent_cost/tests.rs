@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::token_cost::GenericCostResult;
 use betterlite_models::token_cost::error::TokenCostError;
@@ -12,7 +14,10 @@ fn usage() -> CostUsage {
         prompt_tokens: 11,
         completion_tokens: 4,
         total_tokens: 15,
-        ..CostUsage::default()
+        prompt_details: None,
+        completion_details: None,
+        cache_read_tokens: None,
+        numeric_extras: BTreeMap::new(),
     }
 }
 

@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::token_cost::GenericCostResult;
@@ -27,10 +27,6 @@ fn params_value(names: &[&str]) -> Value {
             .map(|name| Value::String((*name).to_owned()))
             .collect(),
     )
-}
-
-fn secret(text: Option<&String>) -> Option<SecretString> {
-    text.map(|value| SecretString::from(value.as_str()))
 }
 
 fn info_value(base: String, key: Option<SecretString>) -> Value {
@@ -115,7 +111,10 @@ fn tencent_cost(model: &str, prompt_tokens: i64, completion_tokens: i64) -> Help
         prompt_tokens,
         completion_tokens,
         total_tokens,
-        ..CostUsage::default()
+        prompt_details: None,
+        completion_details: None,
+        cache_read_tokens: None,
+        numeric_extras: BTreeMap::new(),
     };
     let (prompt, completion) = cost_per_token(&MissingPricing, model, &usage).map_err(|error| {
         Box::new(HelperError {
@@ -160,12 +159,21 @@ pub(crate) fn execute(step: &Step) -> HelperResult {
             env_key,
             global_key,
         } => {
+            let api_key = api_key
+                .as_ref()
+                .map(|value| SecretString::from(value.as_str()));
+            let env_key = env_key
+                .as_ref()
+                .map(|value| SecretString::from(value.as_str()));
+            let global_key = global_key
+                .as_ref()
+                .map(|value| SecretString::from(value.as_str()));
             let (base, key) = minimax_chat::provider_info(
                 api_base.as_deref(),
                 env_base.as_deref(),
-                secret(api_key.as_ref()).as_ref(),
-                secret(env_key.as_ref()).as_ref(),
-                secret(global_key.as_ref()).as_ref(),
+                api_key.as_ref(),
+                env_key.as_ref(),
+                global_key.as_ref(),
             );
             Ok(info_value(base, key))
         }

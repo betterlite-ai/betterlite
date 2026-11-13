@@ -13,13 +13,14 @@ JsonObject: TypeAlias = dict[str, JsonValue]
 
 
 class ChatConfig(Protocol):
-    def get_supported_openai_params(self, model: str) -> list[str]: ...
+    def get_supported_openai_params(self, model: str) -> list[JsonValue]: ...
 
     def map_openai_params(
         self,
         non_default_params: JsonObject,
         optional_params: JsonObject,
         model: str,
+        *,
         drop_params: bool,
     ) -> JsonObject: ...
 
@@ -30,7 +31,6 @@ class ChatConfig(Protocol):
         model: str,
         optional_params: JsonObject,
         litellm_params: JsonObject,
-        stream: bool | None = None,
     ) -> str: ...
 
 
@@ -121,7 +121,7 @@ class Input(TypedDict):
     steps: list[Step]
 
 
-def register(provider: str, model: str, reasoning: bool, adaptive: bool) -> None:
+def register(provider: str, model: str, *, reasoning: bool, adaptive: bool) -> None:
     litellm.register_model(
         {
             model: {
@@ -136,56 +136,74 @@ def register(provider: str, model: str, reasoning: bool, adaptive: bool) -> None
     )
 
 
-def mapped_params(config: ChatConfig, step: TencentMap, optional: JsonObject) -> JsonObject:
+def optional_params(step: Ai21Map | TencentMap) -> JsonObject:
+    given = step.get("optional_params")
+    if given is None:
+        return {}
+    return given
+
+
+def tencent_map(step: TencentMap) -> JsonObject:
     register(
         "tencent",
         step["model"],
-        step["supports_reasoning"],
-        step.get("supports_adaptive_thinking") is True,
+        reasoning=step["supports_reasoning"],
+        adaptive=step.get("supports_adaptive_thinking") is True,
     )
-    return config.map_openai_params(step["params"], optional, step["model"], False)
+    return TENCENT.map_openai_params(
+        step["params"], optional_params(step), step["model"], drop_params=False
+    )
 
 
 def answer(step: Step) -> JsonValue:
+    result: JsonValue
     if step["kind"] == "ai21_params":
-        return AI21.get_supported_openai_params("")
-    if step["kind"] == "ai21_map":
-        optional = step.get("optional_params")
-        return AI21.map_openai_params(
-            step["params"], {} if optional is None else optional, "", False
+        result = AI21.get_supported_openai_params("")
+    elif step["kind"] == "ai21_map":
+        result = AI21.map_openai_params(
+            step["params"], optional_params(step), "", drop_params=False
         )
-    if step["kind"] == "minimax_params":
-        register("minimax", step["model"], step["supports_reasoning"], False)
-        return MINIMAX.get_supported_openai_params(step["model"])
-    if step["kind"] == "minimax_info":
+    elif step["kind"] == "minimax_params":
+        register(
+            "minimax",
+            step["model"],
+            reasoning=step["supports_reasoning"],
+            adaptive=False,
+        )
+        result = MINIMAX.get_supported_openai_params(step["model"])
+    elif step["kind"] == "minimax_info":
         litellm.api_key = step.get("global_key")
-        return {
+        result = {
             "base": MinimaxChatConfig.get_api_base(step.get("api_base")),
             "key": MinimaxChatConfig.get_api_key(step.get("api_key")),
         }
-    if step["kind"] == "minimax_url":
-        return MINIMAX.get_complete_url(step.get("api_base"), None, "", {}, {})
-    if step["kind"] == "modelscope_url":
-        return MODELSCOPE.get_complete_url(step.get("api_base"), None, "", {}, {})
-    if step["kind"] == "tencent_params":
-        register("tencent", step["model"], step["supports_reasoning"], False)
-        return TENCENT.get_supported_openai_params(step["model"])
-    if step["kind"] == "tencent_url":
-        return TENCENT.get_complete_url(step.get("api_base"), None, "", {}, {})
-    if step["kind"] == "tencent_map":
-        optional = step.get("optional_params")
-        return mapped_params(TENCENT, step, {} if optional is None else optional)
-    usage = Usage(
-        prompt_tokens=step["prompt_tokens"],
-        completion_tokens=step["completion_tokens"],
-        total_tokens=step["prompt_tokens"] + step["completion_tokens"],
-    )
-    prompt, completion = cost_calculator.cost_per_token(step["model"], usage)
-    return {"ok": True, "prompt": f"{prompt:g}", "completion": f"{completion:g}"}
+    elif step["kind"] == "minimax_url":
+        result = MINIMAX.get_complete_url(step.get("api_base"), None, "", {}, {})
+    elif step["kind"] == "modelscope_url":
+        result = MODELSCOPE.get_complete_url(step.get("api_base"), None, "", {}, {})
+    elif step["kind"] == "tencent_params":
+        register(
+            "tencent",
+            step["model"],
+            reasoning=step["supports_reasoning"],
+            adaptive=False,
+        )
+        result = TENCENT.get_supported_openai_params(step["model"])
+    elif step["kind"] == "tencent_url":
+        result = TENCENT.get_complete_url(step.get("api_base"), None, "", {}, {})
+    elif step["kind"] == "tencent_map":
+        result = tencent_map(step)
+    else:
+        usage = Usage(
+            prompt_tokens=step["prompt_tokens"],
+            completion_tokens=step["completion_tokens"],
+            total_tokens=step["prompt_tokens"] + step["completion_tokens"],
+        )
+        prompt, completion = cost_calculator.cost_per_token(step["model"], usage)
+        result = {"ok": True, "prompt": f"{prompt:g}", "completion": f"{completion:g}"}
+    return result
 
 
 def run(input_value: Input) -> JsonValue:
-    results: list[JsonValue] = []
-    for step in input_value["steps"]:
-        results.append(answer(step))
-    return results
+    steps = input_value["steps"]
+    return [answer(step) for step in steps]
