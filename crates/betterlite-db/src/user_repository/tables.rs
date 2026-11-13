@@ -13,9 +13,6 @@ use crate::resource_rows::organization::OrganizationTable;
 use crate::resource_rows::project::ProjectTable;
 use crate::resource_rows::{convert, parse_data};
 
-// parse_data rejects a stored row deeper than 64, so convert rechecks at the same bound
-const STORED_ROW_DEPTH: usize = 64;
-
 const USER_BY_ID_SQL: &str =
     "SELECT row_to_json(entry)::text FROM \"LiteLLM_UserTable\" AS entry WHERE \"user_id\" = $1";
 const USER_DELETE_SQL: &str = "DELETE FROM \"LiteLLM_UserTable\" AS entry WHERE \"user_id\" = $1 RETURNING row_to_json(entry)::text";
@@ -182,7 +179,8 @@ where
         source: DriverError { driver: source },
     })?;
     let record = parse_data(stored.as_bytes()).map_err(|source| RowDecodeError::Row { source })?;
-    convert(&record, STORED_ROW_DEPTH)
+    // parse_data applied the stored-row depth bound, so convert re-applies only its byte cap
+    convert(&record, usize::MAX)
         .map(Some)
         .map_err(|source| RowDecodeError::Row { source })
 }
