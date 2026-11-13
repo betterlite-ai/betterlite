@@ -28,7 +28,7 @@ where
     }
     let params = request.optional_params;
     let temperature = params.get("temperature");
-    if temperature.is_none() || matches!(temperature, Some(Json::Null)) {
+    if matches!(temperature, None | Some(Json::Null)) {
         return Ok(());
     }
     if matches!(temperature, Some(Json::Number(number)) if number.as_f64() == Some(1.0_f64)) {

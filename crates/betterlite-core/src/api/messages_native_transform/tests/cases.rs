@@ -638,6 +638,7 @@ fn history_retained() {
         Some(&json(r#"[{"role":"user","content":"hello"}]"#))
     );
     assert_eq!(field(&sent, "system"), None);
+    assert_eq!(field(&sent, "thinking"), None);
 }
 
 #[test]
@@ -656,6 +657,22 @@ fn billing_history() {
         field(&stripped, "system"),
         Some(&json(r#"[{"type":"text","text":"keep"}]"#))
     );
+    let empty_text = body_of(transform(
+        world,
+        "claude-sonnet-4-5",
+        USER,
+        r#"{"max_tokens":2048,"system":""}"#,
+        true,
+    ));
+    assert_eq!(field(&empty_text, "system"), None);
+    let empty_map = body_of(transform(
+        world,
+        "claude-sonnet-4-5",
+        USER,
+        r#"{"max_tokens":2048,"system":{}}"#,
+        true,
+    ));
+    assert_eq!(field(&empty_map, "system"), None);
 }
 
 #[test]
