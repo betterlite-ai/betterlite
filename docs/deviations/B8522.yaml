@@ -18,6 +18,3 @@ deviations:
   - what: A template the format engine cannot parse or fully evaluate is refused with betterlite's own message, where LiteLLM lets Python's ValueError or AttributeError from str.format escape.
     why: Python's Formatter messages name Python internals, and betterlite implements the format subset an advisory message needs (fields, conversions, fill, alignment, width, precision). Attribute access and negative indexes are refused instead of evaluated.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L333-L359
-  - what: A rendered advisory message is capped at 1 MiB and a format width at one million characters.
-    why: A configured template is an input like any other, and an unbounded width would allocate the whole width on every request; LiteLLM renders whatever the template asks for.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L361-L365
