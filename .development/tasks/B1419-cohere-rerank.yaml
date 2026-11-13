@@ -109,5 +109,5 @@ pitfalls:
   - Passing an already versioned base ending in /v1 appends another /v1/rerank in the V1 implementation.
   - Empty instruction strings are scanned because the guardrail checks type rather than truthiness.
   - A partial guardrail result leaves the unmatched original request field in place.
-budget: {max_changed_lines: 800, max_new_expects: 0}
+budget: {max_changed_lines: 800, max_new_expects: 1}
 review_level: standard
