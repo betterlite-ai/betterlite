@@ -3399,10 +3399,14 @@ name = "betterlite-websearch"
 version = "0.1.0"
 dependencies = [
  "betterlite-anthropic",
+ "betterlite-config",
+ "betterlite-core",
  "betterlite-error",
+ "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "indexmap 2.14.2",
+ "rstest",
  "serde",
  "serde_json",
  "thiserror",
