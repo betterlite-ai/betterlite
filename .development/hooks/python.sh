@@ -56,7 +56,7 @@ case ${mode} in
     exit "${status}"
     ;;
   mypy)
-    [[ ${#strict[@]} -eq 0 ]] || exec "${oracle[@]}" mypy --config-file tools/oracle/litellm/pyproject.toml "${strict[@]}"
+    [[ ${#strict[@]} -eq 0 ]] || exec "${oracle[@]}" mypy --config-file tools/oracle/litellm/mypy.toml "${strict[@]}"
     ;;
   pyright)
     # 1031 task checks run basedpyright over the whole helpers folder, so a helper change has to pass that same run, importers included
