@@ -544,9 +544,21 @@ fn blank_content_emits_no_blocks(#[case] content: &str) {
 #[case::empty_string_usage(r#""""#)]
 #[case::empty_list_usage("[]")]
 fn blank_usage_takes_the_default(#[case] usage: &str) {
-    let rendered = frames(&format!(r#"{{"usage": {usage}}}"#));
-    assert!(rendered[0].ends_with("\"usage\": {\"output_tokens\": 0}}}\n\n"));
-    assert!(rendered[1].contains("\"usage\": {}}"));
+    assert_eq!(
+        frames(&format!(r#"{{"usage": {usage}}}"#)),
+        vec![
+            frame(
+                "message_start",
+                r#"{"type": "message_start", "message": {"usage": {"output_tokens": 0}, "content": [], "stop_reason": null, "stop_sequence": null}}"#
+            ),
+            frame(
+                "message_delta",
+                r#"{"type": "message_delta", "delta": {"stop_reason": null, "stop_sequence": null}, "usage": {}}"#
+            ),
+            frame("message_stop", r#"{"type": "message_stop"}"#),
+        ],
+        "{usage}"
+    );
 }
 
 #[test]
