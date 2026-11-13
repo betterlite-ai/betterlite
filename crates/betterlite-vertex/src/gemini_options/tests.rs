@@ -627,3 +627,42 @@ fn an_unknown_reasoning_effort_keeps_its_status() {
     assert_eq!(error.status(), Some(400));
     assert!(error.to_string().contains("extreme"), "{error}");
 }
+
+#[test]
+fn a_null_value_is_absent() {
+    let (result, warnings) = mapped("gemini-2.5-pro", r#"{"temperature": null, "seed": 3}"#);
+
+    assert_eq!(result, json(r#"{"seed": 3}"#));
+    assert_eq!(warnings, 0);
+}
+
+#[test]
+fn a_response_format_becomes_a_mime_type() {
+    let (result, _) = mapped(
+        "gemini-2.5-pro",
+        r#"{"response_format": {"type": "json_object"}}"#,
+    );
+
+    assert_eq!(
+        result,
+        json(r#"{"response_mime_type": "application/json"}"#)
+    );
+}
+
+#[test]
+fn a_maps_tool_adds_its_retrieval_config() {
+    let (result, _) = mapped(
+        "gemini-2.5-pro",
+        r#"{"tools": [{"googleMaps": {"latitude": 1.5, "longitude": 2.5, "languageCode": "en"}}]}"#,
+    );
+
+    assert_eq!(
+        result,
+        json(
+            r#"{
+                "tools": [{"googleMaps": {}}],
+                "toolConfig": {"retrievalConfig": {"latLng": {"latitude": 1.5, "longitude": 2.5}, "languageCode": "en"}}
+            }"#
+        )
+    );
+}
