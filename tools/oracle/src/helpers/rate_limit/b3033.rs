@@ -162,8 +162,8 @@ fn empty_answer() -> Value {
 
 fn lua_answer(
     reply: &[CounterValueInput],
-    keys: Vec<String>,
-    args: Vec<i64>,
+    keys: &[String],
+    args: &[i64],
     meta: &[AtomicCounterMeta],
 ) -> crate::helpers::HelperResult {
     let raw: Vec<CacheCounterValue> = reply.iter().map(CounterValueInput::counter_value).collect();
@@ -204,9 +204,9 @@ impl crate::helpers::Helper for Op {
         if keys.is_empty() {
             return Ok(empty_answer());
         }
-        match &input.reply {
-            Some(reply) => lua_answer(reply, keys, args, &meta),
-            None => in_memory_answer(input, &meta),
-        }
+        input.reply.as_ref().map_or_else(
+            || in_memory_answer(input, &meta),
+            |reply| lua_answer(reply, &keys, &args, &meta),
+        )
     }
 }
