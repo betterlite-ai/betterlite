@@ -5,13 +5,13 @@ use async_trait::async_trait;
 use axum::body::{Body, Bytes};
 use betterlite_logging::otlp_errors::CodecError;
 use betterlite_logging::otlp_normalize::{DecodedSpan, OTLP_MAX_BODY_BYTES, SpanCodec, SpanRow};
-use betterlite_logging::trace_types::TraceScope;
+use betterlite_logging::trace_types::{SpanType, TraceScope};
 use betterlite_tracing::storage::error::StorageError;
 use betterlite_tracing::storage::query::{
     ListTracesQuery, SpanDetailQuery, SpanErrorQuery, SpendByRequestIdsQuery, TraceSpansQuery,
 };
 use betterlite_tracing::storage::rows::{SpanDetailRow, SpanErrorRow, SpanQueryRow, TraceListRow};
-use betterlite_tracing::storage::trace_store::TraceStorage;
+use betterlite_tracing::storage::trace_store::{SpanErrorTarget, TraceStorage};
 use futures_util::stream;
 use thiserror::Error;
 
@@ -37,7 +37,7 @@ enum SinkMode {
 #[derive(Clone, Copy, Debug)]
 enum ReadMode {
     Ok,
-    InvalidCursor,
+    Rows,
     Storage,
 }
 
@@ -66,8 +66,7 @@ impl FakeStorage {
 
     fn read_rows<Row>(&self) -> Result<Vec<Row>, StubError> {
         match self.read {
-            ReadMode::Ok => Ok(Vec::new()),
-            ReadMode::InvalidCursor => Err(StubError),
+            ReadMode::Ok | ReadMode::Rows => Ok(Vec::new()),
             ReadMode::Storage => Err(StubError),
         }
     }
@@ -103,15 +102,53 @@ impl TraceStorage for FakeStorage {
     }
 
     async fn trace_spans(&self, _query: TraceSpansQuery) -> Result<Vec<SpanQueryRow>, StubError> {
-        self.read_rows()
+        match self.read {
+            ReadMode::Rows => Ok(vec![SpanQueryRow {
+                span_id: "span-1".to_owned(),
+                parent_span_id: None,
+                name: "root".to_owned(),
+                span_type: SpanType::Agent,
+                agent: "root".to_owned(),
+                start_ns: 0,
+                duration_ns: 1_000_000,
+                status: "STATUS_CODE_OK".to_owned(),
+                status_message: None,
+                error_truncated: false,
+                input_preview: String::new(),
+                model: None,
+                input_tokens: 0,
+                output_tokens: 0,
+                litellm_request_id: None,
+                team_id: "team-1".to_owned(),
+                api_key_hash: "hash-1".to_owned(),
+                service: "svc".to_owned(),
+            }]),
+            ReadMode::Ok | ReadMode::Storage => self.read_rows(),
+        }
     }
 
     async fn span_detail(&self, _query: SpanDetailQuery) -> Result<Vec<SpanDetailRow>, StubError> {
-        self.read_rows()
+        match self.read {
+            ReadMode::Rows => Ok(vec![SpanDetailRow {
+                span_id: "span-1".to_owned(),
+                input: "in".to_owned(),
+                output: "out".to_owned(),
+                attributes: indexmap::IndexMap::new(),
+            }]),
+            ReadMode::Ok | ReadMode::Storage => self.read_rows(),
+        }
     }
 
     async fn span_error(&self, _query: SpanErrorQuery) -> Result<Vec<SpanErrorRow>, StubError> {
-        self.read_rows()
+        match self.read {
+            ReadMode::Rows => Ok(vec![SpanErrorRow {
+                span_id: "span-1".to_owned(),
+                message: "boom".to_owned(),
+                total_chars: 4,
+                version: "0".repeat(64),
+            }]),
+            ReadMode::Ok | ReadMode::Storage => self.read_rows(),
+        }
     }
 
     async fn spend_by_request_ids(
@@ -211,6 +248,17 @@ async fn ingest_rejects_a_body_over_the_limit() {
 }
 
 #[tokio::test]
+async fn ingest_accepts_a_body_of_exactly_the_limit() {
+    let receiver = receiver(
+        FakeStorage::new(SinkMode::Ok, ReadMode::Ok),
+        CodecAnswer::Ok(Vec::new()),
+        Duration::from_secs(30),
+    );
+    let body = vec![0_u8; OTLP_MAX_BODY_BYTES];
+    assert_eq!(ingest(&receiver, body).await.expect("ingest"), 0);
+}
+
+#[tokio::test]
 async fn ingest_maps_a_decoder_overflow_to_the_too_large_message() {
     let receiver = receiver(
         FakeStorage::new(SinkMode::Ok, ReadMode::Ok),
@@ -302,7 +350,7 @@ fn the_constructor_rejects_zero_concurrency() {
 #[tokio::test]
 async fn a_cursor_failure_is_an_invalid_cursor() {
     let receiver = receiver(
-        FakeStorage::new(SinkMode::Ok, ReadMode::InvalidCursor),
+        FakeStorage::new(SinkMode::Ok, ReadMode::Ok),
         CodecAnswer::Ok(Vec::new()),
         Duration::from_secs(30),
     );
@@ -310,7 +358,7 @@ async fn a_cursor_failure_is_an_invalid_cursor() {
         team_ids: Vec::new(),
         api_key_hash: String::new(),
     };
-    let result = receiver.list_traces(&scope, (0, 1), None).await;
+    let result = receiver.list_traces(&scope, (0, 1), Some("!!!")).await;
     assert!(matches!(
         result,
         Err(TraceReadError::InvalidCursor(_message))
@@ -355,4 +403,61 @@ async fn a_span_row_can_be_stamped_twice_without_duplication() {
     tenant.stamp_rows(&mut rows);
     let row = rows.first().expect("row");
     assert_eq!(row.resource_attributes.len(), 4);
+}
+
+#[tokio::test]
+async fn reads_return_what_the_store_found() {
+    let receiver = receiver(
+        FakeStorage::new(SinkMode::Ok, ReadMode::Rows),
+        CodecAnswer::Ok(Vec::new()),
+        Duration::from_secs(30),
+    );
+    let scope = TraceScope {
+        team_ids: Vec::new(),
+        api_key_hash: String::new(),
+    };
+    let trace = receiver
+        .get_trace("trace-1", &scope, "")
+        .await
+        .expect("trace");
+    assert_eq!(trace.expect("a trace").spans.len(), 1);
+    let span = receiver
+        .get_span("trace-1", "span-1", &scope, "")
+        .await
+        .expect("span");
+    assert_eq!(span.expect("a span").output, "out");
+    let target = SpanErrorTarget {
+        trace_id: "trace-1",
+        span_id: "span-1",
+        trace_ref: "",
+    };
+    let page = receiver
+        .get_span_error(target, &scope, None)
+        .await
+        .expect("error page");
+    assert_eq!(page.expect("an error page").message, "boom");
+}
+
+#[tokio::test]
+async fn reads_find_nothing_when_the_store_is_empty() {
+    let receiver = receiver(
+        FakeStorage::new(SinkMode::Ok, ReadMode::Ok),
+        CodecAnswer::Ok(Vec::new()),
+        Duration::from_secs(30),
+    );
+    let scope = TraceScope {
+        team_ids: Vec::new(),
+        api_key_hash: String::new(),
+    };
+    let trace = receiver.get_trace("trace-1", &scope, "").await;
+    assert!(matches!(trace, Ok(None)));
+    let span = receiver.get_span("trace-1", "span-1", &scope, "").await;
+    assert!(matches!(span, Ok(None)));
+    let target = SpanErrorTarget {
+        trace_id: "trace-1",
+        span_id: "span-1",
+        trace_ref: "",
+    };
+    let page = receiver.get_span_error(target, &scope, None).await;
+    assert!(matches!(page, Ok(None)));
 }

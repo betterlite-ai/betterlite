@@ -489,6 +489,23 @@ async fn get_span_error_rejects_an_overlong_cursor() {
 }
 
 #[tokio::test]
+async fn get_span_error_accepts_a_cursor_of_exactly_512_characters() {
+    let runtime = Arc::new(FakeRuntime::new());
+    let cursor = "a".repeat(512);
+    let uri = format!("/v1/traces/trace-1/spans/span-1/error?cursor={cursor}");
+    let answer = send(
+        app(&runtime, None),
+        Method::GET,
+        &uri,
+        Some(&admin()),
+        &[],
+        b"",
+    )
+    .await;
+    assert_eq!(answer.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn get_trace_without_a_receiver_is_not_implemented() {
     let answer = send(
         application(None, None),

@@ -4,7 +4,7 @@ use rstest::rstest;
 
 use super::support::{master_principal, principal, span_row};
 use crate::tracing_routes::access::{
-    AccessError, Tenant, TraceAuth, TraceRole, provide_trace_access,
+    AccessError, SystemClock, Tenant, TraceAuth, TraceClock as _, TraceRole, provide_trace_access,
 };
 
 #[rstest]
@@ -179,4 +179,18 @@ fn tenant_stamps_rows_and_resource_attributes() {
         row.resource_attributes.get("service.name"),
         Some(&"demo".to_owned())
     );
+}
+
+#[test]
+fn the_system_clock_reads_unix_milliseconds() {
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("a clock after the epoch")
+        .as_millis();
+    let now = u128::try_from(SystemClock.now_ms()).expect("a positive reading");
+    let after = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("a clock after the epoch")
+        .as_millis();
+    assert!(before <= now && now <= after);
 }
