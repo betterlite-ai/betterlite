@@ -183,6 +183,15 @@ fn an_initial_token_that_cannot_be_a_header_value_is_misconfigured() {
     assert!(matches!(failure, CredError::Misconfigured(_)));
 }
 
+#[test]
+fn debug_names_the_type_and_redacts_the_stored_token() {
+    let refetch = ScriptedRefetch::new(Vec::new());
+    let bearer = auth("secret-token", refetch);
+    let rendered = format!("{bearer:?}");
+    assert!(rendered.contains("ClientCredentialsBearerAuth"));
+    assert!(!rendered.contains("secret-token"));
+}
+
 #[tokio::test]
 async fn a_later_request_uses_the_replaced_token() {
     let refetch = ScriptedRefetch::new(vec![Some("fresh")]);

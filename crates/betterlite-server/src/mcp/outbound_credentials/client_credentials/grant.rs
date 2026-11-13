@@ -166,7 +166,10 @@ fn parse_integer(text: &str) -> Option<i64> {
             _ => return None,
         }
     }
-    if !seen_digit || pending_underscore {
+    if !seen_digit {
+        return None;
+    }
+    if pending_underscore {
         return None;
     }
     let plain = digits.replace('_', "");
@@ -177,9 +180,7 @@ fn parse_integer(text: &str) -> Option<i64> {
 #[must_use]
 pub fn parse_granted_scopes(raw: Option<&StringField>) -> Vec<String> {
     match raw {
-        Some(StringField::Text(text)) if !text.is_empty() => {
-            text.split_whitespace().map(str::to_owned).collect()
-        }
-        Some(StringField::Text(_) | StringField::Other(_)) | None => Vec::new(),
+        Some(StringField::Text(text)) => text.split_whitespace().map(str::to_owned).collect(),
+        Some(StringField::Other(_)) | None => Vec::new(),
     }
 }
