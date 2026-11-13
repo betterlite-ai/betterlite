@@ -27,16 +27,6 @@ use crate::routing_mock_scripts::{MockScript, Outcome, ScriptSpec, ScriptedReply
 const SCRIPT_DEADLINE_MILLIS: u64 = 30_000;
 const TIMEOUT: Duration = Duration::from_secs(5);
 
-const CONTEXT_HEADERS: [&str; 7] = [
-    "x-litellm-key-name",
-    "x-litellm-key-alias",
-    "x-litellm-user-id",
-    "x-litellm-user-email",
-    "x-litellm-team-id",
-    "x-litellm-team-name",
-    "x-litellm-org-id",
-];
-
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum Setting {
@@ -47,28 +37,12 @@ pub(super) enum Setting {
 }
 
 impl Setting {
-    pub(super) const fn env_var(self) -> &'static str {
+    pub(super) const fn config(self) -> (&'static str, Option<bool>) {
         match self {
-            Self::AsyncMode => "PILLAR_ASYNC",
-            Self::PersistSession => "PILLAR_PERSIST",
-            Self::IncludeScanners => "PILLAR_INCLUDE_SCANNERS",
-            Self::IncludeEvidence => "PILLAR_INCLUDE_EVIDENCE",
-        }
-    }
-
-    pub(super) const fn default_value(self) -> Option<bool> {
-        match self {
-            Self::AsyncMode | Self::PersistSession => None,
-            Self::IncludeScanners | Self::IncludeEvidence => Some(true),
-        }
-    }
-
-    pub(super) const fn name(self) -> &'static str {
-        match self {
-            Self::AsyncMode => "async_mode",
-            Self::PersistSession => "persist_session",
-            Self::IncludeScanners => "include_scanners",
-            Self::IncludeEvidence => "include_evidence",
+            Self::AsyncMode => ("PILLAR_ASYNC", None),
+            Self::PersistSession => ("PILLAR_PERSIST", None),
+            Self::IncludeScanners => ("PILLAR_INCLUDE_SCANNERS", Some(true)),
+            Self::IncludeEvidence => ("PILLAR_INCLUDE_EVIDENCE", Some(true)),
         }
     }
 }
@@ -88,7 +62,7 @@ pub(super) struct BoolCase {
 pub(super) struct ProtectInput {
     settings: SettingsInput,
     #[serde(default)]
-    key: KeyInput,
+    key: KeyContext,
     data: Value,
     answer: Answer,
 }
@@ -106,23 +80,27 @@ struct SettingsInput {
     environment: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct KeyInput {
-    key_name: Option<String>,
-    key_alias: Option<String>,
-    user_id: Option<String>,
-    user_email: Option<String>,
-    team_id: Option<String>,
-    team_alias: Option<String>,
-    org_id: Option<String>,
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Answer {
     status: u16,
     body: Value,
+}
+
+fn resolved(
+    provided: Option<bool>,
+    env_var: &'static str,
+    default: Option<bool>,
+    environment: &BTreeMap<String, String>,
+) -> Option<bool> {
+    let provided = provided.map(BoolSetting::Boolean);
+    resolve_bool_config(
+        provided.as_ref(),
+        Some(env_var),
+        default,
+        environment,
+        env_var,
+    )
 }
 
 fn pillar_settings(input: &SettingsInput) -> PillarSettings {
@@ -135,34 +113,20 @@ fn pillar_settings(input: &SettingsInput) -> PillarSettings {
             .as_deref()
             .and_then(OnFlaggedAction::parse)
             .unwrap_or(OnFlaggedAction::Monitor),
-        async_mode: resolve_bool_config(
-            input.async_mode.map(BoolSetting::Boolean).as_ref(),
-            Some("PILLAR_ASYNC"),
-            None,
-            environment,
-            "async_mode",
-        ),
-        persist_session: resolve_bool_config(
-            input.persist_session.map(BoolSetting::Boolean).as_ref(),
-            Some("PILLAR_PERSIST"),
-            None,
-            environment,
-            "persist_session",
-        ),
-        include_scanners: resolve_bool_config(
-            input.include_scanners.map(BoolSetting::Boolean).as_ref(),
-            Some("PILLAR_INCLUDE_SCANNERS"),
+        async_mode: resolved(input.async_mode, "PILLAR_ASYNC", None, environment),
+        persist_session: resolved(input.persist_session, "PILLAR_PERSIST", None, environment),
+        include_scanners: resolved(
+            input.include_scanners,
+            "PILLAR_INCLUDE_SCANNERS",
             Some(true),
             environment,
-            "include_scanners",
         )
         .unwrap_or(true),
-        include_evidence: resolve_bool_config(
-            input.include_evidence.map(BoolSetting::Boolean).as_ref(),
-            Some("PILLAR_INCLUDE_EVIDENCE"),
+        include_evidence: resolved(
+            input.include_evidence,
+            "PILLAR_INCLUDE_EVIDENCE",
             Some(true),
             environment,
-            "include_evidence",
         )
         .unwrap_or(true),
         fallback_on_error: input
@@ -171,18 +135,6 @@ fn pillar_settings(input: &SettingsInput) -> PillarSettings {
             .and_then(FallbackAction::parse)
             .unwrap_or(FallbackAction::Allow),
         timeout: TIMEOUT,
-    }
-}
-
-fn key_context(key: &KeyInput) -> KeyContext {
-    KeyContext {
-        key_name: key.key_name.clone(),
-        key_alias: key.key_alias.clone(),
-        user_id: key.user_id.clone(),
-        user_email: key.user_email.clone(),
-        team_id: key.team_id.clone(),
-        team_alias: key.team_alias.clone(),
-        org_id: key.org_id.clone(),
     }
 }
 
@@ -261,7 +213,7 @@ fn captured_headers(headers: &BTreeMap<String, String>) -> BTreeMap<String, Stri
             let lowered = name.to_lowercase();
             let kept = lowered == "content-type"
                 || lowered.starts_with("plr_")
-                || CONTEXT_HEADERS.contains(&lowered.as_str());
+                || lowered.starts_with("x-litellm-");
             kept.then_some((lowered, value.clone()))
         })
         .collect()
@@ -269,7 +221,6 @@ fn captured_headers(headers: &BTreeMap<String, String>) -> BTreeMap<String, Stri
 
 pub(super) fn run(input: &ProtectInput) -> HelperResult {
     let mut settings = pillar_settings(&input.settings);
-    let key = key_context(&input.key);
     let mut data = guardrail_data(&input.data)?;
     let mock = start_mock(&input.answer)?;
     settings.api_base = mock.base_url.clone();
@@ -294,7 +245,7 @@ pub(super) fn run(input: &ProtectInput) -> HelperResult {
         .build()
         .map_err(|error| fail("RuntimeError", error.to_string(), None))?;
     let outcome = runtime.block_on(call_and_process(
-        &client, &settings, &key, &resolver, &mut data,
+        &client, &settings, &input.key, &resolver, &mut data,
     ));
     let calls = mock
         .finish()

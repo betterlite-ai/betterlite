@@ -53,7 +53,6 @@ class ResolveBoolInput(TypedDict):
     function: Literal["resolve_bool"]
     setting: Setting
     provided: bool | None
-    environment: dict[str, str]
 
 
 class ProtectInput(TypedDict):
@@ -75,11 +74,7 @@ class Runner(Protocol):
 
 def reported_header(name: str) -> bool:
     lowered = name.lower()
-    return (
-        lowered == "content-type"
-        or lowered.startswith("plr_")
-        or lowered.startswith("x-litellm-")
-    )
+    return lowered == "content-type" or lowered.startswith(("plr_", "x-litellm-"))
 
 
 class Scripted:

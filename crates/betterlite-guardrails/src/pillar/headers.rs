@@ -1,12 +1,14 @@
 use std::collections::BTreeMap;
 
 use secrecy::ExposeSecret as _;
+use serde::Deserialize;
 
 use super::error::PillarError;
 use super::settings::PillarSettings;
 
 // The fields of LiteLLM's UserAPIKeyAuth that Pillar forwards; litellm_params_metadata stays out
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(default)]
 pub struct KeyContext {
     pub key_name: Option<String>,
     pub key_alias: Option<String>,
@@ -15,13 +17,6 @@ pub struct KeyContext {
     pub team_id: Option<String>,
     pub team_alias: Option<String>,
     pub org_id: Option<String>,
-}
-
-fn set_bool_header(headers: &mut BTreeMap<String, String>, name: &str, value: Option<bool>) {
-    if let Some(value) = value {
-        let text = if value { "true" } else { "false" };
-        headers.insert(name.to_owned(), text.to_owned());
-    }
 }
 
 pub fn prepare_headers(
@@ -41,18 +36,20 @@ pub fn prepare_headers(
         format!("Bearer {}", api_key.expose_secret()),
     );
     headers.insert("Content-Type".to_owned(), "application/json".to_owned());
-    set_bool_header(
-        &mut headers,
-        "plr_scanners",
-        Some(settings.include_scanners),
+    headers.insert(
+        "plr_scanners".to_owned(),
+        settings.include_scanners.to_string(),
     );
-    set_bool_header(
-        &mut headers,
-        "plr_evidence",
-        Some(settings.include_evidence),
+    headers.insert(
+        "plr_evidence".to_owned(),
+        settings.include_evidence.to_string(),
     );
-    set_bool_header(&mut headers, "plr_async", settings.async_mode);
-    set_bool_header(&mut headers, "plr_persist", settings.persist_session);
+    if let Some(value) = settings.async_mode {
+        headers.insert("plr_async".to_owned(), value.to_string());
+    }
+    if let Some(value) = settings.persist_session {
+        headers.insert("plr_persist".to_owned(), value.to_string());
+    }
     let fields = [
         ("X-LiteLLM-Key-Name", &key.key_name),
         ("X-LiteLLM-Key-Alias", &key.key_alias),

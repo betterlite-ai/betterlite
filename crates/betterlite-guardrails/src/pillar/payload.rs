@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use super::LITELLM_VERSION;
 use super::error::PillarError;
-use super::model_provider::{ModelProviderResolver, extract_model_and_provider};
+use super::model_provider::{ModelProviderResolver, extract_model_and_provider, optional_text};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ProtectMetadata {
@@ -36,20 +36,6 @@ fn collection_or_empty(
         Some(_) => Err(PillarError::Field {
             field,
             expected: "a list",
-        }),
-    }
-}
-
-fn optional_text(
-    data: &BTreeMap<String, GuardrailValue>,
-    field: &'static str,
-) -> Result<Option<String>, PillarError> {
-    match data.get(field) {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Text(text)) => Ok(Some(text.clone())),
-        Some(_) => Err(PillarError::Field {
-            field,
-            expected: "a string",
         }),
     }
 }

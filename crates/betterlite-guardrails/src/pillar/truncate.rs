@@ -34,14 +34,6 @@ fn evidence_text(fields: &BTreeMap<String, GuardrailValue>) -> Option<String> {
     }
 }
 
-fn shrink(text: &str, step: usize) -> String {
-    let characters = text.chars().count();
-    if characters > step {
-        return text.chars().take(characters.saturating_sub(step)).collect();
-    }
-    text.chars().take(characters.saturating_sub(1)).collect()
-}
-
 fn shorten_entry(entry: &mut GuardrailValue, encoded: &mut String, max_bytes: usize) {
     let GuardrailValue::Object(fields) = entry else {
         return;
@@ -54,7 +46,12 @@ fn shorten_entry(entry: &mut GuardrailValue, encoded: &mut String, max_bytes: us
     }
     let mut step = text.chars().count().checked_div(2).unwrap_or(0).max(1);
     while encoded.len() > max_bytes && !text.is_empty() {
-        text = shrink(&text, step);
+        let characters = text.chars().count();
+        text = if characters > step {
+            text.chars().take(characters.saturating_sub(step)).collect()
+        } else {
+            text.chars().take(characters.saturating_sub(1)).collect()
+        };
         step = step.checked_div(2).unwrap_or(0).max(1);
         let replaced = if text.is_empty() {
             TRUNCATED_VALUE.to_owned()

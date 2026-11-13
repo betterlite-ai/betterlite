@@ -40,14 +40,15 @@ pub(super) fn fail(class: &str, message: String, status: Option<u16>) -> Box<Hel
 }
 
 fn resolve_bool(case: &BoolCase) -> HelperResult {
+    let (env_var, default) = case.setting.config();
     let provided = case.provided.map(BoolSetting::Boolean);
     let environment = case.environment.clone();
     let value = resolve_bool_config(
         provided.as_ref(),
-        Some(case.setting.env_var()),
-        case.setting.default_value(),
+        Some(env_var),
+        default,
         &environment,
-        case.setting.name(),
+        env_var,
     );
     Ok(json!({"value": value}))
 }

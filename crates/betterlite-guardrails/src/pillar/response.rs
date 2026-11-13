@@ -30,19 +30,6 @@ pub struct ProtectResponse {
     pub other: BTreeMap<String, GuardrailValue>,
 }
 
-impl ProtectResponse {
-    // LiteLLM returns early on an empty body, before writing any metadata
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.flagged.is_none()
-            && self.session_id.is_none()
-            && self.scanners.is_none()
-            && self.evidence.is_none()
-            && self.masked_session_messages.is_none()
-            && self.other.is_empty()
-    }
-}
-
 // LiteLLM's get_metadata_variable_name_from_kwargs
 fn metadata_key(data: &BTreeMap<String, GuardrailValue>) -> &'static str {
     if data.contains_key("litellm_metadata") {
@@ -110,7 +97,8 @@ pub fn process_pillar_response(
     data: &mut BTreeMap<String, GuardrailValue>,
     settings: &PillarSettings,
 ) -> Result<(), PillarError> {
-    if response.is_empty() {
+    // LiteLLM returns early on an empty body, before writing any metadata
+    if *response == ProtectResponse::default() {
         return Ok(());
     }
     let flagged = response.flagged.unwrap_or(false);

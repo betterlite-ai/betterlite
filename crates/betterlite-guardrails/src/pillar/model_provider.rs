@@ -63,7 +63,7 @@ impl ModelProviderResolver for CatalogResolver<'_> {
     }
 }
 
-fn optional_text(
+pub(super) fn optional_text(
     data: &BTreeMap<String, GuardrailValue>,
     field: &'static str,
 ) -> Result<Option<String>, PillarError> {

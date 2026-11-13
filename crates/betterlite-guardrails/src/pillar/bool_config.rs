@@ -43,7 +43,11 @@ pub fn resolve_bool_config(
         if let Ok(parsed) = parse_bool_value(value) {
             return Some(parsed);
         }
-        let text = describe(value);
+        let text = match value {
+            BoolSetting::Boolean(flag) => flag.to_string(),
+            BoolSetting::Integer(number) => number.to_string(),
+            BoolSetting::Text(text) => text.clone(),
+        };
         tracing::warn!(
             "Pillar Guardrail: Invalid boolean value '{text}' for {setting_name}, falling back to default."
         );
@@ -64,12 +68,4 @@ pub fn resolve_bool_config(
         "Pillar Guardrail: Invalid boolean env value '{text}' for {name}, falling back to default."
     );
     default
-}
-
-fn describe(value: &BoolSetting) -> String {
-    match value {
-        BoolSetting::Boolean(value) => value.to_string(),
-        BoolSetting::Integer(value) => value.to_string(),
-        BoolSetting::Text(text) => text.clone(),
-    }
 }

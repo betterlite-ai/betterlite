@@ -25,10 +25,6 @@ fn header_map(headers: &BTreeMap<String, String>) -> Result<HeaderMap, PillarErr
     Ok(map)
 }
 
-fn request_error(source: reqwest::Error) -> PillarError {
-    PillarError::Request { source }
-}
-
 async fn read_capped_body(mut response: reqwest::Response) -> Result<Vec<u8>, PillarError> {
     let limit = u64::try_from(MAX_RESPONSE_BYTES).unwrap_or(u64::MAX);
     if response
@@ -40,7 +36,11 @@ async fn read_capped_body(mut response: reqwest::Response) -> Result<Vec<u8>, Pi
         });
     }
     let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(request_error)? {
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|source| PillarError::Request { source })?
+    {
         body.extend_from_slice(&chunk);
         if body.len() > MAX_RESPONSE_BYTES {
             return Err(PillarError::ResponseTooLarge {
@@ -69,7 +69,7 @@ pub async fn call_pillar_api(
         .timeout(settings.timeout)
         .send()
         .await
-        .map_err(request_error)?;
+        .map_err(|source| PillarError::Request { source })?;
     let status = response.status();
     if !status.is_success() {
         return Err(PillarError::Status {
