@@ -13,7 +13,6 @@ use serde_json::{Value, json};
 
 use super::Script;
 
-const DEFAULT_REJECTION: &str = "OTLP payload rejected";
 const DEFAULT_MESSAGE: &str = "the trace read failed";
 
 pub(super) struct ScriptedRuntime {
@@ -29,15 +28,21 @@ impl TraceRuntime for ScriptedRuntime {
         _content_encoding: Option<&str>,
         _tenant: &Tenant,
     ) -> Result<usize, IngestError> {
-        let payload = to_bytes(body, usize::MAX)
+        let _payload = to_bytes(body, usize::MAX)
             .await
             .map_err(IngestError::BodyRead)?;
-        let _size = payload.len();
-        let (kind, message) = decoder_state(&self.script.decoder);
+        let kind = self.script.decoder.get("kind").and_then(Value::as_str);
+        let message = self
+            .script
+            .decoder
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("OTLP payload rejected")
+            .to_owned();
         match kind {
-            "too_large" | "overflow" => Err(IngestError::TooLarge(message)),
-            "malformed" => Err(IngestError::Invalid(message)),
-            "overloaded" => Err(IngestError::Overloaded),
+            Some("too_large" | "overflow") => Err(IngestError::TooLarge(message)),
+            Some("malformed") => Err(IngestError::Invalid(message)),
+            Some("overloaded") => Err(IngestError::Overloaded),
             _other => Ok(1),
         }
     }
@@ -85,15 +90,6 @@ impl TraceRuntime for ScriptedRuntime {
     }
 }
 
-fn decoder_state(value: &Value) -> (&str, String) {
-    let kind = value.get("kind").and_then(Value::as_str).unwrap_or("ok");
-    let message = value
-        .get("message")
-        .and_then(Value::as_str)
-        .unwrap_or(DEFAULT_REJECTION);
-    (kind, message.to_owned())
-}
-
 fn read_answer<Payload>(section: &Value) -> Result<Payload, TraceReadError>
 where
     Payload: DeserializeOwned,
@@ -101,18 +97,15 @@ where
     if let Some(value) = section.get("value") {
         return serde_json::from_value(value.clone()).map_err(|_error| TraceReadError::Storage);
     }
-    if let Some(error) = section.get("error") {
-        let kind = error
-            .get("kind")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let message = error
-            .get("message")
-            .and_then(Value::as_str)
-            .unwrap_or(DEFAULT_MESSAGE);
-        if kind == "invalid_cursor" {
-            return Err(TraceReadError::InvalidCursor(message.to_owned()));
-        }
+    let Some(error) = section.get("error") else {
+        return Err(TraceReadError::Storage);
+    };
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or(DEFAULT_MESSAGE);
+    if error.get("kind").and_then(Value::as_str) == Some("invalid_cursor") {
+        return Err(TraceReadError::InvalidCursor(message.to_owned()));
     }
     Err(TraceReadError::Storage)
 }
@@ -123,11 +116,10 @@ struct CannedQueries;
 impl TraceQueryStore for CannedQueries {
     async fn query_sql(
         &self,
-        sql: &str,
+        _sql: &str,
         scope: &QueryScope,
         secret: &SecretString,
     ) -> Result<String, QueryRunError> {
-        let _statement = sql;
         Ok(echo(scope, secret))
     }
 

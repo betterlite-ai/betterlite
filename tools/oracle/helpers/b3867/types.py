@@ -1,19 +1,15 @@
-from typing import Literal, NotRequired, TypedDict
+from typing import NotRequired, TypedDict
 
 from pydantic import JsonValue
-
-
-class BodyInput(TypedDict):
-    encoding: Literal["utf8", "base64"]
-    value: str
 
 
 class RequestInput(TypedDict):
     method: str
     path: str
     headers: NotRequired[dict[str, str]]
-    body: NotRequired[BodyInput]
     query: NotRequired[dict[str, str]]
+    body: NotRequired[str]
+    body_base64: NotRequired[bool]
 
 
 class AuthInput(TypedDict):
@@ -30,8 +26,6 @@ class Script(TypedDict):
     get_trace: NotRequired[JsonValue]
     get_span: NotRequired[JsonValue]
     get_span_error: NotRequired[JsonValue]
-    query: NotRequired[JsonValue]
-    query_help: NotRequired[JsonValue]
 
 
 class Input(TypedDict):

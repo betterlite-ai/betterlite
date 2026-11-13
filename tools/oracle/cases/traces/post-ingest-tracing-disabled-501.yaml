@@ -6,7 +6,7 @@ call:
       method: POST
       path: /v1/traces
       headers: {content-type: application/json}
-      body: {encoding: utf8, value: "{}"}
+      body: '{}'
     auth: {user_role: proxy_admin, team_id: team-1, token: hash-1, org_id: org-1}
     tracing: false
     master_key: "sk-master"

@@ -1,4 +1,3 @@
-import asyncio
 import base64
 from typing import Final
 from urllib.parse import urlencode
@@ -25,7 +24,7 @@ from starlette.responses import Response
 from starlette.types import Message, Scope
 
 from .fakes import ERROR_PAGE, PAGE, SPAN, TRACE, ScriptedReceiver
-from .types import AuthInput, BodyInput, Input, RequestInput, Script
+from .types import AuthInput, Input, RequestInput, Script
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
@@ -34,7 +33,7 @@ ROLES: Final[dict[str, LitellmUserRoles]] = {
     "proxy_admin_view_only": LitellmUserRoles.PROXY_ADMIN_VIEW_ONLY,
 }
 
-SINGLE_TRACE_SEGMENTS = 4
+SINGLE_TRACE = 4
 SPAN_SEGMENTS = 6
 SPAN_ERROR_SEGMENTS = 7
 
@@ -44,44 +43,37 @@ HELP_PATH = "/v1/traces/query/help"
 
 
 class BodyChannel:
-    def __init__(self, body: bytes, *, hanging: bool) -> None:
+    def __init__(self, body: bytes) -> None:
         self.body = body
-        self.hanging = hanging
 
     async def __call__(self) -> Message:
-        if self.hanging:
-            await asyncio.Event().wait()
         message: Message = {"type": "http.request", "body": self.body, "more_body": False}
         return message
 
 
-def body_bytes(fields: BodyInput) -> bytes:
-    if fields["encoding"] == "base64":
-        return base64.b64decode(fields["value"])
-    return fields["value"].encode()
-
-
-def build_request(fields: RequestInput) -> Request:
+def ingest_request(fields: RequestInput) -> Request:
     headers: list[tuple[bytes, bytes]] = []
     configured = fields.get("headers")
     if configured is not None:
         for name, value in configured.items():
             headers.append((name.encode("latin-1"), value.encode("latin-1")))
     query = fields.get("query")
-    query_string = urlencode(query).encode() if query is not None else b""
     scope: Scope = {
         "type": "http",
         "method": fields["method"],
         "path": fields["path"],
-        "query_string": query_string,
+        "query_string": b"" if query is None else urlencode(query).encode(),
         "headers": headers,
     }
     body = fields.get("body")
-    if body is None:
-        channel = BodyChannel(b"", hanging=False)
-    else:
-        channel = BodyChannel(body_bytes(body), hanging=body.get("hanging") is True)
-    return Request(scope, channel)
+    raw = b"" if body is None else body_bytes(fields, body)
+    return Request(scope, BodyChannel(raw))
+
+
+def body_bytes(fields: RequestInput, body: str) -> bytes:
+    if fields.get("body_base64") is True:
+        return base64.b64decode(body)
+    return body.encode()
 
 
 def build_auth(fields: AuthInput | None) -> UserAPIKeyAuth:
@@ -89,10 +81,8 @@ def build_auth(fields: AuthInput | None) -> UserAPIKeyAuth:
         return UserAPIKeyAuth(user_role=LitellmUserRoles.INTERNAL_USER)
     configured = fields.get("user_role")
     role = None if configured is None else ROLES.get(configured)
-    if role is None:
-        role = LitellmUserRoles.INTERNAL_USER
     return UserAPIKeyAuth(
-        user_role=role,
+        user_role=LitellmUserRoles.INTERNAL_USER if role is None else role,
         team_id=fields.get("team_id"),
         token=fields.get("token"),
         project_id=fields.get("project_id"),
@@ -107,9 +97,7 @@ def parsed_body(body: bytes) -> JsonValue:
         return None
 
 
-def answer_value(
-    status: int, content_type: str | None, body: bytes, retry_after: str | None
-) -> JsonValue:
+def reply(status: int, content_type: str | None, body: bytes, retry_after: str | None) -> JsonValue:
     payload: dict[str, JsonValue] = {
         "status": status,
         "content_type": content_type,
@@ -121,7 +109,7 @@ def answer_value(
 
 
 def response_value(response: Response) -> JsonValue:
-    return answer_value(
+    return reply(
         response.status_code,
         response.headers.get("content-type"),
         bytes(response.body),
@@ -156,17 +144,17 @@ async def read_route(
     parts = fields["path"].split("/")
     context = await provide_trace_access(auth, receiver)
     reference = trace_ref(fields)
-    if len(parts) == SINGLE_TRACE_SEGMENTS:
+    if len(parts) == SINGLE_TRACE:
         trace = await get_agent_trace(parts[3], context, reference)
-        return answer_value(200, "application/json", TRACE.dump_json(trace), None)
+        return reply(200, "application/json", TRACE.dump_json(trace), None)
     if len(parts) == SPAN_SEGMENTS:
         span = await get_agent_trace_span(parts[3], parts[5], context, reference)
-        return answer_value(200, "application/json", SPAN.dump_json(span), None)
+        return reply(200, "application/json", SPAN.dump_json(span), None)
     if len(parts) == SPAN_ERROR_SEGMENTS and parts[6] == "error":
         query = fields.get("query")
         cursor = None if query is None else query.get("cursor")
         page = await get_agent_trace_span_error(parts[3], parts[5], context, reference, cursor)
-        return answer_value(200, "application/json", ERROR_PAGE.dump_json(page), None)
+        return reply(200, "application/json", ERROR_PAGE.dump_json(page), None)
     raise ValueError(f"the b3867 helper does not route {fields['method']} {fields['path']}")
 
 
@@ -184,19 +172,19 @@ async def dispatch(input_value: Input) -> JsonValue:
     path = fields["path"]
     if method == "POST" and path == INGEST_PATH:
         context = await provide_trace_access(auth, receiver)
-        return response_value(await ingest_otlp_traces(build_request(fields), context))
+        return response_value(await ingest_otlp_traces(ingest_request(fields), context))
     if method == "GET" and path == INGEST_PATH:
         start_ms, end_ms, cursor = window(fields)
         page = await list_agent_traces(
             await provide_trace_access(auth, receiver), start_ms, end_ms, cursor
         )
-        return answer_value(200, "application/json", PAGE.dump_json(page), None)
+        return reply(200, "application/json", PAGE.dump_json(page), None)
     if method == "POST" and path == QUERY_PATH:
         access = await provide_trace_query_access(
             auth, receiver, provide_trace_query_secret()
         )
         body = fields.get("body")
-        raw = b"" if body is None else body_bytes(body)
+        raw = b"" if body is None else body_bytes(fields, body)
         response = await query_agent_traces(TraceQueryRequest.model_validate_json(raw), access)
         return response_value(response)
     if method == "GET" and path == HELP_PATH:

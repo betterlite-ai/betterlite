@@ -9,18 +9,14 @@ use axum::extract::Request;
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use betterlite_auth::auth_identity::records::{
-    CredentialRef, NetworkContext, OrganizationIdentity, Principal, ProjectIdentity, SourceKey,
-    TeamIdentity,
-};
-use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, Role, TeamRole};
+use betterlite_auth::auth_identity::records::Principal;
 use betterlite_server::auth::auth_identity::AuthContext;
 use betterlite_server::tracing_routes::TraceRoutesState;
 use betterlite_server::tracing_routes::access::SystemClock;
 use betterlite_server::tracing_routes::router;
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 use tower::ServiceExt as _;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
@@ -30,7 +26,6 @@ use self::runtime::ScriptedRuntime;
 const INGEST_PATH: &str = "/v1/traces";
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     pub(crate) request: RequestInput,
     #[serde(default)]
@@ -44,34 +39,20 @@ pub(crate) struct Input {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct RequestInput {
     pub(crate) method: String,
     pub(crate) path: String,
     #[serde(default)]
     pub(crate) headers: BTreeMap<String, String>,
     #[serde(default)]
-    pub(crate) body: Option<BodyInput>,
-    #[serde(default)]
     pub(crate) query: BTreeMap<String, String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct BodyInput {
-    pub(crate) encoding: Encoding,
-    pub(crate) value: String,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum Encoding {
-    Utf8,
-    Base64,
+    #[serde(default)]
+    pub(crate) body: String,
+    #[serde(default)]
+    pub(crate) body_base64: bool,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct AuthInput {
     pub(crate) user_role: Option<String>,
     pub(crate) team_id: Option<String>,
@@ -81,7 +62,6 @@ pub(crate) struct AuthInput {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct Script {
     #[serde(default)]
     pub(crate) decoder: Value,
@@ -93,10 +73,6 @@ pub(crate) struct Script {
     pub(crate) get_span: Value,
     #[serde(default)]
     pub(crate) get_span_error: Value,
-    #[serde(default)]
-    pub(crate) query: Value,
-    #[serde(default)]
-    pub(crate) query_help: Value,
 }
 
 fn default_tracing() -> bool {
@@ -122,15 +98,14 @@ async fn answer(input: &Input) -> HelperResult {
         Arc::new(ScriptedRuntime {
             script: input.script.clone(),
         });
-    let receiver = if input.tracing { Some(erased) } else { None };
     let state = TraceRoutesState {
-        receiver,
+        receiver: if input.tracing { Some(erased) } else { None },
         master_key: input.master_key.clone().map(SecretString::from),
         clock: Arc::new(SystemClock),
     };
     let mut request = build_request(input)?;
     request.extensions_mut().insert(AuthContext {
-        principal: principal(&input.auth),
+        principal: principal(&input.auth)?,
     });
     let response = router::router(state)
         .oneshot(request)
@@ -141,17 +116,17 @@ async fn answer(input: &Input) -> HelperResult {
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .map_err(|error| failure(error))?;
-    if !is_ingest(input) && !status.is_success() {
-        return Err(Box::new(HelperError {
-            class: "HTTPException".to_owned(),
-            status: Some(status.as_u16()),
-            error_type: None,
-            param: None,
-            code: None,
-            message: detail(&body),
-        }));
+    if is_ingest(input) || status.is_success() {
+        return Ok(route_value(status, &headers, &body));
     }
-    Ok(route_value(status, &headers, &body))
+    Err(Box::new(HelperError {
+        class: "HTTPException".to_owned(),
+        status: Some(status.as_u16()),
+        error_type: None,
+        param: None,
+        code: None,
+        message: detail(&body),
+    }))
 }
 
 fn is_ingest(input: &Input) -> bool {
@@ -171,11 +146,10 @@ fn detail(body: &[u8]) -> String {
 }
 
 fn route_value(status: StatusCode, headers: &HeaderMap, body: &[u8]) -> Value {
-    let parsed: Option<Value> = serde_json::from_slice(body).ok();
-    serde_json::json!({
+    json!({
         "status": status.as_u16(),
         "content_type": header_text(headers, header::CONTENT_TYPE.as_str()),
-        "body": parsed,
+        "body": serde_json::from_slice::<Value>(body).ok(),
         "body_base64": STANDARD.encode(body),
         "retry_after": header_text(headers, header::RETRY_AFTER.as_str()),
     })
@@ -198,21 +172,18 @@ fn build_request(input: &Input) -> Result<Request<Body>, Box<HelperError>> {
         builder = builder.header(name.as_str(), value.as_str());
     }
     builder
-        .body(Body::from(request_body(input)?))
+        .body(Body::from(body_bytes(input)?))
         .map_err(|error| failure(error))
 }
 
-fn request_body(input: &Input) -> Result<Bytes, Box<HelperError>> {
-    let Some(body) = input.request.body.as_ref() else {
-        return Ok(Bytes::new());
-    };
-    match body.encoding {
-        Encoding::Utf8 => Ok(Bytes::copy_from_slice(body.value.as_bytes())),
-        Encoding::Base64 => STANDARD
-            .decode(&body.value)
+fn body_bytes(input: &Input) -> Result<Bytes, Box<HelperError>> {
+    if input.request.body_base64 {
+        return STANDARD
+            .decode(&input.request.body)
             .map(Bytes::from)
-            .map_err(|error| failure(error)),
+            .map_err(|error| failure(error));
     }
+    Ok(Bytes::copy_from_slice(input.request.body.as_bytes()))
 }
 
 fn uri_text(input: &Input) -> String {
@@ -228,48 +199,27 @@ fn uri_text(input: &Input) -> String {
     format!("{}?{}", input.request.path, pairs.join("&"))
 }
 
-fn principal(auth: &AuthInput) -> Principal {
+fn principal(auth: &AuthInput) -> Result<Principal, Box<HelperError>> {
     let roles = match auth.user_role.as_deref() {
-        Some("proxy_admin") => vec![Role::PlatformAdmin],
-        Some("proxy_admin_view_only") => vec![Role::PlatformViewer],
-        Some(_unrecognized) | None => Vec::new(),
+        Some("proxy_admin") => json!(["platform_admin"]),
+        Some("proxy_admin_view_only") => json!(["platform_viewer"]),
+        Some(_unrecognized) | None => json!([]),
     };
-    Principal {
-        principal_type: PrincipalType::Human,
-        subject: "virtual-key".to_owned(),
-        issuer: None,
-        audience: Vec::new(),
-        user: None,
-        organization: auth.org_id.as_ref().map(|id| OrganizationIdentity {
-            id: id.clone(),
-            name: None,
-        }),
-        teams: auth
-            .team_id
-            .as_ref()
-            .map(|id| {
-                vec![TeamIdentity {
-                    id: id.clone(),
-                    name: None,
-                    role: TeamRole::Member,
-                }]
-            })
-            .unwrap_or_default(),
-        project: auth.project_id.as_ref().map(|id| ProjectIdentity {
-            id: id.clone(),
-            name: None,
-        }),
-        end_user: None,
-        roles,
-        scopes: Vec::new(),
-        auth_method: AuthMethod::ApiKey,
-        credential_ref: CredentialRef {
-            key_id: None,
-            token_id: auth.token.clone(),
-        },
-        network: NetworkContext::default(),
-        source_key: SourceKey(None),
-    }
+    let teams = match &auth.team_id {
+        Some(id) => json!([{"id": id}]),
+        None => json!([]),
+    };
+    serde_json::from_value(json!({
+        "principal_type": "human",
+        "subject": "virtual-key",
+        "auth_method": "api_key",
+        "roles": roles,
+        "teams": teams,
+        "organization": auth.org_id.as_ref().map(|id| json!({"id": id})),
+        "project": auth.project_id.as_ref().map(|id| json!({"id": id})),
+        "credential_ref": {"token_id": auth.token},
+    }))
+    .map_err(|error| failure(error))
 }
 
 fn failure<Message>(message: Message) -> Box<HelperError>
