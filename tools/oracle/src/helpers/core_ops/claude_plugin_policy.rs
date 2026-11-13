@@ -68,7 +68,11 @@ fn answer(call: &Call) -> Value {
 }
 
 fn rejection(error: &ClaudePluginPolicyError) -> Value {
-    json!({ "ok": false, "status": error.fields().status_code, "value": null })
+    json!({
+        "ok": false,
+        "status": error.fields().status_code,
+        "value": null,
+    })
 }
 
 fn require_admin_answer(fields: &CallerFields) -> Value {

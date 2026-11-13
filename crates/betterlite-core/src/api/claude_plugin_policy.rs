@@ -134,7 +134,10 @@ pub struct ClaudePluginPolicyResult {
 impl SkillVisibility {
     #[must_use]
     pub fn allows(&self, plugin: &PluginRecord) -> bool {
-        plugin.enabled || self.sees_private || self.granted.contains(&plugin.name)
+        if plugin.enabled || self.sees_private {
+            return true;
+        }
+        self.granted.contains(&plugin.name)
     }
 
     #[must_use]
