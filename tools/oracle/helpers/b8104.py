@@ -1,11 +1,12 @@
 import os
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Literal, TypedDict
+from typing import Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.base_llm.responses.transformation import BaseResponsesAPIConfig
+from litellm.types.llms.openai import ResponsesAPIResponse
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import LlmProviders
 from litellm.utils import ProviderConfigManager
@@ -24,10 +25,18 @@ class UrlProbe(TypedDict):
     api_base: str | None
 
 
+Body: TypeAlias = dict[str, JsonValue]
+Create: TypeAlias = Callable[[str, str, Body, GenericLiteLLMParams, Body], Body]
+Reply: TypeAlias = Callable[[str, httpx.Response, Logging], ResponsesAPIResponse]
+Retrieve: TypeAlias = Callable[[httpx.Response, Logging], ResponsesAPIResponse]
+Item: TypeAlias = Callable[[str, str, GenericLiteLLMParams, Body], tuple[str, Body]]
+Url: TypeAlias = Callable[[str | None, Body], str]
+
+
 class CreateProbe(TypedDict):
     model: str
-    input: JsonValue
-    optional_params: dict[str, JsonValue]
+    input: str
+    optional_params: Body
 
 
 class ReplyProbe(TypedDict):
@@ -123,22 +132,39 @@ def activate_sdk(sdk: Sdk) -> None:
     litellm.api_base = sdk["api_base"]
 
 
-def config() -> BaseResponsesAPIConfig:
+# LiteLLM types the request conversions as bare dicts, so the callables fix the shape
+class ManusConfig(Protocol):
+    @property
+    def transform_responses_api_request(self) -> Create: ...  # ast-grep-ignore
+
+    @property
+    def transform_response_api_response(self) -> Reply: ...  # ast-grep-ignore
+
+    @property
+    def transform_get_response_api_response(self) -> Retrieve: ...  # ast-grep-ignore
+
+    @property
+    def transform_get_response_api_request(self) -> Item: ...  # ast-grep-ignore
+
+    @property
+    def get_complete_url(self) -> Url: ...
+
+
+def config() -> ManusConfig:
     found = ProviderConfigManager.get_provider_responses_api_config(provider=LlmProviders.MANUS)
     if found is None:
         raise ValueError("no Manus responses config")
     return found
 
 
-def create_body(found: BaseResponsesAPIConfig, probe: CreateProbe) -> dict[str, JsonValue]:
-    body = found.transform_responses_api_request(
-        model=probe["model"],
-        input=probe["input"],
-        response_api_optional_request_params=dict(probe["optional_params"]),
-        litellm_params=GenericLiteLLMParams(),
-        headers={},
+def create_body(found: ManusConfig, probe: CreateProbe) -> Body:
+    return found.transform_responses_api_request(
+        probe["model"],
+        probe["input"],
+        probe["optional_params"],
+        GenericLiteLLMParams(),
+        {},
     )
-    return {"body": body}
 
 
 def urls(input_value: UrlsInput) -> JsonValue:
@@ -148,7 +174,7 @@ def urls(input_value: UrlsInput) -> JsonValue:
     values: list[JsonValue] = []
     for probe in input_value["probes"]:
         try:
-            url = found.get_complete_url(api_base=probe["api_base"], litellm_params={})
+            url = found.get_complete_url(probe["api_base"], {})
         except ValueError:
             values.append({"raised": True})
         else:
@@ -163,7 +189,7 @@ def creates(input_value: CreateInput) -> JsonValue:
     values: list[JsonValue] = []
     for probe in input_value["probes"]:
         try:
-            values.append(create_body(found, probe))
+            values.append({"body": create_body(found, probe)})
         except (ValueError, TypeError, KeyError):
             values.append({"raised": True})
     return {"requests": values}
@@ -221,11 +247,11 @@ def fields_view(reply: BaseModel, logging_obj: Logging) -> JsonValue:
     }
 
 
-def reply_value(found: BaseResponsesAPIConfig, probe: ReplyProbe) -> JsonValue:
+def reply_value(found: ManusConfig, probe: ReplyProbe) -> JsonValue:
     logging_obj = logging_object()
     try:
         reply = found.transform_response_api_response(
-            model="manus-1.6", raw_response=raw_response(probe), logging_obj=logging_obj
+            "manus-1.6", raw_response(probe), logging_obj
         )
     except (ValueError, TypeError, KeyError):
         return {"raised": True}
@@ -237,12 +263,10 @@ def reply_value(found: BaseResponsesAPIConfig, probe: ReplyProbe) -> JsonValue:
     return fields_view(reply, logging_obj)
 
 
-def retrieve_value(found: BaseResponsesAPIConfig, probe: ReplyProbe) -> JsonValue:
+def retrieve_value(found: ManusConfig, probe: ReplyProbe) -> JsonValue:
     logging_obj = logging_object()
     try:
-        reply = found.transform_get_response_api_response(
-            raw_response=raw_response(probe), logging_obj=logging_obj
-        )
+        reply = found.transform_get_response_api_response(raw_response(probe), logging_obj)
     except (ValueError, TypeError, KeyError):
         return {"raised": True}
     except Exception as error:
@@ -270,10 +294,7 @@ def gets(input_value: GetInput) -> JsonValue:
     for probe in input_value["probes"]:
         try:
             url, data = found.transform_get_response_api_request(
-                response_id=probe["response_id"],
-                api_base=probe["api_base"],
-                litellm_params=GenericLiteLLMParams(),
-                headers={},
+                probe["response_id"], probe["api_base"], GenericLiteLLMParams(), {}
             )
         except (ValueError, TypeError, KeyError):
             values.append({"raised": True})

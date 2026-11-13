@@ -12,12 +12,7 @@ use crate::manus_responses::{UnknownIdSource, UuidIdSource};
 
 use super::support::{SUFFIX, headered_response, plain_config, response};
 
-fn created(
-    upstream: &ResponsesUpstream,
-) -> (
-    crate::api::responses_provider_contract::records::Params,
-    ResponsesLogging,
-) {
+fn created(upstream: &ResponsesUpstream) -> (Params, ResponsesLogging) {
     let mut logging = ResponsesLogging::default();
     let reply = plain_config()
         .transform_create_response("manus/manus-1.6", upstream, &mut logging)

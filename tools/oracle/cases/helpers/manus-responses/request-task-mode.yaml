@@ -12,5 +12,5 @@ call:
         input: hi
         optional_params: {store: false}
       - model: manus-1.6-lite
-        input: [{role: user, content: hi}]
+        input: hello
         optional_params: {}

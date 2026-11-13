@@ -69,18 +69,6 @@ pub struct ManusResponsesConfig {
     pub ids: Box<dyn UnknownIdSource>,
 }
 
-impl ManusResponsesConfig {
-    #[must_use]
-    pub fn now(&self) -> i64 {
-        (self.clock)()
-    }
-
-    #[must_use]
-    pub fn unknown_id(&self) -> String {
-        format!("{UNKNOWN_ID_PREFIX}{}", self.ids.next_suffix())
-    }
-}
-
 macro_rules! unsupported_request {
     ($($name:ident($request:ty) => $result:ty, $operation:literal;)*) => {
         $(

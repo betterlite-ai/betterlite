@@ -82,12 +82,9 @@ fn transform_failure(error: &ManusResponsesError) -> Value {
         | ManusResponsesError::ExtraBodyShape
         | ManusResponsesError::ResponseId { .. }
         | ManusResponsesError::Request(_)
-        | ManusResponsesError::Resource(_)
         | ManusResponsesError::Json(_)
         | ManusResponsesError::ParamsShape
-        | ManusResponsesError::StreamChunkShape
-        | ManusResponsesError::StreamChunkWithoutType
-        | ManusResponsesError::InputItemsShape => json!({"raised": true}),
+        | ManusResponsesError::UnsupportedOperation { .. } => json!({"raised": true}),
     }
 }
 

@@ -1,7 +1,6 @@
 use betterlite_models::call_helpers::headers::{HeaderSource, process_response_headers};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
-use betterlite_openai::response_events::RawResponse;
 use betterlite_openai::response_events::created_at::convert_created_at;
 use indexmap::IndexMap;
 use serde_json::Number;
@@ -13,9 +12,9 @@ use crate::api::responses_provider_contract::records::{
 
 mod loose;
 
-use super::ManusResponsesConfig;
 use super::error::ManusResponsesError;
 use super::json;
+use super::{ManusResponsesConfig, UNKNOWN_ID_PREFIX};
 use loose::{construct_loose, zero_usage};
 
 const CREATED_AT_FIELD: &str = "created_at";
@@ -82,7 +81,7 @@ fn convert_created_at_fields(
             .get(CAMEL_CREATED_AT_FIELD)
             .cloned()
             .unwrap_or(Json::Null);
-        let Ok(converted) = convert_created_at(&camel, config.now()) else {
+        let Ok(converted) = convert_created_at(&camel, (config.clock)()) else {
             return Err(reply_failure(upstream, text));
         };
         fields.insert(
@@ -91,7 +90,7 @@ fn convert_created_at_fields(
         );
     }
     if let Some(value) = fields.get(CREATED_AT_FIELD).cloned() {
-        let Ok(converted) = convert_created_at(&value, config.now()) else {
+        let Ok(converted) = convert_created_at(&value, (config.clock)()) else {
             return Err(reply_failure(upstream, text));
         };
         fields.insert(
@@ -115,7 +114,10 @@ fn insert_defaults(config: &ManusResponsesConfig, fields: &mut Params) {
         fields.insert(String::from(USAGE_FIELD), zero_usage());
     }
     if matches!(fields.get(ID_FIELD), None | Some(Json::Null)) {
-        fields.insert(String::from(ID_FIELD), Json::Text(config.unknown_id()));
+        fields.insert(
+            String::from(ID_FIELD),
+            Json::Text(format!("{UNKNOWN_ID_PREFIX}{}", config.ids.next_suffix())),
+        );
     }
 }
 
@@ -172,16 +174,4 @@ pub(super) fn transform(
     convert_created_at_fields(config, &mut fields, upstream, &text)?;
     insert_defaults(config, &mut fields);
     finish(config, upstream, logging, &fields)
-}
-
-pub(super) fn raw<'reply>(
-    upstream: &'reply ResponsesUpstream,
-    headers: &'reply IndexMap<String, String>,
-    text: &'reply str,
-) -> RawResponse<'reply> {
-    RawResponse {
-        status: upstream.status_code,
-        headers,
-        text,
-    }
 }

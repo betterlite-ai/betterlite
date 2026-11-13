@@ -9,7 +9,10 @@ use crate::api::responses_provider_contract::records::Params;
 
 use super::super::ManusResponsesConfig;
 use super::super::error::ManusResponsesError;
-use super::{CREATED_AT_FIELD, ID_FIELD, OUTPUT_FIELD, REASONING_FIELD, TEXT_FIELD, USAGE_FIELD};
+use super::{
+    CREATED_AT_FIELD, ID_FIELD, OUTPUT_FIELD, REASONING_FIELD, TEXT_FIELD, UNKNOWN_ID_PREFIX,
+    USAGE_FIELD,
+};
 
 pub(super) fn zero_usage() -> Json {
     Json::Object(IndexMap::from([
@@ -23,7 +26,7 @@ fn fallback_id(config: &ManusResponsesConfig, fields: &Params) -> String {
     match fields.get(ID_FIELD) {
         Some(Json::Text(id)) => id.clone(),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => config.unknown_id(),
+        | None => format!("{UNKNOWN_ID_PREFIX}{}", config.ids.next_suffix()),
     }
 }
 
