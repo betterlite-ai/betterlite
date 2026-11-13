@@ -57,6 +57,7 @@ fn python_flags_preserve_character_and_case_semantics(
 #[case::before_final_newline(r"foo$", "foo\n", "foo\nbar")]
 #[case::absolute_end(r"foo\Z", "foo", "foo\n")]
 #[case::dollar_in_class(r"[$]", "$", "x")]
+#[case::class_then_end(r"[x]foo$", "xfoo\n", "xfoo\nbar")]
 #[case::escaped_dollar(r"\$", "$", "x")]
 fn python_anchors_match_re_semantics(
     #[case] source: &str,
