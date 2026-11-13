@@ -3,9 +3,6 @@ use std::future::{Future, ready};
 
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
-use betterlite_config::sections::anthropic_capability_catalog::{
-    BEDROCK_MIN_THINKING_BUDGET, Settings,
-};
 use betterlite_context::anthropic_catalog_lookup::RawCatalog;
 use betterlite_context::anthropic_catalog_lookup::candidates::CandidatePatterns;
 use betterlite_context::anthropic_catalog_lookup::error::CatalogLookupError;
@@ -44,34 +41,6 @@ pub(super) struct FixtureInput {
     pub(super) model_cost: IndexMap<String, Box<RawValue>>,
     #[serde(default)]
     pub(super) packaged: serde_json::Value,
-    #[serde(default)]
-    pub(super) budgets: BudgetInput,
-}
-
-// The fixture writes the six budgets a case exercises; the config defaults fill any it omits.
-#[derive(Debug, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub(super) struct BudgetInput {
-    pub(super) minimal: i64,
-    pub(super) low: i64,
-    pub(super) medium: i64,
-    pub(super) high: i64,
-    pub(super) xhigh: i64,
-    pub(super) max: i64,
-}
-
-impl Default for BudgetInput {
-    fn default() -> Self {
-        let defaults = Settings::default();
-        Self {
-            minimal: defaults.minimal,
-            low: defaults.low,
-            medium: defaults.medium,
-            high: defaults.high,
-            xhigh: defaults.xhigh,
-            max: defaults.max,
-        }
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -105,7 +74,6 @@ impl ModelInfoClient for NoHfTransport {
 }
 
 pub(super) struct Fixture {
-    pub(super) budgets: Settings,
     entries: ModelCostMap,
     typed: ModelCatalog,
     generalizations: CatalogGeneralizations,
@@ -123,18 +91,7 @@ impl Fixture {
     pub(super) fn load(input: &FixtureInput) -> Result<Self, FixtureError> {
         let bytes = serde_json::to_vec(&input.model_cost)?;
         let packaged: RawCatalog = serde_json::from_value(input.packaged.clone())?;
-        let budget = &input.budgets;
-        let budgets = Settings {
-            minimal: budget.minimal,
-            low: budget.low,
-            medium: budget.medium,
-            high: budget.high,
-            xhigh: budget.xhigh,
-            max: budget.max,
-            bedrock_min: BEDROCK_MIN_THINKING_BUDGET,
-        };
         Ok(Self {
-            budgets,
             entries: ModelCostMap::parse(&bytes)?,
             // every case names its provider, so resolution never reads the typed catalog
             typed: ModelCatalog::parse(b"{}", UnknownFields::Warn)?,

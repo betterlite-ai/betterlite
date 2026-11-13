@@ -8,7 +8,6 @@ call:
         native-model: {litellm_provider: anthropic, supports_native_structured_output: true}
         no-forced-tools: {litellm_provider: anthropic, supports_forced_tool_use: false}
       packaged: {}
-      budgets: {minimal: 128, low: 1024, medium: 2048, high: 4096, xhigh: 8192, max: 16384}
     default_max_tokens: 4096
     steps:
       - {function: map_openai_params, model: native-model, non_default_params: {response_format: {type: json_schema, json_schema: {schema: {type: object}}}}, optional_params: {}, drop_params: false, global_drop_params: false}

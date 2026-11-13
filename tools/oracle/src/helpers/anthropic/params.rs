@@ -90,7 +90,7 @@ async fn run_steps(
     let mut keys = betterlite_models::model_catalog_keys::ModelCostKeys::default();
     let dynamic = betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
     let catalogs = fixture.catalogs();
-    let budgets = fixture.budgets;
+    let budgets = Settings::default();
     let context = StepContext {
         budgets: &budgets,
         catalogs: &catalogs,

@@ -7,7 +7,6 @@ call:
         effort-model: {litellm_provider: anthropic, supports_output_config: true}
         plain-model: {litellm_provider: anthropic}
       packaged: {}
-      budgets: {minimal: 128, low: 1024, medium: 2048, high: 4096, xhigh: 8192, max: 16384}
     default_max_tokens: 4096
     steps:
       - {function: apply_output_config, model: plain-model, data: {output_config: {effort: high, format: {type: json_schema}}}, optional_params: {output_config: {effort: high, format: {type: json_schema}}}, global_drop_params: true}
