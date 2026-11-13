@@ -1,0 +1,17 @@
+kind: helper
+name: perplexity-supported-params-sonar
+call:
+  b6120:
+    function: supported_params
+    steps:
+      - model: sonar
+        reasoning: false
+        web_search: true
+      - model: sonar-reasoning-pro
+        reasoning: true
+        web_search: false
+      - model: sonar-pro
+        reasoning: false
+        web_search: false
+env: {}
+compare: {ignore: []}

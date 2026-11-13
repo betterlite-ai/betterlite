@@ -1,0 +1,12 @@
+kind: helper
+name: perplexity-annotations-offsets-and-titles
+call:
+  b6120:
+    function: reply
+    steps:
+      - model: sonar
+        id: resp-1
+        start_time: '2026-01-01T00:00:00+00:00'
+        body: '{"id":"resp-1","object":"chat.completion","created":1,"model":"sonar","choices":[{"index":0,"message":{"role":"assistant","content":"🙂 See [1] and [2][3][2]."},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15},"citations":["https://a.example","https://b.example","https://c.example"],"search_results":[{"url":"https://a.example","title":"old"},{"url":"https://a.example","title":"A2"},{"url":"https://b.example","title":"B"},{"url":"https://d.example","title":"D"}]}'
+env: {}
+compare: {ignore: []}

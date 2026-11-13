@@ -1,0 +1,17 @@
+kind: helper
+name: perplexity-supported-params-lookup-failure
+call:
+  b6120:
+    function: supported_params
+    steps:
+      - model: sonar-pro
+        reasoning: error
+        web_search: true
+      - model: sonar-pro
+        reasoning: true
+        web_search: error
+      - model: sonar-pro
+        reasoning: error
+        web_search: error
+env: {}
+compare: {ignore: []}

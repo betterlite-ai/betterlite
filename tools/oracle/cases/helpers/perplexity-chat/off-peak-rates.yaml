@@ -1,0 +1,46 @@
+kind: helper
+name: perplexity-off-peak-rates
+call:
+  b6120:
+    function: cost
+    steps:
+      - model: perplexity/sonar
+        current_time: '2024-06-16T12:00:00Z'
+        model_info:
+          key: perplexity/sonar
+          max_tokens: 4096
+          max_input_tokens: 4096
+          max_output_tokens: 4096
+          input_cost_per_token: '0.000001'
+          output_cost_per_token: '0.000002'
+          off_peak_pricing:
+            hours_utc: '00:00-23:59'
+            input_cost_per_token: '0.5'
+            output_cost_per_token: '1.5'
+          litellm_provider: perplexity
+          mode: chat
+          supported_openai_params: null
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 10
+      - model: perplexity/sonar
+        current_time: '2024-06-16T12:00:00Z'
+        model_info:
+          key: perplexity/sonar
+          max_tokens: 4096
+          max_input_tokens: 4096
+          max_output_tokens: 4096
+          input_cost_per_token: '0.000001'
+          output_cost_per_token: '0.000002'
+          off_peak_pricing:
+            hours_utc: '00:00-06:00'
+            input_cost_per_token: '0.5'
+            output_cost_per_token: '1.5'
+          litellm_provider: perplexity
+          mode: chat
+          supported_openai_params: null
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 10
+env: {}
+compare: {ignore: []}
