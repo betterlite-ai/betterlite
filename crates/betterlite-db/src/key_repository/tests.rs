@@ -841,7 +841,8 @@ async fn postgres_find_many_filters_and_limits() {
     seed(&pool, "two").await;
     seed(&pool, "three").await;
     let client = TestClient { pool: pool.clone() };
-    let table = direct(&client).table().unwrap();
+    let repository = direct(&client);
+    let table = repository.table().unwrap();
     let filter = TokenFilter(vec![(
         TokenColumn::Token,
         TokenValue::Text(String::from("one")),
@@ -862,7 +863,8 @@ async fn postgres_update_and_delete_respect_the_filter() {
     seed(&pool, "target").await;
     seed(&pool, "keep").await;
     let client = TestClient { pool: pool.clone() };
-    let table = direct(&client).table().unwrap();
+    let repository = direct(&client);
+    let table = repository.table().unwrap();
     let write = TokenWrite(BTreeMap::from([(
         TokenColumn::KeyAlias,
         TokenValue::Text(String::from("changed")),
