@@ -1,0 +1,17 @@
+kind: helper
+name: openai-response-events-responses-auth-headers
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_events:
+    responses_auth_headers:
+      probes:
+        - {headers: {}, api_key: params-key, litellm_api_key: litellm-key, litellm_openai_key: openai-key, env_api_key: env-key, api_base: null, identity: false}
+        - {headers: {content-type: text/plain}, api_key: second-key, litellm_api_key: null, litellm_openai_key: null, env_api_key: null, api_base: null, identity: false}
+        - {headers: {Authorization: old}, api_key: null, litellm_api_key: litellm-key, litellm_openai_key: openai-key, env_api_key: env-key, api_base: null, identity: false}
+        - {headers: {}, api_key: null, litellm_api_key: null, litellm_openai_key: openai-key, env_api_key: env-key, api_base: null, identity: false}
+        - {headers: {}, api_key: null, litellm_api_key: null, litellm_openai_key: null, env_api_key: env-key, api_base: null, identity: false}
+        - {headers: {}, api_key: null, litellm_api_key: null, litellm_openai_key: null, env_api_key: null, api_base: null, identity: false}
+        - {headers: {}, api_key: '', litellm_api_key: fallback-key, litellm_openai_key: null, env_api_key: '', api_base: null, identity: false}
+        - {headers: {}, api_key: null, litellm_api_key: null, litellm_openai_key: null, env_api_key: null, api_base: https://identity.example/v1, identity: true}
+        - {headers: {}, api_key: static-key, litellm_api_key: null, litellm_openai_key: null, env_api_key: null, api_base: https://base.example/v1, identity: false}

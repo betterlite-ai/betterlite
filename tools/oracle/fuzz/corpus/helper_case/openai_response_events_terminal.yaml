@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-events-seed-terminal
+call:
+  openai_response_events:
+    completed_incomplete_failed:
+      probes:
+        - chunks: ['data: {"type":"response.completed","response":{"id":"r","created_at":1,"output":[]}}']
+env: {}
+compare: {ignore: []}
