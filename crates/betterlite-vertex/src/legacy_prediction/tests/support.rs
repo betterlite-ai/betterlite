@@ -73,7 +73,9 @@ pub(super) fn projection_services(encoder: &FakeEncoding) -> ProjectionServices<
     }
 }
 
-pub(super) fn legacy_context<'a, 'b>(services: &'a ProjectionServices<'b>) -> LegacyContext<'a, 'b> {
+pub(super) fn legacy_context<'a, 'b>(
+    services: &'a ProjectionServices<'b>,
+) -> LegacyContext<'a, 'b> {
     LegacyContext {
         project: Some("proj"),
         location: Some("us-central1"),

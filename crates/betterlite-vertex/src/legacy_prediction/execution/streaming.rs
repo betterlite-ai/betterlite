@@ -10,9 +10,7 @@ use super::super::client::{
     EndpointPredictRequest, PredictionClient, PredictionStream, PublisherPredictRequest,
 };
 use super::super::error::{LegacyPredictionError, PredictionError};
-use super::super::invocation::{
-    LegacyInvocation, remove_instance_stream, remove_stream_option,
-};
+use super::super::invocation::{LegacyInvocation, remove_instance_stream, remove_stream_option};
 use super::super::records::{LegacyChunk, Prediction, PredictionsReply, strip_output_separator};
 use super::super::streamer::TextStreamer;
 use super::scope::{RpcScope, endpoint_path, require_custom, resolve_scope};

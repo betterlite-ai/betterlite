@@ -5,15 +5,13 @@ use betterlite_models::decisions::Json;
 use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::probe::AccessToken;
 
-use super::super::client::{
-    EndpointPredictRequest, PredictionClient, PublisherPredictRequest,
-};
+use super::super::client::{EndpointPredictRequest, PredictionClient, PublisherPredictRequest};
 use super::super::error::PredictionError;
 use super::super::invocation::LegacyInvocation;
 use super::super::projection::{LegacyResult, ProjectionInput, project};
 use super::super::records::{Prediction, ReplyMeta, strip_output_separator};
-use super::scope::{RpcScope, endpoint_path, require_custom, resolve_scope};
 use super::LegacyContext;
+use super::scope::{RpcScope, endpoint_path, require_custom, resolve_scope};
 
 pub(super) async fn complete_inner<C, Lookup>(
     client: &C,

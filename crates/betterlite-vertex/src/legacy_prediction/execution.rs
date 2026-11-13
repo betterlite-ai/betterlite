@@ -69,4 +69,3 @@ where
         Err(StreamFailure::Prediction(source)) => Err(LegacyPredictionError::Streaming { source }),
     }
 }
-
