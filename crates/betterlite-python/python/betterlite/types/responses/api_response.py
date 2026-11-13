@@ -1,4 +1,5 @@
-from collections.abc import Collection
+from collections.abc import Collection, Mapping, Sequence
+from datetime import datetime
 from typing import ClassVar, Final, Literal
 
 from typing_extensions import override
@@ -46,6 +47,30 @@ class InputTokensDetails(ResponseObject):
     defaults: ClassVar[dict[str, StoredValue]] = {"cached_tokens": 0}
 
 
+def _dict_value(value: StoredValue) -> Mapping[str, StoredValue] | None:
+    match value:
+        case dict() as mapping:
+            return mapping
+        case bool() | int() | float() | datetime() | None | ModelObject() | Sequence() | Mapping():
+            return None
+
+
+def _model_value(value: StoredValue) -> ModelObject | None:
+    match value:
+        case ModelObject() as model:
+            return model
+        case bool() | int() | float() | datetime() | None | Sequence() | Mapping():
+            return None
+
+
+def _negative_int(value: StoredValue) -> bool:
+    match value:
+        case int() if value < 0:
+            return True
+        case bool() | int() | float() | datetime() | None | ModelObject() | Sequence() | Mapping():
+            return False
+
+
 class ResponseAPIUsage(ResponseObject):
     input_tokens: int
     input_tokens_details: InputTokensDetails | None
@@ -56,11 +81,10 @@ class ResponseAPIUsage(ResponseObject):
 
     @field_validator("cost", mode="before")
     def _cost_total(self, value: StoredValue) -> StoredValue:
-        match value:
-            case dict():
-                return value.get("total_cost")
-            case _other:
-                return value
+        mapping = _dict_value(value)
+        if mapping is None:
+            return value
+        return mapping.get("total_cost")
 
 
 class _FrozenObject(ResponseObject):
@@ -82,11 +106,9 @@ class WebSearchToolUsage(_FrozenObject):
 
     @field_validator("num_requests", mode="before")
     def _non_negative(self, value: StoredValue) -> StoredValue:
-        match value:
-            case int() if value < 0:
-                raise ValueError("num_requests must not be negative")
-            case _other:
-                return value
+        if _negative_int(value):
+            raise ValueError("num_requests must not be negative")
+        return value
 
 
 class ResponsesToolUsage(_FrozenObject):
@@ -97,9 +119,9 @@ def _field(item: StoredValue, name: str) -> StoredValue:
     match item:
         case ResponseObject():
             return item.get(name)
-        case dict():
-            return item.get(name)
-        case _other:
+        case dict() as mapping:
+            return mapping.get(name)
+        case bool() | int() | float() | datetime() | None | ModelObject() | Sequence() | Mapping():
             return None
 
 
@@ -112,7 +134,7 @@ def _strip_reasoning_nulls(item: JsonValue) -> JsonValue:
                 key: value for key, value in item.items()
                 if value is not None or key not in DROPPED_REASONING_KEYS
             }
-        case _other:
+        case bool() | int() | float() | str() | datetime() | list() | None:
             return item
 
 
@@ -121,7 +143,7 @@ def _without_reasoning_nulls(dumped: dict[str, JsonValue]) -> dict[str, JsonValu
     match output:
         case list():
             dumped["output"] = [_strip_reasoning_nulls(item) for item in output]
-        case _other:
+        case bool() | int() | float() | str() | datetime() | dict() | None:
             pass
     return dumped
 
@@ -155,19 +177,17 @@ class ResponsesAPIResponse(ResponseObject):
 
     @field_validator("reasoning", mode="before")
     def _reasoning_mapping(self, value: StoredValue) -> StoredValue:
-        match value:
-            case ModelObject():
-                return value.model_dump()
-            case _other:
-                return value
+        model = _model_value(value)
+        if model is None:
+            return value
+        return model.model_dump()
 
     @field_validator("usage", mode="before")
     def _usage_object(self, value: StoredValue) -> StoredValue:
-        match value:
-            case dict():
-                return ResponseAPIUsage(**value)
-            case _other:
-                return value
+        mapping = _dict_value(value)
+        if mapping is None:
+            return value
+        return ResponseAPIUsage(**mapping)
 
     @override
     def model_dump(
@@ -182,7 +202,7 @@ class ResponsesAPIResponse(ResponseObject):
         match dumped:
             case dict():
                 return _without_reasoning_nulls(dumped)
-            case _other:
+            case bool() | int() | float() | str() | datetime() | list() | None:
                 return dumped
 
     @property
@@ -200,8 +220,14 @@ class ResponsesAPIResponse(ResponseObject):
                             match text:
                                 case str():
                                     texts.append(text)
-                                case _other:
+                                case (
+                                    bool() | int() | float() | datetime() | None
+                                    | ModelObject() | Sequence() | Mapping()
+                                ):
                                     texts.append("")
-                case _other:
+                case (
+                    bool() | int() | float() | str() | datetime() | None
+                    | ModelObject() | Sequence() | Mapping()
+                ):
                     pass
         return "".join(texts)

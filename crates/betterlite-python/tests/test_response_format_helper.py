@@ -1,8 +1,9 @@
 import json
 from copy import deepcopy
+from datetime import datetime
 
 import pytest
-from litellm.llms.base_llm.base_utils import type_to_response_format_param as litellm_type_param  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L181
+from litellm.llms.base_llm.base_utils import type_to_response_format_param as litellm_type_param  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L181
 from openai.lib._pydantic import _ensure_strict_json_schema as openai_strict_schema  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L203
 from pydantic import BaseModel, Field
 
@@ -35,21 +36,21 @@ INVALID_VALUES: tuple[JsonValue, ...] = (42, "text", 3.5, True, ["a"])
 UNSUPPORTED_MESSAGE = "Unsupported response_format type"
 
 
-class Nested(BaseModel):  # type: ignore[explicit-any]  # https://github.com/pydantic/pydantic/blob/b2212c787fb5c73386dc770681ec49cd09da8e73/pydantic/main.py#L134
+class Nested(BaseModel):
     value: int = Field(description="a value")
 
 
-class Leaf(BaseModel):  # type: ignore[explicit-any]  # https://github.com/pydantic/pydantic/blob/b2212c787fb5c73386dc770681ec49cd09da8e73/pydantic/main.py#L134
+class Leaf(BaseModel):
     x: int
 
 
-class Child(BaseModel):  # type: ignore[explicit-any]  # https://github.com/pydantic/pydantic/blob/b2212c787fb5c73386dc770681ec49cd09da8e73/pydantic/main.py#L134
+class Child(BaseModel):
     name: str
     nested: Nested
     zz: Leaf = Field(description="a leaf")
 
 
-class ResponseModel(BaseModel):  # type: ignore[explicit-any]  # https://github.com/pydantic/pydantic/blob/b2212c787fb5c73386dc770681ec49cd09da8e73/pydantic/main.py#L134
+class ResponseModel(BaseModel):
     child: Child
     children: list[Child]
     optional: str | None = None
@@ -94,7 +95,7 @@ def litellm_convert(
 
 
 def litellm_convert_value(value: JsonValue) -> dict[str, JsonValue] | None:
-    converted: dict[str, JsonValue] | None = litellm_type_param(value)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L181-L212
+    converted: dict[str, JsonValue] | None = litellm_type_param(value)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
     return converted
 
 
@@ -102,7 +103,7 @@ def as_mapping(value: JsonValue) -> dict[str, JsonValue]:
     match value:
         case dict():
             return value
-        case _other:
+        case bool() | int() | float() | str() | datetime() | list() | None:
             raise AssertionError("the converted format is not a mapping")
 
 
@@ -110,7 +111,7 @@ def as_list(value: JsonValue) -> list[JsonValue]:
     match value:
         case list():
             return value
-        case _other:
+        case bool() | int() | float() | str() | datetime() | dict() | None:
             raise AssertionError("the converted format is not a list")
 
 

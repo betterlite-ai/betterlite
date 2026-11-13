@@ -16,7 +16,7 @@ def _as_dict(value: JsonValue) -> dict[str, JsonValue] | None:
     match value:
         case dict() as mapping:
             return mapping
-        case _other:
+        case bool() | int() | float() | str() | datetime() | list() | None:
             return None
 
 
@@ -24,7 +24,7 @@ def _as_list(value: JsonValue) -> list[JsonValue] | None:
     match value:
         case list() as items:
             return items
-        case _other:
+        case bool() | int() | float() | str() | datetime() | dict() | None:
             return None
 
 
@@ -32,7 +32,7 @@ def _is_container(value: JsonValue) -> bool:
     match value:
         case dict() | list():
             return True
-        case _other:
+        case bool() | int() | float() | str() | datetime() | None:
             return False
 
 
@@ -42,7 +42,7 @@ def _container_children(value: JsonValue) -> list[JsonValue]:
             return [child for child in value.values() if _is_container(child)]
         case list():
             return [child for child in value if _is_container(child)]
-        case _other:
+        case bool() | int() | float() | str() | datetime() | None:
             return []
 
 
@@ -51,7 +51,7 @@ def _rewrite_ref(node: dict[str, JsonValue], ref_template: str) -> None:
     match ref:
         case str():
             node["$ref"] = ref_template.format(model=ref.rsplit("/", 1)[-1])
-        case _other:
+        case bool() | int() | float() | datetime() | list() | dict() | None:
             pass
 
 
@@ -66,7 +66,7 @@ def _rewrite_refs(schema: dict[str, JsonValue], ref_template: str) -> None:
         match node:
             case dict():
                 _rewrite_ref(node, ref_template)
-            case _other:
+            case bool() | int() | float() | str() | datetime() | list() | None:
                 pass
         stack.extend(_container_children(node))
 
@@ -181,7 +181,7 @@ def _strictify_ref(
             return _inline_ref(schema, ref, path=path, root=root)
         case None | str():
             return schema
-        case _other:
+        case bool() | int() | float() | datetime() | list() | dict():
             raise TypeError(f"Received non-string $ref - {ref}")
 
 
@@ -190,44 +190,41 @@ def _ensure_strict_json_schema(
 ) -> dict[str, JsonValue]:
     match json_schema:
         case dict():
-            schema = json_schema
-        case _other:
+            _strictify_defs(json_schema, path=path, root=root)
+            _strictify_properties(json_schema, path=path, root=root)
+            _strictify_composition(json_schema, path=path, root=root)
+            return _strictify_ref(json_schema, path=path, root=root)
+        case bool() | int() | float() | str() | datetime() | list() | None:
             raise TypeError(f"Expected {json_schema} to be a dictionary; path={path}")
-    _strictify_defs(schema, path=path, root=root)
-    _strictify_properties(schema, path=path, root=root)
-    _strictify_composition(schema, path=path, root=root)
-    return _strictify_ref(schema, path=path, root=root)
+
+
+def _class_schema(
+    response_class: type[ResponseFormatModel], ref_template: str | None,
+) -> dict[str, JsonValue]:
+    if ref_template is not None:
+        return response_class.model_json_schema(ref_template=ref_template)
+    schema = response_class.model_json_schema()
+    return _ensure_strict_json_schema(schema, path=(), root=schema)
 
 
 def type_to_response_format_param(
     response_format: type[ResponseFormatModel] | JsonValue,
     ref_template: str | None = None,
 ) -> dict[str, JsonValue] | None:
+    if response_format is None:
+        return None
     match response_format:
-        case None:
-            return None
         case dict():
             return _dict_to_response_format_helper(response_format, ref_template)
-        case bool() | int() | float() | str() | datetime() | list():
+        case int() | float() | str() | datetime() | list():
             raise TypeError(f"Unsupported response_format type - {response_format}")
-        case other:
-            try:
-                schema_method = other.model_json_schema
-                schema_name = other.__name__
-            except AttributeError as error:
-                raise TypeError(f"Unsupported response_format type - {other}") from error
-            if not callable(schema_method):
-                raise TypeError(f"Unsupported response_format type - {other}")
-            if ref_template is not None:
-                schema = other.model_json_schema(ref_template=ref_template)
-            else:
-                schema = other.model_json_schema()
-                schema = _ensure_strict_json_schema(schema, path=(), root=schema)
+        case type():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L179-L212
             return {
                 "type": "json_schema",
                 "json_schema": {
-                    "schema": schema,
-                    "name": schema_name,
+                    "schema": _class_schema(response_format, ref_template),
+                    "name": response_format.__name__,
                     "strict": True,
                 },
             }
+    raise TypeError(f"Unsupported response_format type - {response_format}")

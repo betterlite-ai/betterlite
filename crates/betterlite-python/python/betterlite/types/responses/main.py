@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import ClassVar, Literal
 
 from typing_extensions import TypedDict, override
@@ -55,7 +56,7 @@ def _json_field(value: JsonValue, name: str) -> JsonValue:
     match value:
         case dict():
             return value.get(name)
-        case _other:
+        case bool() | int() | float() | str() | datetime() | list() | None:
             return None
 
 
@@ -63,7 +64,7 @@ def _text_field(value: JsonValue, name: str) -> str:
     match _json_field(value, name):
         case str() as text:
             return text
-        case _other:
+        case bool() | int() | float() | datetime() | list() | dict() | None:
             return ""
 
 
@@ -73,7 +74,7 @@ def _web_search_source_url(item: JsonValue) -> str | None:
     match _json_field(item, "url"):
         case str() as url:
             return url
-        case _other:
+        case bool() | int() | float() | datetime() | list() | dict() | None:
             return None
 
 
@@ -92,7 +93,7 @@ def build_web_search_call(
                 url = _web_search_source_url(item)
                 if url is not None:
                     sources.append({"type": "url", "url": url})
-        case _other:
+        case bool() | int() | float() | str() | datetime() | dict() | None:
             pass
     failed = _text_field(content, "type") == "web_search_tool_result_error"
     resolved: Literal["in_progress", "searching", "completed", "failed"] = (
@@ -150,7 +151,7 @@ def build_code_interpreter_log_outputs(  # ast-grep-ignore: no-long-names
             if logs == "":
                 return None
             return [OutputCodeInterpreterCallLog(type="logs", logs=logs)]
-        case _other:
+        case bool() | int() | float() | str() | datetime() | list() | None:
             return None
 
 
