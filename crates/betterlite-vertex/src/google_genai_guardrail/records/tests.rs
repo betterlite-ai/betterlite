@@ -8,7 +8,7 @@ use rstest::rstest;
 
 use crate::google_genai_guardrail::callbacks::merged_request_data;
 use crate::google_genai_guardrail::records::{
-    Location, SystemSource, project_request, request_texts, response_texts, write_texts,
+    Location, Segment, project_request, request_texts, response_texts, write_texts,
 };
 use crate::google_genai_guardrail::sse::{accumulated_stream_text, decode_google_guardrail_sse};
 use crate::google_native_content::request::GenerateContentRequest;
@@ -73,18 +73,23 @@ fn request_text_locations_place_the_system_instruction_first() {
     assert_eq!(
         request_texts(&data).0,
         vec![
-            Location::System {
-                source: SystemSource::RootCamel,
-                part: 0,
-            },
-            Location::Content {
-                content: 0,
-                part: 0,
-            },
-            Location::Content {
-                content: 1,
-                part: 0,
-            },
+            vec![
+                Segment::Key("systemInstruction"),
+                Segment::Key("parts"),
+                Segment::Index(0),
+            ],
+            vec![
+                Segment::Key("contents"),
+                Segment::Index(0),
+                Segment::Key("parts"),
+                Segment::Index(0),
+            ],
+            vec![
+                Segment::Key("contents"),
+                Segment::Index(1),
+                Segment::Key("parts"),
+                Segment::Index(0),
+            ],
         ]
     );
 }
@@ -114,19 +119,16 @@ fn response_write_back_visits_every_candidate() {
         r#"{"candidates":[{"content":{"parts":[{"text":"a"},{"inlineData":{}},{"text":""}]},"finishReason":"STOP"},{"content":{"parts":[{"text":"b"}]}}]}"#,
     );
     let locations = response_texts(&response).0;
-    assert_eq!(
-        locations,
+    let candidate = |index| -> Location {
         vec![
-            Location::Candidate {
-                candidate: 0,
-                part: 0,
-            },
-            Location::Candidate {
-                candidate: 1,
-                part: 0,
-            },
+            Segment::Key("candidates"),
+            Segment::Index(index),
+            Segment::Key("content"),
+            Segment::Key("parts"),
+            Segment::Index(0),
         ]
-    );
+    };
+    assert_eq!(locations, vec![candidate(0), candidate(1)]);
     write_texts(&mut response, &locations, &["A".to_owned(), "B".to_owned()]);
     assert_eq!(
         Json::Object(response),
@@ -224,6 +226,9 @@ fn ignored_sse_payloads_produce_no_text(#[case] chunk: &[u8]) {
 #[case::no_space(b"data:{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"x\"}]}}]}\n")]
 #[case::carriage_returns(
     b"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"x\"}]}}]}\r\ndata: [DONE]\r\n"
+)]
+#[case::unit_separator_padding(
+    b"data:\x1f{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"x\"}]}}]}\x1f\n"
 )]
 fn data_lines_are_scanned_without_a_space(#[case] chunk: &[u8]) {
     assert_eq!(decode_google_guardrail_sse(&[chunk]), vec!["x".to_owned()]);

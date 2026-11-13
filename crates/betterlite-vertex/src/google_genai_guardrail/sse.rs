@@ -10,33 +10,14 @@ const LINE_BOUNDARIES: [char; 10] = [
 
 // LiteLLM decodes each chunk with errors="replace", so a multibyte character split across chunks becomes replacement characters
 fn decode_lossy(bytes: &[u8]) -> String {
-    let mut decoded = String::new();
-    let mut remaining = bytes;
-    loop {
-        match std::str::from_utf8(remaining) {
-            Ok(text) => {
-                decoded.push_str(text);
-                return decoded;
-            }
-            Err(error) => {
-                let valid = error.valid_up_to();
-                if let Some(prefix) = remaining
-                    .get(..valid)
-                    .and_then(|slice| std::str::from_utf8(slice).ok())
-                {
-                    decoded.push_str(prefix);
-                }
-                decoded.push('\u{fffd}');
-                let invalid = error
-                    .error_len()
-                    .unwrap_or(remaining.len().saturating_sub(valid));
-                let Some(rest) = remaining.get(valid.saturating_add(invalid)..) else {
-                    return decoded;
-                };
-                remaining = rest;
-            }
+    let mut decoded = String::with_capacity(bytes.len());
+    for chunk in bytes.utf8_chunks() {
+        decoded.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            decoded.push(char::REPLACEMENT_CHARACTER);
         }
     }
+    decoded
 }
 
 #[must_use]
@@ -44,12 +25,12 @@ pub fn decode_google_guardrail_sse(chunks: &[&[u8]]) -> Vec<String> {
     let joined: String = chunks.iter().map(|chunk| decode_lossy(chunk)).collect();
     let mut texts = Vec::new();
     for line in joined.split(|character| LINE_BOUNDARIES.contains(&character)) {
-        let Some(payload) = line.strip_prefix("data:").map(str::trim) else {
+        let Some(payload) = line.strip_prefix("data:") else {
             continue;
         };
-        if payload.is_empty() || payload == "[DONE]" {
-            continue;
-        }
+        // an empty payload and [DONE] are not JSON objects, so the parse drops them; Python's strip also removes U+001F
+        let payload = payload
+            .trim_matches(|character: char| character.is_whitespace() || character == '\u{1f}');
         if let Ok(Json::Object(object)) = serde_json::from_str::<Json>(payload) {
             texts.extend(response_texts(&object).1);
         }

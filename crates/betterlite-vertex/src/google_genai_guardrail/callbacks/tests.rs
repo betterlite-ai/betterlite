@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_core::routes::CallType;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 
@@ -188,5 +189,18 @@ async fn stream_replacement_ignored() {
     assert_eq!(
         call.request_data.get("responses_so_far"),
         Some(&Json::List(original))
+    );
+}
+
+#[test]
+fn the_four_generate_content_call_types_are_advertised() {
+    assert_eq!(
+        crate::google_genai_guardrail::CALL_TYPES,
+        [
+            CallType::GenerateContent,
+            CallType::AgenerateContent,
+            CallType::GenerateContentStream,
+            CallType::AgenerateContentStream,
+        ]
     );
 }

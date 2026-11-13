@@ -170,7 +170,7 @@ fn resolve_mut<'data>(data: &'data mut Object, location: &[Segment]) -> Option<&
 }
 
 pub fn write_texts(data: &mut Object, locations: &[Location], texts: &[String]) {
-    if texts.is_empty() || texts.len() != locations.len() {
+    if texts.len() != locations.len() {
         return;
     }
     for (location, text) in locations.iter().zip(texts) {

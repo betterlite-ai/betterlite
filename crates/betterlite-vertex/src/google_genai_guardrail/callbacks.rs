@@ -16,16 +16,6 @@ pub enum InputType {
     Response,
 }
 
-impl InputType {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Request => "request",
-            Self::Response => "response",
-        }
-    }
-}
-
 // LiteLLM's GenericGuardrailAPIInputs reduced to the keys this handler sets
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GuardrailInputs {
@@ -148,12 +138,12 @@ pub async fn process_stream<Guardrail: GenaiGuardrail>(
     user_metadata: &Object,
     guardrail: &mut Guardrail,
 ) -> Result<(), Guardrail::Failure> {
-    let context = Json::List(frames.to_vec());
-    let merged = merged_request_data(request_data, user_metadata, "responses_so_far", context);
     let accumulated = accumulated_stream_text(frames);
     if accumulated.is_empty() {
         return Ok(());
     }
+    let context = Json::List(frames.to_vec());
+    let merged = merged_request_data(request_data, user_metadata, "responses_so_far", context);
     apply(
         guardrail,
         GuardrailInputs {
