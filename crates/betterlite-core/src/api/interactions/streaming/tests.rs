@@ -3,8 +3,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
 use betterlite_core::api::interactions::contract::config::BaseInteractionsAPIConfig;
 use betterlite_core::api::interactions::contract::error::InteractionsContractError;
 use betterlite_core::api::interactions::contract::records::{
@@ -18,9 +21,12 @@ use betterlite_core::api::interactions::streaming::records::{
     InteractionsApiBase, InteractionsStreamSetup, InteractionsSuccessCall, SharedApiBase,
 };
 use betterlite_core::api::interactions::streaming::response::{
-    InteractionsAsyncResponse, InteractionsLineStream, InteractionsSyncResponse,
+    InteractionBufferedResponse, InteractionsAsyncResponse, InteractionsLineStream,
+    InteractionsSyncResponse,
 };
 use betterlite_core::api::interactions::streaming::sync_iterator::SyncInteractionsStreamIterator;
+use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_interactions::types::response::{
     CancelInteractionResult, DeleteInteractionResult, InteractionsApiResponse,
     InteractionsStreamChunk,
@@ -37,8 +43,12 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use chrono::{DateTime, FixedOffset};
+use http::{HeaderMap, Method};
 use indexmap::IndexMap;
 use thiserror::Error;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
+use url::Url;
 
 const COMPLETED_STATUS: &str = r#"{"id":"int_1","status":"completed"}"#;
 const COMPLETED_EVENT: &str = r#"{"id":"int_2","event_type":"interaction.completed"}"#;
@@ -780,6 +790,103 @@ fn sync_iteration_dispatches_the_async_handler_then_the_sync_handler() {
     assert_eq!(records[1].cache_hit, None);
     assert_eq!(records[0].prefer_async_handlers, None);
     assert_eq!(records[1].prefer_async_handlers, None);
+}
+
+async fn serve_stream(listener: TcpListener, answer: &str) {
+    let (mut stream, _) = listener.accept().await.expect("the client connects");
+    let mut head = Vec::new();
+    let mut byte = [0_u8; 1];
+    while !head.ends_with(b"\r\n\r\n") {
+        stream
+            .read_exact(&mut byte)
+            .await
+            .expect("the request head arrives");
+        head.push(byte[0]);
+    }
+    let reply = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nx-ratelimit-remaining-requests: 9\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{answer}",
+        answer.len()
+    );
+    stream
+        .write_all(reply.as_bytes())
+        .await
+        .expect("the reply is written");
+    stream.shutdown().await.expect("the connection closes");
+}
+
+#[tokio::test]
+async fn async_iteration_reads_a_streamed_http_response() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the port binds");
+    let address = listener.local_addr().expect("the address resolves");
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+        .expect("the proxy policy resolves");
+    let client = ProxiedClient::outbound(&Arc::new(policy)).expect("the client builds");
+    let request = OutboundRequest {
+        method: Method::GET,
+        url: Url::parse(&format!("http://{address}/stream")).expect("the url parses"),
+        query: Vec::new(),
+        headers: HeaderMap::new(),
+        body: RequestBody::Empty,
+        deadline: Duration::from_secs(30),
+    };
+    let answer = format!("data: {COMPLETED_STATUS}\n\ndata: [DONE]\n");
+    let (response, ()) = tokio::join!(client.send(request), serve_stream(listener, &answer));
+    let config = FixtureConfig;
+    let mut logging = RecordingLogging::new(Params::new());
+    let mut iterator = InteractionsStreamIterator::new(
+        response.expect("the stream response arrives"),
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the http iterator builds");
+    assert_eq!(
+        iterator
+            .base
+            .hidden_params
+            .additional_headers
+            .get("x-ratelimit-remaining-requests"),
+        Some(&JsonValue::Text(String::from("9")))
+    );
+    let first = iterator
+        .next_chunk()
+        .await
+        .expect("the first event arrives")
+        .expect("the first event decodes");
+    assert_eq!(first.id.as_deref(), Some("int_1"));
+    assert!(iterator.next_chunk().await.is_none());
+    assert!(iterator.base.finished);
+}
+
+#[test]
+fn sync_iteration_reads_a_buffered_response() {
+    let response = InteractionBufferedResponse {
+        headers: IndexMap::from([(
+            String::from("x-ratelimit-remaining-requests"),
+            String::from("9"),
+        )]),
+        body: format!("data: {COMPLETED_EVENT}\n\ndata: [DONE]\n").into_bytes(),
+    };
+    let config = FixtureConfig;
+    let mut logging = RecordingLogging::new(Params::new());
+    let mut iterator =
+        SyncInteractionsStreamIterator::new(response, setup(&mut logging, &config, &NO_API_BASE))
+            .expect("the buffered iterator builds");
+    assert_eq!(
+        iterator
+            .base
+            .hidden_params
+            .additional_headers
+            .get("x-ratelimit-remaining-requests"),
+        Some(&JsonValue::Text(String::from("9")))
+    );
+    let first = iterator
+        .next_chunk()
+        .expect("the first event arrives")
+        .expect("the first event decodes");
+    assert_eq!(first.id.as_deref(), Some("int_2"));
+    assert!(iterator.next_chunk().is_none());
+    assert_eq!(logging.records().len(), 2);
 }
 
 #[tokio::test]
