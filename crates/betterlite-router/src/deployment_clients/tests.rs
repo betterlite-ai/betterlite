@@ -682,3 +682,97 @@ fn deployment_clients_boundaries_a_team_wildcard_shadows_a_global_one() {
     let chosen = credential_deployment(&catalog, "openai/gpt-4o", None).expect("global");
     assert_eq!(chosen.id(), Some("g1"));
 }
+
+#[test]
+fn deployment_clients_boundaries_a_cached_client_expires_exactly_at_the_client_ttl() {
+    let clock = clock_at(0);
+    let clients = CachedClients::new(
+        Duration::from_secs(CLIENT_TTL_SECONDS),
+        system_clock(&clock),
+    );
+    let lookup = ClientLookup {
+        model_id: "d1",
+        stream: false,
+        api_key: None,
+    };
+    let first = clients.openai_client(
+        ClientKind::Async,
+        &lookup,
+        &ClientDeployment {
+            model_group: "gpt",
+            api_base: "https://a.example/v1",
+        },
+    );
+    assert_eq!(first.api_base, "https://a.example/v1");
+    *clock.lock().expect("clock") = 1;
+    let fresh = clients.openai_client(
+        ClientKind::Async,
+        &lookup,
+        &ClientDeployment {
+            model_group: "gpt",
+            api_base: "https://b.example/v1",
+        },
+    );
+    assert_eq!(fresh.api_base, "https://a.example/v1");
+    *clock.lock().expect("clock") = CLIENT_TTL_SECONDS.saturating_mul(1000);
+    let expired = clients.openai_client(
+        ClientKind::Async,
+        &lookup,
+        &ClientDeployment {
+            model_group: "gpt",
+            api_base: "https://c.example/v1",
+        },
+    );
+    assert_eq!(expired.api_base, "https://c.example/v1");
+}
+
+#[test]
+fn deployment_clients_boundaries_a_null_credential_field_is_dropped() {
+    let built = spec("gpt", "d1", &[("api_key", Json::Null)], &[]);
+    let catalog = catalog(&[built]);
+    let credentials = deployment_credentials(&catalog, "d1")
+        .expect("lookup")
+        .expect("credentials");
+    assert!(!credentials.contains_key("api_key"));
+    assert!(credentials.is_empty());
+}
+
+#[test]
+fn deployment_clients_boundaries_a_declared_provider_wins_over_the_model_prefix() {
+    let built = spec(
+        "claude",
+        "d1",
+        &[
+            ("model", text("anthropic/claude-sonnet-5")),
+            ("custom_llm_provider", text("bedrock")),
+        ],
+        &[],
+    );
+    let catalog = catalog(&[built]);
+    let credentials =
+        provider_credentials(&catalog, "d1", None, &std::collections::BTreeMap::new())
+            .expect("lookup")
+            .expect("credentials");
+    assert_eq!(
+        credentials.get("custom_llm_provider"),
+        Some(&text("bedrock"))
+    );
+}
+
+#[test]
+fn deployment_clients_boundaries_an_empty_update_writes_no_tags() {
+    let info = JsonObject::new();
+    let mut context = RequestContext::default();
+    context.update(&DeploymentView {
+        model_name: "gpt",
+        model: "openai/gpt-4o",
+        api_base: None,
+        model_info: &info,
+        tags: &[],
+        credential_name: None,
+        tools: &[],
+        tool_choice: None,
+    });
+    assert!(!context.metadata.contains_key("tags"));
+    assert!(context.tags.is_empty());
+}
