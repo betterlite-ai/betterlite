@@ -168,6 +168,36 @@ fn cato_guardrail_anonymize_rewrites_schema_strings_in_place() {
 }
 
 #[test]
+fn cato_guardrail_anonymize_rewrites_function_and_response_format_strings() {
+    let mut data = body(&[
+        (
+            "functions",
+            list(&[object(&[("description", text("function description"))])]),
+        ),
+        (
+            "response_format",
+            object(&[("title", text("format title"))]),
+        ),
+    ]);
+    let response = redacted(vec![
+        with_content("REDACTED FUNCTION"),
+        with_content("REDACTED FORMAT"),
+    ]);
+    anonymize_request(&response, &mut data).expect("rewritten");
+    assert_eq!(
+        data.get("functions"),
+        Some(&list(&[object(&[(
+            "description",
+            text("REDACTED FUNCTION")
+        )])]))
+    );
+    assert_eq!(
+        data.get("response_format"),
+        Some(&object(&[("title", text("REDACTED FORMAT"))]))
+    );
+}
+
+#[test]
 fn cato_guardrail_anonymize_rewrites_a_string_input() {
     let mut data = body(&[("input", text("original input"))]);
     let response = redacted(vec![with_content("REDACTED INPUT")]);
