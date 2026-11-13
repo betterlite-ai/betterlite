@@ -30,10 +30,7 @@ where
             custom_llm_provider: VertexAuthProvider::VertexAi,
         })
         .await
-        .map_err(|source| GcsClientError::Headers {
-            bucket_name: bucket_name.to_owned(),
-            source,
-        })?;
+        .map_err(|source| header_error(bucket_name, source))?;
     token_headers(instance, access, bucket_name, service_account_json)
 }
 
@@ -53,10 +50,7 @@ where
             project_id: base.environment.get(PROJECT_ID_ENV),
             custom_llm_provider: VertexAuthProvider::VertexAi,
         })
-        .map_err(|source| GcsClientError::Headers {
-            bucket_name: bucket_name.to_owned(),
-            source,
-        })?;
+        .map_err(|source| header_error(bucket_name, source))?;
     token_headers(&base.auth, access, bucket_name, service_account_path)
 }
 
@@ -82,12 +76,20 @@ where
             custom_llm_provider: VertexAuthProvider::VertexAi,
             api_base: None,
         })
-        .map_err(|source| GcsClientError::Headers {
-            bucket_name: bucket_name.to_owned(),
-            source,
-        })?;
+        .map_err(|source| header_error(bucket_name, source))?;
     tracing::debug!(bucket = %bucket_name, "constructed the GCS request authorization header");
     Ok(bearer_headers(&token.token))
+}
+
+fn header_error<Auth, Http>(bucket_name: &str, source: Auth::Error) -> GcsClientError<Auth, Http>
+where
+    Auth: VertexAuth,
+    Http: GcsHttpClient,
+{
+    GcsClientError::Headers {
+        bucket_name: bucket_name.to_owned(),
+        source,
+    }
 }
 
 pub(super) fn to_header_map<Auth, Http>(
