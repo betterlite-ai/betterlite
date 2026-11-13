@@ -39,12 +39,12 @@ pub fn apply_response_format(
             }
         });
     }
-    let mime = match format.get("type").and_then(Json::as_str) {
+    let type_mime = match format.get("type").and_then(Json::as_str) {
         Some("json_object") => Some("application/json"),
         Some("text") => Some("text/plain"),
         _ => None,
     };
-    if let Some(mime) = mime {
+    if let Some(mime) = type_mime {
         optional_params.insert("response_mime_type".to_owned(), Json::Text(mime.to_owned()));
     }
     let candidate = schema_candidate(&format);
