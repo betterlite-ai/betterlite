@@ -1,0 +1,11 @@
+kind: helper
+name: studio-files-seed-foreign-host
+call:
+  studio_files:
+    calls:
+      - function: targets
+        file_ids: [https://foreign.example/v1beta/files/seed/id]
+        api_key: seed-key
+        api_base: "https://studio.example/"
+env: {}
+compare: {ignore: []}

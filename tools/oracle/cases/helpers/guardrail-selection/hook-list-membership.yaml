@@ -1,0 +1,6 @@
+kind: helper
+name: hook-list-membership
+call:
+  b3665: {"function": "event_hook_is_event_type", "guardrail_name": "g", "event_hook": ["pre_call", "post_call"], "default_on": false, "data": {}, "event_type": "post_call"}
+env: {}
+compare: {ignore: []}

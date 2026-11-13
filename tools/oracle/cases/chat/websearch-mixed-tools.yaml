@@ -1,0 +1,24 @@
+{
+  "kind": "helper",
+  "name": "websearch-mixed-tools",
+  "call": {
+    "b4115": {
+      "operation": "short_circuit",
+      "model": "gpt-5",
+      "messages": [
+        {"role": "user", "content": "What is Rust?"}
+      ],
+      "tools": [
+        {"type": "web_search_20250305", "name": "web_search"},
+        {"type": "function", "function": {"name": "other_tool"}}
+      ],
+      "custom_llm_provider": "openai",
+      "enabled_providers": ["openai"],
+      "native_providers": []
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

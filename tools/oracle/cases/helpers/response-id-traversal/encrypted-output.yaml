@@ -1,0 +1,96 @@
+kind: helper
+name: encrypted-output
+call:
+  response_id_traversal:
+    operation: response_rewrite
+    scenarios:
+      - response:
+          id: resp_YQ==
+          output:
+            - id: rs_a
+              encrypted_content: cipher
+            - encrypted_content: cipher_b
+        custom_llm_provider: openai
+        litellm_metadata:
+          encrypted_content_affinity_enabled: true
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - id: rs_a
+              encrypted_content: cipher
+        custom_llm_provider: openai
+        litellm_metadata:
+          encrypted_content_affinity_enabled: true
+          model_info:
+            id: ""
+      - response:
+          id: resp_YQ==
+          output:
+            - id: rs_a
+              encrypted_content: cipher
+        custom_llm_provider: openai
+        litellm_metadata:
+          encrypted_content_affinity_enabled: true
+      - response:
+          id: resp_YQ==
+          output: not-a-list
+        custom_llm_provider: openai
+        litellm_metadata:
+          encrypted_content_affinity_enabled: true
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - id: rs_a
+              encrypted_content: ""
+            - id: rs_b
+              encrypted_content: 7
+            - id: rs_c
+        custom_llm_provider: openai
+        litellm_metadata:
+          encrypted_content_affinity_enabled: true
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - __object__:
+                fields:
+                  id: rs_a
+                  encrypted_content: cipher
+                readonly:
+                  - encrypted_content
+        custom_llm_provider: openai
+        litellm_metadata:
+          encrypted_content_affinity_enabled: true
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - __object__:
+                fields:
+                  id: rs_a
+                  encrypted_content: cipher
+                readonly:
+                  - id
+        custom_llm_provider: openai
+        litellm_metadata:
+          encrypted_content_affinity_enabled: true
+          model_info:
+            id: dep_a
+      - response:
+          id: resp_YQ==
+          output:
+            - id: rs_a
+              encrypted_content: cipher
+        custom_llm_provider: openai
+        litellm_metadata:
+          model_info:
+            id: dep_a
+env: {}
+compare:
+  ignore: []

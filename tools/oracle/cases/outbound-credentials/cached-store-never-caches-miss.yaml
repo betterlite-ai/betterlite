@@ -1,0 +1,36 @@
+{
+  "kind": "helper",
+  "name": "cached-store-never-caches-miss",
+  "call": {
+    "b4656": {
+      "function": "store",
+      "kind": "cached",
+      "inner": [
+        {
+          "kind": "absent"
+        },
+        {
+          "kind": "absent"
+        }
+      ],
+      "operations": [
+        {
+          "op": "fetch",
+          "user_id": "user",
+          "server_id": "server",
+          "now_ms": 1000000
+        },
+        {
+          "op": "fetch",
+          "user_id": "user",
+          "server_id": "server",
+          "now_ms": 1200000
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

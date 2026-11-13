@@ -1,0 +1,90 @@
+kind: helper
+name: context-compaction-betas
+call:
+  anthropic_beta_filter:
+    matrix:
+      anthropic: {}
+    calls:
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          context_management:
+            edits: []
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          context_management:
+            edits:
+              - type: compact_20260112
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          context_management:
+            edits:
+              - type: clear_tool_uses_20250919
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          context_management:
+            edits:
+              - type: clear_tool_uses_20250919
+              - {}
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          context_management:
+            edits:
+              - type: compact_20260112
+              - type: clear_tool_uses_20250919
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          compaction: {}
+        messages: []
+      - function: native_injection
+        custom_llm_provider: bedrock
+        headers: {}
+        optional_params:
+          compaction: {}
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params: {}
+        messages:
+          - role: user
+            content:
+              - type: compaction
+                signature: sig
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params: {}
+        messages:
+          - role: user
+            content:
+              - type: compaction
+                signature: ""
+      - function: native_injection
+        custom_llm_provider: bedrock
+        headers: {}
+        optional_params: {}
+        messages:
+          - role: user
+            content:
+              - type: compaction
+                signature: sig
+env: {}
+compare:
+  ignore: []

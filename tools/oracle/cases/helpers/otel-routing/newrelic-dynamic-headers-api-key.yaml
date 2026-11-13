@@ -1,0 +1,11 @@
+kind: helper
+name: newrelic-dynamic-headers-api-key
+call:
+  b3851:
+    function: newrelic_dynamic_headers
+    params:
+      newrelic_api_key: key-1
+      newrelic_region: eu
+env: {}
+compare:
+  ignore: []

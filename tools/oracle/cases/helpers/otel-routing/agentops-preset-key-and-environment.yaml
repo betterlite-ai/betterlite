@@ -1,0 +1,19 @@
+kind: helper
+name: agentops-preset-key-and-environment
+call:
+  b3851:
+    function: agentops_preset
+    environment:
+      AGENTOPS_API_KEY: key-1
+      AGENTOPS_ENVIRONMENT: production
+      AGENTOPS_SERVICE_NAME: my-service
+    base:
+      exporters: []
+      mapper_names: [genai]
+      resource_attributes: {}
+env:
+  AGENTOPS_API_KEY: key-1
+  AGENTOPS_ENVIRONMENT: production
+  AGENTOPS_SERVICE_NAME: my-service
+compare:
+  ignore: []

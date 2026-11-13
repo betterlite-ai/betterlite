@@ -1,0 +1,11 @@
+kind: helper
+name: signoz-dynamic-endpoint-needs-key
+call:
+  b3851:
+    function: signoz_dynamic_endpoint
+    params:
+      signoz_ingestion_endpoint: https://collector.example/v1/traces
+    allowed_hosts: [collector.example]
+env: {}
+compare:
+  ignore: []

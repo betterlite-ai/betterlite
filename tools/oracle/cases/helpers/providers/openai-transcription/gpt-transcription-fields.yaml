@@ -1,0 +1,12 @@
+kind: helper
+name: openai-transcription-gpt-transcription-fields
+call:
+  openai_transcription:
+    function: params
+    probes:
+      - model: gpt-4o-transcribe
+        non_default_params:
+          {language: en, prompt: hello, response_format: json, temperature: 0.2, timestamp_granularities: [word], include: [logprobs], unsupported: true}
+        existing_params: {language: fr}
+env: {}
+compare: {ignore: []}

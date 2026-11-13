@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-batch-records-seed
+call:
+  vertex_batch_records:
+    operation: row
+    calls:
+      - row: {request: {}, response: {embedding: {values: [1]}, tokenCount: 12}}
+        model_name: null
+        model_info: null
+        pricing: fixed
+env: {}
+compare: {ignore: []}

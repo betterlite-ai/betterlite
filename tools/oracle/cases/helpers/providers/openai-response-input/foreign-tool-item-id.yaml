@@ -1,0 +1,31 @@
+kind: helper
+name: openai-response-input-foreign-tool-item-id
+call:
+  openai_response_input:
+    probes:
+    - model: gpt-4o
+      input:
+      - {type: function_call, id: call_1, call_id: c1, name: f}
+      - {type: function_call, id: fc_1, call_id: c2}
+      - {type: function_call, id: fc, call_id: c3}
+      - {type: custom_tool_call, id: bad, call_id: c4}
+      - {type: custom_tool_call, id: ctc_1}
+      - {type: custom_tool_call, id: ctcx}
+      - {type: function_call, id: 5}
+      - {type: message, id: msg_1, role: user}
+      - plain-string-item
+      params: {}
+    - model: azure/dep
+      provider: azure
+      input:
+      - {type: function_call, id: call_9, call_id: c9}
+      - {type: function_call, id: fcz}
+      params: {}
+    - model: gpt-4o
+      provider: hosted_vllm
+      input:
+      - {type: function_call, id: call_7}
+      params: {}
+    - {model: gpt-4o, input: just a string, params: {}}
+env: {}
+compare: {ignore: []}
