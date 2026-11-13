@@ -1,0 +1,6 @@
+kind: helper
+name: summarize-allow-apply-guardrail
+call:
+  b3664: {"function": "summarize", "hook": "apply_guardrail", "request_data": {"model": "m"}, "inputs": {"texts": ["hi"], "model": "m"}, "response": {"texts": ["hi"], "model": "m"}}
+env: {}
+compare: {ignore: [{"pointer": "/value/request_data/metadata/standard_logging_guardrail_information/0/start_time", "why": "The hook is timed with the wall clock"}, {"pointer": "/value/request_data/metadata/standard_logging_guardrail_information/0/end_time", "why": "The hook is timed with the wall clock"}, {"pointer": "/value/request_data/metadata/standard_logging_guardrail_information/0/duration", "why": "The hook is timed with the wall clock"}]}
