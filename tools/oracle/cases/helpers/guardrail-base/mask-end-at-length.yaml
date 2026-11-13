@@ -1,0 +1,6 @@
+kind: helper
+name: mask-end-at-length
+call:
+  b5471: {"function": "mask", "content": "hello", "mask": "***", "start": 3, "end": 5}
+env: {}
+compare: {ignore: []}
