@@ -83,9 +83,7 @@ impl WebSearchInterceptionLogger {
         if !self.provider_enabled(provider.as_deref()) {
             return Ok(None);
         }
-        let Some(tools) = request_tools(kwargs)? else {
-            return Ok(None);
-        };
+        let tools = request_tools(kwargs)?;
         if matches!(call_type, Some(CallType::Responses | CallType::Aresponses)) {
             return responses_tools(kwargs, tools);
         }
@@ -109,9 +107,7 @@ impl WebSearchInterceptionLogger {
         if !self.provider_enabled(provider.as_deref()) {
             return Ok(None);
         }
-        let Some(tools) = request_tools(kwargs)? else {
-            return Ok(None);
-        };
+        let tools = request_tools(kwargs)?;
         if !tool_rewrite::any_tool(tools, tool_rewrite::is_web_search_tool)? {
             return Ok(None);
         }
@@ -157,10 +153,10 @@ fn responses_tools(kwargs: &Object, tools: &[Json]) -> Result<Option<Object>, We
     Ok(Some(stream_buffered(request)?))
 }
 
-fn request_tools(kwargs: &Object) -> Result<Option<&[Json]>, WebSearchError> {
+fn request_tools(kwargs: &Object) -> Result<&[Json], WebSearchError> {
     match kwargs.get(TOOLS) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::List(tools)) => Ok(Some(tools.as_slice())),
+        None | Some(Json::Null) => Ok(&[]),
+        Some(Json::List(tools)) => Ok(tools.as_slice()),
         Some(_) => Err(WebSearchError::Rewrite(RewriteError::Tools)),
     }
 }
