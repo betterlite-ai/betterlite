@@ -116,6 +116,7 @@ fn applied_policies(result: &RequestGuardrailPolicyResult) -> Vec<String> {
 
 struct OrderCase {
     key: &'static [&'static str],
+    key_policies: &'static [&'static str],
     team: &'static [&'static str],
     project: &'static [&'static str],
     team_alias: Option<&'static str>,
@@ -128,6 +129,7 @@ struct OrderCase {
 #[rstest]
 #[case::key_then_team_then_project(OrderCase {
     key: &["key-a"],
+    key_policies: &[],
     team: &["team-a"],
     project: &["proj-a"],
     team_alias: None,
@@ -138,6 +140,7 @@ struct OrderCase {
 })]
 #[case::policy_guardrails_after_direct_ones(OrderCase {
     key: &["key-a"],
+    key_policies: &["p1"],
     team: &[],
     project: &[],
     team_alias: None,
@@ -148,6 +151,7 @@ struct OrderCase {
 })]
 #[case::attachment_guardrails_after_metadata_ones(OrderCase {
     key: &["key-a"],
+    key_policies: &[],
     team: &[],
     project: &[],
     team_alias: Some("team-a"),
@@ -158,6 +162,7 @@ struct OrderCase {
 })]
 #[case::request_body_guardrails_append_last(OrderCase {
     key: &[],
+    key_policies: &[],
     team: &[],
     project: &[],
     team_alias: None,
@@ -168,6 +173,7 @@ struct OrderCase {
 })]
 #[case::existing_metadata_guardrails_stay_first(OrderCase {
     key: &[],
+    key_policies: &[],
     team: &[],
     project: &[],
     team_alias: None,
@@ -178,6 +184,7 @@ struct OrderCase {
 })]
 #[case::direct_guardrails_replace_existing_metadata(OrderCase {
     key: &["key-a"],
+    key_policies: &[],
     team: &[],
     project: &[],
     team_alias: None,
@@ -190,7 +197,7 @@ fn guardrail_policy_order(#[case] case: OrderCase) {
     let world = world(case.policies, case.attachments);
     let mut input = request(data(case.data));
     input.principal.team_alias = case.team_alias.map(str::to_owned);
-    input.key_metadata = metadata(case.key, &[]);
+    input.key_metadata = metadata(case.key, case.key_policies);
     input.team_metadata = metadata(case.team, &[]);
     input.project_metadata = metadata(case.project, &[]);
     let result = resolve(&world, &input).unwrap();
