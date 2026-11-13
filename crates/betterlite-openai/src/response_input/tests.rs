@@ -314,7 +314,7 @@ fn assert_cache_control_runs_before_decoding() {
     ));
     assert_eq!(
         decoded_and_sanitized["tools"][0]["parameters"],
-        fixture(r#"{"type": "object"}"#)
+        fixture(r#"{"type": "object", "properties": {}}"#)
     );
 }
 

@@ -17,6 +17,7 @@ call:
         tools:
         - {type: function, name: f, cache_control: {x: 1}, parameters: {type: object, cache_control: {deep: 1}}}
         - {parameters: '{"cache_control":{"type":"ephemeral"},"type":"object"}'}
+        - {parameters: '{"anyOf":[{"type":"string"}],"type":"object"}'}
         - raw-tool
 env: {}
 compare: {ignore: []}
