@@ -7,7 +7,7 @@ use betterlite_models::model_registration::JsonObject;
 use thiserror::Error;
 
 use crate::prompt_dispatch::identity::{PromptIdentityError, resolve_prompt_identity};
-use crate::prompt_dispatch::merge::{PromptCall, merge_prompt_request};
+use crate::prompt_dispatch::merge::{FinalPromptRequest, PromptCall, merge_prompt_request};
 use crate::prompt_dispatch::ports::{CompilePromptCall, PromptPorts};
 
 #[derive(Debug, Error)]
@@ -62,6 +62,16 @@ where
         &identity,
         ports.has_deployments(&compiled.model),
     );
+    call_prompt(ports, merged).await
+}
+
+async fn call_prompt<Ports>(
+    ports: &Ports,
+    merged: FinalPromptRequest,
+) -> Result<Ports::Response, PromptFactoryError<Ports::Error>>
+where
+    Ports: PromptPorts + ?Sized,
+{
     match merged.call {
         PromptCall::Direct => ports
             .call_direct(merged.fields)

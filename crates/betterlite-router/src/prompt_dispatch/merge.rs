@@ -35,17 +35,13 @@ pub fn merge_prompt_request(
     identity: &PromptIdentity,
     new_model_has_deployments: bool,
 ) -> FinalPromptRequest {
-    let mut merged = JsonObject::new();
-    for (key, value) in data {
-        if !PROMPT_MANAGEMENT_PARAMS.contains(&key.as_str()) {
-            merged.insert(key.clone(), value.clone());
-        }
-    }
-    for (key, value) in request {
-        merged.insert(key.clone(), value.clone());
-    }
-    for (key, value) in &compiled.optional_params {
-        merged.insert(key.clone(), value.clone());
+    let mut merged = prompt_free_data(data);
+    for source in [request, &compiled.optional_params] {
+        merged.extend(
+            source
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
     }
     merged.insert("model".to_owned(), Json::Text(compiled.model.clone()));
     merged.insert("messages".to_owned(), Json::List(compiled.messages.clone()));
@@ -77,4 +73,10 @@ pub fn merge_prompt_request(
         fields: merged,
         call,
     }
+}
+
+fn prompt_free_data(data: &JsonObject) -> JsonObject {
+    let mut kept = data.clone();
+    kept.retain(|key, _| !PROMPT_MANAGEMENT_PARAMS.contains(&key.as_str()));
+    kept
 }

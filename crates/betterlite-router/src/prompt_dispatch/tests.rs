@@ -437,7 +437,10 @@ async fn prompt_factory_passes_the_reference_arguments_to_every_port() {
         .await
         .unwrap();
     assert_eq!(answer, text("answer"));
-    let observed = ports.observed.lock().unwrap();
+    assert_reference_arguments(&ports.observed.lock().unwrap());
+}
+
+fn assert_reference_arguments(observed: &Observation) {
     let (selected_model, specific) = observed.selected.as_ref().unwrap();
     assert_eq!(selected_model, "langfuse/my-prompt");
     assert_eq!(specific, &Some(Json::Bool(true)));
