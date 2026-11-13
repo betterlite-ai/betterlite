@@ -1,8 +1,10 @@
+use std::collections::BTreeMap;
+
 use betterlite_http::proxy::base_builder;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::support::{legacy, mock, threshold_map};
-use crate::azure_content_safety::error::LegacyAzureContentSafetyError;
+use crate::azure_content_safety::error::AzureContentSafetyError;
 use crate::azure_content_safety::legacy::{
     LegacyAzureContentSafety, LegacyAzureContentSafetyParams,
 };
@@ -43,14 +45,14 @@ fn rejects_an_unknown_threshold_category() {
         LegacyAzureContentSafetyParams {
             endpoint: "http://127.0.0.1:1".to_owned(),
             api_key: SecretString::from("azure-key".to_owned()),
-            thresholds: Some(threshold_map(&[("Toxicity", 2)])),
+            thresholds: threshold_map(&[("Toxicity", 2)]),
         },
         base_builder().build().unwrap(),
     )
     .unwrap_err();
     assert!(matches!(
         error,
-        LegacyAzureContentSafetyError::UnknownCategory { category } if category == "Toxicity"
+        AzureContentSafetyError::UnknownCategory { category } if category == "Toxicity"
     ));
 }
 
@@ -64,6 +66,15 @@ fn keeps_the_api_key_out_of_the_debug_output() {
     let hook = legacy("http://127.0.0.1:1", None);
     assert_eq!(hook.api_key.expose_secret(), "azure-key");
     assert!(!format!("{hook:?}").contains("azure-key"));
+}
+
+#[test]
+fn an_empty_thresholds_map_keeps_every_default() {
+    let hook = legacy("http://127.0.0.1:1", Some(BTreeMap::new()));
+    assert_eq!(
+        hook.thresholds.for_category(TextCategory::Violence),
+        DEFAULT_THRESHOLD
+    );
 }
 
 #[tokio::test]

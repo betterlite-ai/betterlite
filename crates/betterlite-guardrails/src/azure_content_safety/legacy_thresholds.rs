@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::error::LegacyAzureContentSafetyError;
+use super::error::AzureContentSafetyError;
 use super::legacy_wire::TextCategory;
 
 pub const DEFAULT_THRESHOLD: i64 = 4;
@@ -46,12 +46,12 @@ impl SeverityThresholds {
 }
 
 pub fn configure_thresholds(
-    thresholds: Option<BTreeMap<String, i64>>,
-) -> Result<SeverityThresholds, LegacyAzureContentSafetyError> {
+    thresholds: BTreeMap<String, i64>,
+) -> Result<SeverityThresholds, AzureContentSafetyError> {
     let mut configured = SeverityThresholds::default();
-    for (name, threshold) in thresholds.unwrap_or_default() {
+    for (name, threshold) in thresholds {
         let Some(category) = TextCategory::from_name(&name) else {
-            return Err(LegacyAzureContentSafetyError::UnknownCategory { category: name });
+            return Err(AzureContentSafetyError::UnknownCategory { category: name });
         };
         configured.set(category, threshold);
     }

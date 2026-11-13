@@ -1,13 +1,12 @@
 use std::time::Duration;
 
-use betterlite_http::proxy::limits::{ReadError, read_bounded};
+use betterlite_http::proxy::limits::read_bounded;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use super::api_version::resolve_api_version;
-use super::error::AzureContentSafetyError;
+use super::error::{AzureContentSafetyError, read_error, request_error};
 
 // The fallback httpx applies when a guardrail config sets no timeout of its own.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
@@ -19,8 +18,8 @@ pub struct AzureGuardrailBase {
     pub async_handler: reqwest::Client,
     pub api_key: SecretString,
     pub api_base: String,
-    pub api_version: Option<String>,
-    pub timeout: Option<Duration>,
+    pub api_version: String,
+    pub timeout: Duration,
 }
 
 impl AzureGuardrailBase {
@@ -33,10 +32,9 @@ impl AzureGuardrailBase {
         Body: Serialize + Sync,
         Reply: DeserializeOwned,
     {
-        let api_version = resolve_api_version(self.api_version.as_deref());
         let url = format!(
-            "{}/contentsafety/{endpoint_path}?api-version={api_version}",
-            self.api_base
+            "{}/contentsafety/{endpoint_path}?api-version={}",
+            self.api_base, self.api_version
         );
         let mut headers = HeaderMap::new();
         let mut subscription_key = HeaderValue::from_str(self.api_key.expose_secret())
@@ -49,29 +47,21 @@ impl AzureGuardrailBase {
             .post(url)
             .headers(headers)
             .json(request_body)
-            .timeout(self.timeout.unwrap_or(DEFAULT_TIMEOUT))
+            .timeout(self.timeout)
             .send()
             .await
             .map_err(request_error)?;
+        let status = response.status();
         let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
             .await
             .map_err(read_error)?;
+        if !status.is_success() {
+            return Err(AzureContentSafetyError::HttpStatus {
+                status,
+                body: String::from_utf8(body).unwrap_or_default(),
+            });
+        }
         serde_json::from_slice(&body)
             .map_err(|source| AzureContentSafetyError::ResponseJson { source })
-    }
-}
-
-fn request_error(source: reqwest::Error) -> AzureContentSafetyError {
-    if source.is_timeout() {
-        AzureContentSafetyError::Timeout { source }
-    } else {
-        AzureContentSafetyError::Request { source }
-    }
-}
-
-fn read_error(error: ReadError) -> AzureContentSafetyError {
-    match error {
-        ReadError::TooLarge { limit } => AzureContentSafetyError::ResponseTooLarge { limit },
-        ReadError::Failed(source) => AzureContentSafetyError::Request { source },
     }
 }

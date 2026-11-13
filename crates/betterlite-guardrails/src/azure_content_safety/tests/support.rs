@@ -12,7 +12,7 @@ use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
-use crate::azure_content_safety::base::AzureGuardrailBase;
+use crate::azure_content_safety::base::{AzureGuardrailBase, DEFAULT_TIMEOUT};
 use crate::azure_content_safety::legacy::{
     LegacyAzureContentSafety, LegacyAzureContentSafetyParams,
 };
@@ -86,15 +86,15 @@ async fn mock_with(status: u16, payload: String, delay: Option<Duration>) -> Moc
 
 pub(crate) fn base(
     api_base: &str,
-    api_version: Option<&str>,
+    api_version: &str,
     timeout: Option<Duration>,
 ) -> AzureGuardrailBase {
     AzureGuardrailBase {
         async_handler: base_builder().build().unwrap(),
         api_key: SecretString::from("azure-key".to_owned()),
         api_base: api_base.to_owned(),
-        api_version: api_version.map(str::to_owned),
-        timeout,
+        api_version: api_version.to_owned(),
+        timeout: timeout.unwrap_or(DEFAULT_TIMEOUT),
     }
 }
 
@@ -106,7 +106,7 @@ pub(crate) fn legacy(
         LegacyAzureContentSafetyParams {
             endpoint: endpoint.to_owned(),
             api_key: SecretString::from("azure-key".to_owned()),
-            thresholds,
+            thresholds: thresholds.unwrap_or_default(),
         },
         base_builder().build().unwrap(),
     )

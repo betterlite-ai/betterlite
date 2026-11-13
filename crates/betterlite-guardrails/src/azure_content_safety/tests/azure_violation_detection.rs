@@ -1,7 +1,7 @@
 use reqwest::StatusCode;
 
 use super::support::{legacy, mock, mock_body, threshold_map};
-use crate::azure_content_safety::error::{LegacyAzureContentSafetyError, VIOLATION_MESSAGE};
+use crate::azure_content_safety::error::{AzureContentSafetyError, VIOLATION_MESSAGE};
 use crate::azure_content_safety::legacy::LegacyAzureContentSafety;
 use crate::azure_content_safety::legacy_wire::{AnalyzeTextResponse, TextCategory};
 
@@ -108,17 +108,33 @@ async fn surfaces_an_http_error_status() {
     let error = hook.test_violation("hello", None).await.unwrap_err();
     assert!(matches!(
         error,
-        LegacyAzureContentSafetyError::HttpStatus { status } if status == StatusCode::INTERNAL_SERVER_ERROR
+        AzureContentSafetyError::HttpStatus { status, .. } if status == StatusCode::INTERNAL_SERVER_ERROR
     ));
+}
+
+#[tokio::test]
+async fn copies_a_throttling_status_for_the_post_call_hook() {
+    let server = mock(429, "{}").await;
+    let hook = legacy(&server.base, None);
+    let error = hook.test_violation("hello", None).await.unwrap_err();
+    assert_eq!(error.status_code(), StatusCode::TOO_MANY_REQUESTS);
 }
 
 #[tokio::test]
 async fn surfaces_a_transport_failure() {
     let hook = legacy("http://127.0.0.1:1", None);
     let error = hook.test_violation("hello", None).await.unwrap_err();
+    assert!(matches!(error, AzureContentSafetyError::Request { .. }));
+}
+
+#[tokio::test]
+async fn rejects_a_response_larger_than_the_limit() {
+    let server = mock_body(200, " ".repeat(1_048_577)).await;
+    let hook = legacy(&server.base, None);
+    let error = hook.test_violation("hello", None).await.unwrap_err();
     assert!(matches!(
         error,
-        LegacyAzureContentSafetyError::Request { .. }
+        AzureContentSafetyError::ResponseTooLarge { limit } if limit == 1_048_576
     ));
 }
 
@@ -150,15 +166,4 @@ fn keeps_the_last_severity_for_a_duplicated_category() {
     let result = hook.compute_result(&response);
     assert_eq!(result.get(&TextCategory::Hate).unwrap().severity, 6);
     assert!(result.get(&TextCategory::Hate).unwrap().filtered);
-}
-
-#[tokio::test]
-async fn rejects_a_response_larger_than_the_limit() {
-    let server = mock_body(200, " ".repeat(1_048_577)).await;
-    let hook = legacy(&server.base, None);
-    let error = hook.test_violation("hello", None).await.unwrap_err();
-    assert!(matches!(
-        error,
-        LegacyAzureContentSafetyError::ResponseTooLarge { limit } if limit == 1_048_576
-    ));
 }

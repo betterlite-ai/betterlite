@@ -1,11 +1,11 @@
 use std::collections::BTreeMap;
 
-use betterlite_http::proxy::limits::{ReadError, read_bounded};
+use betterlite_http::proxy::limits::read_bounded;
 use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::base::DEFAULT_TIMEOUT;
-use super::error::LegacyAzureContentSafetyError;
+use super::error::{AzureContentSafetyError, read_error, request_error};
 use super::legacy_thresholds::{SeverityThresholds, configure_thresholds};
 use super::legacy_wire::{
     AnalyzeTextOutputType, AnalyzeTextRequest, AnalyzeTextResponse, TextCategory,
@@ -21,7 +21,7 @@ const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 pub struct LegacyAzureContentSafetyParams {
     pub endpoint: String,
     pub api_key: SecretString,
-    pub thresholds: Option<BTreeMap<String, i64>>,
+    pub thresholds: BTreeMap<String, i64>,
 }
 
 #[derive(Debug)]
@@ -45,7 +45,7 @@ impl LegacyAzureContentSafety {
     pub fn new(
         params: LegacyAzureContentSafetyParams,
         client: reqwest::Client,
-    ) -> Result<Self, LegacyAzureContentSafetyError> {
+    ) -> Result<Self, AzureContentSafetyError> {
         let thresholds = configure_thresholds(params.thresholds)?;
         Ok(Self {
             endpoint: params.endpoint,
@@ -85,14 +85,14 @@ impl LegacyAzureContentSafety {
     pub async fn test_violation(
         &self,
         content: &str,
-        source: Option<&str>,
-    ) -> Result<(), LegacyAzureContentSafetyError> {
+        origin: Option<&str>,
+    ) -> Result<(), AzureContentSafetyError> {
         tracing::debug!("Testing Azure Content-Safety for: {content}");
         let response = match self.analyze_text(content).await {
             Ok(response) => response,
-            Err(LegacyAzureContentSafetyError::HttpStatus { status }) => {
-                tracing::debug!(%status, "Error in Azure Content-Safety");
-                return Err(LegacyAzureContentSafetyError::HttpStatus { status });
+            Err(error @ AzureContentSafetyError::HttpStatus { .. }) => {
+                tracing::debug!(%error, "Error in Azure Content-Safety");
+                return Err(error);
             }
             Err(error) => return Err(error),
         };
@@ -100,8 +100,8 @@ impl LegacyAzureContentSafety {
         tracing::debug!(?result, "Azure Content-Safety Result");
         for (category, verdict) in result {
             if verdict.filtered {
-                return Err(LegacyAzureContentSafetyError::Violation {
-                    source: source.map(str::to_owned),
+                return Err(AzureContentSafetyError::Violation {
+                    origin: origin.map(str::to_owned),
                     category,
                     severity: verdict.severity,
                 });
@@ -113,13 +113,13 @@ impl LegacyAzureContentSafety {
     async fn analyze_text(
         &self,
         text: &str,
-    ) -> Result<AnalyzeTextResponse, LegacyAzureContentSafetyError> {
+    ) -> Result<AnalyzeTextResponse, AzureContentSafetyError> {
         let url = format!(
             "{}/contentsafety/{ANALYZE_TEXT_PATH}?api-version={LEGACY_API_VERSION}",
             self.endpoint
         );
         let mut subscription_key = HeaderValue::from_str(self.api_key.expose_secret())
-            .map_err(|source| LegacyAzureContentSafetyError::InvalidApiKey { source })?;
+            .map_err(|source| AzureContentSafetyError::InvalidApiKey { source })?;
         subscription_key.set_sensitive(true);
         let mut response = self
             .client
@@ -135,28 +135,16 @@ impl LegacyAzureContentSafety {
             .await
             .map_err(request_error)?;
         let status = response.status();
-        if status != reqwest::StatusCode::OK {
-            return Err(LegacyAzureContentSafetyError::HttpStatus { status });
-        }
         let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
             .await
             .map_err(read_error)?;
+        if status != reqwest::StatusCode::OK {
+            return Err(AzureContentSafetyError::HttpStatus {
+                status,
+                body: String::from_utf8(body).unwrap_or_default(),
+            });
+        }
         serde_json::from_slice(&body)
-            .map_err(|source| LegacyAzureContentSafetyError::ResponseJson { source })
-    }
-}
-
-fn request_error(source: reqwest::Error) -> LegacyAzureContentSafetyError {
-    if source.is_timeout() {
-        LegacyAzureContentSafetyError::Timeout { source }
-    } else {
-        LegacyAzureContentSafetyError::Request { source }
-    }
-}
-
-fn read_error(error: ReadError) -> LegacyAzureContentSafetyError {
-    match error {
-        ReadError::TooLarge { limit } => LegacyAzureContentSafetyError::ResponseTooLarge { limit },
-        ReadError::Failed(source) => LegacyAzureContentSafetyError::Request { source },
+            .map_err(|source| AzureContentSafetyError::ResponseJson { source })
     }
 }

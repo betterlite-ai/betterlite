@@ -1,3 +1,4 @@
+use betterlite_http::proxy::limits::ReadError;
 use reqwest::StatusCode;
 use reqwest::header::InvalidHeaderValue;
 use serde::Serialize;
@@ -9,12 +10,18 @@ pub const VIOLATION_MESSAGE: &str = "Violated content safety policy";
 
 #[derive(Debug, Error)]
 pub enum AzureContentSafetyError {
+    #[error(
+        "the Azure Content Safety category `{category}` is not one of Hate, SelfHarm, Sexual or Violence"
+    )]
+    UnknownCategory { category: String },
     #[error("the Azure Content Safety API key cannot be sent as a header value")]
     InvalidApiKey { source: InvalidHeaderValue },
     #[error("the Azure Content Safety request timed out")]
     Timeout { source: reqwest::Error },
     #[error("the Azure Content Safety API could not be reached")]
     Request { source: reqwest::Error },
+    #[error("the Azure Content Safety API answered with status {status}")]
+    HttpStatus { status: StatusCode, body: String },
     #[error("the Azure Content Safety response is larger than {limit} bytes")]
     ResponseTooLarge { limit: usize },
     #[error("the Azure Content Safety response is not valid JSON")]
@@ -27,47 +34,34 @@ pub enum AzureContentSafetyError {
         call_type: String,
         source: serde_json::Error,
     },
-}
-
-#[derive(Debug, Error)]
-pub enum LegacyAzureContentSafetyError {
-    #[error(
-        "the Azure Content Safety category `{category}` is not one of Hate, SelfHarm, Sexual or Violence"
-    )]
-    UnknownCategory { category: String },
-    #[error("the Azure Content Safety API key cannot be sent as a header value")]
-    InvalidApiKey { source: InvalidHeaderValue },
-    #[error("the Azure Content Safety request timed out")]
-    Timeout { source: reqwest::Error },
-    #[error("the Azure Content Safety API could not be reached")]
-    Request { source: reqwest::Error },
-    #[error("the Azure Content Safety API answered with status {status}")]
-    HttpStatus { status: StatusCode },
-    #[error("the Azure Content Safety response is larger than {limit} bytes")]
-    ResponseTooLarge { limit: usize },
-    #[error("the Azure Content Safety response is not valid JSON")]
-    ResponseJson { source: serde_json::Error },
     #[error("Violated content safety policy")]
     Violation {
-        source: Option<String>,
+        origin: Option<String>,
         category: TextCategory,
         severity: i64,
     },
 }
 
-impl LegacyAzureContentSafetyError {
-    // LiteLLM raises HTTPException(400) for a violation and lets every SDK failure surface as a 500.
+impl AzureContentSafetyError {
+    // LiteLLM raises HTTPException(400) for a violation and copies a provider status between 400 and 599.
     #[must_use]
-    pub const fn status_code(&self) -> StatusCode {
+    pub fn status_code(&self) -> StatusCode {
         match self {
             Self::Violation { .. } => StatusCode::BAD_REQUEST,
+            Self::HttpStatus { status, .. }
+                if status.is_client_error() || status.is_server_error() =>
+            {
+                *status
+            }
             Self::UnknownCategory { .. }
             | Self::InvalidApiKey { .. }
             | Self::Timeout { .. }
             | Self::Request { .. }
             | Self::HttpStatus { .. }
             | Self::ResponseTooLarge { .. }
-            | Self::ResponseJson { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | Self::ResponseJson { .. }
+            | Self::MessagesShape { .. }
+            | Self::MessageJson { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
@@ -76,12 +70,12 @@ impl LegacyAzureContentSafetyError {
     pub fn detail(&self) -> Option<LegacyViolationDetail<'_>> {
         match self {
             Self::Violation {
-                source,
+                origin,
                 category,
                 severity,
             } => Some(LegacyViolationDetail {
                 error: VIOLATION_MESSAGE,
-                source: source.as_deref(),
+                source: origin.as_deref(),
                 category: *category,
                 severity: *severity,
             }),
@@ -91,8 +85,25 @@ impl LegacyAzureContentSafetyError {
             | Self::Request { .. }
             | Self::HttpStatus { .. }
             | Self::ResponseTooLarge { .. }
-            | Self::ResponseJson { .. } => None,
+            | Self::ResponseJson { .. }
+            | Self::MessagesShape { .. }
+            | Self::MessageJson { .. } => None,
         }
+    }
+}
+
+pub(crate) fn request_error(source: reqwest::Error) -> AzureContentSafetyError {
+    if source.is_timeout() {
+        AzureContentSafetyError::Timeout { source }
+    } else {
+        AzureContentSafetyError::Request { source }
+    }
+}
+
+pub(crate) fn read_error(error: ReadError) -> AzureContentSafetyError {
+    match error {
+        ReadError::TooLarge { limit } => AzureContentSafetyError::ResponseTooLarge { limit },
+        ReadError::Failed(source) => AzureContentSafetyError::Request { source },
     }
 }
 

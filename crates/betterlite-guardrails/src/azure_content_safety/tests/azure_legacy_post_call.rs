@@ -1,7 +1,7 @@
 use reqwest::StatusCode;
 
 use super::support::{legacy, mock};
-use crate::azure_content_safety::error::LegacyAzureContentSafetyError;
+use crate::azure_content_safety::error::AzureContentSafetyError;
 use crate::azure_content_safety::legacy_wire::{ModelResponse, TextCategory};
 
 const VIOLATION: &str = r#"{"categoriesAnalysis":[{"category":"Violence","severity":6}]}"#;
@@ -28,7 +28,7 @@ async fn blocks_violating_response_content() {
         .unwrap_err();
     assert!(matches!(
         error,
-        LegacyAzureContentSafetyError::Violation {
+        AzureContentSafetyError::Violation {
             category: TextCategory::Violence,
             severity: 6,
             ..
@@ -80,7 +80,7 @@ async fn propagates_a_transport_failure_unmodified() {
         .unwrap_err();
     assert!(matches!(
         error,
-        LegacyAzureContentSafetyError::HttpStatus { status } if status == StatusCode::INTERNAL_SERVER_ERROR
+        AzureContentSafetyError::HttpStatus { status, .. } if status == StatusCode::INTERNAL_SERVER_ERROR
     ));
 }
 

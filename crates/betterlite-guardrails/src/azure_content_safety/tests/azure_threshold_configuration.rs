@@ -1,13 +1,15 @@
+use std::collections::BTreeMap;
+
 use super::support::threshold_map;
-use crate::azure_content_safety::error::LegacyAzureContentSafetyError;
+use crate::azure_content_safety::error::AzureContentSafetyError;
 use crate::azure_content_safety::legacy_thresholds::{
     DEFAULT_THRESHOLD, SeverityThresholds, configure_thresholds,
 };
 use crate::azure_content_safety::legacy_wire::TextCategory;
 
 #[test]
-fn an_absent_map_defaults_every_category_to_four() {
-    let thresholds = configure_thresholds(None).unwrap();
+fn an_empty_map_defaults_every_category_to_four() {
+    let thresholds = configure_thresholds(BTreeMap::new()).unwrap();
     assert_eq!(thresholds.for_category(TextCategory::Hate), 4);
     assert_eq!(thresholds.for_category(TextCategory::SelfHarm), 4);
     assert_eq!(thresholds.for_category(TextCategory::Sexual), 4);
@@ -17,12 +19,12 @@ fn an_absent_map_defaults_every_category_to_four() {
 
 #[test]
 fn keeps_every_provided_threshold() {
-    let thresholds = configure_thresholds(Some(threshold_map(&[
+    let thresholds = configure_thresholds(threshold_map(&[
         ("Hate", 1),
         ("SelfHarm", 2),
         ("Sexual", 3),
         ("Violence", 5),
-    ])))
+    ]))
     .unwrap();
     assert_eq!(
         thresholds,
@@ -38,7 +40,7 @@ fn keeps_every_provided_threshold() {
 #[test]
 fn fills_only_the_categories_the_map_omits() {
     let thresholds =
-        configure_thresholds(Some(threshold_map(&[("Sexual", 6), ("Violence", 7)]))).unwrap();
+        configure_thresholds(threshold_map(&[("Sexual", 6), ("Violence", 7)])).unwrap();
     assert_eq!(
         thresholds.for_category(TextCategory::Hate),
         DEFAULT_THRESHOLD
@@ -53,31 +55,30 @@ fn fills_only_the_categories_the_map_omits() {
 
 #[test]
 fn keeps_an_explicit_zero_threshold() {
-    let thresholds = configure_thresholds(Some(threshold_map(&[("Hate", 0)]))).unwrap();
+    let thresholds = configure_thresholds(threshold_map(&[("Hate", 0)])).unwrap();
     assert_eq!(thresholds.for_category(TextCategory::Hate), 0);
 }
 
 #[test]
 fn keeps_a_negative_threshold_as_given() {
-    let thresholds = configure_thresholds(Some(threshold_map(&[("Hate", -1)]))).unwrap();
+    let thresholds = configure_thresholds(threshold_map(&[("Hate", -1)])).unwrap();
     assert_eq!(thresholds.for_category(TextCategory::Hate), -1);
 }
 
 #[test]
 fn rejects_an_unknown_category_and_names_it() {
-    let error =
-        configure_thresholds(Some(threshold_map(&[("Hate", 2), ("Profanity", 3)]))).unwrap_err();
+    let error = configure_thresholds(threshold_map(&[("Hate", 2), ("Profanity", 3)])).unwrap_err();
     assert!(matches!(
         error,
-        LegacyAzureContentSafetyError::UnknownCategory { category } if category == "Profanity"
+        AzureContentSafetyError::UnknownCategory { category } if category == "Profanity"
     ));
 }
 
 #[test]
 fn a_category_name_is_matched_exactly() {
-    let error = configure_thresholds(Some(threshold_map(&[("hate", 2)]))).unwrap_err();
+    let error = configure_thresholds(threshold_map(&[("hate", 2)])).unwrap_err();
     assert!(matches!(
         error,
-        LegacyAzureContentSafetyError::UnknownCategory { category } if category == "hate"
+        AzureContentSafetyError::UnknownCategory { category } if category == "hate"
     ));
 }

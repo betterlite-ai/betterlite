@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::support::{legacy, mock};
-use crate::azure_content_safety::error::LegacyAzureContentSafetyError;
+use crate::azure_content_safety::error::AzureContentSafetyError;
 use crate::azure_content_safety::legacy_wire::TextCategory;
 
 const VIOLATION: &str = r#"{"categoriesAnalysis":[{"category":"Hate","severity":5}]}"#;
@@ -46,7 +46,7 @@ async fn blocks_a_violating_chat_message() {
         .unwrap_err();
     assert!(matches!(
         error,
-        LegacyAzureContentSafetyError::Violation {
+        AzureContentSafetyError::Violation {
             category: TextCategory::Hate,
             severity: 5,
             ..
@@ -65,10 +65,7 @@ async fn scans_a_responses_input() {
         .async_pre_call_hook(&request, "aresponses")
         .await
         .unwrap_err();
-    assert!(matches!(
-        error,
-        LegacyAzureContentSafetyError::Violation { .. }
-    ));
+    assert!(matches!(error, AzureContentSafetyError::Violation { .. }));
 }
 
 #[tokio::test]

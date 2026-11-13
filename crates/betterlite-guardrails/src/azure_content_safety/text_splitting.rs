@@ -1,13 +1,13 @@
 #[must_use]
 pub fn split_text_by_words(text: &str, max_length: usize) -> Vec<String> {
     // LiteLLM loops forever on a zero limit, so a zero limit splits to single characters instead.
-    let max_length = max_length.max(1);
+    let chunk_limit = max_length.max(1);
     let mut chunks = Vec::new();
     let mut current = String::new();
     let mut current_length = 0_usize;
     for token in word_and_space_runs(text) {
         let token_length = token.chars().count();
-        if current_length.saturating_add(token_length) <= max_length {
+        if current_length.saturating_add(token_length) <= chunk_limit {
             current.push_str(&token);
             current_length = current_length.saturating_add(token_length);
             continue;
@@ -18,7 +18,7 @@ pub fn split_text_by_words(text: &str, max_length: usize) -> Vec<String> {
         let mut pieces: Vec<String> = token
             .chars()
             .collect::<Vec<char>>()
-            .chunks(max_length)
+            .chunks(chunk_limit)
             .map(|piece| piece.iter().collect())
             .collect();
         let last = pieces.pop().unwrap_or_default();
