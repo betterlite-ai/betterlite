@@ -362,13 +362,8 @@ fn quoted_braces_stay_outside_the_depth_count() {
     let escaped = format!("{{\"k\":\"\\\"{}\"}}", "{".repeat(64));
     let key = convert(&[("config", text(&escaped))]);
     assert!(key.config.0.contains_key("k"));
-    let repeated = format!(
-        "{}{}{}{}",
-        "[".repeat(64),
-        "]".repeat(64),
-        "[".repeat(64),
-        "]".repeat(64)
-    );
+    let nested = format!("{}{}", "[".repeat(63), "]".repeat(63));
+    let repeated = format!("[{nested},{nested}]");
     assert!(matches!(
         error_of(&[("budget_limits", text(&repeated))]),
         TokenDecodeError::Model { .. }
@@ -504,7 +499,8 @@ async fn insert(pool: &Pool, sql: &str, parameters: &[&(dyn ToSql + Sync)]) {
 }
 
 async fn seed(pool: &Pool, token: &str) {
-    let sql = r#"INSERT INTO "LiteLLM_VerificationToken" (token) VALUES ($1)"#;
+    let sql =
+        r#"INSERT INTO "LiteLLM_VerificationToken" (token, models) VALUES ($1, ARRAY[]::TEXT[])"#;
     insert(pool, sql, &[&token]).await;
 }
 
@@ -521,7 +517,7 @@ async fn seed_legacy(pool: &Pool, token: &str) {
     let model_max_budget = json_string(r#"{"f":6}"#);
     let router_settings = json_string(r#"{"g":7}"#);
     let budget_limits = json_string(r#"[{"h":8}]"#);
-    let sql = r#"INSERT INTO "LiteLLM_VerificationToken" (token, aliases, config, permissions, metadata, model_spend, model_max_budget, router_settings, budget_limits) VALUES ($1, $2::text::jsonb, $3::text::jsonb, $4::text::jsonb, $5::text::jsonb, $6::text::jsonb, $7::text::jsonb, $8::text::jsonb, $9::text::jsonb)"#;
+    let sql = r#"INSERT INTO "LiteLLM_VerificationToken" (token, aliases, config, permissions, metadata, model_spend, model_max_budget, router_settings, budget_limits, models) VALUES ($1, $2::text::jsonb, $3::text::jsonb, $4::text::jsonb, $5::text::jsonb, $6::text::jsonb, $7::text::jsonb, $8::text::jsonb, $9::text::jsonb, ARRAY[]::TEXT[])"#;
     let parameters: [&(dyn ToSql + Sync); 9] = [
         &token,
         &aliases,
@@ -538,8 +534,7 @@ async fn seed_legacy(pool: &Pool, token: &str) {
 
 async fn seed_invalid_aliases(pool: &Pool, token: &str) {
     let aliases = json_string("{not json");
-    let sql =
-        r#"INSERT INTO "LiteLLM_VerificationToken" (token, aliases) VALUES ($1, $2::text::jsonb)"#;
+    let sql = r#"INSERT INTO "LiteLLM_VerificationToken" (token, aliases, models) VALUES ($1, $2::text::jsonb, ARRAY[]::TEXT[])"#;
     insert(pool, sql, &[&token, &aliases]).await;
 }
 
