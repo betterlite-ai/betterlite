@@ -153,8 +153,12 @@ fn map_scalar(
             continue;
         }
         match kind {
-            ScalarKind::Integer => decode::<i64>(value, param)?,
-            ScalarKind::Boolean => decode::<bool>(value, param)?,
+            ScalarKind::Integer => {
+                decode::<i64>(value, param)?;
+            }
+            ScalarKind::Boolean => {
+                decode::<bool>(value, param)?;
+            }
         }
         optional.insert(target.to_owned(), value.clone());
         return Ok(0);
