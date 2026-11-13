@@ -20,6 +20,6 @@ CREATE TABLE "LiteLLM_TeamTable" (
 INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, organization_id, members_with_roles, metadata)
 VALUES
     ('t', 'alpha', 'org-a', '[{"user_id":"u1","role":"admin"}]'::JSONB, '{}'::JSONB),
-    ('empty', 'empty-team', 'org-a', DEFAULT, DEFAULT),
-    ('strings', 'strings-team', 'org-a', DEFAULT, '"{\"stored\": true}"'::JSONB),
-    ('other', 'beta', 'org-b', DEFAULT, DEFAULT);
+    ('empty', 'empty-team', 'org-a', '{}'::JSONB, '{}'::JSONB),
+    ('strings', 'strings-team', 'org-a', '{}'::JSONB, '"{\"stored\": true}"'::JSONB),
+    ('other', 'beta', 'org-b', '{}'::JSONB, '{}'::JSONB);

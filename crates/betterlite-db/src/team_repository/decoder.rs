@@ -18,7 +18,7 @@ pub const JSON_ENCODED_TEAM_FIELDS: [&str; 6] = [
 
 #[derive(Debug, thiserror::Error)]
 pub enum TeamRecordError {
-    #[error("a team record is a JSON object")]
+    #[error("a team record must be a JSON object")]
     NotAnObject,
     #[error("stored team field {field} cannot be decoded")]
     Field {
