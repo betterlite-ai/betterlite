@@ -73,9 +73,9 @@ impl HealthCheckModelInfo for CatalogModelInfo<'_> {
         let Some(info) = resolved(self.catalog, model) else {
             return false;
         };
-        match info.capabilities.supports_reasoning {
-            Some(flag) => flag,
-            None => bare_supports_reasoning(self.catalog, &info.key),
+        if let Some(flag) = info.capabilities.supports_reasoning {
+            return flag;
         }
+        bare_supports_reasoning(self.catalog, &info.key)
     }
 }
