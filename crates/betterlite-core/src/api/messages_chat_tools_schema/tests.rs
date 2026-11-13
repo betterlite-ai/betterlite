@@ -746,13 +746,10 @@ fn an_empty_model_skips_cache_control() {
     let request = object(r#"{"tools": [{"name": "a", "cache_control": {"type": "ephemeral"}}]}"#);
     let mut kwargs = object(r#"{"model": ""}"#);
     translate_tools(&request, &mut kwargs).expect("the tools translate");
-    let Some(Json::List(tools)) = kwargs.get("tools") else {
-        panic!("a tool list answers");
-    };
-    let Some(Json::Object(tool)) = tools.first() else {
-        panic!("one tool answers");
-    };
-    assert_eq!(tool.get("cache_control"), None);
+    assert_eq!(
+        kwargs,
+        object(r#"{"model": "", "tools": [{"type": "function", "function": {"name": "a"}}]}"#)
+    );
 }
 
 #[test]
