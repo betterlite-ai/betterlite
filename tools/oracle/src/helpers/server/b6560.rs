@@ -86,7 +86,7 @@ fn synthetic_entity() -> FormModel {
 
 #[rustfmt::skip]
 fn synthetic_literal_list() -> FormModel {
-    FormModel { ui_friendly_name: None, fields: vec![
+    FormModel { ui_friendly_name: Some("Synthetic Literal List"), fields: vec![
         FormField { name: "kinds", description: Some("Kinds to scan"), required: false, shape: FormShape::List { options: vec![json!("alpha"), json!("beta")] }, default: None, extra: FormExtra::NONE },
         FormField { name: "weights", description: Some("Weight per side"), required: false, shape: FormShape::Mapping { keys: vec![json!("left"), json!("right")], value: Box::new(FormShape::Number) }, default: None, extra: FormExtra::NONE },
         FormField { name: "mode", description: Some("Processing mode"), required: false, shape: FormShape::Choice(vec![json!("fast"), json!("slow")]), default: None, extra: FormExtra::NONE },
@@ -100,7 +100,7 @@ fn synthetic_literal_list() -> FormModel {
 
 fn synthetic_nested() -> FormModel {
     FormModel {
-        ui_friendly_name: None,
+        ui_friendly_name: Some("Synthetic Nested"),
         fields: vec![
             FormField {
                 name: "entity",
@@ -134,7 +134,7 @@ fn synthetic_nested() -> FormModel {
 
 fn synthetic_generic_unfilled() -> FormModel {
     FormModel {
-        ui_friendly_name: None,
+        ui_friendly_name: Some("Synthetic Generic"),
         fields: vec![FormField {
             name: "enabled",
             description: Some("Whether the check runs"),
@@ -148,7 +148,7 @@ fn synthetic_generic_unfilled() -> FormModel {
 
 fn synthetic_generic_filled() -> FormModel {
     FormModel {
-        ui_friendly_name: None,
+        ui_friendly_name: Some("Synthetic Generic"),
         fields: vec![
             FormField {
                 name: "enabled",

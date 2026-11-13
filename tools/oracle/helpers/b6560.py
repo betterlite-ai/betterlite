@@ -1,38 +1,17 @@
+import asyncio
 import json
-from typing import Literal, TypedDict, TypeVar, cast
+from typing import Literal, TypedDict, TypeVar
 
-from litellm.proxy.guardrails.guardrail_endpoints import _get_fields_from_model  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1902
-from litellm.types.guardrails import (
-    BedrockGuardrailConfigModel as BedrockModel,
-)
-from litellm.types.guardrails import (
-    BedrockGuardrailStreamingParams as BedrockStreaming,
-)
-from litellm.types.guardrails import (
-    LakeraV2GuardrailConfigModel as LakeraV2Model,
-)
-from litellm.types.guardrails import (
-    PresidioPresidioConfigModelUserInterface as PresidioUi,
-)
+from litellm.integrations.custom_guardrail import CustomGuardrail
+from litellm.proxy.guardrails.guardrail_endpoints import get_provider_specific_params
+from litellm.proxy.guardrails.guardrail_registry import guardrail_class_registry
 from litellm.types.proxy.guardrails.guardrail_hooks.base import GuardrailConfigModel
-from litellm.types.proxy.guardrails.guardrail_hooks.hide_secrets import (
-    HideSecretsGuardrailConfigModel as HideSecretsModel,
-)
-from litellm.types.proxy.guardrails.guardrail_hooks.tool_permission import (
-    ToolPermissionGuardrailConfigModel as ToolPermissionModel,
-)
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 from pydantic_core import PydanticUndefinedType
 from typing_extensions import override
 
-_JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+ANSWERS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 T = TypeVar("T", bound=BaseModel)
-
-
-class FormModel(BaseModel):
-    @staticmethod
-    def ui_friendly_name() -> str:
-        return ""
 
 
 class SyntheticEntity(BaseModel):
@@ -93,18 +72,42 @@ class SyntheticGenericFilled(GuardrailConfigModel[BaseModel]):
         return "Synthetic Generic"
 
 
-LAKERA_V2: type[FormModel] = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L709
-    "type[FormModel]",
-    LakeraV2Model,
-)
-TOOL_PERMISSION: type[FormModel] = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py#L113
-    "type[FormModel]",
-    ToolPermissionModel,
-)
-HIDE_SECRETS: type[FormModel] = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/hide_secrets.py#L8
-    "type[FormModel]",
-    HideSecretsModel,
-)
+class SyntheticLiteralListGuardrail(CustomGuardrail):
+    @staticmethod
+    @override
+    def get_config_model() -> type[GuardrailConfigModel[BaseModel]] | None:
+        return SyntheticLiteralList
+
+
+class SyntheticNestedGuardrail(CustomGuardrail):
+    @staticmethod
+    @override
+    def get_config_model() -> type[GuardrailConfigModel[BaseModel]] | None:
+        return SyntheticNested
+
+
+class SyntheticGenericUnfilledGuardrail(CustomGuardrail):
+    @staticmethod
+    @override
+    def get_config_model() -> type[GuardrailConfigModel[BaseModel]] | None:
+        return SyntheticGenericUnfilled
+
+
+class SyntheticGenericFilledGuardrail(CustomGuardrail):
+    @staticmethod
+    @override
+    def get_config_model() -> type[GuardrailConfigModel[BaseModel]] | None:
+        return SyntheticGenericFilled
+
+
+SYNTHETIC_GUARDRAILS: dict[str, type[CustomGuardrail]] = {
+    "synthetic_literal_list": SyntheticLiteralListGuardrail,
+    "synthetic_nested": SyntheticNestedGuardrail,
+    "synthetic_generic_unfilled": SyntheticGenericUnfilledGuardrail,
+    "synthetic_generic_filled": SyntheticGenericFilledGuardrail,
+}
+
+
 class UndefinedAsNull:
     def __call__(self, _value: PydanticUndefinedType) -> JsonValue:
         return None
@@ -114,59 +117,24 @@ class Input(TypedDict):
     model: str
 
 
-def answer(model: type[BaseModel], friendly_name: str | None) -> JsonValue:
-    fields = _get_fields_from_model(model)
-    if friendly_name is not None:
-        fields["ui_friendly_name"] = friendly_name
-    return _JSON.validate_json(json.dumps(fields, default=UndefinedAsNull()))
-
-
-def bedrock_answer() -> JsonValue:
-    fields = _get_fields_from_model(BedrockModel)
-    fields.update(_get_fields_from_model(BedrockStreaming))
-    return _JSON.validate_json(json.dumps(fields, default=UndefinedAsNull()))
-
-
-def generic_answer() -> JsonValue:
-    unfilled = _JSON.validate_json(
-        json.dumps(_get_fields_from_model(SyntheticGenericUnfilled), default=UndefinedAsNull())
-    )
-    filled = _JSON.validate_json(
-        json.dumps(_get_fields_from_model(SyntheticGenericFilled), default=UndefinedAsNull())
-    )
-    return {"unfilled": unfilled, "filled": filled}
-
-
-def table_answer(model: str) -> JsonValue:
-    if model == "bedrock":
-        return bedrock_answer()
-    if model == "presidio":
-        return answer(PresidioUi, None)
-    if model == "lakera_v2":
-        return answer(LAKERA_V2, None)
-    if model == "tool_permission":
-        return answer(TOOL_PERMISSION, TOOL_PERMISSION.ui_friendly_name())
-    if model == "hide-secrets":
-        return answer(HIDE_SECRETS, HIDE_SECRETS.ui_friendly_name())
-    return None
-
-
-def synthetic_answer(model: str) -> JsonValue:
-    if model == "synthetic_literal_list":
-        return answer(SyntheticLiteralList, None)
-    if model == "synthetic_nested":
-        return answer(SyntheticNested, None)
-    if model == "synthetic_generic":
-        return generic_answer()
-    return None
+def route_answer() -> dict[str, JsonValue]:
+    saved = dict(guardrail_class_registry)
+    guardrail_class_registry.clear()
+    guardrail_class_registry.update(SYNTHETIC_GUARDRAILS)
+    try:
+        provider_params = asyncio.run(get_provider_specific_params())
+    finally:
+        guardrail_class_registry.clear()
+        guardrail_class_registry.update(saved)
+    return ANSWERS.validate_json(json.dumps(provider_params, default=UndefinedAsNull()))
 
 
 def run(input_value: Input) -> JsonValue:
     model = input_value["model"]
-    table = table_answer(model)
-    if table is not None:
-        return table
-    synthetic = synthetic_answer(model)
-    if synthetic is not None:
-        return synthetic
-    raise ValueError(f"unknown form model {model}")
+    answers = route_answer()
+    if model == "synthetic_generic":
+        return {
+            "unfilled": answers["synthetic_generic_unfilled"],
+            "filled": answers["synthetic_generic_filled"],
+        }
+    return answers[model]

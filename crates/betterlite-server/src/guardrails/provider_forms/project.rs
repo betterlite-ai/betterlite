@@ -4,7 +4,6 @@ use crate::guardrails::provider_forms::error::FormError;
 use crate::guardrails::provider_forms::spec::{FormField, FormModel, FormShape};
 
 // LiteLLM checks the depth when it enters a model, and the top-level model enters at depth 0
-#[must_use]
 pub fn project_model(model: &FormModel, max_depth: usize) -> Result<Map<String, Value>, FormError> {
     let mut fields = Map::new();
     for field in &model.fields {
