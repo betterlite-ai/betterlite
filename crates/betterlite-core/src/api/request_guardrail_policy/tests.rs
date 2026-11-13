@@ -321,29 +321,48 @@ fn not_premium_metadata_guardrails(
 
 #[test]
 fn policy_version_id_selection() {
-    let mut world = world(r#"{"published": {"guardrails": {"add": ["pii"]}}}"#, "[]");
-    let policy = world.registry.policies["published"].clone();
+    let mut world = world(
+        r#"{"published": {"guardrails": {"add": ["pii"]}}, "blank": {"guardrails": {"add": ["phi"]}}}"#,
+        "[]",
+    );
+    let published = world.registry.policies["published"].clone();
     world
         .registry
         .policies_by_id
-        .insert("abc".to_owned(), ("published".to_owned(), policy));
+        .insert("abc".to_owned(), ("published".to_owned(), published));
+    let blank = world.registry.policies["blank"].clone();
+    world
+        .registry
+        .policies_by_id
+        .insert(String::new(), ("blank".to_owned(), blank));
     let input = request(data(
         r#"{"model": "gpt-4", "policies": ["policy_abc", "policy_", "policy_gone"]}"#,
     ));
     let result = resolve(&world, &input).unwrap();
     assert_eq!(guardrails(&result), names(&["pii"]));
     assert_eq!(applied_policies(&result), names(&["published"]));
+    assert!(
+        bucket(&result.data)
+            .unwrap()
+            .get("policy_sources")
+            .is_none()
+    );
+}
+
+const PIPELINE_POLICIES: &str = r#"{"piped": {"pipeline": {"mode": "post_call", "steps": [{"guardrail": "g1"}, {"guardrail": "g2", "on_fail": "next"}]}}}"#;
+
+fn piped_metadata() -> IndexMap<String, Json> {
+    let world = world(PIPELINE_POLICIES, r#"[{"policy": "piped", "scope": "*"}]"#);
+    let input = request(data(r#"{"model": "gpt-4"}"#));
+    let result = resolve(&world, &input).unwrap();
+    assert_eq!(guardrails(&result), Vec::<String>::new());
+    assert_eq!(applied_policies(&result), names(&["piped"]));
+    bucket(&result.data).unwrap().clone()
 }
 
 #[test]
 fn pipeline_metadata_is_written() {
-    let world = world(
-        r#"{"piped": {"pipeline": {"mode": "post_call", "steps": [{"guardrail": "g1"}, {"guardrail": "g2", "on_fail": "next"}]}}}"#,
-        r#"[{"policy": "piped", "scope": "*"}]"#,
-    );
-    let input = request(data(r#"{"model": "gpt-4"}"#));
-    let result = resolve(&world, &input).unwrap();
-    let metadata = bucket(&result.data).unwrap();
+    let metadata = piped_metadata();
     assert_eq!(
         text_list(metadata.get("_pipeline_managed_guardrails")),
         names(&["g1", "g2"])
@@ -356,6 +375,17 @@ fn pipeline_metadata_is_written() {
         panic!("a pipeline is a [name, definition] pair");
     };
     assert_eq!(pair.first(), Some(&Json::Text("piped".to_owned())));
+}
+
+#[test]
+fn pipeline_steps_keep_their_actions() {
+    let metadata = piped_metadata();
+    let Some(Json::List(pipelines)) = metadata.get("_guardrail_pipelines") else {
+        panic!("pipelines are a list");
+    };
+    let Some(Json::List(pair)) = pipelines.first() else {
+        panic!("a pipeline is a [name, definition] pair");
+    };
     let Some(Json::Object(definition)) = pair.get(1) else {
         panic!("the pipeline definition is an object");
     };
@@ -363,8 +393,46 @@ fn pipeline_metadata_is_written() {
         definition.get("mode"),
         Some(&Json::Text("post_call".to_owned()))
     );
-    assert_eq!(guardrails(&result), Vec::<String>::new());
-    assert_eq!(applied_policies(&result), names(&["piped"]));
+    let Some(Json::List(steps)) = definition.get("steps") else {
+        panic!("the pipeline steps are a list");
+    };
+    let Some(Json::Object(second_step)) = steps.get(1) else {
+        panic!("the second step is an object");
+    };
+    assert_eq!(
+        second_step.get("on_fail"),
+        Some(&Json::Text("next".to_owned()))
+    );
+    assert_eq!(
+        second_step.get("on_pass"),
+        Some(&Json::Text("allow".to_owned()))
+    );
+}
+
+#[test]
+fn body_policies_are_logged_when_present() {
+    let world = world(r#"{"p2": {"guardrails": {"add": ["pii"]}}}"#, "[]");
+    let input = request(data(r#"{"model": "gpt-4", "policies": ["p2"]}"#));
+    let (captured, guard) = capture();
+    drop(resolve(&world, &input).unwrap());
+    drop(guard);
+    assert!(
+        captured
+            .text()
+            .contains("added dynamic policies from request body")
+    );
+}
+
+#[test]
+fn a_null_guardrail_field_is_written_as_null() {
+    let world = world("{}", "[]");
+    let input = request(data(
+        r#"{"model": "gpt-4", "metadata": {}, "guardrails": null, "guardrail_config": null}"#,
+    ));
+    let result = resolve(&world, &input).unwrap();
+    let metadata = bucket(&result.data).unwrap();
+    assert_eq!(metadata.get("guardrails"), Some(&Json::Null));
+    assert_eq!(metadata.get("guardrail_config"), Some(&Json::Null));
 }
 
 #[test]
@@ -442,13 +510,16 @@ fn policy_sources_record_the_attachment_reason() {
         r#"{"p1": {"guardrails": {"add": ["pii"]}}}"#,
         r#"[{"policy": "p1", "keys": ["key-a"]}]"#,
     );
-    let mut input = request(data(r#"{"model": "gpt-4"}"#));
+    let mut input = request(data(
+        r#"{"model": "gpt-4", "metadata": {"policy_sources": {"old": "team:t"}}}"#,
+    ));
     input.principal.key_alias = Some("key-a".to_owned());
     let result = resolve(&world, &input).unwrap();
     let metadata = bucket(&result.data).unwrap();
     let Some(Json::Object(sources)) = metadata.get("policy_sources") else {
         panic!("policy sources are an object");
     };
+    assert_eq!(sources.get("old"), Some(&Json::Text("team:t".to_owned())));
     assert_eq!(sources.get("p1"), Some(&Json::Text("key:key-a".to_owned())));
 }
 
