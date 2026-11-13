@@ -61,8 +61,8 @@ fn an_unresolvable_mode_is_none(#[case] params: &str) {
 }
 
 #[rstest]
-#[case::explicit_on(Some(false), Some("chat"), false)]
-#[case::explicit_off(Some(true), Some("embedding"), true)]
+#[case::explicit_false(Some(false), Some("chat"), false)]
+#[case::explicit_true(Some(true), Some("embedding"), true)]
 fn the_operator_override_wins_over_the_mode(
     #[case] supports_max_tokens: Option<bool>,
     #[case] mode: Option<&str>,

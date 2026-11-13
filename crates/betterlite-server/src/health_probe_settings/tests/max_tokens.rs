@@ -119,6 +119,24 @@ fn a_wildcard_route_ignores_the_model_info_limits() {
     assert_eq!(tokens, None);
 }
 
+#[rstest]
+#[case::only_the_reasoning_limit(r#"{"model":"reasoning-model"}"#, Some(64), None, 64)]
+#[case::only_the_non_reasoning_limit(r#"{"model":"plain-model"}"#, None, Some(8), 8)]
+fn a_single_variant_limit_still_applies(
+    #[case] params: &str,
+    #[case] reasoning: Option<i64>,
+    #[case] non_reasoning: Option<i64>,
+    #[case] expected: i64,
+) {
+    let tokens = resolve_max_tokens(
+        &health(None, reasoning, non_reasoning, None),
+        &object(params),
+        &policy(None, None),
+        &reasoning_models(),
+    );
+    assert_eq!(tokens, Some(expected));
+}
+
 #[test]
 fn the_deployment_model_string_reads_a_text_model() {
     assert_eq!(
