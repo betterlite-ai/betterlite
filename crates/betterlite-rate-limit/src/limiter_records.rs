@@ -207,9 +207,9 @@ impl ScriptReply {
 
 #[derive(Debug, Eq, PartialEq, thiserror::Error)]
 pub enum CounterReplyError {
-    #[error("rate limiter script reply is not an array")]
+    #[error("rate limiter script reply is not an array: {kind:?}")]
     NotAnArray { kind: ScriptReplyKind },
-    #[error("rate limiter script reply holds a nil or a nested array")]
+    #[error("rate limiter script reply holds a nil or a nested array: {kind:?}")]
     UnsupportedElement { kind: ScriptReplyKind },
 }
 
