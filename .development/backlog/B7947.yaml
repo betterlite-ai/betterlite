@@ -2,7 +2,7 @@ id: B7947
 milestone: M12 python
 title: Python types for team, SCIM and SSO endpoints and public endpoints (types/proxy)
 status: todo
-depends_on: [B5657, B7929]
+depends_on: [B5657, B7929, B9951]
 file: tasks/B7947-types-proxy-mgmt-endpoints-b.yaml
 covers:
   - "litellm/types/proxy/management_endpoints/team_endpoints.py"
