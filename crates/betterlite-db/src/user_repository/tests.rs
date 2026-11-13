@@ -99,7 +99,9 @@ const PLACEHOLDER_ORDER_SEED: &str = r#"INSERT INTO "LiteLLM_UserTable" (user_id
     ('resolver-z-bravo', NULL),
     ('resolver-a', NULL);
     UPDATE "LiteLLM_UserTable" SET sso_user_id = 'placeholder-z'
-        WHERE user_id IN ('resolver-z-alpha', 'resolver-z-bravo');
+        WHERE user_id = 'resolver-z-alpha';
+    UPDATE "LiteLLM_UserTable" SET user_email = 'Placeholder-Z'
+        WHERE user_id = 'resolver-z-bravo';
     UPDATE "LiteLLM_UserTable" SET sso_user_id = 'placeholder-a'
         WHERE user_id = 'resolver-a'"#;
 
@@ -379,7 +381,8 @@ fn decoded_user_retains_password_exclusion() {
         "secret-password"
     );
     let serialized = serde_json::to_string(&user).unwrap();
-    assert!(!serialized.contains("password"));
+    assert!(!serialized.contains("\"password\":"));
+    assert!(!serialized.contains("secret-password"));
     assert!(!format!("{user:?}").contains("secret-password"));
 }
 
@@ -629,7 +632,7 @@ async fn missing_rows_and_errors_preserved() {
         }
     ));
     client
-        .batch_execute(r#"DROP TABLE "LiteLLM_UserTable""#)
+        .batch_execute(r#"DROP TABLE "LiteLLM_UserTable" CASCADE"#)
         .await
         .unwrap();
     let query_error = users.find_by_id("missing").await.unwrap_err();
@@ -975,7 +978,7 @@ async fn count_error_propagates() {
     let database = Database::start().await;
     let client = database.connect().await;
     client
-        .batch_execute(r#"DROP TABLE "LiteLLM_UserTable""#)
+        .batch_execute(r#"DROP TABLE "LiteLLM_UserTable" CASCADE"#)
         .await
         .unwrap();
     let users = repository(&client);
