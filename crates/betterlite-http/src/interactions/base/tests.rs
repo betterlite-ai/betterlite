@@ -19,6 +19,7 @@ use super::{
     RequestFailure, RequestHeaders, ResponseHeaders, handle_error,
 };
 use crate::proxy::base_builder;
+use crate::proxy::limits::ReadError;
 
 pub(crate) mod support;
 
@@ -99,6 +100,15 @@ fn handle_error_passes_a_transport_failure_through_unchanged() {
         matches!(failure, CallFailure::PassedThrough(RequestFailure::BodyTooLarge { limit }) if limit == 4)
     );
     assert!(fixture.calls().is_empty());
+}
+
+#[test]
+fn a_read_failure_keeps_its_limit() {
+    let failure = RequestFailure::from(ReadError::TooLarge { limit: 4 });
+
+    assert!(
+        matches!(failure, RequestFailure::BodyTooLarge { limit }) if limit == 4
+    );
 }
 
 #[test]
