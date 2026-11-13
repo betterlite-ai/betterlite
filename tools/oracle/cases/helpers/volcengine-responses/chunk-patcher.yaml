@@ -1,0 +1,50 @@
+kind: helper
+name: volcengine-responses-chunk-patcher
+call:
+  b8176:
+    steps:
+      - kind: stream_event
+        event:
+          type: response.created
+          response: {id: "resp_1", created_at: 7}
+      - kind: stream_event
+        event:
+          type: response.completed
+          response:
+            id: "resp_2"
+            created_at: 8
+            output: []
+            usage: {input_tokens: 3}
+      - kind: stream_event
+        event:
+          type: response.output_text.delta
+          item_id: "item_1"
+          delta: "hi"
+      - kind: stream_event
+        event:
+          type: response.content_part.done
+          item_id: "item_1"
+          output_index: 0
+          content_index: 0
+          part: {type: output_text, text: "hi"}
+      - kind: stream_event
+        event:
+          type: response.output_item.added
+      - kind: stream_event
+        event:
+          type: response.custom.thing
+          extra: 1
+      - kind: stream_event
+        event:
+          type: error
+          sequence_number: 1
+          error: {type: invalid_request_error, code: null, message: "bad"}
+      - kind: stream_event
+        event:
+          type: response.failed
+          response: {created_at: 9}
+      - kind: stream_event
+        event:
+          item_id: "item_1"
+env: {}
+compare: {ignore: []}
