@@ -31,7 +31,6 @@ pub struct AnalysisResult {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RedactedMessage {
-    pub role: Option<String>,
     pub content: Option<GuardrailValue>,
 }
 
@@ -41,23 +40,16 @@ impl RedactedMessage {
         let GuardrailValue::Object(object) = value else {
             return Self::default();
         };
-        let role = match object.get("role") {
-            Some(GuardrailValue::Text(role)) => Some(role.clone()),
-            _ => None,
-        };
         let content = match object.get("content") {
             None | Some(GuardrailValue::Null) => None,
             Some(content) => Some(content.clone()),
         };
-        Self { role, content }
+        Self { content }
     }
 
     #[must_use]
     pub fn to_value(&self) -> GuardrailValue {
         let mut object = BTreeMap::new();
-        if let Some(role) = &self.role {
-            object.insert("role".to_owned(), GuardrailValue::Text(role.clone()));
-        }
         if let Some(content) = &self.content {
             object.insert("content".to_owned(), content.clone());
         }
