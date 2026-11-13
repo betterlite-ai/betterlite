@@ -1,13 +1,14 @@
 use pyo3::prelude::*;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::advisory::inject_advisory_message;
 use betterlite_guardrails::guardrail_selection::gate::GuardrailSelection as _;
 
 use super::convert;
 use super::convert::settings::SettingsJson;
-use super::error::GuardrailCallError;
+use super::error::CallError;
 
 #[pyclass]
 pub(crate) struct NativeGuardrail {
@@ -19,7 +20,7 @@ impl NativeGuardrail {
     #[new]
     pub(crate) fn new(settings_json: &str, strict_modes: bool) -> PyResult<Self> {
         let settings = convert::settings_from_text(settings_json)?;
-        let base = GuardrailBase::new(settings, strict_modes).map_err(GuardrailCallError::from)?;
+        let base = GuardrailBase::new(settings, strict_modes).map_err(CallError::from)?;
         Ok(Self { base })
     }
 
@@ -30,22 +31,18 @@ impl NativeGuardrail {
             .as_ref()
             .map(convert::settings::mode_to_value);
         let value = mode.unwrap_or(GuardrailValue::Null);
-        Ok(convert::value_to_text(&value)?)
+        Ok(convert::write("guardrail mode", &value)?)
     }
 
     fn update_params(&mut self, litellm_params: &str) -> PyResult<()> {
-        let params = convert::params_from_text(litellm_params)?;
+        let params: LitellmParams = convert::read("guardrail params", litellm_params)?;
         self.base.update_params(&params);
         Ok(())
     }
 
     fn settings(&self) -> PyResult<String> {
         let json = SettingsJson::from(&self.base.settings);
-        let text = serde_json::to_string(&json).map_err(|source| GuardrailCallError::Json {
-            field: "guardrail settings",
-            source,
-        })?;
-        Ok(text)
+        Ok(convert::write("guardrail settings", &json)?)
     }
 
     fn render_violation_message(&self, default: &str, context: &str) -> PyResult<String> {
@@ -61,7 +58,7 @@ impl NativeGuardrail {
     fn inject_advisory_message(data: &str, message: &str) -> PyResult<(bool, String)> {
         let mut body = convert::data_from_text(data)?;
         let written = inject_advisory_message(&mut body, message);
-        let text = convert::data_to_text(&body)?;
+        let text = convert::write("request data", &body)?;
         Ok((written, text))
     }
 
@@ -77,7 +74,7 @@ impl NativeGuardrail {
         let answer = self
             .base
             .should_run_guardrail(&body, hook, &blocked)
-            .map_err(|source| GuardrailCallError::Selection { source })?;
+            .map_err(|source| CallError::Selection { source })?;
         Ok(answer)
     }
 
@@ -92,7 +89,7 @@ impl NativeGuardrail {
         let params = self
             .base
             .dynamic_request_body_params(&body)
-            .map_err(|source| GuardrailCallError::Selection { source })?;
-        Ok(convert::data_to_text(&params)?)
+            .map_err(|source| CallError::Selection { source })?;
+        Ok(convert::write("request data", &params)?)
     }
 }

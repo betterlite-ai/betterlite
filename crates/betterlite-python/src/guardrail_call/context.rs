@@ -1,17 +1,21 @@
 use std::collections::BTreeMap;
+use std::time::SystemTime;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_records::error::GuardrailSpanError;
+use betterlite_guardrails::guardrail_records::invocation::GuardrailInvocation;
+use betterlite_guardrails::guardrail_records::metadata::add_guardrail_record;
 use betterlite_guardrails::guardrail_records::record::{
-    GuardrailInvocationRecord, GuardrailRecordContext, GuardrailSpanSink,
+    GuardrailInvocationRecord, GuardrailRecordContext, GuardrailRecordInput, GuardrailSpanSink,
 };
 use serde::{Deserialize, Serialize};
 
-use super::convert::exact_data;
+use super::RecordUpdate;
+use super::convert;
 use super::convert::settings::SettingsJson;
-use super::error::GuardrailCallError;
+use super::error::CallError;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -31,8 +35,8 @@ struct LogTargetJson {
 impl LogTargetJson {
     fn into_target(self) -> GuardrailLogTarget {
         GuardrailLogTarget {
-            litellm_params: self.litellm_params.map(exact_data),
-            model_call_params: self.model_call_params.map(exact_data),
+            litellm_params: self.litellm_params.map(convert::exact_data),
+            model_call_params: self.model_call_params.map(convert::exact_data),
         }
     }
 
@@ -58,6 +62,12 @@ pub(crate) struct RecordParts {
     log_target: Option<GuardrailLogTarget>,
 }
 
+pub(crate) enum RecordStep {
+    Add(GuardrailRecordInput),
+    Own(GuardrailRecordInput),
+    Finish(Option<GuardrailValue>),
+}
+
 impl RecordParts {
     pub(crate) fn context<'parts>(
         &'parts mut self,
@@ -71,21 +81,25 @@ impl RecordParts {
         }
     }
 
-    pub(crate) fn log_target_text(&self) -> Result<String, GuardrailCallError> {
+    pub(crate) fn recorded(
+        &self,
+        data: &BTreeMap<String, GuardrailValue>,
+    ) -> Result<RecordUpdate, CallError> {
+        let text = convert::write("request data", data)?;
+        Ok((text, self.log_target_text()?))
+    }
+
+    pub(crate) fn log_target_text(&self) -> Result<String, CallError> {
         self.log_target
             .as_ref()
             .map_or_else(|| Ok("null".to_owned()), log_target_to_text)
     }
 }
 
-pub(crate) fn record_parts(text: &str) -> Result<RecordParts, GuardrailCallError> {
-    let context: ContextJson =
-        serde_json::from_str(text).map_err(|source| GuardrailCallError::Json {
-            field: "guardrail record context",
-            source,
-        })?;
+pub(crate) fn record_parts(text: &str) -> Result<RecordParts, CallError> {
+    let context: ContextJson = convert::read("guardrail record context", text)?;
     let settings = context.settings.into_settings()?;
-    // the settings already passed the guardrail's own constructor, so validating them again here would reject a guardrail built with strict modes off
+    // the settings already passed the guardrail's own constructor, so validating them again would reject a guardrail built with strict modes off
     let base = GuardrailBase {
         settings,
         mode: None,
@@ -97,21 +111,36 @@ pub(crate) fn record_parts(text: &str) -> Result<RecordParts, GuardrailCallError
     })
 }
 
-pub(crate) fn log_target_from_text(text: &str) -> Result<GuardrailLogTarget, GuardrailCallError> {
-    let json: LogTargetJson =
-        serde_json::from_str(text).map_err(|source| GuardrailCallError::Json {
-            field: "guardrail log target",
-            source,
-        })?;
+pub(crate) fn record_call(
+    invocation: &mut Option<GuardrailInvocation>,
+    step: RecordStep,
+    data: &str,
+    context: &str,
+) -> Result<RecordUpdate, CallError> {
+    let mut body = convert::data_from_text(data)?;
+    let mut parts = record_parts(context)?;
+    let mut record_context = parts.context(&mut body);
+    let outcome = match step {
+        RecordStep::Add(input) => add_guardrail_record(&mut record_context, input),
+        RecordStep::Own(input) => invocation
+            .as_mut()
+            .ok_or(CallError::Finished)?
+            .record_own(&mut record_context, input),
+        RecordStep::Finish(response) => invocation
+            .take()
+            .ok_or(CallError::Finished)?
+            .finish_success(&mut record_context, response.as_ref(), SystemTime::now()),
+    };
+    outcome.map_err(CallError::from)?;
+    parts.recorded(&body)
+}
+
+pub(crate) fn log_target_from_text(text: &str) -> Result<GuardrailLogTarget, CallError> {
+    let json: LogTargetJson = convert::read("guardrail log target", text)?;
     Ok(json.into_target())
 }
 
-pub(crate) fn log_target_to_text(
-    target: &GuardrailLogTarget,
-) -> Result<String, GuardrailCallError> {
+pub(crate) fn log_target_to_text(target: &GuardrailLogTarget) -> Result<String, CallError> {
     let json = LogTargetJson::from_target(target);
-    serde_json::to_string(&json).map_err(|source| GuardrailCallError::Json {
-        field: "guardrail log target",
-        source,
-    })
+    convert::write("guardrail log target", &json)
 }

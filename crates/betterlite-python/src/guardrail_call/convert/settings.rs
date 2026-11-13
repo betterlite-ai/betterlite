@@ -6,7 +6,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_guardrails::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use serde::{Deserialize, Serialize};
 
-use crate::guardrail_call::error::GuardrailCallError;
+use crate::guardrail_call::error::CallError;
 
 const TAGS: &str = "tags";
 const DEFAULT: &str = "default";
@@ -107,7 +107,7 @@ impl From<&GuardrailSwitches> for SwitchesJson {
 }
 
 impl SettingsJson {
-    pub(crate) fn into_settings(self) -> Result<GuardrailSettings, GuardrailCallError> {
+    pub(crate) fn into_settings(self) -> Result<GuardrailSettings, CallError> {
         Ok(GuardrailSettings {
             guardrail_name: self.guardrail_name,
             supported_event_hooks: self.supported_event_hooks,
@@ -165,70 +165,55 @@ fn target_to_value(target: ModeTarget) -> GuardrailValue {
     }
 }
 
-fn mode_from_value(
-    value: Option<GuardrailValue>,
-) -> Result<Option<LitellmParamsMode>, GuardrailCallError> {
-    match value {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Text(name)) => Ok(Some(LitellmParamsMode::One(name))),
-        Some(GuardrailValue::Array(items)) => {
-            Ok(Some(LitellmParamsMode::Many(names_from_values(items)?)))
-        }
-        Some(GuardrailValue::Object(fields)) => {
-            Ok(Some(LitellmParamsMode::Tagged(mode_from_fields(fields)?)))
-        }
-        Some(
-            GuardrailValue::Boolean(_)
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_),
-        ) => Err(GuardrailCallError::EventHookShape),
-    }
+fn mode_from_value(value: Option<GuardrailValue>) -> Result<Option<LitellmParamsMode>, CallError> {
+    value.map(mode_from_present).transpose()
 }
 
-fn mode_from_fields(fields: BTreeMap<String, GuardrailValue>) -> Result<Mode, GuardrailCallError> {
+fn mode_from_present(value: GuardrailValue) -> Result<LitellmParamsMode, CallError> {
+    if let GuardrailValue::Object(fields) = &value {
+        return Ok(LitellmParamsMode::Tagged(mode_from_fields(fields.clone())?));
+    }
+    let target = target_from_value(value)?;
+    Ok(match target {
+        ModeTarget::One(name) => LitellmParamsMode::One(name),
+        ModeTarget::Many(names) => LitellmParamsMode::Many(names),
+    })
+}
+
+fn mode_from_fields(fields: BTreeMap<String, GuardrailValue>) -> Result<Mode, CallError> {
     let mut gathered = None;
     let mut default = None;
     for (key, value) in fields {
         match key.as_str() {
             TAGS => gathered = Some(tags_from_value(value)?),
-            DEFAULT => default = default_from_value(value)?,
-            _unknown => return Err(GuardrailCallError::ModeKey { name: key }),
+            DEFAULT => default = default_target(value)?,
+            _unknown => return Err(CallError::ModeKey { name: key }),
         }
     }
     let Some(tags) = gathered else {
-        return Err(GuardrailCallError::EventHookShape);
+        return Err(CallError::EventHookShape);
     };
     Ok(Mode { tags, default })
 }
 
-fn tags_from_value(
-    value: GuardrailValue,
-) -> Result<BTreeMap<String, ModeTarget>, GuardrailCallError> {
+fn tags_from_value(value: GuardrailValue) -> Result<BTreeMap<String, ModeTarget>, CallError> {
     let GuardrailValue::Object(entries) = value else {
-        return Err(GuardrailCallError::EventHookShape);
+        return Err(CallError::EventHookShape);
     };
-    let mut tags = BTreeMap::new();
-    for (tag, target) in entries {
-        tags.insert(tag, target_from_value(target)?);
-    }
-    Ok(tags)
+    entries
+        .into_iter()
+        .map(|(tag, target)| Ok((tag, target_from_value(target)?)))
+        .collect()
 }
 
-fn default_from_value(value: GuardrailValue) -> Result<Option<ModeTarget>, GuardrailCallError> {
-    match value {
-        GuardrailValue::Null => Ok(None),
-        other @ (GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Array(_)
-        | GuardrailValue::Object(_)) => target_from_value(other).map(Some),
+fn default_target(value: GuardrailValue) -> Result<Option<ModeTarget>, CallError> {
+    if value == GuardrailValue::Null {
+        return Ok(None);
     }
+    target_from_value(value).map(Some)
 }
 
-fn target_from_value(value: GuardrailValue) -> Result<ModeTarget, GuardrailCallError> {
+fn target_from_value(value: GuardrailValue) -> Result<ModeTarget, CallError> {
     match value {
         GuardrailValue::Text(name) => Ok(ModeTarget::One(name)),
         GuardrailValue::Array(items) => Ok(ModeTarget::Many(names_from_values(items)?)),
@@ -237,15 +222,15 @@ fn target_from_value(value: GuardrailValue) -> Result<ModeTarget, GuardrailCallE
         | GuardrailValue::SignedInteger(_)
         | GuardrailValue::UnsignedInteger(_)
         | GuardrailValue::Decimal(_)
-        | GuardrailValue::Object(_) => Err(GuardrailCallError::EventHookShape),
+        | GuardrailValue::Object(_) => Err(CallError::EventHookShape),
     }
 }
 
-fn names_from_values(items: Vec<GuardrailValue>) -> Result<Vec<String>, GuardrailCallError> {
+fn names_from_values(items: Vec<GuardrailValue>) -> Result<Vec<String>, CallError> {
     let mut names = Vec::with_capacity(items.len());
     for item in items {
         let GuardrailValue::Text(name) = item else {
-            return Err(GuardrailCallError::EventHookShape);
+            return Err(CallError::EventHookShape);
         };
         names.push(name);
     }

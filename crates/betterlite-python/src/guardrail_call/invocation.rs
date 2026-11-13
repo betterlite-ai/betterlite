@@ -4,9 +4,10 @@ use pyo3::prelude::*;
 
 use betterlite_guardrails::guardrail_records::invocation::GuardrailInvocation;
 
-use super::context::record_parts;
+use super::RecordUpdate;
+use super::context::{RecordStep, record_call};
 use super::convert;
-use super::error::GuardrailCallError;
+use super::error::CallError;
 
 #[pyclass]
 pub(crate) struct NativeGuardrailInvocation {
@@ -31,7 +32,7 @@ impl NativeGuardrailInvocation {
             api_inputs.as_ref(),
             SystemTime::now(),
         )
-        .map_err(GuardrailCallError::from)?;
+        .map_err(CallError::from)?;
         Py::new(
             py,
             Self {
@@ -40,25 +41,10 @@ impl NativeGuardrailInvocation {
         )
     }
 
-    fn record_own(
-        &mut self,
-        data: &str,
-        record_input: &str,
-        context: &str,
-    ) -> PyResult<(String, String)> {
-        let mut body = convert::data_from_text(data)?;
-        let input = convert::record_input::record_input_from_text(record_input)?;
-        let mut parts = record_parts(context)?;
-        let invocation = self
-            .invocation
-            .as_mut()
-            .ok_or(GuardrailCallError::Finished)?;
-        let mut record_context = parts.context(&mut body);
-        invocation
-            .record_own(&mut record_context, input)
-            .map_err(GuardrailCallError::from)?;
-        let text = convert::data_to_text(&body)?;
-        Ok((text, parts.log_target_text()?))
+    fn record_own(&mut self, data: &str, input: &str, context: &str) -> PyResult<RecordUpdate> {
+        let record = convert::record_input::record_input_from_text(input)?;
+        let step = RecordStep::Own(record);
+        Ok(record_call(&mut self.invocation, step, data, context)?)
     }
 
     fn finish_success(
@@ -66,16 +52,9 @@ impl NativeGuardrailInvocation {
         data: &str,
         response: Option<&str>,
         context: &str,
-    ) -> PyResult<(String, String)> {
-        let mut body = convert::data_from_text(data)?;
-        let present = convert::optional_value_from_text(response)?;
-        let mut parts = record_parts(context)?;
-        let invocation = self.invocation.take().ok_or(GuardrailCallError::Finished)?;
-        let mut record_context = parts.context(&mut body);
-        invocation
-            .finish_success(&mut record_context, present.as_ref(), SystemTime::now())
-            .map_err(GuardrailCallError::from)?;
-        let text = convert::data_to_text(&body)?;
-        Ok((text, parts.log_target_text()?))
+    ) -> PyResult<RecordUpdate> {
+        let present = convert::response_value(response)?;
+        let step = RecordStep::Finish(present);
+        Ok(record_call(&mut self.invocation, step, data, context)?)
     }
 }

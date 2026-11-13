@@ -11,7 +11,7 @@ use betterlite_redact::error::RedactionError;
 create_exception!(betterlite_native, NativeGuardrailError, PyException);
 
 #[derive(Debug, thiserror::Error)]
-pub(crate) enum GuardrailCallError {
+pub(crate) enum CallError {
     #[error("the {field} could not be read as JSON of the expected shape: {source}")]
     Json {
         field: &'static str,
@@ -61,7 +61,7 @@ struct NativeErrorPayload<'name> {
     guardrail_name: Option<&'name str>,
 }
 
-impl GuardrailCallError {
+impl CallError {
     pub(crate) const fn kind(&self) -> &'static str {
         match self {
             Self::Json { .. } => "InvalidJson",
@@ -125,8 +125,8 @@ impl GuardrailCallError {
     }
 }
 
-impl From<GuardrailCallError> for PyErr {
-    fn from(error: GuardrailCallError) -> Self {
+impl From<CallError> for PyErr {
+    fn from(error: CallError) -> Self {
         error.into_exception()
     }
 }

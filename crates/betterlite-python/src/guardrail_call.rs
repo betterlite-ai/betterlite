@@ -13,6 +13,8 @@ use functions::{
     summarize_guardrail_response, sync_log_target,
 };
 
+pub(crate) type RecordUpdate = (String, String);
+
 pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<native::NativeGuardrail>()?;
     module.add_class::<invocation::NativeGuardrailInvocation>()?;

@@ -9,7 +9,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use super::exact_value;
-use crate::guardrail_call::error::GuardrailCallError;
+use crate::guardrail_call::error::CallError;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -74,14 +74,11 @@ impl TracingDetailJson {
     }
 }
 
-pub(crate) fn record_input_from_text(
-    text: &str,
-) -> Result<GuardrailRecordInput, GuardrailCallError> {
-    let raw: RecordInputJson =
-        serde_json::from_str(text).map_err(|source| GuardrailCallError::Json {
-            field: "guardrail record input",
-            source,
-        })?;
+pub(crate) fn record_input_from_text(text: &str) -> Result<GuardrailRecordInput, CallError> {
+    let raw: RecordInputJson = serde_json::from_str(text).map_err(|source| CallError::Json {
+        field: "guardrail record input",
+        source,
+    })?;
     Ok(GuardrailRecordInput {
         guardrail_response: exact_value(raw.guardrail_response),
         guardrail_status: raw.guardrail_status,

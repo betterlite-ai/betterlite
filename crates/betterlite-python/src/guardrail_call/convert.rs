@@ -1,13 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::guardrail_base::settings::GuardrailSettings;
 use betterlite_guardrails::guardrail_records::invocation::GuardrailHookName;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
-use super::error::GuardrailCallError;
+use super::error::CallError;
 
 pub(crate) mod record_input;
 pub(crate) mod settings;
@@ -16,6 +17,45 @@ mod tests;
 
 // serde_json's arbitrary_precision feature hands a JSON number to an untagged enum as this one-key map
 const NUMBER_KEY: &str = "$serde_json::private::Number";
+
+const EVENT_TYPES: [(&str, GuardrailEventHooks); 8] = [
+    ("pre_call", GuardrailEventHooks::PreCall),
+    ("post_call", GuardrailEventHooks::PostCall),
+    ("during_call", GuardrailEventHooks::DuringCall),
+    ("logging_only", GuardrailEventHooks::LoggingOnly),
+    ("pre_mcp_call", GuardrailEventHooks::PreMcpCall),
+    ("during_mcp_call", GuardrailEventHooks::DuringMcpCall),
+    ("post_mcp_call", GuardrailEventHooks::PostMcpCall),
+    (
+        "realtime_input_transcription",
+        GuardrailEventHooks::RealtimeInputTranscription,
+    ),
+];
+
+const HOOK_NAMES: [(&str, GuardrailHookName); 6] = [
+    ("async_pre_call_hook", GuardrailHookName::PreCall),
+    ("async_moderation_hook", GuardrailHookName::Moderation),
+    (
+        "async_post_call_success_hook",
+        GuardrailHookName::PostCallSuccess,
+    ),
+    (
+        "async_post_call_streaming_hook",
+        GuardrailHookName::PostCallStreaming,
+    ),
+    ("apply_guardrail", GuardrailHookName::ApplyGuardrail),
+    ("streaming_iterator", GuardrailHookName::StreamingIterator),
+];
+
+fn find<T>(table: &[(&str, T)], name: &str) -> Option<T>
+where
+    T: Copy,
+{
+    table
+        .iter()
+        .find(|(wire, _hook)| *wire == name)
+        .map(|(_wire, hook)| *hook)
+}
 
 fn number_from_text(text: &str) -> Option<GuardrailValue> {
     if let Ok(signed) = text.parse::<i64>() {
@@ -45,7 +85,7 @@ fn exact_object(fields: BTreeMap<String, GuardrailValue>) -> GuardrailValue {
     )
 }
 
-fn exact_value(value: GuardrailValue) -> GuardrailValue {
+pub(crate) fn exact_value(value: GuardrailValue) -> GuardrailValue {
     match value {
         GuardrailValue::Array(items) => {
             GuardrailValue::Array(items.into_iter().map(exact_value).collect())
@@ -69,157 +109,93 @@ pub(super) fn exact_data(
         .collect()
 }
 
-pub(crate) fn value_from_text(text: &str) -> Result<GuardrailValue, GuardrailCallError> {
-    let raw: GuardrailValue =
-        serde_json::from_str(text).map_err(|source| GuardrailCallError::Json {
-            field: "guardrail response",
-            source,
-        })?;
-    Ok(exact_value(raw))
+pub(crate) fn read<T>(field: &'static str, text: &str) -> Result<T, CallError>
+where
+    T: DeserializeOwned,
+{
+    let value = serde_json::from_str(text);
+    value.map_err(|source| CallError::Json { field, source })
 }
 
-pub(crate) fn value_to_text(value: &GuardrailValue) -> Result<String, GuardrailCallError> {
-    serde_json::to_string(value).map_err(|source| GuardrailCallError::Json {
-        field: "guardrail response",
-        source,
-    })
-}
-
-pub(crate) fn optional_value_from_text(
-    text: Option<&str>,
-) -> Result<Option<GuardrailValue>, GuardrailCallError> {
-    let Some(given) = text else {
-        return Ok(None);
-    };
-    match value_from_text(given)? {
-        GuardrailValue::Null => Ok(None),
-        present @ (GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Array(_)
-        | GuardrailValue::Object(_)) => Ok(Some(present)),
+pub(crate) fn write<T>(field: &'static str, value: &T) -> Result<String, CallError>
+where
+    T: Serialize,
+{
+    match serde_json::to_string(value) {
+        Ok(text) => Ok(text),
+        Err(source) => Err(CallError::Json { field, source }),
     }
 }
 
-pub(crate) fn data_from_text(
-    text: &str,
-) -> Result<BTreeMap<String, GuardrailValue>, GuardrailCallError> {
-    let raw: BTreeMap<String, GuardrailValue> =
-        serde_json::from_str(text).map_err(|source| GuardrailCallError::Json {
-            field: "request data",
-            source,
-        })?;
-    Ok(exact_data(raw))
+pub(crate) fn optional_from_text<T>(
+    field: &'static str,
+    text: Option<&str>,
+) -> Result<Option<T>, CallError>
+where
+    T: DeserializeOwned,
+{
+    text.map(|given| read(field, given)).transpose()
 }
 
-pub(crate) fn data_to_text(
-    data: &BTreeMap<String, GuardrailValue>,
-) -> Result<String, GuardrailCallError> {
-    serde_json::to_string(data).map_err(|source| GuardrailCallError::Json {
-        field: "request data",
-        source,
-    })
+pub(crate) fn data_from_text(text: &str) -> Result<BTreeMap<String, GuardrailValue>, CallError> {
+    let raw: BTreeMap<String, GuardrailValue> = read("request data", text)?;
+    Ok(exact_data(raw))
 }
 
 pub(crate) fn optional_data_from_text(
     text: Option<&str>,
-) -> Result<Option<BTreeMap<String, GuardrailValue>>, GuardrailCallError> {
-    let Some(given) = text else {
-        return Ok(None);
-    };
-    let raw: Option<BTreeMap<String, GuardrailValue>> =
-        serde_json::from_str(given).map_err(|source| GuardrailCallError::Json {
-            field: "request data",
-            source,
-        })?;
-    Ok(raw.map(exact_data))
+) -> Result<Option<BTreeMap<String, GuardrailValue>>, CallError> {
+    let raw: Option<Option<BTreeMap<String, GuardrailValue>>> =
+        optional_from_text("request data", text)?;
+    Ok(raw.flatten().map(exact_data))
+}
+
+pub(crate) fn present_value(value: Option<GuardrailValue>) -> Option<GuardrailValue> {
+    value.filter(|present| *present != GuardrailValue::Null)
+}
+
+pub(crate) fn response_value(text: Option<&str>) -> Result<Option<GuardrailValue>, CallError> {
+    let raw: Option<Option<GuardrailValue>> = optional_from_text("guardrail response", text)?;
+    Ok(present_value(raw.flatten()).map(exact_value))
 }
 
 pub(crate) fn inputs_from_text(
     text: Option<&str>,
-) -> Result<Option<GuardrailApiInputs>, GuardrailCallError> {
-    let Some(given) = text else {
-        return Ok(None);
-    };
-    let inputs: Option<GuardrailApiInputs> =
-        serde_json::from_str(given).map_err(|source| GuardrailCallError::Json {
-            field: "guardrail inputs",
-            source,
-        })?;
-    Ok(inputs)
+) -> Result<Option<GuardrailApiInputs>, CallError> {
+    let raw: Option<Option<GuardrailApiInputs>> = optional_from_text("guardrail inputs", text)?;
+    Ok(raw.flatten())
 }
 
-pub(crate) fn suppressed_from_text(text: &str) -> Result<BTreeSet<String>, GuardrailCallError> {
-    let names: Vec<String> =
-        serde_json::from_str(text).map_err(|source| GuardrailCallError::Json {
-            field: "suppressed guardrail names",
-            source,
-        })?;
+pub(crate) fn suppressed_from_text(text: &str) -> Result<BTreeSet<String>, CallError> {
+    let names: Vec<String> = read("suppressed guardrail names", text)?;
     Ok(names.into_iter().collect())
 }
 
-pub(crate) fn text_context_from_text(
-    text: &str,
-) -> Result<Vec<(String, String)>, GuardrailCallError> {
-    let raw: BTreeMap<String, GuardrailValue> =
-        serde_json::from_str(text).map_err(|source| GuardrailCallError::Json {
-            field: "violation message context",
-            source,
-        })?;
+pub(crate) fn text_context_from_text(text: &str) -> Result<Vec<(String, String)>, CallError> {
+    let raw: BTreeMap<String, GuardrailValue> = read("violation message context", text)?;
     let mut entries = Vec::with_capacity(raw.len());
     for (name, value) in raw {
         let GuardrailValue::Text(field) = value else {
-            return Err(GuardrailCallError::ContextValue { name });
+            return Err(CallError::ContextValue { name });
         };
         entries.push((name, field));
     }
     Ok(entries)
 }
 
-pub(crate) fn event_type_from_name(name: &str) -> Result<GuardrailEventHooks, GuardrailCallError> {
-    match name {
-        "pre_call" => Ok(GuardrailEventHooks::PreCall),
-        "post_call" => Ok(GuardrailEventHooks::PostCall),
-        "during_call" => Ok(GuardrailEventHooks::DuringCall),
-        "logging_only" => Ok(GuardrailEventHooks::LoggingOnly),
-        "pre_mcp_call" => Ok(GuardrailEventHooks::PreMcpCall),
-        "during_mcp_call" => Ok(GuardrailEventHooks::DuringMcpCall),
-        "post_mcp_call" => Ok(GuardrailEventHooks::PostMcpCall),
-        "realtime_input_transcription" => Ok(GuardrailEventHooks::RealtimeInputTranscription),
-        _unknown => Err(GuardrailCallError::EventType {
-            name: name.to_owned(),
-        }),
-    }
-}
-
-pub(crate) fn hook_from_name(name: &str) -> Result<GuardrailHookName, GuardrailCallError> {
-    match name {
-        "async_pre_call_hook" => Ok(GuardrailHookName::PreCall),
-        "async_moderation_hook" => Ok(GuardrailHookName::Moderation),
-        "async_post_call_success_hook" => Ok(GuardrailHookName::PostCallSuccess),
-        "async_post_call_streaming_hook" => Ok(GuardrailHookName::PostCallStreaming),
-        "apply_guardrail" => Ok(GuardrailHookName::ApplyGuardrail),
-        "streaming_iterator" => Ok(GuardrailHookName::StreamingIterator),
-        _unknown => Err(GuardrailCallError::HookName {
-            name: name.to_owned(),
-        }),
-    }
-}
-
-pub(crate) fn params_from_text(text: &str) -> Result<LitellmParams, GuardrailCallError> {
-    serde_json::from_str(text).map_err(|source| GuardrailCallError::Json {
-        field: "guardrail params",
-        source,
+pub(crate) fn event_type_from_name(name: &str) -> Result<GuardrailEventHooks, CallError> {
+    find(&EVENT_TYPES, name).ok_or_else(|| CallError::EventType {
+        name: name.to_owned(),
     })
 }
 
-pub(crate) fn settings_from_text(text: &str) -> Result<GuardrailSettings, GuardrailCallError> {
-    let parsed: settings::SettingsJson =
-        serde_json::from_str(text).map_err(|source| GuardrailCallError::Json {
-            field: "guardrail settings",
-            source,
-        })?;
+pub(crate) fn hook_from_name(name: &str) -> Result<GuardrailHookName, CallError> {
+    find(&HOOK_NAMES, name).ok_or_else(|| CallError::HookName {
+        name: name.to_owned(),
+    })
+}
+
+pub(crate) fn settings_from_text(text: &str) -> Result<GuardrailSettings, CallError> {
+    let parsed: settings::SettingsJson = read("guardrail settings", text)?;
     parsed.into_settings()
 }

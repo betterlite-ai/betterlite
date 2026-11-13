@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::{LitellmParamsMode, Mode, ModeTarget};
+use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
 use betterlite_guardrails::guardrail_records::invocation::GuardrailHookName;
@@ -12,14 +13,18 @@ use rstest::rstest;
 
 use super::settings::SettingsJson;
 use super::{
-    data_from_text, data_to_text, event_type_from_name, hook_from_name, inputs_from_text,
-    optional_data_from_text, optional_value_from_text, params_from_text, settings_from_text,
-    suppressed_from_text, text_context_from_text, value_from_text, value_to_text,
+    data_from_text, event_type_from_name, exact_value, hook_from_name, inputs_from_text,
+    optional_data_from_text, read, response_value, settings_from_text, suppressed_from_text,
+    text_context_from_text, write,
 };
 use crate::guardrail_call::context::record_parts;
 use crate::guardrail_call::convert::record_input::record_input_from_text;
-use crate::guardrail_call::error::GuardrailCallError;
+use crate::guardrail_call::error::CallError;
 use crate::guardrail_call::native::NativeGuardrail;
+
+fn value(text: &str) -> Result<GuardrailValue, CallError> {
+    read("guardrail response", text).map(exact_value)
+}
 
 const FULL_SETTINGS: &str = r#"{
     "guardrail_name": "pii",
@@ -48,7 +53,7 @@ const FULL_SETTINGS: &str = r#"{
     }
 }"#;
 
-fn call_error(text: &str) -> GuardrailCallError {
+fn call_error(text: &str) -> CallError {
     settings_from_text(text).unwrap_err()
 }
 
@@ -179,7 +184,7 @@ fn settings_reject_an_unsupported_hook() {
     let text = r#"{"guardrail_name": "pii", "supported_event_hooks": ["pre_call"], "event_hook": "post_call"}"#;
     let settings = settings_from_text(text).unwrap();
     let refusal = GuardrailBase::new(settings, true).unwrap_err();
-    let error = GuardrailCallError::from(refusal);
+    let error = CallError::from(refusal);
     assert_eq!(error.kind(), "UnsupportedEventHook");
     assert_eq!(
         error.to_string(),
@@ -201,7 +206,8 @@ fn settings_update_params_follow_the_given_params() {
     let text = r#"{"guardrail_name": "pii", "event_hook": "pre_call", "default_on": false}"#;
     let settings = settings_from_text(text).unwrap();
     let mut base = GuardrailBase::new(settings, true).unwrap();
-    let params = params_from_text(
+    let params = read::<LitellmParams>(
+            "guardrail params",
         r#"{"guardrail": "pii", "mode": "post_call", "default_on": true, "mask_request_content": true,
             "violation_message_template": "stop", "timeout": 4.5, "on_violation": "warn"}"#,
     )
@@ -225,12 +231,9 @@ fn settings_update_params_follow_the_given_params() {
 
 #[test]
 fn value_keeps_floats_outside_the_serde_number_marker() {
+    assert_eq!(value("1.5").unwrap(), GuardrailValue::Decimal(1.5));
     assert_eq!(
-        value_from_text("1.5").unwrap(),
-        GuardrailValue::Decimal(1.5)
-    );
-    assert_eq!(
-        value_from_text(r#"{"a": [1.5, {"b": 2}]}"#).unwrap(),
+        value(r#"{"a": [1.5, {"b": 2}]}"#).unwrap(),
         GuardrailValue::Object(BTreeMap::from([(
             "a".to_owned(),
             GuardrailValue::Array(vec![
@@ -247,11 +250,11 @@ fn value_keeps_floats_outside_the_serde_number_marker() {
 #[test]
 fn value_round_trips_through_text() {
     let text = r#"{"text":"a","flag":true,"none":null,"list":["x",2]}"#;
-    let value = value_from_text(text).unwrap();
-    let again = value_from_text(&value_to_text(&value).unwrap()).unwrap();
-    assert_eq!(again, value);
+    let parsed = value(text).unwrap();
+    let again = value(&write("guardrail response", &parsed).unwrap()).unwrap();
+    assert_eq!(again, parsed);
     assert_eq!(
-        value_to_text(&GuardrailValue::Text("hi".to_owned())).unwrap(),
+        write("guardrail response", &GuardrailValue::Text("hi".to_owned())).unwrap(),
         "\"hi\""
     );
 }
@@ -267,10 +270,10 @@ fn data_reads_absent_null_and_a_list_wrongly() {
     let error = optional_data_from_text(Some("[]")).unwrap_err();
     assert_eq!(error.kind(), "InvalidJson");
     assert_eq!(
-        data_to_text(&BTreeMap::from([(
-            "score".to_owned(),
-            GuardrailValue::Decimal(0.5)
-        )]))
+        write(
+            "request data",
+            &BTreeMap::from([("score".to_owned(), GuardrailValue::Decimal(0.5))])
+        )
         .unwrap(),
         r#"{"score":0.5}"#
     );
@@ -282,10 +285,10 @@ fn data_reads_absent_null_and_a_list_wrongly() {
 
 #[test]
 fn value_absent_reads_none() {
-    assert_eq!(optional_value_from_text(None).unwrap(), None);
-    assert_eq!(optional_value_from_text(Some("null")).unwrap(), None);
+    assert_eq!(response_value(None).unwrap(), None);
+    assert_eq!(response_value(Some("null")).unwrap(), None);
     assert_eq!(
-        optional_value_from_text(Some("\"deny\"")).unwrap(),
+        response_value(Some("\"deny\"")).unwrap(),
         Some(GuardrailValue::Text("deny".to_owned()))
     );
 }
@@ -359,13 +362,17 @@ fn suppressed_reads_names_once() {
 
 #[test]
 fn params_read_a_guardrail_mode() {
-    let params = params_from_text(r#"{"guardrail": "pii", "mode": ["pre_call"]}"#).unwrap();
+    let params = read::<LitellmParams>(
+        "guardrail params",
+        r#"{"guardrail": "pii", "mode": ["pre_call"]}"#,
+    )
+    .unwrap();
     assert_eq!(
         params.mode,
         LitellmParamsMode::Many(vec!["pre_call".to_owned()])
     );
     assert_eq!(params.guardrail, "pii");
-    let error = params_from_text(r#"{"mode": "pre_call"}"#).unwrap_err();
+    let error = read::<LitellmParams>("guardrail params", r#"{"mode": "pre_call"}"#).unwrap_err();
     assert_eq!(error.kind(), "InvalidJson");
 }
 

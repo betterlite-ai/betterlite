@@ -7,19 +7,19 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::local_ttl_cache::Settings;
 use betterlite_context::local_ttl_cache::dual::{Diagnostics, DualLocalCache};
 use betterlite_guardrails::guardrail_records::messages::messages_for_call_type as messages_for_type;
-use betterlite_guardrails::guardrail_records::metadata::add_guardrail_record as add_record;
 use betterlite_guardrails::guardrail_records::sanitize::sanitize_guardrail_response as sanitize_response;
 use betterlite_guardrails::guardrail_records::summary::summarize_guardrail_response as summarize_response;
 use betterlite_guardrails::guardrail_records::sync::sync_log_target as sync_target;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
-use super::context::{log_target_from_text, log_target_to_text, record_parts};
+use super::RecordUpdate;
+use super::context::{RecordStep, log_target_from_text, log_target_to_text, record_call};
 use super::convert;
-use super::error::GuardrailCallError;
+use super::error::CallError;
 
-fn tool_cache() -> Result<DualLocalCache, GuardrailCallError> {
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
-        .map_err(|source| GuardrailCallError::Cache { source })?;
+fn tool_cache() -> Result<DualLocalCache, CallError> {
+    let redactor =
+        Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|source| CallError::Cache { source })?;
     let diagnostics = Diagnostics {
         redactor: Arc::new(redactor),
         emit: Arc::new(|_event| {}),
@@ -41,24 +41,24 @@ fn tool_cache() -> Result<DualLocalCache, GuardrailCallError> {
 
 #[pyfunction]
 pub(crate) fn sanitize_guardrail_response(response: &str) -> PyResult<String> {
-    let value = convert::value_from_text(response)?;
-    let cleaned = sanitize_response(value).map_err(GuardrailCallError::from)?;
-    Ok(convert::value_to_text(&cleaned)?)
+    let value: GuardrailValue = convert::read("guardrail response", response)?;
+    let cleaned = sanitize_response(convert::exact_value(value)).map_err(CallError::from)?;
+    Ok(convert::write("guardrail response", &cleaned)?)
 }
 
 #[pyfunction]
 pub(crate) fn add_guardrail_record(
     data: &str,
-    record_input: &str,
+    input: &str,
     context: &str,
-) -> PyResult<(String, String)> {
-    let mut body = convert::data_from_text(data)?;
-    let input = convert::record_input::record_input_from_text(record_input)?;
-    let mut parts = record_parts(context)?;
-    let mut record_context = parts.context(&mut body);
-    add_record(&mut record_context, input).map_err(GuardrailCallError::from)?;
-    let text = convert::data_to_text(&body)?;
-    Ok((text, parts.log_target_text()?))
+) -> PyResult<RecordUpdate> {
+    let record = convert::record_input::record_input_from_text(input)?;
+    Ok(record_call(
+        &mut None,
+        RecordStep::Add(record),
+        data,
+        context,
+    )?)
 }
 
 #[pyfunction]
@@ -75,21 +75,12 @@ pub(crate) fn summarize_guardrail_response(
     baseline: Option<&str>,
     event_type: Option<&str>,
 ) -> PyResult<String> {
-    let parsed = convert::value_from_text(response)?;
-    let kept = match parsed {
-        GuardrailValue::Null => None,
-        present @ (GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Array(_)
-        | GuardrailValue::Object(_)) => Some(present),
-    };
+    let parsed: GuardrailValue = convert::read("guardrail response", response)?;
+    let kept = convert::present_value(Some(parsed)).map(convert::exact_value);
     let original = convert::optional_data_from_text(baseline)?;
     let hook = event_type.map(convert::event_type_from_name).transpose()?;
     let summary = summarize_response(kept.as_ref(), original.as_ref(), hook);
-    Ok(convert::value_to_text(&summary)?)
+    Ok(convert::write("guardrail response", &summary)?)
 }
 
 #[pyfunction]
@@ -99,14 +90,9 @@ pub(crate) fn messages_for_call_type(
 ) -> PyResult<Option<String>> {
     let body = convert::optional_data_from_text(data)?;
     let cache = tool_cache()?;
-    let selected =
-        messages_for_type(call_type, body.as_ref(), &cache).map_err(GuardrailCallError::from)?;
+    let selected = messages_for_type(call_type, body.as_ref(), &cache).map_err(CallError::from)?;
     let Some(messages) = selected else {
         return Ok(None);
     };
-    let text = serde_json::to_string(&messages).map_err(|source| GuardrailCallError::Json {
-        field: "guardrail messages",
-        source,
-    })?;
-    Ok(Some(text))
+    Ok(Some(convert::write("guardrail messages", &messages)?))
 }
