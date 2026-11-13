@@ -276,10 +276,22 @@ fn provider_config_carries_extra_headers() {
 
 fn limits_bound_the_create_maps() {
     let mut request = input(BatchProvider::Xai);
-    request.metadata = Some(IndexMap::from([
+    request.metadata = Some(IndexMap::from([("first".to_owned(), "one".to_owned())]));
+    request.extra_headers = Some(IndexMap::from([("x-a".to_owned(), "b".to_owned())]));
+    request.extra_body = Some(IndexMap::from([("x-c".to_owned(), "d".to_owned())]));
+    assert!(outcome_is_overflow(create_outcome(&request, 2), 3, 2));
+    let mut wide = input(BatchProvider::Xai);
+    wide.metadata = Some(IndexMap::from([
         ("first".to_owned(), "one".to_owned()),
         ("second".to_owned(), "two".to_owned()),
     ]));
+    assert!(outcome_is_overflow(create_outcome(&wide, 1), 2, 1));
+}
+
+fn create_outcome(
+    request: &BatchProviderCreateInput,
+    max_items: usize,
+) -> Result<super::BatchProviderCreateResult, BatchProviderCreateError> {
     let resolution = Resolution::new();
     let context = resolution.context();
     let service = BatchProviderCreate {
@@ -289,19 +301,26 @@ fn limits_bound_the_create_maps() {
         limits: ApiLimits {
             max_json_bytes: ApiLimits::default().max_json_bytes,
             max_event_bytes: ApiLimits::default().max_event_bytes,
-            max_items: 1,
+            max_items,
         },
     };
-    let outcome = service.create(&request);
-    assert!(matches!(
+    service.create(request)
+}
+
+fn outcome_is_overflow(
+    outcome: Result<super::BatchProviderCreateResult, BatchProviderCreateError>,
+    observed: usize,
+    limit: usize,
+) -> bool {
+    matches!(
         outcome,
         Err(BatchProviderCreateError::Limit(
             crate::api::api_boundaries::ApiLimitError::TooManyItems {
-                observed: 2,
-                limit: 1
+                observed: seen,
+                limit: maximum
             }
-        ))
-    ));
+        )) if seen == observed && maximum == limit
+    )
 }
 
 fn vertex_credentials_accept_fields() {
@@ -756,4 +775,28 @@ fn xai_takes_only_the_request_credentials() {
     };
     assert_eq!(call.api_base.as_deref(), Some("optional"));
     assert_eq!(revealed(call.api_key.as_ref()).as_deref(), Some("key"));
+}
+
+#[rstest]
+#[case::openai(BatchProvider::Openai, "openai")]
+#[case::azure(BatchProvider::Azure, "azure")]
+#[case::vertex_ai(BatchProvider::VertexAi, "vertex_ai")]
+#[case::bedrock(BatchProvider::Bedrock, "bedrock")]
+#[case::hosted_vllm(BatchProvider::HostedVllm, "hosted_vllm")]
+#[case::litellm_proxy(BatchProvider::LitellmProxy, "litellm_proxy")]
+#[case::mistral(BatchProvider::Mistral, "mistral")]
+#[case::xai(BatchProvider::Xai, "xai")]
+fn provider_names_are_the_wire_slugs(#[case] provider: BatchProvider, #[case] expected: &str) {
+    assert_eq!(provider.as_str(), expected);
+}
+
+#[test]
+fn a_model_does_not_route_other_providers_to_a_provider_config() {
+    let mut request = input(BatchProvider::Openai);
+    request.model = Some("openai/gpt-4o".to_owned());
+    let result = created(&request, &Settings::default());
+    assert!(matches!(
+        result.call,
+        BatchProviderCreateCall::OpenAiCompatible(_)
+    ));
 }
