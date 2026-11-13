@@ -393,6 +393,27 @@ async fn in_memory_allows_an_increment_that_reaches_the_limit() {
 }
 
 #[tokio::test]
+async fn in_memory_blocks_a_positive_increment_that_would_cross_the_limit() {
+    let cache = RecordingCache::new(&[
+        (WINDOW_KEY, window_start_text(1_700_000_299)),
+        (REQUESTS_KEY, CacheCounterValue::Int(9)),
+    ]);
+    let response = atomic_check_and_increment_in_memory(
+        &cache,
+        &[counter(WindowRateLimitType::Requests, 10, 5)],
+        NOW,
+    )
+    .await
+    .unwrap();
+    assert_eq!(response.overall_code, "OVER_LIMIT");
+    assert_eq!(
+        response.statuses,
+        vec![status("OVER_LIMIT", 10, 1, RateLimitType::Requests)]
+    );
+    assert!(cache.writes().is_empty());
+}
+
+#[tokio::test]
 async fn in_memory_blocks_a_positive_increment_past_the_limit() {
     let cache = RecordingCache::new(&[
         (WINDOW_KEY, window_start_text(1_700_000_299)),
