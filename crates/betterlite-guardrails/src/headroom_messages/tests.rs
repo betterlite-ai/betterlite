@@ -146,7 +146,8 @@ fn protected_retrieve_call_ids_read_anthropic_tool_use_blocks() {
                 {"type": "tool_use", "id": "toolu-1", "name": "headroom_retrieve", "input": {}},
                 {"type": "tool_use", "id": "", "name": "mcp__server__headroom_retrieve", "input": {}},
                 {"type": "tool_use", "id": "toolu-3", "name": "lookup", "input": {}},
-                {"type": "text", "text": "hi"}
+                {"type": "text", "text": "hi"},
+                {"type": "text", "id": "text-1", "name": "headroom_retrieve", "text": "not a call"}
             ]}
         ]"#);
     assert_eq!(retrieve_call_ids(Some(&messages)), ids(&["", "toolu-1"]));
@@ -327,6 +328,25 @@ fn restore_protected_puts_the_held_rows_back_at_their_positions() {
         restored,
         rows(
             r#"[{"role": "system", "content": "s"}, {"role": "tool", "tool_call_id": "x", "content": "sent one"}, {"role": "assistant", "content": "a"}, {"role": "user", "content": "u2"}]"#
+        )
+    );
+}
+
+#[test]
+fn restore_protected_ignores_rows_beyond_the_sent_count() {
+    let messages =
+        rows(r#"[{"role": "user", "content": "u"}, {"role": "assistant", "content": "a"}]"#);
+    let compressed = rows(
+        r#"[
+            {"role": "user", "content": "compressed"},
+            {"role": "assistant", "content": "extra"}
+        ]"#,
+    );
+    let restored = restore_protected_messages(&messages, &compressed, &indices(&[1])).unwrap();
+    assert_eq!(
+        restored,
+        rows(
+            r#"[{"role": "user", "content": "compressed"}, {"role": "assistant", "content": "a"}]"#
         )
     );
 }
