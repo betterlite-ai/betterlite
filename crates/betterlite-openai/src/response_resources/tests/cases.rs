@@ -489,6 +489,8 @@ fn compact_paths() {
     assert_eq!(bare.url, "https://api.openai.com/compact");
     let doubled = compact_request(&request, "https://host/v1//").unwrap();
     assert_eq!(doubled.url, "https://host/v1/compact");
+    let escaped = compact_request(&request, "https://host/a%2Fb").unwrap();
+    assert_eq!(escaped.url, "https://host/a%2Fb/compact");
 }
 
 fn compact_options() {

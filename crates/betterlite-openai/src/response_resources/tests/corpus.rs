@@ -29,3 +29,17 @@ fn replays_the_openai_response_resources_corpus() {
     );
     assert_eq!(seeds.iter().find(|path| !replays(path)), None);
 }
+
+#[test]
+fn decode_response_resource_refuses_oversized_inputs() {
+    let too_many = serde_json::to_vec(&vec![0_u8; 0x4001]).unwrap();
+    assert!(matches!(
+        decode_response_resource(&too_many),
+        Err(ResponseResourceError::Decode { .. })
+    ));
+    let too_large = format!("\"{}\"", "a".repeat(0x0010_0000));
+    assert!(matches!(
+        decode_response_resource(too_large.as_bytes()),
+        Err(ResponseResourceError::Decode { .. })
+    ));
+}
