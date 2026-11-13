@@ -1,5 +1,5 @@
 id: B9311
-milestone: M0 oracle helpers
+milestone: R1 cleanup and refactoring
 title: Bedrock AWS settings helper on LiteLLM's public API
 status: done
 depends_on: [B590]

@@ -2,7 +2,7 @@ id: B2434
 milestone: M5 API families
 title: Synchronous Messages stream transitions
 status: todo
-depends_on: [B976, B966, B005, B2401]
+depends_on: [B976, B966, B005, B2401, B9952]
 file: tasks/B2434-messages-sync-stream.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py"
