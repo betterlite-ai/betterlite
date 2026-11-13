@@ -218,6 +218,8 @@ def type_to_response_format_param(
             return _dict_to_response_format_helper(response_format, ref_template)
         case int() | float() | str() | datetime() | list():
             raise TypeError(f"Unsupported response_format type - {response_format}")
+    if not callable(response_format):
+        raise TypeError(f"Unsupported response_format type - {response_format}")
     return {
         "type": "json_schema",
         "json_schema": {
