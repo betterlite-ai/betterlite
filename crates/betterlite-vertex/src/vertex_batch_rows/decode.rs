@@ -21,17 +21,20 @@ fn has_status(row: &VertexBatchRow) -> bool {
 
 #[must_use]
 pub fn is_embeddings_output_row(row: &VertexBatchRow) -> bool {
-    let embedded = matches!(
-        row.response
-            .object()
-            .and_then(|fields| fields.get("embedding")),
-        Some(Json::Object(_))
-    );
-    let failed = row
-        .request
+    let embedding = row
+        .response
         .object()
-        .is_some_and(|fields| fields.contains_key("content"));
-    row.request != RowField::Absent && (embedded || (failed && has_status(row)))
+        .and_then(|fields| fields.get("embedding"));
+    match (&row.request, embedding) {
+        (RowField::Absent, _) => false,
+        (_, Some(Json::Object(_))) => true,
+        (request, _) => {
+            has_status(row)
+                && request
+                    .object()
+                    .is_some_and(|fields| fields.contains_key("content"))
+        }
+    }
 }
 
 #[must_use]
