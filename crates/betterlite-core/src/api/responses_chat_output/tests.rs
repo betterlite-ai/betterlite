@@ -246,12 +246,14 @@ fn the_first_choice_controls_status_while_items_use_their_own() {
     );
     let items = message_items(&response);
     assert_eq!(items.len(), 2);
-    for (item, status) in items.iter().zip(["incomplete", "completed"]) {
-        let ResponseOutputItem::Message(message) = item else {
-            panic!("a message item was expected");
-        };
-        assert_eq!(message.status, status);
-    }
+    let ResponseOutputItem::Message(first) = items[0] else {
+        panic!("a message item was expected");
+    };
+    let ResponseOutputItem::Message(second) = items[1] else {
+        panic!("a message item was expected");
+    };
+    assert_eq!(first.status, "incomplete");
+    assert_eq!(second.status, "completed");
 }
 
 #[test]
