@@ -21,6 +21,7 @@ use betterlite_models::decisions::Json;
 use betterlite_prompts::message_content::Message;
 use http::Method;
 use http::header::CONTENT_TYPE;
+use secrecy::SecretString;
 use tokio::time::timeout;
 
 use crate::cache_create::error::CacheCreateError;
@@ -30,6 +31,7 @@ use crate::cache_create::tests::support::{
     HangingTransport, Harness, Reply, ScriptedTransport, created_cache, empty_list_page,
     expected_cache_key, list_page, page, stalling_server, status,
 };
+use crate::cache_lookup::target::CacheProvider;
 
 const SHORT_MARKED: &str =
     r#"[{"role":"user","content":"hi","cache_control":{"type":"ephemeral"}}]"#;
@@ -309,6 +311,33 @@ async fn provider_prefix_selects_the_model_minimum() {
         .expect("the create");
     assert_eq!(outcome.cached_content.as_deref(), Some("cachedContents/9"));
     assert_eq!(transport.methods(), vec![Method::GET, Method::POST]);
+}
+
+#[tokio::test]
+async fn studio_target_is_used() {
+    let mut harness = eligible("gemini-2.5-pro", SHORT_MARKED);
+    harness.provider = CacheProvider::Gemini;
+    harness.gemini_api_key = Some(SecretString::from("studio-key"));
+    harness.auth_token = None;
+    harness.project = None;
+    harness.location = None;
+    let mut options = CacheCreateOptions::default();
+    let transport = ScriptedTransport::new(vec![
+        empty_list_page(),
+        created_cache("cachedContents/studio"),
+    ]);
+    let outcome = harness
+        .run(&transport, &mut options)
+        .await
+        .expect("the create");
+    assert_eq!(
+        outcome.cached_content.as_deref(),
+        Some("cachedContents/studio")
+    );
+    assert_eq!(
+        transport.requests()[0].url,
+        "https://generativelanguage.googleapis.com/v1beta/cachedContents"
+    );
 }
 
 #[tokio::test]
