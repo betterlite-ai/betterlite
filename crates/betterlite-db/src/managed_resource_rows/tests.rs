@@ -18,38 +18,14 @@ use support::*;
 mod support;
 
 #[rstest]
-#[case::file_object(
-    "file_object",
-    "null",
-    r#"{"id":"f","bytes":3,"created_at":1,"filename":"a.txt","object":"file","purpose":"batch"}"#,
-    r#"{"id":"f","bytes":3,"created_at":1,"filename":"a.txt","object":"file","purpose":"batch"}"#,
-    true
-)]
-#[case::created_by("created_by", "null", r#""c""#, r#""c""#, true)]
-#[case::team_id("team_id", "null", r#""t""#, r#""t""#, true)]
-#[case::updated_by("updated_by", "null", r#""u""#, r#""u""#, true)]
-#[case::storage_backend("storage_backend", "null", r#""s3""#, r#""s3""#, true)]
-#[case::storage_url(
-    "storage_url",
-    "null",
-    r#""s3://bucket/f""#,
-    r#""s3://bucket/f""#,
-    true
-)]
-fn managed_file_fields(
-    #[case] field: &str,
-    #[case] default: &str,
-    #[case] supplied: &str,
-    #[case] expected: &str,
-    #[case] null_ok: bool,
-) {
-    assert_field_cases(
-        "managed_file",
-        managed_file_base(),
-        field,
-        (default, supplied, expected),
-        null_ok,
-    );
+#[case::file_object(("file_object", "null", r#"{"id":"f","bytes":3,"created_at":1,"filename":"a.txt","object":"file","purpose":"batch"}"#, r#"{"id":"f","bytes":3,"created_at":1,"filename":"a.txt","object":"file","purpose":"batch"}"#, true))]
+#[case::created_by(("created_by", "null", r#""c""#, r#""c""#, true))]
+#[case::team_id(("team_id", "null", r#""t""#, r#""t""#, true))]
+#[case::updated_by(("updated_by", "null", r#""u""#, r#""u""#, true))]
+#[case::storage_backend(("storage_backend", "null", r#""s3""#, r#""s3""#, true))]
+#[case::storage_url(("storage_url", "null", r#""s3://bucket/f""#, r#""s3://bucket/f""#, true))]
+fn managed_file_fields(#[case] spec: (&str, &str, &str, &str, bool)) {
+    assert_field_cases("managed_file", managed_file_base(), spec);
 }
 
 #[rstest]
@@ -127,26 +103,14 @@ fn embedded_object_union_rejects_a_non_object() {
 }
 
 #[rstest]
-#[case::resource_object("resource_object", "null", r#"{"a":1}"#, r#"{"a":1}"#, true)]
-#[case::created_by("created_by", "null", r#""c""#, r#""c""#, true)]
-#[case::team_id("team_id", "null", r#""t""#, r#""t""#, true)]
-#[case::updated_by("updated_by", "null", r#""u""#, r#""u""#, true)]
-#[case::storage_backend("storage_backend", "null", r#""s3""#, r#""s3""#, true)]
-#[case::storage_url("storage_url", "null", r#""s3://bucket""#, r#""s3://bucket""#, true)]
-fn singular_vector_store_fields(
-    #[case] field: &str,
-    #[case] default: &str,
-    #[case] supplied: &str,
-    #[case] expected: &str,
-    #[case] null_ok: bool,
-) {
-    assert_field_cases(
-        "managed_vector_store",
-        singular_base(),
-        field,
-        (default, supplied, expected),
-        null_ok,
-    );
+#[case::resource_object(("resource_object", "null", r#"{"a":1}"#, r#"{"a":1}"#, true))]
+#[case::created_by(("created_by", "null", r#""c""#, r#""c""#, true))]
+#[case::team_id(("team_id", "null", r#""t""#, r#""t""#, true))]
+#[case::updated_by(("updated_by", "null", r#""u""#, r#""u""#, true))]
+#[case::storage_backend(("storage_backend", "null", r#""s3""#, r#""s3""#, true))]
+#[case::storage_url(("storage_url", "null", r#""s3://bucket""#, r#""s3://bucket""#, true))]
+fn singular_vector_store_fields(#[case] spec: (&str, &str, &str, &str, bool)) {
+    assert_field_cases("managed_vector_store", singular_base(), spec);
 }
 
 #[rstest]
@@ -158,42 +122,18 @@ fn singular_vector_store_required_fields(#[case] field: &str) {
 }
 
 #[rstest]
-#[case::vector_store_name("vector_store_name", "null", r#""n""#, r#""n""#, true)]
-#[case::vector_store_description("vector_store_description", "null", r#""d""#, r#""d""#, true)]
-#[case::vector_store_metadata("vector_store_metadata", "null", r#"{"a":1}"#, r#"{"a":1}"#, true)]
-#[case::created_at(
-    "created_at",
-    "null",
-    r#""2026-01-01T00:00:00Z""#,
-    r#""2026-01-01T00:00:00Z""#,
-    true
-)]
-#[case::updated_at(
-    "updated_at",
-    "null",
-    r#""2026-01-01T00:00:00Z""#,
-    r#""2026-01-01T00:00:00Z""#,
-    true
-)]
-#[case::litellm_credential_name("litellm_credential_name", "null", r#""c""#, r#""c""#, true)]
-#[case::litellm_params("litellm_params", "null", r#"{"a":1}"#, r#"{"a":1}"#, true)]
-#[case::team_id("team_id", "null", r#""t""#, r#""t""#, true)]
-#[case::user_id("user_id", "null", r#""u""#, r#""u""#, true)]
-#[case::is_config("is_config", "false", "true", "true", false)]
-fn plural_vector_store_fields(
-    #[case] field: &str,
-    #[case] default: &str,
-    #[case] supplied: &str,
-    #[case] expected: &str,
-    #[case] null_ok: bool,
-) {
-    assert_field_cases(
-        "managed_vector_stores",
-        plural_base(),
-        field,
-        (default, supplied, expected),
-        null_ok,
-    );
+#[case::vector_store_name(("vector_store_name", "null", r#""n""#, r#""n""#, true))]
+#[case::vector_store_description(("vector_store_description", "null", r#""d""#, r#""d""#, true))]
+#[case::vector_store_metadata(("vector_store_metadata", "null", r#"{"a":1}"#, r#"{"a":1}"#, true))]
+#[case::created_at(("created_at", "null", r#""2026-01-01T00:00:00Z""#, r#""2026-01-01T00:00:00Z""#, true))]
+#[case::updated_at(("updated_at", "null", r#""2026-01-01T00:00:00Z""#, r#""2026-01-01T00:00:00Z""#, true))]
+#[case::litellm_credential_name(("litellm_credential_name", "null", r#""c""#, r#""c""#, true))]
+#[case::litellm_params(("litellm_params", "null", r#"{"a":1}"#, r#"{"a":1}"#, true))]
+#[case::team_id(("team_id", "null", r#""t""#, r#""t""#, true))]
+#[case::user_id(("user_id", "null", r#""u""#, r#""u""#, true))]
+#[case::is_config(("is_config", "false", "true", "true", false))]
+fn plural_vector_store_fields(#[case] spec: (&str, &str, &str, &str, bool)) {
+    assert_field_cases("managed_vector_stores", plural_base(), spec);
 }
 
 #[rstest]
@@ -204,23 +144,11 @@ fn plural_vector_store_required_fields(#[case] field: &str) {
 }
 
 #[rstest]
-#[case::value("value", r#""""#, r#""v""#, r#""v""#, false)]
-#[case::scope("scope", r#""global""#, r#""user""#, r#""user""#, false)]
-#[case::description("description", "null", r#""d""#, r#""d""#, true)]
-fn mcp_env_var_fields(
-    #[case] field: &str,
-    #[case] default: &str,
-    #[case] supplied: &str,
-    #[case] expected: &str,
-    #[case] null_ok: bool,
-) {
-    assert_field_cases(
-        "mcp_env_var",
-        data(r#"{"name":"A"}"#),
-        field,
-        (default, supplied, expected),
-        null_ok,
-    );
+#[case::value(("value", r#""""#, r#""v""#, r#""v""#, false))]
+#[case::scope(("scope", r#""global""#, r#""user""#, r#""user""#, false))]
+#[case::description(("description", "null", r#""d""#, r#""d""#, true))]
+fn mcp_env_var_fields(#[case] spec: (&str, &str, &str, &str, bool)) {
+    assert_field_cases("mcp_env_var", data(r#"{"name":"A"}"#), spec);
 }
 
 #[test]
@@ -230,203 +158,65 @@ fn mcp_env_var_requires_name() {
 }
 
 #[rstest]
-#[case::is_config("is_config", "false", "true", "true", false)]
-#[case::allow_all_keys("allow_all_keys", "false", "true", "true", false)]
-#[case::delegate_auth_to_upstream("delegate_auth_to_upstream", "false", "true", "true", false)]
-#[case::oauth_passthrough("oauth_passthrough", "false", "true", "true", false)]
-#[case::per_server_oauth_discovery("per_server_oauth_discovery", "false", "true", "true", false)]
-#[case::is_byok("is_byok", "false", "true", "true", false)]
-#[case::available_on_public_internet(
-    "available_on_public_internet",
-    "true",
-    "false",
-    "false",
-    false
-)]
-#[case::teams("teams", "[]", r#"[{"team_id":"t"}]"#, r#"[{"team_id":"t"}]"#, false)]
-#[case::mcp_access_groups("mcp_access_groups", "[]", r#"["g"]"#, r#"["g"]"#, false)]
-#[case::allowed_tools("allowed_tools", "[]", r#"["t"]"#, r#"["t"]"#, false)]
-#[case::extra_headers("extra_headers", "[]", r#"["h"]"#, r#"["h"]"#, false)]
-#[case::args("args", "[]", r#"["-x"]"#, r#"["-x"]"#, false)]
-#[case::byok_description("byok_description", "[]", r#"["d"]"#, r#"["d"]"#, false)]
-#[case::env("env", "{}", r#"{"A":"B"}"#, r#"{"A":"B"}"#, true)]
-#[case::status("status", r#""unknown""#, r#""healthy""#, r#""healthy""#, true)]
-#[case::approval_status(
-    "approval_status",
-    r#""active""#,
-    r#""pending_review""#,
-    r#""pending_review""#,
-    true
-)]
-#[case::server_name("server_name", "null", r#""n""#, r#""n""#, true)]
-#[case::alias("alias", "null", r#""a""#, r#""a""#, true)]
-#[case::description("description", "null", r#""d""#, r#""d""#, true)]
-#[case::url(
-    "url",
-    "null",
-    r#""https://example.test""#,
-    r#""https://example.test""#,
-    true
-)]
-#[case::spec_path("spec_path", "null", r#""/spec""#, r#""/spec""#, true)]
-#[case::auth_type("auth_type", "null", r#""api_key""#, r#""api_key""#, true)]
-#[case::credentials(
-    "credentials",
-    "null",
-    r#"{"auth_value":"v"}"#,
-    r#"{"auth_value":"v"}"#,
-    true
-)]
-#[case::instructions("instructions", "null", r#""i""#, r#""i""#, true)]
-#[case::created_at(
-    "created_at",
-    "null",
-    r#""2026-01-01T00:00:00Z""#,
-    r#""2026-01-01T00:00:00Z""#,
-    true
-)]
-#[case::created_by("created_by", "null", r#""c""#, r#""c""#, true)]
-#[case::updated_at(
-    "updated_at",
-    "null",
-    r#""2026-01-01T00:00:00Z""#,
-    r#""2026-01-01T00:00:00Z""#,
-    true
-)]
-#[case::updated_by("updated_by", "null", r#""u""#, r#""u""#, true)]
-#[case::tool_name_to_display_name(
-    "tool_name_to_display_name",
-    "null",
-    r#"{"t":"d"}"#,
-    r#"{"t":"d"}"#,
-    true
-)]
-#[case::tool_name_to_description(
-    "tool_name_to_description",
-    "null",
-    r#"{"t":"d"}"#,
-    r#"{"t":"d"}"#,
-    true
-)]
-#[case::pinned_tools(
-    "pinned_tools",
-    "null",
-    r#"{"t":{}}"#,
-    r#"{"t":{"description":"","input_schema":{}}}"#,
-    true
-)]
-#[case::mcp_info(
-    "mcp_info",
-    "null",
-    r#"{"protocol_version":"auto"}"#,
-    r#"{"protocol_version":"auto"}"#,
-    true
-)]
-#[case::static_headers("static_headers", "null", r#"{"A":"B"}"#, r#"{"A":"B"}"#, true)]
-#[case::env_vars(
-    "env_vars",
-    "null",
-    r#"[{"name":"A"}]"#,
-    r#"[{"description":null,"name":"A","scope":"global","value":""}]"#,
-    true
-)]
-#[case::last_health_check(
-    "last_health_check",
-    "null",
-    r#""2026-01-01T00:00:00Z""#,
-    r#""2026-01-01T00:00:00Z""#,
-    true
-)]
-#[case::health_check_error("health_check_error", "null", r#""e""#, r#""e""#, true)]
-#[case::command("command", "null", r#""cmd""#, r#""cmd""#, true)]
-#[case::issuer("issuer", "null", r#""iss""#, r#""iss""#, true)]
-#[case::authorization_url(
-    "authorization_url",
-    "null",
-    r#""https://a.test""#,
-    r#""https://a.test""#,
-    true
-)]
-#[case::token_url(
-    "token_url",
-    "null",
-    r#""https://t.test""#,
-    r#""https://t.test""#,
-    true
-)]
-#[case::registration_url(
-    "registration_url",
-    "null",
-    r#""https://r.test""#,
-    r#""https://r.test""#,
-    true
-)]
-#[case::oauth2_flow(
-    "oauth2_flow",
-    "null",
-    r#""client_credentials""#,
-    r#""client_credentials""#,
-    true
-)]
-#[case::token_exchange_endpoint(
-    "token_exchange_endpoint",
-    "null",
-    r#""https://x.test""#,
-    r#""https://x.test""#,
-    true
-)]
-#[case::audience("audience", "null", r#""aud""#, r#""aud""#, true)]
-#[case::subject_token_type("subject_token_type", "null", r#""urn:type""#, r#""urn:type""#, true)]
-#[case::token_exchange_profile("token_exchange_profile", "null", r#""p""#, r#""p""#, true)]
-#[case::dcr_bridge("dcr_bridge", "null", "true", "true", true)]
-#[case::byok_api_key_help_url(
-    "byok_api_key_help_url",
-    "null",
-    r#""https://h.test""#,
-    r#""https://h.test""#,
-    true
-)]
-#[case::has_user_credential("has_user_credential", "null", "true", "true", true)]
-#[case::connected_app_reachable("connected_app_reachable", "null", "false", "false", true)]
-#[case::source_url(
-    "source_url",
-    "null",
-    r#""https://s.test""#,
-    r#""https://s.test""#,
-    true
-)]
-#[case::timeout("timeout", "null", "4", "4.0", true)]
-#[case::max_concurrent_requests("max_concurrent_requests", "null", "4", "4", true)]
-#[case::submitted_by("submitted_by", "null", r#""s""#, r#""s""#, true)]
-#[case::submitted_at(
-    "submitted_at",
-    "null",
-    r#""2026-01-01T00:00:00Z""#,
-    r#""2026-01-01T00:00:00Z""#,
-    true
-)]
-#[case::reviewed_at(
-    "reviewed_at",
-    "null",
-    r#""2026-01-01T00:00:00Z""#,
-    r#""2026-01-01T00:00:00Z""#,
-    true
-)]
-#[case::review_notes("review_notes", "null", r#""notes""#, r#""notes""#, true)]
-fn mcp_server_fields(
-    #[case] field: &str,
-    #[case] default: &str,
-    #[case] supplied: &str,
-    #[case] expected: &str,
-    #[case] null_ok: bool,
-) {
-    assert_field_cases(
-        "mcp_server",
-        mcp_server_base(),
-        field,
-        (default, supplied, expected),
-        null_ok,
-    );
+#[case::is_config(("is_config", "false", "true", "true", false))]
+#[case::allow_all_keys(("allow_all_keys", "false", "true", "true", false))]
+#[case::delegate_auth_to_upstream(("delegate_auth_to_upstream", "false", "true", "true", false))]
+#[case::oauth_passthrough(("oauth_passthrough", "false", "true", "true", false))]
+#[case::per_server_oauth_discovery(("per_server_oauth_discovery", "false", "true", "true", false))]
+#[case::is_byok(("is_byok", "false", "true", "true", false))]
+#[case::available_on_public_internet(("available_on_public_internet", "true", "false", "false", false))]
+#[case::teams(("teams", "[]", r#"[{"team_id":"t"}]"#, r#"[{"team_id":"t"}]"#, false))]
+#[case::mcp_access_groups(("mcp_access_groups", "[]", r#"["g"]"#, r#"["g"]"#, false))]
+#[case::allowed_tools(("allowed_tools", "[]", r#"["t"]"#, r#"["t"]"#, false))]
+#[case::extra_headers(("extra_headers", "[]", r#"["h"]"#, r#"["h"]"#, false))]
+#[case::args(("args", "[]", r#"["-x"]"#, r#"["-x"]"#, false))]
+#[case::byok_description(("byok_description", "[]", r#"["d"]"#, r#"["d"]"#, false))]
+#[case::env(("env", "{}", r#"{"A":"B"}"#, r#"{"A":"B"}"#, true))]
+#[case::status(("status", r#""unknown""#, r#""healthy""#, r#""healthy""#, true))]
+#[case::approval_status(("approval_status", r#""active""#, r#""pending_review""#, r#""pending_review""#, true))]
+#[case::server_name(("server_name", "null", r#""n""#, r#""n""#, true))]
+#[case::alias(("alias", "null", r#""a""#, r#""a""#, true))]
+#[case::description(("description", "null", r#""d""#, r#""d""#, true))]
+#[case::url(("url", "null", r#""https://example.test""#, r#""https://example.test""#, true))]
+#[case::spec_path(("spec_path", "null", r#""/spec""#, r#""/spec""#, true))]
+#[case::auth_type(("auth_type", "null", r#""api_key""#, r#""api_key""#, true))]
+#[case::credentials(("credentials", "null", r#"{"auth_value":"v"}"#, r#"{"auth_value":"v"}"#, true))]
+#[case::instructions(("instructions", "null", r#""i""#, r#""i""#, true))]
+#[case::created_at(("created_at", "null", r#""2026-01-01T00:00:00Z""#, r#""2026-01-01T00:00:00Z""#, true))]
+#[case::created_by(("created_by", "null", r#""c""#, r#""c""#, true))]
+#[case::updated_at(("updated_at", "null", r#""2026-01-01T00:00:00Z""#, r#""2026-01-01T00:00:00Z""#, true))]
+#[case::updated_by(("updated_by", "null", r#""u""#, r#""u""#, true))]
+#[case::tool_name_to_display_name(("tool_name_to_display_name", "null", r#"{"t":"d"}"#, r#"{"t":"d"}"#, true))]
+#[case::tool_name_to_description(("tool_name_to_description", "null", r#"{"t":"d"}"#, r#"{"t":"d"}"#, true))]
+#[case::pinned_tools(("pinned_tools", "null", r#"{"t":{}}"#, r#"{"t":{"description":"","input_schema":{}}}"#, true))]
+#[case::mcp_info(("mcp_info", "null", r#"{"protocol_version":"auto"}"#, r#"{"protocol_version":"auto"}"#, true))]
+#[case::static_headers(("static_headers", "null", r#"{"A":"B"}"#, r#"{"A":"B"}"#, true))]
+#[case::env_vars(("env_vars", "null", r#"[{"name":"A"}]"#, r#"[{"description":null,"name":"A","scope":"global","value":""}]"#, true))]
+#[case::last_health_check(("last_health_check", "null", r#""2026-01-01T00:00:00Z""#, r#""2026-01-01T00:00:00Z""#, true))]
+#[case::health_check_error(("health_check_error", "null", r#""e""#, r#""e""#, true))]
+#[case::command(("command", "null", r#""cmd""#, r#""cmd""#, true))]
+#[case::issuer(("issuer", "null", r#""iss""#, r#""iss""#, true))]
+#[case::authorization_url(("authorization_url", "null", r#""https://a.test""#, r#""https://a.test""#, true))]
+#[case::token_url(("token_url", "null", r#""https://t.test""#, r#""https://t.test""#, true))]
+#[case::registration_url(("registration_url", "null", r#""https://r.test""#, r#""https://r.test""#, true))]
+#[case::oauth2_flow(("oauth2_flow", "null", r#""client_credentials""#, r#""client_credentials""#, true))]
+#[case::token_exchange_endpoint(("token_exchange_endpoint", "null", r#""https://x.test""#, r#""https://x.test""#, true))]
+#[case::audience(("audience", "null", r#""aud""#, r#""aud""#, true))]
+#[case::subject_token_type(("subject_token_type", "null", r#""urn:type""#, r#""urn:type""#, true))]
+#[case::token_exchange_profile(("token_exchange_profile", "null", r#""p""#, r#""p""#, true))]
+#[case::dcr_bridge(("dcr_bridge", "null", "true", "true", true))]
+#[case::byok_api_key_help_url(("byok_api_key_help_url", "null", r#""https://h.test""#, r#""https://h.test""#, true))]
+#[case::has_user_credential(("has_user_credential", "null", "true", "true", true))]
+#[case::connected_app_reachable(("connected_app_reachable", "null", "false", "false", true))]
+#[case::source_url(("source_url", "null", r#""https://s.test""#, r#""https://s.test""#, true))]
+#[case::timeout(("timeout", "null", "4", "4.0", true))]
+#[case::max_concurrent_requests(("max_concurrent_requests", "null", "4", "4", true))]
+#[case::submitted_by(("submitted_by", "null", r#""s""#, r#""s""#, true))]
+#[case::submitted_at(("submitted_at", "null", r#""2026-01-01T00:00:00Z""#, r#""2026-01-01T00:00:00Z""#, true))]
+#[case::reviewed_at(("reviewed_at", "null", r#""2026-01-01T00:00:00Z""#, r#""2026-01-01T00:00:00Z""#, true))]
+#[case::review_notes(("review_notes", "null", r#""notes""#, r#""notes""#, true))]
+fn mcp_server_fields(#[case] spec: (&str, &str, &str, &str, bool)) {
+    assert_field_cases("mcp_server", mcp_server_base(), spec);
 }
 
 #[rstest]
@@ -437,45 +227,21 @@ fn mcp_server_required_fields(#[case] field: &str) {
 }
 
 #[rstest]
-#[case::source("source", r#""custom""#, r#""builtin""#, r#""builtin""#, false)]
-#[case::display_title("display_title", "null", r#""t""#, r#""t""#, true)]
-#[case::description("description", "null", r#""d""#, r#""d""#, true)]
-#[case::instructions("instructions", "null", r#""i""#, r#""i""#, true)]
-#[case::latest_version("latest_version", "null", r#""2""#, r#""2""#, true)]
-#[case::file_content("file_content", "null", r#""abc""#, r#""abc""#, true)]
-#[case::file_name("file_name", "null", r#""a.txt""#, r#""a.txt""#, true)]
-#[case::file_type("file_type", "null", r#""text/plain""#, r#""text/plain""#, true)]
-#[case::metadata("metadata", "null", r#"{"a":1}"#, r#"{"a":1}"#, true)]
-#[case::created_at(
-    "created_at",
-    "null",
-    r#""2026-01-01T00:00:00Z""#,
-    r#""2026-01-01T00:00:00Z""#,
-    true
-)]
-#[case::created_by("created_by", "null", r#""c""#, r#""c""#, true)]
-#[case::updated_at(
-    "updated_at",
-    "null",
-    r#""2026-01-01T00:00:00Z""#,
-    r#""2026-01-01T00:00:00Z""#,
-    true
-)]
-#[case::updated_by("updated_by", "null", r#""u""#, r#""u""#, true)]
-fn skill_fields(
-    #[case] field: &str,
-    #[case] default: &str,
-    #[case] supplied: &str,
-    #[case] expected: &str,
-    #[case] null_ok: bool,
-) {
-    assert_field_cases(
-        "skill",
-        data(r#"{"skill_id":"s"}"#),
-        field,
-        (default, supplied, expected),
-        null_ok,
-    );
+#[case::source(("source", r#""custom""#, r#""builtin""#, r#""builtin""#, false))]
+#[case::display_title(("display_title", "null", r#""t""#, r#""t""#, true))]
+#[case::description(("description", "null", r#""d""#, r#""d""#, true))]
+#[case::instructions(("instructions", "null", r#""i""#, r#""i""#, true))]
+#[case::latest_version(("latest_version", "null", r#""2""#, r#""2""#, true))]
+#[case::file_content(("file_content", "null", r#""abc""#, r#""abc""#, true))]
+#[case::file_name(("file_name", "null", r#""a.txt""#, r#""a.txt""#, true))]
+#[case::file_type(("file_type", "null", r#""text/plain""#, r#""text/plain""#, true))]
+#[case::metadata(("metadata", "null", r#"{"a":1}"#, r#"{"a":1}"#, true))]
+#[case::created_at(("created_at", "null", r#""2026-01-01T00:00:00Z""#, r#""2026-01-01T00:00:00Z""#, true))]
+#[case::created_by(("created_by", "null", r#""c""#, r#""c""#, true))]
+#[case::updated_at(("updated_at", "null", r#""2026-01-01T00:00:00Z""#, r#""2026-01-01T00:00:00Z""#, true))]
+#[case::updated_by(("updated_by", "null", r#""u""#, r#""u""#, true))]
+fn skill_fields(#[case] spec: (&str, &str, &str, &str, bool)) {
+    assert_field_cases("skill", data(r#"{"skill_id":"s"}"#), spec);
 }
 
 #[test]
@@ -485,28 +251,12 @@ fn skill_requires_skill_id() {
 }
 
 #[rstest]
-#[case::savings_estimated_turns("savings_estimated_turns", "0", "2", "2")]
-#[case::savings_estimated_actual_spend("savings_estimated_actual_spend", "0.0", "1.5", "1.5")]
-#[case::savings_estimated_saved_spend("savings_estimated_saved_spend", "0.0", "2.5", "2.5")]
-#[case::savings_estimated_baseline_models(
-    "savings_estimated_baseline_models",
-    "{}",
-    r#"{"m":2}"#,
-    r#"{"m":2}"#
-)]
-fn autorouter_fields(
-    #[case] field: &str,
-    #[case] default: &str,
-    #[case] supplied: &str,
-    #[case] expected: &str,
-) {
-    assert_field_cases(
-        "autorouter_session",
-        autorouter_base(),
-        field,
-        (default, supplied, expected),
-        false,
-    );
+#[case::savings_estimated_turns(("savings_estimated_turns", "0", "2", "2", false))]
+#[case::savings_estimated_actual_spend(("savings_estimated_actual_spend", "0.0", "1.5", "1.5", false))]
+#[case::savings_estimated_saved_spend(("savings_estimated_saved_spend", "0.0", "2.5", "2.5", false))]
+#[case::savings_estimated_baseline_models(("savings_estimated_baseline_models", "{}", r#"{"m":2}"#, r#"{"m":2}"#, false))]
+fn autorouter_fields(#[case] spec: (&str, &str, &str, &str, bool)) {
+    assert_field_cases("autorouter_session", autorouter_base(), spec);
 }
 
 #[rstest]
@@ -555,46 +305,22 @@ fn autorouter_baseline_model(
 }
 
 #[rstest]
-#[case::model("model", r#""""#, r#""m""#, r#""m""#, true)]
-#[case::api_base("api_base", r#""""#, r#""/v1""#, r#""/v1""#, true)]
-#[case::spend("spend", "0.0", "1.25", "1.25", true)]
-#[case::total_tokens("total_tokens", "0", "4", "4", true)]
-#[case::prompt_tokens("prompt_tokens", "0", "4", "4", true)]
-#[case::completion_tokens("completion_tokens", "0", "4", "4", true)]
-#[case::user("user", r#""""#, r#""u""#, r#""u""#, true)]
-#[case::metadata("metadata", "{}", r#""{\"a\": 1}""#, r#"{"a":1}"#, true)]
-#[case::cache_hit("cache_hit", r#""False""#, r#""True""#, r#""True""#, true)]
-#[case::cache_key("cache_key", "null", r#""k""#, r#""k""#, true)]
-#[case::request_tags("request_tags", "null", r#""[\"x\"]""#, r#"["x"]"#, true)]
-#[case::requester_ip_address("requester_ip_address", "null", r#""1.2.3.4""#, r#""1.2.3.4""#, true)]
-#[case::created_at(
-    "created_at",
-    "null",
-    r#""2026-01-01T00:00:00Z""#,
-    r#""2026-01-01T00:00:00Z""#,
-    true
-)]
-#[case::updated_at(
-    "updated_at",
-    "null",
-    r#""2026-01-01T00:00:00Z""#,
-    r#""2026-01-01T00:00:00Z""#,
-    true
-)]
-fn spend_log_fields(
-    #[case] field: &str,
-    #[case] default: &str,
-    #[case] supplied: &str,
-    #[case] expected: &str,
-    #[case] null_ok: bool,
-) {
-    assert_field_cases(
-        "spend_log",
-        spend_log_base(),
-        field,
-        (default, supplied, expected),
-        null_ok,
-    );
+#[case::model(("model", r#""""#, r#""m""#, r#""m""#, true))]
+#[case::api_base(("api_base", r#""""#, r#""/v1""#, r#""/v1""#, true))]
+#[case::spend(("spend", "0.0", "1.25", "1.25", true))]
+#[case::total_tokens(("total_tokens", "0", "4", "4", true))]
+#[case::prompt_tokens(("prompt_tokens", "0", "4", "4", true))]
+#[case::completion_tokens(("completion_tokens", "0", "4", "4", true))]
+#[case::user(("user", r#""""#, r#""u""#, r#""u""#, true))]
+#[case::metadata(("metadata", "{}", r#""{\"a\": 1}""#, r#"{"a":1}"#, true))]
+#[case::cache_hit(("cache_hit", r#""False""#, r#""True""#, r#""True""#, true))]
+#[case::cache_key(("cache_key", "null", r#""k""#, r#""k""#, true))]
+#[case::request_tags(("request_tags", "null", r#""[\"x\"]""#, r#"["x"]"#, true))]
+#[case::requester_ip_address(("requester_ip_address", "null", r#""1.2.3.4""#, r#""1.2.3.4""#, true))]
+#[case::created_at(("created_at", "null", r#""2026-01-01T00:00:00Z""#, r#""2026-01-01T00:00:00Z""#, true))]
+#[case::updated_at(("updated_at", "null", r#""2026-01-01T00:00:00Z""#, r#""2026-01-01T00:00:00Z""#, true))]
+fn spend_log_fields(#[case] spec: (&str, &str, &str, &str, bool)) {
+    assert_field_cases("spend_log", spend_log_base(), spec);
 }
 
 #[rstest]
@@ -606,73 +332,31 @@ fn spend_log_required_fields(#[case] field: &str) {
 }
 
 #[rstest]
-#[case::request_id(
-    "request_id",
-    r#""00000000-0000-0000-0000-00000000002a""#,
-    r#""explicit""#,
-    r#""explicit""#,
-    true
-)]
-#[case::api_base("api_base", r#""""#, r#""/v1""#, r#""/v1""#, true)]
-#[case::model_group("model_group", r#""""#, r#""g""#, r#""g""#, true)]
-#[case::litellm_model_name("litellm_model_name", r#""""#, r#""m""#, r#""m""#, true)]
-#[case::model_id("model_id", r#""""#, r#""id""#, r#""id""#, true)]
-#[case::request_kwargs("request_kwargs", "{}", r#"{"a":1}"#, r#"{"a":1}"#, true)]
-#[case::exception_type("exception_type", r#""""#, r#""e""#, r#""e""#, true)]
-#[case::status_code("status_code", r#""""#, r#""500""#, r#""500""#, true)]
-#[case::exception_string("exception_string", r#""""#, r#""s""#, r#""s""#, true)]
-fn error_log_fields(
-    #[case] field: &str,
-    #[case] default: &str,
-    #[case] supplied: &str,
-    #[case] expected: &str,
-    #[case] null_ok: bool,
-) {
-    assert_field_cases(
-        "error_log",
-        error_log_base(),
-        field,
-        (default, supplied, expected),
-        null_ok,
-    );
+#[case::request_id(("request_id", r#""00000000-0000-0000-0000-00000000002a""#, r#""explicit""#, r#""explicit""#, true))]
+#[case::api_base(("api_base", r#""""#, r#""/v1""#, r#""/v1""#, true))]
+#[case::model_group(("model_group", r#""""#, r#""g""#, r#""g""#, true))]
+#[case::litellm_model_name(("litellm_model_name", r#""""#, r#""m""#, r#""m""#, true))]
+#[case::model_id(("model_id", r#""""#, r#""id""#, r#""id""#, true))]
+#[case::request_kwargs(("request_kwargs", "{}", r#"{"a":1}"#, r#"{"a":1}"#, true))]
+#[case::exception_type(("exception_type", r#""""#, r#""e""#, r#""e""#, true))]
+#[case::status_code(("status_code", r#""""#, r#""500""#, r#""500""#, true))]
+#[case::exception_string(("exception_string", r#""""#, r#""s""#, r#""s""#, true))]
+fn error_log_fields(#[case] spec: (&str, &str, &str, &str, bool)) {
+    assert_field_cases("error_log", error_log_base(), spec);
 }
 
 #[rstest]
-#[case::models("models", "[]", r#"["m"]"#, r#"["m"]"#, true)]
-#[case::spend("spend", "0.0", "1.5", "1.5", true)]
-#[case::description("description", "null", r#""d""#, r#""d""#, true)]
-#[case::model_info("model_info", "null", r#"{"a":1}"#, r#"{"a":1}"#, true)]
-#[case::budget_id("budget_id", "null", r#""b""#, r#""b""#, true)]
-#[case::litellm_budget_table("litellm_budget_table", "null", r#"{"budget_id":"b"}"#, r#"{"budget_id":"b","soft_budget":null,"max_budget":null,"max_parallel_requests":null,"tpm_limit":null,"rpm_limit":null,"tpd_limit":null,"model_max_budget":null,"budget_duration":null,"allowed_models":null,"temp_budget_increase":null,"temp_budget_expiry":null}"#, true)]
-#[case::created_at(
-    "created_at",
-    "null",
-    r#""2026-01-01T00:00:00Z""#,
-    r#""2026-01-01T00:00:00Z""#,
-    true
-)]
-#[case::created_by("created_by", "null", r#""c""#, r#""c""#, true)]
-#[case::updated_at(
-    "updated_at",
-    "null",
-    r#""2026-01-01T00:00:00Z""#,
-    r#""2026-01-01T00:00:00Z""#,
-    true
-)]
-fn tag_fields(
-    #[case] field: &str,
-    #[case] default: &str,
-    #[case] supplied: &str,
-    #[case] expected: &str,
-    #[case] null_ok: bool,
-) {
-    assert_field_cases(
-        "tag",
-        data(r#"{"tag_name":"t"}"#),
-        field,
-        (default, supplied, expected),
-        null_ok,
-    );
+#[case::models(("models", "[]", r#"["m"]"#, r#"["m"]"#, true))]
+#[case::spend(("spend", "0.0", "1.5", "1.5", true))]
+#[case::description(("description", "null", r#""d""#, r#""d""#, true))]
+#[case::model_info(("model_info", "null", r#"{"a":1}"#, r#"{"a":1}"#, true))]
+#[case::budget_id(("budget_id", "null", r#""b""#, r#""b""#, true))]
+#[case::litellm_budget_table(("litellm_budget_table", "null", r#"{"budget_id":"b"}"#, r#"{"budget_id":"b","soft_budget":null,"max_budget":null,"max_parallel_requests":null,"tpm_limit":null,"rpm_limit":null,"tpd_limit":null,"model_max_budget":null,"budget_duration":null,"allowed_models":null,"temp_budget_increase":null,"temp_budget_expiry":null}"#, true))]
+#[case::created_at(("created_at", "null", r#""2026-01-01T00:00:00Z""#, r#""2026-01-01T00:00:00Z""#, true))]
+#[case::created_by(("created_by", "null", r#""c""#, r#""c""#, true))]
+#[case::updated_at(("updated_at", "null", r#""2026-01-01T00:00:00Z""#, r#""2026-01-01T00:00:00Z""#, true))]
+fn tag_fields(#[case] spec: (&str, &str, &str, &str, bool)) {
+    assert_field_cases("tag", data(r#"{"tag_name":"t"}"#), spec);
 }
 
 #[test]

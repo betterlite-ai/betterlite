@@ -111,14 +111,8 @@ pub(crate) fn dumped(kind: &str, row: &JsonData) -> JsonData {
     dumped_row(&decode_envelope(kind, row).unwrap())
 }
 
-pub(crate) fn assert_field_cases(
-    kind: &str,
-    base: JsonData,
-    field: &str,
-    values: (&str, &str, &str),
-    null_ok: bool,
-) {
-    let (default, supplied, expected) = values;
+pub(crate) fn assert_field_cases(kind: &str, base: JsonData, spec: (&str, &str, &str, &str, bool)) {
+    let (field, default, supplied, expected, null_ok) = spec;
     let mut row = base;
     assert_eq!(field_of(&dumped(kind, &row), field), data(default));
     set_field(&mut row, field, data(supplied));
