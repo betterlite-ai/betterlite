@@ -216,17 +216,22 @@ async fn input_model_is_sent_only_when_it_is_a_non_empty_text(
 #[case::null_role(r#"{"role":null,"parts":[{"kind":"text","text":"hi"}]}"#)]
 #[case::integer_role(r#"{"role":7,"parts":[{"kind":"text","text":"hi"}]}"#)]
 #[tokio::test]
-async fn input_message_without_a_text_role_is_an_error_and_makes_no_call(#[case] message: &str) {
-    let guardrail = FakeGuardrail::replying(&["unused"]);
-    let data = format!(r#"{{"params":{{"message":{message}}}}}"#);
-    let mut body_data = body(&data);
-    let untouched = body_data.clone();
-    let error = process_input_messages(&mut body_data, &guardrail, None)
+async fn input_message_without_a_text_role_is_scanned_with_an_empty_role(#[case] message: &str) {
+    let guardrail = FakeGuardrail::replying(&["rewritten"]);
+    let raw = format!(r#"{{"params":{{"message":{message}}}}}"#);
+    let mut data = body(&raw);
+    process_input_messages(&mut data, &guardrail, None)
         .await
-        .unwrap_err();
-    assert!(matches!(error, A2aTranslationError::MessageRole));
-    assert!(guardrail.calls().is_empty());
-    assert_eq!(body_data, untouched);
+        .unwrap();
+    let calls = guardrail.calls();
+    assert_eq!(calls[0].inputs.texts, Some(vec!["hi".to_owned()]));
+    let structured = calls[0].inputs.structured_messages.as_ref().unwrap();
+    assert_eq!(structured[0].role, String::new());
+    assert!(!structured[0].extra.contains_key("role"));
+    assert_eq!(
+        part_text(&data, 0),
+        &GuardrailValue::Text("rewritten".to_owned())
+    );
 }
 
 #[tokio::test]
@@ -240,16 +245,16 @@ async fn input_guardrail_failure_is_returned_and_leaves_the_data_alone() {
         .unwrap_err();
     match error {
         A2aTranslationError::Guardrail(returned) => assert_eq!(returned, failure),
-        A2aTranslationError::Text(_)
-        | A2aTranslationError::MessageRole
-        | A2aTranslationError::Json { .. } => panic!("unexpected error {error:?}"),
+        A2aTranslationError::Text(_) | A2aTranslationError::Json { .. } => {
+            panic!("unexpected error {error:?}")
+        }
     }
     assert_eq!(data, untouched);
 }
 
 #[tokio::test]
-async fn input_parts_that_are_not_objects_are_skipped() {
-    let guardrail = FakeGuardrail::replying(&["found"]);
+async fn input_parts_that_are_not_objects_keep_their_index() {
+    let guardrail = FakeGuardrail::replying(&["changed"]);
     let mut data = body(
         r#"{"params":{"message":{"role":"user","parts":[7,[],"x",{"kind":"text","text":"found"}]}}}"#,
     );
@@ -257,7 +262,13 @@ async fn input_parts_that_are_not_objects_are_skipped() {
         .await
         .unwrap();
     assert_eq!(
-        part_text(&data, 3),
-        &GuardrailValue::Text("found".to_owned())
+        guardrail.calls()[0].inputs.texts,
+        Some(vec!["found".to_owned()])
+    );
+    assert_eq!(
+        data,
+        body(
+            r#"{"params":{"message":{"role":"user","parts":[7,[],"x",{"kind":"text","text":"changed"}]}}}"#
+        )
     );
 }

@@ -101,12 +101,18 @@ async fn stream_keeps_only_the_first_text_part_of_the_first_chunk() {
 #[tokio::test]
 async fn stream_rewrites_an_ndjson_item_as_a_compact_line() {
     let guardrail = FakeGuardrail::replying(&["rewritten"]);
-    let mut responses = vec![value(
+    let raw = concat!(
         r#"{"jsonrpc":"2.0","id":1,"result":{"parts":[{"kind":"text","text":"hi"}]}}"#,
-    )];
+        "\n"
+    );
+    let mut responses = vec![GuardrailValue::Text(raw.to_owned())];
     process_streaming_response(&mut responses, &guardrail, None, None, None)
         .await
         .unwrap();
+    assert_eq!(
+        guardrail.calls()[0].inputs.texts,
+        Some(vec!["hi".to_owned()])
+    );
     let expected = value(
         r#"{"jsonrpc":"2.0","id":1,"result":{"parts":[{"kind":"text","text":"rewritten"}]}}"#,
     );
@@ -255,6 +261,57 @@ async fn stream_keeps_the_litellm_metadata_it_was_given() {
 }
 
 #[tokio::test]
+async fn stream_keeps_the_metadata_and_responses_it_was_given() {
+    let guardrail = FakeGuardrail::replying(&["rewritten"]);
+    let user = BTreeMap::from([("user_id".to_owned(), GuardrailValue::Text("u-1".to_owned()))]);
+    let mut responses = chunks(&[FIRST]);
+    let given_metadata = GuardrailValue::Object(BTreeMap::from([(
+        "keep".to_owned(),
+        GuardrailValue::Boolean(true),
+    )]));
+    let given_responses = GuardrailValue::Text("kept".to_owned());
+    let mut request_data = BTreeMap::from([
+        ("litellm_metadata".to_owned(), given_metadata.clone()),
+        ("responses_so_far".to_owned(), given_responses.clone()),
+    ]);
+    process_streaming_response(
+        &mut responses,
+        &guardrail,
+        None,
+        Some(&user),
+        Some(&mut request_data),
+    )
+    .await
+    .unwrap();
+    assert_eq!(request_data.get("litellm_metadata"), Some(&given_metadata));
+    assert_eq!(request_data.get("responses_so_far"), Some(&given_responses));
+    let recorded = &guardrail.calls()[0].request_data;
+    assert_eq!(recorded.get("litellm_metadata"), Some(&given_metadata));
+    assert_eq!(recorded.get("responses_so_far"), Some(&given_responses));
+}
+
+#[tokio::test]
+async fn stream_writes_the_text_into_the_first_chunk_that_has_text() {
+    let guardrail = FakeGuardrail::replying(&["X"]);
+    let mut responses = chunks(&[
+        r#"{"result":{"kind":"task","status":{"state":"submitted"}}}"#,
+        r#"{"result":{"artifact":{"parts":[{"kind":"text","text":"he"}]}}}"#,
+        r#"{"result":{"artifact":{"parts":[{"kind":"text","text":"llo"}]}}}"#,
+    ]);
+    let opening = responses[0].clone();
+    process_streaming_response(&mut responses, &guardrail, None, None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        guardrail.calls()[0].inputs.texts,
+        Some(vec!["hello".to_owned()])
+    );
+    assert_eq!(responses[0], opening);
+    assert_eq!(text_of(&responses[1]), "X");
+    assert_eq!(text_of(&responses[2]), String::new());
+}
+
+#[tokio::test]
 async fn stream_guardrail_failure_is_returned_and_leaves_the_chunks_alone() {
     let failure = GuardrailFailure::Other("blocked by fake".to_owned());
     let guardrail = FakeGuardrail::failing(failure.clone());
@@ -265,9 +322,9 @@ async fn stream_guardrail_failure_is_returned_and_leaves_the_chunks_alone() {
         .unwrap_err();
     match error {
         A2aTranslationError::Guardrail(returned) => assert_eq!(returned, failure),
-        A2aTranslationError::Text(_)
-        | A2aTranslationError::MessageRole
-        | A2aTranslationError::Json { .. } => panic!("unexpected error {error:?}"),
+        A2aTranslationError::Text(_) | A2aTranslationError::Json { .. } => {
+            panic!("unexpected error {error:?}")
+        }
     }
     assert_eq!(responses, untouched);
 }

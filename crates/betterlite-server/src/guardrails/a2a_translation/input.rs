@@ -31,7 +31,7 @@ where
     if parts.texts.is_empty() {
         return Ok(());
     }
-    let structured = structured_message(message)?;
+    let structured = structured_message(message);
     let model = non_empty_text(data.get("model"));
     let inputs = GuardrailApiInputs {
         texts: Some(parts.texts),
@@ -101,14 +101,14 @@ fn collect_text_parts(parts: &[GuardrailValue]) -> TextParts {
     collected
 }
 
-fn structured_message(
-    message: &BTreeMap<String, GuardrailValue>,
-) -> Result<GuardrailMessage, A2aTranslationError> {
+// LiteLLM passes the message through unread, so a message without a text role still gets scanned
+fn structured_message(message: &BTreeMap<String, GuardrailValue>) -> GuardrailMessage {
     let mut extra = message.clone();
-    let Some(GuardrailValue::Text(role)) = extra.remove("role") else {
-        return Err(A2aTranslationError::MessageRole);
+    let role = match extra.remove("role") {
+        Some(GuardrailValue::Text(role)) => role,
+        Some(_) | None => String::new(),
     };
-    Ok(GuardrailMessage { role, extra })
+    GuardrailMessage { role, extra }
 }
 
 fn non_empty_text(value: Option<&GuardrailValue>) -> Option<String> {

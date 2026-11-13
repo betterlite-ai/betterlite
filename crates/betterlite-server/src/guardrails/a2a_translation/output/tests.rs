@@ -265,9 +265,9 @@ async fn output_guardrail_failure_is_returned_and_leaves_the_response_alone() {
         .unwrap_err();
     match error {
         A2aTranslationError::Guardrail(returned) => assert_eq!(returned, failure),
-        A2aTranslationError::Text(_)
-        | A2aTranslationError::MessageRole
-        | A2aTranslationError::Json { .. } => panic!("unexpected error {error:?}"),
+        A2aTranslationError::Text(_) | A2aTranslationError::Json { .. } => {
+            panic!("unexpected error {error:?}")
+        }
     }
     assert_eq!(response, untouched);
 }
