@@ -39,63 +39,63 @@ fn only_one_provider_prefix_is_stripped() {
 }
 
 #[rstest]
-#[case::below_4("llama-3b", "together-ai-up-to-4b")]
-#[case::at_4("llama-4b", "together-ai-up-to-4b")]
-#[case::above_4("llama-5b", "together-ai-4.1b-8b")]
-#[case::at_8("llama-8b", "together-ai-4.1b-8b")]
-#[case::above_8("llama-9b", "together-ai-8.1b-21b")]
-#[case::at_21("llama-21b", "together-ai-8.1b-21b")]
-#[case::above_21("llama-22b", "together-ai-21.1b-41b")]
-#[case::at_41("llama-41b", "together-ai-21.1b-41b")]
-#[case::above_41("llama-42b", "together-ai-41.1b-80b")]
-#[case::at_80("llama-80b", "together-ai-41.1b-80b")]
-#[case::above_80("llama-81b", "together-ai-81.1b-110b")]
-#[case::at_110("llama-110b", "together-ai-81.1b-110b")]
-#[case::above_110("llama-111b", "llama-111b")]
-#[case::huge("llama-999999999999999999999b", "llama-999999999999999999999b")]
-#[case::no_match("llama-chat", "llama-chat")]
-#[case::detached_suffix("llama-70-b", "llama-70-b")]
-#[case::first_digits("mixtral-8x7b", "together-ai-4.1b-8b")]
-fn billion_names_map_to_their_category(#[case] model: &str, #[case] expected: &str) {
+#[case::below_4(PricingCallType::Other, "llama-3b", "together-ai-up-to-4b")]
+#[case::at_4(PricingCallType::Other, "llama-4b", "together-ai-up-to-4b")]
+#[case::above_4(PricingCallType::Other, "llama-5b", "together-ai-4.1b-8b")]
+#[case::at_8(PricingCallType::Other, "llama-8b", "together-ai-4.1b-8b")]
+#[case::above_8(PricingCallType::Other, "llama-9b", "together-ai-8.1b-21b")]
+#[case::at_21(PricingCallType::Other, "llama-21b", "together-ai-8.1b-21b")]
+#[case::above_21(PricingCallType::Other, "llama-22b", "together-ai-21.1b-41b")]
+#[case::at_41(PricingCallType::Other, "llama-41b", "together-ai-21.1b-41b")]
+#[case::above_41(PricingCallType::Other, "llama-42b", "together-ai-41.1b-80b")]
+#[case::at_80(PricingCallType::Other, "llama-80b", "together-ai-41.1b-80b")]
+#[case::above_80(PricingCallType::Other, "llama-81b", "together-ai-81.1b-110b")]
+#[case::at_110(PricingCallType::Other, "llama-110b", "together-ai-81.1b-110b")]
+#[case::above_110(PricingCallType::Other, "llama-111b", "llama-111b")]
+#[case::huge(
+    PricingCallType::Other,
+    "llama-999999999999999999999b",
+    "llama-999999999999999999999b"
+)]
+#[case::no_match(PricingCallType::Other, "llama-chat", "llama-chat")]
+#[case::detached_suffix(PricingCallType::Other, "llama-70-b", "llama-70-b")]
+#[case::first_digits(PricingCallType::Other, "mixtral-8x7b", "together-ai-4.1b-8b")]
+#[case::llama_chat(PricingCallType::Other, "llama-3-70b-chat", "together-ai-41.1b-80b")]
+#[case::uppercase(PricingCallType::Other, "Llama-3-70B", "together-ai-41.1b-80b")]
+#[case::below_150(
+    PricingCallType::Embedding,
+    "embed-100m",
+    "together-ai-embedding-up-to-150m"
+)]
+#[case::at_150(
+    PricingCallType::Embedding,
+    "embed-150m",
+    "together-ai-embedding-up-to-150m"
+)]
+#[case::above_150(
+    PricingCallType::Embedding,
+    "embed-151m",
+    "together-ai-embedding-151m-to-350m"
+)]
+#[case::at_350(
+    PricingCallType::Embedding,
+    "embed-350m",
+    "together-ai-embedding-151m-to-350m"
+)]
+#[case::above_350(PricingCallType::Embedding, "embed-351m", "embed-351m")]
+#[case::embedding_no_match(PricingCallType::Embedding, "embed-model", "embed-model")]
+#[case::embedding_uppercase(
+    PricingCallType::Embedding,
+    "Embed-200M",
+    "together-ai-embedding-151m-to-350m"
+)]
+fn names_map_to_their_price_category(
+    #[case] call_type: PricingCallType,
+    #[case] model: &str,
+    #[case] expected: &str,
+) {
     assert_eq!(
-        pricing_category(
-            model,
-            PricingCallType::Other,
-            &TogetherPricingTiers::default()
-        ),
-        expected
-    );
-}
-
-#[rstest]
-#[case::llama_chat("llama-3-70b-chat", "together-ai-41.1b-80b")]
-#[case::uppercase("Llama-3-70B", "together-ai-41.1b-80b")]
-fn the_name_is_lowercased_before_the_count(#[case] model: &str, #[case] expected: &str) {
-    assert_eq!(
-        pricing_category(
-            model,
-            PricingCallType::Other,
-            &TogetherPricingTiers::default()
-        ),
-        expected
-    );
-}
-
-#[rstest]
-#[case::below_150("embed-100m", "together-ai-embedding-up-to-150m")]
-#[case::at_150("embed-150m", "together-ai-embedding-up-to-150m")]
-#[case::above_150("embed-151m", "together-ai-embedding-151m-to-350m")]
-#[case::at_350("embed-350m", "together-ai-embedding-151m-to-350m")]
-#[case::above_350("embed-351m", "embed-351m")]
-#[case::no_match("embed-model", "embed-model")]
-#[case::uppercase("Embed-200M", "together-ai-embedding-151m-to-350m")]
-fn embedding_names_map_to_their_category(#[case] model: &str, #[case] expected: &str) {
-    assert_eq!(
-        pricing_category(
-            model,
-            PricingCallType::Embedding,
-            &TogetherPricingTiers::default()
-        ),
+        pricing_category(model, call_type, &TogetherPricingTiers::default()),
         expected
     );
 }

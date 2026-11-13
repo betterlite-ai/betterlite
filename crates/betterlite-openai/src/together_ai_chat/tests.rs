@@ -403,15 +403,25 @@ fn a_false_response_schema_verdict_fails_without_drop_params() {
 }
 
 #[rstest]
-#[case::minimal("minimal", "low")]
-#[case::xhigh("xhigh", "high")]
-#[case::max("max", "high")]
-#[case::low("low", "low")]
-#[case::none("none", "low")]
-#[case::unknown("custom", "custom")]
-fn adjustable_models_translate_the_effort(#[case] requested: &str, #[case] expected: &str) {
+#[case::adjustable_minimal("openai/gpt-oss-20b", "minimal", "low")]
+#[case::adjustable_xhigh("openai/gpt-oss-20b", "xhigh", "high")]
+#[case::adjustable_max("openai/gpt-oss-20b", "max", "high")]
+#[case::adjustable_low("openai/gpt-oss-20b", "low", "low")]
+#[case::adjustable_none("openai/gpt-oss-20b", "none", "low")]
+#[case::adjustable_unknown("openai/gpt-oss-20b", "custom", "custom")]
+#[case::deepseek_minimal("deepseek-ai/DeepSeek-V4-Pro-turbo", "minimal", "high")]
+#[case::deepseek_low("deepseek-ai/DeepSeek-V4-Pro-turbo", "low", "high")]
+#[case::deepseek_medium("deepseek-ai/DeepSeek-V4-Pro-turbo", "medium", "high")]
+#[case::deepseek_xhigh("deepseek-ai/DeepSeek-V4-Pro-turbo", "xhigh", "max")]
+#[case::deepseek_high("deepseek-ai/DeepSeek-V4-Pro-turbo", "high", "high")]
+#[case::deepseek_unknown("deepseek-ai/DeepSeek-V4-Pro-turbo", "custom", "custom")]
+fn reasoning_efforts_reach_the_pinned_payload(
+    #[case] model: &str,
+    #[case] requested: &str,
+    #[case] expected: &str,
+) {
     let mapped = map_with(
-        "openai/gpt-oss-20b",
+        model,
         json!({"reasoning_effort": requested}),
         DropParams::default(),
         &Answers::default(),
@@ -470,24 +480,6 @@ fn an_undeclared_effort_goes_through_the_translation() {
     )
     .unwrap();
     assert_eq!(mapped, object(json!({"reasoning_effort": "high"})));
-}
-
-#[rstest]
-#[case::minimal("minimal", "high")]
-#[case::low("low", "high")]
-#[case::medium("medium", "high")]
-#[case::xhigh("xhigh", "max")]
-#[case::high("high", "high")]
-#[case::unknown("custom", "custom")]
-fn deepseek_v4_pro_uses_the_high_max_table(#[case] requested: &str, #[case] expected: &str) {
-    let mapped = map_with(
-        "deepseek-ai/DeepSeek-V4-Pro-turbo",
-        json!({"reasoning_effort": requested}),
-        DropParams::default(),
-        &Answers::default(),
-    )
-    .unwrap();
-    assert_eq!(mapped, object(json!({"reasoning_effort": expected})));
 }
 
 #[test]

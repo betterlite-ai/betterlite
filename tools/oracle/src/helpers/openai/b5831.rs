@@ -1,9 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use betterlite_openai::api::rerank_contracts::records::RerankDocument;
-use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::openai_base_config::{
-    CatalogCapabilities, ConfigFamily, Headers, Object, OpenAiConfig, OpenAiSettings,
+    CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
 };
 use betterlite_openai::reasoning_models::DropParams;
 use betterlite_openai::together_ai_chat::{
@@ -19,98 +17,17 @@ use betterlite_openai::together_ai_rerank::{
     RerankCall, ReturnDocuments, TogetherRerankError, request, transform_response,
 };
 use secrecy::SecretString;
-use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+mod inputs;
+
+use inputs::{
+    CategoryStep, ChatMapStep, ChatMessagesStep, ChatSupportedStep, CompletionStep, Input,
+    RegistryStep, RerankRequestStep, RerankResponseStep,
+};
+
 pub(crate) struct Op;
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
-pub(crate) struct Input {
-    model_cost: BTreeMap<String, BTreeMap<String, Value>>,
-    chat_supported: Vec<ChatSupportedStep>,
-    chat_map: Vec<ChatMapStep>,
-    chat_messages: Vec<ChatMessagesStep>,
-    completion: Vec<CompletionStep>,
-    rerank_requests: Vec<RerankRequestStep>,
-    rerank_responses: Vec<RerankResponseStep>,
-    cost_categories: Vec<CategoryStep>,
-    cost_registry: Vec<RegistryStep>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChatSupportedStep {
-    model: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChatMapStep {
-    model: String,
-    params: Object,
-    #[serde(default)]
-    optional_params: Object,
-    #[serde(default)]
-    drop_params: bool,
-    #[serde(default)]
-    global_drop_params: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChatMessagesStep {
-    messages: Vec<ChatMessage>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CompletionStep {
-    model: String,
-    messages: Vec<Value>,
-    #[serde(default)]
-    optional_params: Object,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RerankRequestStep {
-    model: String,
-    query: String,
-    documents: Vec<RerankDocument>,
-    #[serde(default)]
-    top_n: Option<i64>,
-    #[serde(default)]
-    rank_fields: Option<Vec<String>>,
-    #[serde(default, with = "serde_with::rust::double_option")]
-    return_documents: Option<Option<bool>>,
-    #[serde(default)]
-    max_chunks_per_doc: Option<i64>,
-    api_key: String,
-    api_base: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RerankResponseStep {
-    response: Value,
-    next_id: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CategoryStep {
-    model: String,
-    #[serde(default)]
-    call_type: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RegistryStep {
-    model: String,
-}
 
 struct ModelCost<'map>(&'map BTreeMap<String, BTreeMap<String, Value>>);
 
@@ -230,6 +147,13 @@ fn rerank_kind(error: &TogetherRerankError) -> &'static str {
     }
 }
 
+fn outcome(result: Result<Value, &'static str>) -> Value {
+    match result {
+        Ok(value) => json!({"ok": true, "value": value}),
+        Err(kind) => json!({"ok": false, "error": {"kind": kind}}),
+    }
+}
+
 fn rerank_request_step(step: &RerankRequestStep) -> Value {
     let key = SecretString::from(step.api_key.clone());
     let returned = match step.return_documents {
@@ -248,24 +172,21 @@ fn rerank_request_step(step: &RerankRequestStep) -> Value {
         api_key: &key,
         api_base: &step.api_base,
     };
-    match request(&call) {
-        Ok(http) => json!({
-            "ok": true,
-            "value": {"url": http.url, "headers": http.headers, "body": http.body},
-        }),
-        Err(error) => json!({"ok": false, "error": {"kind": rerank_kind(&error)}}),
-    }
+    outcome(
+        request(&call)
+            .map(|http| json!({"url": http.url, "headers": http.headers, "body": http.body}))
+            .map_err(|error| rerank_kind(&error)),
+    )
 }
 
 fn rerank_response_step(step: &RerankResponseStep) -> Value {
     let next = step.next_id.clone();
     let next_id = move || Uuid::parse_str(&next).unwrap_or_default();
-    match transform_response(&step.response, &next_id) {
-        Ok(reply) => {
-            json!({"ok": true, "value": serde_json::to_value(reply).unwrap_or(Value::Null)})
-        }
-        Err(error) => json!({"ok": false, "error": {"kind": rerank_kind(&error)}}),
-    }
+    outcome(
+        transform_response(&step.response, &next_id)
+            .map(|reply| serde_json::to_value(reply).unwrap_or(Value::Null))
+            .map_err(|error| rerank_kind(&error)),
+    )
 }
 
 fn category_step(step: &CategoryStep) -> Value {

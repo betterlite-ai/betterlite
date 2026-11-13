@@ -269,26 +269,26 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
     registered = {key: dict(entry) for key, entry in parsed["model_cost"].items()}
     with contextlib.redirect_stdout(io.StringIO()):
         litellm.register_model(registered, persist_across_reloads=False)
-    return {
-        "chat_supported": [
-            chat_supported(step) for step in parsed["chat_supported"]
-        ],
-        "chat_map": [chat_map(step) for step in parsed["chat_map"]],
-        "chat_messages": [
-            chat_messages(step) for step in parsed["chat_messages"]
-        ],
-        "completion": [completion(step) for step in parsed["completion"]],
-        "rerank_requests": [
-            rerank_request(step) for step in parsed["rerank_requests"]
-        ],
-        "rerank_responses": [
-            rerank_response(step) for step in parsed["rerank_responses"]
-        ],
-        "cost_categories": [
-            cost_category(step) for step in parsed["cost_categories"]
-        ],
-        "cost_registry": [
-            COSTS.has_together_registry_pricing(step["model"], parsed["model_cost"])
-            for step in parsed["cost_registry"]
-        ],
-    }
+    collected: dict[str, JsonValue] = {}
+    collected["chat_supported"] = [
+        chat_supported(step) for step in parsed["chat_supported"]
+    ]
+    collected["chat_map"] = [chat_map(step) for step in parsed["chat_map"]]
+    collected["chat_messages"] = [
+        chat_messages(step) for step in parsed["chat_messages"]
+    ]
+    collected["completion"] = [completion(step) for step in parsed["completion"]]
+    collected["rerank_requests"] = [
+        rerank_request(step) for step in parsed["rerank_requests"]
+    ]
+    collected["rerank_responses"] = [
+        rerank_response(step) for step in parsed["rerank_responses"]
+    ]
+    collected["cost_categories"] = [
+        cost_category(step) for step in parsed["cost_categories"]
+    ]
+    collected["cost_registry"] = [
+        COSTS.has_together_registry_pricing(step["model"], parsed["model_cost"])
+        for step in parsed["cost_registry"]
+    ]
+    return collected
