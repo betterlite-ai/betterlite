@@ -6,3 +6,6 @@ deviations:
   - what: Missing cloud libraries never raise the "pip install google-cloud-iam", "pip install azure-identity" or "pip install boto3" ImportError.
     why: The clients are compiled in.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis_credential_provider.py#L51-L57
+  - what: The Azure credential is not kept between fetches. Each fetch builds the grant again and reuses the last token until its refresh or expiry time.
+    why: betterlite-azure's NativeGrants borrows its inputs, so it cannot live in a long-lived provider; the token cache keeps the network traffic the same as a kept credential.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L363-L398
