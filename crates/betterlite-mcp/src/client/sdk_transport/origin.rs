@@ -20,7 +20,6 @@ pub(super) struct RequestTarget {
     pub(super) method: Method,
     pub(super) url: Url,
 }
-
 fn location_target(sent: &Url, status: u16, headers: &HeaderMap) -> Option<Url> {
     if !matches!(status, 301 | 302 | 303 | 307 | 308) {
         return None;
@@ -31,7 +30,6 @@ fn location_target(sent: &Url, status: u16, headers: &HeaderMap) -> Option<Url> 
         Err(_) => sent.join(raw).ok(),
     }
 }
-
 fn redirected_method(method: &Method, status: u16) -> Method {
     if status == 303 && *method != Method::HEAD {
         return Method::GET;
@@ -44,14 +42,12 @@ fn redirected_method(method: &Method, status: u16) -> Method {
     }
     method.clone()
 }
-
 fn brings_userinfo(sent: &Url, target: &Url) -> bool {
     if target.username() == "" && target.password().is_none() {
         return false;
     }
     target.username() != sent.username() || target.password() != sent.password()
 }
-
 fn within_origin(sent: &Url, target: &Url) -> bool {
     let same = sent.scheme() == target.scheme()
         && sent.host_str() == target.host_str()
@@ -66,7 +62,6 @@ fn within_origin(sent: &Url, target: &Url) -> bool {
         && target.scheme() == "https"
         && target.port().is_none()
 }
-
 pub(super) fn next_request_within_origin(
     method: &Method,
     url: &Url,
@@ -83,7 +78,6 @@ pub(super) fn next_request_within_origin(
         url: target,
     })
 }
-
 fn redirect_location(url: &Url, status: u16, headers: &HeaderMap) -> Option<String> {
     let mut shown = location_target(url, status, headers)?;
     shown.set_query(None);
@@ -94,12 +88,10 @@ fn redirect_location(url: &Url, status: u16, headers: &HeaderMap) -> Option<Stri
     shown.set_password(None).ok()?;
     Some(shown.to_string())
 }
-
 pub(super) fn redirect_note(url: &Url, status: u16, headers: &HeaderMap) -> Option<String> {
     let location = redirect_location(url, status, headers)?;
     Some(format!(" (redirected to {location}; not followed)"))
 }
-
 pub(super) async fn send_within_origin(
     transport: &McpHttpTransport,
     request: McpHttpRequest,
@@ -131,7 +123,6 @@ pub(super) async fn send_within_origin(
         followed = followed.saturating_add(1);
     }
 }
-
 pub(super) async fn delete_within_origin(
     client: &McpHttpClient<McpHttpTransport>,
     request: McpHttpRequest,
@@ -175,7 +166,6 @@ pub(super) async fn delete_within_origin(
         followed = followed.saturating_add(1);
     }
 }
-
 pub(super) fn status_error(response: HttpResponse<HttpBody>) -> SdkError {
     let HttpResponse {
         status,
@@ -189,7 +179,6 @@ pub(super) fn status_error(response: HttpResponse<HttpBody>) -> SdkError {
         capture,
     }))))
 }
-
 pub(super) fn legacy_failure(url: &Url, response: HttpResponse<HttpBody>) -> SdkError {
     if let Some(note) = redirect_note(url, response.status, &response.headers) {
         return SdkError::Redirect {

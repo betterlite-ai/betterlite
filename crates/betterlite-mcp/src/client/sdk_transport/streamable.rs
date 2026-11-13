@@ -30,7 +30,6 @@ use crate::client::sessions::transport::TransportContext;
 use super::error::{SdkError, report_failure};
 use super::event_stream::MAX_EVENT_SIZE;
 use super::origin::delete_within_origin;
-
 pub(super) const CONNECTION_CLOSED: ErrorCode = ErrorCode(-32000);
 pub(super) const MAX_RECONNECTION_ATTEMPTS: usize = 2;
 pub(super) const RECONNECTION_DELAY: Duration = Duration::from_millis(1000);
@@ -38,17 +37,14 @@ pub(super) const LAST_EVENT_ID: HeaderName = HeaderName::from_static("last-event
 const MCP_SESSION_ID: HeaderName = HeaderName::from_static("mcp-session-id");
 const MCP_PROTOCOL_VERSION: HeaderName = HeaderName::from_static("mcp-protocol-version");
 const INCOMING_CAPACITY: usize = 32;
-
 pub(super) enum Incoming {
     Message(RxJsonRpcMessage<RoleClient>),
     Closed,
 }
-
 pub(super) struct SessionState {
     pub(super) session_id: Option<String>,
     pub(super) protocol_version: Option<String>,
 }
-
 pub(super) struct StreamableCore {
     pub(super) url: Url,
     pub(super) http: Arc<McpHttpTransport>,
@@ -60,17 +56,14 @@ pub(super) struct StreamableCore {
     pub(super) tasks: TaskTracker,
     pub(super) max_event_size: usize,
 }
-
 pub struct StreamableHttp {
     core: Arc<StreamableCore>,
     incoming: Option<mpsc::Receiver<Incoming>>,
 }
-
 pub struct StreamableStreams {
     core: Arc<StreamableCore>,
     incoming: mpsc::Receiver<Incoming>,
 }
-
 impl StreamableHttp {
     pub fn new(
         url: Url,
@@ -109,7 +102,6 @@ impl StreamableHttp {
         state.protocol_version = Some(version.to_owned());
     }
 }
-
 impl StreamableCore {
     pub(super) fn headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
@@ -178,31 +170,26 @@ impl StreamableCore {
 
     pub(super) async fn close(&self) -> Result<(), SdkError> {
         if self.session_id().is_some() {
-            self.terminate().await;
+            let request = McpHttpRequest {
+                method: Method::DELETE,
+                url: self.url.clone(),
+                headers: self.headers(),
+                body: Bytes::new(),
+                read_timeout: None,
+            };
+            match delete_within_origin(&self.cleanup, request).await {
+                Ok(405) => debug!("Server does not allow session termination"),
+                Ok(200 | 204) => {}
+                Ok(status) => warn!("Session termination failed: {status}"),
+                Err(error) => warn!("Session termination failed: {error}"),
+            }
         }
         self.cancel.cancel();
         self.tasks.close();
         self.tasks.wait().await;
         Ok(())
     }
-
-    async fn terminate(&self) {
-        let request = McpHttpRequest {
-            method: Method::DELETE,
-            url: self.url.clone(),
-            headers: self.headers(),
-            body: Bytes::new(),
-            read_timeout: None,
-        };
-        match delete_within_origin(&self.cleanup, request).await {
-            Ok(405) => debug!("Server does not allow session termination"),
-            Ok(200 | 204) => {}
-            Ok(status) => warn!("Session termination failed: {status}"),
-            Err(error) => warn!("Session termination failed: {error}"),
-        }
-    }
 }
-
 impl TransportContext for StreamableHttp {
     type Streams = StreamableStreams;
     type Error = SdkError;
@@ -227,7 +214,6 @@ impl TransportContext for StreamableHttp {
         }
     }
 }
-
 impl Transport<RoleClient> for StreamableStreams {
     type Error = SdkError;
 

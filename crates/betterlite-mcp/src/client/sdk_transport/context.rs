@@ -21,13 +21,11 @@ pub enum SdkTransport {
     LegacySse(LegacySse),
     Stdio(StdioTransport),
 }
-
 pub enum SdkStreams {
     Streamable(StreamableStreams),
     LegacySse(LegacySseStreams),
     Stdio(StdioRw),
 }
-
 fn stdio_exit(failure: ExitFailure<io::Error>) -> ExitFailure<SdkError> {
     match failure {
         ExitFailure::Cancelled => ExitFailure::Cancelled,
@@ -37,7 +35,6 @@ fn stdio_exit(failure: ExitFailure<io::Error>) -> ExitFailure<SdkError> {
         }
     }
 }
-
 impl TransportContext for SdkTransport {
     type Streams = SdkStreams;
     type Error = SdkError;
@@ -77,7 +74,6 @@ impl TransportContext for SdkTransport {
         }
     }
 }
-
 impl Transport<RoleClient> for SdkStreams {
     type Error = SdkError;
 

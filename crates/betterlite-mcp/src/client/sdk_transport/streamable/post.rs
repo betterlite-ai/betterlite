@@ -17,7 +17,6 @@ use crate::client::sdk_transport::error::SdkError;
 use crate::client::sdk_transport::origin::{redirect_note, send_within_origin};
 
 use super::streamable::{Incoming, StreamableCore};
-
 pub(super) fn content_type(headers: &HeaderMap) -> String {
     let value = headers
         .get(CONTENT_TYPE)
@@ -27,7 +26,6 @@ pub(super) fn content_type(headers: &HeaderMap) -> String {
         None => String::new(),
     }
 }
-
 impl StreamableCore {
     pub(super) async fn send(
         self: Arc<Self>,
@@ -108,7 +106,14 @@ impl StreamableCore {
         }
         let kind = content_type(&headers);
         if kind.starts_with("application/json") {
-            return self.answer_json(body, id).await;
+            let content = body.read_all().await?;
+            return match serde_json::from_slice::<RxJsonRpcMessage<RoleClient>>(&content) {
+                Ok(message) => self.push(message).await,
+                Err(source) => {
+                    let message = format!("Failed to parse JSON response: {source}");
+                    self.push_error(ErrorCode::PARSE_ERROR, message, id).await
+                }
+            };
         }
         if kind.starts_with("text/event-stream") {
             return self.read_events(body, id).await;
@@ -121,21 +126,6 @@ impl StreamableCore {
         .await?;
         drop(body.close().await);
         Ok(())
-    }
-
-    async fn answer_json(&self, mut body: HttpBody, id: RequestId) -> Result<(), SdkError> {
-        let content = body.read_all().await?;
-        match serde_json::from_slice::<RxJsonRpcMessage<RoleClient>>(&content) {
-            Ok(message) => self.push(message).await,
-            Err(source) => {
-                self.push_error(
-                    ErrorCode::PARSE_ERROR,
-                    format!("Failed to parse JSON response: {source}"),
-                    id,
-                )
-                .await
-            }
-        }
     }
 
     async fn answer_error(

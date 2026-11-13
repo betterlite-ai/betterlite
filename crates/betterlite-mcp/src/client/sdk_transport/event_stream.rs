@@ -18,7 +18,6 @@ pub(super) const MAX_EVENT_SIZE: usize = 1024 * 1024;
 pub(super) struct EventStream {
     inner: BoxStream<'static, Result<Sse, SseError>>,
 }
-
 impl EventStream {
     pub(super) fn open(body: HttpBody, limit: usize) -> Self {
         let chunks = futures_util::stream::unfold(body, |mut body| async move {
@@ -50,7 +49,6 @@ enum LimitError {
     #[error("the SSE event is larger than {limit} bytes")]
     TooLarge { limit: usize },
 }
-
 impl LimitError {
     fn into_sdk(self) -> SdkError {
         match self {
@@ -62,7 +60,6 @@ impl LimitError {
         }
     }
 }
-
 fn sdk_error(error: SseError) -> SdkError {
     match error {
         SseError::Body(source) => match source.downcast::<LimitError>() {
@@ -72,80 +69,48 @@ fn sdk_error(error: SseError) -> SdkError {
         framing => SdkError::Sse(framing),
     }
 }
-
 struct Limiter {
     maximum: usize,
     retained: usize,
-    line: usize,
-    comment: bool,
-    after_cr: bool,
+    blank: bool,
 }
-
 struct OverLimit;
-
 impl Limiter {
     const fn new(maximum: usize) -> Self {
         Self {
             maximum,
             retained: 0,
-            line: 0,
-            comment: false,
-            after_cr: false,
+            blank: false,
         }
     }
 
     fn observe(&mut self, chunk: &[u8]) -> Result<(), OverLimit> {
         for &byte in chunk {
-            if self.after_cr {
-                self.after_cr = false;
-                if byte == b'\n' {
-                    continue;
-                }
-            }
             match byte {
-                b'\r' => {
-                    self.finish_line()?;
-                    self.after_cr = true;
-                }
-                b'\n' => self.finish_line()?,
-                _ => {
-                    if self.line == 0 {
-                        self.comment = byte == b':';
+                b'\n' => {
+                    if self.blank {
+                        self.retained = 0;
                     }
-                    self.line = self.line.saturating_add(1);
-                    self.check()?;
+                    self.blank = !self.blank;
+                }
+                b'\r' => {}
+                _ => {
+                    self.blank = false;
+                    self.retained = self.retained.saturating_add(1);
+                    if self.retained > self.maximum {
+                        return Err(OverLimit);
+                    }
                 }
             }
         }
         Ok(())
     }
-
-    fn finish_line(&mut self) -> Result<(), OverLimit> {
-        if self.line == 0 {
-            self.retained = 0;
-        } else if !self.comment {
-            self.retained = self.retained.saturating_add(self.line).saturating_add(1);
-        }
-        self.line = 0;
-        self.comment = false;
-        self.check()
-    }
-
-    fn check(&self) -> Result<(), OverLimit> {
-        if self.retained.saturating_add(self.line) > self.maximum {
-            Err(OverLimit)
-        } else {
-            Ok(())
-        }
-    }
 }
-
 struct Bounded {
     inner: BoxStream<'static, Result<Bytes, McpHttpError>>,
     limiter: Limiter,
     failed: bool,
 }
-
 impl Stream for Bounded {
     type Item = Result<Bytes, LimitError>;
 

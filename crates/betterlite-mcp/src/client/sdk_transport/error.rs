@@ -31,22 +31,9 @@ pub enum SdkError {
     #[error("the MCP server answered with a JSON-RPC error")]
     JsonRpc(#[source] ErrorData),
 }
-
 impl From<McpHttpError> for SdkError {
     fn from(source: McpHttpError) -> Self {
         Self::Http(Arc::new(source))
-    }
-}
-
-impl From<io::Error> for SdkError {
-    fn from(source: io::Error) -> Self {
-        Self::Io(Arc::new(source))
-    }
-}
-
-impl From<serde_json::Error> for SdkError {
-    fn from(source: serde_json::Error) -> Self {
-        Self::Json(source)
     }
 }
 

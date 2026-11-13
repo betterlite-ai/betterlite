@@ -700,7 +700,7 @@ async fn a_get_stream_delivers_server_messages() {
 async fn an_sse_event_at_the_size_limit_is_accepted() {
     let prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"";
     let suffix = "\"}}";
-    let padding = 1_048_555 - prefix.len() - suffix.len();
+    let padding = 1_048_556 - prefix.len() - suffix.len();
     let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
     let server = TestServer::start(move |_| {
         let event = format!("event: message\ndata: {json}\n\n");
@@ -717,14 +717,13 @@ async fn an_sse_event_at_the_size_limit_is_accepted() {
 }
 
 #[tokio::test]
-async fn a_comment_line_does_not_count_toward_the_event_limit() {
+async fn an_sse_event_with_crlf_at_the_size_limit_is_accepted() {
     let prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"";
     let suffix = "\"}}";
-    let padding = 524_288 - prefix.len() - suffix.len();
+    let padding = 1_048_556 - prefix.len() - suffix.len();
     let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
-    let comment = format!(": {}", "c".repeat(600_000));
     let server = TestServer::start(move |_| {
-        let event = format!("{comment}\nevent: message\ndata: {json}\n\n");
+        let event = format!("event: message\r\ndata: {json}\r\n\r\n");
         streamed(vec![Bytes::from(event)])
     })
     .await;
@@ -738,19 +737,23 @@ async fn a_comment_line_does_not_count_toward_the_event_limit() {
 }
 
 #[tokio::test]
-async fn an_sse_event_with_crlf_at_the_size_limit_is_accepted() {
+async fn consecutive_events_each_count_from_zero() {
     let prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"";
     let suffix = "\"}}";
-    let padding = 1_048_555 - prefix.len() - suffix.len();
+    let padding = 600_000 - prefix.len() - suffix.len();
     let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
     let server = TestServer::start(move |_| {
-        let event = format!("event: message\r\ndata: {json}\r\n\r\n");
+        let event = format!("event: message\ndata: {json}\n\nevent: message\ndata: {json}\n\n");
         streamed(vec![Bytes::from(event)])
     })
     .await;
     let (mut transport, _handler) = streamable(server.url("/mcp"));
     let mut streams = enter(&mut transport).await;
     send(&mut streams, request(7, "tools/list")).await;
+    assert!(matches!(
+        receive(&mut streams).await,
+        JsonRpcMessage::Notification(_)
+    ));
     assert!(matches!(
         receive(&mut streams).await,
         JsonRpcMessage::Notification(_)

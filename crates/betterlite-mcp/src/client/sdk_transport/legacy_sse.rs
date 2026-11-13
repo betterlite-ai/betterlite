@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::future::Future;
 use std::io;
 use std::sync::Arc;
@@ -26,27 +25,22 @@ use crate::client::sessions::transport::TransportContext;
 
 // the SDK's sse_read_timeout default; LiteLLM never overrides it
 const SSE_READ_TIMEOUT: Duration = Duration::from_secs(300);
-
 pub struct LegacySse {
     pub url: Url,
     pub http: Arc<McpHttpTransport>,
     pub handler: MessageHandler<SdkError>,
 }
-
 pub struct LegacySseStreams {
     endpoint: Url,
     http: Arc<McpHttpTransport>,
     events: EventStream,
-    pending: VecDeque<Result<Sse, SdkError>>,
     handler: MessageHandler<SdkError>,
 }
-
 enum Received {
     Message(RxJsonRpcMessage<RoleClient>),
     Skip,
     Stop,
 }
-
 fn endpoint_of(base: &Url, sse: &Sse) -> Result<Url, SdkError> {
     let data = sse.data.as_deref().unwrap_or_default();
     let endpoint = match base.join(data) {
@@ -66,7 +60,6 @@ fn endpoint_of(base: &Url, sse: &Sse) -> Result<Url, SdkError> {
         endpoint_url: endpoint.to_string(),
     })
 }
-
 impl TransportContext for LegacySse {
     type Streams = LegacySseStreams;
     type Error = SdkError;
@@ -91,7 +84,6 @@ impl TransportContext for LegacySse {
                 return Err(legacy_failure(&url, response));
             }
             let mut events = EventStream::open(response.body, MAX_EVENT_SIZE);
-            let mut pending = VecDeque::new();
             loop {
                 let Some(event) = events.next().await else {
                     let context = io::Error::new(
@@ -109,11 +101,9 @@ impl TransportContext for LegacySse {
                                 endpoint,
                                 http,
                                 events,
-                                pending,
                                 handler,
                             });
                         }
-                        pending.push_back(Ok(sse));
                     }
                 }
             }
@@ -124,15 +114,7 @@ impl TransportContext for LegacySse {
         async move { Ok(()) }
     }
 }
-
 impl LegacySseStreams {
-    async fn next_event(&mut self) -> Option<Result<Sse, SdkError>> {
-        match self.pending.pop_front() {
-            Some(event) => Some(event),
-            None => self.events.next().await,
-        }
-    }
-
     fn accept(&self, event: Result<Sse, SdkError>) -> Received {
         match event {
             Err(error) => {
@@ -166,7 +148,6 @@ impl LegacySseStreams {
         }
     }
 }
-
 impl Transport<RoleClient> for LegacySseStreams {
     type Error = SdkError;
 
@@ -182,7 +163,7 @@ impl Transport<RoleClient> for LegacySseStreams {
     fn receive(&mut self) -> impl Future<Output = Option<RxJsonRpcMessage<RoleClient>>> + Send {
         async move {
             loop {
-                let Some(event) = self.next_event().await else {
+                let Some(event) = self.events.next().await else {
                     return None;
                 };
                 match self.accept(event) {
@@ -198,7 +179,6 @@ impl Transport<RoleClient> for LegacySseStreams {
         async move { Ok(()) }
     }
 }
-
 async fn post(
     http: &McpHttpTransport,
     endpoint: &Url,

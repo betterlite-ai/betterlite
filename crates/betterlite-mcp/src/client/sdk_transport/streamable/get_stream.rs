@@ -17,14 +17,12 @@ use crate::client::sessions::stream::StreamFailureKind;
 
 use super::sse_response::{event_message, track_event};
 use super::streamable::{LAST_EVENT_ID, MAX_RECONNECTION_ATTEMPTS, StreamableCore};
-
 enum GetOutcome {
     Ended,
     Framing(SdkError),
     Invalid(SdkError),
     Closed,
 }
-
 impl StreamableCore {
     pub(super) async fn run_get_stream(self: Arc<Self>) {
         let mut event_id: Option<String> = None;

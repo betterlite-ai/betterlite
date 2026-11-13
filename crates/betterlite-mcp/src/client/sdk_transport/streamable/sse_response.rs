@@ -20,7 +20,6 @@ use super::post::content_type;
 use super::streamable::{
     CONNECTION_CLOSED, LAST_EVENT_ID, MAX_RECONNECTION_ATTEMPTS, StreamableCore,
 };
-
 enum Attempt {
     Complete,
     Ended,
@@ -28,7 +27,6 @@ enum Attempt {
     Framing(SdkError),
     Invalid(serde_json::Error),
 }
-
 pub(super) fn event_message(sse: &Sse) -> Option<Result<RxJsonRpcMessage<RoleClient>, SdkError>> {
     if sse.event.as_deref() != Some("message") {
         warn!("Unknown SSE event: {}", sse.event.as_deref().unwrap_or(""));
@@ -40,7 +38,6 @@ pub(super) fn event_message(sse: &Sse) -> Option<Result<RxJsonRpcMessage<RoleCli
     }
     Some(serde_json::from_str::<RxJsonRpcMessage<RoleClient>>(data).map_err(SdkError::Json))
 }
-
 pub(super) fn track_event(event_id: &mut Option<String>, retry_ms: &mut Option<u64>, sse: &Sse) {
     if let Some(id) = sse.id.as_deref() {
         *event_id = Some(id.to_owned());
@@ -49,7 +46,6 @@ pub(super) fn track_event(event_id: &mut Option<String>, retry_ms: &mut Option<u
         *retry_ms = Some(retry);
     }
 }
-
 impl StreamableCore {
     pub(super) async fn read_events(&self, body: HttpBody, id: RequestId) -> Result<(), SdkError> {
         let mut events = EventStream::open(body, self.max_event_size);
