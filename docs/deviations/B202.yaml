@@ -1,0 +1,11 @@
+task: B202
+deviations:
+  - what: A request-level api_base or api_key is read as a control and never reaches the provider; LiteLLM forwards both to the SDK constructor.
+    why: Outbound URLs and credentials come only from the deployment config, so a request body cannot redirect a call or supply a credential.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7480-L7482
+  - what: Client mock controls (mock_response, mock_tool_calls, mock_timeout, mock_delay) are dropped instead of answering with a mock completion.
+    why: betterlite's mock framework is configured per deployment; a client-supplied mock response is not part of the completion route yet, matching the embeddings route's refusal to honor one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L656
+  - what: A completion parameter outside the text config's allowlist answers 400 invalid_request_error naming the parameter; LiteLLM raises UnsupportedParamsError, which the proxy answers with 500.
+    why: betterlite names the field and its own message, and docs/compatibility makes a value of the wrong type a named client error; the status differs only for a request that fails on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4509-L4540

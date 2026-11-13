@@ -1,0 +1,18 @@
+name: completions-invalid-mixed-prompt
+config: |
+  model_list:
+    - model_name: text-model
+      litellm_params: {model: openai/gpt-3.5-turbo-instruct, api_base: "{{upstream}}", api_key: oracle-key}
+env: {}
+request:
+  method: POST
+  path: /v1/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: text-model, prompt: [[hello]]}
+upstream: []
+compare:
+  headers: [content-type, llm_provider-x-request-id]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own provider error message}
