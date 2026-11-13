@@ -1,0 +1,36 @@
+kind: helper
+name: separate-token-client-identity
+call:
+  azure_endpoints:
+    separate_token_client_identity:
+      - params:
+          azure_ad_token: fixture-ad-token
+          auth:
+            tenant_id: tenant-a
+            client_id: client-a
+            client_secret: fixture-client-secret
+            azure_username: user-a
+            azure_password: fixture-password
+            azure_scope: scope-a
+        api_key: fixture-api-key
+        api_version: "2024-02-01"
+        provider:
+          identity: 4242
+          script: {outcome: token, token: passed-token}
+      - params:
+          auth: {tenant_id: tenant-b, client_id: client-b, client_secret: client-secret-b}
+        api_key: fixture-api-key
+        session: shared
+      - api_key: fixture-api-key
+        cached: azure_open_ai
+      - api_key: fixture-api-key
+        cached: other
+        provider:
+          identity: 7
+          script: {outcome: token, token: cached-fallback-token}
+      - api_version: "2024-02-01"
+        supplied:
+          kind: async_azure_open_ai
+          custom_query: {api-version: "2023-01-01", extra: kept}
+env: {}
+compare: {ignore: []}

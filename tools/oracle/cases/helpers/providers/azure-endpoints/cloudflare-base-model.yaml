@@ -1,0 +1,48 @@
+kind: helper
+name: cloudflare-base-model
+call:
+  azure_endpoints:
+    cloudflare_base_model:
+      - api_base: https://gateway.example/azure
+        model: gpt-4o
+        api_version: "2024-02-01"
+        max_retries: 2
+        timeout: 7.5
+      - api_base: https://gateway.example/azure/
+        model: gpt-4o
+        api_version: "2024-02-01"
+        max_retries: 3
+        timeout: 7.5
+        api_key: fixture-api-key
+        azure_ad_token: fixture-ad-token
+      - api_base: https://gateway.example/azure
+        model: gpt-4o
+        api_version: "2024-02-01"
+        max_retries: 2
+        timeout: 7.5
+        azure_ad_token: plain-token
+      - api_base: https://gateway.example/azure
+        model: gpt-4o
+        api_version: "2024-02-01"
+        max_retries: 2
+        timeout: 7.5
+        azure_ad_token: oidc/assertion
+        params: {tenant_id: null}
+        environment: {AZURE_CLIENT_ID: env-client}
+      - api_base: https://gateway.example/azure
+        model: gpt-4o
+        api_version: "2024-02-01"
+        max_retries: 2
+        timeout: 7.5
+        is_async: true
+        shared_session: true
+      - api_base: https://gateway.example/azure
+        model: gpt-4o
+        api_version: "2024-02-01"
+        max_retries: 2
+        timeout: 7.5
+        client:
+          kind: async_azure_open_ai
+          custom_query: {api-version: "2023-01-01"}
+env: {}
+compare: {ignore: []}

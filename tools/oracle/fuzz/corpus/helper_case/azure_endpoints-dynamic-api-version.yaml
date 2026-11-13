@@ -1,0 +1,9 @@
+kind: helper
+name: azure-endpoints-dynamic-api-version-seed
+call:
+  azure_endpoints:
+    dynamic_api_version:
+      - api_version: v1
+        custom_query: {api-version: "2024-02-01"}
+env: {}
+compare: {ignore: []}

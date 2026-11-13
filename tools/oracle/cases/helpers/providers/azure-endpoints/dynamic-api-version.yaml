@@ -1,0 +1,15 @@
+kind: helper
+name: dynamic-api-version
+call:
+  azure_endpoints:
+    dynamic_api_version:
+      - {}
+      - api_version: v1
+      - api_version: "2024-02-01"
+        custom_query: {api-version: "2024-02-01"}
+      - api_version: v1
+        custom_query: {api-version: "2024-02-01", other: ignored}
+      - api_version: v1
+        custom_query: {other: ignored}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,33 @@
+kind: helper
+name: azure-v1-client-projection
+call:
+  azure_endpoints:
+    azure_v1_client_projection:
+      - api_version: v1
+        api_base: https://example.openai.azure.com
+        api_key: fixture-api-key
+      - api_version: v1
+        api_base: https://example.openai.azure.com
+        provider:
+          identity: 1
+          script: {outcome: token, token: provider-token}
+      - api_version: latest
+        api_base: https://example.openai.azure.com
+        is_async: true
+        provider:
+          identity: 1
+          script: {outcome: token, token: provider-token}
+      - api_version: preview
+        api_base: https://example.openai.azure.com
+        params: {azure_ad_token: fixture-ad-token}
+      - api_version: v1
+        api_base: https://example.openai.azure.com
+      - api_version: v1
+        api_base: https://x.openai.azure.com/openai/deployments/gpt
+        is_async: true
+        session: shared
+        params: {timeout: 2.5, max_retries: 4}
+      - api_version: v1
+        api_base: https://x.openai.azure.com/
+env: {}
+compare: {ignore: []}

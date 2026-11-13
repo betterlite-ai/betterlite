@@ -1,0 +1,15 @@
+kind: helper
+name: azure-endpoints-cloudflare-base-model-seed
+call:
+  azure_endpoints:
+    cloudflare_base_model:
+      - api_base: https://gateway.example/azure
+        model: gpt-4o
+        api_version: "2024-02-01"
+        max_retries: 2
+        timeout: 7.5
+        params: {tenant_id: null}
+        environment: {AZURE_CLIENT_ID: seed-client}
+        sources: {}
+env: {}
+compare: {ignore: []}

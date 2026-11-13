@@ -1,0 +1,9 @@
+kind: helper
+name: azure-endpoints-default-api-version-seed
+call:
+  azure_endpoints:
+    default_api_version:
+      - params: {}
+        environment: {AZURE_API_VERSION: "2024-06-01"}
+env: {}
+compare: {ignore: []}
