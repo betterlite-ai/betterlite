@@ -9,6 +9,9 @@ pub mod chunk;
 mod dispatch;
 pub mod error;
 mod json_mode;
+mod message;
+mod start;
+mod stop;
 mod tests;
 
 use chunk::{Branch, StreamEventChoice, StreamEventChunk, StreamEventDelta};
@@ -31,14 +34,12 @@ where
         let mut branch = Branch::default();
         match dispatch::event_type(fields) {
             "content_block_delta" => dispatch::content_block_delta(self, chunk, &mut branch)?,
-            "content_block_start" => dispatch::content_block_start(self, chunk, &mut branch)?,
-            "content_block_stop" => dispatch::content_block_stop(self, &mut branch),
-            "message_delta" => dispatch::message_delta(self, chunk, &mut branch)?,
-            "message_start" => dispatch::message_start(self, chunk, &mut branch)?,
+            "content_block_start" => start::content_block_start(self, chunk, &mut branch)?,
+            "content_block_stop" => stop::content_block_stop(self, &mut branch),
+            "message_delta" => message::message_delta(self, chunk, &mut branch)?,
+            "message_start" => message::message_start(self, chunk, &mut branch)?,
             "error" => {
-                return Err(StreamEventError::from(dispatch::native_error(
-                    chunk, fields,
-                )));
+                return Err(StreamEventError::from(message::native_error(chunk, fields)));
             }
             _ => {}
         }

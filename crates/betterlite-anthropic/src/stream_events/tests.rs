@@ -2,6 +2,7 @@
 
 mod cases;
 mod fixture;
+mod lifecycle;
 
 use std::fs;
 use std::path::Path;
@@ -20,9 +21,9 @@ use crate::stream_events::decode_stream_tool_arguments;
 #[case::ping_no_content(cases::ping_no_content)]
 #[case::error_event(cases::error_event)]
 #[case::content_start_reset(cases::content_start_reset)]
-#[case::web_search_stream_lifecycle(cases::web_search_stream_lifecycle)]
-#[case::compaction_and_container_events(cases::compaction_and_container_events)]
-#[case::accumulated_json_values(cases::accumulated_json_values)]
+#[case::web_search_stream_lifecycle(lifecycle::web_search_stream_lifecycle)]
+#[case::compaction_and_container_events(lifecycle::compaction_and_container_events)]
+#[case::accumulated_json_values(lifecycle::accumulated_json_values)]
 fn stream_events_cases(#[case] scenario: fn()) {
     scenario();
 }
