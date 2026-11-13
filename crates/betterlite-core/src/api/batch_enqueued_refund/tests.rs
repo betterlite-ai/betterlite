@@ -814,6 +814,34 @@ async fn pop_reads_the_local_record_without_redis() {
     assert!(captured.levels().is_empty());
 }
 
+#[tokio::test]
+async fn pop_falls_back_to_local_when_the_script_fails() {
+    let time = Arc::new(Mutex::new(0.0_f64));
+    let counters = counters_at(&time);
+    let reservation = redis_record(500, vec![key_scope()]);
+    seed_record(&counters, &record_text(&reservation));
+    let scripts = ScriptedScripts::new(
+        Vec::new(),
+        Vec::new(),
+        vec![PopReply::Fail("down".to_owned())],
+    );
+    let service = refund_service(Some(scripts.clone()), Arc::clone(&counters));
+    let (captured, _guard) = capture();
+    let outcome = service
+        .run(&BatchEnqueuedRefundInput::Pop {
+            batch_id: "batch-1".to_owned(),
+        })
+        .await
+        .expect("the pop falls back to the local record");
+    assert_eq!(
+        outcome,
+        BatchEnqueuedRefundResult::Popped(Some(reservation))
+    );
+    assert_eq!(scripts.calls(), vec![pop_call()]);
+    assert!(stored_tokens(&counters).is_none());
+    assert_eq!(captured.levels(), vec![Level::WARN]);
+}
+
 #[test]
 fn record_round_trips_the_reservation() {
     let reservation = BatchEnqueuedTokenReservation {
