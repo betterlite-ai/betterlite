@@ -137,23 +137,37 @@ def authentication(kind: AuthKind) -> DatabaseTokenAuth | None:
     return None
 
 
-# The wrapper reaches the pinned private methods through self, which the private-member rules allow
+# Each helper's private call sits in a method body with real work, not a one-line forwarder
 class Wrapper(PrismaWrapper):
     def __init__(self, kind: AuthKind) -> None:
         self._token_auth = authentication(kind)
         self._db_url_env_var = ENV_VAR
 
-    def extract_token(self, db_url: str | None) -> str | None:
-        return self._extract_token_from_db_url(db_url)
+    def extract_password(self, db_url: str | None) -> Json:
+        with captured() as capture:
+            password = self._extract_token_from_db_url(db_url)
+        return {"password": password, "log_levels": capture.levels}
 
-    def parse_expiration(self, token: str | None) -> datetime | None:
-        return self._parse_token_expiration(token)
+    def expiration(self, token: str | None) -> Json:
+        with captured() as capture:
+            parsed = self._parse_token_expiration(token)
+        value = None if parsed is None else parsed.isoformat()
+        return {"expiration": value, "log_levels": capture.levels}
 
-    def seconds_until_refresh(self) -> float:
-        return self._calculate_seconds_until_refresh()
+    def scheduled(self, now: str) -> Json:
+        with FrozenClock(now), captured() as capture:
+            seconds = self._calculate_seconds_until_refresh()
+        return {"seconds": float(seconds), "log_levels": capture.levels}
 
-    def refresh_not_needed(self, token_url: str | None) -> bool:
-        return self._token_refresh_not_needed(token_url)
+    def expired(self, token_url: str | None, now: str) -> Json:
+        with FrozenClock(now), captured() as capture:
+            expired = self.is_token_expired(token_url)
+        return {"expired": expired, "log_levels": capture.levels}
+
+    def refresh_not_needed(self, token_url: str | None, now: str) -> Json:
+        with FrozenClock(now), captured() as capture:
+            not_needed = self._token_refresh_not_needed(token_url)
+        return {"not_needed": not_needed, "log_levels": capture.levels}
 
 
 def set_environment(url: str | None) -> None:
@@ -163,51 +177,17 @@ def set_environment(url: str | None) -> None:
         os.environ[ENV_VAR] = url
 
 
-def extract_password(call: ExtractPasswordCall) -> Json:
-    with captured() as capture:
-        password = Wrapper("disabled").extract_token(call["url"])
-    return {"password": password, "log_levels": capture.levels}
-
-
-def expiration(call: ParseExpirationCall) -> Json:
-    with captured() as capture:
-        parsed = Wrapper(call["auth"]).parse_expiration(call["token"])
-    value = None if parsed is None else parsed.isoformat()
-    return {"expiration": value, "log_levels": capture.levels}
-
-
-def seconds_until_refresh(call: SecondsUntilRefreshCall) -> Json:
-    set_environment(call["url"])
-    created = Wrapper(call["auth"])
-    with FrozenClock(call["now"]), captured() as capture:
-        seconds = created.seconds_until_refresh()
-    return {"seconds": float(seconds), "log_levels": capture.levels}
-
-
-def is_token_expired(call: IsTokenExpiredCall) -> Json:
-    created = Wrapper(call["auth"])
-    with FrozenClock(call["now"]), captured() as capture:
-        expired = created.is_token_expired(call["url"])
-    return {"expired": expired, "log_levels": capture.levels}
-
-
-def token_refresh_not_needed(call: TokenRefreshNotNeededCall) -> Json:
-    created = Wrapper(call["auth"])
-    with FrozenClock(call["now"]), captured() as capture:
-        not_needed = created.refresh_not_needed(call["url"])
-    return {"not_needed": not_needed, "log_levels": capture.levels}
-
-
 def evaluate(call: Call) -> Json:
     if call["function"] == "extract_password":
-        return extract_password(call)
+        return Wrapper("disabled").extract_password(call["url"])
     if call["function"] == "parse_expiration":
-        return expiration(call)
+        return Wrapper(call["auth"]).expiration(call["token"])
     if call["function"] == "seconds_until_refresh":
-        return seconds_until_refresh(call)
+        set_environment(call["url"])
+        return Wrapper(call["auth"]).scheduled(call["now"])
     if call["function"] == "is_token_expired":
-        return is_token_expired(call)
-    return token_refresh_not_needed(call)
+        return Wrapper(call["auth"]).expired(call["url"], call["now"])
+    return Wrapper(call["auth"]).refresh_not_needed(call["url"], call["now"])
 
 
 def scenario(call: Call) -> Json:

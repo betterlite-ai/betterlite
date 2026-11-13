@@ -24,6 +24,9 @@ use crate::database_url_policy::url_codec::urlsplit;
 use super::fakes::{FakeError, lock, secret, slot_url, utc};
 use super::loops::{FakeCallback, fixed_clock, options};
 
+// the slot starts on a credential the fixture database never accepts, so only a refresh replaces it
+const STALE_URL: &str = "postgresql://betterlite:stale@stale.example:5432/stale";
+
 #[derive(Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -201,7 +204,8 @@ pub(crate) async fn loop_on(
             .expect("the initial native pool builds"),
     );
     let slot = DatabaseUrlSlot::default();
-    drop(slot.publish(Some(case.url.clone())));
+    // a stale credential the refresh has to replace, so the published slot proves it wrote one
+    drop(slot.publish(Some(secret(STALE_URL))));
     let built = DatabaseRefreshLoop::<NativePoolProvider, PasswordMinter, FakeError>::new(
         provider,
         options(slot.clone()),
