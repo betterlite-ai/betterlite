@@ -3,7 +3,6 @@ from typing import Literal, Protocol, TypedDict
 
 import httpx
 import litellm
-from fastapi import HTTPException
 from litellm.caching.llm_caching_handler import LLMClientCache
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.proxy.guardrails.guardrail_hooks.zscaler_ai_guard.zscaler_ai_guard import (
@@ -11,6 +10,7 @@ from litellm.proxy.guardrails.guardrail_hooks.zscaler_ai_guard.zscaler_ai_guard 
 )
 from litellm.types.llms.custom_http import httpxSpecialProvider
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 
 CLIENT_CACHE_KEY = "async_httpx_client" + httpxSpecialProvider.LoggingCallback
 HEADER_NAMES = (
@@ -126,9 +126,7 @@ def run(input_value: Call) -> JsonValue:
         result = asyncio.run(check(instance, handler, input_value))
     except HTTPException as error:
         return blocked(captured, error)
-    hooks = [hook.value for hook in ZscalerAIGuard.get_supported_event_hooks()]
     return {
-        "supported_event_hooks": hooks,
         "path": captured.get("path"),
         "headers": captured.get("headers"),
         "body": captured.get("body"),

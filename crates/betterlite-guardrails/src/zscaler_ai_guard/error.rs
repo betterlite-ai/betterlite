@@ -85,18 +85,21 @@ impl ZscalerAiGuardError {
 
     #[must_use]
     pub fn detail(&self) -> ZscalerErrorDetail {
-        match self {
-            Self::Blocked { info } => ZscalerErrorDetail::Block {
+        if let Self::Blocked { info } = self {
+            return ZscalerErrorDetail::Block {
                 error: format!("Content blocked by Zscaler AI Guard: {info}"),
-            },
-            Self::Http { reason, .. } => ZscalerErrorDetail::Service {
-                error_type: ERROR_TYPE,
-                reason: reason.clone(),
-            },
-            other => ZscalerErrorDetail::Service {
-                error_type: ERROR_TYPE,
-                reason: other.to_string(),
-            },
+            };
+        }
+        ZscalerErrorDetail::Service {
+            error_type: ERROR_TYPE,
+            reason: self.reason(),
+        }
+    }
+
+    fn reason(&self) -> String {
+        match self {
+            Self::Http { reason, .. } => reason.clone(),
+            other => other.to_string(),
         }
     }
 }

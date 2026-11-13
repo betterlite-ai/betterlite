@@ -5,7 +5,7 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::zscaler_ai_guard::error::ZscalerAiGuardError;
 use betterlite_guardrails::zscaler_ai_guard::init::ZscalerArgs;
-use betterlite_guardrails::zscaler_ai_guard::{Inputs, SUPPORTED_EVENT_HOOKS, ZscalerAiGuard};
+use betterlite_guardrails::zscaler_ai_guard::{Inputs, ZscalerAiGuard};
 use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -92,7 +92,6 @@ fn output(
     };
     match result {
         Ok(inputs) => Ok(json!({
-            "supported_event_hooks": SUPPORTED_EVENT_HOOKS,
             "path": path,
             "headers": header_subset(headers.as_ref()),
             "body": body,
