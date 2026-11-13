@@ -1,0 +1,1 @@
+postgresql://user:abc%3Fdef%26x%3D1@host:5432/db

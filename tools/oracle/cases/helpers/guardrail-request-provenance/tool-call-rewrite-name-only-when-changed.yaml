@@ -1,0 +1,9 @@
+kind: helper
+name: tool-call-rewrite-name-only-when-changed
+call:
+  b3670:
+    function: tool_call_rewrite
+    before: {"id": "c1", "type": "function", "function": {"name": "lookup", "arguments": "a"}, "index": 0}
+    after: {"id": "c1", "type": "function", "function": {"name": "lookup", "arguments": "b"}, "index": 0}
+env: {}
+compare: {ignore: []}
