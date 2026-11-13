@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use betterlite_models::cost_usage::CostUsage;
+use betterlite_models::price_lookup::PriceLookup;
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::token_rates::ModelInfo;
 use chrono::DateTime;
@@ -299,4 +300,12 @@ fn cost_per_token_surfaces_a_rate_error() {
     )
     .unwrap_err();
     assert!(matches!(error, FireworksCostError::Cost(_)));
+}
+
+#[test]
+fn supplied_pricing_only_answers_no_catalog_lookup() {
+    let lookup = super::SuppliedPricingOnly;
+    assert!(lookup.effective_model_info("m", Some("p")).is_none());
+    assert!(lookup.raw_cost_map_entry("m").is_none());
+    assert!(lookup.effective_priced_model("m", Some("p")).is_none());
 }

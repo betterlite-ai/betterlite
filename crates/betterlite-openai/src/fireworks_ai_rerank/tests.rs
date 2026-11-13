@@ -5,11 +5,11 @@ use std::path::PathBuf;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
-use uuid::Uuid;
+use uuid::{Uuid, Version};
 
 use super::error::FireworksRerankError;
 use super::response::{
-    IdSource, MAX_RESPONSE_BYTES, decode_rerank_response, transform_rerank_response,
+    IdSource, MAX_RESPONSE_BYTES, UuidIds, decode_rerank_response, transform_rerank_response,
 };
 use super::wire::{OptionalRerankParams, transform_rerank_request};
 use super::{
@@ -411,4 +411,14 @@ fn replays_the_rerank_response_corpus(
     #[files("fuzz/corpus/fireworks_ai_rerank_response/*")] path: PathBuf,
 ) {
     let _decoded = decode_rerank_response(&std::fs::read(path).expect("corpus file"));
+}
+
+#[test]
+fn the_response_limit_is_one_mib() {
+    assert_eq!(MAX_RESPONSE_BYTES, 1024 * 1024);
+}
+
+#[test]
+fn uuid_ids_produce_a_v4_uuid() {
+    assert_eq!(UuidIds.new_uuid().get_version(), Some(Version::Random));
 }
