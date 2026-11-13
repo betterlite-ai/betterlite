@@ -18,12 +18,11 @@ use crate::deployment_clients::credentials::{
     ClientsideCredentials, clientside_deployment, dynamic_litellm_params, is_clientside_credential,
 };
 use crate::deployment_clients::guard::{
-    LimitSource, MaxParallelRequestsExceeded, MaxParallelRequestsLimit,
-    calculate_max_parallel_requests, installable_limit,
+    LimitSource, MaxParallelRequestsExceeded, MaxParallelRequestsLimit, calculate_parallel_limit,
+    installable_limit,
 };
 use crate::deployment_clients::lookup::{
-    credential_deployment, deployment_credentials, deployment_credentials_with_provider,
-    sensitive_credential_hash,
+    credential_deployment, deployment_credentials, provider_credentials, sensitive_credential_hash,
 };
 use crate::deployment_clients::mismatch::credential_mismatch_warning;
 use crate::deployment_clients::request::{DeploymentView, RequestContext, merged_tools};
@@ -107,7 +106,7 @@ fn deployment_clients_behaviors_calculate(
     #[case] expected: Option<i64>,
 ) {
     assert_eq!(
-        calculate_max_parallel_requests(
+        calculate_parallel_limit(
             max_parallel_requests,
             rpm,
             tpm,
@@ -121,12 +120,16 @@ fn deployment_clients_behaviors_calculate(
 fn deployment_clients_behaviors_install_a_zero_cap_never_caps() {
     let source = LimitSource {
         max_parallel_requests: Some(0),
-        ..LimitSource::default()
+        rpm: None,
+        tpm: None,
+        default_max_parallel_requests: None,
     };
     assert!(installable_limit(source, "d1", "gpt").is_none());
     let negative = LimitSource {
         max_parallel_requests: Some(-2),
-        ..LimitSource::default()
+        rpm: None,
+        tpm: None,
+        default_max_parallel_requests: None,
     };
     assert!(installable_limit(negative, "d1", "gpt").is_some());
 }
@@ -153,7 +156,7 @@ fn deployment_clients_behaviors_enter_and_exit_release_after_a_failure() {
 fn deployment_clients_behaviors_a_full_limit_reports_the_concurrent_requests_error() {
     let limit = limit(1);
     let _held = limit.acquire().expect("a free slot");
-    let error = limit.acquire().expect_err("the only slot is in use");
+    let error = limit.acquire().err().expect("the only slot is in use");
     assert_eq!(error.model_id, "d1");
     assert_eq!(error.model_group, "gpt");
     assert_eq!(error.max_parallel_requests, 1);
@@ -180,7 +183,9 @@ fn deployment_clients_behaviors_a_cached_limit_is_reused_for_the_same_model_id()
     );
     let source = LimitSource {
         max_parallel_requests: Some(2),
-        ..LimitSource::default()
+        rpm: None,
+        tpm: None,
+        default_max_parallel_requests: None,
     };
     let first = clients.max_parallel_requests("d1", "gpt", source);
     let second = clients.max_parallel_requests("d1", "gpt", source);
@@ -201,8 +206,10 @@ fn deployment_clients_behaviors_cached_limits_expire_after_the_client_ttl() {
         system_clock(&clock),
     );
     let source = LimitSource {
+        max_parallel_requests: None,
         rpm: Some(3),
-        ..LimitSource::default()
+        tpm: None,
+        default_max_parallel_requests: None,
     };
     let first = clients
         .max_parallel_requests("d1", "gpt", source)
@@ -494,14 +501,10 @@ fn deployment_clients_behaviors_the_provider_call_gets_model_and_provider() {
         &[],
     );
     let catalog = catalog(&[built]);
-    let credentials = deployment_credentials_with_provider(
-        &catalog,
-        "d1",
-        None,
-        &std::collections::BTreeMap::new(),
-    )
-    .expect("lookup")
-    .expect("credentials");
+    let credentials =
+        provider_credentials(&catalog, "d1", None, &std::collections::BTreeMap::new())
+            .expect("lookup")
+            .expect("credentials");
     assert_eq!(credentials.get("model"), Some(&text("openai/gpt-4o")));
     assert_eq!(
         credentials.get("custom_llm_provider"),
@@ -514,14 +517,10 @@ fn deployment_clients_behaviors_the_provider_call_gets_model_and_provider() {
         &[],
     );
     let catalog = catalog(&[prefixed]);
-    let credentials = deployment_credentials_with_provider(
-        &catalog,
-        "d2",
-        None,
-        &std::collections::BTreeMap::new(),
-    )
-    .expect("lookup")
-    .expect("credentials");
+    let credentials =
+        provider_credentials(&catalog, "d2", None, &std::collections::BTreeMap::new())
+            .expect("lookup")
+            .expect("credentials");
     assert_eq!(
         credentials.get("custom_llm_provider"),
         Some(&text("anthropic"))
@@ -545,7 +544,7 @@ fn deployment_clients_behaviors_a_named_credential_is_resolved_and_dropped() {
         String::from("team-key"),
         JsonObject::from_iter([("api_key".to_owned(), text("sk-stored"))]),
     );
-    let credentials = deployment_credentials_with_provider(&catalog, "d1", None, &stored)
+    let credentials = provider_credentials(&catalog, "d1", None, &stored)
         .expect("lookup")
         .expect("credentials");
     assert_eq!(credentials.get("api_key"), Some(&text("sk-stored")));
@@ -609,9 +608,14 @@ fn deployment_clients_boundaries_acquire_compares_against_the_cap(
     let held: Vec<_> = (0..in_flight)
         .map(|_| limit.acquire().expect("within the cap"))
         .collect();
-    let granted_now = limit.acquire().is_ok();
+    let acquired = limit.acquire();
+    let granted_now = acquired.is_ok();
     assert_eq!(granted_now, granted);
-    assert_eq!(limit.snapshot().in_flight, in_flight + i64::from(granted));
+    assert_eq!(
+        limit.snapshot().in_flight,
+        in_flight + i64::from(granted_now)
+    );
+    drop(acquired);
     drop(held);
     assert_eq!(limit.snapshot().in_flight, 0);
 }
@@ -625,10 +629,7 @@ fn deployment_clients_boundaries_tpm_truncates_like_the_azure_formula(
     #[case] tpm: Option<i64>,
     #[case] expected: Option<i64>,
 ) {
-    assert_eq!(
-        calculate_max_parallel_requests(None, None, tpm, None),
-        expected
-    );
+    assert_eq!(calculate_parallel_limit(None, None, tpm, None), expected);
 }
 
 #[test]

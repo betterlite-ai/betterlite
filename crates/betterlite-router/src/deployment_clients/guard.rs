@@ -113,7 +113,7 @@ impl MaxParallelRequestsLimit {
 
 // max_parallel_requests > rpm > tpm / 1000 * 6 (at least one) > default_max_parallel_requests
 #[must_use]
-pub fn calculate_max_parallel_requests(
+pub fn calculate_parallel_limit(
     max_parallel_requests: Option<i64>,
     rpm: Option<i64>,
     tpm: Option<i64>,
@@ -148,7 +148,7 @@ pub fn installable_limit(
     model_id: &str,
     model_group: &str,
 ) -> Option<Arc<MaxParallelRequestsLimit>> {
-    let calculated = calculate_max_parallel_requests(
+    let calculated = calculate_parallel_limit(
         source.max_parallel_requests,
         source.rpm,
         source.tpm,

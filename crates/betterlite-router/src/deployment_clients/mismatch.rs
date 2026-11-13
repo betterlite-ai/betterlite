@@ -10,7 +10,7 @@ pub enum CredentialFamily {
     Vertex,
 }
 
-const PROVIDER_SCOPED_CREDENTIAL_PARAMS: [(&str, CredentialFamily); 11] = [
+const SCOPED_CREDENTIAL_PARAMS: [(&str, CredentialFamily); 11] = [
     ("aws_access_key_id", CredentialFamily::Aws),
     ("aws_profile_name", CredentialFamily::Aws),
     ("aws_region_name", CredentialFamily::Aws),
@@ -51,8 +51,7 @@ impl CredentialFamily {
     }
 }
 
-// warn_on_provider_credential_mismatch: a deployment carrying one provider's credentials while resolving to another.
-// None means consistent, or a provider this build cannot classify, which is left alone rather than blocking startup.
+// a deployment carrying one provider's credentials while resolving to another warns; an unknown provider is left alone
 #[must_use]
 pub fn credential_mismatch_warning(
     model_name: &str,
@@ -65,7 +64,7 @@ pub fn credential_mismatch_warning(
     if model.is_empty() {
         return None;
     }
-    let mut scoped: Vec<(&str, CredentialFamily)> = PROVIDER_SCOPED_CREDENTIAL_PARAMS
+    let mut scoped: Vec<(&str, CredentialFamily)> = SCOPED_CREDENTIAL_PARAMS
         .iter()
         .copied()
         .filter(|(field, _family)| {

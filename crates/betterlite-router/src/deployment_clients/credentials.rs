@@ -25,8 +25,7 @@ pub fn is_clientside_credential(request: &JsonObject) -> bool {
         .any(|key| request.contains_key(*key))
 }
 
-// get_dynamic_litellm_params: the request key replaces the configured one. A request destination is never written,
-// because the only URL a client may use is the deployment's configured base.
+// the request key replaces the configured one; a request destination is never written, so the configured base stays
 #[must_use]
 pub fn dynamic_litellm_params(
     mut litellm_params: JsonObject,
@@ -41,8 +40,7 @@ pub fn dynamic_litellm_params(
     litellm_params
 }
 
-// _handle_clientside_credential: a per-request deployment under a generated id, never registered with the router.
-// The caller registers its pricing (B9710), exactly like the Python method does after building it.
+// a per-request deployment under a generated id, never registered; the caller registers its pricing (B9710)
 pub fn clientside_deployment(
     deployment: &DeploymentSpec,
     model_group: &str,

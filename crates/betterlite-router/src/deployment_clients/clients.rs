@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use secrecy::{ExposeSecret as _, SecretString};
@@ -90,16 +90,12 @@ impl CachedClients {
         }
     }
 
-    fn lock<T>(entries: &Mutex<T>) -> MutexGuard<'_, T> {
-        entries.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-
     fn fresh<T>(ttl: Duration, now: SystemTime, entry: &Timed<T>) -> bool {
         now.duration_since(entry.stored_at)
             .is_ok_and(|age| age < ttl)
     }
 
-    // The max_parallel_requests branch of _get_client: a cached limit, or one just calculated and cached.
+    // the max_parallel_requests branch of the client lookup: a cached limit, or one calculated and cached now
     pub fn max_parallel_requests(
         &self,
         model_id: &str,
@@ -108,7 +104,7 @@ impl CachedClients {
     ) -> LimitLookup {
         let now = (self.clock)();
         let key = format!("{model_id}_max_parallel_requests_client");
-        let mut limits = Self::lock(&self.limits);
+        let mut limits = self.limits.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(entry) = limits.get(&key)
             && Self::fresh(self.ttl, now, entry)
         {
@@ -134,8 +130,7 @@ impl CachedClients {
         }
     }
 
-    // _get_async_openai_model_client: the configured client is reused while it is fresh, and a caller key that
-    // differs from the cached one gets its own identity instead. The key never carries a request base URL.
+    // the configured client is reused while it is fresh; a caller key gets its own identity and never moves the base
     pub fn openai_client(
         &self,
         kind: ClientKind,
@@ -149,7 +144,7 @@ impl CachedClients {
         });
         let now = (self.clock)();
         let key = kind.cache_key(lookup.model_id, lookup.stream);
-        let mut clients = Self::lock(&self.clients);
+        let mut clients = self.clients.lock().unwrap_or_else(PoisonError::into_inner);
         if credential == ClientCredential::Configured {
             if let Some(entry) = clients.get(&key)
                 && Self::fresh(self.ttl, now, entry)

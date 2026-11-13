@@ -13,8 +13,7 @@ pub fn merged_tools(deployment: &[Json], request: &[Json]) -> Option<Vec<Json>> 
     Some(tools)
 }
 
-// The values _update_kwargs_with_deployment copies out of a deployment; a clientside request passes its per-request
-// deployment here, which is how the caller's key and generated id reach the metadata.
+// what the deployment update copies; a clientside request passes its per-request deployment here
 pub struct DeploymentView<'a> {
     pub model_name: &'a str,
     pub model: &'a str,

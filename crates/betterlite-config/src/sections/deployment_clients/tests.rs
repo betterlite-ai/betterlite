@@ -45,8 +45,8 @@ fn deployments_keep_model_list_order() {
     )
     .unwrap();
     assert_eq!(
-        settings.deployments.as_ref(),
-        &[
+        settings.deployments.to_vec(),
+        vec![
             DeploymentLimits {
                 max_parallel_requests: Some(2),
                 rpm: Some(3),

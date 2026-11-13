@@ -10,7 +10,7 @@ use betterlite_router::deployment_clients::credentials::{
 };
 use betterlite_router::deployment_clients::guard::{
     DeploymentSlot, LimitSource, MaxParallelRequestsExceeded, MaxParallelRequestsLimit,
-    calculate_max_parallel_requests,
+    calculate_parallel_limit,
 };
 use betterlite_router::deployment_identity::stable_id::generate_model_id;
 use secrecy::SecretString;
@@ -138,7 +138,7 @@ pub(crate) fn run(
         .calculate
         .iter()
         .map(|case| {
-            calculate_max_parallel_requests(
+            calculate_parallel_limit(
                 case.max_parallel_requests,
                 case.rpm,
                 case.tpm,
@@ -177,7 +177,7 @@ fn limit_outcome(input: &LimitInput) -> Vec<LimitObservation> {
                 });
             }
             LimitStep::Release => {
-                let _released = held.pop();
+                drop(held.pop());
                 observations.push(LimitObservation {
                     kind: String::from("release"),
                     in_flight: limit.snapshot().in_flight,
@@ -203,8 +203,7 @@ fn limit_outcome(input: &LimitInput) -> Vec<LimitObservation> {
     observations
 }
 
-// The first acquisition's error decides the step; a second acquire would consume another slot, so the probe
-// acquires once and keeps that guard.
+// the first acquisition decides the step, so the probe acquires once and keeps that guard
 fn acquire_once(
     limit: &Arc<MaxParallelRequestsLimit>,
     held: &mut Vec<DeploymentSlot>,
