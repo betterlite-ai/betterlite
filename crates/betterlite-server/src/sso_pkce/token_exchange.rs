@@ -50,9 +50,10 @@ where
                 code_verifier: verifier,
             });
         }
-        CacheLookup::Missing(kind) => {
-            handle_missing_pkce_verifier(settings, caches, &cache_key, state, kind).await?;
+        CacheLookup::Missing(kind) if settings.strict_cache_miss => {
+            strict_miss(caches, &cache_key, state, kind).await?;
         }
+        CacheLookup::Missing(kind) => permissive_miss(caches, &cache_key, state, kind).await,
     }
     Ok(parameters)
 }
@@ -62,6 +63,7 @@ enum CacheLookup {
     Missing(MissingKind),
 }
 
+#[derive(Clone, Copy)]
 enum MissingKind {
     Absent,
     Empty,
@@ -77,22 +79,25 @@ where
     Redis: VerifierCache,
     User: VerifierCache,
 {
-    match caches.read_verifier(cache_key).await {
-        CacheRead::Found(PkceCacheEntry::Verifier(verifier)) => CacheLookup::Found(verifier),
-        CacheRead::Found(PkceCacheEntry::LegacyVerifier(verifier)) => {
+    let CacheRead::Found(entry) = caches.read_verifier(cache_key).await else {
+        return CacheLookup::Missing(MissingKind::Absent);
+    };
+    match entry {
+        PkceCacheEntry::Verifier(verifier) => CacheLookup::Found(verifier),
+        PkceCacheEntry::LegacyVerifier(verifier) => {
             tracing::warn!(
                 "Retrieved the PKCE code verifier in the legacy plain-string format; future storage uses the object format"
             );
             CacheLookup::Found(verifier)
         }
-        CacheRead::Found(PkceCacheEntry::EmptyVerifier) => {
+        PkceCacheEntry::EmptyVerifier => {
             tracing::warn!(
                 state,
                 "the PKCE verifier cache entry has an empty or null code_verifier value; treating it as a cache miss"
             );
             CacheLookup::Missing(MissingKind::Empty)
         }
-        CacheRead::Found(PkceCacheEntry::UnexpectedShape(shape)) => {
+        PkceCacheEntry::UnexpectedShape(shape) => {
             tracing::debug!(
                 state,
                 ?shape,
@@ -100,26 +105,7 @@ where
             );
             CacheLookup::Missing(MissingKind::Unexpected(shape))
         }
-        CacheRead::Miss => CacheLookup::Missing(MissingKind::Absent),
     }
-}
-
-async fn handle_missing_pkce_verifier<Redis, User>(
-    settings: &PkceSettings,
-    caches: &PkceCaches<'_, Redis, User>,
-    cache_key: &str,
-    state: &str,
-    kind: MissingKind,
-) -> Result<(), PkceError>
-where
-    Redis: VerifierCache,
-    User: VerifierCache,
-{
-    if settings.strict_cache_miss {
-        return strict_miss(caches, cache_key, state, kind).await;
-    }
-    permissive_miss(caches, cache_key, state, kind).await;
-    Ok(())
 }
 
 async fn strict_miss<Redis, User>(
@@ -132,24 +118,20 @@ where
     Redis: VerifierCache,
     User: VerifierCache,
 {
-    match kind {
-        MissingKind::Empty => {
-            caches.delete_verifier(cache_key).await;
-            Err(PkceError::EmptyVerifier {
-                state: state.to_owned(),
-            })
-        }
+    let error = match kind {
+        MissingKind::Empty => PkceError::EmptyVerifier {
+            state: state.to_owned(),
+        },
         MissingKind::Unexpected(shape) => {
             tracing::error!(
                 state,
                 ?shape,
                 "the cached PKCE verifier has an unrecognized format; treating it as a cache miss"
             );
-            caches.delete_verifier(cache_key).await;
-            Err(PkceError::UnexpectedShape {
+            PkceError::UnexpectedShape {
                 state: state.to_owned(),
                 shape,
-            })
+            }
         }
         MissingKind::Absent => {
             let cause = missing_cause(caches.kind());
@@ -158,12 +140,16 @@ where
                 cause,
                 "PKCE is enabled but no verifier was found in cache"
             );
-            Err(PkceError::MissingVerifier {
+            PkceError::MissingVerifier {
                 state: state.to_owned(),
                 cause,
-            })
+            }
         }
+    };
+    if !matches!(kind, MissingKind::Absent) {
+        caches.delete_verifier(cache_key).await;
     }
+    Err(error)
 }
 
 async fn permissive_miss<Redis, User>(

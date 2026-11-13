@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use async_trait::async_trait;
 use betterlite_auth::auth_cache::AuthCache;
 use betterlite_auth::auth_cache::backend::AuthCacheTier;
@@ -43,23 +45,14 @@ impl<T: AuthCacheTier> VerifierCache for AuthCache<T> {
     }
 
     async fn read(&self, cache_key: &str) -> CacheRead {
-        match self
-            .async_get(cache_key, false)
-            .await
+        let stored = self.async_get(cache_key, false).await;
+        stored
             .and_then(|value| stored_entry(&value))
-        {
-            Some(entry) => CacheRead::Found(entry),
-            None => CacheRead::Miss,
-        }
+            .map_or(CacheRead::Miss, CacheRead::Found)
     }
 
     async fn delete(&self, cache_key: &str) {
-        if let Err(error) = self.tier(cache_key).async_delete(cache_key).await {
-            tracing::warn!(
-                %error,
-                "PKCE: failed to delete the verifier cache key (best-effort cleanup)"
-            );
-        }
+        warn_when_delete_fails(self.tier(cache_key).async_delete(cache_key).await);
     }
 }
 
@@ -71,11 +64,9 @@ impl VerifierCache for RedisCache {
 
     async fn read(&self, cache_key: &str) -> CacheRead {
         match self.async_get_cache(cache_key).await {
-            Ok(Some(value)) => match stored_entry(&json_from_cached(value)) {
-                Some(entry) => CacheRead::Found(entry),
-                None => CacheRead::Miss,
-            },
-            Ok(None) => CacheRead::Miss,
+            Ok(stored) => stored
+                .and_then(|value| stored_entry(&json_from_cached(value)))
+                .map_or(CacheRead::Miss, CacheRead::Found),
             Err(error) => {
                 tracing::warn!(
                     %error,
@@ -87,12 +78,16 @@ impl VerifierCache for RedisCache {
     }
 
     async fn delete(&self, cache_key: &str) {
-        if let Err(error) = self.admin.async_delete_cache(cache_key).await {
-            tracing::warn!(
-                %error,
-                "PKCE: failed to delete the verifier cache key (best-effort cleanup)"
-            );
-        }
+        warn_when_delete_fails(self.admin.async_delete_cache(cache_key).await);
+    }
+}
+
+fn warn_when_delete_fails<T, E: Display>(outcome: Result<T, E>) {
+    if let Err(error) = outcome {
+        tracing::warn!(
+            %error,
+            "PKCE: failed to delete the verifier cache key (best-effort cleanup)"
+        );
     }
 }
 
