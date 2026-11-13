@@ -5,6 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use betterlite_config::sections::Sections;
 use betterlite_models::decisions::Json;
 use betterlite_openai::image_generation::reply::ImageDatum;
 use http::HeaderMap;
@@ -18,17 +19,16 @@ use super::{
     generation_endpoint, map_openai_params, request_body, validate_environment,
 };
 use crate::api::bfl::common::{
-    BflError, BflReply, DEFAULT_API_BASE, DEFAULT_MAX_POLLING_TIME, DEFAULT_POLLING_INTERVAL,
-    IMAGE_EDIT_MODELS, IMAGE_GENERATION_MODELS, MAX_REPLY_BYTES, check_bfl_poll_url,
-    decode_bfl_reply,
+    BflError, BflReply, DEFAULT_MAX_POLLING_TIME, DEFAULT_POLLING_INTERVAL, IMAGE_EDIT_MODELS,
+    IMAGE_GENERATION_MODELS, MAX_REPLY_BYTES, check_bfl_poll_url, decode_bfl_reply,
 };
 
-fn lookup(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
+fn settings(entries: &[(&str, &str)]) -> (Option<SecretString>, String) {
     let mut found = BTreeMap::new();
     for (name, value) in entries {
         found.insert((*name).to_owned(), (*value).to_owned());
     }
-    found
+    Sections::bfl_generation_settings(&found)
 }
 
 fn params(entries: &[(&str, Json)]) -> IndexMap<String, Json> {
@@ -75,7 +75,6 @@ fn urls(reply: &BflReply, existing: Vec<ImageDatum>) -> Vec<Option<String>> {
 
 #[test]
 fn constants_match_the_source() {
-    assert_eq!(DEFAULT_API_BASE, "https://api.bfl.ai");
     assert_eq!(DEFAULT_POLLING_INTERVAL, Duration::from_millis(1500));
     assert_eq!(DEFAULT_MAX_POLLING_TIME, Duration::from_secs(300));
     assert_eq!(
@@ -117,7 +116,8 @@ fn supported_params_are_the_source_list() {
             "raw",
             "num_images",
             "image_url",
-            "image_prompt_strength"
+            "image_prompt_strength",
+            "aspect_ratio"
         ]
     );
 }
@@ -257,7 +257,8 @@ fn malformed_sizes_raise_the_parse_error(#[case] size: &str) {
     )
     .unwrap_err();
 
-    assert!(matches!(&error, BflError::InvalidSize { size: found } if found == size));
+    assert!(matches!(&error, BflError::InvalidSize { size: found, .. } if found == size));
+    assert!(std::error::Error::source(&error).is_some());
     assert_eq!(error.status(), None);
 }
 
@@ -389,51 +390,55 @@ fn resolves_the_complete_url(
     #[case] environment: &[(&str, &str)],
     #[case] expected: &str,
 ) {
-    let settings = lookup(environment);
+    let (_, configured_base) = settings(environment);
 
     assert_eq!(
-        complete_url(api_base, "flux-pro-1.1", &settings).unwrap(),
+        complete_url(api_base, "flux-pro-1.1", &configured_base).unwrap(),
         expected
     );
 }
 
 #[test]
 fn the_complete_url_rejects_an_unknown_model() {
-    let settings = lookup(&[]);
+    let (_, configured_base) = settings(&[]);
 
     assert!(matches!(
-        complete_url(None, "flux-unknown", &settings),
+        complete_url(None, "flux-unknown", &configured_base),
         Err(BflError::UnknownModel { .. })
     ));
 }
 
 #[test]
 fn an_explicit_api_key_wins_over_both_environment_names() {
-    let settings = lookup(&[
+    let (configured_key, _) = settings(&[
         ("BFL_API_KEY", "env-bfl"),
         ("BLACK_FOREST_LABS_API_KEY", "env-legacy"),
     ]);
-    let headers =
-        validate_environment(HeaderMap::new(), Some(&secret("caller")), &settings).unwrap();
+    let headers = validate_environment(
+        HeaderMap::new(),
+        Some(&secret("caller")),
+        configured_key.as_ref(),
+    )
+    .unwrap();
 
     assert_eq!(headers.get("x-key").unwrap(), "caller");
 }
 
 #[test]
 fn bfl_api_key_wins_over_black_forest_labs_api_key() {
-    let settings = lookup(&[
+    let (configured_key, _) = settings(&[
         ("BFL_API_KEY", "env-bfl"),
         ("BLACK_FOREST_LABS_API_KEY", "env-legacy"),
     ]);
-    let headers = validate_environment(HeaderMap::new(), None, &settings).unwrap();
+    let headers = validate_environment(HeaderMap::new(), None, configured_key.as_ref()).unwrap();
 
     assert_eq!(headers.get("x-key").unwrap(), "env-bfl");
 }
 
 #[test]
 fn black_forest_labs_api_key_is_the_fallback() {
-    let settings = lookup(&[("BLACK_FOREST_LABS_API_KEY", "env-legacy")]);
-    let headers = validate_environment(HeaderMap::new(), None, &settings).unwrap();
+    let (configured_key, _) = settings(&[("BLACK_FOREST_LABS_API_KEY", "env-legacy")]);
+    let headers = validate_environment(HeaderMap::new(), None, configured_key.as_ref()).unwrap();
 
     assert_eq!(headers.get("x-key").unwrap(), "env-legacy");
 }
@@ -446,30 +451,32 @@ fn empty_credentials_fall_through(
     #[case] environment: &[(&str, &str)],
     #[case] expected: &str,
 ) {
-    let settings = lookup(environment);
+    let (configured_key, _) = settings(environment);
     let key = secret(api_key);
-    let headers = validate_environment(HeaderMap::new(), Some(&key), &settings).unwrap();
+    let headers =
+        validate_environment(HeaderMap::new(), Some(&key), configured_key.as_ref()).unwrap();
 
     assert_eq!(headers.get("x-key").unwrap(), expected);
 }
 
 #[test]
 fn missing_credentials_raise_the_source_401() {
-    let settings = lookup(&[]);
-    let error = validate_environment(HeaderMap::new(), None, &settings).unwrap_err();
+    let (configured_key, _) = settings(&[]);
+    let error = validate_environment(HeaderMap::new(), None, configured_key.as_ref()).unwrap_err();
+    let empty = validate_environment(HeaderMap::new(), Some(&secret("")), None).unwrap_err();
 
     assert!(matches!(&error, BflError::MissingCredentials));
+    assert!(matches!(&empty, BflError::MissingCredentials));
     assert_eq!(error.status(), Some(401));
 }
 
 #[test]
 fn the_three_headers_overwrite_caller_values() {
-    let settings = lookup(&[]);
     let mut headers = HeaderMap::new();
     headers.insert("x-key", "stale".parse().unwrap());
     headers.insert("content-type", "text/plain".parse().unwrap());
     headers.insert("accept", "text/plain".parse().unwrap());
-    let prepared = validate_environment(headers, Some(&secret("fresh")), &settings).unwrap();
+    let prepared = validate_environment(headers, Some(&secret("fresh")), None).unwrap();
 
     assert_eq!(prepared.get("x-key").unwrap(), "fresh");
     assert_eq!(prepared.get("content-type").unwrap(), "application/json");
@@ -479,9 +486,8 @@ fn the_three_headers_overwrite_caller_values() {
 
 #[test]
 fn the_api_key_never_appears_in_debug_text() {
-    let settings = lookup(&[]);
     let key = secret("super-secret");
-    let headers = validate_environment(HeaderMap::new(), Some(&key), &settings).unwrap();
+    let headers = validate_environment(HeaderMap::new(), Some(&key), None).unwrap();
     let rendered = format!("{headers:?}");
 
     assert!(!rendered.contains("super-secret"));

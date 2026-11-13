@@ -1,3 +1,4 @@
+use std::num::ParseIntError;
 use std::time::Duration;
 
 use http::header::InvalidHeaderValue;
@@ -6,7 +7,6 @@ use serde::de::IgnoredAny;
 use serde_with::rust::double_option;
 use url::Url;
 
-pub const DEFAULT_API_BASE: &str = "https://api.bfl.ai";
 pub const DEFAULT_POLLING_INTERVAL: Duration = Duration::from_millis(1500);
 pub const DEFAULT_MAX_POLLING_TIME: Duration = Duration::from_secs(300);
 pub const MAX_REPLY_BYTES: usize = 0x0100_0000;
@@ -46,7 +46,11 @@ pub enum BflError {
     #[error("the size option must be a string")]
     InvalidSizeField,
     #[error("Invalid size format: '{size}'. Expected format 'WIDTHxHEIGHT'")]
-    InvalidSize { size: String },
+    InvalidSize {
+        size: String,
+        #[source]
+        source: ParseIntError,
+    },
     #[error("Rejected polling URL: scheme must be https")]
     PollingScheme,
     #[error("Rejected polling URL: host is not within the bfl.ai domain")]

@@ -1,4 +1,3 @@
-use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::decisions::Json;
 use betterlite_openai::image_generation::reply::ImageDatum;
 use http::HeaderMap;
@@ -9,12 +8,12 @@ use serde::Serialize;
 use serde_json::Number;
 
 use crate::api::bfl::common::{
-    BflError, BflImageEntry, BflReply, BflResult, DEFAULT_API_BASE, IMAGE_GENERATION_MODELS,
+    BflError, BflImageEntry, BflReply, BflResult, IMAGE_GENERATION_MODELS,
 };
 
 mod tests;
 
-pub const SUPPORTED_OPENAI_PARAMS: [&str; 11] = [
+pub const SUPPORTED_OPENAI_PARAMS: [&str; 12] = [
     "n",
     "size",
     "quality",
@@ -26,6 +25,7 @@ pub const SUPPORTED_OPENAI_PARAMS: [&str; 11] = [
     "num_images",
     "image_url",
     "image_prompt_strength",
+    "aspect_ratio",
 ];
 
 const REQUEST_PARAMS: [&str; 11] = [
@@ -82,32 +82,23 @@ pub fn generation_endpoint(model: &str) -> Result<&'static str, BflError> {
 pub fn complete_url(
     api_base: Option<&str>,
     model: &str,
-    lookup: &dyn EnvironmentLookup,
+    configured_base: &str,
 ) -> Result<String, BflError> {
     let endpoint = generation_endpoint(model)?;
     let base = api_base
         .filter(|base| !base.is_empty())
-        .map(str::to_owned)
-        .or_else(|| {
-            lookup
-                .lookup("BFL_API_BASE")
-                .filter(|value| !value.is_empty())
-        })
-        .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
+        .unwrap_or(configured_base);
     Ok(format!("{}{endpoint}", base.trim_end_matches('/')))
 }
 
 pub fn validate_environment(
     mut headers: HeaderMap,
     api_key: Option<&SecretString>,
-    lookup: &dyn EnvironmentLookup,
+    configured_key: Option<&SecretString>,
 ) -> Result<HeaderMap, BflError> {
-    let present = |name: &str| lookup.lookup(name).filter(|value| !value.is_empty());
-    let environment = present("BFL_API_KEY").or_else(|| present("BLACK_FOREST_LABS_API_KEY"));
     let key = api_key
         .filter(|key| !key.expose_secret().is_empty())
-        .cloned()
-        .or_else(|| environment.map(SecretString::from))
+        .or(configured_key)
         .ok_or(BflError::MissingCredentials)?;
     let mut value = HeaderValue::try_from(key.expose_secret().as_str())
         .map_err(|source| BflError::InvalidApiKey { source })?;
@@ -177,19 +168,23 @@ fn map_size(value: &Json, optional_params: &mut IndexMap<String, Json>) -> Resul
         optional_params.insert("height".to_owned(), Json::Number(Number::from(*height)));
         return Ok(());
     }
-    let Some((width, height)) = size.split_once('x') else {
+    let Some((width_text, height_text)) = size.split_once('x') else {
         return Ok(());
     };
-    let width = width
+    let width = width_text
         .trim()
         .parse::<i64>()
-        .ok()
-        .ok_or_else(|| BflError::InvalidSize { size: size.clone() })?;
-    let height = height
+        .map_err(|source| BflError::InvalidSize {
+            size: size.clone(),
+            source,
+        })?;
+    let height = height_text
         .trim()
         .parse::<i64>()
-        .ok()
-        .ok_or_else(|| BflError::InvalidSize { size: size.clone() })?;
+        .map_err(|source| BflError::InvalidSize {
+            size: size.clone(),
+            source,
+        })?;
     optional_params.insert("width".to_owned(), Json::Number(Number::from(width)));
     optional_params.insert("height".to_owned(), Json::Number(Number::from(height)));
     Ok(())

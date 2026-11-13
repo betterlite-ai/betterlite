@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::sections::Sections;
 use betterlite_core::api::bfl::common::{BflError, check_bfl_poll_url, decode_bfl_reply};
 use betterlite_core::api::bfl::generation::{
     SUPPORTED_OPENAI_PARAMS, apply_image_response, complete_url, map_openai_params, request_body,
@@ -122,18 +123,19 @@ fn mapping(params: &MappingParams) -> HelperResult {
 }
 
 fn credentials(params: &CredentialParams) -> HelperResult {
-    let environment = &params.environment;
+    let (configured_key, configured_base) = Sections::bfl_generation_settings(&params.environment);
     let mut outcomes = Vec::new();
     for request in &params.requests {
         let key = request.api_key.clone().map(SecretString::from);
         let prepared =
-            validate_environment(HeaderMap::new(), key.as_ref(), environment).map_err(failure)?;
+            validate_environment(HeaderMap::new(), key.as_ref(), configured_key.as_ref())
+                .map_err(failure)?;
         let mut headers = Map::new();
         for (name, value) in &prepared {
             let text = value.to_str().map_err(|error| invalid(error.to_string()))?;
             headers.insert(name.as_str().to_owned(), json!(text));
         }
-        let url = complete_url(request.api_base.as_deref(), &params.model, environment)
+        let url = complete_url(request.api_base.as_deref(), &params.model, &configured_base)
             .map_err(failure)?;
         outcomes.push(json!({"headers": headers, "url": url}));
     }
