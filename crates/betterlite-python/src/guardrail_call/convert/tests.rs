@@ -20,7 +20,7 @@ use super::{
     event_type_from_name, exact_data, exact_value, hook_from_name, is_integer_literal, read,
     settings_from_text, suppressed_from_text, text_context_from_text,
 };
-use crate::guardrail_call::context::{RecordStep, record_call, record_parts};
+use crate::guardrail_call::context::{RecordStep, log_target_from_text, record_call, record_parts};
 use crate::guardrail_call::convert::record_input::record_input_from_text;
 use crate::guardrail_call::error::CallError;
 use crate::guardrail_call::native::NativeGuardrail;
@@ -572,6 +572,17 @@ fn record_parts_build_a_base_and_a_log_target() {
         rendered.contains("\"model_call_params\":null"),
         "{rendered}"
     );
+}
+
+#[test]
+fn log_targets_reject_an_integer_past_u64() {
+    let target =
+        r#"{"litellm_params": {"id": 123456789012345678901234567890}, "model_call_params": null}"#;
+    let error = log_target_from_text(target).unwrap_err();
+    assert_eq!(error.kind(), "InvalidJson");
+    let context = format!(r#"{{"settings": {{}}, "log_target": {target}}}"#);
+    let error = record_parts(&context).err().unwrap();
+    assert_eq!(error.kind(), "InvalidJson");
 }
 
 #[test]

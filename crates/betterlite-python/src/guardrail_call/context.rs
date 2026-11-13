@@ -33,11 +33,14 @@ struct LogTargetJson {
 }
 
 impl LogTargetJson {
-    fn into_target(self) -> GuardrailLogTarget {
-        GuardrailLogTarget {
-            litellm_params: self.litellm_params.map(convert::exact_data),
-            model_call_params: self.model_call_params.map(convert::exact_data),
-        }
+    fn into_target(self) -> Result<GuardrailLogTarget, CallError> {
+        Ok(GuardrailLogTarget {
+            litellm_params: self.litellm_params.map(convert::exact_data).transpose()?,
+            model_call_params: self
+                .model_call_params
+                .map(convert::exact_data)
+                .transpose()?,
+        })
     }
 
     fn from_target(target: &GuardrailLogTarget) -> Self {
@@ -109,7 +112,10 @@ pub(crate) fn record_parts(text: &str) -> Result<RecordParts, CallError> {
     Ok(RecordParts {
         base,
         sink: NoSpanSink,
-        log_target: context.log_target.map(LogTargetJson::into_target),
+        log_target: context
+            .log_target
+            .map(LogTargetJson::into_target)
+            .transpose()?,
     })
 }
 
@@ -140,7 +146,7 @@ pub(crate) fn record_call(
 
 pub(crate) fn log_target_from_text(text: &str) -> Result<GuardrailLogTarget, CallError> {
     convert::read::<LogTargetJson>("guardrail logging target object", text)
-        .map(LogTargetJson::into_target)
+        .and_then(LogTargetJson::into_target)
 }
 
 pub(crate) fn log_target_to_text(target: &GuardrailLogTarget) -> Result<String, CallError> {
