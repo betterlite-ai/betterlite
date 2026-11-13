@@ -291,6 +291,42 @@ fn subtitle_thresholds_a_later_known_speaker_breaks_after_unknown_words() {
     );
 }
 
+#[test]
+fn subtitle_thresholds_merge_subtokens_into_one_overlong_word() {
+    let tokens = vec![timed("a", 0, 100); 100];
+    assert_eq!(
+        group_tokens_into_cues(&tokens),
+        vec![cue(0, 100, &"a".repeat(100))]
+    );
+}
+
+#[test]
+fn subtitle_thresholds_a_leading_space_starts_a_new_word() {
+    let tokens = [timed(&"a".repeat(84), 0, 100), timed(" b", 100, 200)];
+    assert_eq!(
+        group_tokens_into_cues(&tokens),
+        vec![cue(0, 100, &"a".repeat(84)), cue(100, 200, "b")]
+    );
+}
+
+#[test]
+fn subtitle_thresholds_a_known_speaker_change_without_spaces_starts_a_new_word() {
+    let tokens = [
+        spoken(&"a".repeat(84), 0, 100, "a"),
+        spoken("b", 100, 200, "b"),
+    ];
+    assert_eq!(
+        group_tokens_into_cues(&tokens),
+        vec![cue(0, 100, &"a".repeat(84)), cue(100, 200, "b")]
+    );
+}
+
+#[test]
+fn subtitle_thresholds_a_known_speaker_after_only_unknown_ones_does_not_break() {
+    let tokens = [timed("a ", 0, 100), spoken("b", 100, 200, "b")];
+    assert_eq!(group_tokens_into_cues(&tokens), vec![cue(0, 200, "a b")]);
+}
+
 #[rstest]
 #[case::period(". ")]
 #[case::exclamation("! ")]
@@ -451,6 +487,26 @@ fn subtitle_cjk_boundaries_drop_empty_tokens_and_keep_outer_timestamps() {
     ];
     assert_eq!(texts(&merge_tokens_into_words(&tokens)), vec!["Hello"]);
     assert_eq!(group_tokens_into_cues(&tokens), vec![cue(5, 9, "Hello")]);
+}
+
+#[test]
+fn subtitle_cjk_boundaries_ignore_empty_tokens_between_words() {
+    let prefix = "一".repeat(41);
+    let tokens = [
+        timed(&prefix, 0, 100),
+        timed("㐀", 100, 200),
+        SubtitleToken {
+            text: String::new(),
+            start_ms: Some(200),
+            end_ms: Some(250),
+            speaker: None,
+        },
+        timed("䷀", 250, 300),
+    ];
+    assert_eq!(
+        group_tokens_into_cues(&tokens),
+        vec![cue(0, 200, &format!("{prefix}㐀")), cue(250, 300, "䷀")]
+    );
 }
 
 #[test]
