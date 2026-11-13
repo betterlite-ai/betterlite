@@ -104,7 +104,9 @@ fn captured_request(request: &ProviderRequest) -> Result<Value, Box<HelperError>
             params.insert(name.into_owned(), Value::String(value.into_owned()));
         }
     }
-    let body = super::payload::normalize(&request.body)?;
+    let captured: AktoPayload = serde_json::from_value(request.body.clone())
+        .map_err(|error| failure("JsonError", None, error.to_string()))?;
+    let body = super::payload::normalize(captured)?;
     Ok(json!({
         "path": path,
         "query": Value::Object(params),

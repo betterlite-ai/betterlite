@@ -30,19 +30,6 @@ pub struct AktoMirroring {
     pub now_millis: fn() -> i64,
 }
 
-impl std::fmt::Debug for AktoMirroring {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("AktoMirroring")
-            .field("base_url", &self.base_url)
-            .field("account_id", &self.account_id)
-            .field("vxlan_id", &self.vxlan_id)
-            .field("unreachable_fallback", &self.unreachable_fallback)
-            .field("timeout", &self.timeout)
-            .finish_non_exhaustive()
-    }
-}
-
 impl AktoMirroring {
     pub fn new(settings: Configured, client: reqwest::Client) -> Result<Self, AktoError> {
         if settings.api_base.is_empty() {

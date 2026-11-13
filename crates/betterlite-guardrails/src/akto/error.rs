@@ -33,36 +33,10 @@ pub enum AktoError {
 impl AktoError {
     #[must_use]
     pub const fn status_code(&self) -> StatusCode {
-        match self {
-            Self::Unreachable => StatusCode::SERVICE_UNAVAILABLE,
-            Self::MissingBaseUrl
-            | Self::MissingApiKey
-            | Self::InvalidHeader { .. }
-            | Self::Encode { .. }
-            | Self::Transport { .. }
-            | Self::HttpStatus { .. }
-            | Self::ResponseTooLarge { .. }
-            | Self::ResponseJson { .. }
-            | Self::ResponseEncoding { .. }
-            | Self::ResponseField { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-
-    // LiteLLM hands a RequestError or HTTPStatusError to handle_unreachable and nothing else
-    #[must_use]
-    pub const fn is_unreachable(&self) -> bool {
-        match self {
-            Self::Transport { .. }
-            | Self::HttpStatus { .. }
-            | Self::ResponseTooLarge { .. }
-            | Self::ResponseJson { .. }
-            | Self::ResponseEncoding { .. }
-            | Self::ResponseField { .. } => true,
-            Self::MissingBaseUrl
-            | Self::MissingApiKey
-            | Self::InvalidHeader { .. }
-            | Self::Encode { .. }
-            | Self::Unreachable => false,
+        if matches!(self, Self::Unreachable) {
+            StatusCode::SERVICE_UNAVAILABLE
+        } else {
+            StatusCode::INTERNAL_SERVER_ERROR
         }
     }
 }

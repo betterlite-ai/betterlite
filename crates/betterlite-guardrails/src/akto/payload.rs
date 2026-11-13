@@ -20,48 +20,38 @@ pub struct AktoInputs {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AktoRequestBody {
-    pub model: String,
-    pub messages: GuardrailValue,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<GuardrailValue>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_calls: Option<GuardrailValue>,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AktoPayload {
     pub path: String,
-    #[serde(rename = "requestHeaders")]
     pub request_headers: String,
-    #[serde(rename = "responseHeaders")]
     pub response_headers: String,
     pub method: String,
-    #[serde(rename = "requestPayload")]
     pub request_payload: String,
-    #[serde(rename = "responsePayload")]
     pub response_payload: String,
     pub ip: String,
-    #[serde(rename = "destIp")]
     pub dest_ip: String,
     pub time: String,
-    #[serde(rename = "statusCode")]
     pub status_code: String,
     #[serde(rename = "type")]
     pub request_type: String,
     pub status: String,
+    #[serde(rename = "akto_account_id")]
     pub akto_account_id: String,
+    #[serde(rename = "akto_vxlan_id")]
     pub akto_vxlan_id: String,
+    #[serde(rename = "is_pending")]
     pub is_pending: String,
     pub source: String,
-    pub direction: Option<String>,
+    #[serde(rename = "process_id")]
     pub process_id: Option<String>,
+    #[serde(rename = "socket_id")]
     pub socket_id: Option<String>,
+    #[serde(rename = "daemonset_id")]
     pub daemonset_id: Option<String>,
+    #[serde(rename = "enabled_graph")]
     pub enabled_graph: Option<String>,
     pub tag: String,
     pub metadata: String,
-    #[serde(rename = "contextSource")]
     pub context_source: String,
 }
 
@@ -132,26 +122,22 @@ where
 fn build_request_body(
     inputs: &AktoInputs,
     request_data: &BTreeMap<String, GuardrailValue>,
-) -> AktoRequestBody {
-    let mut body = AktoRequestBody {
-        model: inputs.model.clone().unwrap_or_default(),
-        messages: GuardrailValue::Array(Vec::new()),
-        tools: None,
-        tool_calls: None,
-    };
+) -> GuardrailValue {
+    let mut model = inputs.model.clone().unwrap_or_default();
+    let mut messages = GuardrailValue::Array(Vec::new());
     if let Some(structured) = inputs
         .structured_messages
         .as_ref()
         .filter(|value| present(value))
     {
-        body.messages = structured.clone();
-    } else if let Some(messages) = request_data.get("messages").filter(|value| present(value)) {
-        body.messages = messages.clone();
-        if let Some(GuardrailValue::Text(model)) = request_data.get("model") {
-            body.model.clone_from(model);
+        messages = structured.clone();
+    } else if let Some(found) = request_data.get("messages").filter(|value| present(value)) {
+        messages = found.clone();
+        if let Some(GuardrailValue::Text(found_model)) = request_data.get("model") {
+            model.clone_from(found_model);
         }
     } else if !inputs.texts.is_empty() {
-        body.messages = GuardrailValue::Array(
+        messages = GuardrailValue::Array(
             inputs
                 .texts
                 .iter()
@@ -164,15 +150,19 @@ fn build_request_body(
                 .collect(),
         );
     }
+    let mut body = BTreeMap::from([
+        ("model".to_owned(), GuardrailValue::Text(model)),
+        ("messages".to_owned(), messages),
+    ]);
     if let Some(tools) = inputs.tools.as_ref().filter(|value| present(value)) {
-        body.tools = Some(tools.clone());
+        body.insert("tools".to_owned(), tools.clone());
     } else if let Some(tools) = request_data.get("tools").filter(|value| present(value)) {
-        body.tools = Some(tools.clone());
+        body.insert("tools".to_owned(), tools.clone());
     }
     if let Some(tool_calls) = inputs.tool_calls.as_ref().filter(|value| present(value)) {
-        body.tool_calls = Some(tool_calls.clone());
+        body.insert("tool_calls".to_owned(), tool_calls.clone());
     }
-    body
+    GuardrailValue::Object(body)
 }
 
 fn build_response_body(

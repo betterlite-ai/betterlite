@@ -1,3 +1,4 @@
+use betterlite_guardrails::akto::payload::AktoPayload;
 use serde_json::{Value, json};
 
 use super::Input;
@@ -14,91 +15,62 @@ pub(super) fn build(input: &Input) -> crate::helpers::HelperResult {
             input.include_response,
         )
         .map_err(|error| failure("AktoError", None, error.to_string()))?;
-    let encoded = serde_json::to_string(&payload)
-        .map_err(|error| failure("JsonError", None, error.to_string()))?;
-    let raw: Value = serde_json::from_str(&encoded)
-        .map_err(|error| failure("JsonError", None, error.to_string()))?;
-    normalize(&raw)
+    normalize(payload)
 }
 
-pub(super) fn normalize(raw: &Value) -> crate::helpers::HelperResult {
+pub(super) fn normalize(payload: AktoPayload) -> crate::helpers::HelperResult {
+    let request_headers = parse_json(&payload.request_headers)?;
+    let response_headers = parse_json(&payload.response_headers)?;
+    let request_payload = decode_encoded(&payload.request_payload, false)?;
+    let response_payload = decode_encoded(&payload.response_payload, true)?;
+    let tag = parse_json(&payload.tag)?;
+    let metadata = parse_json(&payload.metadata)?;
     Ok(json!({
-        "path": text_field(raw, "path")?,
-        "requestHeaders": parse_json(&text_field(raw, "requestHeaders")?)?,
-        "responseHeaders": parse_json(&text_field(raw, "responseHeaders")?)?,
-        "method": text_field(raw, "method")?,
-        "requestPayload": decode_double(&text_field(raw, "requestPayload")?)?,
-        "responsePayload": decode_response_payload(&text_field(raw, "responsePayload")?)?,
-        "ip": text_field(raw, "ip")?,
-        "destIp": text_field(raw, "destIp")?,
-        "time": clock_text(&text_field(raw, "time")?),
-        "statusCode": text_field(raw, "statusCode")?,
-        "type": text_field(raw, "type")?,
-        "status": text_field(raw, "status")?,
-        "akto_account_id": text_field(raw, "akto_account_id")?,
-        "akto_vxlan_id": text_field(raw, "akto_vxlan_id")?,
-        "is_pending": text_field(raw, "is_pending")?,
-        "source": text_field(raw, "source")?,
-        "direction": null_field(raw, "direction")?,
-        "process_id": null_field(raw, "process_id")?,
-        "socket_id": null_field(raw, "socket_id")?,
-        "daemonset_id": null_field(raw, "daemonset_id")?,
-        "enabled_graph": null_field(raw, "enabled_graph")?,
-        "tag": parse_json(&text_field(raw, "tag")?)?,
-        "metadata": parse_json(&text_field(raw, "metadata")?)?,
-        "contextSource": text_field(raw, "contextSource")?,
+        "path": payload.path,
+        "requestHeaders": request_headers,
+        "responseHeaders": response_headers,
+        "method": payload.method,
+        "requestPayload": request_payload,
+        "responsePayload": response_payload,
+        "ip": payload.ip,
+        "destIp": payload.dest_ip,
+        "time": clock_text(&payload.time),
+        "statusCode": payload.status_code,
+        "type": payload.request_type,
+        "status": payload.status,
+        "akto_account_id": payload.akto_account_id,
+        "akto_vxlan_id": payload.akto_vxlan_id,
+        "is_pending": payload.is_pending,
+        "source": payload.source,
+        "direction": payload.direction,
+        "process_id": payload.process_id,
+        "socket_id": payload.socket_id,
+        "daemonset_id": payload.daemonset_id,
+        "enabled_graph": payload.enabled_graph,
+        "tag": tag,
+        "metadata": metadata,
+        "contextSource": payload.context_source,
     }))
-}
-
-fn field<'value>(value: &'value Value, name: &str) -> Result<&'value Value, Box<HelperError>> {
-    value.get(name).ok_or_else(|| {
-        failure(
-            "AktoError",
-            None,
-            format!("payload field {name} is missing"),
-        )
-    })
-}
-
-fn text_field(value: &Value, name: &str) -> Result<String, Box<HelperError>> {
-    match field(value, name)? {
-        Value::String(text) => Ok(text.clone()),
-        other => Err(failure(
-            "AktoError",
-            None,
-            format!("payload field {name} is not text: {other}"),
-        )),
-    }
-}
-
-fn null_field(value: &Value, name: &str) -> Result<Value, Box<HelperError>> {
-    let found = field(value, name)?;
-    if found.is_null() {
-        return Ok(Value::Null);
-    }
-    Err(failure(
-        "AktoError",
-        None,
-        format!("payload field {name} is not null: {found}"),
-    ))
 }
 
 fn parse_json(encoded: &str) -> Result<Value, Box<HelperError>> {
     serde_json::from_str(encoded).map_err(|error| failure("JsonError", None, error.to_string()))
 }
 
-fn decode_double(encoded: &str) -> Result<Value, Box<HelperError>> {
+// the request payload is always double encoded; the empty response payload is a bare object
+fn decode_encoded(encoded: &str, response_payload: bool) -> Result<Value, Box<HelperError>> {
     let outer = parse_json(encoded)?;
-    let inner = text_field(&outer, "body")?;
-    parse_json(&inner)
-}
-
-fn decode_response_payload(encoded: &str) -> Result<Value, Box<HelperError>> {
-    let outer = parse_json(encoded)?;
-    if outer.get("body").is_none() {
+    if response_payload && outer.get("body").is_none() {
         return Ok(outer);
     }
-    decode_double(encoded)
+    let Some(Value::String(inner)) = outer.get("body") else {
+        return Err(failure(
+            "AktoError",
+            None,
+            "the encoded payload has no inner body".to_owned(),
+        ));
+    };
+    parse_json(inner)
 }
 
 fn clock_text(text: &str) -> String {

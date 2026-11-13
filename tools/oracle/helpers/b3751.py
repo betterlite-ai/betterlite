@@ -37,33 +37,6 @@ class AktoCall(TypedDict, total=False):
     ingest_data: bool
 
 
-class AktoPayloadView(TypedDict):
-    path: str
-    requestHeaders: str
-    responseHeaders: str
-    method: str
-    requestPayload: str
-    responsePayload: str
-    ip: str
-    destIp: str
-    time: str
-    statusCode: str
-    type: str
-    status: str
-    akto_account_id: str
-    akto_vxlan_id: str
-    is_pending: str
-    source: str
-    direction: None
-    process_id: None
-    socket_id: None
-    daemonset_id: None
-    enabled_graph: None
-    tag: str
-    metadata: str
-    contextSource: str
-
-
 class ScriptedTransport(httpx.AsyncBaseTransport):
     def __init__(self, answer: AktoAnswer) -> None:
         self.answer = answer
@@ -133,33 +106,22 @@ def decode_encoded(encoded: str, *, response_payload: bool) -> Json:
 
 
 def normalize_payload(payload: dict[str, Json]) -> dict[str, Json]:
-    view = TypeAdapter(AktoPayloadView).validate_python(payload)
-    return {
-        "path": view["path"],
-        "requestHeaders": TypeAdapter(Json).validate_json(view["requestHeaders"]),
-        "responseHeaders": TypeAdapter(Json).validate_json(view["responseHeaders"]),
-        "method": view["method"],
-        "requestPayload": decode_encoded(view["requestPayload"], response_payload=False),
-        "responsePayload": decode_encoded(view["responsePayload"], response_payload=True),
-        "ip": view["ip"],
-        "destIp": view["destIp"],
-        "time": "<millis>" if view["time"].isdigit() else view["time"],
-        "statusCode": view["statusCode"],
-        "type": view["type"],
-        "status": view["status"],
-        "akto_account_id": view["akto_account_id"],
-        "akto_vxlan_id": view["akto_vxlan_id"],
-        "is_pending": view["is_pending"],
-        "source": view["source"],
-        "direction": view["direction"],
-        "process_id": view["process_id"],
-        "socket_id": view["socket_id"],
-        "daemonset_id": view["daemonset_id"],
-        "enabled_graph": view["enabled_graph"],
-        "tag": TypeAdapter(Json).validate_json(view["tag"]),
-        "metadata": TypeAdapter(Json).validate_json(view["metadata"]),
-        "contextSource": view["contextSource"],
-    }
+    normalized = TypeAdapter(dict[str, Json]).validate_python(payload)
+    request_headers = TypeAdapter(str).validate_python(payload["requestHeaders"])
+    normalized["requestHeaders"] = TypeAdapter(Json).validate_json(request_headers)
+    response_headers = TypeAdapter(str).validate_python(payload["responseHeaders"])
+    normalized["responseHeaders"] = TypeAdapter(Json).validate_json(response_headers)
+    request_payload = TypeAdapter(str).validate_python(payload["requestPayload"])
+    normalized["requestPayload"] = decode_encoded(request_payload, response_payload=False)
+    response_payload = TypeAdapter(str).validate_python(payload["responsePayload"])
+    normalized["responsePayload"] = decode_encoded(response_payload, response_payload=True)
+    tag = TypeAdapter(str).validate_python(payload["tag"])
+    normalized["tag"] = TypeAdapter(Json).validate_json(tag)
+    metadata = TypeAdapter(str).validate_python(payload["metadata"])
+    normalized["metadata"] = TypeAdapter(Json).validate_json(metadata)
+    time = TypeAdapter(str).validate_python(payload["time"])
+    normalized["time"] = "<millis>" if time.isdigit() else time
+    return normalized
 
 
 def capture_request(request: httpx.Request) -> Json:
