@@ -138,7 +138,8 @@ async fn a_pass_waits_for_the_check_and_increment_lock() {
     let cache = FakeCache::new(Some(RedisCacheKind::Standalone));
     let store = store_with(Arc::clone(&cache));
     let guard = store.check_and_increment_lock.lock().await;
-    let pass = in_memory_cache_sliding_window(&store, &pair(), 100, WINDOW_TTL);
+    let keys = pair();
+    let pass = in_memory_cache_sliding_window(&store, &keys, 100, WINDOW_TTL);
     let mut pinned = pin!(pass);
     let mut context = Context::from_waker(Waker::noop());
     assert!(pinned.as_mut().poll(&mut context).is_pending());
