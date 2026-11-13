@@ -354,6 +354,14 @@ fn an_image_config_string_that_is_not_an_object_is_ignored() {
 }
 
 #[test]
+fn optional_params_suppress_a_passthrough_param() {
+    let params = object(r#"{"seed":7}"#);
+    let optional = object(r#"{"seed":9}"#);
+    let mapped = map_openai_image_params_to_gemini(&mapping(&params, &optional)).expect("mapping");
+    assert_eq!(wrapped(&mapped), json("{}"));
+}
+
+#[test]
 fn a_size_that_is_not_text_is_ignored() {
     let params = object(r#"{"size":1024}"#);
     let optional = object("{}");
@@ -584,6 +592,15 @@ fn image_options_decode_json_configuration() {
     assert_eq!(
         decode_image_options(br#""1024x1024""#).expect("size"),
         ImageOptions::Size("1024x1024".to_owned())
+    );
+}
+
+#[test]
+fn the_image_options_limit_covers_the_whole_limit() {
+    let at_the_limit = vec![b'a'; MAX_IMAGE_OPTIONS_BYTES];
+    assert_eq!(
+        decode_image_options(&at_the_limit).expect("size"),
+        ImageOptions::Size("a".repeat(MAX_IMAGE_OPTIONS_BYTES))
     );
 }
 

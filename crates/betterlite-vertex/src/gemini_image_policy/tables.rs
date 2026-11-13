@@ -1,6 +1,5 @@
 use betterlite_bedrock::image_models::sizing::parse_python_int;
 
-// LiteLLM's dict order decides a tie between two equally distant ratios
 const ASPECT_RATIOS: [(&str, u64, u64); 14] = [
     ("1:1", 1, 1),
     ("1:4", 1, 4),
