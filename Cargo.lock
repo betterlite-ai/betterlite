@@ -2893,6 +2893,7 @@ dependencies = [
 name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
+ "arc-swap",
  "async-trait",
  "betterlite-config",
  "betterlite-context",
