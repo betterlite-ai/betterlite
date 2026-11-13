@@ -26,15 +26,6 @@ fn alias(voice: &str) -> Option<&'static str> {
         _ => None,
     }
 }
-fn mime(format: Option<&str>) -> &'static str {
-    match format {
-        Some("wav") => "audio/wav",
-        Some("pcm") => "audio/pcm",
-        Some("flac") => "audio/flac",
-        Some("opus") => "audio/ogg",
-        _ => "audio/mpeg",
-    }
-}
 // Python's b64decode(validate=True) rejects stray characters and bad padding but keeps nonzero trailing bits
 const AUDIO_BASE64: GeneralPurpose = GeneralPurpose::new(
     &alphabet::STANDARD,
@@ -171,10 +162,14 @@ fn audio_headers(
             )
         })
         .collect();
+    let content_type = match requested_format {
+        Some("wav") => "audio/wav",
+        Some("pcm") => "audio/pcm",
+        Some("flac") => "audio/flac",
+        Some("opus") => "audio/ogg",
+        _ => "audio/mpeg",
+    };
     rebuilt.insert(String::from("content-length"), length.to_string());
-    rebuilt.insert(
-        String::from("content-type"),
-        String::from(mime(requested_format)),
-    );
+    rebuilt.insert(String::from("content-type"), String::from(content_type));
     rebuilt
 }
