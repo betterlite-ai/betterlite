@@ -91,7 +91,6 @@ impl crate::helpers::Helper for Op {
         Ok(json!({ "framed": framed, "fake": fake }))
     }
 }
-
 fn failure(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: "InvokeEvents".to_owned(),
@@ -102,7 +101,6 @@ fn failure(message: String) -> Box<HelperError> {
         message,
     })
 }
-
 fn current_seconds() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -110,7 +108,6 @@ fn current_seconds() -> i64 {
             i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX)
         })
 }
-
 fn decoder(scenario: &FramedScenario) -> InvokeStreamDecoder {
     let clock = DecoderClock {
         next_id: Uuid::new_v4,
@@ -130,7 +127,6 @@ fn decoder(scenario: &FramedScenario) -> InvokeStreamDecoder {
         Construction::Base => base_decoder(&options),
     }
 }
-
 fn run_framed(
     scenario: &FramedScenario,
     runtime: &tokio::runtime::Runtime,
