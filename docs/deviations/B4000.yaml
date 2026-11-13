@@ -1,0 +1,33 @@
+task: B4000
+deviations:
+  - what: >-
+      A failed per-event upload stops the loop and keeps the failed event and every event after it queued for the
+      next flush cycle. LiteLLM's async_send_batch swallows the upload error, and CustomBatchLogger.flush_queue then
+      clears the whole queue, losing the events it never sent.
+    why: Losing log records on a transient upload failure is a data-loss bug no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L60-L93
+  - what: >-
+      Events queued while a flush is running are kept and sent in the next cycle; LiteLLM's log_queue.clear() drops
+      them because preserve_events_added_during_flush is false.
+    why: Those events were accepted from the caller and were never uploaded, so dropping them loses data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L82-L86
+  - what: >-
+      The account-key path talks to the Data Lake REST API itself (HEAD/PUT directory, PUT file, PATCH append,
+      PATCH flush) with a SharedKey signature rather than constructing the Python DataLakeServiceClient. The requests
+      and stored files match what the SDK sends with an account key.
+    why: No Azure Data Lake SDK exists for Rust at the locked azure_core version, and the older SDK line would put a
+      second azure_core in Cargo.lock, which deny.toml rejects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L362-L406
+  - what: >-
+      The dated directory name comes from the injected clock in UTC; LiteLLM calls datetime.now(), which is the
+      host's local time.
+    why: The logging crate has no tz database dependency and the gateway runs with the host clock; UTC is the
+      stable equivalent for every deployment whose host runs UTC.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L378-L384
+  - what: >-
+      The credential chain covers the deployment identity link order workload identity, user-assigned managed
+      identity, system-assigned managed identity over IMDS. The SDK's hosted environments (App Service, Service
+      Fabric, Azure Arc, Azure ML, Cloud Shell) and its IMDS retry policy are not reproduced.
+    why: Those protocols belong to B676/B699 and the dependency cycle through betterlite-openai keeps
+      betterlite-azure out of betterlite-logging; a setup using a hosted identity endpoint would need that wiring.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/get_azure_ad_token_provider.py#L37-L135
