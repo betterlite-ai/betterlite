@@ -16,7 +16,7 @@ use crate::client::sdk_transport::origin::{redirect_note, send_within_origin, st
 use crate::client::sessions::stream::StreamFailureKind;
 
 use super::sse_response::{event_message, track_event};
-use super::streamable::{LAST_EVENT_ID, MAX_RECONNECTION_ATTEMPTS, StreamableCore};
+use super::{LAST_EVENT_ID, MAX_RECONNECTION_ATTEMPTS, StreamableCore};
 enum GetOutcome {
     Ended,
     Framing(SdkError),

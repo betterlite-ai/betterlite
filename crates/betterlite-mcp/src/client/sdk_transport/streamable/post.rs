@@ -15,7 +15,7 @@ use crate::client::http_transport::send::HttpBody;
 use crate::client::sdk_transport::error::SdkError;
 use crate::client::sdk_transport::origin::{redirect_note, send_within_origin};
 
-use super::streamable::{Incoming, StreamableCore};
+use super::{Incoming, StreamableCore};
 pub(super) fn content_type(headers: &HeaderMap) -> String {
     let value = headers
         .get(CONTENT_TYPE)

@@ -17,9 +17,7 @@ use crate::client::sdk_transport::event_stream::EventStream;
 use crate::client::sdk_transport::origin::send_within_origin;
 
 use super::post::content_type;
-use super::streamable::{
-    CONNECTION_CLOSED, LAST_EVENT_ID, MAX_RECONNECTION_ATTEMPTS, StreamableCore,
-};
+use super::{CONNECTION_CLOSED, LAST_EVENT_ID, MAX_RECONNECTION_ATTEMPTS, StreamableCore};
 enum Attempt {
     Complete,
     Ended,
