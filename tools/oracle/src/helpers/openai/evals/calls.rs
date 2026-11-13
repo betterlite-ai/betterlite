@@ -83,9 +83,15 @@ fn reply_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
         headers: &headers,
         text,
     };
-    match reply_result(operation, &response) {
-        Ok(()) => Ok(json!({"value": null})),
-        Err(_error) => Ok(json!({"error": {"status": null}})),
+    Ok(outcome(
+        reply_result(operation, &response).map(|()| json!({"value": null})),
+    ))
+}
+
+pub(super) fn outcome(result: Result<Value, EvalsError>) -> Value {
+    match result {
+        Ok(value) => value,
+        Err(_error) => json!({"error": {"status": null}}),
     }
 }
 
@@ -109,23 +115,22 @@ fn reply_result(
     }
 }
 
-fn auth_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
+fn evals_config(probe: &Probe) -> Result<OpenAiEvalsConfig, Box<HelperError>> {
     let env = probe.env.clone().unwrap_or_default();
     let config = ConfigLoader { lookup: env }.load("").or_config_error()?;
-    let evals = OpenAiEvalsConfig {
+    Ok(OpenAiEvalsConfig {
         api_key: probe.litellm_api_key.clone().map(SecretString::from),
         openai_key: probe.litellm_openai_key.clone().map(SecretString::from),
         env_api_key: config.sections.resource_sdk_settings.openai_api_key.clone(),
-    };
-    let params = match &probe.litellm_params {
-        Some(fields) => Some(params_object(Some(fields))?),
-        None => None,
-    };
+    })
+}
+
+fn auth_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
+    let params = params_object(probe.litellm_params.as_ref())?;
     let headers = probe.headers.clone().unwrap_or_default();
-    match evals.validate_environment(headers, params.as_ref()) {
-        Ok(headers) => Ok(json!({"headers": headers})),
-        Err(_error) => Ok(json!({"error": {"status": null}})),
-    }
+    let validated = evals_config(probe)?.validate_environment(headers, Some(&params));
+    let body = validated.map(|headers| json!({"headers": headers}));
+    Ok(outcome(body))
 }
 
 fn url_value(probe: &Probe) -> Result<Value, Box<HelperError>> {

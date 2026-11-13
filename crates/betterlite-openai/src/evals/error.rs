@@ -9,7 +9,7 @@ pub enum EvalsError {
     ApiKeyRequired,
     #[error("{source}")]
     PathSegment {
-        #[source]
+        #[from]
         source: HttpError,
     },
     #[error("the eval reply is {size} bytes, over the {limit} byte limit")]
