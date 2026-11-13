@@ -20,7 +20,7 @@ if [[ ${GATE_DISPATCHED:-} == 1 ]]; then
   case ${command} in
     build | b | check | c | clippy | test | t | nextest | run | r | bench | doc | d | llvm-cov | rustc | rustdoc | fix | mutants)
       if [[ ${asking} == 0 ]] && [[ ${command} != mutants || ${listing} == 0 ]]; then
-        printf 'cargo %s: a dispatched run builds nothing on this machine (stage 3). Run cargo fmt and the checks that cargo gate list <ID> --local prints; CI runs clippy, the tests and mutants on the pull request. This refusal is final: never unset GATE_DISPATCHED or call cargo by its full path.\n' "${command}" >&2
+        printf 'cargo %s: a dispatched run builds nothing on this machine (stage 3). CI runs every check, clippy, the tests and mutants on the pull request, so commit your work and give your report. This refusal is final: never unset GATE_DISPATCHED or call cargo by its full path.\n' "${command}" >&2
         exit 1
       fi
       ;;
