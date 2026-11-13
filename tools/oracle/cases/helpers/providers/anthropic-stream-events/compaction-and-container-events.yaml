@@ -17,6 +17,11 @@ call:
       - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn, container: null}}}
       - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn, container: {}}}}
       - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn, container: {type: x}}}}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn, container: {id: ""}}}}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn, container: 5}}}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn, container: 0}}}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn, container: ""}}}
+      - {function: chunk, chunk: {type: message_delta, delta: {stop_reason: end_turn, container: []}}}
       - {function: state}
 env: {}
 compare: {ignore: []}

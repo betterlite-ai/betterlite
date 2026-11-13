@@ -238,10 +238,64 @@ fn server_tool_stop_inputs() {
     assert_eq!(converter.state.current_server_tool_id, None);
 }
 
+fn tool_stop_pending_server_id() {
+    let mut converter = new_converter();
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"s9","name":"bash_code_execution","input":{"command":"kept"}}}"#,
+    );
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"t9","name":"plain","input":{}}}"#,
+    );
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"citations_delta","partial_json":"{\"x\": 1}"}}"#,
+    );
+    let stop = chunk(&mut converter, TOOL_STOP);
+    assert_eq!(
+        tool_calls(&stop).unwrap(),
+        parse(
+            r#"[{"id":null,"type":"function","function":{"name":null,"arguments":"{}"},"index":1}]"#
+        )
+    );
+    assert_eq!(
+        as_json(converter.state.server_tool_inputs.get("s9").unwrap()),
+        parse(r#"{"command":"kept"}"#)
+    );
+    assert_eq!(
+        converter.state.current_server_tool_id.as_deref(),
+        Some("s9")
+    );
+}
+
+fn server_tool_stop_assembles_only_input_json() {
+    let mut converter = new_converter();
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"s10","name":"bash_code_execution","input":{"command":"initial"}}}"#,
+    );
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"a\": 1}"}}"#,
+    );
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"citations_delta","partial_json":"{\"b\": 2}"}}"#,
+    );
+    chunk(&mut converter, TOOL_STOP);
+    assert_eq!(
+        as_json(converter.state.server_tool_inputs.get("s10").unwrap()),
+        parse(r#"{"a":1}"#)
+    );
+}
+
 pub(super) fn tool_use_and_argument_delta() {
     tool_start_and_deltas();
     tool_stop_arguments();
     server_tool_stop_inputs();
+    server_tool_stop_assembles_only_input_json();
+    tool_stop_pending_server_id();
 }
 
 fn thinking_delta_events() {
@@ -252,6 +306,7 @@ fn thinking_delta_events() {
     );
     assert_eq!(start.choices[0].delta.thinking_blocks, None);
     assert_eq!(start.choices[0].delta.reasoning_content, None);
+    assert_eq!(provider_fields(&start), None);
     let thought = chunk(
         &mut converter,
         r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hmm"}}"#,
@@ -500,6 +555,11 @@ fn native_error_messages() {
         .to_string();
     assert!(fallback.contains("type"));
     assert!(fallback.contains("error"));
+    let empty_message = converter
+        .chunk_parser(&parse(r#"{"type":"error","error":{"message":""}}"#))
+        .unwrap_err()
+        .to_string();
+    assert!(empty_message.contains("type"));
 }
 
 fn content_start_resets_blocks() {
@@ -847,11 +907,48 @@ fn container_without_id() {
     assert_eq!(converter.state.container_id, None);
 }
 
+fn container_truthiness() {
+    let mut converter = new_converter();
+    let empty_id = chunk(
+        &mut converter,
+        r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","container":{"id":""}}}"#,
+    );
+    assert_eq!(
+        provider_fields(&empty_id).unwrap(),
+        parse(r#"{"container":{"id":""}}"#)
+    );
+    assert_eq!(converter.state.container_id, None);
+    let number = chunk(
+        &mut converter,
+        r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","container":5}}"#,
+    );
+    assert_eq!(
+        provider_fields(&number).unwrap(),
+        parse(r#"{"container":5}"#)
+    );
+    let zero = chunk(
+        &mut converter,
+        r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","container":0}}"#,
+    );
+    assert_eq!(provider_fields(&zero), None);
+    let empty_text = chunk(
+        &mut converter,
+        r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","container":""}}"#,
+    );
+    assert_eq!(provider_fields(&empty_text), None);
+    let empty_list = chunk(
+        &mut converter,
+        r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","container":[]}}"#,
+    );
+    assert_eq!(provider_fields(&empty_list), None);
+}
+
 pub(super) fn compaction_and_container_events() {
     compaction_starts();
     container_before_results();
     container_after_results();
     container_without_id();
+    container_truthiness();
 }
 
 fn accumulated_complete_and_partial() {
@@ -958,9 +1055,35 @@ fn accumulated_error_event() {
     assert!(matches!(failure, StreamEventError::Anthropic(_)));
 }
 
+fn accumulated_waits_for_closing_byte() {
+    let mut converter = new_converter();
+    assert!(
+        converter
+            .handle_accumulated_json_chunk(r#"{"type":"ping"}{"ty"#, false)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        converter.state.json_buffer.snapshot(),
+        r#"{"type":"ping"}{"ty"#
+    );
+    let completed = converter
+        .handle_accumulated_json_chunk(r#"pe":"message_stop"}"#, false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(content(&completed), "");
+    let second = converter
+        .handle_accumulated_json_chunk("", false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(content(&second), "");
+    assert_eq!(converter.state.json_buffer.snapshot(), "");
+}
+
 pub(super) fn accumulated_json_values() {
     accumulated_complete_and_partial();
     accumulated_multiple_values();
     accumulated_drain_and_tail();
+    accumulated_waits_for_closing_byte();
     accumulated_error_event();
 }

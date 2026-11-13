@@ -23,5 +23,17 @@ call:
       - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: '{"command": "ls -l"}'}}}
       - {function: chunk, chunk: {type: content_block_stop, index: 0}}
       - {function: state}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: server_tool_use, id: s9, name: bash_code_execution, input: {command: kept}}}}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: tool_use, id: t9, name: plain, input: {}}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: citations_delta, partial_json: '{"x": 1}'}}}
+      - {function: chunk, chunk: {type: content_block_stop, index: 0}}
+      - {function: state}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: server_tool_use, id: s10, name: bash_code_execution, input: {command: initial}}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: input_json_delta, partial_json: '{"a": 1}'}}}
+      - {function: chunk, chunk: {type: content_block_delta, index: 0, delta: {type: citations_delta, partial_json: '{"b": 2}'}}}
+      - {function: chunk, chunk: {type: content_block_stop, index: 0}}
+      - {function: state}
+      - {function: chunk, chunk: {type: content_block_stop}}
+      - {function: state}
 env: {}
 compare: {ignore: []}

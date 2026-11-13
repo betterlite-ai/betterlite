@@ -265,12 +265,11 @@ fn start_tool_result<Counter>(
     Ok(())
 }
 
+// ContentBlockStop(**chunk) never validates, so the stop event itself is not read.
 pub(crate) fn content_block_stop<Counter>(
     converter: &mut StreamEventConverter<Counter>,
-    chunk: &Json,
     branch: &mut Branch,
-) -> Result<(), ShapeError> {
-    stop_index(chunk)?;
+) {
     let block_type = converter.state.current_content_block_type.clone();
     let tool_block = matches!(block_type.as_deref(), Some("tool_use" | "server_tool_use"));
     if tool_block && check_empty_tool_call_args(&converter.state) {
@@ -295,7 +294,6 @@ pub(crate) fn content_block_stop<Counter>(
     }
     converter.state.is_response_format_tool = false;
     converter.state.current_content_block_type = None;
-    Ok(())
 }
 
 fn assembled_arguments(state: &StreamState) -> String {
@@ -308,19 +306,6 @@ fn assembled_arguments(state: &StreamState) -> String {
         }
     }
     arguments
-}
-
-fn stop_index(chunk: &Json) -> Result<(), ShapeError> {
-    match chunk {
-        Json::Object(fields) => match fields.get("index") {
-            Some(Json::Number(_)) => Ok(()),
-            Some(_) => Err(ShapeError::FieldType { field: "index" }),
-            None => Err(ShapeError::Missing { field: "index" }),
-        },
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Err(ShapeError::NotAnObject)
-        }
-    }
 }
 
 pub(crate) fn message_delta<Counter>(
@@ -406,11 +391,12 @@ where
 
 pub(crate) fn native_error(chunk: &Json, fields: &JsonFields) -> AnthropicError {
     let message = match fields.get("error") {
-        Some(Json::Object(error)) if !error.is_empty() => match error.get("message") {
+        Some(Json::Object(error)) => match error.get("message") {
             Some(Json::Text(message)) if !message.is_empty() => Some(message.clone()),
             _ => None,
         },
-        _ => None,
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
+        | None => None,
     };
     AnthropicError {
         message: message.unwrap_or_else(|| serde_json::to_string(chunk).unwrap_or_default()),

@@ -18,6 +18,9 @@ call:
       - {function: accumulated, fragment: '', is_final: true}
       - {function: accumulated, fragment: 'pe":"ping"}', is_final: false}
       - {function: accumulated, fragment: '{"type":"ping"}   ', is_final: false}
+      - {function: accumulated, fragment: '{"type":"ping"}{"ty', is_final: false}
+      - {function: accumulated, fragment: 'pe":"message_stop"}', is_final: false}
+      - {function: accumulated, fragment: '', is_final: false}
       - {function: accumulated, fragment: '{"type":"ping"}x', is_final: true}
       - {function: accumulated, fragment: '', is_final: true}
       - {function: state}

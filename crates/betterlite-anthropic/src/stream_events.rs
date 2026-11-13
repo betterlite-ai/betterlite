@@ -32,7 +32,7 @@ where
         match dispatch::event_type(fields) {
             "content_block_delta" => dispatch::content_block_delta(self, chunk, &mut branch)?,
             "content_block_start" => dispatch::content_block_start(self, chunk, &mut branch)?,
-            "content_block_stop" => dispatch::content_block_stop(self, chunk, &mut branch)?,
+            "content_block_stop" => dispatch::content_block_stop(self, &mut branch),
             "message_delta" => dispatch::message_delta(self, chunk, &mut branch)?,
             "message_start" => dispatch::message_start(self, chunk, &mut branch)?,
             "error" => {
