@@ -942,7 +942,7 @@ async fn chat_rerun_lays_patch_params_over_request_params_and_drops_tool_choice(
         .unwrap();
     assert_eq!(
         serde_json::to_value(&rerun.params).unwrap(),
-        json!({"temperature": 0.5, "top_p": 0.9, "tools": [{"type": "function"}]})
+        json!({"temperature": 0.5, "top_p": 0.9, "tools": [{"type": "function"}], "extra_body": {"trace": true}})
     );
     assert_eq!(
         serde_json::to_value(&rerun.kwargs).unwrap(),

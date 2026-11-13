@@ -1,0 +1,24 @@
+kind: helper
+name: chat-function-args
+call:
+  b4119:
+    operation: build_chat_plan
+    model: gpt-4o
+    messages:
+      - role: user
+        content: hi
+    tool_calls:
+      - id: call_1
+        type: function
+        name: litellm_web_search
+        input: not-an-object
+        function:
+          name: litellm_web_search
+          arguments: {query: fallback}
+    searches:
+      - kind: success
+        text: result
+    optional_params: {}
+    kwargs: {}
+env: {}
+compare: {ignore: []}

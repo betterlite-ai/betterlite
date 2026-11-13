@@ -1,0 +1,27 @@
+kind: helper
+name: chat-two-searches
+call:
+  b4119:
+    operation: build_chat_plan
+    model: gpt-4o
+    messages:
+      - role: user
+        content: hi
+    tool_calls:
+      - id: call_1
+        type: function
+        name: litellm_web_search
+        input: {query: first}
+      - id: call_2
+        type: function
+        name: litellm_web_search
+        input: {query: second}
+    searches:
+      - kind: success
+        text: one
+      - kind: success
+        text: two
+    optional_params: {}
+    kwargs: {}
+env: {}
+compare: {ignore: []}
