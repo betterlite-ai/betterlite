@@ -1,0 +1,17 @@
+kind: helper
+name: client-ip-extraction
+call:
+  b3751:
+    op: payload
+    settings:
+      akto_base_url: http://akto.invalid
+      akto_api_key: oracle-key
+    inputs:
+      texts: ["hello"]
+    request_data:
+      proxy_server_request:
+        headers:
+          x-forwarded-for: 203.0.113.7, 10.0.0.1
+          x-real-ip: 198.51.100.9
+env: {}
+compare: {ignore: []}

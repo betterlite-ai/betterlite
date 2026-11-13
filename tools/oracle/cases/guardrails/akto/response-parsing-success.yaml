@@ -1,0 +1,17 @@
+kind: helper
+name: response-parsing-success
+call:
+  b3751:
+    op: response
+    settings:
+      akto_base_url: http://akto.invalid
+      akto_api_key: oracle-key
+    answer:
+      status: 200
+      body:
+        data:
+          guardrailsResult:
+            Allowed: true
+            Reason: clean
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,28 @@
+kind: helper
+name: pre-call-payload-double-encoding
+call:
+  b3751:
+    op: payload
+    settings:
+      akto_base_url: http://akto.invalid
+      akto_api_key: oracle-key
+    inputs:
+      texts: ["hello"]
+      model: gpt-4o
+    request_data:
+      messages:
+        - role: user
+          content: hello
+      tools:
+        - type: function
+          function:
+            name: lookup
+      metadata:
+        user_api_key_request_route: /v1/responses
+        user_api_key_user_id: user-1
+      proxy_server_request:
+        headers:
+          X-Custom: abc
+    include_response: false
+env: {}
+compare: {ignore: []}
