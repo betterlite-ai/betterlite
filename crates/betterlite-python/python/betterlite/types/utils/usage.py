@@ -1,15 +1,15 @@
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import ClassVar, Literal
 
+from pydantic import ConfigDict, JsonValue, PrivateAttr
 from typing_extensions import override
 
-from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.values import (
-    MODEL_TYPES,
-    JsonValue,
-    ModelObject,
-    StoredValue,
-    ValidationError,
+from betterlite.types.utils.base import (
+    Dumpable,
+    InitValue,
+    ModelValue,
+    ResponseObject,
+    dump_value,
 )
 
 CACHED_TARGETS: tuple[tuple[Literal["cached", "write"], str], ...] = (
@@ -29,62 +29,66 @@ DROP_WHEN_NONE = (
 )
 
 
-class DeclaredOnly(ResponseObject):
-    @override
-    def __init__(self, **data: StoredValue) -> None:
-        super().__init__(**{
-            name: value for name, value in data.items() if name in type(self).__fields__
-        })
+class ServerToolUse(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
-
-class ServerToolUse(DeclaredOnly):
-    web_search_requests: int | None
-    tool_search_requests: int | None
-    browser_open_requests: int | None
+    web_search_requests: int | None = None
+    tool_search_requests: int | None = None
+    browser_open_requests: int | None = None
 
     @override
-    def __getitem__(self, key: str) -> StoredValue:
-        if key not in type(self).__fields__:
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)
+
+    @override
+    def __getitem__(self, key: str) -> InitValue:
+        if key not in type(self).model_fields:
             raise KeyError(key)
         return super().__getitem__(key)
 
 
-class CacheCreationTokenDetails(DeclaredOnly):
-    ephemeral_5m_input_tokens: int | None
-    ephemeral_1h_input_tokens: int | None
+class CacheCreationTokenDetails(ResponseObject):
+    model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
+
+    ephemeral_5m_input_tokens: int | None = None
+    ephemeral_1h_input_tokens: int | None = None
+
+    @override
+    def __init__(self, **data: InitValue) -> None:
+        super().__init__(**data)
 
 
 class CompletionTokensDetailsWrapper(ResponseObject):
-    accepted_prediction_tokens: int | None
-    audio_tokens: int | None
-    reasoning_tokens: int | None
-    rejected_prediction_tokens: int | None
-    text_tokens: int | None
-    image_tokens: int | None
-    video_tokens: int | None
+    accepted_prediction_tokens: int | None = None
+    audio_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    rejected_prediction_tokens: int | None = None
+    text_tokens: int | None = None
+    image_tokens: int | None = None
+    video_tokens: int | None = None
 
 
 class PromptTokensDetailsWrapper(ResponseObject):
-    audio_tokens: int | None
-    cached_tokens: int | None
-    text_tokens: int | None
-    image_tokens: int | None
-    video_tokens: int | None
-    web_search_requests: int | None
-    google_maps_grounding_requests: int | None
-    tool_use_tokens: int | None
-    character_count: int | None
-    image_count: int | None
-    video_length_seconds: float | None
-    audio_length_seconds: float | None
-    query_count: int | None
-    cache_write_tokens: int | None
-    cache_creation_tokens: int | None
-    cache_creation_token_details: CacheCreationTokenDetails | None
-    cached_tokens_details: JsonValue
+    audio_tokens: int | None = None
+    cache_write_tokens: int | None = None
+    cached_tokens: int | None = None
+    text_tokens: int | None = None
+    image_tokens: int | None = None
+    video_tokens: int | None = None
+    web_search_requests: int | None = None
+    google_maps_grounding_requests: int | None = None
+    tool_use_tokens: int | None = None
+    character_count: int | None = None
+    image_count: int | None = None
+    video_length_seconds: float | None = None
+    audio_length_seconds: float | None = None
+    query_count: int | None = None
+    cache_creation_tokens: int | None = None
+    cache_creation_token_details: CacheCreationTokenDetails | None = None
+    cached_tokens_details: JsonValue = None
 
     @override
-    def __setattr__(self, name: str, value: StoredValue) -> None:
+    def __setattr__(self, name: str, value: InitValue) -> None:
         super().__setattr__(name, value)
         if name == "cache_write_tokens":
             super().__setattr__("cache_creation_tokens", value)
@@ -92,7 +96,7 @@ class PromptTokensDetailsWrapper(ResponseObject):
             super().__setattr__("cache_write_tokens", value)
 
     @override
-    def __init__(self, **data: StoredValue) -> None:
+    def __init__(self, **data: InitValue) -> None:
         super().__init__(**data)
         write = self.cache_write_tokens
         if write is None:
@@ -100,41 +104,41 @@ class PromptTokensDetailsWrapper(ResponseObject):
         if write is None and "cache_creation_input_tokens" in data:
             write = int_value(data["cache_creation_input_tokens"])
         self.cache_write_tokens = write
-        drop_none_fields(self)
+        for name in DROP_WHEN_NONE:
+            if name in self and self[name] is None:
+                del self[name]
 
 
 class Usage(ResponseObject):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
-    completion_tokens_details: CompletionTokensDetailsWrapper | None
-    prompt_tokens_details: PromptTokensDetailsWrapper | None
-    server_tool_use: ServerToolUse | None
-    cost: float | None
-    _cache_creation_input_tokens: int
-    _cache_read_input_tokens: int
-    defaults: ClassVar[dict[str, StoredValue]] = {
-        "_cache_creation_input_tokens": 0,
-        "_cache_read_input_tokens": 0,
-    }
+    completion_tokens_details: CompletionTokensDetailsWrapper | None = None
+    prompt_tokens_details: PromptTokensDetailsWrapper | None = None
+    server_tool_use: ServerToolUse | None = None
+    cost: float | None = None
+    _cache_creation_input_tokens: int = PrivateAttr(default=0)
+    _cache_read_input_tokens: int = PrivateAttr(default=0)
 
     @override
     def __init__(
-        self, prompt_tokens: StoredValue = None, completion_tokens: StoredValue = None,
-        total_tokens: StoredValue = None, reasoning_tokens: StoredValue = None,
-        prompt_tokens_details: StoredValue = None, completion_tokens_details: StoredValue = None,
-        server_tool_use: StoredValue = None, cost: StoredValue = None,
-        **params: StoredValue,
+        self, prompt_tokens: JsonValue = None, completion_tokens: JsonValue = None,
+        total_tokens: JsonValue = None, reasoning_tokens: int | None = None,
+        prompt_tokens_details: ModelValue = None,
+        completion_tokens_details: ModelValue = None,
+        server_tool_use: ModelValue | Mapping[str, JsonValue] = None,
+        cost: JsonValue = None, **params: InitValue,
     ) -> None:
-        prompt_details_input = prompt_details_value(prompt_tokens_details)
-        super().__init__(
-            prompt_tokens=token_count(prompt_tokens, "prompt_tokens"),
-            completion_tokens=token_count(completion_tokens, "completion_tokens"),
-            total_tokens=token_count(total_tokens, "total_tokens"),
-            completion_tokens_details=completion_tokens_details,
-            prompt_tokens_details=prompt_details_input,
-            server_tool_use=server_tool_use,
-        )
+        counts: dict[str, InitValue] = {
+            "prompt_tokens": token_count(prompt_tokens),
+            "completion_tokens": token_count(completion_tokens),
+            "total_tokens": token_count(total_tokens),
+            "completion_tokens_details": dump_value(completion_tokens_details),
+            "prompt_tokens_details": dump_value(prompt_tokens_details),
+            "server_tool_use": server_tool_use,
+            "cost": cost,
+        }
+        super().__init__(**counts)
         if reasoning_tokens is not None:
             self.completion_tokens_details = reasoning_details(
                 self.completion_tokens_details, reasoning_tokens, completion_tokens,
@@ -145,83 +149,51 @@ class Usage(ResponseObject):
             if cached is not None:
                 prompt_details = token_details(prompt_details, cached, kind)
         self.prompt_tokens_details = prompt_details
+        # LiteLLM leaves these two unset rather than passing them, and a reader sees the same fields
+        for name in ("server_tool_use", "cost"):
+            if self[name] is None:
+                del self[name]
+                self.model_fields_set.discard(name)
         for name, target in PRIVATE_CACHE_PARAMS:
             value = int_param(params, name)
             if value is not None:
                 self[target] = value
-        if server_tool_use is None:
-            del self.server_tool_use
-        if cost is None:
-            del self.cost
-        else:
-            self.cost = cost_number(cost)
         for name, item in params.items():
             self[name] = item
 
 
-def int_value(value: StoredValue) -> int | None:
+def int_value(value: InitValue) -> int | None:
+    if value is None:
+        return None
     match value:
         case int():
             return value
-        case _other:
+        case Dumpable() | Mapping() | Sequence() | float():
             return None
 
 
-def prompt_details_value(value: StoredValue) -> StoredValue:
-    if value is None or value.__class__ in MODEL_TYPES:
-        return value
-    match value:
-        case ModelObject():
-            dumped = value.model_dump()
-            match dumped:
-                case Mapping():
-                    return dumped
-                case _other:
-                    raise ValidationError("Usage", ("prompt_tokens_details",), "wrong type")
-        case _other:
-            return value
-
-
-def drop_none_fields(details: PromptTokensDetailsWrapper) -> None:
-    for name in DROP_WHEN_NONE:
-        if details[name] is None:
-            del details[name]
-
-
-def int_param(params: Mapping[str, StoredValue], name: str) -> int | None:
+def int_param(params: Mapping[str, InitValue], name: str) -> int | None:
     if name not in params:
         return None
     return int_value(params[name])
 
 
-def token_count(value: StoredValue, name: str) -> int:
-    match value:
-        case int():
-            return value
-        case None:
-            return 0
-        case _other:
-            raise ValidationError("Usage", (name,), "expected an integer")
-
-
-def cost_number(value: StoredValue) -> float:
-    match value:
-        case int() | float():
-            return float(value)
-        case _other:
-            raise ValidationError("Usage", ("cost",), "expected a number")
+def token_count(value: JsonValue) -> JsonValue:
+    if value is None:
+        return 0
+    return value
 
 
 def reasoning_details(
-    details: CompletionTokensDetailsWrapper | None, reasoning_tokens: StoredValue,
-    completion_tokens: StoredValue,
+    details: CompletionTokensDetailsWrapper | None, reasoning_tokens: int,
+    completion_tokens: JsonValue,
 ) -> CompletionTokensDetailsWrapper:
-    reasoning = token_count(reasoning_tokens, "reasoning_tokens")
     wrapper = CompletionTokensDetailsWrapper() if details is None else details
     if wrapper.reasoning_tokens is None:
-        wrapper.reasoning_tokens = reasoning
-    if wrapper.text_tokens is None and completion_tokens is not None:
-        calculated = token_count(completion_tokens, "completion_tokens") - reasoning
+        wrapper.reasoning_tokens = reasoning_tokens
+    count = int_value(completion_tokens)
+    if wrapper.text_tokens is None and count is not None:
+        calculated = count - reasoning_tokens
         calculated -= wrapper.image_tokens if wrapper.image_tokens is not None else 0
         calculated -= wrapper.audio_tokens if wrapper.audio_tokens is not None else 0
         wrapper.text_tokens = max(0, calculated)
