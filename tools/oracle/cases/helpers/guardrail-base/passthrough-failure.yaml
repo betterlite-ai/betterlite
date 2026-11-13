@@ -1,0 +1,6 @@
+kind: helper
+name: passthrough-failure
+call:
+  b5471: {"function": "passthrough", "guardrail_name": "g", "message": "nope", "request_data": {"model": "gpt-4", "messages": []}, "detection_info": null}
+env: {}
+compare: {ignore: []}
