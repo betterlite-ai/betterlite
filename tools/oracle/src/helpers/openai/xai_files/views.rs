@@ -1,13 +1,17 @@
+use betterlite_config::sections::xai_identity::Settings;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::api::batch_records::WireDecodeLimits;
 use betterlite_openai::files::records::BinaryContent;
 use betterlite_openai::xai_files::error::XaiFilesError;
+use betterlite_openai::xai_files::records::{XaiFileList, decode_xai_upload_reply};
+use betterlite_openai::xai_files::reply::{decode_file_reply, to_file_list};
+use betterlite_openai::xai_files::request::{FilesTarget, files_url, next_page};
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Map, Value, json};
 
 use crate::helpers::OrHelperError as _;
 
-use super::ContentSpec;
+use super::{ContentSpec, ListCall};
 
 pub(super) const fn limits() -> WireDecodeLimits {
     WireDecodeLimits {
@@ -67,6 +71,50 @@ pub(super) fn empty_list(url: &str) -> Map<String, Value> {
         ("files".to_owned(), Value::Array(Vec::new())),
         ("raised_list".to_owned(), Value::Null),
     ])
+}
+
+// LiteLLM reads the cursor without a status check, then decodes the same page for the listed files
+pub(super) fn list_entry(
+    call: &ListCall,
+    settings: &Settings,
+) -> Result<Value, Box<crate::helpers::HelperError>> {
+    let url = files_url(
+        call.params_api_base.as_deref(),
+        FilesTarget::Collection,
+        settings,
+    )
+    .map_err(|error| failure(&error))?;
+    let response = upstream(call.reply.status, call.reply.body.as_bytes(), &[]);
+    let mut entry = empty_list(&url);
+    match decode_xai_upload_reply::<XaiFileList>(&response.body, &limits())
+        .map(|page| next_page(&page, &url))
+    {
+        Ok(Some(page)) => {
+            entry.insert(
+                "next".to_owned(),
+                json!({"url": page.url, "query": page.query}),
+            );
+        }
+        Ok(None) => {}
+        Err(_) => {
+            entry.insert("raised".to_owned(), json!("page"));
+        }
+    }
+    match decode_file_reply(&response, &limits(), |page: XaiFileList| {
+        to_file_list(&page, call.now)
+    }) {
+        Ok(files) => {
+            entry.insert(
+                "files".to_owned(),
+                serde_json::to_value(&files).or_config_error()?,
+            );
+        }
+        Err(error) if error.status_code().is_some() => return Err(failure(&error)),
+        Err(_) => {
+            entry.insert("raised_list".to_owned(), json!("list"));
+        }
+    }
+    Ok(Value::Object(entry))
 }
 
 pub(super) fn content_call(spec: &ContentSpec) -> Value {

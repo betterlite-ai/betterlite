@@ -3,14 +3,10 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::xai_identity::Settings;
 use betterlite_openai::xai_batches::transformation::get_xai_auth_headers;
 use betterlite_openai::xai_files::error::XaiFilesError;
-use betterlite_openai::xai_files::records::{
-    XaiFile, XaiFileDeleted, XaiFileList, decode_xai_upload_reply,
-};
-use betterlite_openai::xai_files::reply::{
-    decode_file_reply, to_file_deleted, to_file_list, to_file_object,
-};
+use betterlite_openai::xai_files::records::{XaiFile, XaiFileDeleted};
+use betterlite_openai::xai_files::reply::{decode_file_reply, to_file_deleted, to_file_object};
 use betterlite_openai::xai_files::request::{
-    FilesTarget, SUPPORTED_OPENAI_PARAMS, files_url, map_openai_params, next_page,
+    FilesTarget, SUPPORTED_OPENAI_PARAMS, files_url, map_openai_params,
 };
 use http::header::{AUTHORIZATION, HeaderMap};
 use secrecy::SecretString;
@@ -177,49 +173,6 @@ fn file_call(
     }))
 }
 
-fn list_call(
-    call: &ListCall,
-    settings: &Settings,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let url = files_url(
-        call.params_api_base.as_deref(),
-        FilesTarget::Collection,
-        settings,
-    )
-    .map_err(|error| failure(&error))?;
-    let response = upstream(call.reply.status, call.reply.body.as_bytes(), &[]);
-    let mut entry = views::empty_list(&url);
-    match decode_xai_upload_reply::<XaiFileList>(&response.body, &limits())
-        .map(|page| next_page(&page, &url))
-    {
-        Ok(Some(page)) => {
-            entry.insert(
-                "next".to_owned(),
-                json!({"url": page.url, "query": page.query}),
-            );
-        }
-        Ok(None) => {}
-        Err(_) => {
-            entry.insert("raised".to_owned(), json!("page"));
-        }
-    }
-    match decode_file_reply(&response, &limits(), |page: XaiFileList| {
-        to_file_list(&page, call.now)
-    }) {
-        Ok(files) => {
-            entry.insert(
-                "files".to_owned(),
-                serde_json::to_value(&files).or_config_error()?,
-            );
-        }
-        Err(error) if error.status_code().is_some() => return Err(failure(&error)),
-        Err(_) => {
-            entry.insert("raised_list".to_owned(), json!("list"));
-        }
-    }
-    Ok(Value::Object(entry))
-}
-
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
@@ -259,7 +212,7 @@ impl crate::helpers::Helper for Op {
                 let settings = settings(xai_key.as_deref(), env);
                 let answers = calls
                     .iter()
-                    .map(|call| list_call(call, &settings))
+                    .map(|call| views::list_entry(call, &settings))
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(json!({"calls": answers}))
             }

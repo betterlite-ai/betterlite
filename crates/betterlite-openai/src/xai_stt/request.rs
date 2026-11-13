@@ -46,7 +46,7 @@ pub struct SttForm {
 impl FormScalar {
     // Python's str() spelling of a list member, where a bool capitalizes and a float keeps its repr
     #[must_use]
-    pub fn member_text(&self) -> String {
+    pub fn member(&self) -> String {
         match self {
             Self::Bool(true) => "True".to_owned(),
             Self::Bool(false) => "False".to_owned(),
@@ -56,26 +56,16 @@ impl FormScalar {
             Self::Null => "None".to_owned(),
         }
     }
-
-    // a scalar bool reaches the form in lowercase; every other scalar uses its Python str() spelling
-    #[must_use]
-    pub fn form_text(&self) -> String {
-        if let Self::Bool(flag) = self {
-            flag.to_string()
-        } else {
-            self.member_text()
-        }
-    }
 }
 
 impl FormValue {
+    // a scalar bool reaches the form in lowercase, while list members keep Python's str() spelling
     #[must_use]
     pub fn form_text(&self) -> FormText {
         match self {
-            Self::List(items) => {
-                FormText::Repeated(items.iter().map(FormScalar::member_text).collect())
-            }
-            Self::Scalar(scalar) => FormText::Scalar(scalar.form_text()),
+            Self::Scalar(FormScalar::Bool(flag)) => FormText::Scalar(flag.to_string()),
+            Self::Scalar(scalar) => FormText::Scalar(scalar.member()),
+            Self::List(items) => FormText::Repeated(items.iter().map(FormScalar::member).collect()),
         }
     }
 }
