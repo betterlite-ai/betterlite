@@ -14,25 +14,6 @@ pub(super) type Coordinator =
     InProcessRefreshCoordinator<Option<OAuthToken>, TokenStoreUnavailable>;
 type Step<'call> = RefreshStep<'call, Option<OAuthToken>, TokenStoreUnavailable>;
 
-fn refresh_step<'call>(calls: &'call AtomicUsize, result: &'call StoreResult) -> Step<'call> {
-    Box::new(move || {
-        Box::pin(async move {
-            calls.fetch_add(1, Ordering::SeqCst);
-            yield_now().await;
-            result.clone()
-        })
-    })
-}
-
-fn reread_step(calls: &AtomicUsize) -> Step<'_> {
-    Box::new(move || {
-        Box::pin(async move {
-            calls.fetch_add(1, Ordering::SeqCst);
-            Ok(None)
-        })
-    })
-}
-
 async fn coordinated_call(
     flight: &Coordinator,
     key: &TokenKey,
@@ -40,13 +21,20 @@ async fn coordinated_call(
     rereads: &AtomicUsize,
     result: &StoreResult,
 ) -> StoreResult {
-    flight
-        .run(
-            key.clone(),
-            refresh_step(refreshes, result),
-            reread_step(rereads),
-        )
-        .await
+    let refresh: Step<'_> = Box::new(move || {
+        Box::pin(async move {
+            refreshes.fetch_add(1, Ordering::SeqCst);
+            yield_now().await;
+            result.clone()
+        })
+    });
+    let reread: Step<'_> = Box::new(move || {
+        Box::pin(async move {
+            rereads.fetch_add(1, Ordering::SeqCst);
+            Ok(None)
+        })
+    });
+    flight.run(key.clone(), refresh, reread).await
 }
 
 pub(super) fn coordinator(input: &Value) -> HelperResult {

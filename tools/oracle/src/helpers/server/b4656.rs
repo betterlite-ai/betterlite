@@ -8,6 +8,7 @@ use std::collections::VecDeque;
 
 use betterlite_server::mcp::outbound_credentials::{OAuthToken, TokenStoreUnavailable};
 use chrono::DateTime;
+use serde::Deserialize;
 use serde_json::Value;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
@@ -15,6 +16,19 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 pub(crate) struct Op;
 
 type StoreResult = Result<Option<OAuthToken>, TokenStoreUnavailable>;
+
+#[derive(Deserialize)]
+struct TokenInput {
+    access_token: String,
+    #[serde(default)]
+    expires_at_ms: Option<i64>,
+    #[serde(default)]
+    refresh_token: Option<String>,
+    #[serde(default)]
+    scopes: Vec<String>,
+    #[serde(default)]
+    identity_binding_proof: Option<String>,
+}
 
 impl Helper for Op {
     type Input = Value;
@@ -64,36 +78,21 @@ pub(super) fn number(value: &Value, name: &str) -> Result<i64, Box<HelperError>>
 }
 
 pub(super) fn parse_token(value: &Value) -> Result<OAuthToken, Box<HelperError>> {
-    let expires_at = match value.get("expires_at_ms").and_then(Value::as_i64) {
+    let input: TokenInput =
+        serde_json::from_value(value.clone()).map_err(|error| value_error(error.to_string()))?;
+    let expires_at = match input.expires_at_ms {
         Some(millis) => Some(
             DateTime::from_timestamp_millis(millis)
                 .ok_or_else(|| value_error(format!("invalid epoch millis: {millis}")))?,
         ),
         None => None,
     };
-    let scopes = value
-        .get("scopes")
-        .and_then(Value::as_array)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default();
     Ok(OAuthToken {
-        access_token: text(value, "access_token")?.to_owned(),
+        access_token: input.access_token,
         expires_at,
-        refresh_token: value
-            .get("refresh_token")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
-        scopes,
-        identity_binding_proof: value
-            .get("identity_binding_proof")
-            .and_then(Value::as_str)
-            .map(str::to_owned),
+        refresh_token: input.refresh_token,
+        scopes: input.scopes,
+        identity_binding_proof: input.identity_binding_proof,
     })
 }
 
