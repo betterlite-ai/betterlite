@@ -189,7 +189,7 @@ impl Engine<'_, '_> {
             policy_names,
         );
         let bucket = metadata::bucket_mut(self.data, self.metadata_name)?;
-        write_pipelines(bucket, &pipelines);
+        write_pipelines(bucket, &pipelines)?;
         if guardrails.is_empty() && pipelines.is_empty() {
             return Ok(());
         }

@@ -2,9 +2,13 @@ use std::collections::BTreeSet;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use serde::Serialize;
 
 use crate::api::request_destination::RequestData;
 use crate::api::request_guardrail_policy::error::RequestGuardrailPolicyError;
+use crate::api::request_guardrail_policy::requested_guardrails::{
+    RequestedGuardrail, requested_guardrail,
+};
 use crate::api::request_guardrail_policy::{GuardrailPolicySettings, RequestGuardrailPolicyInput};
 
 pub(super) const GUARDRAILS: &str = "guardrails";
@@ -42,6 +46,16 @@ pub(super) fn texts(
         names.push(name);
     }
     Ok(names)
+}
+
+pub(super) fn json_from_serialize<T>(value: &T) -> Result<Json, RequestGuardrailPolicyError>
+where
+    T: Serialize + ?Sized,
+{
+    match serde_json::to_string(value) {
+        Ok(text) => serde_json::from_str(&text).map_err(RequestGuardrailPolicyError::Serialization),
+        Err(error) => Err(RequestGuardrailPolicyError::Serialization(error)),
+    }
 }
 
 pub(super) fn existing_string_list(
@@ -143,7 +157,7 @@ pub(super) fn move_request_guardrails(
 }
 
 enum MovedField {
-    Guardrails(Option<Vec<String>>),
+    Guardrails(Option<Vec<RequestedGuardrail>>),
     Config(Option<IndexMap<String, Json>>),
 }
 
@@ -157,11 +171,17 @@ fn moved_field(value: Json, kind: MovedKind) -> Result<MovedField, RequestGuardr
     match kind {
         MovedKind::Guardrails => match value {
             Json::Null => Ok(MovedField::Guardrails(None)),
-            Json::List(items) => Ok(MovedField::Guardrails(Some(texts(items, GUARDRAILS)?))),
+            Json::List(items) => {
+                let guardrails = items
+                    .into_iter()
+                    .map(requested_guardrail)
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(MovedField::Guardrails(Some(guardrails)))
+            }
             Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
                 Err(RequestGuardrailPolicyError::NotTyped {
                     field: GUARDRAILS,
-                    expected: "a list of strings",
+                    expected: "a list of guardrail names or guardrail params objects",
                 })
             }
         },
@@ -190,12 +210,14 @@ fn apply_moved_field(
                 bucket.insert(GUARDRAILS.to_owned(), Json::Null);
             }
         }
-        MovedField::Guardrails(Some(names)) => {
+        MovedField::Guardrails(Some(guardrails)) => {
             let mut stored = match bucket.get(GUARDRAILS) {
                 Some(Json::List(existing)) => existing.clone(),
                 _ => Vec::new(),
             };
-            stored.extend(names.into_iter().map(Json::Text));
+            for guardrail in &guardrails {
+                stored.push(json_from_serialize(guardrail)?);
+            }
             bucket.insert(GUARDRAILS.to_owned(), Json::List(stored));
         }
         MovedField::Config(None) => {

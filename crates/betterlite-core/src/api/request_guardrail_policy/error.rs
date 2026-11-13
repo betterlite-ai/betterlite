@@ -16,6 +16,8 @@ pub enum RequestGuardrailPolicyError {
     },
     #[error("the request metadata bucket must be a JSON object")]
     MetadataBucket,
+    #[error("a resolved guardrail value could not be written to request metadata")]
+    Serialization(#[source] serde_json::Error),
     #[error(transparent)]
     Limit(#[from] ApiLimitError),
 }
@@ -51,6 +53,12 @@ impl RequestGuardrailPolicyError {
                 error_type: "invalid_request_error",
                 param: Some("metadata"),
                 code: "400",
+            },
+            Self::Serialization(_) => GuardrailPolicyErrorFacts {
+                status: 500,
+                error_type: "internal_server_error",
+                param: None,
+                code: "500",
             },
             Self::Limit(error) => {
                 let fields = error.fields();

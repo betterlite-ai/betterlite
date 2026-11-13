@@ -3,6 +3,7 @@ pub mod error;
 mod metadata;
 mod pipelines;
 mod policies;
+mod requested_guardrails;
 
 mod tests;
 

@@ -436,6 +436,27 @@ fn a_null_guardrail_field_is_written_as_null() {
 }
 
 #[test]
+fn dynamic_guardrail_params_move_unchanged() {
+    let world = world("{}", "[]");
+    let input = request(data(
+        r#"{"model": "gpt-4", "metadata": {}, "guardrails": ["plain", {"lakera_guard": {"extra_body": {"foo": "bar"}}}]}"#,
+    ));
+    let result = resolve(&world, &input).unwrap();
+    let metadata = bucket(&result.data).unwrap();
+    let Some(Json::List(guardrails)) = metadata.get("guardrails") else {
+        panic!("guardrails are a list");
+    };
+    assert_eq!(guardrails.first(), Some(&Json::Text("plain".to_owned())));
+    let mut body = IndexMap::new();
+    body.insert("foo".to_owned(), Json::Text("bar".to_owned()));
+    let mut params = IndexMap::new();
+    params.insert("extra_body".to_owned(), Json::Object(body));
+    let mut dynamic = IndexMap::new();
+    dynamic.insert("lakera_guard".to_owned(), Json::Object(params));
+    assert_eq!(guardrails.last(), Some(&Json::Object(dynamic)));
+}
+
+#[test]
 fn request_policy_limit_is_enforced() {
     let world = world("{}", "[]");
     let input = request(data(r#"{"model": "gpt-4", "policies": ["a", "b"]}"#));
@@ -477,6 +498,11 @@ fn request_policy_limit_is_enforced() {
 #[case::model_not_text(r#"{"model": 3}"#, "model")]
 #[case::existing_guardrails_not_a_list(
     r#"{"model": "gpt-4", "metadata": {"guardrails": 5}}"#,
+    "guardrails"
+)]
+#[case::dynamic_guardrail_not_an_object(r#"{"model": "gpt-4", "guardrails": [3]}"#, "guardrails")]
+#[case::dynamic_guardrail_without_extra_body(
+    r#"{"model": "gpt-4", "guardrails": [{"lakera_guard": {"other": 1}}]}"#,
     "guardrails"
 )]
 fn untyped_fields_are_named(#[case] source: &'static str, #[case] expected_field: &'static str) {
