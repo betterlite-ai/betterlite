@@ -8,7 +8,7 @@ from typing_extensions import override
 
 from probes.protocol import Operation, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false, reportUnknownMemberType=false
 
 
 API_KEY = "sk-probe"
@@ -61,7 +61,7 @@ def deployment(entry: Entry) -> Deployment:
 
 
 # The model list in order, the id index, and the ids each model name indexes, as the router's public readers show them.
-def observe(router: Router, raised: bool, returned: Deployment | None) -> Observed:
+def observe(router: Router, *, raised: bool, returned: Deployment | None) -> Observed:
     names = [listed["model_name"] for listed in router.get_model_list() or []]
     return Observed(
         raised=raised,
@@ -103,5 +103,5 @@ class CatalogUpdates(Operation):
                     returned = router.delete_deployment(step.id)
             except (ValueError, TypeError, BadRequestError):
                 raised = True
-            observed.append(observe(router, raised, returned))
+            observed.append(observe(router, raised=raised, returned=returned))
         return Output(steps=observed)
