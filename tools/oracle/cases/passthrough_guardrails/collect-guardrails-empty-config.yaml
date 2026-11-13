@@ -1,0 +1,19 @@
+kind: helper
+name: collect-guardrails-empty-config
+call:
+  b3601:
+    calls:
+      - function: collect_guardrails
+        key_metadata: {guardrails: [key-a]}
+        team_metadata: {}
+        config: null
+      - function: collect_guardrails
+        key_metadata: {guardrails: [key-a]}
+        team_metadata: {}
+        config: []
+      - function: collect_guardrails
+        key_metadata: {}
+        team_metadata: {}
+        config: {}
+env: {}
+compare: {ignore: []}
