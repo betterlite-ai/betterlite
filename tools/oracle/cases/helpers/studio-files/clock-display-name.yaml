@@ -1,0 +1,18 @@
+kind: helper
+name: studio-files-clock-display-name
+call:
+  studio_files:
+    calls:
+      - function: create_plan
+        now: 1704161045
+        file:
+          data: [1]
+          content_type: text/plain
+      - function: create_plan
+        now: 1704161045
+        file:
+          data: [1]
+          filename: report.pdf
+          content_type: application/pdf
+env: {}
+compare: {ignore: []}
