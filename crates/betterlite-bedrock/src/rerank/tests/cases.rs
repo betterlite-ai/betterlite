@@ -675,6 +675,7 @@ fn rerank_error_status() {
         panic!("a status error is a provider error");
     };
     assert_eq!(*status, 429);
+    assert_eq!(run.result.as_ref().unwrap_err().status(), Some(429));
     assert_eq!(error.error.status_code, 429);
     assert_eq!(error.error.message, "slow down");
     assert_eq!(
@@ -701,6 +702,7 @@ fn rerank_error_transport() {
         panic!("a timeout is a provider error");
     };
     assert_eq!(*status, 408);
+    assert_eq!(run.result.as_ref().unwrap_err().status(), Some(408));
     assert_eq!(error.error.message, "Timeout error occurred.");
 
     let run = run(
@@ -709,6 +711,7 @@ fn rerank_error_transport() {
         Some(ClientKind::Sync),
     );
     assert!(matches!(run.result, Err(RerankCallError::Transport(_))));
+    assert_eq!(run.result.as_ref().unwrap_err().status(), None);
 
     let run = run(
         call(&documented, auth_params()),
