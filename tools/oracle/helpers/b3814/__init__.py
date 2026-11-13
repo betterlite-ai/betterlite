@@ -1,14 +1,15 @@
 import asyncio
+import json
 from collections.abc import Coroutine
 from typing import Literal, Protocol, TypedDict, cast
 
-from fastapi import HTTPException
 from litellm.proxy.db import tool_registry_writer
 from litellm.proxy.db.tool_registry_writer import ToolPolicyRegistry
 from litellm.proxy.guardrails.guardrail_hooks.tool_policy.tool_policy_guardrail import (
     ToolPolicyGuardrail,
 )
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 from typing_extensions import override
 
 
@@ -117,10 +118,11 @@ def run(input_value: Input) -> Output:
                 input_value["input_type"],
             )
         )
-    except HTTPException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_policy/tool_policy_guardrail.py#L182-L189
+    # LiteLLM raises FastAPI's HTTPException; Starlette's base carries the refusal dict here
+    except HTTPException as error:
         blocked: Blocked = {
             "status": error.status_code,
-            "detail": adapter.validate_python(error.detail),
+            "detail": adapter.validate_json(json.dumps(error.detail)),
         }
         return {"blocked": blocked, "inputs": None}
     return {"blocked": None, "inputs": returned}
