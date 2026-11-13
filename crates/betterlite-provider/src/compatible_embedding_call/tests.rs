@@ -1,20 +1,80 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::compatible_embedding_settings::{Globals, Settings};
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
+use betterlite_logging::logging_pre_post::env::{
+    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
+};
+use betterlite_logging::logging_privacy::request::Decision;
+use betterlite_logging::logging_state::correlation::{
+    CorrelationContext, CorrelationSettings, CorrelationSetup,
+};
+use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_openai::compatible_embedding::Mode;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use chrono::DateTime;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
+use tokio::time::timeout;
 
-use super::{CometapiEmbedding, SharedEmbedding};
+use super::{CometapiEmbedding, SharedEmbedding, shared_embedding};
 use crate::prepared::PreparedRequest;
+
+const INIT: &str = r#"{"model":"gpt-4o","call_type":"embedding","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
+const REPLY: &str = r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.25]}],"model":"upstream","usage":{"prompt_tokens":1,"total_tokens":1}}"#;
+const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(5);
+
+struct Discard;
+
+impl LogSink for Discard {
+    fn emit(&self, _record: LogRecord) {}
+}
+
+fn client() -> ProxiedClient {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    ProxiedClient::outbound(&Arc::new(policy)).unwrap()
+}
+
+async fn serve(listener: &TcpListener) -> String {
+    let (mut stream, _) = listener.accept().await.unwrap();
+    let mut request = Vec::new();
+    loop {
+        let mut chunk = [0_u8; 4096];
+        let count = stream.read(&mut chunk).await.unwrap();
+        assert!(count > 0);
+        request.extend_from_slice(&chunk[..count]);
+        let text = String::from_utf8(request.clone()).unwrap();
+        if let Some((head, body)) = text.split_once("\r\n\r\n") {
+            let length = head
+                .to_ascii_lowercase()
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length: ")?.parse::<usize>().ok())
+                .unwrap_or(0);
+            if body.len() >= length {
+                break;
+            }
+        }
+    }
+    let reply = format!(
+        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{REPLY}",
+        REPLY.len()
+    );
+    stream.write_all(reply.as_bytes()).await.unwrap();
+    String::from_utf8(request).unwrap()
+}
 
 const ENVIRONMENT: &[(&str, &str)] = &[
     ("OPENAI_LIKE_API_BASE", "http://env.example/v1"),
@@ -347,4 +407,106 @@ fn cometapi_identity_follows_the_pinned_precedence(
         chat.http.headers.get("Authorization").unwrap(),
         expected_authorization
     );
+}
+
+#[tokio::test]
+async fn cometapi_execute_sends_the_prepared_request_and_keeps_the_callers_model() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let input = PromptJson::Text(String::from("a"));
+    let options = Object::new();
+    let globals = Globals::default();
+    let settings = settings(ENVIRONMENT);
+    let key = SecretString::from(String::from("sk-explicit"));
+    let embedding = CometapiEmbedding {
+        model: "m",
+        input: &input,
+        optional_params: &options,
+        api_base: Some(&base),
+        api_key: Some(&key),
+        timeout: Duration::from_secs(5),
+        globals: &globals,
+        settings: &settings,
+    };
+    let client = client();
+    let (request, answer) = timeout(EXCHANGE_TIMEOUT, async {
+        tokio::join!(serve(&listener), embedding.execute(&client))
+    })
+    .await
+    .unwrap();
+    let response = answer.unwrap();
+    assert_eq!(response.model, "m");
+    assert_eq!(response.data.len(), 1);
+    assert!(request.starts_with("POST /v1/embeddings HTTP/1.1"));
+    assert!(
+        request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer sk-explicit")
+    );
+    assert!(request.contains(r#""model":"m""#));
+}
+
+#[tokio::test]
+async fn shared_embedding_sends_the_handler_call_and_returns_the_decoded_reply() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let input = Json::List(vec![Json::Text(String::from("a"))]);
+    let options = IndexMap::new();
+    let globals = Globals::default();
+    let settings = settings(&[]);
+    let key = SecretString::from(String::from("sk-explicit"));
+    let call = SharedEmbedding {
+        model: "m",
+        input: &input,
+        api_base: Some(&base),
+        api_key: Some(&key),
+        optional_params: &options,
+        headers: None,
+        custom_endpoint: false,
+        timeout: Duration::from_secs(5),
+        mode: Mode::Async,
+        globals: &globals,
+        settings: &settings,
+    }
+    .handler_call();
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let mut state = LoggingState::new(
+        serde_json::from_str::<LoggingInit>(INIT).unwrap(),
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        &redactor,
+        || "trace".to_owned(),
+        Duration::default,
+    )
+    .unwrap();
+    let env = PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor: &redactor,
+        log: &Discard,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").unwrap(),
+    };
+    let client = client();
+    let (request, answer) = timeout(EXCHANGE_TIMEOUT, async {
+        tokio::join!(
+            serve(&listener),
+            shared_embedding(call, &client, &mut state, &env)
+        )
+    })
+    .await
+    .unwrap();
+    let response = answer.unwrap();
+    assert_eq!(response.model, "upstream");
+    assert_eq!(response.data.len(), 1);
+    assert!(request.starts_with("POST /v1/embeddings HTTP/1.1"));
+    assert!(request.contains(r#""input":["a"]"#));
 }
