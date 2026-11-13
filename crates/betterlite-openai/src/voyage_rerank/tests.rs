@@ -214,7 +214,10 @@ fn results_keep_scores_and_convert_string_documents() {
             VoyageRerankResult {
                 index: 1,
                 relevance_score: Decimal::new(5, 1),
-                document: Some(Json::Text("doc".to_owned())),
+                document: Some(Json::Object(indexmap::IndexMap::from([(
+                    "text".to_owned(),
+                    Json::Text("doc".to_owned()),
+                )]))),
             },
             VoyageRerankResult {
                 index: 2,

@@ -247,10 +247,17 @@ fn result(item: &Json) -> Result<VoyageRerankResult, VoyageRerankError> {
         .map_err(|_| VoyageRerankError::ResponseField {
             field: "relevance_score",
         })?;
+    let document = fields.get("document").map(|value| match value {
+        Json::Text(text) => Json::Object(IndexMap::from([(
+            "text".to_owned(),
+            Json::Text(text.clone()),
+        )])),
+        other => other.clone(),
+    });
     Ok(VoyageRerankResult {
         index,
         relevance_score,
-        document: fields.get("document").cloned(),
+        document,
     })
 }
 
@@ -265,19 +272,10 @@ fn total_tokens(root: &IndexMap<String, Json>) -> Result<Option<i64>, VoyageRera
     match usage.get("total_tokens") {
         None => Ok(Some(0)),
         Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => {
-            number
-                .as_i64()
-                .map(Some)
-                .ok_or(VoyageRerankError::ResponseField {
-                    field: "usage.total_tokens",
-                })
-        }
-        Some(Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(VoyageRerankError::ResponseField {
-                field: "usage.total_tokens",
-            })
-        }
+        Some(Json::Number(number)) if number.is_i64() => Ok(number.as_i64()),
+        Some(_) => Err(VoyageRerankError::ResponseField {
+            field: "usage.total_tokens",
+        }),
     }
 }
 
