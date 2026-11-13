@@ -1,4 +1,5 @@
 import logging
+from functools import partial
 from typing import Final, Literal, Protocol, TypeAlias, TypedDict, cast
 
 from litellm import anthropic_beta_headers_manager
@@ -57,8 +58,15 @@ class NativeUpdater(Protocol):
     ) -> dict[str, Json]: ...
 
 
-UPDATE_REQUEST: Final = cast(RequestUpdateFn, anthropic_beta_headers_manager.update_request_with_filtered_beta)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L359
+UPDATE_REQUEST: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L359
+    RequestUpdateFn, anthropic_beta_headers_manager.update_request_with_filtered_beta
+)
 NATIVE_BETAS: Final = cast(NativeUpdater, AnthropicMessagesConfig._update_headers_with_anthropic_beta)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L611
+
+
+class FixtureConfig(dict[str, Json]):
+    def load(self, _url: str) -> dict[str, Json]:
+        return dict(self)
 
 
 class DropRecorder(logging.Handler):
@@ -78,7 +86,9 @@ class DropRecorder(logging.Handler):
 
 
 def run(input_value: Input) -> Json:
-    anthropic_beta_headers_manager._BETA_HEADERS_CONFIG = input_value["matrix"]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_beta_headers_manager.py#L35
+    anthropic_beta_headers_manager.get_beta_headers_config = partial(
+        FixtureConfig(input_value["matrix"]).load
+    )
     logger = logging.getLogger("LiteLLM")
     recorder = DropRecorder()
     previous_handlers = logger.handlers
