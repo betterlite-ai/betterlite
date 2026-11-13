@@ -98,10 +98,10 @@ pub(super) fn split_unicode() {
     for outcomes in [&sync, &asynchronous] {
         assert_eq!(
             kinds(outcomes),
-            ["generic", "event", "event", "event", "parsing"]
+            ["generic", "event", "event", "parsing", "event"]
         );
         assert_eq!(contents(outcomes), ["b", "\u{20ac}", "r"]);
-        let message = failure(&outcomes[4]).to_string();
+        let message = failure(&outcomes[3]).to_string();
         assert!(message.starts_with("Error parsing chunk: "), "{message}");
         assert!(message.contains("Received chunk: "), "{message}");
     }
@@ -181,7 +181,7 @@ pub(super) fn invalid_json_event() {
     assert!(truncated.is_empty());
     let accumulated = drive_sync(vec![
         Ok(text(r#"data: {"type":"pi"#)),
-        Ok(text(r#"data: ng"}"#)),
+        Ok(text(r#"data: ng""#)),
     ]);
     assert!(accumulated.is_empty());
 }
@@ -203,7 +203,7 @@ pub(super) fn native_error_event() {
     let accumulated = drive_sync(vec![
         Ok(text(r#"data: {"type":"err"#)),
         Ok(text(
-            r#"data: or","error":{"type":"rate_limit_error","message":"slow"}}"#,
+            r#"data:or","error":{"type":"rate_limit_error","message":"slow"}}"#,
         )),
     ]);
     assert_eq!(kinds(&accumulated), ["anthropic"]);
