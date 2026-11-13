@@ -85,13 +85,21 @@ fn drop_adaptive(model: &str, optional_params: &mut IndexMap<String, Json>) {
 
 // Python's `max_completion_tokens or max_tokens`, then the int a budget can compare against
 fn cap_tokens(non_default_params: &IndexMap<String, Json>) -> Result<Option<i64>, ParamsError> {
+    let carries = |value: &Json| !match value {
+        Json::Null | Json::Bool(false) => true,
+        Json::Bool(true) => false,
+        Json::Number(number) => number.as_f64() == Some(0.0_f64),
+        Json::Text(text) => text.is_empty(),
+        Json::List(items) => items.is_empty(),
+        Json::Object(fields) => fields.is_empty(),
+    };
     let chosen = non_default_params
         .get("max_completion_tokens")
-        .filter(|value| value::is_set(value))
+        .filter(|value| carries(value))
         .or_else(|| {
             non_default_params
                 .get("max_tokens")
-                .filter(|value| value::is_set(value))
+                .filter(|value| carries(value))
         });
     let Some(value) = chosen else {
         return Ok(None);
