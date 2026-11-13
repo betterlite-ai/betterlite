@@ -67,7 +67,7 @@ impl Helper for Op {
             }));
         }
         for call in &input.errors {
-            answers.push(error_record(call)?);
+            answers.push(error_record(call));
         }
         Ok(json!({ "calls": answers }))
     }
@@ -86,7 +86,7 @@ fn construct(record: Record, fields: &Value) -> Result<Value, Box<HelperError>> 
     }
 }
 
-fn error_record(call: &ErrorCall) -> Result<Value, Box<HelperError>> {
+fn error_record(call: &ErrorCall) -> Value {
     let sent: ResponseHeaders = call
         .headers
         .iter()
@@ -97,11 +97,11 @@ fn error_record(call: &ErrorCall) -> Result<Value, Box<HelperError>> {
     for (name, value) in error.headers.into_iter().flatten() {
         rendered.insert(name, Value::String(value));
     }
-    Ok(json!({
+    json!({
         "status_code": error.status_code,
         "message": error.message,
         "headers": rendered,
-    }))
+    })
 }
 
 // the trait's provided methods are what the cases read, so a bare implementor stands in for a provider config
