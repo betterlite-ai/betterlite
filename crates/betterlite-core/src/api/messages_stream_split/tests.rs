@@ -590,11 +590,13 @@ fn splitter_pull_and_attributes_keeps_instances_separate() {
 #[test]
 fn splitter_pull_and_attributes_forwards_stream_attributes() {
     let mut source = TestSource::new(Vec::new());
-    source.chunks_attr = Some(vec![text_chunk("Hello", "null")]);
-    source.messages_attr = Some(vec![Json::Null]);
+    let logged = text_chunk("Hello", "null");
+    let sent = Json::Text("hi".to_owned());
+    source.chunks_attr = Some(vec![logged.clone()]);
+    source.messages_attr = Some(vec![sent.clone()]);
     let split = splitter(source);
-    assert_eq!(split.chunks().map(<[StreamChunk]>::len), Some(1));
-    assert_eq!(split.messages().map(<[Json]>::len), Some(1));
+    assert_eq!(split.chunks(), Some([logged].as_slice()));
+    assert_eq!(split.messages(), Some([sent].as_slice()));
     let bare = splitter(TestSource::new(Vec::new()));
     assert!(bare.chunks().is_none());
     assert!(bare.messages().is_none());
@@ -685,11 +687,13 @@ fn splitter_pull_and_attributes_propagates_an_async_failure() {
 #[test]
 fn splitter_pull_and_attributes_async_attributes_match_the_source() {
     let mut source = TestSource::new(Vec::new());
-    source.chunks_attr = Some(Vec::new());
-    source.messages_attr = Some(Vec::new());
+    let logged = text_chunk("Hello", "null");
+    let sent = Json::Text("hi".to_owned());
+    source.chunks_attr = Some(vec![logged.clone()]);
+    source.messages_attr = Some(vec![sent.clone()]);
     let split = async_splitter(source);
-    assert_eq!(split.chunks().map(<[StreamChunk]>::len), Some(0));
-    assert_eq!(split.messages().map(<[Json]>::len), Some(0));
+    assert_eq!(split.chunks(), Some([logged].as_slice()));
+    assert_eq!(split.messages(), Some([sent].as_slice()));
 }
 
 // delta_and_error_literals
