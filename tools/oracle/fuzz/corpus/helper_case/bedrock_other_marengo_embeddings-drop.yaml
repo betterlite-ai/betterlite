@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-other-marengo-embeddings-drop
+call:
+  bedrock_other_marengo_embeddings:
+    drop_unsupported_param:
+      model: twelvelabs.marengo-embed-3-0-v1:0
+      input: []
+      inference: {}
+      replies: []
+      global_drop_params: false
+      deployment_drop_params: "true"
+env: {}
+compare:
+  ignore: []
