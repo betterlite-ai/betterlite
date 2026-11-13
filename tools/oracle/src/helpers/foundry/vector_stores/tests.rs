@@ -33,25 +33,27 @@ fn helper_seeds_select_foundry_vector_stores() {
         .filter(|(name, _source)| name.starts_with("foundry_vector_stores"))
         .collect();
     assert!(!seeds.is_empty(), "no foundry_vector_stores seeds");
-    let mut seen = BTreeSet::new();
-    for (name, source) in seeds {
-        let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-        assert_eq!(case.call.operation, "foundry_vector_stores");
-        let variant = case
-            .call
-            .input
-            .as_object()
-            .unwrap()
-            .keys()
-            .next()
-            .unwrap()
-            .clone();
-        assert!(
-            VARIANTS.contains(&variant.as_str()),
-            "{name} names {variant}"
-        );
-        validate_helper(Path::new("<helper>"), &case).unwrap();
-        seen.insert(variant);
-    }
-    assert_eq!(seen.len(), VARIANTS.len());
+    let variants: BTreeSet<String> = seeds
+        .iter()
+        .map(|(name, source)| {
+            let case: HelperCase = serde_saphyr::from_str(source).unwrap();
+            assert_eq!(case.call.operation, "foundry_vector_stores");
+            let variant = case
+                .call
+                .input
+                .as_object()
+                .unwrap()
+                .keys()
+                .next()
+                .unwrap()
+                .clone();
+            assert!(
+                VARIANTS.contains(&variant.as_str()),
+                "{name} names {variant}"
+            );
+            validate_helper(Path::new("<helper>"), &case).unwrap();
+            variant
+        })
+        .collect();
+    assert_eq!(variants.len(), VARIANTS.len());
 }

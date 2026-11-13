@@ -40,8 +40,9 @@ fn store_type_endpoints_report(_input: &StoreTypeEndpointsInput) -> Value {
 }
 
 fn search_report(input: &SearchQueryFieldsInput) -> Value {
-    let searches: Vec<Value> = input.searches.iter().map(search_outcome).collect();
-    json!({"searches": searches})
+    json!({
+        "searches": input.searches.iter().map(search_outcome).collect::<Vec<Value>>(),
+    })
 }
 
 fn search_outcome(scenario: &SearchScenario) -> Value {
@@ -177,8 +178,9 @@ fn runtime_error(message: String) -> Box<HelperError> {
 }
 
 fn endpoint_report(input: &AzureSearchEndpointInput) -> Value {
-    let scenarios: Vec<Value> = input.scenarios.iter().map(endpoint_outcome).collect();
-    json!({"scenarios": scenarios})
+    json!({
+        "scenarios": input.scenarios.iter().map(endpoint_outcome).collect::<Vec<Value>>(),
+    })
 }
 
 fn endpoint_outcome(scenario: &EndpointScenario) -> Value {

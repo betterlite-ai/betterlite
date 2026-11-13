@@ -15,8 +15,9 @@ use super::super::fixtures::FixtureExecutor;
 use super::super::scenarios::{CitationScenario, DocumentScoreCitationInput};
 
 pub(super) fn citation_report(input: &DocumentScoreCitationInput) -> Value {
-    let responses: Vec<Value> = input.responses.iter().map(citation_outcome).collect();
-    json!({"responses": responses})
+    json!({
+        "responses": input.responses.iter().map(citation_outcome).collect::<Vec<Value>>(),
+    })
 }
 
 fn citation_outcome(scenario: &CitationScenario) -> Value {
