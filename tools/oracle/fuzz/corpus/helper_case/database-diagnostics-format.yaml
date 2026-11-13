@@ -1,0 +1,21 @@
+kind: helper
+name: database-diagnostics-format-seed
+call:
+  database_diagnostics:
+    function: format
+    format_scenarios:
+      - format: json
+        message: "worker %s beat %d"
+        level: INFO
+        created: 1700000000.125
+        offset_seconds: 19800
+        arguments: {positional: [alpha, 3]}
+      - format: text
+        message: beat
+        level: ERROR
+        created: 1700000000.123
+        offset_seconds: 0
+        exception: {kind: ValueError, message: boom}
+    enabled_scenarios: []
+env: {}
+compare: {ignore: []}

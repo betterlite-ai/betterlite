@@ -1,0 +1,29 @@
+kind: helper
+name: database-diagnostics-json-fields-and-time
+call:
+  database_diagnostics:
+    function: format
+    format_scenarios:
+      - format: json
+        message: worker beat
+        level: INFO
+        created: 1700000000.0
+        offset_seconds: 0
+      - format: json
+        message: worker beat
+        level: DEBUG
+        created: 1700000000.125
+        offset_seconds: 19800
+      - format: json
+        message: worker beat
+        level: ERROR
+        created: 0.5
+        offset_seconds: -18000
+      - format: json
+        message: "héllo\nworld\u0001"
+        level: INFO
+        created: 1700000000.000001
+        offset_seconds: 0
+    enabled_scenarios: []
+env: {}
+compare: {ignore: []}
