@@ -22,23 +22,24 @@ fn parse(decoder: &mut InvokeStreamDecoder, source: &str) -> InvokeChunk {
     decoder.chunk_parser(&json(source)).unwrap()
 }
 
-fn generic(chunk: InvokeChunk) -> GenericChunk {
+fn base(chunk: InvokeChunk) -> ChunkProjection {
     match chunk {
-        InvokeChunk::Base(projection) => match *projection {
-            ChunkProjection::Generic(generic) => generic,
-            ChunkProjection::Converse(_) => panic!("expected a generic chunk"),
-        },
+        InvokeChunk::Base(projection) => *projection,
         _ => panic!("expected the base decoder projection"),
     }
 }
 
+fn generic(chunk: InvokeChunk) -> GenericChunk {
+    match base(chunk) {
+        ChunkProjection::Generic(generic) => generic,
+        ChunkProjection::Converse(_) => panic!("expected a generic chunk"),
+    }
+}
+
 fn converse(chunk: InvokeChunk) -> ConverseChunk {
-    match chunk {
-        InvokeChunk::Base(projection) => match *projection {
-            ChunkProjection::Converse(converse) => converse,
-            ChunkProjection::Generic(_) => panic!("expected a converse chunk"),
-        },
-        _ => panic!("expected the base decoder projection"),
+    match base(chunk) {
+        ChunkProjection::Converse(converse) => converse,
+        ChunkProjection::Generic(_) => panic!("expected a converse chunk"),
     }
 }
 
@@ -489,7 +490,7 @@ pub(super) fn framing_iteration_and_eof() {
     ];
     let chunks = byte_chunks(&frames);
     let outcomes: Vec<_> = decoder
-        .iter_bytes(chunks, Some(headers.clone()), &redactor)
+        .framed(chunks, Some(headers.clone()), &redactor)
         .collect();
     let texts: Vec<String> = outcomes
         .into_iter()
@@ -502,7 +503,7 @@ pub(super) fn framing_iteration_and_eof() {
     let tail = split.split_off(split.len() - 3);
     let chunks = byte_chunks(&[split, tail]);
     let outcomes: Vec<_> = decoder
-        .iter_bytes(chunks, Some(headers.clone()), &redactor)
+        .framed(chunks, Some(headers.clone()), &redactor)
         .collect();
     assert_eq!(outcomes.len(), 1);
     assert_eq!(
@@ -513,7 +514,7 @@ pub(super) fn framing_iteration_and_eof() {
     let mut decoder = stream_decoder(None, &options(None, false));
     let empty = vec![chunk_frame(""), chunk_frame("{}")];
     let outcomes: Vec<_> = decoder
-        .iter_bytes(byte_chunks(&empty), Some(headers.clone()), &redactor)
+        .framed(byte_chunks(&empty), Some(headers.clone()), &redactor)
         .collect();
     assert_eq!(outcomes.len(), 1);
     let only = generic(outcomes.into_iter().next().unwrap().unwrap());
@@ -527,7 +528,7 @@ pub(super) fn framing_iteration_and_eof() {
         chunk_frame(r#"{"outputText":"never"}"#),
     ];
     let outcomes: Vec<_> = decoder
-        .iter_bytes(byte_chunks(&late_error), Some(headers.clone()), &redactor)
+        .framed(byte_chunks(&late_error), Some(headers.clone()), &redactor)
         .collect();
     assert_eq!(outcomes.len(), 2);
     let mut outcomes = outcomes.into_iter();
@@ -538,7 +539,7 @@ pub(super) fn framing_iteration_and_eof() {
 
     let mut decoder = stream_decoder(None, &options(None, false));
     let outcomes: Vec<_> = decoder
-        .iter_bytes(byte_chunks(&[]), Some(headers.clone()), &redactor)
+        .framed(byte_chunks(&[]), Some(headers.clone()), &redactor)
         .collect();
     assert_eq!(outcomes.len(), 1);
     assert_eq!(
@@ -550,7 +551,7 @@ pub(super) fn framing_iteration_and_eof() {
     let mut truncated = frames[0].clone();
     truncated.truncate(truncated.len() - 2);
     let outcomes: Vec<_> = decoder
-        .iter_bytes(
+        .framed(
             byte_chunks(&[frames[0].clone(), truncated]),
             Some(headers.clone()),
             &redactor,
@@ -564,7 +565,7 @@ pub(super) fn framing_iteration_and_eof() {
     let mut decoder = stream_decoder(None, &options(None, false));
     let ignored = vec![chunk_frame("")];
     let outcomes: Vec<_> = decoder
-        .iter_bytes(byte_chunks(&ignored), Some(headers.clone()), &redactor)
+        .framed(byte_chunks(&ignored), Some(headers.clone()), &redactor)
         .collect();
     assert!(outcomes.is_empty());
 
@@ -573,7 +574,7 @@ pub(super) fn framing_iteration_and_eof() {
         r#"{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"#,
     )];
     let outcomes: Vec<_> = decoder
-        .iter_bytes(byte_chunks(&bad_payload), Some(headers.clone()), &redactor)
+        .framed(byte_chunks(&bad_payload), Some(headers.clone()), &redactor)
         .collect();
     assert_eq!(outcomes.len(), 1);
     assert_eq!(error(outcomes.into_iter().next().unwrap()).status(), None);
@@ -583,7 +584,7 @@ pub(super) fn framing_iteration_and_eof() {
         r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"#,
     )];
     let outcomes: Vec<_> = decoder
-        .iter_bytes(byte_chunks(&projected), Some(headers.clone()), &redactor)
+        .framed(byte_chunks(&projected), Some(headers.clone()), &redactor)
         .collect();
     assert_eq!(
         anthropic(outcomes.into_iter().next().unwrap().unwrap()).choices[0]
@@ -595,7 +596,7 @@ pub(super) fn framing_iteration_and_eof() {
     let mut decoder = stream_decoder(None, &options(None, false));
     let chunks = bytes_stream(&frames);
     let outcomes = block_on(async {
-        let mut stream = decoder.aiter_bytes(chunks, Some(headers), &redactor);
+        let mut stream = decoder.framed(chunks, Some(headers), &redactor);
         let mut outcomes = Vec::new();
         while let Some(item) = stream.next().await {
             outcomes.push(item);

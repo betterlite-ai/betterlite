@@ -6,8 +6,7 @@ use betterlite_anthropic::stream_events::chunk::StreamEventChunk;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat_choices::wire::StreamReply;
 use betterlite_redact::secret::Redactor;
-use bytes::{Bytes, BytesMut};
-use futures_util::Stream;
+use bytes::BytesMut;
 use indexmap::IndexMap;
 use uuid::Uuid;
 
@@ -16,7 +15,7 @@ use crate::converse_events::ConverseStreamState;
 use crate::event_frames::shape::ResponseStreamShape;
 use crate::event_frames::tally::EventStreamTally;
 use crate::invoke_events::error::InvokeStreamError;
-use crate::invoke_events::framing::{FramedEventStream, FramedEvents, FramedState};
+use crate::invoke_events::framing::{FramedEvents, FramedState};
 use crate::invoke_events::ids::IdFunction;
 
 mod anthropic;
@@ -63,65 +62,27 @@ enum Projection {
 }
 
 // AWSEventStreamDecoder.__init__: the content blocks, response id and JSON-mode flag every provider shares.
-fn base_state(model: &str, json_mode: bool, clock: DecoderClock) -> ConverseStreamState {
-    ConverseStreamState {
-        content_blocks: Vec::new(),
-        tool_calls_index: None,
-        response_id: None,
-        current_tool_name: None,
-        thinking_ran: false,
-        provider_reasoning_tokens: None,
-        json_mode,
-        model: model.to_owned(),
-        mappings: IndexMap::new(),
-        ids: Arc::new(IdFunction {
-            next: clock.next_id,
-        }),
-    }
-}
-
-#[must_use]
-pub fn base_decoder(options: &DecoderOptions<'_>) -> InvokeStreamDecoder {
+fn new_decoder(
+    projection: Projection,
+    json_mode: bool,
+    options: &DecoderOptions<'_>,
+) -> InvokeStreamDecoder {
     InvokeStreamDecoder {
-        base: base_state(
-            options.model,
-            options.json_mode.unwrap_or(false),
-            options.clock,
-        ),
-        projection: Projection::Base,
-        clock: options.clock,
-    }
-}
-
-#[must_use]
-pub fn anthropic_decoder(options: &DecoderOptions<'_>) -> InvokeStreamDecoder {
-    InvokeStreamDecoder {
-        base: base_state(options.model, false, options.clock),
-        projection: Projection::Anthropic(Box::new(anthropic::converter(
-            options.sync_stream,
-            options.json_mode,
-            options.clock.next_id,
-        ))),
-        clock: options.clock,
-    }
-}
-
-#[must_use]
-pub fn deepseek_decoder(options: &DecoderOptions<'_>) -> InvokeStreamDecoder {
-    InvokeStreamDecoder {
-        base: base_state(options.model, false, options.clock),
-        projection: Projection::DeepSeek {
-            has_finished_thinking: false,
+        base: ConverseStreamState {
+            content_blocks: Vec::new(),
+            tool_calls_index: None,
+            response_id: None,
+            current_tool_name: None,
+            thinking_ran: false,
+            provider_reasoning_tokens: None,
+            json_mode,
+            model: options.model.to_owned(),
+            mappings: IndexMap::new(),
+            ids: Arc::new(IdFunction {
+                next: options.clock.next_id,
+            }),
         },
-        clock: options.clock,
-    }
-}
-
-#[must_use]
-pub fn openai_compatible_decoder(options: &DecoderOptions<'_>) -> InvokeStreamDecoder {
-    InvokeStreamDecoder {
-        base: base_state(options.model, false, options.clock),
-        projection: Projection::OpenAiCompatible,
+        projection,
         clock: options.clock,
     }
 }
@@ -152,15 +113,13 @@ impl InvokeStreamDecoder {
         }
     }
 
-    pub fn iter_bytes<'decoder, Chunks>(
+    // AWSEventStreamDecoder.iter_bytes and aiter_bytes: the frames pull from a sync iterator or an async stream.
+    pub fn framed<'decoder, Chunks>(
         &'decoder mut self,
         chunks: Chunks,
         response_headers: Option<BTreeMap<String, String>>,
         redactor: &'decoder Redactor,
-    ) -> FramedEvents<'decoder, Chunks>
-    where
-        Chunks: Iterator<Item = Bytes>,
-    {
+    ) -> FramedEvents<'decoder, Chunks> {
         let state = FramedState {
             decoder: self,
             buffer: BytesMut::new(),
@@ -176,40 +135,32 @@ impl InvokeStreamDecoder {
             redactor,
         }
     }
-
-    pub fn aiter_bytes<'decoder, Chunks>(
-        &'decoder mut self,
-        chunks: Chunks,
-        response_headers: Option<BTreeMap<String, String>>,
-        redactor: &'decoder Redactor,
-    ) -> FramedEventStream<'decoder, Chunks>
-    where
-        Chunks: Stream<Item = Bytes> + Unpin,
-    {
-        let state = FramedState {
-            decoder: self,
-            buffer: BytesMut::new(),
-            tally: EventStreamTally::default(),
-            shape: ResponseStreamShape::bedrock_runtime(),
-            response_headers,
-            done: false,
-        };
-        FramedEventStream {
-            state,
-            chunks,
-            pending: VecDeque::new(),
-            redactor,
-        }
-    }
 }
 
 #[must_use]
 pub fn stream_decoder(provider: Option<&str>, options: &DecoderOptions<'_>) -> InvokeStreamDecoder {
     match provider {
-        Some("anthropic") => anthropic_decoder(options),
-        Some("deepseek_r1") => deepseek_decoder(options),
-        Some("moonshot") => openai_compatible_decoder(options),
-        Some(_) | None => base_decoder(options),
+        Some("anthropic") => {
+            let converter = anthropic::converter(
+                options.sync_stream,
+                options.json_mode,
+                options.clock.next_id,
+            );
+            new_decoder(Projection::Anthropic(Box::new(converter)), false, options)
+        }
+        Some("deepseek_r1") => new_decoder(
+            Projection::DeepSeek {
+                has_finished_thinking: false,
+            },
+            false,
+            options,
+        ),
+        Some("moonshot") => new_decoder(Projection::OpenAiCompatible, false, options),
+        Some(_) | None => new_decoder(
+            Projection::Base,
+            options.json_mode.unwrap_or(false),
+            options,
+        ),
     }
 }
 
@@ -219,13 +170,8 @@ pub fn bedrock_event_stream_decoder(
     options: &DecoderOptions<'_>,
 ) -> InvokeStreamDecoder {
     match provider {
-        Some("anthropic") => anthropic_decoder(options),
-        Some("deepseek_r1") => deepseek_decoder(options),
+        Some("anthropic" | "deepseek_r1") => stream_decoder(provider, options),
         // the legacy export has no Moonshot branch and drops json_mode for every other provider
-        Some(_) | None => InvokeStreamDecoder {
-            base: base_state(options.model, false, options.clock),
-            projection: Projection::Base,
-            clock: options.clock,
-        },
+        Some(_) | None => new_decoder(Projection::Base, false, options),
     }
 }

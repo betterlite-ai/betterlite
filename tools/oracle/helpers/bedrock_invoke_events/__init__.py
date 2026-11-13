@@ -1,6 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator, Iterator, Mapping
-from typing import Literal, NotRequired, Protocol, TypedDict
+from collections.abc import AsyncIterator, Iterator
 
 from litellm.llms.bedrock.chat import get_bedrock_event_stream_decoder
 from litellm.llms.bedrock.chat.invoke_handler import (
@@ -14,113 +13,26 @@ from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.types.utils import ModelResponse, ModelResponseStream
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-Provider = Literal["anthropic", "deepseek_r1", "moonshot"]
-Construction = Literal["legacy", "anthropic", "deepseek_r1", "moonshot", "base"]
-Step = Literal["next", "anext"]
-
-class FramedInput(TypedDict):
-    construction: Construction
-    provider: Provider | None
-    sync: bool
-    model: str
-    json_mode: bool | None
-    chunks: list[str]
-    headers: dict[str, str] | None
-
-class FakeInput(TypedDict):
-    response: dict[str, JsonValue]
-    json_mode: bool | None
-    steps: list[Step]
-
-class Input(TypedDict):
-    framed: list[FramedInput]
-    fake: list[FakeInput]
-
-class FailureView(TypedDict):
-    status: int | None
-
-class UsageView(TypedDict):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-class GenericView(TypedDict):
-    kind: Literal["generic"]
-    text: str
-    tool_use: JsonValue
-    is_finished: bool
-    finish_reason: str
-    usage: UsageView | None
-    index: int | None
-
-class StreamView(TypedDict):
-    kind: Literal["stream"]
-    content: str | None
-    reasoning_content: str | None
-    finish_reason: str | None
-    tool_calls: list[JsonValue] | None
-    usage: UsageView | None
-
-class FramedResult(TypedDict):
-    chunks: list[GenericView | StreamView]
-    failure: FailureView | None
-
-class OkStep(TypedDict):
-    ok: GenericView | StreamView
-
-class FailureStep(TypedDict):
-    failure: FailureView
-
-class DoneStep(TypedDict):
-    done: bool
-
-class FakeResult(TypedDict):
-    steps: list[OkStep | FailureStep | DoneStep]
-
-class Output(TypedDict):
-    framed: list[FramedResult]
-    fake: list[FakeResult]
-
-class GenericRaw(TypedDict):
-    text: str
-    tool_use: JsonValue
-    is_finished: bool
-    finish_reason: str
-    usage: UsageView | None
-    index: int | None
-
-class FunctionView(TypedDict):
-    name: NotRequired[str | None]
-    arguments: NotRequired[str | None]
-
-class ToolCallView(TypedDict):
-    id: NotRequired[str | None]
-    index: NotRequired[int | None]
-    function: NotRequired[FunctionView]
-
-class DeltaView(TypedDict):
-    content: NotRequired[str | None]
-    reasoning_content: NotRequired[str | None]
-    tool_calls: NotRequired[list[JsonValue] | None]
-
-class ChoiceView(TypedDict):
-    index: int
-    finish_reason: NotRequired[str | None]
-    delta: DeltaView
-
-class ChunkView(TypedDict):
-    choices: list[ChoiceView]
-    usage: JsonValue | None
-
-class Framed(Protocol):
-    def iter_bytes(
-        self, iterator: Iterator[bytes], *, response_headers: Mapping[str, str] | None = None
-    ) -> Iterator[object]: ...
-
-    def aiter_bytes(
-        self, iterator: AsyncIterator[bytes], *, response_headers: Mapping[str, str] | None = None
-    ) -> AsyncIterator[object]: ...
-
+from .types import (
+    ChunkLike,
+    ChunkView,
+    DoneStep,
+    FailureStep,
+    FailureView,
+    FakeInput,
+    FakeResult,
+    Framed,
+    FramedInput,
+    FramedResult,
+    GenericRaw,
+    GenericView,
+    Input,
+    OkStep,
+    Output,
+    StreamView,
+    ToolCallView,
+    UsageView,
+)
 
 GENERIC: TypeAdapter[GenericRaw] = TypeAdapter(GenericRaw)
 STREAM: TypeAdapter[ModelResponseStream] = TypeAdapter(ModelResponseStream)
@@ -185,7 +97,7 @@ def generic_view(raw: GenericRaw) -> GenericView:
     }
 
 
-def chunk_view(value: object) -> GenericView | StreamView:
+def chunk_view(value: ChunkLike) -> GenericView | StreamView:
     try:
         generic = GENERIC.validate_python(value)
     except ValidationError:
@@ -193,8 +105,10 @@ def chunk_view(value: object) -> GenericView | StreamView:
     return generic_view(generic)
 
 
-async def collect_async(iterator: AsyncIterator[object]) -> tuple[list[object], FailureView | None]:
-    values: list[object] = []
+async def collect_async(
+    iterator: AsyncIterator[ChunkLike],
+) -> tuple[list[ChunkLike], FailureView | None]:
+    values: list[ChunkLike] = []
     while True:
         try:
             value = await anext(iterator)
@@ -207,18 +121,15 @@ async def collect_async(iterator: AsyncIterator[object]) -> tuple[list[object], 
         values.append(value)
 
 
-def collect_sync(iterator: Iterator[object]) -> tuple[list[object], FailureView | None]:
-    values: list[object] = []
-    while True:
-        try:
-            value = next(iterator)
-        except StopIteration:
-            return values, None
-        except BedrockError as error:
-            return values, {"status": error.status_code}
-        except ValueError:
-            return values, {"status": None}
-        values.append(value)
+def collect_sync(iterator: Iterator[ChunkLike]) -> tuple[list[ChunkLike], FailureView | None]:
+    values: list[ChunkLike] = []
+    try:
+        values.extend(iterator)
+    except BedrockError as error:
+        return values, {"status": error.status_code}
+    except ValueError:
+        return values, {"status": None}
+    return values, None
 
 
 async def frame_stream(frames: list[bytes]) -> AsyncIterator[bytes]:
@@ -226,16 +137,12 @@ async def frame_stream(frames: list[bytes]) -> AsyncIterator[bytes]:
         yield frame
 
 
-def framed_result(values: list[object], failure: FailureView | None) -> FramedResult:
-    return {"chunks": [chunk_view(value) for value in values], "failure": failure}
-
-
 def construction_decoder(scenario: FramedInput) -> Framed:
     model = scenario["model"]
     sync = scenario["sync"]
     json_mode = scenario["json_mode"]
     if scenario["construction"] == "legacy":
-        return get_bedrock_event_stream_decoder(
+        return get_bedrock_event_stream_decoder(  # type: ignore[no-any-return,misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/__init__.py#L9
             scenario["provider"], model, sync, json_mode is True
         )
     if scenario["construction"] == "anthropic":
@@ -256,20 +163,23 @@ def run_framed(scenario: FramedInput) -> FramedResult:
         values, failure = collect_sync(
             decoder.iter_bytes(iter(frames), response_headers=scenario["headers"])
         )
-        return framed_result(values, failure)
-    values, failure = asyncio.run(
-        collect_async(
-            decoder.aiter_bytes(frame_stream(frames), response_headers=scenario["headers"])
+    else:
+        values, failure = asyncio.run(
+            collect_async(
+                decoder.aiter_bytes(frame_stream(frames), response_headers=scenario["headers"])
+            )
         )
-    )
-    return framed_result(values, failure)
+    return {"chunks": [chunk_view(value) for value in values], "failure": failure}
 
 
-async def anext_or_none(iterator: AsyncIterator[object]) -> object | None:
-    return await anext(iterator, None)
+async def next_async(iterator: AsyncIterator[ChunkLike]) -> ChunkLike | None:
+    try:
+        return await anext(iterator)
+    except StopAsyncIteration:
+        return None
 
 
-def step_view(value: object | None) -> OkStep | FailureStep | DoneStep:
+def step_view(value: ChunkLike | None) -> OkStep | FailureStep | DoneStep:
     if value is None:
         return {"done": True}
     return {"ok": chunk_view(value)}
@@ -278,15 +188,15 @@ def step_view(value: object | None) -> OkStep | FailureStep | DoneStep:
 def run_fake(scenario: FakeInput) -> FakeResult:
     response = RESPONSE.validate_python(scenario["response"])
     iterator = MockResponseIterator(model_response=response, json_mode=scenario["json_mode"])
-    sync_iterator: Iterator[object] = iterator
-    async_iterator: AsyncIterator[object] = iterator
+    sync_iterator: Iterator[ChunkLike] = iterator
+    async_iterator: AsyncIterator[ChunkLike] = iterator
     steps: list[OkStep | FailureStep | DoneStep] = []
     for step in scenario["steps"]:
         try:
             if step == "next":
                 steps.append(step_view(next(sync_iterator, None)))
             else:
-                steps.append(step_view(asyncio.run(anext_or_none(async_iterator))))
+                steps.append(step_view(asyncio.run(next_async(async_iterator))))
         except ValueError:
             steps.append({"failure": {"status": None}})
     return {"steps": steps}

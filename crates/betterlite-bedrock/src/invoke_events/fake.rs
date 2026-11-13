@@ -108,13 +108,10 @@ fn parse(
             let first = calls
                 .first()
                 .ok_or_else(|| decode_error(response, "the first tool call is missing"))?;
-            match convert_tool_response_to_message(first.function.arguments.as_deref()) {
-                Some(content) => {
-                    text = content;
-                    None
-                }
-                None => None,
+            if let Some(content) = json_mode_message(first.function.arguments.as_deref()) {
+                text = content;
             }
+            None
         }
         (_, Some(calls)) => calls.first().map(tool_use_json),
         (_, None) => None,
@@ -142,7 +139,7 @@ fn parse(
 }
 
 // AnthropicConfig._convert_tool_response_to_message: a json.dumps of the values field or of the whole argument object.
-fn convert_tool_response_to_message(arguments: Option<&str>) -> Option<String> {
+fn json_mode_message(arguments: Option<&str>) -> Option<String> {
     let raw = arguments?;
     match decode_json_mode_arguments(raw) {
         Err(_source) => Some(raw.to_owned()),

@@ -2,8 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_bedrock::invoke_events::fake::{FakeResponse, FakeStream};
 use betterlite_bedrock::invoke_events::{
-    DecoderClock, DecoderOptions, InvokeStreamDecoder, anthropic_decoder, base_decoder,
-    bedrock_event_stream_decoder, deepseek_decoder, openai_compatible_decoder,
+    DecoderClock, DecoderOptions, InvokeStreamDecoder, bedrock_event_stream_decoder, stream_decoder,
 };
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use bytes::Bytes;
@@ -120,11 +119,13 @@ fn decoder(scenario: &FramedScenario) -> InvokeStreamDecoder {
         clock,
     };
     match scenario.construction {
-        Construction::Legacy => bedrock_event_stream_decoder(scenario.provider.as_deref(), &options),
-        Construction::Anthropic => anthropic_decoder(&options),
-        Construction::DeepseekR1 => deepseek_decoder(&options),
-        Construction::Moonshot => openai_compatible_decoder(&options),
-        Construction::Base => base_decoder(&options),
+        Construction::Legacy => {
+            bedrock_event_stream_decoder(scenario.provider.as_deref(), &options)
+        }
+        Construction::Anthropic => stream_decoder(Some("anthropic"), &options),
+        Construction::DeepseekR1 => stream_decoder(Some("deepseek_r1"), &options),
+        Construction::Moonshot => stream_decoder(Some("moonshot"), &options),
+        Construction::Base => stream_decoder(None, &options),
     }
 }
 fn run_framed(
@@ -142,11 +143,11 @@ fn run_framed(
         Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| failure(error.to_string()))?;
     let outcomes = if scenario.sync {
         decoder
-            .iter_bytes(chunks.into_iter(), scenario.headers.clone(), &redactor)
+            .framed(chunks.into_iter(), scenario.headers.clone(), &redactor)
             .collect::<Vec<_>>()
     } else {
         runtime.block_on(async {
-            let mut stream = decoder.aiter_bytes(
+            let mut stream = decoder.framed(
                 futures_util::stream::iter(chunks),
                 scenario.headers.clone(),
                 &redactor,
@@ -162,7 +163,7 @@ fn run_framed(
     let mut failure_view = Value::Null;
     for outcome in outcomes {
         match outcome {
-            Ok(chunk) => views.push(chunk_view(chunk)),
+            Ok(chunk) => views.push(chunk_view(chunk).map_err(|error| failure(error.to_string()))?),
             Err(error) => {
                 failure_view = json!({ "status": error.status() });
                 break;

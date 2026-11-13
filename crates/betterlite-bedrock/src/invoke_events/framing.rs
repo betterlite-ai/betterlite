@@ -18,8 +18,13 @@ use crate::invoke_events::error::InvokeStreamError;
 
 // The bytes B599 hands back for one framed Bedrock event; every provider projection reads its JSON.
 pub fn decode_bedrock_event_json(payload: &[u8]) -> Result<Json, InvokeStreamError> {
-    serde_json::from_slice(payload).map_err(|source| InvokeStreamError::Json { source })
+    match serde_json::from_slice(payload) {
+        Ok(value) => Ok(value),
+        Err(source) => Err(InvokeStreamError::Json { source }),
+    }
 }
+
+type Pending = VecDeque<Result<InvokeChunk, InvokeStreamError>>;
 
 pub(crate) struct FramedState<'decoder> {
     pub(crate) decoder: &'decoder mut InvokeStreamDecoder,
@@ -31,11 +36,7 @@ pub(crate) struct FramedState<'decoder> {
 }
 
 impl FramedState<'_> {
-    pub(crate) fn absorb(
-        &mut self,
-        chunk: &[u8],
-        pending: &mut VecDeque<Result<InvokeChunk, InvokeStreamError>>,
-    ) {
+    pub(crate) fn absorb(&mut self, chunk: &[u8], pending: &mut Pending) {
         self.buffer.extend_from_slice(chunk);
         self.tally.add_chunk(chunk);
         loop {
@@ -56,11 +57,7 @@ impl FramedState<'_> {
         }
     }
 
-    fn project(
-        &mut self,
-        event: &AwsEvent,
-        pending: &mut VecDeque<Result<InvokeChunk, InvokeStreamError>>,
-    ) -> bool {
+    fn project(&mut self, event: &AwsEvent, pending: &mut Pending) -> bool {
         let message = match parse_message_from_event(Some(&self.shape), event) {
             Ok(Some(text)) => text,
             Ok(None) => return true,
@@ -88,25 +85,18 @@ impl FramedState<'_> {
         }
     }
 
-    pub(crate) fn finish(
-        &mut self,
-        pending: &mut VecDeque<Result<InvokeChunk, InvokeStreamError>>,
-        redactor: &Redactor,
-    ) {
+    pub(crate) fn finish(&mut self, pending: &mut Pending, redactor: &Redactor) {
         self.done = true;
-        if let Some(error) = self
-            .tally
-            .undecoded_stream_error(self.response_headers.as_ref(), redactor)
-        {
-            pending.push_back(Err(InvokeStreamError::Frame(error)));
-        }
+        let headers = self.response_headers.as_ref();
+        let error = self.tally.undecoded_stream_error(headers, redactor);
+        pending.extend(error.map(|error| Err(InvokeStreamError::Frame(error))));
     }
 }
 
 pub struct FramedEvents<'decoder, Chunks> {
     pub(crate) state: FramedState<'decoder>,
     pub(crate) chunks: Chunks,
-    pub(crate) pending: VecDeque<Result<InvokeChunk, InvokeStreamError>>,
+    pub(crate) pending: Pending,
     pub(crate) redactor: &'decoder Redactor,
 }
 
@@ -132,14 +122,7 @@ where
     }
 }
 
-pub struct FramedEventStream<'decoder, Chunks> {
-    pub(crate) state: FramedState<'decoder>,
-    pub(crate) chunks: Chunks,
-    pub(crate) pending: VecDeque<Result<InvokeChunk, InvokeStreamError>>,
-    pub(crate) redactor: &'decoder Redactor,
-}
-
-impl<Chunks> Stream for FramedEventStream<'_, Chunks>
+impl<Chunks> Stream for FramedEvents<'_, Chunks>
 where
     Chunks: Stream<Item = Bytes> + Unpin,
 {
