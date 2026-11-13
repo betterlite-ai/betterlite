@@ -71,26 +71,31 @@ impl Default for SettingsJson {
 
 impl From<&GuardrailSettings> for SettingsJson {
     fn from(settings: &GuardrailSettings) -> Self {
-        Self {
-            guardrail_name: settings.guardrail_name.clone(),
-            supported_event_hooks: settings.supported_event_hooks.clone(),
-            event_hook: settings.event_hook.as_ref().map(mode_to_value),
-            default_on: settings.default_on,
-            mask_request_content: settings.mask_request_content,
-            mask_response_content: settings.mask_response_content,
-            violation_message_template: settings.violation_message_template.clone(),
-            end_session_after_n_fails: settings.end_session_after_n_fails,
-            on_violation: settings.on_violation.clone(),
-            realtime_violation_message: settings.realtime_violation_message.clone(),
-            on_sensitive_data: settings.on_sensitive_data.clone(),
-            sensitive_data_route_to_model: settings.sensitive_data_route_to_model.clone(),
-            sticky_session_routing: settings.sticky_session_routing,
-            run_in_parallel: settings.run_in_parallel,
-            scan_raw_request: settings.scan_raw_request,
-            only_scan_new_messages: settings.only_scan_new_messages,
-            timeout: settings.timeout,
-            switches: SwitchesJson::from(&settings.switches),
-        }
+        let mut json = Self::default();
+        json.guardrail_name.clone_from(&settings.guardrail_name);
+        json.supported_event_hooks
+            .clone_from(&settings.supported_event_hooks);
+        json.event_hook = settings.event_hook.as_ref().map(mode_to_value);
+        json.default_on = settings.default_on;
+        json.mask_request_content = settings.mask_request_content;
+        json.mask_response_content = settings.mask_response_content;
+        json.violation_message_template
+            .clone_from(&settings.violation_message_template);
+        json.end_session_after_n_fails = settings.end_session_after_n_fails;
+        json.on_violation.clone_from(&settings.on_violation);
+        json.realtime_violation_message
+            .clone_from(&settings.realtime_violation_message);
+        json.on_sensitive_data
+            .clone_from(&settings.on_sensitive_data);
+        json.sensitive_data_route_to_model
+            .clone_from(&settings.sensitive_data_route_to_model);
+        json.sticky_session_routing = settings.sticky_session_routing;
+        json.run_in_parallel = settings.run_in_parallel;
+        json.scan_raw_request = settings.scan_raw_request;
+        json.only_scan_new_messages = settings.only_scan_new_messages;
+        json.timeout = settings.timeout;
+        json.switches = SwitchesJson::from(&settings.switches);
+        json
     }
 }
 
