@@ -294,6 +294,23 @@ fn container_truthiness() {
     assert_eq!(provider_fields(&empty_list), None);
 }
 
+fn container_empty_id_with_results() {
+    let mut converter = new_converter();
+    chunk(
+        &mut converter,
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"bash_code_execution_tool_result","tool_use_id":"b1","content":{"type":"bash_code_execution_result","stdout":"hi","stderr":""}}}"#,
+    );
+    let empty_id = chunk(
+        &mut converter,
+        r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","container":{"id":""}}}"#,
+    );
+    assert_eq!(
+        provider_fields(&empty_id).unwrap(),
+        parse(r#"{"container":{"id":""}}"#)
+    );
+    assert_eq!(converter.state.container_id, None);
+}
+
 fn container_float_truthiness() {
     let mut converter = new_converter();
     let float = chunk(
@@ -312,6 +329,7 @@ pub(super) fn compaction_and_container_events() {
     container_after_results();
     container_without_id();
     container_truthiness();
+    container_empty_id_with_results();
     container_float_truthiness();
 }
 
