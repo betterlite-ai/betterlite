@@ -142,9 +142,10 @@ def construction_decoder(scenario: FramedInput) -> Framed:
     sync = scenario["sync"]
     json_mode = scenario["json_mode"]
     if scenario["construction"] == "legacy":
-        return get_bedrock_event_stream_decoder(  # type: ignore[no-any-return,misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/__init__.py#L9
+        legacy: Framed = get_bedrock_event_stream_decoder(
             scenario["provider"], model, sync, json_mode is True
         )
+        return legacy
     if scenario["construction"] == "anthropic":
         return AmazonAnthropicClaudeStreamDecoder(
             model=model, sync_stream=sync, json_mode=json_mode
