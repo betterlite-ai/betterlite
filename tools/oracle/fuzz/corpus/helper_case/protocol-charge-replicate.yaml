@@ -1,0 +1,5 @@
+kind: helper
+name: protocol-charge-replicate-seed
+call: {protocol_charge: {function: replicate, replicate_charge: {total_time: -80}}}
+env: {}
+compare: {ignore: []}

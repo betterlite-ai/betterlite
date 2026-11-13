@@ -1,0 +1,9 @@
+kind: helper
+name: replicate-explicit-milliseconds-and-negative-duration
+call:
+  protocol_charge:
+    function: replicate
+    replicate_charge:
+      total_time: -80
+env: {}
+compare: {ignore: []}

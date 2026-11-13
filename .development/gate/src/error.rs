@@ -62,6 +62,8 @@ pub(crate) enum GateError {
     Failed { program: String, stderr: String },
     #[error("cannot parse {path} as Rust: {source}")]
     RustParse { path: PathBuf, source: syn::Error },
+    #[error("shard {index} is not between 1 and {count}")]
+    Shard { index: u16, count: u16 },
     #[error("cannot read {what}: {source}")]
     Affected {
         what: String,

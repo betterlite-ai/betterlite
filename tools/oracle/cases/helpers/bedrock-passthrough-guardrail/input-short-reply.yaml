@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-passthrough-input-short-reply
+call:
+  b3678:
+    function: input_texts
+    endpoint: model/anthropic.claude-v2/converse
+    data:
+      model: anthropic.claude-v2
+      data:
+        messages:
+          - role: user
+            content:
+              - text: first
+              - text: second
+              - text: third
+    skip_system: false
+    skip_tool: false
+    returned_texts: [ONLY]
+env: {}
+compare: {ignore: []}

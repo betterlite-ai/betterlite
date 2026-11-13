@@ -93,5 +93,5 @@ pitfalls:
   - A requested file purpose is sent on upload but never reflected in the normalized xAI file object.
   - STT boolean list items retain Python's capitalized spelling even though scalar booleans do not.
   - STT decode errors use raw_response.status_code rather than replacing a successful status with 500.
-budget: {max_changed_lines: 800, max_new_expects: 1}
+budget: {max_changed_lines: 1300, max_new_expects: 1}
 review_level: standard

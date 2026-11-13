@@ -1,0 +1,14 @@
+kind: helper
+name: speaker-zero-and-duration
+call:
+  xai_stt:
+    env: {}
+    xai_key: null
+    steps:
+      - step: reply
+        status: 200
+        headers: []
+        body: '{"text": "hello", "language": "en", "duration": 2.5, "words": [{"text": "he", "start": 0.0, "end": 1.0, "speaker": 0}, {"text": "llo", "start": 1.0, "end": 2.0}]}'
+      - {step: reply, status: 200, headers: [], body: '{"text": "hi", "language": "de", "words": [], "duration": null}'}
+env: {}
+compare: {ignore: []}

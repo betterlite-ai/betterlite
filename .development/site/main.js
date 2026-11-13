@@ -330,6 +330,27 @@ function renderDeviations(logs, byId, milestones, merges) {
   });
 }
 
+const EXCEPTIONS = [
+  { kind: "expects", title: "Lint escapes", numbers: true, rest: "more tasks", about: "New #[expect(...)] attributes and Python lines with a cast, type: ignore, pyright: ignore or noqa that a merged task was allowed. The default is none." },
+  { kind: "lines", title: "Raised line budgets", numbers: true, rest: "more tasks", about: "Merged tasks whose changed-line budget went up after planning, against the planned budget." },
+  { kind: "advisory", title: "Ignored advisories", numbers: false, rest: "more advisories", about: "RustSec advisories cargo deny lets through. The reason is the one in deny.toml, or the commit that added the entry." },
+  { kind: "duplicate", title: "Duplicate crate versions", numbers: false, rest: "more crates", about: "Older crate versions cargo deny allows next to a newer one, with the commit that added each." },
+];
+
+function renderExceptions(rows) {
+  document.getElementById("exceptions").innerHTML = EXCEPTIONS.map((group) => {
+    const listed = rows.filter((row) => row.kind === group.kind);
+    const numbers = group.numbers ? `<th class="num">Allowed</th><th class="num">Default</th>` : "";
+    const head = `<thead><tr><th>Where</th>${numbers}<th>Reason</th><th>Date</th></tr></thead>`;
+    const lines = listed.map((row) => {
+      const values = group.numbers ? `<td class="num">${esc(row.value)}</td><td class="num muted">${esc(row.default)}</td>` : "";
+      return `<tr><td class="id"><a href="${esc(row.link)}">${esc(row.where)}</a></td>${values}<td>${esc(row.reason)}</td><td class="muted">${esc(row.date)}</td></tr>`;
+    });
+    const table = listed.length === 0 ? `<p class="empty">Nothing to check.</p>` : shortTable(head, lines, group.rest);
+    return `<div class="block"><header><h3>${esc(group.title)}: ${number.format(listed.length)}</h3><p>${esc(group.about)}</p></header>${table}</div>`;
+  }).join("");
+}
+
 // Answers the open pull request of each task in review, or null when GitHub doesn't answer.
 async function renderOpenPullRequests(byId) {
   const container = document.getElementById("open-prs");
@@ -478,8 +499,8 @@ function renderMerges(merges) {
 }
 
 async function main() {
-  const files = ["backlog.yaml", "deviations.yaml", "litellm-inventory.txt", "litellm.yaml", "merges.txt", "commit.txt", "prs.csv", "runs.csv", "agent-runs.csv", "targets.csv", "machine-boot.csv", "machine-hours.csv"];
-  const [backlogText, deviationsText, inventoryText, configText, mergesText, commitText, prsText, runsText, agentText, targetsText, bootText, hoursText] = await Promise.all(files.map(fetchText));
+  const files = ["backlog.yaml", "deviations.yaml", "litellm-inventory.txt", "litellm.yaml", "merges.txt", "commit.txt", "prs.csv", "runs.csv", "agent-runs.csv", "targets.csv", "machine-boot.csv", "machine-hours.csv", "exceptions.csv"];
+  const [backlogText, deviationsText, inventoryText, configText, mergesText, commitText, prsText, runsText, agentText, targetsText, bootText, hoursText, exceptionsText] = await Promise.all(files.map(fetchText));
   const entries = jsyaml.loadAll(backlogText).filter((entry) => entry && entry.id);
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const byPull = new Map(entries.filter((entry) => entry.pr).map((entry) => [Number(entry.pr), entry]));
@@ -531,6 +552,7 @@ async function main() {
   });
   renderMerges(merges);
   renderDeviations(jsyaml.loadAll(deviationsText), byId, milestones, merges);
+  renderExceptions(parseCsv(exceptionsText));
 
   const [sha, committed] = commitText.trim().split(" ");
   const built = document.getElementById("built");

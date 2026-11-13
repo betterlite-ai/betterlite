@@ -1,0 +1,15 @@
+kind: helper
+name: team_repository_wrong_shapes
+call:
+  team_repository:
+    cases:
+      shapes:
+        records:
+          - {"team_id":"t","metadata":"[]","model_spend":"0","router_settings":"\"text\"","budget_limits":"{}"}
+          - {"team_id":"t","members_with_roles":"{}"}
+          - {"team_id":"t","members_with_roles":"[{\"user_email\": \"u@example.com\", \"role\": \"user\"}, {\"user_email\": \"u@example.com\", \"role\": \"user\"}]"}
+          - {}
+          - {"team_id":null}
+          - null
+env: {}
+compare: {ignore: []}
