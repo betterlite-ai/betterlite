@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::PoisonError;
 
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use betterlite_openai::chat::ChatMessage;
@@ -75,7 +76,12 @@ impl Run<'_> {
             })
         })
         .map_err(failure)?;
-        Ok(json!({ "body": body, "warnings": warnings.count() }))
+        let count = warnings
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len();
+        Ok(json!({ "body": body, "warnings": count }))
     }
 
     pub(super) fn environment(
@@ -155,7 +161,7 @@ impl Run<'_> {
 
     pub(super) fn chunk(&self, raw: &Value) -> HelperResult {
         let mut chunk = raw.clone();
-        let reply = parse_chunk(&mut chunk, Uuid::nil, zero_clock).map_err(stream_failure)?;
+        let reply = parse_chunk(&mut chunk, Uuid::nil, || 0).map_err(stream_failure)?;
         let choices: Vec<Value> = reply
             .choices
             .iter()
@@ -168,10 +174,6 @@ impl Run<'_> {
             .collect();
         Ok(json!({ "choices": choices, "usage": stream_usage(&reply) }))
     }
-}
-
-fn zero_clock() -> i64 {
-    0
 }
 
 fn decimal_text(value: Option<&Value>) -> Option<String> {

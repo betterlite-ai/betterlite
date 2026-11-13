@@ -141,21 +141,13 @@ impl OauthTokens for LoginRequired {
 
 struct Scripted(Option<bool>);
 
-struct LookupFailure;
-
-impl fmt::Display for LookupFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("the capability lookup failed")
-    }
-}
-
-impl ReasoningLookup<LookupFailure> for Scripted {
+impl ReasoningLookup<std::io::Error> for Scripted {
     fn supports_reasoning(
         &mut self,
         _model: &str,
-    ) -> impl Future<Output = Result<bool, LookupFailure>> + Send {
+    ) -> impl Future<Output = Result<bool, std::io::Error>> + Send {
         let outcome = self.0;
-        async move { outcome.ok_or(LookupFailure) }
+        async move { outcome.ok_or_else(|| std::io::Error::other("the capability lookup failed")) }
     }
 }
 
@@ -200,7 +192,10 @@ fn map_writes_max_completion_tokens_as_max_tokens() {
         &mut optional,
     )
     .expect("a mapped request");
-    assert_eq!(optional.get("max_tokens"), Some(&Json::Number(5.into())));
+    assert_eq!(
+        optional.get("max_tokens"),
+        Some(&Json::Number(serde_json::Number::from(5_i64)))
+    );
     let mut nulled = Object::new();
     map_openai_params(
         "grok-4",
@@ -313,7 +308,10 @@ fn names_are_stripped_for_every_role_but_user() {
 #[case::null(r#"{"web_search_options":null}"#)]
 fn web_search_options_warns_and_is_removed(#[case] optional: &str) {
     let mut parsed: Object = serde_json::from_str(optional).expect("an object");
-    parsed.insert(String::from("temperature"), Json::Number(1.into()));
+    parsed.insert(
+        String::from("temperature"),
+        Json::Number(serde_json::Number::from(1_i64)),
+    );
     let messages = [named(Role::User, "alice")];
     let environment = BTreeMap::new();
     let warnings = Warnings(Arc::default());
@@ -323,7 +321,10 @@ fn web_search_options_warns_and_is_removed(#[case] optional: &str) {
     })
     .expect("a transformed request");
     assert!(!body.contains_key("web_search_options"));
-    assert_eq!(body.get("temperature"), Some(&Json::Number(1.into())));
+    assert_eq!(
+        body.get("temperature"),
+        Some(&Json::Number(serde_json::Number::from(1_i64)))
+    );
     assert_eq!(warnings.count(), 1);
 }
 

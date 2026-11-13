@@ -119,9 +119,12 @@ fn usage_from_parent(usage: &ChatUsage) -> Result<XaiUsage, XaiChatError> {
         .map_err(|_| XaiChatError::Usage(XaiUsageError::Overflow))?;
     Ok(XaiUsage {
         tokens: CostUsage {
-            prompt_tokens: count(usage.prompt_tokens)?,
-            completion_tokens: count(usage.completion_tokens)?,
-            total_tokens: count(usage.total_tokens)?,
+            prompt_tokens: i64::try_from(usage.prompt_tokens)
+                .map_err(|_| XaiChatError::Usage(XaiUsageError::Overflow))?,
+            completion_tokens: i64::try_from(usage.completion_tokens)
+                .map_err(|_| XaiChatError::Usage(XaiUsageError::Overflow))?,
+            total_tokens: i64::try_from(usage.total_tokens)
+                .map_err(|_| XaiChatError::Usage(XaiUsageError::Overflow))?,
             prompt_details: None,
             completion_details: reasoning.map(|tokens| CompletionDetails {
                 text_tokens: None,
@@ -137,10 +140,6 @@ fn usage_from_parent(usage: &ChatUsage) -> Result<XaiUsage, XaiChatError> {
         cost_in_usd_ticks: None,
         server_side_tool_usage_details: None,
     })
-}
-
-fn count(tokens: u64) -> Result<i64, XaiChatError> {
-    i64::try_from(tokens).map_err(|_| XaiChatError::Usage(XaiUsageError::Overflow))
 }
 
 fn write_back(usage: &mut ChatUsage, reconciled: &XaiUsage) -> Result<(), XaiChatError> {

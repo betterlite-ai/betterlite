@@ -6,7 +6,7 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
 
 #[derive(Clone, Default)]
-pub(super) struct Warnings(Arc<Mutex<Vec<String>>>);
+pub(super) struct Warnings(pub(super) Arc<Mutex<Vec<String>>>);
 
 #[derive(Default)]
 struct Message(String);
@@ -16,12 +16,6 @@ impl Visit for Message {
         if field.name() == "message" {
             self.0 = format!("{value:?}");
         }
-    }
-}
-
-impl Warnings {
-    pub(super) fn count(&self) -> usize {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).len()
     }
 }
 

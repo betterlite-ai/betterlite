@@ -1,4 +1,3 @@
-use std::fmt;
 use std::future::Future;
 
 use betterlite_config::sections::xai_identity::Settings as IdentitySettings;
@@ -34,21 +33,13 @@ pub(super) struct CapabilityLookup {
     pub(super) outcome: Option<bool>,
 }
 
-struct LookupFailure;
-
-impl fmt::Display for LookupFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("the capability lookup failed")
-    }
-}
-
-impl ReasoningLookup<LookupFailure> for CapabilityLookup {
+impl ReasoningLookup<std::io::Error> for CapabilityLookup {
     fn supports_reasoning(
         &mut self,
         _model: &str,
-    ) -> impl Future<Output = Result<bool, LookupFailure>> + Send {
+    ) -> impl Future<Output = Result<bool, std::io::Error>> + Send {
         let outcome = self.outcome;
-        async move { outcome.ok_or(LookupFailure) }
+        async move { outcome.ok_or_else(|| std::io::Error::other("the capability lookup failed")) }
     }
 }
 
