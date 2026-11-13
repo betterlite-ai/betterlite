@@ -26,8 +26,6 @@ pub(crate) struct Input {
 #[serde(deny_unknown_fields)]
 pub(crate) struct Probe {
     #[serde(default)]
-    model: String,
-    #[serde(default)]
     voice: Option<SpeechVoice>,
     #[serde(default)]
     optional_params: Object,

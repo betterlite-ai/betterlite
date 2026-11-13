@@ -28,7 +28,6 @@ class SpeechInput(TypedDict):
 
 
 class TranscriptionProbe(TypedDict):
-    model: str
     optional_params: Object
     non_default_params: Object
     headers: dict[str, str]
@@ -132,13 +131,13 @@ def transcription_probe(view: TranscriptionConfig, probe: TranscriptionProbe) ->
     mapped = view.map_openai_params(
         probe["non_default_params"],
         probe["optional_params"],
-        probe["model"],
+        "voxtral",
         drop_params=False,
     )
     headers = string_map(
         view.validate_environment(
             probe["headers"],
-            probe["model"],
+            "voxtral",
             NoMessages(),
             EMPTY,
             EMPTY,

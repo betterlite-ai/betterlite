@@ -3,8 +3,8 @@ name: voxtral-transcription-unversioned-custom-base
 call:
   voxtral_transcription:
     probes:
-      - {model: voxtral, optional_params: {}, non_default_params: {}, headers: {}, api_key: explicit-key, environment_api_key: environment-key}
-      - {model: voxtral, optional_params: {}, non_default_params: {}, headers: {}, api_key: null, environment_api_key: environment-key}
-      - {model: voxtral, optional_params: {}, non_default_params: {}, headers: {x-base: custom}, api_key: null, environment_api_key: null}
+      - {optional_params: {}, non_default_params: {}, headers: {}, api_key: explicit-key, environment_api_key: environment-key}
+      - {optional_params: {}, non_default_params: {}, headers: {}, api_key: null, environment_api_key: environment-key}
+      - {optional_params: {}, non_default_params: {}, headers: {x-base: custom}, api_key: null, environment_api_key: null}
 env: {}
 compare: {ignore: []}
