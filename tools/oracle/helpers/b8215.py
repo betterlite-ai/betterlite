@@ -4,7 +4,6 @@ from typing import Literal, TypedDict
 import httpx
 from litellm.exceptions import GuardrailRaisedException
 from litellm.proxy.guardrails.guardrail_hooks.singulr.singulr import SingulrGuardrail
-from litellm.types.utils import GenericGuardrailAPIInputs
 from pydantic import JsonValue, TypeAdapter
 
 REPORTED_HEADERS = (
@@ -15,7 +14,6 @@ REPORTED_HEADERS = (
 )
 
 JSON_ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-INPUTS_ADAPTER: TypeAdapter[GenericGuardrailAPIInputs] = TypeAdapter(GenericGuardrailAPIInputs)
 
 
 class Settings(TypedDict):
@@ -124,14 +122,10 @@ def run_scenario(scenario: Scenario) -> ScenarioOutput:
     guardrail = build_guardrail(scenario["settings"])
     script = Script(scenario["answer"])
     guardrail.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(script))
+    inputs = scenario["inputs"]
+    request = dict(scenario["request_data"])
     try:
-        returned = asyncio.run(
-            guardrail.apply_guardrail(
-                INPUTS_ADAPTER.validate_python(scenario["inputs"]),
-                dict(scenario["request_data"]),
-                scenario["input_type"],
-            )
-        )
+        returned = asyncio.run(guardrail.apply_guardrail(inputs, request, scenario["input_type"]))  # type: ignore[misc, arg-type]  # pyright: ignore[reportUnknownMemberType, reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
     except GuardrailRaisedException as error:
         outcome: Literal["blocked", "error"] = "blocked" if error.blocked_content else "error"
         return {
@@ -146,7 +140,7 @@ def run_scenario(scenario: Scenario) -> ScenarioOutput:
         "outcome": "allowed",
         "status": None,
         "calls": script.calls,
-        "inputs": JSON_ADAPTER.validate_python(returned),
+        "inputs": JSON_ADAPTER.validate_python(returned),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547
     }
 
 
