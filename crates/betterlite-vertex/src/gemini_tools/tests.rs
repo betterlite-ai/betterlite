@@ -1,10 +1,15 @@
 #![cfg(test)]
 
+use std::fs;
+use std::sync::Arc;
+
 use betterlite_config::sections::vertex_schema_shaping::Settings;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use tempfile::NamedTempFile;
+use tracing::subscriber::with_default;
 
 use super::assembly::{MappedTools, map_tools};
 use super::cleanup::remove_unsupported_fields;
@@ -333,9 +338,9 @@ fn a_computer_use_tool_with_a_null_config_gets_an_empty_one() {
 }
 
 #[rstest]
-#[case::none("none", r#"{"functionCallingConfig": {"mode": "NONE"}}"#)]
-#[case::required("required", r#"{"functionCallingConfig": {"mode": "ANY"}}"#)]
-#[case::auto("auto", r#"{"functionCallingConfig": {"mode": "AUTO"}}"#)]
+#[case::none(r#""none""#, r#"{"functionCallingConfig": {"mode": "NONE"}}"#)]
+#[case::required(r#""required""#, r#"{"functionCallingConfig": {"mode": "ANY"}}"#)]
+#[case::auto(r#""auto""#, r#"{"functionCallingConfig": {"mode": "AUTO"}}"#)]
 #[case::function(
     r#"{"type": "function", "function": {"name": "f"}}"#,
     r#"{"functionCallingConfig": {"mode": "ANY", "allowed_function_names": ["f"]}}"#
@@ -510,6 +515,21 @@ fn unknown_tools_are_dropped_and_counted() {
     let mapped = mapped(&input);
     assert!(mapped.tools.is_empty());
     assert_eq!(mapped.warnings, 2);
+}
+
+#[test]
+fn each_unknown_tool_logs_an_invalid_tool_warning() {
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    with_default(subscriber, || {
+        mapped(&tools(r#"[{"whatever": {}}, {"type": "mystery", "x": 1}]"#));
+    });
+    let logged = fs::read_to_string(log.path()).unwrap();
+    assert_eq!(logged.matches("WARN").count(), 2);
+    assert!(logged.contains("invalid tool"));
 }
 
 #[test]

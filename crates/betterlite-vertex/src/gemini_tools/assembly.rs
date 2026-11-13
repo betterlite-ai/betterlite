@@ -86,7 +86,10 @@ impl Collected {
         }
         match declaration(tool, settings)? {
             Some(found) => self.declarations.push(found),
-            None => self.invalid = self.invalid.saturating_add(1),
+            None => {
+                tracing::warn!("invalid tool, no function declaration or native tool matches it");
+                self.invalid = self.invalid.saturating_add(1);
+            }
         }
         Ok(())
     }
