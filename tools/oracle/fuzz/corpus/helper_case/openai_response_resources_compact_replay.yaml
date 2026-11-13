@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-resources-seed-compact-replay
+call:
+  openai_response_resources:
+    compact_replay_input:
+      probes:
+        - {endpoint: compact, model: gpt-4o, api_base: 'https://api.openai.com/v1', input: hi}
+env: {}
+compare: {ignore: []}
