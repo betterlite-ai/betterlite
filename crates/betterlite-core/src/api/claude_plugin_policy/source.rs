@@ -41,10 +41,18 @@ pub struct PluginSource {
 
 #[must_use]
 pub fn is_https_url_with_host(text: &str) -> bool {
-    match Url::parse(text) {
-        Ok(parsed) => parsed.scheme() == "https" && parsed.host_str().is_some(),
-        Err(_) => false,
-    }
+    // urlsplit reads a netloc only after "//", so "https:host" has no hostname there.
+    let cleaned: String = text
+        .trim_start_matches(|character: char| character <= ' ')
+        .chars()
+        .filter(|character| !matches!(character, '\t' | '\n' | '\r'))
+        .collect();
+    let has_authority = cleaned
+        .get(..8)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"));
+    has_authority
+        && Url::parse(text)
+            .is_ok_and(|parsed| parsed.scheme() == "https" && parsed.host_str().is_some())
 }
 
 pub fn validate_plugin_source(source: &PluginSource) -> Result<(), ClaudePluginPolicyError> {
@@ -109,7 +117,6 @@ fn validate_variant_fields(source: &PluginSource) -> Result<(), ClaudePluginPoli
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
 pub struct PluginAuthor {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,7 +124,6 @@ pub struct PluginAuthor {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct PluginSpec {
     pub source: PluginSource,
     #[serde(default = "default_version")]
@@ -143,7 +149,6 @@ fn default_version() -> Option<String> {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
-#[serde(deny_unknown_fields)]
 pub struct UpdatePluginSpec {
     pub source: PluginSource,
     #[serde(default)]

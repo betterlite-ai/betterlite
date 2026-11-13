@@ -59,6 +59,14 @@ fn source(json: &str) -> PluginSource {
 #[case::empty("", false)]
 #[case::no_scheme("bucket/plugin.zip", false)]
 #[case::other_scheme("ftp://bucket/plugin.zip", false)]
+#[case::no_slashes("https:bucket/plugin.zip", false)]
+#[case::one_slash("https:/bucket/plugin.zip", false)]
+#[case::backslashes(r"https:\\bucket\plugin.zip", false)]
+#[case::scheme_only("https://", false)]
+#[case::leading_space(" https://bucket/plugin.zip", true)]
+#[case::leading_control("\u{1}https://bucket/plugin.zip", true)]
+#[case::tab_between_slashes("https:/\t/bucket/plugin.zip", true)]
+#[case::trailing_newline("https://bucket/plugin.zip\n", true)]
 fn https_url_with_host(#[case] url: &str, #[case] expected: bool) {
     assert_eq!(is_https_url_with_host(url), expected);
 }
@@ -85,6 +93,15 @@ fn https_url_with_host(#[case] url: &str, #[case] expected: bool) {
     Some(ARCHIVE_URL_INVALID)
 )]
 #[case::missing_archive_url(r#"{"source":"archive"}"#, Some(ARCHIVE_URL_INVALID))]
+#[case::archive_without_slashes(
+    r#"{"source":"archive","url":"https:host/p.zip"}"#,
+    Some(ARCHIVE_URL_INVALID)
+)]
+#[case::archive_with_one_slash(
+    r#"{"source":"archive","url":"https:/host/p.zip"}"#,
+    Some(ARCHIVE_URL_INVALID)
+)]
+#[case::archive_with_leading_space(r#"{"source":"archive","url":" https://host/p.zip"}"#, None)]
 #[case::short_sha(
     r#"{"source":"archive","url":"https://host/plugin.zip","sha256":"abc"}"#,
     Some(ARCHIVE_SHA256_INVALID)
@@ -158,6 +175,14 @@ fn plugin_https_source(#[case] source_json: &str, #[case] expected: Option<&str>
 #[case::subdir_underscore_segment(
     r#"{"source":"git-subdir","url":"https://host/repo.git","path":"a_b/c-d.e"}"#,
     None
+)]
+#[case::subdir_trailing_newline(
+    r#"{"source":"git-subdir","url":"https://host/repo.git","path":"plugins/x\n"}"#,
+    Some(GIT_SUBDIR_PATH_INVALID)
+)]
+#[case::sha_trailing_newline(
+    r#"{"source":"archive","url":"https://host/p.zip","sha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n"}"#,
+    Some(ARCHIVE_SHA256_INVALID)
 )]
 #[case::unknown_source(r#"{"source":"svn"}"#, Some(UNKNOWN_SOURCE))]
 #[case::missing_source(r#"{"repo":"org/repo"}"#, Some(UNKNOWN_SOURCE))]
@@ -316,6 +341,10 @@ fn the_error_envelope_names_the_error_key() {
     r#"{"source":{"source":"github","repo":"org/repo"},"version":"2.0.0","author":{"name":"Ada"},"keywords":["git"]}"#,
     r#"{"name":"my-plugin","source":{"source":"github","repo":"org/repo"},"version":"2.0.0","author":{"name":"Ada"},"keywords":["git"]}"#
 )]
+#[case::author_url_dropped(
+    r#"{"source":{"source":"github","repo":"org/repo"},"author":{"name":"Ada","url":"https://ada.dev"}}"#,
+    r#"{"name":"my-plugin","source":{"source":"github","repo":"org/repo"},"version":"1.0.0","author":{"name":"Ada"}}"#
+)]
 #[case::extra_source_keys_survive(
     r#"{"source":{"source":"github","repo":"org/repo","ref":"main"}}"#,
     r#"{"name":"my-plugin","source":{"source":"github","repo":"org/repo","ref":"main"},"version":"1.0.0"}"#
@@ -328,9 +357,10 @@ fn manifest_holds_the_present_spec_fields(#[case] spec: &str, #[case] expected: 
 
 #[test]
 fn an_update_clears_an_omitted_version() {
-    let update: UpdatePluginSpec =
-        serde_json::from_str(r#"{"source":{"source":"url","url":"https://host/repo.git"}}"#)
-            .unwrap();
+    let update: UpdatePluginSpec = serde_json::from_str(
+        r#"{"name":"renamed","source":{"source":"url","url":"https://host/repo.git"}}"#,
+    )
+    .unwrap();
     let manifest = build_plugin_manifest("my-plugin", &PluginSpec::from(update));
     assert_eq!(
         serde_json::to_string(&manifest).unwrap(),

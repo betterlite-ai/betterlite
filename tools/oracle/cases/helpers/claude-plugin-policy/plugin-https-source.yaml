@@ -21,5 +21,13 @@ call:
         source:
           source: archive
           url: "https://user:secret@host/plugin.zip"
+      - function: validate_source
+        source:
+          source: archive
+          url: " https://host/plugin.zip"
+      - function: validate_source
+        source:
+          source: archive
+          url: "https:/\t/host/plugin.zip"
 env: {}
 compare: {ignore: []}

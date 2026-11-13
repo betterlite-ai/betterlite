@@ -14,6 +14,10 @@ call:
       - function: validate_source
         source: {source: archive, url: "http://host/plugin.zip"}
       - function: validate_source
+        source: {source: archive, url: "https:host/plugin.zip"}
+      - function: validate_source
+        source: {source: archive, url: "https:/host/plugin.zip"}
+      - function: validate_source
         source: {source: archive, url: "https://host/plugin.zip", sha256: "abc"}
       - function: validate_source
         source: {source: svn}
