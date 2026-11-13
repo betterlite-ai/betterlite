@@ -119,8 +119,10 @@ impl Helper for Op {
             }
             Input::KeyScheme { environment, cases } => {
                 let settings = settings(environment);
-                let outcomes: Vec<Value> =
-                    cases.iter().map(|case| key_outcome(case, &settings)).collect();
+                let outcomes: Vec<Value> = cases
+                    .iter()
+                    .map(|case| key_outcome(case, &settings))
+                    .collect();
                 Ok(json!({"cases": outcomes}))
             }
             Input::MixedImageObjects { replies } | Input::BoolDimensionsExcluded { replies } => {
@@ -194,12 +196,7 @@ fn key_outcome(case: &KeyCase, settings: &FalImageSettings) -> Value {
 
 fn reply_outcome(case: &ReplyCase) -> Value {
     let mut data = None;
-    match append_generation_images(
-        &mut data,
-        case.status,
-        &case.headers,
-        case.body.as_bytes(),
-    ) {
+    match append_generation_images(&mut data, case.status, &case.headers, case.body.as_bytes()) {
         Ok(()) => json!({"images": records(data.as_deref().unwrap_or_default())}),
         Err(_) => json!({"error": {"status": case.status}}),
     }
