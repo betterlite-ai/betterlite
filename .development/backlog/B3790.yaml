@@ -1,7 +1,7 @@
 id: B3790
 milestone: M6 guardrails
 title: Pillar protection payloads and response evidence
-status: todo
+status: done
 depends_on: [B002, B173, B174, B206]
 file: tasks/B3790-pillar-protection.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/pillar.py"
 parent: B108
 split_from: B108
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1639
