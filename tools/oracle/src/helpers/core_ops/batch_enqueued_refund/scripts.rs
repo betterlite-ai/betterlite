@@ -40,6 +40,10 @@ impl ScriptedScripts {
 
     fn take_step(&self, queue: &Mutex<VecDeque<Step>>, event: Value) -> Result<(), ScriptFailure> {
         self.push_event(event);
+        self.take_reply(queue)
+    }
+
+    fn take_reply(&self, queue: &Mutex<VecDeque<Step>>) -> Result<(), ScriptFailure> {
         let step = queue
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -74,8 +78,10 @@ impl ReservationScripts for ScriptedScripts {
         counter_key: &str,
         tokens: i64,
     ) -> impl Future<Output = Result<(), ScriptFailure>> + Send {
-        let event = json!({"event": "refund", "key": counter_key, "args": [tokens]});
-        ready(self.take_step(&self.refunds, event))
+        ready(self.take_step(
+            &self.refunds,
+            json!({"event": "refund", "key": counter_key, "args": [tokens]}),
+        ))
     }
 }
 
@@ -86,10 +92,11 @@ impl ReservationRecordScripts for ScriptedScripts {
         record: &str,
         ttl_seconds: i64,
     ) -> impl Future<Output = Result<(), ScriptFailure>> + Send {
-        let stored: Value = serde_json::from_str(record).unwrap_or_else(|_error| Value::Null);
-        let event =
-            json!({"event": "save", "key": record_key, "record": stored, "args": [ttl_seconds]});
-        ready(self.take_step(&self.saves, event))
+        let stored = serde_json::from_str::<Value>(record).unwrap_or(Value::Null);
+        self.push_event(
+            json!({"event": "save", "key": record_key, "record": stored, "args": [ttl_seconds]}),
+        );
+        ready(self.take_reply(&self.saves))
     }
 
     fn pop(
