@@ -1,0 +1,29 @@
+kind: helper
+name: groq-web-search-options-tool
+call:
+  b5833:
+    capabilities:
+      web_search: "no"
+      reasoning: "no"
+      response_schema: "no"
+    options:
+      - model: llama-3.3-70b-versatile
+        non_default:
+          web_search_options: {search_context_size: high}
+        optional_params: {}
+      - model: llama-3.3-70b-versatile
+        non_default:
+          web_search_options: {}
+        optional_params:
+          tools:
+            - type: browser_search
+      - model: llama-3.3-70b-versatile
+        non_default:
+          web_search_options: null
+        optional_params: {}
+      - model: groq/compound
+        non_default:
+          web_search_options: {}
+        optional_params: {}
+env: {}
+compare: {ignore: []}

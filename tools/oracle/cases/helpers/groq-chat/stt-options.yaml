@@ -1,0 +1,20 @@
+kind: helper
+name: groq-stt-options
+call:
+  b5833:
+    stt:
+      - non_default:
+          response_format: verbose_json
+          language: en
+          temperature: 0
+        optional_params:
+          prompt: keep
+      - non_default:
+          response_format: text
+        optional_params: {}
+      - non_default:
+          prompt: new
+        optional_params:
+          prompt: old
+env: {}
+compare: {ignore: []}

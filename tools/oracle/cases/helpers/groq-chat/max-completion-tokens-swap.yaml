@@ -1,0 +1,16 @@
+kind: helper
+name: groq-max-completion-tokens-swap
+call:
+  b5833:
+    capabilities:
+      web_search: "no"
+      reasoning: "no"
+      response_schema: "no"
+    options:
+      - model: llama-3.3-70b-versatile
+        non_default:
+          max_completion_tokens: 128
+        optional_params:
+          max_tokens: 32
+env: {}
+compare: {ignore: []}

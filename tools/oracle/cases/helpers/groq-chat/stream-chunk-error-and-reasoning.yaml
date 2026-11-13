@@ -1,0 +1,26 @@
+kind: helper
+name: groq-stream-chunk-error-and-reasoning
+call:
+  b5833:
+    chunks:
+      - chunk:
+          id: c1
+          created: 1
+          model: llama-3.3-70b-versatile
+          choices:
+            - index: 0
+              delta: {reasoning: thinking, content: answer}
+      - chunk:
+          id: c2
+          created: 1
+          model: llama-3.3-70b-versatile
+          choices:
+            - index: 0
+              delta: {content: done}
+              finish_reason: stop
+      - chunk:
+          error: {message: rate limited, code: 429}
+      - chunk:
+          error: {message: no code}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: groq-supported-params-capabilities
+call:
+  b5833:
+    capabilities:
+      web_search: "yes"
+      reasoning: "yes"
+      response_schema: "no"
+    supported:
+      - model: llama-3.3-70b-versatile
+env: {}
+compare: {ignore: []}
