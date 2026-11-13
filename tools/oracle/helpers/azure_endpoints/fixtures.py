@@ -29,10 +29,6 @@ from azure_endpoints.sdk import (
     stable_id,
 )
 
-COMMON = "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L626"
-ACCESSORS = "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/common_utils.py#L211-L259"
-
-
 IDENTITY = TypeAdapter(IdentityParams)
 
 
@@ -256,10 +252,10 @@ def session(config: SessionConfig) -> Generator[None]:
         common_utils.get_azure_ad_token_from_username_password = username_source  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L639-L644
         common_utils._cached_azure_ad_token_refresh_provider = cached_refresh  # type: ignore[assignment]  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L99-L101
         common_utils.get_azure_ad_token_from_oidc = oidc_source  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L648-L653
-        common_utils.AzureOpenAI = FixtureAzureOpenAI  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L589-L591
-        common_utils.AsyncAzureOpenAI = FixtureAsyncAzureOpenAI  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L588-L590
-        common_utils.OpenAI = FixtureOpenAI  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L584-L586
-        common_utils.AsyncOpenAI = FixtureAsyncOpenAI  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L583-L585
+        common_utils.AzureOpenAI = FixtureAzureOpenAI  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L591
+        common_utils.AsyncAzureOpenAI = FixtureAsyncAzureOpenAI  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L589
+        common_utils.OpenAI = FixtureOpenAI  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L585
+        common_utils.AsyncOpenAI = FixtureAsyncOpenAI  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L583
         common_utils.id = stable_id  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L502
         BaseOpenAILLM.get_cached_openai_client = staticmethod(get_cached)  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/common_utils.py#L211-L221
         BaseOpenAILLM.set_cached_openai_client = staticmethod(set_cached)  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/common_utils.py#L238-L259
