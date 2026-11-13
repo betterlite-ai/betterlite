@@ -1,19 +1,17 @@
 import os
 import time
-from collections.abc import Callable
+from datetime import UTC, datetime
 from functools import partial
-from typing import Final, Literal, NotRequired, TypeAlias, TypedDict, cast
+from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.gemini.files.transformation import GoogleAIStudioFilesHandler
-from litellm.types.llms.openai import CreateFileRequest
-from litellm.types.llms.openai import OpenAIFileObject as FileObject
+from litellm.types.llms.openai import CreateFileRequest, OpenAIFileObject
 from openai.types.file_deleted import FileDeleted
 from pydantic import JsonValue, TypeAdapter
 
-Json: TypeAlias = JsonValue
-Object: TypeAlias = dict[str, Json]
+Object: TypeAlias = dict[str, JsonValue]
 Headers: TypeAlias = dict[str, str]
 FileValue: TypeAlias = (
     bytes
@@ -85,33 +83,51 @@ class Plan(TypedDict):
     upload_request: UploadStep
 
 
-INPUT = TypeAdapter(Input)
+class FilesApi(Protocol):
+    def transform_create_file_request(
+        self,
+        model: str,
+        create_file_data: CreateFileRequest,
+        optional_params: Object,
+        litellm_params: Object,
+        /,
+    ) -> Object: ...
+
+    def transform_create_file_response(
+        self,
+        model: str | None,
+        raw_response: httpx.Response,
+        logging_obj: Logging,
+        litellm_params: Object,
+        /,
+    ) -> OpenAIFileObject: ...
+
+    def transform_delete_file_response(
+        self, raw_response: httpx.Response, logging_obj: Logging, litellm_params: Object, /
+    ) -> FileDeleted: ...
+
+    def transform_delete_file_request(
+        self, file_id: str, optional_params: Object, litellm_params: Object, /
+    ) -> tuple[str, Headers]: ...
+
+
 HANDLER: Final = GoogleAIStudioFilesHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L55
-CREATE_PLAN: Final = cast(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L124
-    "Callable[[str, CreateFileRequest, Object, Object], Plan]",
-    HANDLER.transform_create_file_request,
+API: FilesApi = HANDLER
+
+
+INPUT = TypeAdapter(Input)
+PLAN = TypeAdapter(Plan)
+TARGET = TypeAdapter(tuple[str, Headers])
+MESSAGES: Final[list[str]] = []
+LOGGING: Final = Logging(
+    model="",
+    messages=MESSAGES,
+    stream=False,
+    call_type="create_file",
+    start_time=datetime.now(UTC),
+    litellm_call_id="",
+    function_id="",
 )
-CREATE_RESPONSE: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L176
-    "Callable[[str | None, httpx.Response, Logging, Object], FileObject]",
-    HANDLER.transform_create_file_response,
-)
-RETRIEVE_RESPONSE: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L274
-    "Callable[[httpx.Response, Logging, Object], FileObject]",
-    HANDLER.transform_retrieve_file_response,
-)
-DELETE_RESPONSE: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L355
-    "Callable[[httpx.Response, Logging, Object], FileDeleted]",
-    HANDLER.transform_delete_file_response,
-)
-RETRIEVE_REQUEST: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L214
-    "Callable[[str, Object, Object], tuple[str, Headers]]",
-    HANDLER.transform_retrieve_file_request,
-)
-DELETE_REQUEST: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L318
-    "Callable[[str, Object, Object], tuple[str, Headers]]",
-    HANDLER.transform_delete_file_request,
-)
-LOGGING: Final = cast("Logging", None)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/transformation.py#L24
 
 
 def file_value(file: FileInput) -> FileValue:
@@ -128,13 +144,19 @@ def file_value(file: FileInput) -> FileValue:
     return data
 
 
-def create_plan(call: CreatePlan) -> Json:
+def create_plan(call: CreatePlan) -> JsonValue:
     saved = time.time
     time.time = partial(float, call["now"])
     try:
-        plan = CREATE_PLAN("", {"file": file_value(call["file"]), "purpose": "batch"}, {}, {})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L472
+        raw = API.transform_create_file_request(
+            "",
+            {"file": file_value(call["file"]), "purpose": "batch"},  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L472
+            {},
+            {},
+        )
     finally:
         time.time = saved
+    plan = PLAN.validate_python(raw)
     return {
         "headers": dict(plan["initial_request"]["headers"]),
         "data": plan["initial_request"]["data"],
@@ -143,16 +165,16 @@ def create_plan(call: CreatePlan) -> Json:
     }
 
 
-def replies(call: Replies) -> Json:
+def replies(call: Replies) -> JsonValue:
     os.environ["TZ"] = call["timezone"]
     time.tzset()
-    files: list[Json] = []
+    files: list[JsonValue] = []
     for body in call["bodies"]:
         response = httpx.Response(200, content=body.encode("utf-8"))
         if call["shape"] == "create":
-            file = CREATE_RESPONSE(None, response, LOGGING, {})
+            file = API.transform_create_file_response(None, response, LOGGING, {})
         else:
-            file = RETRIEVE_RESPONSE(response, LOGGING, {})
+            file = HANDLER.transform_retrieve_file_response(response, LOGGING, {})  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L274
         files.append(
             {
                 "id": file.id,
@@ -168,33 +190,38 @@ def replies(call: Replies) -> Json:
     return {"files": files}
 
 
-def targets(call: Targets) -> Json:
+def targets(call: Targets) -> JsonValue:
     given = call.get("environment")
     os.environ.clear()
     os.environ.update({} if given is None else given)
     params: Object = {"api_key": call.get("api_key"), "api_base": call.get("api_base")}
-    transform = DELETE_REQUEST if call.get("delete") is True else RETRIEVE_REQUEST
-    views: list[Json] = []
+    delete = call.get("delete") is True
+    views: list[JsonValue] = []
     for file_id in call["file_ids"]:
-        url, query = transform(file_id, {}, params)
+        if delete:
+            url, query = API.transform_delete_file_request(file_id, {}, params)
+        else:
+            url, query = TARGET.validate_python(
+                HANDLER.transform_retrieve_file_request(file_id, {}, params)  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L214
+            )
         views.append({"url": url, "query": [[name, value] for name, value in query.items()]})
     return {"targets": views}
 
 
-def delete_reply(call: DeleteReply) -> Json:
-    replies: list[Json] = []
+def delete_reply(call: DeleteReply) -> JsonValue:
+    replies: list[JsonValue] = []
     for item in call["replies"]:
         body = item.get("body")
         content = b"" if body is None else body.encode("utf-8")
         url = item.get("url")
         request = None if url is None else httpx.Request("DELETE", url)
         response = httpx.Response(item["status"], content=content, request=request)
-        deleted = DELETE_RESPONSE(response, LOGGING, {})
+        deleted = API.transform_delete_file_response(response, LOGGING, {})
         replies.append({"id": deleted.id, "object": deleted.object, "deleted": deleted.deleted})
     return {"replies": replies}
 
 
-def resolve(call: Call) -> Json:
+def resolve(call: Call) -> JsonValue:
     if call["function"] == "create_plan":
         return create_plan(call)
     if call["function"] == "replies":
@@ -204,6 +231,6 @@ def resolve(call: Call) -> Json:
     return delete_reply(call)
 
 
-def run(input_value: Json) -> Json:
+def run(input_value: JsonValue) -> JsonValue:
     parsed = INPUT.validate_python(input_value)
     return {"calls": [resolve(call) for call in parsed["calls"]]}
