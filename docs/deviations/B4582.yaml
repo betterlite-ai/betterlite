@@ -1,0 +1,26 @@
+task: B4582
+deviations:
+  - what: The report file is opened with mode 0600 before the first byte is written.
+    why: Python writes the report with the default mode and then calls chmod, so the text sits readable by other users for a moment. A report can hold prompts and responses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L294-L299
+  - what: A session id that contains a path separator ("/" or "\") is refused with an error instead of being used in the report file name.
+    why: Python puts the id into the file name unchecked, so `--session-id ../../x` writes outside the debug directory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L294-L299
+  - what: The request id is percent-encoded as one path segment when its body is fetched from /spend/logs/ui.
+    why: Python builds the path with an f-string, so an id with "/", "?" or "#" asks for another resource.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L176-L178
+  - what: Spend is read as an exact decimal and printed with six places, rounding a midpoint away from zero. The total is the exact sum of the rows.
+    why: Python reads spend as a float, so a value such as 0.0000005 prints as 0.000000 because of its binary form, and a sum carries float error. Money is never a float here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L72-L72
+  - what: A total spend too large for a decimal is an error.
+    why: Python sums floats and never fails. No real session reaches 7.9e28 dollars, so this only refuses corrupt rows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L248-L248
+  - what: The first failing page or body request ends the fetch. Later pages and bodies are not requested.
+    why: Python requests every remaining page and every wanted body and then reports the first failure, which costs requests the report cannot use. The reported error is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L147-L156
+  - what: A proxy error reads "GET <path> failed with HTTP <status>: <first 500 characters of the body>", and a connection failure names the path and carries its cause.
+    why: The text comes from the requests library in Python. betterlite reports the status and body of its own client with typed errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L137-L141
+  - what: A response of the wrong shape reports "Unexpected <path> response" with the serde message.
+    why: Python appends the pydantic validation text. The path and the failure are the same, the wording of the cause differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/debug.py#L164-L174
