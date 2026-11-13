@@ -5,7 +5,9 @@ use http::Method;
 use rstest::rstest;
 
 use super::support::{KEY, MODEL, Pending, Script, Slow, json, secret, settings};
-use crate::cache_prediction_targets::counting::{PromptCount, count_prompt_tokens};
+use crate::cache_prediction_targets::counting::{
+    PromptCount, PromptTokenCounter, TokenCounter as _, count_prompt_tokens,
+};
 use crate::count_tokens::handler::AnthropicCountTokensHandler;
 
 const SUCCESS: &[u8] = br#"{"input_tokens":7}"#;
@@ -88,6 +90,41 @@ async fn count_prompt_tokens_keeps_a_messages_url_unchanged() {
     assert_eq!(
         handler.transport.request().url,
         "https://configured.test/v1/messages/count_tokens"
+    );
+}
+
+#[tokio::test]
+async fn count_prompt_tokens_counts_through_the_token_counter() {
+    let handler = AnthropicCountTokensHandler {
+        transport: Script::replying(&[(200, SUCCESS)]),
+        request_timeout: Duration::from_secs(600),
+        beta_version: "test-beta".to_owned(),
+    };
+    let settings = settings("https://api.anthropic.com", None);
+    let key = secret(KEY);
+    let body = json(MINIMAL);
+    let counter = PromptTokenCounter {
+        handler: &handler,
+        messages_url: &settings,
+    };
+    assert_eq!(counter.count(MODEL, &key, &body).await, Some(7));
+    assert_eq!(
+        handler.transport.request().url,
+        "https://api.anthropic.com/v1/messages/count_tokens"
+    );
+}
+
+#[tokio::test]
+async fn count_prompt_tokens_accepts_a_system_block_list() {
+    let body = r#"{"messages":[{"role":"user","content":"hi"}],"system":[{"type":"text","text":"be brief"}]}"#;
+    let (count, handler) = counted(body).await;
+    assert_eq!(count, Some(7));
+    let sent = serde_json::from_slice::<Json>(&handler.transport.request().body).unwrap();
+    assert_eq!(
+        sent,
+        json(
+            r#"{"model":"claude-x","messages":[{"role":"user","content":"hi"}],"system":[{"type":"text","text":"be brief"}]}"#
+        )
     );
 }
 

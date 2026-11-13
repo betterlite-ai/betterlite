@@ -201,6 +201,15 @@ async fn count_cache_plan_rejects_inconsistent_prefix_counts(#[case] replies: &[
 }
 
 #[tokio::test]
+async fn count_cache_plan_accepts_a_zero_count() {
+    let plan = plan(SINGLE);
+    let (result, _counter, _thinking) = counted(&plan, &[Some(0), Some(0)], true).await;
+    let counted = result.unwrap();
+    assert_eq!(counted.total_tokens, 0);
+    assert_eq!(counted.breakpoints[0].prefix_tokens, 0);
+}
+
+#[tokio::test]
 async fn count_cache_plan_accepts_equal_counts() {
     let plan = plan(TWO);
     let (result, _counter, _thinking) = counted(&plan, &[Some(10), Some(10), Some(10)], true).await;

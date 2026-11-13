@@ -87,6 +87,26 @@ fn deployment_config_extra_option_allows_a_false_default(#[case] json: &str) {
 }
 
 #[test]
+fn deployment_config_extra_option_reasons_are_the_litellm_strings() {
+    assert_eq!(
+        UnsupportedPredictionTarget::UnsupportedDeploymentConfig.reason(),
+        "unsupported_deployment_configuration"
+    );
+    assert_eq!(
+        UnsupportedPredictionTarget::UnsupportedProviderEndpoint.reason(),
+        "unsupported_provider_endpoint"
+    );
+    assert_eq!(
+        UnsupportedPredictionTarget::UnsupportedProvider.reason(),
+        "unsupported_provider"
+    );
+    assert_eq!(
+        UnsupportedPredictionTarget::UnsupportedProviderCredentials.reason(),
+        "unsupported_provider_credentials"
+    );
+}
+
+#[test]
 fn deployment_config_extra_option_ignores_null_values() {
     let json = r#"{"model":"anthropic/claude-x","api_key":"sk-ant-api03-x","organization":null}"#;
     assert!(resolve(json).is_ok());
@@ -129,6 +149,12 @@ fn endpoint_non_public_reads_the_settings_base() {
         resolve_with(NATIVE_KEY, &public).unwrap().api_base,
         "https://api.anthropic.com/v1/messages"
     );
+}
+
+#[test]
+fn endpoint_non_public_treats_an_empty_base_as_unset() {
+    let json = r#"{"model":"anthropic/claude-x","api_key":"sk-ant-api03-x","api_base":""}"#;
+    assert_eq!(resolve(json).unwrap().api_base, "https://api.anthropic.com");
 }
 
 #[test]
