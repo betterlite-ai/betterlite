@@ -1,13 +1,13 @@
 id: B9952
 milestone: R1 cleanup and refactoring
 title: Oracle SDK HTTP dispatcher off the legacy list
-status: todo
+status: done
 depends_on: []
 file: tasks/B9952-sdk-http-dispatch-strict.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1579
