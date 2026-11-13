@@ -51,7 +51,8 @@ def transport_sends_query() -> None:
 def transport_sends_json() -> None:
     with RecordingServer() as server:
         server.reply(200, "{}")
-        expected = requests.post(f"{server.url}/x", json={"a": 1}, timeout=TIMEOUT)
+        payload: dict[str, int] = {"a": 1}
+        expected = requests.post(f"{server.url}/x", json=payload, timeout=TIMEOUT)
         server.reply(200, "{}")
         response = send(Request(method="POST", url=f"{server.url}/x", json={"a": 1}), TIMEOUT)
         assert response.status_code == expected.status_code
@@ -62,7 +63,8 @@ def transport_caller_type() -> None:
     headers = {"Content-Type": "application/json; charset=utf-8"}
     with RecordingServer() as server:
         server.reply(200, "{}")
-        requests.post(f"{server.url}/x", json={"a": 1}, headers=dict(headers), timeout=TIMEOUT)
+        payload: dict[str, int] = {"a": 1}
+        requests.post(f"{server.url}/x", json=payload, headers=dict(headers), timeout=TIMEOUT)
         server.reply(200, "{}")
         request = Request(
             method="POST", url=f"{server.url}/x", json={"a": 1}, headers=dict(headers)
@@ -204,9 +206,10 @@ def http_client_no_key() -> None:
 def http_client_json_body() -> None:
     with RecordingServer() as server:
         server.reply(200, '{"ok": true}')
+        payload: dict[str, str] = {"user_id": "u1"}
         requests.post(
             f"{server.url}/user/new",
-            json={"user_id": "u1"},
+            json=payload,
             headers={"Authorization": "Bearer sk-test"},
             timeout=TIMEOUT,
         )
@@ -220,7 +223,8 @@ def http_client_caller_type() -> None:
     headers = {"content-type": "application/json; charset=utf-8"}
     with RecordingServer() as server:
         server.reply(200, "{}")
-        requests.post(f"{server.url}/x", json={"a": 1}, headers=dict(headers), timeout=TIMEOUT)
+        payload: dict[str, int] = {"a": 1}
+        requests.post(f"{server.url}/x", json=payload, headers=dict(headers), timeout=TIMEOUT)
         server.reply(200, "{}")
         ours = HTTPClient(base_url=server.url, timeout=TIMEOUT)
         ours.request("POST", "/x", json={"a": 1}, headers=dict(headers))
@@ -282,10 +286,10 @@ def health_readiness() -> None:
     with RecordingServer() as server:
         server.reply(200, body)
         lite = LiteLLMHealthClient(server.url, timeout=TIMEOUT)
-        expected = lite.get_readiness()
+        lite.get_readiness()
         server.reply(200, body)
         ours = HealthManagementClient(server.url, timeout=TIMEOUT)
-        assert ours.get_readiness() == expected
+        assert ours.get_readiness() == {"status": "healthy", "litellm_version": "1.105.1"}
         assert server.requests[1] == server.requests[0]
 
 
@@ -318,10 +322,10 @@ def model_groups_info() -> None:
     with RecordingServer() as server:
         server.reply(200, body)
         lite = LiteLLMModelGroupsClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-        expected = lite.info()
+        lite.info()
         server.reply(200, body)
         ours = ModelGroupsManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-        assert ours.info() == expected
+        assert ours.info() == [{"model_group": "gpt-4"}]
         assert server.requests[1] == server.requests[0]
 
 
@@ -353,10 +357,10 @@ def users_list() -> None:
     with RecordingServer() as server:
         server.reply(200, body)
         lite = LiteLLMUsersClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-        expected = lite.list_users()
+        lite.list_users()
         server.reply(200, body)
         ours = UsersManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-        assert ours.list_users() == expected
+        assert ours.list_users() == [{"user_id": "u1"}]
         assert server.requests[1] == server.requests[0]
 
 
@@ -365,21 +369,22 @@ def users_list_whole() -> None:
     with RecordingServer() as server:
         server.reply(200, body)
         lite = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
-        expected = lite.list_users()
+        lite.list_users()
         server.reply(200, body)
         ours = UsersManagementClient(server.url, timeout=TIMEOUT)
-        assert ours.list_users() == expected
+        assert ours.list_users() == {"count": 1}
 
 
 def users_list_params() -> None:
     body = '{"users": []}'
     with RecordingServer() as server:
         server.reply(200, body)
+        params: dict[str, str] = {"page": "2"}
         lite = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
-        lite.list_users(params={"page": "2"})
+        lite.list_users(params=params)
         server.reply(200, body)
         ours = UsersManagementClient(server.url, timeout=TIMEOUT)
-        ours.list_users(params={"page": "2"})
+        ours.list_users(params=params)
         assert server.requests[1] == server.requests[0]
 
 
@@ -388,10 +393,10 @@ def users_get_user() -> None:
     with RecordingServer() as server:
         server.reply(200, body)
         lite = LiteLLMUsersClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-        expected = lite.get_user(user_id="u1")
+        lite.get_user(user_id="u1")
         server.reply(200, body)
         ours = UsersManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-        assert ours.get_user(user_id="u1") == expected
+        assert ours.get_user(user_id="u1") == {"user_id": "u1"}
         assert server.requests[1] == server.requests[0]
 
 
@@ -439,10 +444,10 @@ def users_create() -> None:
     with RecordingServer() as server:
         server.reply(200, body)
         lite = LiteLLMUsersClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-        expected = lite.create_user({"user_id": "u1"})
+        lite.create_user({"user_id": "u1"})
         server.reply(200, body)
         ours = UsersManagementClient(server.url, api_key="sk-test", timeout=TIMEOUT)
-        assert ours.create_user({"user_id": "u1"}) == expected
+        assert ours.create_user({"user_id": "u1"}) == {"user_id": "u1"}
         assert server.requests[1] == server.requests[0]
 
 
@@ -451,10 +456,10 @@ def users_delete() -> None:
     with RecordingServer() as server:
         server.reply(200, body)
         lite = LiteLLMUsersClient(server.url, timeout=TIMEOUT)
-        expected = lite.delete_user(["u1", "u2"])
+        lite.delete_user(["u1", "u2"])
         server.reply(200, body)
         ours = UsersManagementClient(server.url, timeout=TIMEOUT)
-        assert ours.delete_user(["u1", "u2"]) == expected
+        assert ours.delete_user(["u1", "u2"]) == {"deleted": True}
         assert server.requests[1] == server.requests[0]
 
 
