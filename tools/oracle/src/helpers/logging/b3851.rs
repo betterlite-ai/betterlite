@@ -21,7 +21,7 @@ use betterlite_models::decisions::Json;
 use serde_json::{Value, json};
 
 use self::base::BaseInput;
-use self::values::{destination_value, headers_value, settings_value};
+use self::values::{destination_value, settings_value};
 
 mod base;
 mod tests;
@@ -59,8 +59,8 @@ pub(crate) struct Input {
     base: Option<BaseInput>,
     #[serde(default)]
     allow_missing_credentials: bool,
-    #[serde(default)]
-    params: Option<Json>,
+    #[serde(default = "default_params")]
+    params: Json,
     #[serde(default)]
     allowed_hosts: Vec<String>,
     #[serde(default)]
@@ -71,13 +71,13 @@ pub(crate) struct Input {
     service_name: Option<String>,
 }
 
-impl Input {
-    fn json_params(&self) -> &Json {
-        self.params.as_ref().unwrap_or(&Json::Null)
-    }
+const fn default_params() -> Json {
+    Json::Null
+}
 
+impl Input {
     fn string_params(&self) -> BTreeMap<String, String> {
-        let Json::Object(fields) = self.json_params() else {
+        let Json::Object(fields) = &self.params else {
             return BTreeMap::new();
         };
         let mut values = BTreeMap::new();
@@ -87,10 +87,6 @@ impl Input {
             }
         }
         values
-    }
-
-    fn callback_name(&self) -> &str {
-        self.callback_name.as_deref().unwrap_or_default()
     }
 
     fn hosts(&self) -> Vec<AllowedDestination> {
@@ -107,7 +103,7 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let values = input.string_params();
         let hosts = input.hosts();
-        let callback_name = Some(input.callback_name());
+        let callback_name = Some(input.callback_name.as_deref().unwrap_or_default());
         match input.function {
             Function::AgentopsPreset => preset_result(&AgentopsPreset, input, false),
             Function::NewrelicPreset => preset_result(&NewrelicPreset, input, false),
@@ -120,18 +116,18 @@ impl crate::helpers::Helper for Op {
             | Function::SignozDynamicHeaders
             | Function::SignozDynamicEndpoint
             | Function::LangfuseDynamicHeaders => builder_result(input.function, &values, &hosts),
-            Function::PresetFor => Ok(json!(preset_for(input.callback_name()).is_some())),
+            Function::PresetFor => Ok(json!(
+                preset_for(input.callback_name.as_deref().unwrap_or_default()).is_some()
+            )),
             Function::DynamicOtlpHeaders => {
-                Ok(
-                    dynamic_otlp_headers(callback_name, input.json_params(), &hosts)
-                        .map_or(Value::Null, |headers| headers_value(&headers)),
-                )
+                Ok(dynamic_otlp_headers(callback_name, &input.params, &hosts)
+                    .map_or(Value::Null, |headers| json!(headers)))
             }
             Function::DynamicOtlpEndpoint => {
-                let endpoint = dynamic_otlp_endpoint(callback_name, input.json_params(), &hosts);
+                let endpoint = dynamic_otlp_endpoint(callback_name, &input.params, &hosts);
                 Ok(json!(endpoint))
             }
-            Function::ProjectRoutingHeaders => Ok(headers_value(&project_routing_headers(
+            Function::ProjectRoutingHeaders => Ok(json!(project_routing_headers(
                 callback_name,
                 input.auth_metadata.as_ref(),
             ))),
@@ -150,11 +146,11 @@ fn builder_result(
     hosts: &[AllowedDestination],
 ) -> crate::helpers::HelperResult {
     match function {
-        Function::NewrelicDynamicHeaders => Ok(headers_value(&newrelic_dynamic_headers(values))),
+        Function::NewrelicDynamicHeaders => Ok(json!(newrelic_dynamic_headers(values))),
         Function::NewrelicDynamicEndpoint => Ok(json!(newrelic_dynamic_endpoint(values))),
-        Function::SignozDynamicHeaders => Ok(headers_value(&signoz_dynamic_headers(values, hosts))),
+        Function::SignozDynamicHeaders => Ok(json!(signoz_dynamic_headers(values, hosts))),
         Function::SignozDynamicEndpoint => Ok(json!(signoz_dynamic_endpoint(values, hosts))),
-        Function::LangfuseDynamicHeaders => Ok(headers_value(&langfuse_dynamic_headers(values))),
+        Function::LangfuseDynamicHeaders => Ok(json!(langfuse_dynamic_headers(values))),
         Function::AgentopsPreset
         | Function::DestinationCapableBackends
         | Function::DestinationFor
@@ -190,8 +186,8 @@ fn destination_result(input: &Input, hosts: &[AllowedDestination]) -> Value {
     let destination = destination_for(
         &input.environment,
         hosts,
-        input.callback_name(),
-        input.json_params(),
+        input.callback_name.as_deref().unwrap_or_default(),
+        &input.params,
         input.service_name.as_deref(),
     );
     destination.as_ref().map_or(Value::Null, destination_value)

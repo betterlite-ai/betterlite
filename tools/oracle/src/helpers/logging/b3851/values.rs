@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_logging::otel::config::destination::{OtelDestination, SpanScope};
 use betterlite_logging::otel::config::{
     CaptureMessageContent, ExporterOwner, ExporterSpec, Settings,
@@ -55,10 +53,6 @@ fn owner_name(owner: ExporterOwner) -> &'static str {
         .iter()
         .find_map(|(candidate, name)| (*candidate == owner).then_some(*name))
         .unwrap_or_default()
-}
-
-pub(crate) fn headers_value(headers: &BTreeMap<String, String>) -> Value {
-    json!(headers)
 }
 
 pub(crate) fn destination_value(destination: &OtelDestination) -> Value {

@@ -78,8 +78,8 @@ fn record_content(value: &str) -> Result<bool, NewrelicPresetError> {
         });
     }
     match value.to_ascii_lowercase().as_str() {
-        "t" => Ok(true),
-        "f" => Ok(false),
+        "t" | "y" => Ok(true),
+        "f" | "n" => Ok(false),
         other => flag(RECORD_CONTENT_ENV, other)
             .map_err(|_source| NewrelicPresetError::RecordContent {
                 value: value.to_owned(),
