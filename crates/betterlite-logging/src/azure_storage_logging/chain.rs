@@ -12,14 +12,18 @@ pub struct UnwiredChainFactory {
 
 impl ChainProviderFactory for UnwiredChainFactory {
     fn provider(&self) -> Result<Arc<dyn ChainTokenProvider>, ChainError> {
-        let configured = ["AZURE_CLIENT_ID", "AZURE_TENANT_ID", "AZURE_FEDERATED_TOKEN_FILE"]
-            .iter()
-            .filter(|name| {
-                self.environment
-                    .lookup(name)
-                    .is_some_and(|value| !value.is_empty())
-            })
-            .count();
+        let configured = [
+            "AZURE_CLIENT_ID",
+            "AZURE_TENANT_ID",
+            "AZURE_FEDERATED_TOKEN_FILE",
+        ]
+        .iter()
+        .filter(|name| {
+            self.environment
+                .lookup(name)
+                .is_some_and(|value| !value.is_empty())
+        })
+        .count();
         if configured == 0 {
             return Err(ChainError::Unavailable);
         }
