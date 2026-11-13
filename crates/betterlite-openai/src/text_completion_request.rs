@@ -119,16 +119,9 @@ impl CompletionPrompt {
     pub fn to_value(&self) -> Value {
         match self {
             Self::Text(text) => Value::String(text.clone()),
-            Self::Texts(texts) => Value::Array(texts.iter().cloned().map(Value::String).collect()),
-            Self::Tokens(tokens) => {
-                Value::Array(tokens.iter().map(|id| Value::from(*id)).collect())
-            }
-            Self::TokenLists(lists) => Value::Array(
-                lists
-                    .iter()
-                    .map(|ids| Value::Array(ids.iter().map(|id| Value::from(*id)).collect()))
-                    .collect(),
-            ),
+            Self::Texts(texts) => Value::from(texts.clone()),
+            Self::Tokens(tokens) => Value::from(tokens.clone()),
+            Self::TokenLists(lists) => Value::from(lists.clone()),
             Self::Unmapped(value) => value.clone(),
         }
     }
