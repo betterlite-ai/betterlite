@@ -1,0 +1,5 @@
+task: B722
+deviations:
+  - what: A stored token JSON-string field over 1048576 bytes or depth 64 fails with a typed decode-limit error.
+    why: Bound the stored database-string parser this task newly exposes; the exact and over-limit behavior is proved by native_token_record_field_limits without silently dropping a field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/verification_token_repository.py#L93-L109
