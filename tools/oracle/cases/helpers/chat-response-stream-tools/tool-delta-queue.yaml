@@ -1,0 +1,54 @@
+kind: helper
+name: chat-response-stream-tools-tool-delta-queue
+call:
+  chat_response_stream_tools:
+    model: gpt-4o-mini
+    request_value: hi
+    responses_api_request:
+      tools:
+        - {type: function, name: ns__f}
+        - type: namespace
+          name: ns
+          tools:
+            - {type: function, name: f}
+        - {type: custom, name: patch}
+    custom_llm_provider: null
+    litellm_metadata: null
+    logging_marker: ctx
+    steps:
+      - kind: deltas
+        tool_calls:
+          - {id: c, index: 0, function: {name: f, arguments: "12345678901"}}
+      - kind: deltas
+        tool_calls:
+          - {id: c, index: 0, function: {name: f, arguments: AB}}
+      - kind: deltas
+        tool_calls: null
+      - kind: deltas
+        tool_calls:
+          - {index: 5, function: {name: f, arguments: a}}
+      - kind: deltas
+        tool_calls:
+          - {id: d, index: 1, function: {}}
+      - kind: deltas
+        tool_calls:
+          - {id: e, index: 2, function: {name: f, arguments: {a: 1}}}
+      - kind: deltas
+        tool_calls:
+          - {id: h, index: 3, function: {name: ns__f, arguments: ab}}
+      - kind: deltas
+        tool_calls:
+          - {id: i, index: 4, function: {name: patch, arguments: '{"content":"x"}'}}
+      - kind: deltas
+        tool_calls:
+          - {id: fc_ready, index: 7, function: {name: f, arguments: ""}}
+      - kind: reserve
+        provider_fields:
+          web_search_calls:
+            k: {id: ws_call_x, status: completed, action: {type: search}}
+      - kind: deltas
+        tool_calls:
+          - {id: call_x, index: 6, function: {name: f, arguments: a}}
+env: {}
+compare:
+  ignore: []

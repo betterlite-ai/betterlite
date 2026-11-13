@@ -1,0 +1,15 @@
+kind: helper
+name: spend_counter_batch_empty_nonstring_and_duplicate_ids
+call:
+  spend_counter_batch:
+    function: post_call_counter_keys
+    token: 12
+    team_id: ""
+    user_id: ""
+    org_id: false
+    end_user_id: null
+    project_id: ""
+    tags: ["", dup, dup, 5, null, true, x]
+    model_access_groups: ["", g, g, 7]
+env: {}
+compare: {ignore: []}

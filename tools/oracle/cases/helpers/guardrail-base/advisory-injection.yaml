@@ -1,0 +1,6 @@
+kind: helper
+name: advisory-injection
+call:
+  b5471: {"function": "advisory", "data": {"instructions": "be kind", "messages": [{"role": "user", "content": "hi"}]}, "message": "careful"}
+env: {}
+compare: {ignore: []}

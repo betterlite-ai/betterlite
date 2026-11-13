@@ -1,0 +1,18 @@
+kind: helper
+name: cancel-over-counters
+call:
+  xai_batches:
+    operation: batch
+    calls:
+      - endpoint: null
+        batch: {batch_id: batch_xai, cancel_time: "2024-01-02T00:00:00Z", cancel_by_xai_message: "the input file failed validation", state: {num_requests: 3, num_pending: 2}}
+      - endpoint: null
+        batch: {batch_id: batch_caller, cancel_time: "2024-01-02T00:00:00Z", state: {num_requests: 3, num_pending: 2}}
+      - endpoint: null
+        batch: {batch_id: batch_validating, state: {num_requests: 0}}
+      - endpoint: null
+        batch: {batch_id: batch_pending, state: {num_requests: 4, num_pending: 1, num_success: 3}}
+      - endpoint: null
+        batch: {batch_id: batch_done, state: {num_requests: 4, num_success: 3, num_error: 1, num_cancelled: 2}}
+env: {}
+compare: {ignore: []}

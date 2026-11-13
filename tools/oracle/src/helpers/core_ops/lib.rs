@@ -1,4 +1,12 @@
-helper_group! {
+#![expect(
+    clippy::absolute_paths,
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    clippy::pub_use,
+    reason = "The operation files name crate::helpers paths, build provider JSON with serde_json::json!, and reach the trait through the re-export the shared macro generates."
+)]
+
+betterlite_oracle_helper_api::helper_group! {
     "anthropic_beta_config" => anthropic_beta_config,
     "anthropic_beta_filter" => anthropic_beta_filter, "apiserpent_search" => apiserpent_search,
     "assistant_message_options" => assistant_message_options, "b031" => b031, "b045" => b045,

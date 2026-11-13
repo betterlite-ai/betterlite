@@ -1,0 +1,5 @@
+task: B2316
+deviations:
+  - what: Nonfinite or out-of-range Redis numeric maps trigger DEBUG fallback to per-key reads instead of entering batch state as Python floats.
+    why: Checked Decimal values cannot represent those source values, so the whole map is dropped; finite numeric coercions and negatives stay supported, parsed from their exact text so a long counter keeps its cents.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L116-L135

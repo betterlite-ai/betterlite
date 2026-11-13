@@ -107,3 +107,10 @@ path = "fuzz_targets/mcp_jwt_idp_document.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "guardrail_message_scope_sse_chunk"
+path = "fuzz_targets/guardrail_message_scope_sse_chunk.rs"
+test = false
+doc = false
+bench = false
