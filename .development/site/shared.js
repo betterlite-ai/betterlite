@@ -25,6 +25,16 @@ export function idNumber(id) {
   return Number(id.slice(1));
 }
 
+// R milestones hold cleanup and refactoring, so the porting figures leave them out (Max, 2026-11-13).
+export function porting(entry) {
+  return !entry.milestone.startsWith("R");
+}
+
+// The M milestones in number order, then the R ones.
+export function milestoneOrder(a, b) {
+  return Number(a.code.startsWith("R")) - Number(b.code.startsWith("R")) || idNumber(a.code) - idNumber(b.code);
+}
+
 export function figure(value, small, label) {
   return `<div class="figure"><div class="value">${value} <small>${small}</small></div><div class="label">${label}</div></div>`;
 }

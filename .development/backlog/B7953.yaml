@@ -2,7 +2,7 @@ id: B7953
 milestone: M12 python
 title: Python types for videos, secret managers, pass-through endpoints, prompts and repositories
 status: todo
-depends_on: [B5657, B7929]
+depends_on: [B5657, B7929, B9951]
 file: tasks/B7953-types-runtime-helper-types.yaml
 covers:
   - "litellm/types/videos/**"

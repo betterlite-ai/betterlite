@@ -62,7 +62,7 @@ checks:
 oracle_cases: []
 deviations:
 - what: Names that LiteLLM only imports from the openai package are not exported, and fields they type hold JSON mappings.
-  why: The wheel depends only on python-dotenv and typing_extensions, so no openai import can exist at import time.
+  why: The wheel does not depend on openai, so no openai import can exist at import time.
 out_of_scope:
 - >-
   `HttpxBinaryResponseContent` L121-L145: it subclasses the SDK's httpx wrapper, and the gateway does its own HTTP, so
