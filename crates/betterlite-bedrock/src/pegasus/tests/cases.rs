@@ -304,6 +304,26 @@ fn pegasus_reply_errors() {
         }
         other => panic!("expected a bedrock error, got {other:?}"),
     }
+    let not_utf8 = block_on(decode_pegasus_reply(
+        &[0xff, 0xfe],
+        &context(&headers, &given, 10.0),
+        &mut single_choice(),
+        &counter,
+    ))
+    .unwrap_err();
+    match not_utf8 {
+        PegasusError::Bedrock { status, error } => {
+            assert_eq!(status, 200);
+            assert!(
+                error
+                    .cause
+                    .error
+                    .message
+                    .contains("Error parsing response: the body is not UTF-8")
+            );
+        }
+        other => panic!("expected a bedrock error, got {other:?}"),
+    }
     for body in [
         b"[1,2]".as_slice(),
         br#"{"message":"visible","finishReason":[]}"#.as_slice(),
