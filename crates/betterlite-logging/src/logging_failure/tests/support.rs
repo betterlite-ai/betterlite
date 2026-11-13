@@ -89,6 +89,7 @@ pub(crate) struct RecordedCall {
     pub(crate) method: CallMethod,
     pub(crate) payload: Arc<StandardLoggingPayload>,
     pub(crate) stream: bool,
+    pub(crate) litellm_metadata: Arc<IndexMap<String, Json>>,
 }
 
 pub(crate) struct SpecialCall {
@@ -159,6 +160,13 @@ impl FakeLogger {
             .collect()
     }
 
+    pub(crate) fn litellm_metadata(&self) -> Vec<(CallMethod, Arc<IndexMap<String, Json>>)> {
+        lock(&self.calls)
+            .iter()
+            .map(|call| (call.method, Arc::clone(&call.litellm_metadata)))
+            .collect()
+    }
+
     pub(crate) fn special_calls(&self) -> Vec<(Option<String>, Option<String>)> {
         lock(&self.special_calls)
             .iter()
@@ -171,6 +179,7 @@ impl FakeLogger {
             method,
             payload: Arc::clone(&event.payload),
             stream: event.stream,
+            litellm_metadata: Arc::clone(&event.litellm_metadata),
         });
         let failing = match method {
             CallMethod::Sync => self.has(Flag::FailsSync),
