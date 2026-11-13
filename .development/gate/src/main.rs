@@ -9,6 +9,7 @@ mod development;
 mod deviations;
 mod dispatch;
 mod error;
+mod exceptions;
 mod facts;
 mod gate_lock;
 mod git;
@@ -69,6 +70,10 @@ enum Command {
         about = "Validate every spec file under .development/ and the committed JSON Schemas"
     )]
     Validate,
+    #[command(
+        about = "Print every exception to check later as CSV: tasks merged with new expects or a raised line budget, and the advisories and duplicate crates deny.toml allows"
+    )]
+    Exceptions,
     #[command(about = "Print the checks a task runs")]
     List {
         task: String,
@@ -248,6 +253,14 @@ fn run_selection(
     Ok((verdict.lines, verdict.passed))
 }
 
+fn preflight(development: &Development, id: &str) -> Result<(Vec<String>, bool), GateError> {
+    let task = development.task(id)?;
+    let selection =
+        checks::selection::builtins_and(development, &task, checks::selection::prerequisite)?;
+    let verdict = checks::run(development, &task, &selection)?;
+    Ok((verdict.lines, verdict.passed))
+}
+
 fn run_command(
     command: Command,
     development: &Development,
@@ -261,18 +274,10 @@ fn run_command(
             Ok((vec!["a worker vendor is available".to_owned()], true))
         }
         Command::Validate => validate_command(development),
+        Command::Exceptions => Ok((exceptions::exceptions(development)?, true)),
         Command::Shellcheck { paths } => shellcheck::shellcheck(&development.root, &paths),
         Command::List { task, local } => Ok((listing(development, &task, local)?, true)),
-        Command::Preflight { task: id } => {
-            let task = development.task(&id)?;
-            let selection = checks::selection::builtins_and(
-                development,
-                &task,
-                checks::selection::prerequisite,
-            )?;
-            let verdict = checks::run(development, &task, &selection)?;
-            Ok((verdict.lines, verdict.passed))
-        }
+        Command::Preflight { task } => preflight(development, &task),
         Command::Run {
             task,
             only,
