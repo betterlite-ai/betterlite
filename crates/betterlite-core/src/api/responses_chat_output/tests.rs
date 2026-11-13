@@ -606,6 +606,21 @@ fn usage_projection_keeps_cost_and_details() {
 }
 
 #[test]
+fn hosted_search_calls_replace_their_function_call() {
+    let response = assemble(
+        r#"{"id":"c","created":1,"model":"m","choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null,
+            "tool_calls":[{"id":"x","type":"function","function":{"name":"search","arguments":"{}"}}],
+            "provider_specific_fields":{"web_search_calls":[{"id":"ws_x","type":"web_search_call","status":"completed","action":{"type":"search","query":"cats"}}]}}}]}"#,
+    );
+    assert_eq!(
+        serialized(&response.response.output[0]),
+        parse(
+            r#"{"id":"ws_x","action":{"type":"search","queries":null,"query":"cats","sources":null},"status":"completed","type":"web_search_call"}"#
+        )
+    );
+}
+
+#[test]
 fn custom_chat_tool_calls_cache_an_empty_function() {
     let response = assemble(
         r#"{"id":"c","created":1,"model":"m","choices":[{"finish_reason":"stop","message":{"role":"assistant","content":null,
