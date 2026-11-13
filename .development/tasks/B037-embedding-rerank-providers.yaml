@@ -120,7 +120,7 @@ checks:
       run: test -f tools/oracle/helpers/embedding_family_selection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The pure helper must inspect the config selected by the pinned utility factories.
     - id: embedding-selection-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/embedding_family_selection*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::core_ops::embedding_family_selection::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/embedding_family_selection*')" && cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^embedding_family_selection::/)'
       why: Every new seed must parse to embedding_family_selection with a nonzero count.
 oracle_cases:
   - tools/oracle/cases/providers/embedding-rerank/cohere-chat-aliases.yaml

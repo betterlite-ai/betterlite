@@ -1,0 +1,23 @@
+[package]
+name = "betterlite-pyhost-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-pyhost = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "instance_ref"
+path = "fuzz_targets/instance_ref.rs"
+test = false
+doc = false
+bench = false

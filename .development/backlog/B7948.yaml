@@ -2,7 +2,7 @@ id: B7948
 milestone: M12 python
 title: Python types for the policy engine (types/policy_engine.py, types/proxy/policy_engine/*)
 status: todo
-depends_on: [B5657]
+depends_on: [B5657, B9951]
 file: tasks/B7948-types-policy-engine.yaml
 covers:
   - "litellm/types/policy_engine.py"
