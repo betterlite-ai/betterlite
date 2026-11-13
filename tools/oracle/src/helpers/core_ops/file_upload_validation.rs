@@ -1,5 +1,4 @@
-use std::collections::BTreeMap;
-use std::io::Cursor;
+use crate::helpers::{Helper, HelperError, HelperResult};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_config::sections::Section;
@@ -12,12 +11,13 @@ use betterlite_core::api::file_upload_validation::failure::{FailureFields, excep
 use betterlite_core::api::file_upload_validation::line_shape::LineShape;
 use betterlite_core::api::file_upload_validation::source::FileBody;
 use betterlite_core::api::file_upload_validation::upload::{
-    UploadValidationFailure, check_allowed_extension, check_blocked_extension,
-    check_unsafe_filename, check_upload_file_size,
+    ExtensionRule, UploadValidationFailure, check_extension, check_unsafe_filename,
+    check_upload_file_size,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use crate::helpers::{Helper, HelperError, HelperResult};
+use std::collections::BTreeMap;
+use std::io::Cursor;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
@@ -178,8 +178,16 @@ fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
             allowed,
             blocked,
         } => {
-            let allowed = check_allowed_extension(filename.as_deref(), allowed.as_deref());
-            let blocked = check_blocked_extension(filename.as_deref(), blocked.as_deref());
+            let allowed = check_extension(
+                filename.as_deref(),
+                allowed.as_deref(),
+                ExtensionRule::Allowed,
+            );
+            let blocked = check_extension(
+                filename.as_deref(),
+                blocked.as_deref(),
+                ExtensionRule::Blocked,
+            );
             Ok(json!({
                 "allowed": upload_failure(allowed.as_ref()),
                 "blocked": upload_failure(blocked.as_ref()),

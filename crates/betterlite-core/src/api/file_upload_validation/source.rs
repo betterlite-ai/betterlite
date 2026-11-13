@@ -1,5 +1,5 @@
-use std::io::{BufRead, Seek, SeekFrom};
 use super::error::FileUploadValidationError;
+use std::io::{BufRead, Seek, SeekFrom};
 pub trait SeekableBody: BufRead + Seek {}
 impl<T: BufRead + Seek> SeekableBody for T {}
 pub enum FileBody<'a> {
@@ -21,10 +21,7 @@ impl FileBody<'_> {
     pub fn reset(&mut self) -> Result<(), FileUploadValidationError> {
         match self {
             Self::Bytes(_) => Ok(()),
-            Self::Seekable(reader) => {
-                reader.rewind()?;
-                Ok(())
-            }
+            Self::Seekable(reader) => reader.rewind().map_err(FileUploadValidationError::from),
         }
     }
 }

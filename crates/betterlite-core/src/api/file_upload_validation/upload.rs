@@ -1,8 +1,8 @@
-use crate::api::upload_filename::safe_filename;
 use super::error::FileUploadValidationError;
 use super::failure::{FILE_PARAM, FILE_TOO_LARGE, FailureFields, INVALID_REQUEST};
 use super::source::FileBody;
 use super::{exceeds, megabytes};
+use crate::api::upload_filename::safe_filename;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UploadValidationFailure {
     TooLarge { size_bytes: u128, limit_mb: i64 },
@@ -67,37 +67,36 @@ pub fn check_upload_file_size(
     }
     Ok(None)
 }
-pub fn check_allowed_extension(
-    filename: Option<&str>,
-    allowed_extensions: Option<&[String]>,
-) -> Option<UploadValidationFailure> {
-    let allowed_extensions = allowed_extensions?;
-    let extension = normalized_extension(filename);
-    let permitted = allowed_extensions
-        .iter()
-        .any(|item| item.to_lowercase() == extension);
-    if !extension.is_empty() && permitted {
-        return None;
+fn listed(extensions: &[String], extension: &str) -> bool {
+    let mut found = false;
+    for item in extensions {
+        if item.to_lowercase() == extension {
+            found = true;
+        }
     }
-    Some(UploadValidationFailure::ExtensionNotAllowed { extension })
+    found
 }
-pub fn check_blocked_extension(
+#[derive(Clone, Copy)]
+pub enum ExtensionRule {
+    Allowed,
+    Blocked,
+}
+pub fn check_extension(
     filename: Option<&str>,
-    blocked_extensions: Option<&[String]>,
+    extensions: Option<&[String]>,
+    rule: ExtensionRule,
 ) -> Option<UploadValidationFailure> {
-    let blocked_extensions = blocked_extensions?;
-    if blocked_extensions.is_empty() {
-        return None;
-    }
     let extension = normalized_extension(filename);
-    let blocked = !extension.is_empty()
-        && blocked_extensions
-            .iter()
-            .any(|item| item.to_lowercase() == extension);
-    if blocked {
-        return Some(UploadValidationFailure::BlockedExtension { extension });
+    let listed = !extension.is_empty() && listed(extensions?, &extension);
+    match rule {
+        ExtensionRule::Allowed if !listed => {
+            Some(UploadValidationFailure::ExtensionNotAllowed { extension })
+        }
+        ExtensionRule::Blocked if listed => {
+            Some(UploadValidationFailure::BlockedExtension { extension })
+        }
+        ExtensionRule::Allowed | ExtensionRule::Blocked => None,
     }
-    None
 }
 pub fn check_unsafe_filename(filename: Option<&str>) -> Option<UploadValidationFailure> {
     let Some(filename) = filename else {

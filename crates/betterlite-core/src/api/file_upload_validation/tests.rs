@@ -9,12 +9,12 @@ use rstest::rstest;
 use super::batch::{
     BatchValidationFailure, check_batch_file_upload, decode_file_upload_validation,
 };
+use super::failure::exception;
 use super::line_shape::LineShape;
 use super::source::FileBody;
-use super::failure::exception;
 use super::upload::{
-    UploadValidationFailure, check_allowed_extension, check_blocked_extension,
-    check_unsafe_filename, check_upload_file_size,
+    ExtensionRule, UploadValidationFailure, check_extension, check_unsafe_filename,
+    check_upload_file_size,
 };
 use crate::api::api_boundaries::ApiLimits;
 
@@ -76,9 +76,10 @@ fn unsafe_filename_components_reject(#[case] filename: &str) {
 fn extension_policy_allowlist_and_blocklist() {
     let pdf = names(&[".pdf"]);
     let upper = names(&[".PDF"]);
-    assert!(check_allowed_extension(Some("REPORT.PDF"), Some(&pdf)).is_none());
-    assert!(check_blocked_extension(Some("REPORT.PDF"), Some(&upper)).is_none());
-    let failure = check_blocked_extension(Some("report.pdf"), Some(&upper)).unwrap();
+    assert!(check_extension(Some("REPORT.PDF"), Some(&pdf), ExtensionRule::Allowed).is_none());
+    assert!(check_extension(Some("REPORT.PDF"), Some(&upper), ExtensionRule::Allowed).is_none());
+    let failure =
+        check_extension(Some("report.pdf"), Some(&upper), ExtensionRule::Blocked).unwrap();
     let fields = failure.fields();
     let exception = exception(fields.clone());
     assert_eq!(
@@ -89,9 +90,9 @@ fn extension_policy_allowlist_and_blocklist() {
     assert_eq!(exception.error_type, "invalid_request_error");
     assert_eq!(exception.param, Some("file".to_owned()));
     assert_eq!(exception.code, "400");
-    assert!(check_blocked_extension(Some("report.pdf"), Some(&[])).is_none());
-    assert!(check_blocked_extension(Some("report.pdf"), None).is_none());
-    assert!(check_allowed_extension(Some("report.pdf"), None).is_none());
+    assert!(check_extension(Some("report.pdf"), Some(&[]), ExtensionRule::Blocked).is_none());
+    assert!(check_extension(Some("report.pdf"), None, ExtensionRule::Allowed).is_none());
+    assert!(check_extension(Some("report.pdf"), None, ExtensionRule::Blocked).is_none());
 }
 
 #[rstest]
@@ -108,7 +109,7 @@ fn extension_policy_allow_failures(
     #[case] missing_extension: bool,
 ) {
     let allow = names(allow);
-    let failure = check_allowed_extension(filename, Some(&allow)).unwrap();
+    let failure = check_extension(filename, Some(&allow), ExtensionRule::Allowed).unwrap();
     let fields = failure.fields();
     let exception = exception(fields.clone());
     assert_eq!(fields.status, 400);

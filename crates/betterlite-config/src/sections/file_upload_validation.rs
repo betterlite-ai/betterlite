@@ -1,7 +1,7 @@
-use serde::Deserialize;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 use crate::sections::settings::JsonValue;
+use serde::Deserialize;
 const MAX_FILE_SIZE_PATH: &str = "general_settings.max_file_size_mb";
 const MAX_BATCH_FILE_SIZE_PATH: &str = "general_settings.max_batch_file_size_mb";
 const ALLOWED_EXTENSIONS_PATH: &str = "general_settings.allowed_file_extensions";
@@ -84,25 +84,18 @@ fn lax_string_integer(text: &str) -> Option<i64> {
     }
     integer.parse::<i64>().ok()
 }
+fn strings_of(value: &JsonValue) -> Option<Vec<String>> {
+    value
+        .as_array()?
+        .iter()
+        .map(|item| item.as_str().map(str::to_owned))
+        .collect()
+}
 fn string_list(raw: Option<&JsonValue>, path: &str) -> Result<Option<Vec<String>>, ConfigError> {
-    let Some(value) = raw else {
-        return Ok(None);
-    };
-    let JsonValue::Array(items) = value else {
-        return Err(invalid(path, value));
-    };
-    let mut strings = Vec::with_capacity(items.len());
-    for item in items {
-        match item {
-            JsonValue::String(text) => strings.push(text.clone()),
-            JsonValue::Null
-            | JsonValue::Bool(_)
-            | JsonValue::Number(_)
-            | JsonValue::Array(_)
-            | JsonValue::Object(_) => return Err(invalid(path, value)),
-        }
-    }
-    Ok(Some(strings))
+    let Some(value) = raw else { return Ok(None) };
+    strings_of(value)
+        .map(Some)
+        .ok_or_else(|| invalid(path, value))
 }
 fn invalid(path: &str, value: &JsonValue) -> ConfigError {
     let flag = match value {

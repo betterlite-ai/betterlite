@@ -109,25 +109,24 @@ impl Parser<'_> {
             }
         }
     }
-    fn array(&mut self, depth: usize) -> Option<()> {
-        if self.next_unit()? != b'[' {
-            return None;
+    fn element(&mut self, depth: usize) -> Option<()> {
+        self.skip_whitespace();
+        self.value(depth)?;
+        self.skip_whitespace();
+        match self.next_unit()? {
+            b',' => self.element(depth),
+            b']' => Some(()),
+            _ => None,
         }
+    }
+    fn array(&mut self, depth: usize) -> Option<()> {
+        drop(self.next_unit()?);
         self.skip_whitespace();
         if self.peek() == Some(b']') {
             drop(self.next_unit()?);
             return Some(());
         }
-        loop {
-            self.skip_whitespace();
-            self.value(depth.saturating_add(1))?;
-            self.skip_whitespace();
-            match self.next_unit()? {
-                b',' => {}
-                b']' => return Some(()),
-                _ => return None,
-            }
-        }
+        self.element(depth.saturating_add(1))
     }
     fn signed(&mut self) -> Option<()> {
         drop(self.next_unit()?);
