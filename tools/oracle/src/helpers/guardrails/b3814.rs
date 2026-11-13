@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
-use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
+use betterlite_guardrails::guardrail_base::contract::GuardrailContract as _;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::guardrail_base::settings::GuardrailSettings;
@@ -17,7 +17,7 @@ pub(crate) struct Op;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Input {
+pub(crate) struct ApplyInput {
     initialized: bool,
     input_policies: BTreeMap<String, String>,
     output_policies: BTreeMap<String, String>,
@@ -121,7 +121,7 @@ struct Output {
 }
 
 impl Helper for Op {
-    type Input = Input;
+    type Input = ApplyInput;
 
     fn run(input: &Self::Input) -> HelperResult {
         let guardrail = ToolPolicyGuardrail::new(
