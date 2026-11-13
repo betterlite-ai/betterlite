@@ -30,7 +30,8 @@ pub(super) fn delete_keys(options: &DeleteKeys, ports: KeysPorts<'_>) -> Result<
         redactor,
     };
     match api.send(Method::POST, DELETE_PATH, &[], Some(encoded)) {
-        Ok(reply) => output::write_pretty(&reply.value, stdout).map_err(KeysError::Json),
+        Ok(reply) => output::write_json(&reply.value, output::JsonText::Pretty, stdout)
+            .map_err(KeysError::Json),
         Err(ApiError::Http { status, body, .. }) => {
             output::print_http_error(status, &body, stdout, stderr).map_err(KeysError::Json)?;
             Err(KeysError::Aborted)

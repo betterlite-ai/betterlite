@@ -29,7 +29,8 @@ pub(super) fn generate_key(options: &GenerateKey, ports: KeysPorts<'_>) -> Resul
         redactor,
     };
     match api.send(Method::POST, GENERATE_PATH, &[], Some(body)) {
-        Ok(reply) => output::write_pretty(&reply.value, stdout).map_err(KeysError::Json),
+        Ok(reply) => output::write_json(&reply.value, output::JsonText::Pretty, stdout)
+            .map_err(KeysError::Json),
         Err(ApiError::Http { status, body, .. }) => {
             output::print_http_error(status, &body, stdout, stderr).map_err(KeysError::Json)?;
             Err(KeysError::Aborted)
@@ -41,14 +42,14 @@ pub(super) fn generate_key(options: &GenerateKey, ports: KeysPorts<'_>) -> Resul
 fn generate_body(options: &GenerateKey) -> Result<Vec<u8>, KeysError> {
     let body = KeyGenerateBody {
         models: json_string_list(options.models.as_deref()),
-        aliases: parse_aliases(options.aliases.as_deref())?,
+        aliases: parse_object(options.aliases.as_deref(), "aliases", ObjectValues::Strings)?,
         spend: parse_spend(options.spend)?,
         duration: options.duration.clone(),
         key_alias: options.key_alias.clone(),
         team_id: options.team_id.clone(),
         user_id: options.user_id.clone(),
         budget_id: options.budget_id.clone(),
-        config: parse_config(options.config.as_deref())?,
+        config: parse_object(options.config.as_deref(), "config", ObjectValues::Any)?,
     };
     serde_json::to_vec(&body).map_err(KeysError::Json)
 }
@@ -66,37 +67,36 @@ fn parse_spend(spend: Option<Decimal>) -> Result<Option<Number>, KeysError> {
     Ok(Some(number))
 }
 
-fn parse_aliases(text: Option<&str>) -> Result<Option<JsonValue>, KeysError> {
+fn parse_json(text: &str) -> Result<JsonValue, KeysError> {
+    serde_json::from_str(text).map_err(|source| KeysError::Usage {
+        message: format!("Invalid JSON: {source}"),
+    })
+}
+
+fn parse_object(
+    text: Option<&str>,
+    option: &'static str,
+    values: ObjectValues,
+) -> Result<Option<JsonValue>, KeysError> {
     let Some(text) = text else {
         return Ok(None);
     };
-    let value: JsonValue = serde_json::from_str(text).map_err(|source| KeysError::Usage {
-        message: format!("Invalid JSON: {source}"),
-    })?;
+    let value = parse_json(text)?;
     let Some(entries) = value.as_object() else {
         return Err(KeysError::Usage {
-            message: String::from("the --aliases option must hold a JSON object"),
+            message: format!("the --{option} option must hold a JSON object"),
         });
     };
-    if entries.values().any(|entry| !entry.is_string()) {
+    if matches!(values, ObjectValues::Strings) && entries.values().any(|entry| !entry.is_string()) {
         return Err(KeysError::Usage {
-            message: String::from("the --aliases option must hold a JSON object of strings"),
+            message: format!("the --{option} option must hold a JSON object of strings"),
         });
     }
     Ok(Some(value))
 }
 
-fn parse_config(text: Option<&str>) -> Result<Option<JsonValue>, KeysError> {
-    let Some(text) = text else {
-        return Ok(None);
-    };
-    let value: JsonValue = serde_json::from_str(text).map_err(|source| KeysError::Usage {
-        message: format!("Invalid JSON: {source}"),
-    })?;
-    if !value.is_object() {
-        return Err(KeysError::Usage {
-            message: String::from("the --config option must hold a JSON object"),
-        });
-    }
-    Ok(Some(value))
+#[derive(Clone, Copy)]
+enum ObjectValues {
+    Strings,
+    Any,
 }

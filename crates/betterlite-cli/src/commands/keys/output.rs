@@ -8,21 +8,22 @@ use super::KeysError;
 use super::dates;
 use super::wire::SourceKey;
 
-pub(super) fn write_pretty(
-    value: &JsonValue,
-    stdout: &mut dyn Write,
-) -> Result<(), serde_json::Error> {
-    serde_json::to_writer_pretty(&mut *stdout, value)?;
-    let _newline = stdout.write_all(b"\n");
-    Ok(())
+#[derive(Clone, Copy)]
+pub(super) enum JsonText {
+    Pretty,
+    Generated,
 }
 
-pub(super) fn write_generated(
+pub(super) fn write_json(
     value: &JsonValue,
+    text: JsonText,
     stdout: &mut dyn Write,
 ) -> Result<(), serde_json::Error> {
-    let text = serde_json::to_string(value)?;
-    let _wrote = writeln!(stdout, "Generated key: {text}");
+    let (prefix, rendered) = match text {
+        JsonText::Pretty => ("", serde_json::to_string_pretty(value)?),
+        JsonText::Generated => ("Generated key: ", serde_json::to_string(value)?),
+    };
+    let _wrote = writeln!(stdout, "{prefix}{rendered}");
     Ok(())
 }
 
@@ -34,7 +35,7 @@ pub(super) fn print_http_error(
 ) -> Result<(), serde_json::Error> {
     let _status_line = writeln!(stderr, "Error: HTTP {status}");
     match serde_json::from_slice::<JsonValue>(body) {
-        Ok(value) => write_pretty(&value, stdout),
+        Ok(value) => write_json(&value, JsonText::Pretty, stdout),
         Err(_source) => {
             let _wrote = stderr.write_all(body);
             if !body.ends_with(b"\n") {

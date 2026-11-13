@@ -182,7 +182,8 @@ impl Import<'_> {
                 });
             match outcome {
                 Ok(reply) => {
-                    let _generated = output::write_generated(&reply.value, self.stdout);
+                    let _generated =
+                        output::write_json(&reply.value, output::JsonText::Generated, self.stdout);
                     imported = imported.saturating_add(1);
                     let _imported = writeln!(self.stdout, "Imported key: {alias}");
                 }

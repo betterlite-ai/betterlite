@@ -32,7 +32,8 @@ pub(super) fn list_keys(options: &ListKeys, ports: KeysPorts<'_>) -> Result<(), 
         return Err(KeysError::NotAnObject { url: reply.url });
     }
     if options.format == OutputFormat::Json {
-        return output::write_pretty(&value, stdout).map_err(KeysError::Json);
+        return output::write_json(&value, output::JsonText::Pretty, stdout)
+            .map_err(KeysError::Json);
     }
     let page: KeyListPage =
         serde_path_to_error::deserialize(value).map_err(|error| KeysError::Field {

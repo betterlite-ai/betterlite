@@ -36,7 +36,7 @@ pub(super) fn migrate_encryption(
         },
     )?;
     let value = api::interpret(&reply, None)?;
-    output::write_pretty(&value, stdout).map_err(EncryptionError::Json)?;
+    output::write_json(&value, output::JsonText::Pretty, stdout).map_err(EncryptionError::Json)?;
     print_residual(&value, &reply.url, stdout)?;
     Ok(())
 }
