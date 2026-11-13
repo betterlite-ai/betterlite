@@ -3,9 +3,10 @@ import threading
 import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from socketserver import BaseServer
 from types import TracebackType
-from typing import Self
+from typing import ClassVar, Self
+
+from typing_extensions import override
 
 from betterlite.types.utils.values import JsonValue
 
@@ -39,6 +40,7 @@ class RecordingServer(ThreadingHTTPServer):
         self.lock = threading.Lock()
         self.thread = threading.Thread(target=self.serve_forever, daemon=True)
         self.thread.start()
+        _Handler.recording = self
 
     def reply(self, status: int, body_text: str, *, delay: float = 0.0) -> None:
         with self.lock:
@@ -48,9 +50,11 @@ class RecordingServer(ThreadingHTTPServer):
     def url(self) -> str:
         return f"http://{HOST}:{self.server_port}"
 
+    @override
     def __enter__(self) -> Self:
         return self
 
+    @override
     def __exit__(
         self,
         _exc_type: type[BaseException] | None,
@@ -63,12 +67,7 @@ class RecordingServer(ThreadingHTTPServer):
 
 
 class _Handler(BaseHTTPRequestHandler):
-    def recording(self) -> RecordingServer:
-        match self.server:
-            case RecordingServer():
-                return self.server
-            case BaseServer():
-                raise RuntimeError("the handler is not on a RecordingServer")
+    recording: ClassVar["RecordingServer | None"] = None
 
     def do_GET(self) -> None:
         self._respond("GET")
@@ -83,6 +82,9 @@ class _Handler(BaseHTTPRequestHandler):
         self._respond("DELETE")
 
     def _respond(self, method: str) -> None:
+        server = _Handler.recording
+        if server is None:
+            raise RuntimeError("the handler is not on a RecordingServer")
         lengths = self.headers.get_all("Content-Length")
         length = 0 if lengths is None else int(lengths[0])
         raw = self.rfile.read(length)
@@ -95,7 +97,6 @@ class _Handler(BaseHTTPRequestHandler):
             content_type=self.headers.get("Content-Type"),
             body=_body(raw),
         )
-        server = self.recording()
         with server.lock:
             server.requests.append(seen)
             queued = server.answers.pop(0) if server.answers else Answer(500, "", 0.0)
