@@ -1,0 +1,17 @@
+kind: helper
+name: destination-arize-grpc-endpoint
+call:
+  b3851:
+    function: destination_for
+    environment:
+      ARIZE_ENDPOINT: https://grpc.example/v1
+    allowed_hosts: []
+    callback_name: arize
+    params:
+      arize_space_id: space-1
+      arize_api_key: key-1
+    service_name: null
+env:
+  ARIZE_ENDPOINT: https://grpc.example/v1
+compare:
+  ignore: []

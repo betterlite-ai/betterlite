@@ -1,0 +1,14 @@
+kind: helper
+name: empty-stream-no-rewrite
+call:
+  b3246:
+    guardrail:
+      kind: unified
+      name: pii
+      texts_out: null
+      tool_calls_out: null
+      hook: {mode: nothing, response: null}
+    translation: {delivers: true, tool_calls: null, rescans: true}
+    chunks: []
+env: {}
+compare: {ignore: []}

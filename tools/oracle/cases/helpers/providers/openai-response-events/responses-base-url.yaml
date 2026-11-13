@@ -1,0 +1,15 @@
+kind: helper
+name: openai-response-events-responses-base-url
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_events:
+    responses_base_url:
+      probes:
+        - {api_base: null, litellm_api_base: null, env_base_url: null, env_api_base: null}
+        - {api_base: https://a.example/v1/, litellm_api_base: null, env_base_url: null, env_api_base: null}
+        - {api_base: '', litellm_api_base: https://b.example//, env_base_url: null, env_api_base: null}
+        - {api_base: null, litellm_api_base: null, env_base_url: https://c.example/, env_api_base: null}
+        - {api_base: null, litellm_api_base: null, env_base_url: '', env_api_base: https://d.example/v1}
+        - {api_base: https://e.example/v1/embeddings?x=1, litellm_api_base: https://ignored.example, env_base_url: https://ignored.example, env_api_base: null}
+        - {api_base: https://f.example/v1, litellm_api_base: null, env_base_url: null, env_api_base: null}

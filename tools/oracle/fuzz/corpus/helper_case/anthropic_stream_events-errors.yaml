@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-stream-events-errors
+call:
+  anthropic_stream_events:
+    json_mode: null
+    tool_name_reverse_map: {sanitized: json_tool_call}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: chunk, chunk: {type: error, error: {type: rate_limit_error, message: slow}}}
+      - {function: chunk, chunk: {type: error}}
+      - {function: chunk, chunk: {type: content_block_start, index: 0, content_block: {type: tool_use, id: t1, name: sanitized, input: {}}}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: destination-service-name-attribute
+call:
+  b3851:
+    function: destination_for
+    environment: {}
+    allowed_hosts: []
+    callback_name: langfuse_otel
+    params:
+      langfuse_public_key: pk-lf-1
+      langfuse_secret_key: sk-lf-1
+    service_name: my-service
+env: {}
+compare:
+  ignore: []

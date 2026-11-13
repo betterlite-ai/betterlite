@@ -1,0 +1,23 @@
+{
+  "kind": "helper",
+  "name": "websearch-no-query",
+  "call": {
+    "b4115": {
+      "operation": "short_circuit",
+      "model": "gpt-5",
+      "messages": [
+        {"role": "user", "content": "   "}
+      ],
+      "tools": [
+        {"name": "litellm_web_search"}
+      ],
+      "custom_llm_provider": "openai",
+      "enabled_providers": ["openai"],
+      "native_providers": []
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

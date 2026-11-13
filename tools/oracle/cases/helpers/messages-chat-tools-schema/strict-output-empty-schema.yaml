@@ -1,0 +1,10 @@
+kind: helper
+name: messages-chat-tools-schema-strict-output-empty-schema
+call:
+  messages_chat_tools_schema:
+    operation: output_format
+    output_format:
+      type: json_schema
+      schema: {}
+env: {}
+compare: {ignore: []}
