@@ -561,6 +561,30 @@ fn batch_cancel_preserves_the_provider_status(#[case] status: BatchStatus) {
 }
 
 #[test]
+fn batch_cancel_bounds_the_extra_bytes() {
+    let defaults = ApiLimits::default();
+    let limits = ApiLimits {
+        max_json_bytes: 4,
+        max_event_bytes: defaults.max_event_bytes,
+        max_items: defaults.max_items,
+    };
+    let (dispatch, calls) = scripted(BatchStatus::Cancelling);
+    let service = BatchProviderCancel {
+        clock: Arc::new(|| SECOND),
+        dispatch,
+        limits,
+        settings: base_settings(),
+    };
+    let error = drive(
+        &service,
+        &request("openai", base_params(), CancelCall::Sync),
+    )
+    .expect_err("the request exceeds the byte limit");
+    assert!(matches!(error, BatchProviderCancelError::Limits(_)));
+    assert!(recorded(&calls).is_empty());
+}
+
+#[test]
 fn batch_cancel_bounds_the_extra_entries() {
     let limit = ApiLimits::default().max_items;
     let extra_headers: BTreeMap<String, String> = (0..=limit)
