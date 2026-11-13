@@ -304,18 +304,18 @@ async fn input_missing_or_null_prompt_makes_no_call(#[case] raw: &str) {
 }
 
 #[rstest]
-#[case::integer(r#"{"prompt":7}"#, "int")]
-#[case::boolean(r#"{"prompt":true}"#, "bool")]
-#[case::float(r#"{"prompt":1.5}"#, "float")]
-#[case::object(r#"{"prompt":{"text":"x"}}"#, "dict")]
+#[case::integer(value("7"), "int")]
+#[case::boolean(value("true"), "bool")]
+#[case::float(GuardrailValue::Decimal(1.5), "float")]
+#[case::object(value(r#"{"text":"x"}"#), "dict")]
 #[tokio::test]
 async fn input_unexpected_prompt_type_warns_and_makes_no_call(
-    #[case] raw: &str,
+    #[case] prompt: GuardrailValue,
     #[case] kind: &str,
 ) {
     let (log, _guard) = capture_logs(tracing::Level::WARN);
     let guardrail = FakeGuardrail::replying(&["unused"]);
-    let mut data = body(raw);
+    let mut data = BTreeMap::from([("prompt".to_owned(), prompt)]);
     let untouched = data.clone();
     process_input_messages(&mut data, &guardrail, None)
         .await

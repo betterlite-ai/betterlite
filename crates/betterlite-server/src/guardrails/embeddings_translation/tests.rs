@@ -261,18 +261,18 @@ async fn input_token_ids_make_no_call(#[case] raw: &str) {
 }
 
 #[rstest]
-#[case::boolean(r#"{"input":[true]}"#, "bool")]
-#[case::float(r#"{"input":[1.5]}"#, "float")]
-#[case::object(r#"{"input":[{"x":1}]}"#, "dict")]
-#[case::null(r#"{"input":[null]}"#, "NoneType")]
+#[case::boolean(value("true"), "bool")]
+#[case::float(GuardrailValue::Decimal(1.5), "float")]
+#[case::object(value(r#"{"x":1}"#), "dict")]
+#[case::null(GuardrailValue::Null, "NoneType")]
 #[tokio::test]
 async fn input_unexpected_list_item_type_warns_and_makes_no_call(
-    #[case] raw: &str,
+    #[case] item: GuardrailValue,
     #[case] kind: &str,
 ) {
     let (log, _guard) = capture_logs(tracing::Level::WARN);
     let guardrail = FakeGuardrail::replying(&["unused"]);
-    let mut data = body(raw);
+    let mut data = BTreeMap::from([("input".to_owned(), GuardrailValue::Array(vec![item]))]);
     let untouched = data.clone();
     process_input_messages(&mut data, &guardrail, None)
         .await
@@ -337,15 +337,18 @@ async fn input_missing_or_null_makes_no_call(#[case] raw: &str) {
 }
 
 #[rstest]
-#[case::integer(r#"{"input":7}"#, "int")]
-#[case::boolean(r#"{"input":true}"#, "bool")]
-#[case::float(r#"{"input":1.5}"#, "float")]
-#[case::object(r#"{"input":{"a":1}}"#, "dict")]
+#[case::integer(value("7"), "int")]
+#[case::boolean(value("true"), "bool")]
+#[case::float(GuardrailValue::Decimal(1.5), "float")]
+#[case::object(value(r#"{"a":1}"#), "dict")]
 #[tokio::test]
-async fn input_unexpected_type_warns_and_makes_no_call(#[case] raw: &str, #[case] kind: &str) {
+async fn input_unexpected_type_warns_and_makes_no_call(
+    #[case] input: GuardrailValue,
+    #[case] kind: &str,
+) {
     let (log, _guard) = capture_logs(tracing::Level::WARN);
     let guardrail = FakeGuardrail::replying(&["unused"]);
-    let mut data = body(raw);
+    let mut data = BTreeMap::from([("input".to_owned(), input)]);
     let untouched = data.clone();
     process_input_messages(&mut data, &guardrail, None)
         .await
