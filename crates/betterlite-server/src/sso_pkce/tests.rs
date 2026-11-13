@@ -468,6 +468,22 @@ async fn a_missing_state_only_warns_even_in_strict_mode() {
 }
 
 #[tokio::test]
+async fn an_empty_callback_state_counts_as_missing() {
+    let (log, _guard) = capture_logs(tracing::Level::WARN);
+    let cache = FakeCache::returning(PkceCacheKind::UserCache, None);
+    let caches = PkceCaches {
+        redis: None::<&FakeCache>,
+        user: &cache,
+    };
+    let parameters = token_exchange_parameters(Some(""), true, &settings(true, true), &caches)
+        .await
+        .unwrap();
+    assert!(parameters.verifier.is_none());
+    assert_eq!(cache.reads.load(Ordering::SeqCst), 0);
+    assert!(written(&log).contains("carried no state parameter"));
+}
+
+#[tokio::test]
 async fn pkce_disabled_without_a_state_does_not_warn() {
     let (log, _guard) = capture_logs(tracing::Level::WARN);
     let cache = FakeCache::returning(PkceCacheKind::UserCache, None);
@@ -691,6 +707,19 @@ async fn a_failed_cache_read_is_a_miss() {
             .await
             .unwrap();
     assert!(parameters.verifier.is_none());
+}
+
+#[tokio::test]
+async fn a_strict_miss_on_the_auth_cache_names_the_restart_cause() {
+    let cache = local_cache();
+    let caches = PkceCaches {
+        redis: None::<&FakeCache>,
+        user: &cache,
+    };
+    let error = token_exchange_parameters(Some("state"), true, &settings(true, true), &caches)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("Configure Redis"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
