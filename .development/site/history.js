@@ -1,4 +1,4 @@
-import { GITHUB, DAY, number, oneDecimal, compact, shortDate, yearDate, longDate, dayTime, hourOnly, esc, idNumber, figure, dayKey, cssColor, duration, quantile, plural, swatch } from "./shared.js";
+import { GITHUB, DAY, number, oneDecimal, compact, shortDate, yearDate, longDate, dayTime, hourOnly, esc, idNumber, figure, dayKey, porting, milestoneOrder, cssColor, duration, quantile, plural, swatch } from "./shared.js";
 
 const CUTOVER_PR = 722;
 const MEDIAN_WINDOW = 20;
@@ -381,7 +381,7 @@ function renderCompare(facts, stats) {
 }
 
 function renderPace(facts, stats) {
-  const open = facts.entries.filter((entry) => entry.status !== "done").length;
+  const open = facts.entries.filter((entry) => porting(entry) && entry.status !== "done").length;
   const week = facts.tasks.filter((merge) => merge.time >= facts.now * 1000 - 7 * DAY).length;
   const paces = [...facts.live.map((period) => [stageLabel(period), stats.get(period.key).length, stats.get(period.key).tasks]), ["Last 7 days", 7, week]];
   const rows = paces.map(([label, length, count]) => {
@@ -525,7 +525,7 @@ function renderMachine(facts) {
 function renderMilestonePace(facts) {
   const week = facts.now * 1000 - 7 * DAY;
   const live = facts.live;
-  const rows = [...facts.milestones.values()].sort((a, b) => idNumber(a.code) - idNumber(b.code)).map((group) => {
+  const rows = [...facts.milestones.values()].sort(milestoneOrder).map((group) => {
     const merged = facts.tasks.filter((merge) => merge.entry.milestone.split(" ")[0] === group.code);
     const open = group.total - group.done;
     const recent = merged.filter((merge) => merge.time >= week).length;
