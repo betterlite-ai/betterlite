@@ -1,0 +1,12 @@
+kind: helper
+name: manus-responses-url-default
+env: {}
+compare: {ignore: []}
+call:
+  b8104:
+    op: urls
+    environment: {}
+    sdk: {api_base: null, api_key: null}
+    probes:
+      - {api_base: null}
+      - {api_base: ""}

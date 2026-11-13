@@ -1,0 +1,11 @@
+kind: helper
+name: manus-responses-get-request-encoded-id
+env: {}
+compare: {ignore: []}
+call:
+  b8104:
+    op: get_requests
+    probes:
+      - {response_id: resp_1, api_base: "https://api.manus.im/v1/responses"}
+      - {response_id: "a/b c?d#e", api_base: "https://api.manus.im/v1/responses"}
+      - {response_id: "x~y.z-_", api_base: "https://host.example/openai"}

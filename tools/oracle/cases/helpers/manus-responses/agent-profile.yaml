@@ -1,0 +1,12 @@
+kind: helper
+name: manus-responses-agent-profile
+env: {}
+compare: {ignore: []}
+call:
+  b8104:
+    op: agent_profile
+    models:
+      - manus/manus-1.6
+      - manus/manus-1.6-lite
+      - manus-1.6
+      - a/b/c
