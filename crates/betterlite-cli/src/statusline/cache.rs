@@ -104,7 +104,8 @@ impl SessionCache<'_> {
         if !self.directory_is_private() {
             return Lookup::Stale;
         }
-        let Ok(descriptor) = open(path, OFlags::RDONLY | OFlags::NOFOLLOW, Mode::empty()) else {
+        let Ok(descriptor) = open(path, OFlags::RDONLY.union(OFlags::NOFOLLOW), Mode::empty())
+        else {
             return Lookup::Stale;
         };
         let mut raw = Vec::new();
