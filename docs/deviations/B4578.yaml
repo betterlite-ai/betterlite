@@ -1,0 +1,56 @@
+task: B4578
+deviations:
+  - what: >-
+      Every table is drawn with comfy-table (default features off). The title, column headers, row
+      order and cell text are as LiteLLM writes them, but borders, column widths and wrapping differ
+      from rich's, there is no color, and the Total row of the import summary is marked with
+      comfy-table's bold attribute instead of rich markup.
+    why: >-
+      Porting rich's layout engine buys nothing for output a person reads, and the models, keys,
+      credentials and model-group commands all draw their tables with the same crate. Scripts read
+      --format json where a command has it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L355-L378
+  - what: >-
+      A Unix timestamp is rendered in UTC. LiteLLM's datetime.fromtimestamp uses the machine's local
+      timezone, so the same created value shows the host's wall clock there.
+    why: >-
+      A CLI report must not change with the TZ of the machine that ran it, and no environment read
+      happens outside the config crate. A host configured for UTC, which the common proxy deployment
+      uses, renders exactly as before.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L76-L84
+  - what: >-
+      An ISO datetime that is not valid RFC 3339 is an error that names the field. LiteLLM falls back
+      to the value's own text for any string its fromisoformat cannot read.
+    why: >-
+      Formatting helpers take typed fields, so a value the field's type cannot hold is refused at the
+      boundary instead of being echoed as if it were a date. The task text asks for the error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L64-L73
+  - what: >-
+      A per-token cost that is not a JSON number is an error that names the field. LiteLLM runs the
+      value through float(), so a numeric string is accepted and a non-numeric one is echoed back.
+    why: >-
+      Money is a rust_decimal::Decimal in betterlite, read from the declared number type, and a
+      string-to-float conversion is exactly the Python habit docs/compatibility.md excludes. The task
+      text asks for the error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L87-L97
+  - what: >-
+      Repeating a --param or --info key is an error that names the key. LiteLLM builds a dict from
+      the pairs, so the last value silently replaces the earlier one.
+    why: >-
+      The earlier value is dropped without a word, and betterlite's no-silent-drops rule refuses
+      input whose meaning depends on which duplicate won. No working script relies on the overwrite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L154-L181
+  - what: >-
+      A --param or --info value without an equals sign is a usage error naming the flag and value.
+      LiteLLM's dict(split("=", 1)) raises an uncaught ValueError and exits with a traceback.
+    why: >-
+      The failure is a mistake in the command line, not a program bug, so it gets the same typed
+      error every other bad flag value gets instead of a Python traceback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L154-L181
+  - what: >-
+      The dry-run import title reads "Models that would be imported if --dry-run was not provided".
+      LiteLLM's title carries rich markup around --dry-run, which rich renders as color.
+    why: >-
+      betterlite's tables draw no rich markup, so the tags would reach the user as literal text;
+      rendering them away keeps the sentence LiteLLM shows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L407-L459
