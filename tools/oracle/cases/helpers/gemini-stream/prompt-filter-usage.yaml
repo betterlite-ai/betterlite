@@ -1,0 +1,11 @@
+kind: helper
+name: gemini-stream-prompt-filter-usage
+call:
+  gemini_stream:
+    fragments:
+      - '{"responseId":"p1","promptFeedback":{"blockReason":"SAFETY"},"candidates":[{"content":{"parts":[{"text":"still"}]},"groundingMetadata":{"webSearchQueries":["q"]}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2,"trafficType":"ON_DEMAND"}}'
+    legacy_function: false
+    headers:
+      x-gemini-service-tier: STANDARD
+env: {}
+compare: {ignore: []}

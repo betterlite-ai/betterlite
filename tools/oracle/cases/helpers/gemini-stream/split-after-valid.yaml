@@ -1,0 +1,12 @@
+kind: helper
+name: gemini-stream-split-after-valid
+call:
+  gemini_stream:
+    fragments:
+      - '{"responseId":"s1","candidates":[{"content":{"parts":[{"text":"Hel"}]}}]}'
+      - '{"responseId":"s1","candidates":[{"content":{"parts":[{"text":"lo'
+      - '"}]}}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":2,"totalTokenCount":3}}'
+    legacy_function: false
+    headers: {}
+env: {}
+compare: {ignore: []}
