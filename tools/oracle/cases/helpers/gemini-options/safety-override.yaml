@@ -1,0 +1,20 @@
+kind: helper
+name: gemini-options-safety-override
+call:
+  gemini_options:
+    safety_settings: {category: CONFIGURED}
+    steps:
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params: {temperature: 0}
+        optional_params: {safety_settings: [{category: REQUEST}]}
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params: {temperature: 0}
+        optional_params: {}
+      - op: options
+        model: gemini-3-pro-preview
+        non_default_params: {}
+        optional_params: {safety_settings: [{category: REQUEST}]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,29 @@
+kind: helper
+name: gemini-options-server-flag-after-tools
+call:
+  gemini_options:
+    safety_settings: null
+    steps:
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params:
+          tools: [{function: {name: lookup}}, {googleSearch: {}}]
+          includeServerSideToolInvocations: true
+        optional_params: {}
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params:
+          tools: [{function: {name: lookup}}, {googleSearch: {}}]
+        optional_params: {}
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params:
+          tools: [{function: {name: lookup}}, {googleSearch: {}}]
+        optional_params: {include_server_side_tool_invocations: true}
+      - op: options
+        model: gemini-2.5-pro
+        non_default_params:
+          tools: [{function: {name: lookup}}]
+        optional_params: {}
+env: {}
+compare: {ignore: []}
