@@ -1,0 +1,121 @@
+kind: helper
+name: auth-reconnect-cooldown-and-generation
+call:
+  auth_reconnect:
+    scenarios:
+      - name: cooldown_blocks_without_engine
+        settings: {cooldown_seconds: 15, escalation_threshold: 3, watchdog_timeout_ms: 30000, auth_timeout_ms: 2000, auth_lock_timeout_ms: 100}
+        clock: [1000.0]
+        last_attempt: 999.0
+        failures: 0
+        dead: false
+        failed: []
+        database_url: "postgresql://user:pw@db.example:5432/litellm"
+        generations: {writer: 0, reader: 0}
+        reader_unavailable: false
+        routing: true
+        engine_state: alive
+        bump_writer_generation_on_probe: false
+        request: {reason: no_engine, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
+        stale: null
+        lock: {mode: free, error: null}
+        recreate: {value: true, error: null, pending: false}
+        writer_read_only: {value: false, error: null, pending: false}
+        select_one: {value: null, error: null, pending: false}
+      - name: switched_handle_respects_cooldown
+        settings: {cooldown_seconds: 15, escalation_threshold: 3, watchdog_timeout_ms: 30000, auth_timeout_ms: 2000, auth_lock_timeout_ms: 100}
+        clock: [1000.0, 1000.0, 1000.0]
+        last_attempt: 999.0
+        failures: 0
+        dead: false
+        failed: []
+        database_url: "postgresql://user:pw@db.example:5432/litellm"
+        generations: {writer: 0, reader: 0}
+        reader_unavailable: false
+        routing: true
+        engine_state: alive
+        bump_writer_generation_on_probe: false
+        request: {reason: switched, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
+        stale: {target: writer, generation: 0}
+        lock: {mode: free, error: null}
+        recreate: {value: true, error: null, pending: false}
+        writer_read_only: {value: false, error: null, pending: false}
+        select_one: {value: null, error: null, pending: false}
+      - name: live_handle_waives_cooldown
+        settings: {cooldown_seconds: 15, escalation_threshold: 3, watchdog_timeout_ms: 30000, auth_timeout_ms: 2000, auth_lock_timeout_ms: 100}
+        clock: [1000.0]
+        last_attempt: 999.0
+        failures: 0
+        dead: false
+        failed: []
+        database_url: "postgresql://user:pw@db.example:5432/litellm"
+        generations: {writer: 0, reader: 0}
+        reader_unavailable: false
+        routing: true
+        engine_state: alive
+        bump_writer_generation_on_probe: false
+        request: {reason: live, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
+        stale: {target: reader, generation: 0}
+        lock: {mode: free, error: null}
+        recreate: {value: true, error: null, pending: false}
+        writer_read_only: {value: false, error: null, pending: false}
+        select_one: {value: null, error: null, pending: false}
+      - name: recorded_repair_respects_cooldown
+        settings: {cooldown_seconds: 15, escalation_threshold: 3, watchdog_timeout_ms: 30000, auth_timeout_ms: 2000, auth_lock_timeout_ms: 100}
+        clock: [1000.0]
+        last_attempt: 999.0
+        failures: 1
+        dead: false
+        failed: [{target: reader, generation: 0}]
+        database_url: "postgresql://user:pw@db.example:5432/litellm"
+        generations: {writer: 0, reader: 0}
+        reader_unavailable: false
+        routing: true
+        engine_state: alive
+        bump_writer_generation_on_probe: false
+        request: {reason: recorded, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
+        stale: {target: reader, generation: 0}
+        lock: {mode: free, error: null}
+        recreate: {value: true, error: null, pending: false}
+        writer_read_only: {value: false, error: null, pending: false}
+        select_one: {value: null, error: null, pending: false}
+      - name: moved_generation_respects_cooldown
+        settings: {cooldown_seconds: 15, escalation_threshold: 3, watchdog_timeout_ms: 30000, auth_timeout_ms: 2000, auth_lock_timeout_ms: 100}
+        clock: [1000.0, 1000.0, 1000.0]
+        last_attempt: 999.0
+        failures: 0
+        dead: false
+        failed: []
+        database_url: "postgresql://user:pw@db.example:5432/litellm"
+        generations: {writer: 0, reader: 1}
+        reader_unavailable: false
+        routing: true
+        engine_state: alive
+        bump_writer_generation_on_probe: false
+        request: {reason: moved, force: false, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
+        stale: {target: reader, generation: 0}
+        lock: {mode: free, error: null}
+        recreate: {value: true, error: null, pending: false}
+        writer_read_only: {value: false, error: null, pending: false}
+        select_one: {value: null, error: null, pending: false}
+      - name: force_ignores_cooldown
+        settings: {cooldown_seconds: 15, escalation_threshold: 3, watchdog_timeout_ms: 30000, auth_timeout_ms: 2000, auth_lock_timeout_ms: 100}
+        clock: [1000.0, 1000.0, 1000.0]
+        last_attempt: 999.0
+        failures: 1
+        dead: false
+        failed: [{target: reader, generation: 0}]
+        database_url: "postgresql://user:pw@db.example:5432/litellm"
+        generations: {writer: 0, reader: 0}
+        reader_unavailable: false
+        routing: true
+        engine_state: alive
+        bump_writer_generation_on_probe: false
+        request: {reason: forced, force: true, force_recreate: false, timeout_ms: null, lock_timeout_ms: null}
+        stale: {target: reader, generation: 0}
+        lock: {mode: free, error: null}
+        recreate: {value: true, error: null, pending: false}
+        writer_read_only: {value: false, error: null, pending: false}
+        select_one: {value: null, error: null, pending: false}
+env: {}
+compare: {ignore: []}

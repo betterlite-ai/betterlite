@@ -1,0 +1,8 @@
+task: B2323
+deviations:
+  - what: Reconnect observes native pool generations and emits pool diagnostics instead of Prisma PID and zombie diagnostics.
+    why: B713/B714 replace subprocess engines; the policy keeps a native engine state (alive, dead or unknown) and a writer/reader generation pair, so a switched handle is never mistaken for a live engine.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6191-L6309
+  - what: A lock acquisition error with no lock timeout returns false and logs DEBUG, where LiteLLM lets it propagate out of attempt_db_reconnect.
+    why: The native singleflight lock never fails, so the branch is only reachable through an injected lock; returning false keeps the reconnect boolean total for B738.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6467-L6478
