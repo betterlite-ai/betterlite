@@ -1,0 +1,35 @@
+kind: helper
+name: api-key-before-oauth
+call:
+  xai_chat:
+    settings:
+      api_base: null
+      oauth_api_base: "https://oauth.example/v1"
+      xai_key: "xai-key"
+      environment_key: "environment-key"
+    steps:
+      - kind: environment
+        model: grok-4
+        headers: {}
+        api_key: null
+        use_xai_oauth: true
+      - kind: environment
+        model: grok-4
+        headers: {content-type: text/plain}
+        api_key: "explicit-key"
+        use_xai_oauth: true
+      - kind: environment
+        model: grok-4
+        headers: {}
+        api_key: null
+        use_xai_oauth: false
+      - kind: url
+        api_base: null
+        api_key: null
+        use_xai_oauth: true
+      - kind: url
+        api_base: "https://explicit/v1"
+        api_key: null
+        use_xai_oauth: false
+env: {}
+compare: {ignore: []}

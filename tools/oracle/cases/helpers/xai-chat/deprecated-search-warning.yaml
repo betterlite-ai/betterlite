@@ -1,0 +1,20 @@
+kind: helper
+name: deprecated-search-warning
+call:
+  xai_chat:
+    settings: {api_base: null, oauth_api_base: null, xai_key: null, environment_key: null}
+    steps:
+      - kind: request
+        model: grok-4
+        messages: [{role: user, content: hi}]
+        optional_params: {web_search_options: null}
+      - kind: request
+        model: grok-4
+        messages: [{role: user, content: hi}]
+        optional_params: {web_search_options: {search_context_size: low}, temperature: 0.2}
+      - kind: request
+        model: grok-4
+        messages: [{role: user, content: hi}]
+        optional_params: {temperature: 0.5}
+env: {}
+compare: {ignore: []}
