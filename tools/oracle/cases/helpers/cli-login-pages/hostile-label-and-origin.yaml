@@ -1,0 +1,27 @@
+kind: helper
+name: cli-login-pages-hostile-label-and-origin
+call:
+  cli_login_page:
+    environment:
+      CLI_JWT_EXPIRATION_HOURS: "12"
+    renders:
+      - page: consent
+        client_origin: "http://127.0.0.1/&<>"
+        user_id: "u&<>"
+        teams:
+          - id: "t&<>"
+            label: "L&<>"
+        flow_handle: "f&<>"
+        complete_url: "https://proxy.example.com/complete?a&b=<d>"
+      - page: consent
+        client_origin: "https://localhost:1/&amp;"
+        user_id: "a&b"
+        teams:
+          - id: "t1"
+            label: "One & Two"
+          - id: "t2"
+            label: "Three <Four>"
+        flow_handle: "handle"
+        complete_url: "https://proxy.example.com/authorize/complete?x=1&y=2"
+env: {}
+compare: {ignore: []}

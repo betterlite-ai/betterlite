@@ -1,0 +1,34 @@
+kind: helper
+name: cli-login-pages-no-single-and-many-teams
+call:
+  cli_login_page:
+    environment: {}
+    renders:
+      - page: consent
+        client_origin: "http://127.0.0.1:53682"
+        user_id: user@example.com
+        teams: []
+        flow_handle: flow-handle
+        complete_url: "https://proxy.example.com/authorize/complete"
+      - page: consent
+        client_origin: "http://127.0.0.1:53682"
+        user_id: user@example.com
+        teams:
+          - id: team-1
+            label: Team One
+        flow_handle: flow-handle
+        complete_url: "https://proxy.example.com/authorize/complete"
+      - page: consent
+        client_origin: "http://127.0.0.1:53682"
+        user_id: user@example.com
+        teams:
+          - id: team-2
+            label: Team Two
+          - id: team-1
+            label: Team One
+          - id: team-3
+            label: Team Three
+        flow_handle: flow-handle
+        complete_url: "https://proxy.example.com/authorize/complete"
+env: {}
+compare: {ignore: []}

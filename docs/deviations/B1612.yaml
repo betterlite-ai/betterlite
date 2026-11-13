@@ -1,0 +1,8 @@
+task: B1612
+deviations:
+  - what: The CLI verification, consent and completion pages label the product betterlite and the completion page's ASCII banner spells BETTERLITE, while form field names, form actions, the loopback complete URL and the lite logout command stay as LiteLLM writes them.
+    why: The retained-dashboard decision keeps the MIT dashboard and rebrands its visible product names; nothing a client posts or reads for the flow changes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/cli_sso_success.py#L155-L185
+  - what: The native-client consent page escapes quotes and apostrophes in the origin, user, flow handle, complete URL, team id and team label, where LiteLLM calls html.escape without quote and leaves " and ' raw inside its attributes and text.
+    why: Those values reach quoted attributes (action, value) and text nodes, so an unescaped quote lets a crafted origin or team label break out of the attribute or inject markup; owned-behavior-is-built fixes a security flaw no working setup relies on, and an oracle case on that input cannot match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/native_client_consent.py#L61-L91
