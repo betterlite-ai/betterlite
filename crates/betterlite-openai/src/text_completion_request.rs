@@ -102,8 +102,12 @@ impl CompletionPrompt {
     #[must_use]
     pub fn messages(&self) -> Option<Vec<Value>> {
         if let Self::Texts(texts) = self {
-            return (!texts.is_empty())
-                .then(|| texts.iter().map(|text| user_message(Value::from(text.as_str()))).collect());
+            return (!texts.is_empty()).then(|| {
+                texts
+                    .iter()
+                    .map(|text| user_message(Value::from(text.as_str())))
+                    .collect()
+            });
         }
         (!matches!(self, Self::Unmapped(_))).then(|| vec![user_message(self.to_value())])
     }
