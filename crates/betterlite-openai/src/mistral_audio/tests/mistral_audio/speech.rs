@@ -337,7 +337,7 @@ fn rejects_a_reply_larger_than_the_limit() {
 
 #[test]
 fn reads_a_reply_of_exactly_sixteen_mebibytes() {
-    assert_eq!(REPLY_LIMIT, 16_777_216);
+    assert_eq!(REPLY_LIMIT, 0x0100_0000);
     let at_limit = vec![b'a'; REPLY_LIMIT];
     let error = decode_voxtral_reply(&speech_request(&[]), &response(200, &[], &at_limit))
         .expect_err("the body is not JSON");
