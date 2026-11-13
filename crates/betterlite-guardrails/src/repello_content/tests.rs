@@ -351,8 +351,8 @@ fn tool_call_args_keeps_the_arguments_verbatim() {
 #[case::not_a_list(r#"{"type":"input_text","text":"a"}"#, &[])]
 #[case::null_content("null", &[])]
 fn input_text_parts_reads_only_input_text_parts(#[case] content: &str, #[case] expected: &[&str]) {
-    let content = value(content);
-    assert_eq!(input_text_parts(Some(&content)), expected);
+    let parsed = value(content);
+    assert_eq!(input_text_parts(Some(&parsed)), expected);
 }
 
 #[rstest]
