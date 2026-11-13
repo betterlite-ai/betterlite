@@ -182,6 +182,21 @@ async fn parallel_ai_usage_prices_the_mode_model() {
 }
 
 #[tokio::test]
+async fn parallel_ai_charges_results_past_ten_from_max_results() {
+    let source = parallel_source();
+    let optional_params = r#"{"max_results": 25}"#;
+    let result = cost(
+        &source,
+        "parallel_ai/search",
+        Some("parallel_ai"),
+        1,
+        optional_params,
+    )
+    .await;
+    assert_eq!(result.unwrap().0, money("0.02"));
+}
+
+#[tokio::test]
 async fn parallel_ai_ignores_the_query_count_and_the_model_name() {
     let source = parallel_source();
     let result = cost(&source, "anything", Some("parallel_ai"), 5, "{}").await;
