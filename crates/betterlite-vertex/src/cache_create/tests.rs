@@ -64,6 +64,15 @@ fn with_tools() -> CacheCreateOptions {
     }
 }
 
+fn long_marked_message() -> String {
+    // about 800 cl100k tokens: above the 512 minimum of the vertex_ai-prefixed catalog entry, below the 1024 fallback
+    let words = "word ".repeat(800);
+    format!(
+        r#"[{{"role":"user","content":"{}","cache_control":{{"type":"ephemeral"}}}}]"#,
+        words.trim_end()
+    )
+}
+
 fn eligible(model: &str, messages: &str) -> Harness {
     let mut harness = Harness::new(model, messages);
     // the fixture prompts are far below every model minimum, so the override is what makes them eligible
@@ -253,8 +262,29 @@ async fn miss_posts_mapped_tools() {
         panic!("the create body is an object");
     };
     assert_eq!(fields.get("displayName"), Some(&Json::Text(key)));
+    assert_eq!(
+        fields.get("model"),
+        Some(&Json::Text(
+            "projects/proj/locations/us-central1/publishers/google/models/gemini-2.5-pro"
+                .to_owned()
+        ))
+    );
     assert_eq!(fields.get("tools"), Some(&Json::List(mapped_tools())));
     assert_eq!(fields.get("toolConfig"), Some(&json(TOOL_CONFIG)));
+}
+
+#[tokio::test]
+async fn provider_prefix_selects_the_model_minimum() {
+    let harness = Harness::new("claude-sonnet-5-5@default", &long_marked_message());
+    let mut options = CacheCreateOptions::default();
+    let transport =
+        ScriptedTransport::new(vec![empty_list_page(), created_cache("cachedContents/9")]);
+    let outcome = harness
+        .run(&transport, &mut options)
+        .await
+        .expect("the create");
+    assert_eq!(outcome.cached_content.as_deref(), Some("cachedContents/9"));
+    assert_eq!(transport.methods(), vec![Method::GET, Method::POST]);
 }
 
 #[tokio::test]
