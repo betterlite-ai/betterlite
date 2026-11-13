@@ -1,0 +1,14 @@
+kind: helper
+name: done-marker-exits
+call:
+  b3491:
+    mode: async
+    lines:
+      - 'data: {"id":"first"}'
+      - 'data: [DONE]'
+      - 'data: {"id":"after"}'
+    litellm_params:
+      api_base: https://interactions.test
+env: {}
+compare:
+  ignore: []

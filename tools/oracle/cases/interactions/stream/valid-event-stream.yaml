@@ -1,0 +1,14 @@
+kind: helper
+name: valid-event-stream
+call:
+  b3491:
+    mode: async
+    lines:
+      - 'data: {"event_type":"interaction.created","id":"int_1","status":"in_progress"}'
+      - 'data: {"event_type":"step.delta","id":"int_1","index":0,"delta":{"text":"hi"}}'
+      - 'data: {"event_type":"step.stop","id":"int_1","index":0}'
+    litellm_params:
+      api_base: https://interactions.test
+env: {}
+compare:
+  ignore: []

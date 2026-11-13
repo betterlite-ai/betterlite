@@ -1,0 +1,12 @@
+kind: helper
+name: legacy-status-done
+call:
+  b3491:
+    mode: async
+    lines:
+      - 'data: {"id":"int_1","status":"completed"}'
+    litellm_params:
+      api_base: https://interactions.test
+env: {}
+compare:
+  ignore: []
