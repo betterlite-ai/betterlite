@@ -3,19 +3,17 @@ mod reauth;
 mod tests;
 
 use std::future::Future;
-use std::pin::Pin;
 use std::sync::{Arc, PoisonError};
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use secrecy::SecretString;
+use tokio_util::task::TaskTracker;
 
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::token_cache::CredentialCache;
 use crate::token_cache::error::{CredentialCacheError, needs_reauthentication};
 use crate::token_cache::key::CredentialKey;
-use crate::token_cache::probe::{
-    AccessToken, UsableToken, try_cached_token, try_usable_cached_token,
-};
+use crate::token_cache::probe::{AccessToken, UsableToken, try_usable_cached_token};
 use crate::token_cache::record::{CacheRecord, CredentialSnapshot, unpack_cached_credentials};
 use crate::token_cache::state::{TokenState, token_state};
 
@@ -25,22 +23,40 @@ use self::reauth::reauthenticate_async;
 // LiteLLM's get_access_token_async: fresh returns now, stale serves now and refreshes in the background, invalid blocks
 pub async fn get_access_token_async(
     cache: &CredentialCache,
+    tasks: &TaskTracker,
     credentials: Option<&ConfiguredCredentials>,
     project: Option<&str>,
 ) -> Result<AccessToken, CredentialCacheError> {
     let key = CredentialKey::new(credentials, project);
-    if let Some(entry) = usable_cached(cache, &key, project) {
-        if entry.state == TokenState::Stale {
-            schedule_background_refresh(cache, entry.credential, key.clone(), entry.cached_project);
-        }
-        return Ok(AccessToken {
-            token: entry.token,
-            project: entry.project,
-        });
+    if let Some(access) = usable_or_scheduled(cache, tasks, &key, project) {
+        return Ok(access);
     }
     // the lease covers the whole slow path so one caller refreshes and the rest read its result
     let _lease = cache.acquire_refresh_lease(&key).await?;
-    locked_access_token(cache, credentials, project, &key).await
+    locked_access_token(cache, tasks, credentials, project, &key).await
+}
+
+// a stale token is served as is; the refresh it needs runs once in the caller's tracker
+fn usable_or_scheduled(
+    cache: &CredentialCache,
+    tasks: &TaskTracker,
+    key: &CredentialKey,
+    project: Option<&str>,
+) -> Option<AccessToken> {
+    let entry = usable_cached(cache, key, project)?;
+    if entry.state == TokenState::Stale {
+        schedule_background_refresh(
+            cache,
+            tasks,
+            entry.credential,
+            key.to_owned(),
+            entry.cached_project,
+        );
+    }
+    Some(AccessToken {
+        token: entry.token,
+        project: entry.project,
+    })
 }
 
 // the fast path reads the usable projection without taking the per-key lease
@@ -57,54 +73,67 @@ fn usable_cached(
     )
 }
 
-// LiteLLM's _ensure_access_token: gemini is Google AI Studio and reads no credentials at all
-pub fn ensure_access_token<'borrow>(
-    cache: &'borrow CredentialCache,
-    credentials: Option<&'borrow ConfiguredCredentials>,
-    project: Option<&'borrow str>,
-    provider: VertexCapabilityProvider,
-) -> Pin<Box<dyn Future<Output = Result<AccessToken, CredentialCacheError>> + Send + 'borrow>> {
-    Box::pin(async move {
-        if provider == VertexCapabilityProvider::Gemini {
-            return Ok(gemini_access());
+// one template generates both ensure-token wrappers, so their mode handling cannot drift apart
+macro_rules! ensure_access {
+    ($name:ident, method) => {
+        // LiteLLM's _ensure_access_token: the synchronous lookup behind the same mode selection
+        pub async fn $name(
+            cache: &CredentialCache,
+            credentials: Option<&ConfiguredCredentials>,
+            project: Option<&str>,
+            provider: VertexCapabilityProvider,
+        ) -> Result<AccessToken, CredentialCacheError> {
+            select_access_by_provider(provider, cache.get_access_token(credentials, project)).await
         }
-        cache.get_access_token(credentials, project).await
-    })
+    };
+    ($name:ident, $lookup:ident) => {
+        // LiteLLM's _ensure_access_token_async: the coordinated lookup behind the same mode selection
+        pub async fn $name(
+            cache: &CredentialCache,
+            tasks: &TaskTracker,
+            credentials: Option<&ConfiguredCredentials>,
+            project: Option<&str>,
+            provider: VertexCapabilityProvider,
+        ) -> Result<AccessToken, CredentialCacheError> {
+            select_access_by_provider(provider, $lookup(cache, tasks, credentials, project)).await
+        }
+    };
 }
 
-// LiteLLM's _ensure_access_token_async: the same mode selection over the coordinated lookup
-pub async fn ensure_access_token_async(
-    cache: &CredentialCache,
-    credentials: Option<&ConfiguredCredentials>,
-    project: Option<&str>,
+ensure_access!(ensure_access_token, method);
+ensure_access!(ensure_access_token_async, get_access_token_async);
+
+// the mode selection here is exhaustive, so a provider added to the enum fails this match instead of reading credentials
+async fn select_access_by_provider<Lookup>(
     provider: VertexCapabilityProvider,
-) -> Result<AccessToken, CredentialCacheError> {
+    lookup: Lookup,
+) -> Result<AccessToken, CredentialCacheError>
+where
+    Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
+{
     match provider {
-        VertexCapabilityProvider::Gemini => Ok(gemini_access()),
-        VertexCapabilityProvider::VertexAi | VertexCapabilityProvider::VertexAiBeta => {
-            get_access_token_async(cache, credentials, project).await
-        }
-    }
-}
-
-// LiteLLM returns an empty token and project for Google AI Studio without reading any credentials
-fn gemini_access() -> AccessToken {
-    AccessToken {
-        token: SecretString::from(""),
-        project: String::new(),
+        VertexCapabilityProvider::Gemini => Ok(AccessToken {
+            token: SecretString::from(""),
+            project: String::new(),
+        }),
+        VertexCapabilityProvider::VertexAi | VertexCapabilityProvider::VertexAiBeta => lookup.await,
     }
 }
 
 async fn locked_access_token(
     cache: &CredentialCache,
+    tasks: &TaskTracker,
     credentials: Option<&ConfiguredCredentials>,
     project: Option<&str>,
     key: &CredentialKey,
 ) -> Result<AccessToken, CredentialCacheError> {
-    let fresh = {
-        let records = cache.records.lock().unwrap_or_else(PoisonError::into_inner);
-        try_cached_token(&records, key, project, cache.clock.now())
-    };
+    // another caller may have refreshed while this one waited for the lease
+    let fresh = usable_cached(cache, key, project)
+        .filter(|entry| entry.state == TokenState::Fresh)
+        .map(|entry| AccessToken {
+            token: entry.token,
+            project: entry.project,
+        });
     if let Some(access) = fresh {
         return Ok(access);
     }
@@ -112,25 +141,17 @@ async fn locked_access_token(
         Some(record) => record,
         None => cache.load_and_cache(credentials, project, key).await?,
     };
-    let (credential, credential_project) = unpack_record(&record)?;
+    let (credential, credential_project) = unpack_record(&record);
     let resolved = project.map_or_else(
         || resolved_project_alias(cache, key, &credential, credential_project.as_deref()),
         |named| Some(named.to_owned()),
     );
     match token_state(&credential, cache.clock.now()) {
         TokenState::Fresh => validate(&credential, resolved),
-        TokenState::Stale => {
-            match stale_access(
-                cache,
-                key,
-                resolved.as_deref(),
-                &credential,
-                credential_project.as_deref(),
-            )? {
-                Some(access) => Ok(access),
-                None => invalid_access(cache, credentials, key, record, resolved).await,
-            }
-        }
+        TokenState::Stale => match stale_access(cache, tasks, key, resolved.as_deref(), &record)? {
+            Some(access) => Ok(access),
+            None => invalid_access(cache, credentials, key, record, resolved).await,
+        },
         TokenState::Invalid => invalid_access(cache, credentials, key, record, resolved).await,
     }
 }
@@ -158,28 +179,23 @@ fn resolved_project_alias(
 
 fn stale_access(
     cache: &CredentialCache,
+    tasks: &TaskTracker,
     key: &CredentialKey,
     resolved: Option<&str>,
-    credential: &Arc<CredentialSnapshot>,
-    credential_project: Option<&str>,
+    record: &CacheRecord,
 ) -> Result<Option<AccessToken>, CredentialCacheError> {
+    let (credential, credential_project) = unpack_record(record);
     let project = resolved.ok_or(CredentialCacheError::MissingProject)?;
     let Some(token) = credential.token.clone() else {
         return Ok(None);
     };
-    schedule_background_refresh(
-        cache,
-        Arc::clone(credential),
-        key.clone(),
-        credential_project.map(str::to_owned),
-    );
+    schedule_background_refresh(cache, tasks, credential, key.clone(), credential_project);
     Ok(Some(AccessToken {
         token,
         project: project.to_owned(),
     }))
 }
 
-// LiteLLM's INVALID branch: drain a background refresh first, then block on a refresh of this handle
 async fn invalid_access(
     cache: &CredentialCache,
     credentials: Option<&ConfiguredCredentials>,
@@ -188,14 +204,16 @@ async fn invalid_access(
     resolved: Option<String>,
 ) -> Result<AccessToken, CredentialCacheError> {
     await_background_refresh(cache, key).await;
-    let fresh = {
-        let records = cache.records.lock().unwrap_or_else(PoisonError::into_inner);
-        try_cached_token(&records, key, resolved.as_deref(), cache.clock.now())
-    };
+    let fresh = usable_cached(cache, key, resolved.as_deref())
+        .filter(|entry| entry.state == TokenState::Fresh)
+        .map(|entry| AccessToken {
+            token: entry.token,
+            project: entry.project,
+        });
     if let Some(access) = fresh {
         return Ok(access);
     }
-    let (credential, credential_project) = unpack_record(&record)?;
+    let (credential, credential_project) = unpack_record(&record);
     match refresh_credential(cache, key, &credential, credential_project).await {
         Ok(refreshed) => validate(&refreshed, resolved),
         Err(error) if needs_reauthentication(&error) => {
@@ -223,12 +241,9 @@ async fn refresh_credential(
     Ok(refreshed)
 }
 
-fn unpack_record(
-    record: &CacheRecord,
-) -> Result<(Arc<CredentialSnapshot>, Option<String>), CredentialCacheError> {
-    let (cached, project) = unpack_cached_credentials(Some(record));
-    let credential = cached.ok_or(CredentialCacheError::MissingCredentials)?;
-    Ok((Arc::clone(credential), project.map(str::to_owned)))
+fn unpack_record(record: &CacheRecord) -> (Arc<CredentialSnapshot>, Option<String>) {
+    let (_, project) = unpack_cached_credentials(Some(record));
+    (Arc::clone(record.credential()), project.map(str::to_owned))
 }
 
 fn validate(

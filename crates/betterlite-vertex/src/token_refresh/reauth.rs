@@ -6,9 +6,9 @@ use crate::token_cache::CredentialCache;
 use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::key::CredentialKey;
 use crate::token_cache::probe::AccessToken;
-use crate::token_cache::record::{CacheRecord, unpack_cached_credentials};
+use crate::token_cache::record::CacheRecord;
 
-use super::validate;
+use super::{unpack_record, validate};
 
 // LiteLLM's _handle_reauthentication_async: the retry stays inside the per-key lock and the first failure survives
 pub(super) async fn reauthenticate_async(
@@ -34,13 +34,10 @@ async fn load_resolved(
     let record = cache
         .load_and_cache(credentials, project.as_deref(), key)
         .await?;
-    let (credential, credential_project) = unpack_cached_credentials(Some(&record));
-    let Some(loaded) = credential else {
-        return Err(CredentialCacheError::MissingCredentials);
-    };
+    let (credential, credential_project) = unpack_record(&record);
     let mut resolved = project;
     if resolved.is_none()
-        && let Some(alias) = credential_project
+        && let Some(alias) = credential_project.as_deref()
     {
         // unlike the synchronous lookup, async reauthentication overwrites any entry already at the resolved key
         cache.store_record(
@@ -49,11 +46,11 @@ async fn load_resolved(
                 project: Some(alias.to_owned()),
             },
             CacheRecord::Paired {
-                credential: Arc::clone(loaded),
+                credential: Arc::clone(&credential),
                 project: Some(alias.to_owned()),
             },
         );
         resolved = Some(alias.to_owned());
     }
-    validate(loaded, resolved)
+    validate(&credential, resolved)
 }

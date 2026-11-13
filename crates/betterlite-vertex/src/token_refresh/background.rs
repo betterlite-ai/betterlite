@@ -3,6 +3,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use tokio::sync::watch;
+use tokio_util::task::TaskTracker;
 use tracing::warn;
 
 use crate::token_cache::CredentialCache;
@@ -17,11 +18,12 @@ pub(crate) struct RefreshJob {
 // LiteLLM's _schedule_background_refresh: one refresh per identity, replaced once its task has finished
 pub(super) fn schedule_background_refresh(
     cache: &CredentialCache,
+    tasks: &TaskTracker,
     credential: Arc<CredentialSnapshot>,
     key: CredentialKey,
     project: Option<String>,
 ) {
-    if cache.tasks.is_closed() {
+    if tasks.is_closed() {
         return;
     }
     let mut jobs = cache
@@ -38,7 +40,7 @@ pub(super) fn schedule_background_refresh(
     let executor = Arc::clone(&cache.executor);
     let records = Arc::clone(&cache.records);
     let tracked = Arc::clone(&cache.refreshes);
-    cache.tasks.spawn(async move {
+    tasks.spawn(async move {
         match executor.refresh(&credential).await {
             Ok(snapshot) => store_refreshed(&records, &key, &credential, snapshot, project),
             Err(error) => warn!(error = %error, "background vertex credential refresh failed"),
