@@ -123,45 +123,37 @@ fn data_line_stripping(#[case] input: &[u8], #[case] expected: Option<&str>) {
 }
 
 #[rstest]
-#[case::utf16_le("utf-16-le")]
-#[case::utf16_be("utf-16-be")]
-#[case::utf32_le("utf-32-le")]
-#[case::utf32_be("utf-32-be")]
-fn data_line_decodes_byte_order_marks(#[case] encoding: &str) {
+#[case::utf16_le("utf-16-le", &[0xFF, 0xFE])]
+#[case::utf16_be("utf-16-be", &[0xFE, 0xFF])]
+#[case::utf32_le("utf-32-le", &[0xFF, 0xFE, 0x00, 0x00])]
+#[case::utf32_be("utf-32-be", &[0x00, 0x00, 0xFE, 0xFF])]
+#[case::utf16_le_without_bom("utf-16-le", &[])]
+#[case::utf16_be_without_bom("utf-16-be", &[])]
+#[case::utf32_le_without_bom("utf-32-le", &[])]
+#[case::utf32_be_without_bom("utf-32-be", &[])]
+fn data_line_decodes_byte_orders(#[case] encoding: &str, #[case] bom: &[u8]) {
     let document = r#"{"type": "stop"}"#;
     let encoded = match encoding {
-        "utf-16-le" => with_bom(
-            &[0xFF, 0xFE],
-            &document
-                .encode_utf16()
-                .flat_map(u16::to_le_bytes)
-                .collect::<Vec<u8>>(),
-        ),
-        "utf-16-be" => with_bom(
-            &[0xFE, 0xFF],
-            &document
-                .encode_utf16()
-                .flat_map(u16::to_be_bytes)
-                .collect::<Vec<u8>>(),
-        ),
-        "utf-32-le" => with_bom(
-            &[0xFF, 0xFE, 0x00, 0x00],
-            &document
-                .chars()
-                .flat_map(|character| u32::from(character).to_le_bytes())
-                .collect::<Vec<u8>>(),
-        ),
-        "utf-32-be" => with_bom(
-            &[0x00, 0x00, 0xFE, 0xFF],
-            &document
-                .chars()
-                .flat_map(|character| u32::from(character).to_be_bytes())
-                .collect::<Vec<u8>>(),
-        ),
+        "utf-16-le" => document
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<u8>>(),
+        "utf-16-be" => document
+            .encode_utf16()
+            .flat_map(u16::to_be_bytes)
+            .collect::<Vec<u8>>(),
+        "utf-32-le" => document
+            .chars()
+            .flat_map(|character| u32::from(character).to_le_bytes())
+            .collect::<Vec<u8>>(),
+        "utf-32-be" => document
+            .chars()
+            .flat_map(|character| u32::from(character).to_be_bytes())
+            .collect::<Vec<u8>>(),
         other => panic!("unexpected encoding {other}"),
     };
     let mut input = b"data: ".to_vec();
-    input.extend_from_slice(&encoded);
+    input.extend_from_slice(&with_bom(bom, &encoded));
     input.extend_from_slice(b"\n\n");
     let decoded = classified(&input);
     assert_eq!(
@@ -271,13 +263,13 @@ fn refusal_stop_details(#[case] input: &str, #[case] expected: Option<&str>) {
 
 #[test]
 fn completed_response_lifecycle() {
-    let response = r#"{"type": "message", "id": "msg_a", "model": "claude-sonnet-4-20250514", "role": "assistant", "content": [{"type": "text", "text": "Hi"}], "usage": {"input_tokens": 5, "output_tokens": 2, "cache_read_input_tokens": 3}, "stop_reason": "end_turn", "extra": 7}"#;
+    let response = r#"{"type": "message", "id": "msg_a", "model": "claude-sonnet-4-20250514", "role": "assistant", "content": [{"type": "text", "text": "Hi"}], "usage": {"input_tokens": 5, "output_tokens": 2, "cache_read_input_tokens": 3}, "stop_reason": "end_turn", "stop_sequence": "END", "extra": 7}"#;
     assert_eq!(
         frames(response),
         vec![
             frame(
                 "message_start",
-                r#"{"type": "message_start", "message": {"type": "message", "id": "msg_a", "model": "claude-sonnet-4-20250514", "role": "assistant", "content": [], "usage": {"input_tokens": 5, "output_tokens": 0, "cache_read_input_tokens": 3}, "stop_reason": null, "extra": 7, "stop_sequence": null}}"#
+                r#"{"type": "message_start", "message": {"type": "message", "id": "msg_a", "model": "claude-sonnet-4-20250514", "role": "assistant", "content": [], "usage": {"input_tokens": 5, "output_tokens": 0, "cache_read_input_tokens": 3}, "stop_reason": null, "stop_sequence": null, "extra": 7}}"#
             ),
             frame(
                 "content_block_start",
@@ -293,7 +285,7 @@ fn completed_response_lifecycle() {
             ),
             frame(
                 "message_delta",
-                r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": null}, "usage": {"input_tokens": 5, "output_tokens": 2, "cache_read_input_tokens": 3}}"#
+                r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": "END"}, "usage": {"input_tokens": 5, "output_tokens": 2, "cache_read_input_tokens": 3}}"#
             ),
             frame("message_stop", r#"{"type": "message_stop"}"#),
         ]

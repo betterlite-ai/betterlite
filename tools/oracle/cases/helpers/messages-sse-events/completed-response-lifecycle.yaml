@@ -12,6 +12,7 @@ call:
         - {type: text, text: Hi}
       usage: {input_tokens: 5, output_tokens: 2, cache_read_input_tokens: 3}
       stop_reason: end_turn
+      stop_sequence: END
       extra: 7
 env: {}
 compare:
