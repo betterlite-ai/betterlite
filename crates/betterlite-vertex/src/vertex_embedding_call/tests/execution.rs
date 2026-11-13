@@ -145,6 +145,11 @@ async fn execution_multimodal_posts_the_transformed_request() {
     assert_eq!(sync_body, r#"{"instances":[{"text":"hello"}]}"#);
     assert_eq!(str::from_utf8(&calls[1].body).unwrap(), sync_body);
     assert_eq!(
+        calls[0].url,
+        "https://us-central1-aiplatform.googleapis.com/v1/projects/project-p/locations/us-central1/publishers/google/models/multimodalembedding@001:predict"
+    );
+    assert_eq!(calls[1].url, calls[0].url);
+    assert_eq!(
         calls[0].headers.get("Content-Type").map(String::as_str),
         Some("application/json; charset=utf-8")
     );
