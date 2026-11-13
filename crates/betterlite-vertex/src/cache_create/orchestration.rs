@@ -32,6 +32,7 @@ use super::request::{CreateCacheBody, cache_create_request};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CacheCreateOptions {
+    // the provider-mapped tools and tool config LiteLLM's optional params carry by the time context caching runs
     pub tools: Option<Vec<Json>>,
     pub tool_choice: Option<Json>,
 }
@@ -111,7 +112,8 @@ where
     )
     .await
     .map_err(|source| CacheCreateError::Endpoint { source })?;
-    if let Some(name) = found {
+    // LiteLLM's `if google_cache_name:` treats an empty name as unusable, so a new cache is created instead
+    if let Some(name) = found.filter(|name| !name.is_empty()) {
         return Ok(CacheCreateOutcome {
             messages: non_cached,
             cached_content: Some(name),

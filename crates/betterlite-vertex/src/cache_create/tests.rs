@@ -274,6 +274,26 @@ async fn miss_posts_mapped_tools() {
 }
 
 #[tokio::test]
+async fn empty_lookup_name_is_a_miss() {
+    let harness = eligible("gemini-2.5-pro", SHORT_MARKED);
+    let mut options = CacheCreateOptions::default();
+    let key = expected_cache_key(&harness.messages, None, None, &harness.model);
+    let transport = ScriptedTransport::new(vec![
+        list_page(&key, ""),
+        created_cache("cachedContents/new"),
+    ]);
+    let outcome = harness
+        .run(&transport, &mut options)
+        .await
+        .expect("the create");
+    assert_eq!(
+        outcome.cached_content.as_deref(),
+        Some("cachedContents/new")
+    );
+    assert_eq!(transport.methods(), vec![Method::GET, Method::POST]);
+}
+
+#[tokio::test]
 async fn provider_prefix_selects_the_model_minimum() {
     let harness = Harness::new("claude-sonnet-5-5@default", &long_marked_message());
     let mut options = CacheCreateOptions::default();
@@ -387,6 +407,7 @@ async fn timeout_408() {
         .await
         .expect_err("the create");
     assert!(matches!(error, CacheCreateError::Timeout { .. }));
+    assert!(error.source().is_some());
     assert_eq!(error.status_code(), 408);
     assert_eq!(server.seen.lock().expect("fixture requests").len(), 2);
 }
