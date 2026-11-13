@@ -1,0 +1,8 @@
+kind: helper
+name: gateway-allowed-mount-exact
+call:
+  b4471:
+    component: gateway
+    path: /metrics
+env: {}
+compare: {ignore: []}

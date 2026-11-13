@@ -1,0 +1,8 @@
+kind: helper
+name: backend-allowed-mount-exact
+call:
+  b4471:
+    component: backend
+    path: /swagger
+env: {}
+compare: {ignore: []}

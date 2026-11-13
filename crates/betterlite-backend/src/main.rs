@@ -1,5 +1,5 @@
 use betterlite_backend::cli::Cli;
-use betterlite_backend::serve::run;
+use betterlite_backend::run;
 use clap::Parser as _;
 use std::process::ExitCode;
 
