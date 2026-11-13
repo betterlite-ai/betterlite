@@ -1,111 +1,129 @@
+import json
 from collections.abc import Mapping
-from typing import Final
+from typing import ClassVar, Final, TypeAlias
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.llms.azure.batches.handler import AzureBatchesAPI
 from litellm.llms.base_llm.batches.transformation import BaseBatchesConfig
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
+from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.llms.openai.openai import OpenAIBatchesAPI
+from litellm.llms.vertex_ai.batches.handler import VertexAIBatchPrediction
+from litellm.llms.xai.batches.handler import XAIBatchesHandler
 from litellm.types.llms.openai import CreateBatchRequest, FileExpiresAfter
-from litellm.types.llms.vertex_ai import VERTEX_CREDENTIALS_TYPES
 from litellm.types.utils import LiteLLMBatch
-from openai import AsyncOpenAI, OpenAI
-from pydantic import JsonValue
-from typing_extensions import override
+from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
+from pydantic import ConfigDict, JsonValue, TypeAdapter
 
-BASE_KEYS: Final = ("api_base", "api_key", "timeout", "is_async")
-OPENAI_KEYS: Final = (*BASE_KEYS, "organization", "max_retries")
-AZURE_KEYS: Final = (*BASE_KEYS, "api_version", "max_retries")
-VERTEX_KEYS: Final = (
-    "api_base",
-    "timeout",
-    "is_async",
-    "vertex_project",
-    "vertex_location",
-    "vertex_credentials",
-    "max_retries",
-    "custom_endpoint",
+Recordable: TypeAlias = (
+    JsonValue
+    | dict[str, str]
+    | CreateBatchRequest
+    | httpx.Timeout
+    | BaseBatchesConfig
+    | Logging
+    | HTTPHandler
+    | AsyncHTTPHandler
+    | OpenAI
+    | AsyncOpenAI
+    | AzureOpenAI
+    | AsyncAzureOpenAI
 )
-PROVIDER_KEYS: Final = (*BASE_KEYS, "provider", "model", "headers")
+FieldValue: TypeAlias = JsonValue | dict[str, str] | httpx.Timeout | BaseBatchesConfig
+FIELDS: Final = TypeAdapter(FieldValue, config=ConfigDict(arbitrary_types_allowed=True))
+
+BASE_KEYS: Final = {
+    "api_base": "api_base",
+    "api_key": "api_key",
+    "timeout": "timeout",
+    "is_async": "_is_async",
+}
+OPENAI_KEYS: Final = {**BASE_KEYS, "organization": "organization", "max_retries": "max_retries"}
+AZURE_KEYS: Final = {**BASE_KEYS, "api_version": "api_version", "max_retries": "max_retries"}
+VERTEX_KEYS: Final = {
+    "api_base": "api_base",
+    "timeout": "timeout",
+    "is_async": "_is_async",
+    "vertex_project": "vertex_project",
+    "vertex_location": "vertex_location",
+    "vertex_credentials": "vertex_credentials",
+    "max_retries": "max_retries",
+    "custom_endpoint": "custom_endpoint",
+}
+PROVIDER_KEYS: Final = {
+    **BASE_KEYS,
+    "provider": "provider_config",
+    "model": "model",
+    "headers": "headers",
+}
 
 
-class Recorder(OpenAIBatchesAPI):
-    def __init__(self, branch: str, keys: tuple[str, ...]) -> None:
-        super().__init__()
-        self.branch = branch
-        self.keys = keys
-        self.calls: list[JsonValue] = []
+class Recording:
+    branch: ClassVar[str]
+    keys: ClassVar[Mapping[str, str]]
 
-    @override
-    def create_batch(
-        self,
-        _is_async: bool,
-        create_batch_data: CreateBatchRequest,
-        api_key: str | None = None,
-        api_base: str | None = None,
-        timeout: float | httpx.Timeout | None = None,
-        max_retries: int | None = None,
-        organization: str | None = None,
-        client: OpenAI | AsyncOpenAI | HTTPHandler | AsyncHTTPHandler | None = None,
-        api_version: str | None = None,
-        litellm_params: Mapping[str, JsonValue] | None = None,
-        provider_config: BaseBatchesConfig | None = None,
-        headers: Mapping[str, str] | None = None,
-        logging_obj: Logging | None = None,
-        vertex_project: str | None = None,
-        vertex_location: str | None = None,
-        vertex_credentials: VERTEX_CREDENTIALS_TYPES | None = None,
-        custom_endpoint: bool | None = None,
-        model: str | None = None,
-    ) -> LiteLLMBatch:
-        provider = None if provider_config is None else provider_config.custom_llm_provider.value
-        available: dict[str, JsonValue] = {
-            "api_base": api_base,
-            "api_key": api_key,
-            "timeout": timeout_json(timeout),
-            "is_async": _is_async,
-            "organization": organization,
-            "max_retries": max_retries,
-            "api_version": api_version,
-            "vertex_project": vertex_project,
-            "vertex_location": vertex_location,
-            "vertex_credentials": credentials_json(vertex_credentials),
-            "custom_endpoint": custom_endpoint,
-            "provider": provider,
-            "model": model,
-            "headers": None if headers is None else pairs(headers),
+    def create_batch(self, *_args: Recordable, **kwargs: Recordable) -> LiteLLMBatch:
+        call: dict[str, JsonValue] = {
+            "branch": self.branch,
+            "body": body_json(kwargs["create_batch_data"]),
         }
-        call: dict[str, JsonValue] = {"branch": self.branch, "body": body_json(create_batch_data)}
-        for key in self.keys:
-            call[key] = available[key]
-        self.calls.append(call)
-        return sample_batch()
+        for output, source in self.keys.items():
+            call[output] = field_json(kwargs[source])
+        return LiteLLMBatch(
+            id="batch-oracle",
+            completion_window="24h",
+            created_at=0,
+            endpoint="/v1/chat/completions",
+            input_file_id="file-oracle",
+            object="batch",
+            status="validating",
+            metadata={"call": json.dumps(call)},
+        )
 
 
-def recorders() -> list[tuple[str, Recorder]]:
-    return [
-        ("openai_batches_instance", Recorder("openai_compatible", OPENAI_KEYS)),
-        ("azure_batches_instance", Recorder("azure", AZURE_KEYS)),
-        ("vertex_ai_batches_instance", Recorder("vertex_ai", VERTEX_KEYS)),
-        ("xai_batches_instance", Recorder("xai", BASE_KEYS)),
-        ("base_llm_http_handler", Recorder("provider_config", PROVIDER_KEYS)),
-    ]
+class OpenAiRecorder(Recording, OpenAIBatchesAPI):
+    branch = "openai_compatible"
+    keys: ClassVar[Mapping[str, str]] = OPENAI_KEYS
 
 
-def sample_batch() -> LiteLLMBatch:
-    return LiteLLMBatch(
-        id="batch-oracle",
-        completion_window="24h",
-        created_at=0,
-        endpoint="/v1/chat/completions",
-        input_file_id="file-oracle",
-        object="batch",
-        status="validating",
-    )
+class AzureRecorder(Recording, AzureBatchesAPI):
+    branch = "azure"
+    keys: ClassVar[Mapping[str, str]] = AZURE_KEYS
 
 
-def pairs(values: Mapping[str, str]) -> list[JsonValue]:
-    return [[key, value] for key, value in sorted(values.items())]
+class VertexRecorder(Recording, VertexAIBatchPrediction):
+    branch = "vertex_ai"
+    keys: ClassVar[Mapping[str, str]] = VERTEX_KEYS
+
+
+class XaiRecorder(Recording, XAIBatchesHandler):
+    branch = "xai"
+    keys: ClassVar[Mapping[str, str]] = BASE_KEYS
+
+
+class ProviderConfigRecorder(Recording, BaseLLMHTTPHandler):
+    branch = "provider_config"
+    keys: ClassVar[Mapping[str, str]] = PROVIDER_KEYS
+
+
+def pairs(values: Mapping[str, JsonValue]) -> list[JsonValue]:
+    sorted_pairs: list[JsonValue] = []
+    for key, value in sorted(values.items()):
+        sorted_pairs.append([key, value])
+    return sorted_pairs
+
+
+def field_json(value: Recordable) -> JsonValue:
+    match FIELDS.validate_python(value):
+        case None | httpx.Timeout():
+            return None
+        case bool() | int() | float() | str() | list() as plain:
+            return plain
+        case BaseBatchesConfig() as config:
+            return config.custom_llm_provider.value
+        case dict() as mapping:
+            return pairs(mapping)
 
 
 def expiry_json(value: FileExpiresAfter | None) -> JsonValue:
@@ -114,34 +132,18 @@ def expiry_json(value: FileExpiresAfter | None) -> JsonValue:
     return {"anchor": value["anchor"], "seconds": value["seconds"]}
 
 
-def body_json(data: CreateBatchRequest) -> JsonValue:
-    metadata = data.get("metadata")
-    extra_headers = data.get("extra_headers")
-    extra_body = data.get("extra_body")
+def body_json(data: Recordable) -> JsonValue:
+    request = TypeAdapter(CreateBatchRequest).validate_python(data)
+    metadata = request.get("metadata")
+    extra_headers = request.get("extra_headers")
+    extra_body = request.get("extra_body")
+    expiry = request.get("output_expires_after")
     return {
-        "completion_window": data.get("completion_window"),
-        "endpoint": data.get("endpoint"),
-        "input_file_id": data.get("input_file_id"),
+        "completion_window": request.get("completion_window"),
+        "endpoint": request.get("endpoint"),
+        "input_file_id": request.get("input_file_id"),
         "metadata": None if metadata is None else pairs(metadata),
         "extra_headers": None if extra_headers is None else pairs(extra_headers),
         "extra_body": None if extra_body is None else pairs(extra_body),
-        "output_expires_after": expiry_json(data.get("output_expires_after")),
+        "output_expires_after": expiry_json(expiry),
     }
-
-
-def timeout_json(value: float | httpx.Timeout | None) -> JsonValue:
-    match value:
-        case None | httpx.Timeout():
-            return None
-        case float() | int():
-            return value
-
-
-def credentials_json(value: VERTEX_CREDENTIALS_TYPES | None) -> JsonValue:
-    match value:
-        case None:
-            return None
-        case str():
-            return value
-        case dict():
-            return pairs(value)

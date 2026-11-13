@@ -1,17 +1,21 @@
 import os
-from contextlib import ExitStack
 from typing import Literal, NotRequired, Protocol, TypedDict, cast
-from unittest import mock
 
 import litellm
 import litellm.batches.main as batches
 from litellm.types.llms.vertex_ai import VERTEX_CREDENTIALS_TYPES
 from litellm.types.utils import LiteLLMBatch
 from openai import BadRequestError
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
-from batch_provider_create.views import recorders
+from batch_provider_create.views import (
+    AzureRecorder,
+    OpenAiRecorder,
+    ProviderConfigRecorder,
+    VertexRecorder,
+    XaiRecorder,
+)
 
 
 class OptionalParams(TypedDict, total=False):
@@ -43,7 +47,6 @@ class CreateCall(TypedDict):
 
 class Module(TypedDict, total=False):
     api_base: str
-    organization: str
     api_key: str
     openai_key: str
     api_version: str
@@ -56,6 +59,10 @@ class Input(TypedDict):
     env: dict[str, str]
     module: Module
     steps: list[CreateCall]
+
+
+class UnrecordedCallError(Exception):
+    pass
 
 
 class BatchBase(Protocol):
@@ -90,10 +97,6 @@ class BatchCaller(BatchBase, Protocol):
     ) -> LiteLLMBatch: ...
 
 
-class UnrecordedCallError(Exception):
-    pass
-
-
 create_batch = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1674
     BatchCaller,
     batches.create_batch,
@@ -107,44 +110,56 @@ def run_step(step: CreateCall) -> JsonValue:
     provider = step.get("custom_llm_provider")
     if provider is None:
         provider = "openai"
-    installed = recorders()
-    with ExitStack() as stack:
-        for name, recorder in installed:
-            stack.enter_context(mock.patch.object(batches, name, recorder))
-        try:
-            create_batch(
-                completion_window=step["completion_window"],
-                endpoint=step["endpoint"],
-                input_file_id=step["input_file_id"],
-                custom_llm_provider=provider,
-                metadata=step.get("metadata"),
-                extra_headers=step.get("extra_headers"),
-                extra_body=step.get("extra_body"),
-                output_expires_after=step.get("output_expires_after"),
-                model=step.get("model"),
-                api_base=optional.get("api_base"),
-                api_key=optional.get("api_key"),
-                api_version=optional.get("api_version"),
-                organization=optional.get("organization"),
-                timeout=optional.get("timeout"),
-                request_timeout=optional.get("request_timeout"),
-                max_retries=optional.get("max_retries"),
-                vertex_project=optional.get("vertex_project"),
-                vertex_location=optional.get("vertex_location"),
-                vertex_credentials=optional.get("vertex_credentials"),
-                custom_endpoint=optional.get("custom_endpoint"),
-            )
-        except BadRequestError as error:
-            return {"raised": error.status_code}
-    recorded = [entry for _name, recorder in installed for entry in recorder.calls]
-    if not recorded:
+    try:
+        batch = create_batch(
+            completion_window=step["completion_window"],
+            endpoint=step["endpoint"],
+            input_file_id=step["input_file_id"],
+            custom_llm_provider=provider,
+            metadata=step.get("metadata"),
+            extra_headers=step.get("extra_headers"),
+            extra_body=step.get("extra_body"),
+            output_expires_after=step.get("output_expires_after"),
+            model=step.get("model"),
+            api_base=optional.get("api_base"),
+            api_key=optional.get("api_key"),
+            api_version=optional.get("api_version"),
+            organization=optional.get("organization"),
+            timeout=optional.get("timeout"),
+            request_timeout=optional.get("request_timeout"),
+            max_retries=optional.get("max_retries"),
+            vertex_project=optional.get("vertex_project"),
+            vertex_location=optional.get("vertex_location"),
+            vertex_credentials=optional.get("vertex_credentials"),
+            custom_endpoint=optional.get("custom_endpoint"),
+        )
+    except BadRequestError as error:
+        return {"raised": error.status_code}
+    if batch.metadata is None:
         raise UnrecordedCallError
-    return recorded[0]
+    return TypeAdapter(JsonValue).validate_json(batch.metadata["call"])
 
 
 def run(input_value: Input) -> JsonValue:
     os.environ.update(input_value["env"])
-    with ExitStack() as stack:
-        for name, value in input_value["module"].items():
-            stack.enter_context(mock.patch.object(litellm, name, value))
-        return [run_step(step) for step in input_value["steps"]]
+    module = input_value["module"]
+    if "api_base" in module:
+        litellm.api_base = module["api_base"]
+    if "api_key" in module:
+        litellm.api_key = module["api_key"]
+    if "openai_key" in module:
+        litellm.openai_key = module["openai_key"]
+    if "api_version" in module:
+        litellm.api_version = module["api_version"]
+    if "azure_key" in module:
+        litellm.azure_key = module["azure_key"]
+    if "vertex_project" in module:
+        litellm.vertex_project = module["vertex_project"]
+    if "vertex_location" in module:
+        litellm.vertex_location = module["vertex_location"]
+    batches.openai_batches_instance.__class__ = OpenAiRecorder
+    batches.azure_batches_instance.__class__ = AzureRecorder
+    batches.vertex_ai_batches_instance.__class__ = VertexRecorder
+    batches.xai_batches_instance.__class__ = XaiRecorder
+    batches.base_llm_http_handler.__class__ = ProviderConfigRecorder
+    return [run_step(step) for step in input_value["steps"]]

@@ -34,7 +34,6 @@ pub(crate) struct Input {
 #[serde(default, deny_unknown_fields)]
 struct Module {
     api_base: Option<String>,
-    organization: Option<String>,
     api_key: Option<SecretString>,
     openai_key: Option<SecretString>,
     api_version: Option<String>,
@@ -47,10 +46,7 @@ fn settings(module: &Module, env: &BTreeMap<String, String>) -> Settings {
     let read = |name: &str| env.get(name).filter(|value| !value.is_empty()).cloned();
     Settings {
         api_base: module.api_base.clone().filter(|value| !value.is_empty()),
-        organization: module
-            .organization
-            .clone()
-            .filter(|value| !value.is_empty()),
+        organization: None,
         api_key: module.api_key.clone(),
         openai_key: module.openai_key.clone(),
         api_version: module.api_version.clone().filter(|value| !value.is_empty()),
