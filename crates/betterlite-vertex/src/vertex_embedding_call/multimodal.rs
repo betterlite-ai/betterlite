@@ -169,8 +169,7 @@ pub async fn async_multimodal_embedding(
             body: &request.body,
             timeout: multimodal_timeout(timeout, ClientTimeout::HandlerDefault),
         })
-        .await
-        .map_err(VertexEmbeddingCallError::from_post)?;
+        .await?;
     logging::answer(model, &reply);
     if !(200..300).contains(&reply.status) {
         return Err(VertexEmbeddingCallError::Status {

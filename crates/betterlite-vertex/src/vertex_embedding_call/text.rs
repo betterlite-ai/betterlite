@@ -194,8 +194,7 @@ async fn send(
             body: &prepared.body,
             timeout,
         })
-        .await
-        .map_err(VertexEmbeddingCallError::from_post)?;
+        .await?;
     logging::answer(model, &reply);
     embedded(reply, model)
 }
