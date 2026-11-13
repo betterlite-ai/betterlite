@@ -172,7 +172,7 @@ fn limit_outcome(input: &LimitInput) -> Vec<LimitObservation> {
                 let error = acquire_once(&limit, &mut held);
                 observations.push(LimitObservation {
                     kind: String::from("acquire"),
-                    in_flight: limit.snapshot().in_flight,
+                    in_flight: limit.in_flight(),
                     error,
                     failed: false,
                 });
@@ -181,7 +181,7 @@ fn limit_outcome(input: &LimitInput) -> Vec<LimitObservation> {
                 drop(held.pop());
                 observations.push(LimitObservation {
                     kind: String::from("release"),
-                    in_flight: limit.snapshot().in_flight,
+                    in_flight: limit.in_flight(),
                     error: None,
                     failed: false,
                 });
@@ -194,7 +194,7 @@ fn limit_outcome(input: &LimitInput) -> Vec<LimitObservation> {
                 };
                 observations.push(LimitObservation {
                     kind: String::from("enter_exit"),
-                    in_flight: limit.snapshot().in_flight,
+                    in_flight: limit.in_flight(),
                     error,
                     failed,
                 });

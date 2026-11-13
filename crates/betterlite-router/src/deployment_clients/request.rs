@@ -13,7 +13,6 @@ pub fn merged_tools(deployment: &[Json], request: &[Json]) -> Option<Vec<Json>> 
     Some(tools)
 }
 
-// what the deployment update copies; a clientside request passes its per-request deployment here
 pub struct DeploymentView<'a> {
     pub model_name: &'a str,
     pub model: &'a str,
@@ -62,15 +61,12 @@ impl RequestContext {
             Json::Text(deployment.model_name.to_owned()),
         );
         self.model_info = deployment.model_info.clone();
-        for tag in deployment.tags {
-            if !self.tags.iter().any(|existing| existing == tag) {
-                self.tags.push(tag.clone());
-            }
-        }
-        if let Some(name) = deployment.credential_name {
-            let credential_tag = format!("Credential: {name}");
-            if !self.tags.iter().any(|existing| *existing == credential_tag) {
-                self.tags.push(credential_tag);
+        let credential_tag = deployment
+            .credential_name
+            .map(|name| format!("Credential: {name}"));
+        for tag in deployment.tags.iter().cloned().chain(credential_tag) {
+            if !self.tags.contains(&tag) {
+                self.tags.push(tag);
             }
         }
         if !self.tags.is_empty() {

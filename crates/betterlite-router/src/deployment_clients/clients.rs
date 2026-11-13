@@ -32,7 +32,6 @@ impl ClientKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ClientCredential {
     Configured,
-    // the SHA-256 hex of the request key, never the key itself
     Overridden(String),
 }
 
@@ -51,7 +50,6 @@ struct Timed<T> {
     stored_at: SystemTime,
 }
 
-// Whether the cache held the limit and whether this lookup had to run the calculation at all.
 #[derive(Clone, Debug)]
 pub struct LimitLookup {
     pub limit: Option<Arc<MaxParallelRequestsLimit>>,
@@ -127,7 +125,6 @@ impl CachedClients {
         }
     }
 
-    // the configured client is reused while it is fresh; a caller key gets its own identity and never moves the base
     pub fn openai_client(
         &self,
         kind: ClientKind,
@@ -137,38 +134,31 @@ impl CachedClients {
         let credential = lookup.api_key.map_or(ClientCredential::Configured, |key| {
             ClientCredential::Overridden(credential_digest(key.expose_secret()))
         });
-        let now = (self.clock)();
-        let key = kind.cache_key(lookup.model_id, lookup.stream);
-        let mut clients = self.clients.lock().unwrap_or_else(PoisonError::into_inner);
-        if credential == ClientCredential::Configured {
-            if let Some(entry) = clients.get(&key)
-                && Self::fresh(self.ttl, now, entry)
-                && entry.value.credential == ClientCredential::Configured
-            {
-                return entry.value.clone();
-            }
-            let configured = CachedClient {
-                model_id: lookup.model_id.to_owned(),
-                model_group: deployment.model_group.to_owned(),
-                api_base: deployment.api_base.to_owned(),
-                stream: lookup.stream,
-                credential: ClientCredential::Configured,
-            };
-            clients.insert(
-                key,
-                Timed {
-                    value: configured.clone(),
-                    stored_at: now,
-                },
-            );
-            return configured;
-        }
-        CachedClient {
+        let client = CachedClient {
             model_id: lookup.model_id.to_owned(),
             model_group: deployment.model_group.to_owned(),
             api_base: deployment.api_base.to_owned(),
             stream: lookup.stream,
             credential,
+        };
+        if client.credential != ClientCredential::Configured {
+            return client;
         }
+        let now = (self.clock)();
+        let key = kind.cache_key(lookup.model_id, lookup.stream);
+        let mut clients = self.clients.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(entry) = clients.get(&key)
+            && Self::fresh(self.ttl, now, entry)
+        {
+            return entry.value.clone();
+        }
+        clients.insert(
+            key,
+            Timed {
+                value: client.clone(),
+                stored_at: now,
+            },
+        );
+        client
     }
 }

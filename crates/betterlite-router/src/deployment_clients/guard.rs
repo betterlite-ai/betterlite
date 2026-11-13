@@ -8,7 +8,6 @@ use thiserror::Error;
 const TPM_PER_REQUEST: i64 = 1000;
 const REQUESTS_PER_TPM_UNIT: i64 = 6;
 
-// A caller that finds every slot in use gets this instead of waiting for one to free up.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error(
     "deployment {model_group} (id {model_id}) already has max_parallel_requests={max_parallel_requests} requests in flight; raise max_parallel_requests (or the rpm/tpm it is derived from) for this deployment"
@@ -28,18 +27,11 @@ impl MaxParallelRequestsExceeded {
     pub const LLM_PROVIDER: &'static str = "";
 }
 
-// The deployment's slot counter, shared by every request the cache hands this deployment.
 pub struct MaxParallelRequestsLimit {
     pub max_parallel_requests: i64,
     pub model_id: String,
     pub model_group: String,
     in_flight: AtomicI64,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LimitSnapshot {
-    pub max_parallel_requests: i64,
-    pub in_flight: i64,
 }
 
 // The guard holds one slot until it is dropped, which is what makes a stream release it when it ends.
@@ -75,20 +67,15 @@ impl MaxParallelRequestsLimit {
                 .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |in_flight| {
                     (in_flight < self.max_parallel_requests).then(|| in_flight.saturating_add(1))
                 });
-        acquired.map_or_else(
-            |_| {
-                Err(MaxParallelRequestsExceeded {
-                    model_group: self.model_group.clone(),
-                    model_id: self.model_id.clone(),
-                    max_parallel_requests: self.max_parallel_requests,
-                })
-            },
-            |_| {
-                Ok(DeploymentSlot {
-                    limit: Arc::clone(self),
-                })
-            },
-        )
+        acquired
+            .map(|_| DeploymentSlot {
+                limit: Arc::clone(self),
+            })
+            .map_err(|_| MaxParallelRequestsExceeded {
+                model_group: self.model_group.clone(),
+                model_id: self.model_id.clone(),
+                max_parallel_requests: self.max_parallel_requests,
+            })
     }
 
     // the synchronous facade of __enter__/__exit__: the slot is held for the whole body
@@ -103,11 +90,8 @@ impl MaxParallelRequestsLimit {
     }
 
     #[must_use]
-    pub fn snapshot(&self) -> LimitSnapshot {
-        LimitSnapshot {
-            max_parallel_requests: self.max_parallel_requests,
-            in_flight: self.in_flight.load(Ordering::SeqCst),
-        }
+    pub fn in_flight(&self) -> i64 {
+        self.in_flight.load(Ordering::SeqCst)
     }
 }
 
@@ -119,20 +103,19 @@ pub fn calculate_parallel_limit(
     tpm: Option<i64>,
     default_max_parallel_requests: Option<i64>,
 ) -> Option<i64> {
-    if let Some(limit) = max_parallel_requests {
-        return Some(limit);
-    }
-    if let Some(limit) = rpm {
-        return Some(limit);
-    }
-    if let Some(tokens) = tpm {
-        let calculated = tokens.saturating_mul(REQUESTS_PER_TPM_UNIT) / TPM_PER_REQUEST;
-        return Some(if calculated == 0 { 1 } else { calculated });
-    }
-    default_max_parallel_requests
+    max_parallel_requests
+        .or(rpm)
+        .or_else(|| {
+            tpm.map(
+                |tokens| match tokens.saturating_mul(REQUESTS_PER_TPM_UNIT) / TPM_PER_REQUEST {
+                    0 => 1,
+                    calculated => calculated,
+                },
+            )
+        })
+        .or(default_max_parallel_requests)
 }
 
-// The limits a deployment declares and the router-wide default its calculation falls back to.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct LimitSource {
     pub max_parallel_requests: Option<i64>,

@@ -7,7 +7,6 @@ use crate::deployment_identity::error::InvalidDeployment;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::deployment_identity::stable_id::generate_model_id;
 
-// clientside_credential_keys: LiteLLM accepts these three from the request itself
 pub const CLIENTSIDE_CREDENTIAL_KEYS: [&str; 3] = ["api_key", "api_base", "base_url"];
 
 // The clientside part of a request: the key is used, the destinations are only markers for B052's 400.

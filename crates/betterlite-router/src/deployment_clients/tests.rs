@@ -140,9 +140,9 @@ fn deployment_clients_behaviors_install_a_zero_cap_never_caps() {
 fn deployment_clients_behaviors_a_free_slot_is_granted_and_released_on_drop() {
     let limit = limit(1);
     let slot = limit.acquire().expect("a free slot");
-    assert_eq!(limit.snapshot().in_flight, 1);
+    assert_eq!(limit.in_flight(), 1);
     drop(slot);
-    assert_eq!(limit.snapshot().in_flight, 0);
+    assert_eq!(limit.in_flight(), 0);
 }
 
 #[test]
@@ -150,7 +150,7 @@ fn deployment_clients_behaviors_enter_and_exit_release_after_a_failure() {
     let limit = limit(1);
     let outcome = limit.with_slot(|| Err::<(), &str>("the provider failed"));
     assert_eq!(outcome, Ok(Err("the provider failed")));
-    assert_eq!(limit.snapshot().in_flight, 0);
+    assert_eq!(limit.in_flight(), 0);
     assert!(limit.acquire().is_ok());
 }
 
@@ -639,13 +639,10 @@ fn deployment_clients_boundaries_acquire_compares_against_the_cap(
     let acquired = limit.acquire();
     let granted_now = acquired.is_ok();
     assert_eq!(granted_now, granted);
-    assert_eq!(
-        limit.snapshot().in_flight,
-        in_flight + i64::from(granted_now)
-    );
+    assert_eq!(limit.in_flight(), in_flight + i64::from(granted_now));
     drop(acquired);
     drop(held);
-    assert_eq!(limit.snapshot().in_flight, 0);
+    assert_eq!(limit.in_flight(), 0);
 }
 
 #[rstest]

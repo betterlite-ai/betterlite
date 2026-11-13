@@ -58,20 +58,12 @@ pub fn credential_params(litellm_params: &JsonObject) -> Result<JsonObject, Cred
     Ok(credentials)
 }
 
-fn team_owner(deployment: &DeploymentSpec) -> Option<&str> {
-    match deployment.model_info.get("team_id") {
-        Some(Json::Text(team)) => Some(team),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
-    }
-}
-
 // _deployment_usable_by_team: a team deployment serves only its own team, an unowned one is shared
 fn usable_by_team(deployment: &DeploymentSpec, team_id: Option<&str>) -> bool {
-    match (team_owner(deployment), team_id) {
-        (None, _) => true,
-        (Some(_owner), None) => false,
-        (Some(owner), Some(caller)) => owner == caller,
+    match (deployment.model_info.get("team_id"), team_id) {
+        (Some(Json::Text(owner)), Some(caller)) => owner == caller,
+        (Some(Json::Text(_)), None) => false,
+        _ => true,
     }
 }
 
