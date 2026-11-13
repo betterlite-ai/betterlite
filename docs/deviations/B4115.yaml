@@ -1,0 +1,18 @@
+task: B4115
+deviations:
+  - what: >-
+      betterlite calls B4114's authorization functions directly (SearchToolAuthorizer::authorize with the
+      selected SearchToolConfig), not through a search-execution wrapper, so the key check runs before the
+      team lookup and check exactly as LiteLLM's _authorize_search_tool orders them.
+    why: Faithful port of LiteLLM behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1626-L1668
+  - what: >-
+      The two ProviderConfigManager lookups behind the short-circuit gate and the rich-input forwarding, and the
+      litellm.asearch call itself, reach this crate through injected ports (ProviderCapabilities and SearchRunner)
+      instead of module imports. The server wires them to get_provider_anthropic_messages_config,
+      get_provider_search_config and the search executor.
+    why: >-
+      betterlite-websearch sits below the provider crates and cannot import a provider registry or the search
+      HTTP call, and B4119 already needs a search runner trait to supply fixed outcomes in tests. The decisions,
+      their order and the arguments forwarded to the search stay LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1556-L1612

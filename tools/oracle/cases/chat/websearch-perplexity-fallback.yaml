@@ -1,0 +1,20 @@
+{
+  "kind": "helper",
+  "name": "websearch-perplexity-fallback",
+  "call": {
+    "b4115": {
+      "operation": "execute_search",
+      "model": "gpt-5",
+      "query": "what is betterlite",
+      "search_response": {
+        "results": [
+          {"title": "betterlite", "url": "https://example.com/betterlite", "snippet": "A Rust gateway."}
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
