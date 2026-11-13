@@ -1,7 +1,9 @@
+import json
 from copy import deepcopy
 
 import pytest
 from litellm.llms.base_llm.base_utils import type_to_response_format_param as litellm_type_param  # pyright: ignore[reportMissingTypeStubs, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L181
+from openai.lib._pydantic import _ensure_strict_json_schema as openai_strict_schema  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L203
 from pydantic import BaseModel, Field
 
 from betterlite.llms.base_llm.base_utils import type_to_response_format_param
@@ -9,6 +11,8 @@ from betterlite.types.utils.values import JsonValue
 
 REF_TEMPLATE = "#/$defs/{model}"
 URN_TEMPLATE = "urn:{model}"
+ALL_OF_ENTRIES = 2
+CLASS_REFERENCES = 3
 DICT_FORMAT: dict[str, JsonValue] = {
     "type": "json_schema",
     "json_schema": {
@@ -47,6 +51,35 @@ class ResponseModel(BaseModel):  # type: ignore[explicit-any]  # https://github.
     described: Child = Field(description="a described child")
 
 
+STRICT_SHAPE: dict[str, JsonValue] = {
+    "type": "object",
+    "default": None,
+    "definitions": {"Legacy": {"type": "object", "properties": {"value": {"type": "integer"}}}},
+    "$defs": {"Current": {"type": "object", "properties": {"value": {"type": "integer"}}}},
+    "properties": {
+        "described": {
+            "type": "object",
+            "description": "a single entry allOf",
+            "allOf": [{"type": "object", "properties": {"a": {"type": "string"}}}],
+        },
+        "intersected": {
+            "allOf": [
+                {"type": "object", "properties": {"b": {"type": "string"}}},
+                {"type": "object", "properties": {"c": {"type": "integer"}}},
+            ],
+        },
+        "tuple_items": {"type": "array", "items": [{"type": "string"}]},
+    },
+}
+
+
+class SchemaSource:
+    @classmethod
+    def model_json_schema(cls, *, ref_template: str = REF_TEMPLATE) -> dict[str, JsonValue]:
+        assert ref_template == REF_TEMPLATE
+        return deepcopy(STRICT_SHAPE)
+
+
 def litellm_convert(
     response_format: type[BaseModel] | dict[str, JsonValue] | None,
     ref_template: str | None = None,
@@ -81,6 +114,16 @@ def schema_of(converted: dict[str, JsonValue]) -> dict[str, JsonValue]:
     return as_mapping(json_schema["schema"])
 
 
+def convert_same(
+    response_format: type[BaseModel] | dict[str, JsonValue],
+    ref_template: str | None = None,
+) -> dict[str, JsonValue]:
+    ours = type_to_response_format_param(response_format, ref_template)
+    assert ours is not None
+    assert ours == litellm_convert(response_format, ref_template)
+    return ours
+
+
 def test_none() -> None:
     assert type_to_response_format_param(None) is None
     assert litellm_convert(None) is None
@@ -96,10 +139,7 @@ def test_dict_passthrough() -> None:
 
 
 def test_dict_ref_template() -> None:
-    ours = type_to_response_format_param(deepcopy(DICT_FORMAT), ref_template=REF_TEMPLATE)
-    reference = litellm_convert(deepcopy(DICT_FORMAT), ref_template=REF_TEMPLATE)
-    assert ours == reference
-    assert ours is not None
+    ours = convert_same(deepcopy(DICT_FORMAT), REF_TEMPLATE)
     properties = as_mapping(schema_of(ours)["properties"])
     assert properties["first"] == {"$ref": "#/$defs/Item"}
     assert as_mapping(properties["list"])["items"] == {"$ref": "#/$defs/Item"}
@@ -137,6 +177,9 @@ def test_dict_missing_schema() -> None:
     payload: dict[str, JsonValue] = {"type": "json_schema", "json_schema": {}}
     with pytest.raises(TypeError, match=r"json_schema\.schema"):
         type_to_response_format_param(payload, ref_template=REF_TEMPLATE)
+    without_schema: dict[str, JsonValue] = {"type": "json_schema"}
+    with pytest.raises(TypeError, match="json_schema is not a dictionary"):
+        type_to_response_format_param(without_schema, ref_template=REF_TEMPLATE)
 
 
 def test_class_schema() -> None:
@@ -154,11 +197,44 @@ def test_class_schema() -> None:
 
 
 def test_class_ref_template() -> None:
-    ours = type_to_response_format_param(Nested, ref_template=REF_TEMPLATE)
-    reference = litellm_convert(Nested, ref_template=REF_TEMPLATE)
+    ours = convert_same(ResponseModel, URN_TEMPLATE)
+    dumped = json.dumps(schema_of(ours))
+    assert "#/$defs/" not in dumped
+    assert dumped.count('"urn:Child"') == CLASS_REFERENCES
+    child = as_mapping(as_mapping(schema_of(ours)["properties"])["child"])
+    assert child == {"$ref": "urn:Child"}
+
+
+def test_strict_schema_shapes() -> None:
+    converted = type_to_response_format_param(SchemaSource)
+    assert converted is not None
+    ours = schema_of(converted)
+    # openai types root as a dict of objects, which a display takes from the argument
+    reference: dict[str, JsonValue] = openai_strict_schema(
+        deepcopy(STRICT_SHAPE), path=(), root={**STRICT_SHAPE},
+    )
     assert ours == reference
-    assert ours is not None
-    assert schema_of(ours)["type"] == "object"
+    assert "default" not in ours
+    definitions = as_mapping(ours["definitions"])
+    assert as_mapping(definitions["Legacy"])["required"] == ["value"]
+    assert as_mapping(as_mapping(ours["$defs"])["Current"])["additionalProperties"] is False
+    properties = as_mapping(ours["properties"])
+    described = as_mapping(properties["described"])
+    assert "allOf" not in described
+    assert described["description"] == "a single entry allOf"
+    assert described["additionalProperties"] is False
+    intersected = as_mapping(properties["intersected"])
+    assert len(as_list(intersected["allOf"])) == ALL_OF_ENTRIES
+    assert as_mapping(properties["tuple_items"])["items"] == [{"type": "string"}]
+
+
+def test_instance_refused() -> None:
+    instance = Nested(value=1)
+    with pytest.raises(TypeError, match=UNSUPPORTED_MESSAGE) as ours_error:
+        type_to_response_format_param(instance)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L196-L198
+    with pytest.raises(TypeError, match=UNSUPPORTED_MESSAGE) as reference_error:
+        litellm_type_param(instance)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L196-L198
+    assert str(ours_error.value) == str(reference_error.value)
 
 
 def test_unsupported() -> None:

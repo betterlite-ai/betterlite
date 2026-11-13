@@ -199,11 +199,6 @@ def _ensure_strict_json_schema(
     return _strictify_ref(schema, path=path, root=root)
 
 
-def _strict_schema_of(response_format: type[ResponseFormatModel]) -> dict[str, JsonValue]:
-    schema = response_format.model_json_schema()
-    return _ensure_strict_json_schema(schema, path=(), root=schema)
-
-
 def type_to_response_format_param(
     response_format: type[ResponseFormatModel] | JsonValue,
     ref_template: str | None = None,
@@ -218,6 +213,7 @@ def type_to_response_format_param(
         case other:
             try:
                 schema_method = other.model_json_schema
+                schema_name = other.__name__
             except AttributeError as error:
                 raise TypeError(f"Unsupported response_format type - {other}") from error
             if not callable(schema_method):
@@ -225,12 +221,13 @@ def type_to_response_format_param(
             if ref_template is not None:
                 schema = other.model_json_schema(ref_template=ref_template)
             else:
-                schema = _strict_schema_of(other)
+                schema = other.model_json_schema()
+                schema = _ensure_strict_json_schema(schema, path=(), root=schema)
             return {
                 "type": "json_schema",
                 "json_schema": {
                     "schema": schema,
-                    "name": other.__name__,
+                    "name": schema_name,
                     "strict": True,
                 },
             }

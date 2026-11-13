@@ -15,6 +15,9 @@ deviations:
   - what: A ResponsesAPIResponse output item given as a dict dumps as given, where pydantic validates a message item into openai's ResponseOutputMessage and ResponseOutputText, whose dumps add phase null and logprobs null, and exclude_none drops null values inside a plain dict in LiteLLM but not here.
     why: The wheel has no openai models and the declared output union includes dict, which the shared response base keeps; the mock builder passes phase and logprobs as null in its literal so the mock's model_dump matches LiteLLM's value for value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1397-L1409
+  - what: A ResponsesAPIResponse tools list given as dicts dumps as given, where pydantic validates each dict into openai's Tool models and model_dump adds their null fields, such as strict, description, output_schema, allowed_callers and defer_loading for a function tool, and search_content_types, search_context_size and user_location for web_search_preview.
+    why: The wheel does not depend on openai, and the shared response base keeps declared JSON values as they are.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1412
   - what: A response_format dict of type json_schema whose json_schema or schema is missing or not a dict raises TypeError naming the part, where LiteLLM's helper raises a KeyError.
     why: docs/compatibility.md makes a value the declared shape cannot hold an error that names the field, and a KeyError names nothing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L143-L176

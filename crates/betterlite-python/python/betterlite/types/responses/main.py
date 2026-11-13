@@ -1,15 +1,30 @@
 from typing import ClassVar, Literal
 
-from typing_extensions import TypedDict
+from typing_extensions import TypedDict, override
 
 from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.values import JsonValue, StoredValue
+from betterlite.types.utils.values import JsonValue, StoredValue, allows_none
 
 Phase = Literal["commentary", "final_answer"] | None
 
 
+class RequiredFields(ResponseObject):
+    # pydantic makes a nullable field without a default required; the base would default it to None
+    @override
+    def __init_subclass__(cls, **kwargs: StoredValue) -> None:
+        super().__init_subclass__(**kwargs)
+        nullable = {
+            name: field for name, field in cls.__fields__.items() if allows_none(field)
+        }
+        cls.__defaults__ = {
+            name: value
+            for name, value in cls.__defaults__.items()
+            if name not in nullable or name in cls.defaults
+        }
+
+
 class GenericResponseOutputItemContentAnnotation(  # ast-grep-ignore: no-long-names
-    ResponseObject,
+    RequiredFields,
 ):
     type: str | None
     start_index: int | None
@@ -18,14 +33,14 @@ class GenericResponseOutputItemContentAnnotation(  # ast-grep-ignore: no-long-na
     title: str | None
 
 
-class OutputText(ResponseObject):
+class OutputText(RequiredFields):
     type: str | None
     text: str | None
     # ast-grep-ignore: no-long-names
     annotations: list[GenericResponseOutputItemContentAnnotation] | None
 
 
-class OutputFunctionToolCall(ResponseObject):
+class OutputFunctionToolCall(RequiredFields):
     arguments: str | None
     call_id: str | None
     name: str | None
@@ -33,6 +48,7 @@ class OutputFunctionToolCall(ResponseObject):
     id: str | None
     status: Literal["in_progress", "completed", "incomplete"]
     phase: Phase
+    defaults: ClassVar[dict[str, StoredValue]] = {"phase": None}
 
 
 def _json_field(value: JsonValue, name: str) -> JsonValue:
@@ -97,19 +113,19 @@ def build_web_search_call(
     )
 
 
-class OutputImageGenerationCall(ResponseObject):
+class OutputImageGenerationCall(RequiredFields):
     type: Literal["image_generation_call"]
     id: str
     status: Literal["in_progress", "completed", "incomplete", "failed"]
     result: str | None
 
 
-class OutputCodeInterpreterCallLog(ResponseObject):
+class OutputCodeInterpreterCallLog(RequiredFields):
     type: Literal["logs"]
     logs: str
 
 
-class OutputCodeInterpreterCall(ResponseObject):
+class OutputCodeInterpreterCall(RequiredFields):
     type: Literal["code_interpreter_call"]
     id: str
     code: str | None
@@ -138,25 +154,27 @@ def build_code_interpreter_log_outputs(  # ast-grep-ignore: no-long-names
             return None
 
 
-class CustomToolCallOutputItem(ResponseObject):
+class CustomToolCallOutputItem(RequiredFields):
     type: Literal["custom_tool_call"]
     call_id: str
     id: str | None
     name: str
     input: str
     status: Literal["in_progress", "completed", "incomplete"] | None
+    defaults: ClassVar[dict[str, StoredValue]] = {"id": None, "status": None}
 
 
-class GenericResponseOutputItem(ResponseObject):
+class GenericResponseOutputItem(RequiredFields):
     type: str
     id: str
     status: str
     role: str
     content: list[OutputText]
     phase: Phase
+    defaults: ClassVar[dict[str, StoredValue]] = {"phase": None}
 
 
-class DeleteResponseResult(ResponseObject):
+class DeleteResponseResult(RequiredFields):
     id: str | None
     object: str | None
     deleted: bool | None

@@ -5,6 +5,7 @@ import litellm.types.llms.openai as litellm_openai  # pyright: ignore[reportMiss
 import litellm.types.responses.main as litellm_responses  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L1
 import pytest
 from litellm.responses.main import mock_responses_api_response as litellm_mock_response  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L105
+from pydantic import ValidationError as PydanticValidationError
 
 from betterlite.types.responses import (
     CustomToolCallOutputItem,
@@ -137,9 +138,31 @@ REASONING_ITEM: dict[str, JsonValue] = {
     "summary": [],
     "kept": None,
 }
+OTHER_ITEM: dict[str, JsonValue] = {
+    "type": "note",
+    "id": "note_1",
+    "status": None,
+    "content": None,
+    "encrypted_content": None,
+}
 MESSAGE_VALUES: dict[str, JsonValue] = {
     "type": "message", "id": "msg_4", "status": "completed", "role": "assistant", "content": [],
 }
+FUNCTION_TOOL: dict[str, JsonValue] = {
+    "type": "function", "name": "f", "parameters": {"type": "object"},
+}
+WEB_SEARCH_TOOL: dict[str, JsonValue] = {"type": "web_search_preview"}
+FUNCTION_TOOL_DEFAULTS: dict[str, JsonValue] = {
+    "allowed_callers": None, "defer_loading": None, "description": None,
+    "output_schema": None, "strict": None,
+}
+WEB_SEARCH_TOOL_DEFAULTS: dict[str, JsonValue] = {
+    "search_content_types": None, "search_context_size": None, "user_location": None,
+}
+REFERENCE_TOOLS: list[JsonValue] = [
+    {**FUNCTION_TOOL, **FUNCTION_TOOL_DEFAULTS},
+    {**WEB_SEARCH_TOOL, **WEB_SEARCH_TOOL_DEFAULTS},
+]
 WEB_SEARCH_ACTION: dict[str, JsonValue] = {
     "type": "search",
     "query": "cats",
@@ -292,6 +315,23 @@ def test_output_item_generic() -> None:
     assert ours.content == [OutputText(**TEXT_VALUES)]
 
 
+def test_output_item_required() -> None:
+    with pytest.raises(ValidationError):
+        OutputText(text="hi")
+    with pytest.raises(PydanticValidationError):
+        litellm_responses.OutputText(text="hi")  # type: ignore[call-arg]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L24-L29
+    without_status = {k: v for k, v in FUNCTION_VALUES.items() if k != "status"}
+    with pytest.raises(ValidationError):
+        OutputFunctionToolCall(**without_status)
+    with pytest.raises(PydanticValidationError):
+        litellm_responses.OutputFunctionToolCall(**without_status)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L32-L42
+    without_outputs = {k: v for k, v in CODE_CALL_VALUES.items() if k != "outputs"}
+    with pytest.raises(ValidationError):
+        OutputCodeInterpreterCall(**without_outputs)
+    with pytest.raises(PydanticValidationError):
+        litellm_responses.OutputCodeInterpreterCall(**without_outputs)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L90-L98
+
+
 def test_output_item_extras() -> None:
     values = {**TEXT_VALUES, "provider_field": "kept"}
     ours = OutputText(**values)
@@ -367,6 +407,14 @@ def test_delete_result_hidden() -> None:
     assert_hidden_fresh(first, DeleteResponseResult(**DELETE_VALUES))
 
 
+def test_delete_result_required() -> None:
+    missing: dict[str, JsonValue] = {}
+    with pytest.raises(ValidationError):
+        DeleteResponseResult(**missing)
+    with pytest.raises(PydanticValidationError):
+        litellm_responses.DeleteResponseResult(**missing)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/responses/main.py#L149-L165
+
+
 def test_api_response_dump() -> None:
     item = GenericResponseOutputItem(**GENERIC_VALUES)
     ours = ResponsesAPIResponse(**RESPONSE_VALUES, output=[item])
@@ -390,6 +438,15 @@ def test_api_response_usage_dict() -> None:
     assert ours.usage.cost is None
 
 
+def test_api_response_tools_dict() -> None:
+    tools = [FUNCTION_TOOL, WEB_SEARCH_TOOL]
+    values = {**RESPONSE_VALUES, "output": [], "tools": tools}
+    assert as_mapping(ResponsesAPIResponse(**values).model_dump())["tools"] == tools
+    reference = litellm_openai.ResponsesAPIResponse(**values)  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388
+    reference_dump: JsonValue = reference.model_dump()
+    assert as_mapping(reference_dump)["tools"] == REFERENCE_TOOLS
+
+
 def test_api_response_reasoning() -> None:
     ours = ResponsesAPIResponse(
         id="resp_1", created_at=1, output=[], reasoning=ReasoningValue(effort="low"),
@@ -403,9 +460,10 @@ def test_api_response_reasoning() -> None:
 
 
 def test_api_response_nulls() -> None:
-    ours = ResponsesAPIResponse(id="resp_1", created_at=1, output=[dict(REASONING_ITEM)])
+    output = [dict(REASONING_ITEM), dict(OTHER_ITEM)]
+    ours = ResponsesAPIResponse(id="resp_1", created_at=1, output=output)
     reference = litellm_openai.ResponsesAPIResponse(
-        id="resp_1", created_at=1, output=[dict(REASONING_ITEM)],  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388
+        id="resp_1", created_at=1, output=output,  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1388
     )
     reference_dump: JsonValue = reference.model_dump()
     reference_unset: JsonValue = reference.model_dump(exclude_unset=True)
@@ -414,8 +472,9 @@ def test_api_response_nulls() -> None:
     dumped = as_mapping(ours.model_dump())
     assert dumped["output"] == [
         {"type": "reasoning", "id": "rs_1", "summary": [], "kept": None},
+        OTHER_ITEM,
     ]
-    assert ours.output == [REASONING_ITEM]
+    assert ours.output == output
 
 
 def test_api_response_output_text() -> None:
