@@ -18,12 +18,12 @@ pub fn provider_info(
 ) -> (String, Option<SecretString>) {
     let base = api_base
         .filter(|value| !value.is_empty())
-        .or(env_base.filter(|value| !value.is_empty()))
+        .or_else(|| env_base.filter(|value| !value.is_empty()))
         .unwrap_or(DEFAULT_API_BASE)
         .to_owned();
     let key = api_key
         .filter(|key| !key.expose_secret().is_empty())
-        .or(env_key.filter(|key| !key.expose_secret().is_empty()))
+        .or_else(|| env_key.filter(|key| !key.expose_secret().is_empty()))
         .cloned();
     (base, key)
 }

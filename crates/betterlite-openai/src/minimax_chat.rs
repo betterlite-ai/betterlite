@@ -14,7 +14,7 @@ pub const KEEPS_CACHE_CONTROL: bool = true;
 pub fn resolve_base(api_base: Option<&str>, env_base: Option<&str>) -> String {
     api_base
         .filter(|value| !value.is_empty())
-        .or(env_base.filter(|value| !value.is_empty()))
+        .or_else(|| env_base.filter(|value| !value.is_empty()))
         .unwrap_or(DEFAULT_API_BASE)
         .to_owned()
 }
