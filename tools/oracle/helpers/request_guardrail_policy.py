@@ -7,10 +7,16 @@ from typing import Final, NotRequired, TypedDict
 
 from litellm.proxy import litellm_pre_call_utils
 from litellm.proxy._types import UserAPIKeyAuth
+from litellm.proxy.common_utils.openai_error_payload import (
+    error_status_code,
+    openai_error_param,
+    openai_error_type,
+)
 from litellm.proxy.policy_engine.attachment_registry import get_attachment_registry
 from litellm.proxy.policy_engine.policy_registry import get_policy_registry
 from litellm.types.proxy.policy_engine import Policy
 from pydantic import JsonValue
+from starlette.exceptions import HTTPException
 from typing_extensions import override
 
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
@@ -84,6 +90,18 @@ def build_auth(call: Call) -> UserAPIKeyAuth:
     )
 
 
+# the mapping helper wants FastAPI's subclass, and the catch sees its Starlette base
+def rejection_facts(error: HTTPException) -> dict[str, JsonValue]:
+    status = error_status_code(error, 400)
+    facts: dict[str, JsonValue] = {
+        "status": status,
+        "type": openai_error_type(error, status),
+        "param": openai_error_param(error),
+        "code": str(status),
+    }
+    return facts
+
+
 def call_value(call: Call) -> dict[str, JsonValue]:
     install_registries(call)
     auth = build_auth(call)
@@ -103,6 +121,8 @@ def call_value(call: Call) -> dict[str, JsonValue]:
                 data, call["metadata_variable_name"], auth
             )
         )
+    except HTTPException as error:
+        return rejection_facts(error)
     finally:
         logger.removeHandler(warnings)
         logger.setLevel(saved_level)
