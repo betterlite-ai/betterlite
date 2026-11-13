@@ -104,6 +104,7 @@ Input: TypeAlias = MessagesInput | SeedingInput | ProjectionInput
 
 
 def install(probe: Setup) -> None:
+    litellm.suppress_debug_info = True
     litellm.enable_anthropic_prompt_caching = probe.get("global_enable") is True
     litellm.anthropic_prompt_caching_ttl = probe.get("ttl")
     litellm.api_base = probe.get("global_api_base")
@@ -152,14 +153,14 @@ def chat_seeding(probe: SeedingProbe) -> JsonValue:
 
 def router_projection(probe: ProjectionProbe) -> JsonValue:
     install(probe)
-    messages = project_messages(
-        messages=probe["messages"],
-        models=probe["models"],
+    projected = project_messages(
+        probe["messages"],
+        probe["models"],
         tools=probe.get("tools"),
         enable_prompt_caching=probe.get("enable_prompt_caching"),
         request_kwargs=probe.get("request_kwargs"),
     )
-    return {"messages": JSON.validate_json(json.dumps(messages))}
+    return {"messages": JSON.validate_json(json.dumps(projected))}
 
 
 def run(input_value: Input) -> JsonValue:

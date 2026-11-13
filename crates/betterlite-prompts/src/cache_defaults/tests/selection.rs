@@ -124,7 +124,7 @@ fn an_explicit_custom_provider_resolves_the_capability() {
         ..Setup::claude()
     };
     assert_eq!(
-        wire(&defaults(&setup, &Facts::none())),
+        wire(&defaults(&setup, &Facts::claude())),
         json(DEFAULT_POINTS)
     );
 }
@@ -136,7 +136,7 @@ fn an_explicit_non_anthropic_provider_stands_down() {
         custom_llm_provider: Some("openai".to_owned()),
         ..Setup::claude()
     };
-    assert!(defaults(&setup, &Facts::none()).is_empty());
+    assert!(defaults(&setup, &Facts::claude()).is_empty());
 }
 
 #[rstest]

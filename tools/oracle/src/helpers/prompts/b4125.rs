@@ -77,6 +77,28 @@ pub(crate) struct SeedingProbe {
     model_cost: BTreeMap<String, Json>,
 }
 
+impl SeedingProbe {
+    fn seeding<'probe>(
+        &'probe self,
+        params: &'probe mut Object,
+        policy: CachePolicy<'probe>,
+    ) -> ChatSeeding<'probe> {
+        ChatSeeding {
+            model: &self.model,
+            custom_llm_provider: None,
+            messages: &self.messages,
+            params,
+            tools: self.tools.as_deref(),
+            enable_prompt_caching: self.enable_prompt_caching,
+            api_base: None,
+            global_api_base: self.global_api_base.as_deref(),
+            environment: &self.environment,
+            alias_map: &self.alias_map,
+            policy,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ProjectionProbe {
@@ -130,9 +152,24 @@ impl crate::helpers::Helper for Op {
 
 struct Facts<'input> {
     model_cost: &'input BTreeMap<String, Json>,
+    policy: CachePolicy<'input>,
 }
 
-impl Facts<'_> {
+impl<'input> Facts<'input> {
+    fn new(
+        model_cost: &'input BTreeMap<String, Json>,
+        global_enabled: bool,
+        ttl: Option<&'input str>,
+    ) -> Self {
+        Self {
+            model_cost,
+            policy: CachePolicy {
+                global_enabled,
+                ttl,
+            },
+        }
+    }
+
     fn flag(&self, model: &str, name: &str) -> Option<bool> {
         match self.model_cost.get(model)?.as_object()?.get(name)? {
             Json::Bool(flag) => Some(*flag),
@@ -172,9 +209,7 @@ impl CacheFacts for Facts<'_> {
 }
 
 fn result(probe: &Probe) -> Result<Value, Box<HelperError>> {
-    let facts = Facts {
-        model_cost: &probe.model_cost,
-    };
+    let facts = Facts::new(&probe.model_cost, probe.global_enable, probe.ttl.as_deref());
     let mut params = probe.params.clone();
     let placed = maybe_inject_cache_control(
         MessagesInjection {
@@ -187,10 +222,7 @@ fn result(probe: &Probe) -> Result<Value, Box<HelperError>> {
             api_base: None,
             global_api_base: probe.global_api_base.as_deref(),
             environment: &probe.environment,
-            policy: CachePolicy {
-                global_enabled: probe.global_enable,
-                ttl: probe.ttl.as_deref(),
-            },
+            policy: facts.policy,
         },
         &facts,
     )
@@ -203,37 +235,15 @@ fn result(probe: &Probe) -> Result<Value, Box<HelperError>> {
 }
 
 fn seeded(probe: &SeedingProbe) -> Result<Value, Box<HelperError>> {
-    let facts = Facts {
-        model_cost: &probe.model_cost,
-    };
+    let facts = Facts::new(&probe.model_cost, probe.global_enable, probe.ttl.as_deref());
     let mut params = probe.params.clone();
-    seed_default_injection_points(
-        ChatSeeding {
-            model: &probe.model,
-            custom_llm_provider: None,
-            messages: &probe.messages,
-            params: &mut params,
-            tools: probe.tools.as_deref(),
-            enable_prompt_caching: probe.enable_prompt_caching,
-            api_base: None,
-            global_api_base: probe.global_api_base.as_deref(),
-            environment: &probe.environment,
-            alias_map: &probe.alias_map,
-            policy: CachePolicy {
-                global_enabled: probe.global_enable,
-                ttl: probe.ttl.as_deref(),
-            },
-        },
-        &facts,
-    )
-    .or_value_error()?;
+    seed_default_injection_points(probe.seeding(&mut params, facts.policy), &facts)
+        .or_value_error()?;
     Ok(json!({ "params": params }))
 }
 
 fn projected(probe: &ProjectionProbe) -> Value {
-    let facts = Facts {
-        model_cost: &probe.model_cost,
-    };
+    let facts = Facts::new(&probe.model_cost, probe.global_enable, probe.ttl.as_deref());
     let no_kwargs = Object::new();
     let messages = messages_with_defaults(
         &RouterProjection {
@@ -243,10 +253,7 @@ fn projected(probe: &ProjectionProbe) -> Value {
             enable_prompt_caching: probe.enable_prompt_caching,
             request_kwargs: probe.request_kwargs.as_ref().unwrap_or(&no_kwargs),
             alias_map: &probe.alias_map,
-            policy: CachePolicy {
-                global_enabled: probe.global_enable,
-                ttl: probe.ttl.as_deref(),
-            },
+            policy: facts.policy,
         },
         &facts,
     );
