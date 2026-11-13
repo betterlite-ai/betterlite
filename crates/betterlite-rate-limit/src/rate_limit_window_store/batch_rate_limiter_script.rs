@@ -3,7 +3,7 @@ use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use super::{WindowStore, WindowStoreError};
 use crate::limiter_records::{CacheCounterValue, counter_values_from_reply};
 
-pub const BATCH_RATE_LIMITER_SCRIPT: &str = r#"
+pub const BATCH_RATE_LIMITER_SCRIPT: &str = "
 local results = {}
 local now = tonumber(ARGV[1])
 local window_size = tonumber(ARGV[2])
@@ -35,7 +35,7 @@ for i = 1, #KEYS, 2 do
 end
 
 return results
-"#;
+";
 
 #[must_use]
 pub fn window_script_args(now_int: i64, window_size: i64) -> Vec<RedisScalar> {

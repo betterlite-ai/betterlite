@@ -5,6 +5,7 @@ use std::sync::Arc;
 use betterlite_redis::batch::error::BatchError;
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use betterlite_redis::redis_counters::RedisCountersError;
+use tokio::sync::Mutex;
 
 use self::counter_value::CounterValueError;
 use crate::limiter_records::{CacheCounterValue, CounterReplyError, ScriptReply};
@@ -77,7 +78,7 @@ pub struct WindowStore {
     pub counter_read_script: Option<Arc<dyn CounterScript>>,
     pub request_batch: Option<Arc<dyn RequestBatchSource>>,
     // LiteLLM's _check_and_increment_lock, held across the reads and writes of one sliding-window pass
-    pub check_and_increment_lock: tokio::sync::Mutex<()>,
+    pub check_and_increment_lock: Mutex<()>,
 }
 
 #[derive(Debug, thiserror::Error)]

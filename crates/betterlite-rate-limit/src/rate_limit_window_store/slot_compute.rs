@@ -1,4 +1,4 @@
-pub const REDIS_CLUSTER_SLOTS: u16 = 16_384;
+pub const REDIS_CLUSTER_SLOTS: u16 = 0x4000;
 
 // Redis computes CRC16(key) % 16384, and 16384 is a power of two, so the mask gives the same slot without a remainder that can panic
 const SLOT_BITS: u16 = 0x3FFF;

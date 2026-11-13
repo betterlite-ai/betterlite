@@ -34,7 +34,7 @@ fn calls() -> Vec<ScriptCall> {
 fn batched(reply: ScriptReply) -> (WindowStore, Arc<FakeBatch>) {
     let batch = FakeBatch::new(reply);
     let source = Arc::new(FakeBatchSource {
-        batch: Arc::clone(&batch),
+        batch: Some(Arc::clone(&batch)),
     });
     let mut store = store_with(FakeCache::new(Some(RedisCacheKind::Standalone)));
     store.request_batch = Some(source);
@@ -44,6 +44,17 @@ fn batched(reply: ScriptReply) -> (WindowStore, Arc<FakeBatch>) {
 #[test]
 fn no_open_batch_leaves_every_call_unbatched() {
     let store = store_with(FakeCache::new(Some(RedisCacheKind::Standalone)));
+    let script: Arc<dyn CounterScript> = FakeScript::new("return {}", Vec::new());
+    let handles = pipeline_scripts(&store, &script, &calls());
+    assert_eq!(handles.len(), 2);
+    assert!(handles.iter().all(Option::is_none));
+}
+
+#[test]
+fn a_source_without_an_active_batch_declares_no_script_call() {
+    let source = Arc::new(FakeBatchSource { batch: None });
+    let mut store = store_with(FakeCache::new(Some(RedisCacheKind::Standalone)));
+    store.request_batch = Some(source);
     let script: Arc<dyn CounterScript> = FakeScript::new("return {}", Vec::new());
     let handles = pipeline_scripts(&store, &script, &calls());
     assert_eq!(handles.len(), 2);

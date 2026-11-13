@@ -6,11 +6,15 @@ use super::read_counter_values_from_redis;
 use crate::limiter_records::{CacheCounterValue, ScriptReply};
 use crate::rate_limit_window_store::batch_counter_read_script::BATCH_COUNTER_READ_SCRIPT;
 use crate::rate_limit_window_store::tests::support::{FakeCache, FakeScript, key_list, store_with};
-use crate::rate_limit_window_store::{RedisCacheKind, WindowStore};
+use crate::rate_limit_window_store::{CounterScript, RedisCacheKind, WindowStore};
 
-fn store_with_script(script: &Arc<FakeScript>, kind: Option<RedisCacheKind>) -> WindowStore {
+fn store_with_script<S>(script: &Arc<S>, kind: Option<RedisCacheKind>) -> WindowStore
+where
+    S: CounterScript + 'static,
+{
     let mut store = store_with(FakeCache::new(kind));
-    store.counter_read_script = Some(Arc::clone(script));
+    let script = Arc::clone(script);
+    store.counter_read_script = Some(script);
     store
 }
 

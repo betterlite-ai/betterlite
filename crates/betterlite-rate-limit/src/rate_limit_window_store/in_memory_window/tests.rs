@@ -1,6 +1,9 @@
 #![cfg(test)]
 
+use std::future::Future;
+use std::pin::pin;
 use std::sync::Arc;
+use std::task::{Context, Waker};
 
 use rstest::rstest;
 
@@ -102,6 +105,54 @@ async fn a_live_window_increments_the_counter_only() {
             local_only: true,
         }]
     );
+}
+
+#[tokio::test]
+async fn a_live_window_without_a_counter_counts_the_first_request() {
+    let cache = FakeCache::new(Some(RedisCacheKind::Standalone));
+    cache.seed(&window_key(), CacheCounterValue::Text("90".to_owned()));
+    let store = store_with(Arc::clone(&cache));
+    let values = in_memory_cache_sliding_window(&store, &pair(), 100, WINDOW_TTL)
+        .await
+        .expect("the sliding window pass");
+    assert_eq!(
+        values,
+        vec![
+            Some(CacheCounterValue::Text("90".to_owned())),
+            Some(CacheCounterValue::Int(1)),
+        ]
+    );
+    assert_eq!(
+        cache.writes(),
+        vec![CacheWrite {
+            key: counter_key(),
+            value: CacheCounterValue::Int(1),
+            ttl: WINDOW_TTL,
+            local_only: true,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn a_pass_waits_for_the_check_and_increment_lock() {
+    let cache = FakeCache::new(Some(RedisCacheKind::Standalone));
+    let store = store_with(Arc::clone(&cache));
+    let guard = store.check_and_increment_lock.lock().await;
+    let pass = in_memory_cache_sliding_window(&store, &pair(), 100, WINDOW_TTL);
+    let mut pass = pin!(pass);
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(pass.as_mut().poll(&mut context).is_pending());
+    assert!(cache.gets().is_empty());
+    drop(guard);
+    let values = pass.await.expect("the sliding window pass");
+    assert_eq!(
+        values,
+        vec![
+            Some(CacheCounterValue::Text("100".to_owned())),
+            Some(CacheCounterValue::Int(1)),
+        ]
+    );
+    assert_eq!(cache.gets().len(), 1);
 }
 
 #[rstest]

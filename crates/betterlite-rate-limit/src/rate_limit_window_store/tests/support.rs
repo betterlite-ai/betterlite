@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use betterlite_redis::batch::error::BatchError;
 use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use betterlite_redis::redis_counters::RedisCountersError;
+use tokio::sync::Mutex as AsyncMutex;
 use tracing::Level;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt;
@@ -20,13 +21,16 @@ pub(crate) fn key_list(values: &[&str]) -> Vec<String> {
     values.iter().map(|value| (*value).to_owned()).collect()
 }
 
-pub(crate) fn store_with(cache: Arc<dyn CounterCache>) -> WindowStore {
+pub(crate) fn store_with<C>(cache: Arc<C>) -> WindowStore
+where
+    C: CounterCache + 'static,
+{
     WindowStore {
         cache,
         rate_limiter_script: None,
         counter_read_script: None,
         request_batch: None,
-        check_and_increment_lock: tokio::sync::Mutex::new(()),
+        check_and_increment_lock: AsyncMutex::new(()),
     }
 }
 
@@ -237,13 +241,13 @@ impl ScriptBatch for FakeBatch {
 }
 
 pub(crate) struct FakeBatchSource {
-    pub(crate) batch: Arc<FakeBatch>,
+    pub(crate) batch: Option<Arc<FakeBatch>>,
 }
 
 impl RequestBatchSource for FakeBatchSource {
     fn active_batch(&self) -> Option<Arc<dyn ScriptBatch>> {
-        let batch: Arc<dyn ScriptBatch> = Arc::clone(&self.batch);
-        Some(batch)
+        let batch = self.batch.as_ref()?;
+        Some(Arc::<FakeBatch>::clone(batch))
     }
 }
 

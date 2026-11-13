@@ -39,8 +39,7 @@ async fn reset_window(
     now_int: i64,
     window_size: i64,
 ) -> CounterValues {
-    let (requests_key, tokens_key) = sibling_counter_keys(window_key);
-    for sibling in [requests_key, tokens_key] {
+    for sibling in <[String; 2]>::from(sibling_counter_keys(window_key)) {
         store
             .cache
             .set_cache(&sibling, CacheCounterValue::Int(0), window_size, true)

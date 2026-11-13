@@ -11,16 +11,16 @@ fn the_crc16_check_value_matches_the_standard_vector() {
 }
 
 #[test]
-fn the_slot_mask_is_the_cluster_slot_count_minus_one() {
-    assert_eq!(REDIS_CLUSTER_SLOTS, 16_384);
-    assert_eq!(SLOT_BITS, REDIS_CLUSTER_SLOTS - 1);
+fn the_slot_count_and_its_mask_are_the_cluster_values() {
+    assert_eq!(REDIS_CLUSTER_SLOTS, 0x4000);
+    assert_eq!(SLOT_BITS, 0x3FFF);
 }
 
 #[rstest]
-#[case::foo("foo", 12_182)]
-#[case::bar("bar", 5_061)]
+#[case::foo("foo", 0x2F96)]
+#[case::bar("bar", 0x13C5)]
 #[case::hello("hello", 866)]
-#[case::tagged("a{tag}b", 8338)]
+#[case::tagged("a{tag}b", 0x2092)]
 fn a_key_lands_on_the_slot_binascii_crc_hqx_gives(#[case] key: &str, #[case] slot: u16) {
     assert_eq!(keyslot_for_redis_cluster(key), slot);
     assert!(keyslot_for_redis_cluster(key) < REDIS_CLUSTER_SLOTS);

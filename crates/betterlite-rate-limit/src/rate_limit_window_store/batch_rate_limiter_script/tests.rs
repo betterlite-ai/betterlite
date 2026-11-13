@@ -7,10 +7,51 @@ use betterlite_redis::cache_primitives::protocol::RedisScalar;
 use super::{BATCH_RATE_LIMITER_SCRIPT, run_batch_rate_limiter_script, window_script_args};
 use crate::limiter_records::{CacheCounterValue, ScriptReply};
 use crate::rate_limit_window_store::tests::support::{FakeCache, FakeScript, key_list, store_with};
-use crate::rate_limit_window_store::{RedisCacheKind, WindowStore, WindowStoreError};
+use crate::rate_limit_window_store::{
+    CounterScript, RedisCacheKind, WindowStore, WindowStoreError,
+};
 
-fn register(store: &mut WindowStore, script: &Arc<FakeScript>) {
-    store.rate_limiter_script = Some(Arc::clone(script));
+// LiteLLM's BATCH_RATE_LIMITER_SCRIPT at parallel_request_limiter_v3.py:168-205, comments removed
+const PORTED_SCRIPT: &str = "
+local results = {}
+local now = tonumber(ARGV[1])
+local window_size = tonumber(ARGV[2])
+
+for i = 1, #KEYS, 2 do
+    local window_key = KEYS[i]
+    local counter_key = KEYS[i + 1]
+    local increment_value = 1
+
+    local window_start = redis.call('GET', window_key)
+    if not window_start or (now - tonumber(window_start)) >= window_size then
+        local prefix = string.sub(window_key, 1, -(#':window') - 1)
+        redis.call('DEL', prefix .. ':requests', prefix .. ':tokens')
+        redis.call('SET', window_key, tostring(now))
+        redis.call('SET', counter_key, increment_value)
+        redis.call('EXPIRE', window_key, window_size)
+        redis.call('EXPIRE', counter_key, window_size)
+        table.insert(results, tostring(now))
+        table.insert(results, increment_value)
+    else
+        local counter = redis.call('INCR', counter_key)
+        local current_ttl = redis.call('TTL', counter_key)
+        if current_ttl == -1 then
+            redis.call('EXPIRE', counter_key, window_size)
+        end
+        table.insert(results, window_start)
+        table.insert(results, counter)
+    end
+end
+
+return results
+";
+
+fn register<S>(store: &mut WindowStore, script: &Arc<S>)
+where
+    S: CounterScript + 'static,
+{
+    let script = Arc::clone(script);
+    store.rate_limiter_script = Some(script);
 }
 
 fn pair_reply() -> Vec<ScriptReply> {
@@ -18,66 +59,8 @@ fn pair_reply() -> Vec<ScriptReply> {
 }
 
 #[test]
-fn the_script_pairs_each_window_with_its_counter() {
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("for i = 1, #KEYS, 2 do"));
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("local window_key = KEYS[i]"));
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("local counter_key = KEYS[i + 1]"));
-}
-
-#[test]
-fn the_script_reads_the_now_and_window_size_arguments() {
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("local now = tonumber(ARGV[1])"));
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("local window_size = tonumber(ARGV[2])"));
-}
-
-#[test]
-fn the_script_resets_an_expired_window() {
-    assert!(
-        BATCH_RATE_LIMITER_SCRIPT
-            .contains("if not window_start or (now - tonumber(window_start)) >= window_size then")
-    );
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("redis.call('SET', window_key, tostring(now))"));
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("redis.call('SET', counter_key, increment_value)"));
-}
-
-#[test]
-fn the_script_clears_the_sibling_request_and_token_counters() {
-    assert!(
-        BATCH_RATE_LIMITER_SCRIPT
-            .contains("local prefix = string.sub(window_key, 1, -(#':window') - 1)")
-    );
-    assert!(
-        BATCH_RATE_LIMITER_SCRIPT
-            .contains("redis.call('DEL', prefix .. ':requests', prefix .. ':tokens')")
-    );
-}
-
-#[test]
-fn the_script_sets_the_window_and_counter_ttl_on_a_reset() {
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("redis.call('EXPIRE', window_key, window_size)"));
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("redis.call('EXPIRE', counter_key, window_size)"));
-}
-
-#[test]
-fn the_script_increments_within_a_live_window() {
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("local counter = redis.call('INCR', counter_key)"));
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("table.insert(results, window_start)"));
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("table.insert(results, counter)"));
-}
-
-#[test]
-fn the_script_repairs_a_counter_without_a_ttl() {
-    assert!(
-        BATCH_RATE_LIMITER_SCRIPT.contains("local current_ttl = redis.call('TTL', counter_key)")
-    );
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("if current_ttl == -1 then"));
-}
-
-#[test]
-fn the_script_returns_the_window_start_and_counter_of_every_pair() {
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("table.insert(results, tostring(now))"));
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("table.insert(results, increment_value)"));
-    assert!(BATCH_RATE_LIMITER_SCRIPT.contains("return results"));
+fn the_script_is_the_ported_litellm_text_with_its_comments_removed() {
+    assert_eq!(BATCH_RATE_LIMITER_SCRIPT, PORTED_SCRIPT);
 }
 
 #[test]

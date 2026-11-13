@@ -3,7 +3,6 @@ use crate::limiter_records::{CacheCounterValue, CounterReplyError, ScriptReply, 
 
 pub const BATCH_COUNTER_READ_SCRIPT: &str = "return redis.call('MGET', unpack(KEYS))";
 
-#[must_use]
 pub fn counter_read_values_from_reply(
     reply: &ScriptReply,
 ) -> Result<CounterValues, CounterReplyError> {
