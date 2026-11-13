@@ -1,0 +1,22 @@
+kind: helper
+name: jsonpath-array-wildcard
+call:
+  b3601:
+    calls:
+      - function: evaluate
+        data: {documents: [{text: first}, {text: second}]}
+        expression: "documents[*].text"
+      - function: extract_fields
+        data: {documents: [{text: first}, {text: second}]}
+        expressions: ["documents[*].text"]
+      - function: evaluate
+        data: {messages: [{content: [a, b]}, {content: [c]}]}
+        expression: "messages[*].content"
+      - function: evaluate
+        data: {documents: []}
+        expression: "documents[*]"
+      - function: evaluate
+        data: {documents: [a, b]}
+        expression: "documents[*]"
+env: {}
+compare: {ignore: []}

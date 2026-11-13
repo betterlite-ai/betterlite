@@ -1,9 +1,9 @@
 mod tests;
 
-use std::fs::{self, File};
+use std::env;
+use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
 
 use crate::affected::finish;
 use crate::error::GateError;
@@ -24,6 +24,16 @@ pub(crate) fn branch_name(task: &Task) -> String {
     format!("task/{}-{}", task.id, trimmed.trim_end_matches('-'))
 }
 
+// bin/cargo runs the shared build of a clean gate version, so a checkout's own 625 MB gate build is waste (142 checkouts held one on 11-13)
+fn needs_own_gate(path: &Path, shared_builds: Option<&Path>) -> Result<bool, GateError> {
+    let Some(builds) = shared_builds else {
+        return Ok(true);
+    };
+    let tree = git(path, &["rev-parse", "HEAD:.development/gate"])?;
+    let changes = git(path, &["status", "--porcelain", "--", ".development/gate"])?;
+    Ok(!changes.is_empty() || !builds.join(tree.trim()).join("gate").is_file())
+}
+
 pub(crate) fn ensure(
     root: &Path,
     worktrees: &str,
@@ -32,29 +42,28 @@ pub(crate) fn ensure(
     let branch = branch_name(task);
     let folder = root.join(worktrees);
     let path = folder.join(&task.id);
-    let new = !path.join(".git").exists();
     prepare(root, &path, &branch)?;
-    if new {
-        seed(&folder.join("clippy-seed"), &path)?;
-    }
     // inside the worker sandbox uv cannot hardlink from its cache and copies the whole LiteLLM venv
     finish(
         "uv",
         &["sync", "--locked", "--quiet"],
         &path.join("tools/oracle/litellm"),
     )?;
-    // the alias builds the gate quietly, and workers took that silent first cargo gate for a hang and quit
-    finish(
-        "cargo",
-        &[
-            "build",
-            "--quiet",
-            "--locked",
-            "--manifest-path",
-            ".development/gate/Cargo.toml",
-        ],
-        &path,
-    )?;
+    let shared_builds = env::var_os("GATE_SHARED_BUILDS").map(PathBuf::from);
+    if needs_own_gate(&path, shared_builds.as_deref())? {
+        // the alias builds the gate quietly, and workers took that silent first cargo gate for a hang and quit
+        finish(
+            "cargo",
+            &[
+                "build",
+                "--quiet",
+                "--locked",
+                "--manifest-path",
+                ".development/gate/Cargo.toml",
+            ],
+            &path,
+        )?;
+    }
     // Claude's sandbox matches writable paths literally, so a path through .. would not cover the worktree
     let canonical = fs::canonicalize(&path).map_err(|source| GateError::Read {
         path: path.clone(),
@@ -109,24 +118,18 @@ fn configure(root: &Path, target: &Path) -> Result<(), GateError> {
     )?;
     // commit and fetch start a detached gc, and its reflog expire holds HEAD.lock while the next git command needs it
     git(target, &["config", "maintenance.auto", "false"])?;
-    for key in [
-        "user.name",
-        "user.email",
-        "commit.gpgsign",
-        "core.hooksPath",
-    ] {
+    for key in ["user.name", "user.email", "commit.gpgsign"] {
         if let Ok(value) = git(root, &["config", "--get", key]) {
             git(target, &["config", key, value.trim()])?;
         }
     }
+    // CI runs the hooks on the pull request, and on 11-13 a worker commit that ran them took 158 s on average
     for name in ["pre-commit", "pre-push"] {
-        let hook = coordinator.join("hooks").join(name);
-        if hook.is_file() {
-            let destination = target.join(".git/hooks").join(name);
-            fs::copy(&hook, &destination).map_err(|source| GateError::Write {
-                path: destination,
-                source,
-            })?;
+        let hook = target.join(".git/hooks").join(name);
+        match fs::remove_file(&hook) {
+            Ok(()) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(source) => return Err(GateError::Write { path: hook, source }),
         }
     }
     Ok(())
@@ -159,81 +162,6 @@ fn prepare(root: &Path, target: &Path, branch: &str) -> Result<(), GateError> {
         git(target, &["switch", "--no-track", "-c", branch, &base])?;
     }
     configure(&canonical, target)
-}
-
-// cargo rebuilds a unit when a source is newer than its output, so copied units stay fresh only under older sources
-fn seed(store: &Path, checkout: &Path) -> Result<(), GateError> {
-    let Some(commit) = copy_seed(store, checkout)? else {
-        return Ok(());
-    };
-    // 2000 rather than 1970, since zip and wheel builds refuse dates before 1980
-    let old = SystemTime::UNIX_EPOCH
-        .checked_add(Duration::from_hours(262_968))
-        .ok_or_else(|| refuse(checkout, "the year 2000 is not a valid file time"))?;
-    for name in git(checkout, &["ls-files", "-z"])?.split_terminator('\0') {
-        stamp(&checkout.join(name), old)?;
-    }
-    let changed = ["diff", "--name-only", "-z", commit.trim(), "HEAD"];
-    let now = SystemTime::now();
-    for name in git(checkout, &changed)?.split_terminator('\0') {
-        stamp(&checkout.join(name), now)?;
-    }
-    git(checkout, &["update-index", "-q", "--refresh"])?;
-    Ok(())
-}
-
-fn copy_seed(store: &Path, checkout: &Path) -> Result<Option<String>, GateError> {
-    let recorded = store.join("commit");
-    if !recorded.is_file() {
-        return Ok(None);
-    }
-    let lock = store.join("lock");
-    let shared = File::open(&lock).map_err(|source| GateError::Read {
-        path: lock.clone(),
-        source,
-    })?;
-    shared
-        .lock_shared()
-        .map_err(|source| GateError::Lock { path: lock, source })?;
-    let commit = fs::read_to_string(&recorded).map_err(|source| GateError::Read {
-        path: recorded,
-        source,
-    })?;
-    let snapshot = store.join("target");
-    let copy = checkout.join("target");
-    finish(
-        "cp",
-        &[
-            "-a",
-            snapshot
-                .to_str()
-                .ok_or(GateError::NotUnicode("the clippy seed"))?,
-            copy.to_str()
-                .ok_or(GateError::NotUnicode("the task checkout"))?,
-        ],
-        checkout,
-    )?;
-    Ok(Some(commit))
-}
-
-fn stamp(path: &Path, time: SystemTime) -> Result<(), GateError> {
-    match fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.is_file() => {}
-        Ok(_) => return Ok(()),
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
-        Err(source) => {
-            return Err(GateError::Read {
-                path: path.to_owned(),
-                source,
-            });
-        }
-    }
-    File::open(path)
-        .and_then(|file| file.set_modified(time))
-        .map_err(|source| GateError::Write {
-            path: path.to_owned(),
-            source,
-        })
 }
 
 fn idle(target: &Path) -> Result<(), GateError> {

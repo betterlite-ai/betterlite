@@ -25,6 +25,7 @@ regex.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_with = "3.24.0"
 sha2 = "0.11.1"
 thiserror.workspace = true
 tracing.workspace = true

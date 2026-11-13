@@ -207,6 +207,7 @@ footer p { margin: 0 0 0.25rem; }
 .stage-about p { margin: 0 0 0.75rem; }
 @media (min-width: 64rem) {
   .stage-about { display: grid; grid-template-columns: repeat(2, 1fr); column-gap: 2rem; }
-  .stage-about p:last-child { grid-column: 1 / -1; }
+  /* stage 3 takes a full row, so the paragraphs around it sit in pairs */
+  .stage-about p:nth-child(3) { grid-column: 1 / -1; }
 }
 .table-note { font-size: 0.8125rem; color: var(--muted); margin: 0.5rem 0 0; max-width: 42rem; }
