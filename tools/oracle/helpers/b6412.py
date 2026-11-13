@@ -4,17 +4,11 @@ from typing import Literal, Protocol, TypeAlias, TypedDict
 import httpx
 import litellm
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
-from litellm.llms.ovhcloud.audio_transcription.transformation import (
-    OVHCloudAudioTranscriptionConfig,
-)
-from litellm.llms.ovhcloud.chat.transformation import (
-    OVHCloudChatCompletionStreamingHandler,
-    OVHCloudChatConfig,
-)
+from litellm.llms.ovhcloud.audio_transcription.transformation import OVHCloudAudioTranscriptionConfig
+from litellm.llms.ovhcloud.chat.transformation import OVHCloudChatConfig
+from litellm.llms.ovhcloud.chat.transformation import OVHCloudChatCompletionStreamingHandler as OvhHandler
 from litellm.llms.ovhcloud.embedding.transformation import OVHCloudEmbeddingConfig
-from litellm.llms.scaleway.audio_transcription.transformation import (
-    ScalewayAudioTranscriptionConfig,
-)
+from litellm.llms.scaleway.audio_transcription.transformation import ScalewayAudioTranscriptionConfig
 from litellm.types.utils import EmbeddingResponse
 from pydantic import JsonValue, TypeAdapter
 
@@ -25,17 +19,10 @@ NO_MESSAGES: list[dict[str, JsonValue]] = []
 
 
 class ChunkView(Protocol):
-    @property
-    def id(self) -> str: ...
-
-    @property
-    def object(self) -> str: ...
-
-    @property
-    def created(self) -> int: ...
-
-    @property
-    def model(self) -> str | None: ...
+    id: str
+    object: str
+    created: int
+    model: str | None
 
 
 class ReplyView(Protocol):
@@ -91,11 +78,7 @@ class EmbeddingConfig(Config, Protocol):
     ) -> dict[str, JsonValue]: ...
 
     def transform_embedding_request(
-        self,
-        model: str,
-        input_value: JsonValue,
-        optional_params: dict[str, JsonValue],
-        headers: dict[str, JsonValue],
+        self, model: str, input_value: JsonValue, optional_params: dict[str, JsonValue], headers: dict[str, JsonValue]
     ) -> dict[str, JsonValue]: ...
 
     def transform_embedding_response(
@@ -120,10 +103,7 @@ class AudioConfig(Config, Protocol):
         litellm_params: dict[str, JsonValue],
     ) -> RequestData: ...
 
-    def transform_audio_transcription_response(
-        self,
-        raw_response: httpx.Response,
-    ) -> ReplyView: ...
+    def transform_audio_transcription_response(self, raw_response: httpx.Response) -> ReplyView: ...
 
 
 class Handler(Protocol):
@@ -136,6 +116,33 @@ class ChatRequestCall(TypedDict):
     optional_params: dict[str, JsonValue]
 
 
+class HeaderCall(TypedDict):
+    api_key: str | None
+    headers: dict[str, str]
+    env: dict[str, str]
+
+
+class ReplyCall(TypedDict):
+    body: str
+    status: int
+    headers: dict[str, str]
+
+
+class EmbeddingCall(TypedDict):
+    model: str
+    input: JsonValue
+    non_default_params: dict[str, JsonValue]
+
+
+class TranscriptionCall(TypedDict):
+    api_base: str | None
+    model: str
+    optional_params: dict[str, JsonValue]
+    filename: str
+    content: str
+    env: dict[str, str]
+
+
 class ChatRequestInput(TypedDict):
     function: Literal["chat_request"]
     requests: list[ChatRequestCall]
@@ -146,38 +153,11 @@ class ChunksInput(TypedDict):
     chunks: list[dict[str, JsonValue]]
 
 
-class HeaderCall(TypedDict):
-    api_key: str | None
-    headers: dict[str, str]
-    env: dict[str, str]
-
-
-class EmbeddingCall(TypedDict):
-    model: str
-    input: JsonValue
-    non_default_params: dict[str, JsonValue]
-
-
-class ReplyCall(TypedDict):
-    body: str
-    status: int
-    headers: dict[str, str]
-
-
 class EmbeddingInput(TypedDict):
     function: Literal["embedding"]
     headers: list[HeaderCall]
     requests: list[EmbeddingCall]
     replies: list[ReplyCall]
-
-
-class TranscriptionCall(TypedDict):
-    api_base: str | None
-    model: str
-    optional_params: dict[str, JsonValue]
-    filename: str
-    content: str
-    env: dict[str, str]
 
 
 class TranscriptionInput(TypedDict):
@@ -193,13 +173,7 @@ class ScalewayKeyInput(TypedDict):
     replies: list[ReplyCall]
 
 
-Input: TypeAlias = (
-    ChatRequestInput
-    | ChunksInput
-    | EmbeddingInput
-    | TranscriptionInput
-    | ScalewayKeyInput
-)
+Input: TypeAlias = ChatRequestInput | ChunksInput | EmbeddingInput | TranscriptionInput | ScalewayKeyInput
 
 OVH_EMBEDDING: EmbeddingConfig = OVHCloudEmbeddingConfig()
 OVH_AUDIO: AudioConfig = OVHCloudAudioTranscriptionConfig()
@@ -222,22 +196,10 @@ def response_of(call: ReplyCall) -> httpx.Response:
 
 
 def chat_request(config: ChatConfig, call: ChatRequestCall) -> JsonValue:
-    url = config.get_complete_url(
-        api_base=call["api_base"],
-        api_key=None,
-        model=call["model"],
-        optional_params=EMPTY,
-        litellm_params=EMPTY,
-    )
+    url = config.get_complete_url(call["api_base"], None, call["model"], EMPTY, EMPTY)
     optional: dict[str, JsonValue] = dict(call["optional_params"])
     try:
-        body = config.transform_request(
-            model=call["model"],
-            messages=NO_MESSAGES,
-            optional_params=optional,
-            litellm_params=EMPTY,
-            headers=EMPTY,
-        )
+        body = config.transform_request(call["model"], NO_MESSAGES, optional, EMPTY, EMPTY)
     except (TypeError, ValueError):
         return {"url": url, "ok": False}
     return {"url": url, "ok": True, "value": body}
@@ -265,13 +227,7 @@ def header_value(config: Config, call: HeaderCall) -> JsonValue:
     apply_env(call["env"])
     try:
         headers = config.validate_environment(
-            headers=dict(call["headers"]),
-            model="m",
-            messages=NO_MESSAGES,
-            optional_params=EMPTY,
-            litellm_params=EMPTY,
-            api_key=call["api_key"],
-            api_base=None,
+            dict(call["headers"]), "m", NO_MESSAGES, EMPTY, dict(EMPTY), call["api_key"], None
         )
     except BaseLLMException as error:
         return {"ok": False, "status": error.status_code}
@@ -279,29 +235,15 @@ def header_value(config: Config, call: HeaderCall) -> JsonValue:
 
 
 def embedding_request(config: EmbeddingConfig, call: EmbeddingCall) -> JsonValue:
-    mapped = config.map_openai_params(
-        non_default_params=dict(call["non_default_params"]),
-        optional_params={},
-        model=call["model"],
-        drop_params=False,
-    )
-    body = config.transform_embedding_request(
-        call["model"], call["input"], mapped, EMPTY
-    )
+    mapped = config.map_openai_params(dict(call["non_default_params"]), {}, call["model"], False)
+    body = config.transform_embedding_request(call["model"], call["input"], mapped, EMPTY)
     return {"value": [[name, value] for name, value in body.items()]}
 
 
 def embedding_reply(config: EmbeddingConfig, call: ReplyCall) -> JsonValue:
     try:
         result = config.transform_embedding_response(
-            model="m",
-            raw_response=response_of(call),
-            model_response=EmbeddingResponse(),
-            logging_obj=EMPTY,
-            api_key=None,
-            request_data=EMPTY,
-            optional_params=EMPTY,
-            litellm_params=EMPTY,
+            "m", response_of(call), EmbeddingResponse(), EMPTY, None, EMPTY, EMPTY, EMPTY
         )
     except BaseLLMException as error:
         return {"ok": False, "status": error.status_code}
@@ -314,9 +256,7 @@ def embedding_reply(config: EmbeddingConfig, call: ReplyCall) -> JsonValue:
             "data": dumped["data"],
             "object": dumped["object"],
             "usage": {
-                "prompt_tokens": TypeAdapter(int).validate_python(
-                    usage["prompt_tokens"]
-                ),
+                "prompt_tokens": TypeAdapter(int).validate_python(usage["prompt_tokens"]),
                 "total_tokens": TypeAdapter(int).validate_python(usage["total_tokens"]),
             },
         },
@@ -325,30 +265,13 @@ def embedding_reply(config: EmbeddingConfig, call: ReplyCall) -> JsonValue:
 
 def transcription_request(config: AudioConfig, call: TranscriptionCall) -> JsonValue:
     apply_env(call["env"])
-    url = config.get_complete_url(
-        api_base=call["api_base"],
-        api_key=None,
-        model=call["model"],
-        optional_params=EMPTY,
-        litellm_params=EMPTY,
-    )
+    url = config.get_complete_url(call["api_base"], None, call["model"], EMPTY, EMPTY)
     try:
-        headers = config.validate_environment(
-            headers=NO_HEADERS,
-            model=call["model"],
-            messages=NO_MESSAGES,
-            optional_params=EMPTY,
-            litellm_params=EMPTY,
-            api_key=None,
-            api_base=None,
-        )
+        headers = config.validate_environment(NO_HEADERS, call["model"], NO_MESSAGES, EMPTY, dict(EMPTY), None, None)
     except BaseLLMException as error:
         return {"url": url, "ok": False, "status": error.status_code}
     data = config.transform_audio_transcription_request(
-        model=call["model"],
-        audio_file=(call["filename"], call["content"].encode()),
-        optional_params=dict(call["optional_params"]),
-        litellm_params=EMPTY,
+        call["model"], (call["filename"], call["content"].encode()), dict(call["optional_params"]), EMPTY
     )
     filename, content, content_type = data.files["file"]
     return {
@@ -356,19 +279,13 @@ def transcription_request(config: AudioConfig, call: TranscriptionCall) -> JsonV
         "ok": True,
         "headers": headers,
         "form": [[name, value] for name, value in data.data.items()],
-        "file": {
-            "filename": filename,
-            "content": content.decode(),
-            "content_type": content_type,
-        },
+        "file": {"filename": filename, "content": content.decode(), "content_type": content_type},
     }
 
 
 def transcription_reply(config: AudioConfig, call: ReplyCall) -> JsonValue:
     try:
-        result = config.transform_audio_transcription_response(
-            raw_response=response_of(call)
-        )
+        result = config.transform_audio_transcription_response(response_of(call))
     except BaseLLMException as error:
         return {"ok": False, "status": error.status_code}
     dumped = result.model_dump()
@@ -381,42 +298,24 @@ def transcription_reply(config: AudioConfig, call: ReplyCall) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     if input_value["function"] == "chunks":
-        handler: Handler = OVHCloudChatCompletionStreamingHandler(
-            streaming_response=iter([""]), sync_stream=False, json_mode=False
-        )
+        handler: Handler = OvhHandler(streaming_response=iter([""]), sync_stream=False, json_mode=False)
         return [chunk_value(handler, chunk) for chunk in input_value["chunks"]]
     if input_value["function"] == "chat_request":
         chat: ChatConfig = OVHCloudChatConfig()
         return [chat_request(chat, call) for call in input_value["requests"]]
     if input_value["function"] == "embedding":
         return {
-            "headers": [
-                header_value(OVH_EMBEDDING, call) for call in input_value["headers"]
-            ],
-            "requests": [
-                embedding_request(OVH_EMBEDDING, call)
-                for call in input_value["requests"]
-            ],
-            "replies": [
-                embedding_reply(OVH_EMBEDDING, call) for call in input_value["replies"]
-            ],
+            "headers": [header_value(OVH_EMBEDDING, call) for call in input_value["headers"]],
+            "requests": [embedding_request(OVH_EMBEDDING, call) for call in input_value["requests"]],
+            "replies": [embedding_reply(OVH_EMBEDDING, call) for call in input_value["replies"]],
         }
     if input_value["function"] == "scaleway_key":
         return {
-            "headers": [
-                header_value(SCALEWAY_AUDIO, call) for call in input_value["calls"]
-            ],
-            "replies": [
-                transcription_reply(SCALEWAY_AUDIO, reply)
-                for reply in input_value["replies"]
-            ],
+            "headers": [header_value(SCALEWAY_AUDIO, call) for call in input_value["calls"]],
+            "replies": [transcription_reply(SCALEWAY_AUDIO, reply) for reply in input_value["replies"]],
         }
     audio = OVH_AUDIO if input_value["provider"] == "ovhcloud" else SCALEWAY_AUDIO
     return {
-        "requests": [
-            transcription_request(audio, call) for call in input_value["requests"]
-        ],
-        "replies": [
-            transcription_reply(audio, reply) for reply in input_value["replies"]
-        ],
+        "requests": [transcription_request(audio, call) for call in input_value["requests"]],
+        "replies": [transcription_reply(audio, reply) for reply in input_value["replies"]],
     }
