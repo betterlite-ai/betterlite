@@ -390,6 +390,14 @@ pub(super) fn strict_tools_fallback() {
         ask("anthropic.claude-unmapped"),
         "every suppressed lookup failure leaves the default on"
     );
+    assert!(
+        ask("anthropic.claude-vnext"),
+        "a -v that does not start a numeric version stays in the name"
+    );
+    assert!(
+        ask("anthropic.claude-v1:beta"),
+        "a non-numeric revision stays in the name"
+    );
 }
 
 pub(super) fn effort_ceiling() {

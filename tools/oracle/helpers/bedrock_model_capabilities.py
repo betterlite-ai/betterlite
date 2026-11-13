@@ -1,6 +1,5 @@
 import os
-from typing import Literal, NotRequired, TypeAlias, TypedDict
-from unittest.mock import patch
+from typing import Literal, NotRequired, TypedDict
 
 import litellm
 from litellm.llms.bedrock.common_utils import (
@@ -14,9 +13,6 @@ from litellm.llms.bedrock.common_utils import (
     normalize_bedrock_opus_output_config_effort,
 )
 from pydantic import JsonValue
-
-Json: TypeAlias = JsonValue
-ModelCost: TypeAlias = dict[str, JsonValue]
 
 
 class MantleCase(TypedDict):
@@ -38,47 +34,47 @@ class MantleApiBase(TypedDict):
 
 class NativeResponses(TypedDict):
     function: Literal["native_responses"]
-    model_cost: ModelCost
+    model_cost: dict[str, JsonValue]
     models: list[str | None]
 
 
 class CachePointUnknownModel(TypedDict):
     function: Literal["cache_point_unknown_model"]
-    model_cost: ModelCost
+    model_cost: dict[str, JsonValue]
     models: list[str | None]
 
 
 class StrictToolsFallback(TypedDict):
     function: Literal["strict_tools_fallback"]
-    model_cost: ModelCost
+    model_cost: dict[str, JsonValue]
     models: list[str]
 
 
 class ToolSearch(TypedDict):
     function: Literal["tool_search"]
-    model_cost: ModelCost
+    model_cost: dict[str, JsonValue]
     models: list[str]
 
 
 class EffortCeiling(TypedDict):
     function: Literal["effort_ceiling"]
-    model_cost: ModelCost
+    model_cost: dict[str, JsonValue]
     cases: list[EffortCase]
 
 
 class ParallelTools(TypedDict):
     function: Literal["parallel_tools"]
-    model_cost: ModelCost
+    model_cost: dict[str, JsonValue]
     models: list[str]
 
 
 class ExtendedCacheTtl(TypedDict):
     function: Literal["extended_cache_ttl"]
-    model_cost: ModelCost
+    model_cost: dict[str, JsonValue]
     models: list[str]
 
 
-Input: TypeAlias = (
+Input = (
     MantleApiBase
     | NativeResponses
     | CachePointUnknownModel
@@ -90,22 +86,31 @@ Input: TypeAlias = (
 )
 
 
-def mantle_api_base(call: MantleApiBase) -> Json:
-    urls: list[Json] = []
+def install_environment(environment: dict[str, str]) -> dict[str, str]:
+    previous = dict(os.environ)
+    os.environ.clear()
+    os.environ.update(environment)
+    return previous
+
+
+def mantle_api_base(call: MantleApiBase) -> JsonValue:
+    urls: list[JsonValue] = []
     for case in call["cases"]:
-        with patch.dict(os.environ, case["environment"], clear=True):
-            urls.append(
-                build_mantle_messages_url(
-                    case.get("api_base"),
-                    case.get("aws_bedrock_runtime_endpoint"),
-                    call["region"],
-                )
+        previous = install_environment(case["environment"])
+        urls.append(
+            build_mantle_messages_url(
+                case.get("api_base"),
+                case.get("aws_bedrock_runtime_endpoint"),
+                call["region"],
             )
+        )
+        os.environ.clear()
+        os.environ.update(previous)
     return {"urls": urls}
 
 
-def native_responses(call: NativeResponses) -> Json:
-    results: list[Json] = []
+def native_responses(call: NativeResponses) -> JsonValue:
+    results: list[JsonValue] = []
     for model in call["models"]:
         try:
             results.append(bedrock_supports_openai_responses(model, call["model_cost"]))
@@ -114,9 +119,9 @@ def native_responses(call: NativeResponses) -> Json:
     return {"results": results}
 
 
-def cache_points(call: CachePointUnknownModel) -> Json:
+def cache_points(call: CachePointUnknownModel) -> JsonValue:
     litellm.model_cost = call["model_cost"]
-    results: list[Json] = []
+    results: list[JsonValue] = []
     for model in call["models"]:
         try:
             results.append(bedrock_model_accepts_cache_points(model))
@@ -125,23 +130,23 @@ def cache_points(call: CachePointUnknownModel) -> Json:
     return {"results": results}
 
 
-def strict_tools(call: StrictToolsFallback) -> Json:
+def strict_tools(call: StrictToolsFallback) -> JsonValue:
     litellm.model_cost = call["model_cost"]
-    results: list[Json] = [
+    results: list[JsonValue] = [
         bedrock_converse_supports_strict_tools(model) for model in call["models"]
     ]
     return {"results": results}
 
 
-def tool_search(call: ToolSearch) -> Json:
+def tool_search(call: ToolSearch) -> JsonValue:
     litellm.model_cost = call["model_cost"]
-    results: list[Json] = [bedrock_supports_tool_search(model) for model in call["models"]]
+    results: list[JsonValue] = [bedrock_supports_tool_search(model) for model in call["models"]]
     return {"results": results}
 
 
-def effort_ceiling(call: EffortCeiling) -> Json:
+def effort_ceiling(call: EffortCeiling) -> JsonValue:
     litellm.model_cost = call["model_cost"]
-    results: list[Json] = []
+    results: list[JsonValue] = []
     for case in call["cases"]:
         output_config = case["output_config"]
         try:
@@ -153,9 +158,9 @@ def effort_ceiling(call: EffortCeiling) -> Json:
     return {"results": results}
 
 
-def parallel_tools(call: ParallelTools) -> Json:
+def parallel_tools(call: ParallelTools) -> JsonValue:
     litellm.model_cost = call["model_cost"]
-    results: list[Json] = []
+    results: list[JsonValue] = []
     for model in call["models"]:
         try:
             results.append(bedrock_converse_supports_parallel_tool_use_config(model))
@@ -164,9 +169,9 @@ def parallel_tools(call: ParallelTools) -> Json:
     return {"results": results}
 
 
-def extended_cache_ttl(call: ExtendedCacheTtl) -> Json:
+def extended_cache_ttl(call: ExtendedCacheTtl) -> JsonValue:
     litellm.model_cost = call["model_cost"]
-    results: list[Json] = []
+    results: list[JsonValue] = []
     for model in call["models"]:
         try:
             results.append(is_claude_4_5_on_bedrock(model))
@@ -177,7 +182,7 @@ def extended_cache_ttl(call: ExtendedCacheTtl) -> Json:
 
 def run_catalog_capability(
     call: ToolSearch | EffortCeiling | ParallelTools | ExtendedCacheTtl,
-) -> Json:
+) -> JsonValue:
     if call["function"] == "tool_search":
         return tool_search(call)
     if call["function"] == "effort_ceiling":
@@ -187,7 +192,7 @@ def run_catalog_capability(
     return extended_cache_ttl(call)
 
 
-def run(input_value: Input) -> Json:
+def run(input_value: Input) -> JsonValue:
     if input_value["function"] == "mantle_api_base":
         return mantle_api_base(input_value)
     if input_value["function"] == "native_responses":
