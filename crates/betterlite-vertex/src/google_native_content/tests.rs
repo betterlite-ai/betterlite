@@ -464,6 +464,22 @@ fn malformed_response_json_is_an_error() {
 }
 
 #[test]
+fn non_standard_number_literals_are_refused() {
+    let error = decode_google_native_content(br#"{"value":NaN}"#).unwrap_err();
+    assert!(matches!(error, NativeContentError::Json { .. }));
+}
+
+#[test]
+fn a_response_nested_past_the_depth_limit_is_refused() {
+    let mut body = String::new();
+    body.push_str(&r#"{"a":"#.repeat(200));
+    body.push('1');
+    body.push_str(&"}".repeat(200));
+    let error = decode_google_native_content(body.as_bytes()).unwrap_err();
+    assert!(matches!(error, NativeContentError::Json { .. }));
+}
+
+#[test]
 fn a_non_object_response_root_is_refused() {
     let error = decode_google_native_content(b"[1,2]").unwrap_err();
     assert!(matches!(error, NativeContentError::ResponseNotObject));
