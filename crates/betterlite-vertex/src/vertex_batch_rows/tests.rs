@@ -229,12 +229,12 @@ fn custom_id_from_labels_keeps_a_zero_numbered_chunk_after_the_raw_one() {
     assert_eq!(custom_id_from_labels(&written).unwrap(), "foofe");
 }
 
-#[test]
-fn custom_id_from_labels_ignores_a_suffix_that_is_not_numeric() {
-    let written = labels(&[
-        (RAW_LABEL, "b32_jbswy3dp"),
-        ("litellm_custom_id_raw_x", "b32_a"),
-    ]);
+#[rstest]
+#[case::letter("litellm_custom_id_raw_x")]
+#[case::empty("litellm_custom_id_raw_")]
+#[case::plus_sign("litellm_custom_id_raw_+1")]
+fn custom_id_from_labels_ignores_a_suffix_that_is_not_numeric(#[case] name: &str) {
+    let written = labels(&[(RAW_LABEL, "b32_jbswy3dp"), (name, "b32_a")]);
     assert_eq!(custom_id_from_labels(&written).unwrap(), "Hello");
 }
 
@@ -364,6 +364,8 @@ fn is_generate_output_row_matches_the_row_shape(#[case] source: &str, #[case] ex
 #[case::empty_key("", "", 0, 1)]
 #[case::second_hash("a#1/2#3", "a#1/2#3", 0, 1)]
 #[case::not_a_number("a#x/2", "a#x/2", 0, 1)]
+#[case::signed_index("a#+1/2", "a#+1/2", 0, 1)]
+#[case::signed_total("a#1/+2", "a#1/+2", 0, 1)]
 #[case::decoded_index("%C3%A9#0/1", "\u{e9}", 0, 1)]
 #[case::empty_identifier("#1/2", "", 1, 2)]
 #[case::leading_zeros("a#01/02", "a", 1, 2)]
@@ -564,10 +566,10 @@ fn a_duplicate_embedding_position_fails_the_whole_entry() {
 #[test]
 fn a_failed_element_reports_its_status() {
     let failed = row(
-        r#"{"key": "id#0/2", "request": {}, "status": "service unavailable", "response": {"embedding": {"values": [1]}}}"#,
+        r#"{"key": "id#1/2", "request": {}, "status": "service unavailable", "response": {"embedding": {"values": [1]}}}"#,
     );
     let ok = row(
-        r#"{"key": "id#1/2", "request": {}, "status": "", "response": {"embedding": {"values": [2]}}}"#,
+        r#"{"key": "id#0/2", "request": {}, "status": "", "response": {"embedding": {"values": [2]}}}"#,
     );
     let outputs = regroup(&[failed, ok], None);
     let error = outputs[0].error.as_ref().unwrap();
