@@ -71,13 +71,14 @@ pub(super) struct FailureInput {
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum FailureKind {
-    Reported,
+    BaseLlm,
+    MidStreamFallback,
     Unclassified,
 }
 
 pub(super) fn stream_failure(input: &FailureInput) -> Result<StreamFailure, Box<HelperError>> {
     match input.kind {
-        FailureKind::Reported => {
+        FailureKind::BaseLlm | FailureKind::MidStreamFallback => {
             let Some(status_code) = input.status_code else {
                 return Err("a reported failure names its status_code").or_value_error();
             };
