@@ -68,9 +68,9 @@ fn provider_combiner_request(model: &str, provider: &str) -> Value {
     ))
 }
 
-fn gate_request(model_info: &str) -> Value {
+fn gate_request(model: &str, model_info: &str) -> Value {
     fixture(&format!(
-        r#"{{"model": "my-deployment", "input": "hi", "params": {{"tools": [{{"type": "function", "name": "f", "parameters": {COMBINER}}}]}}, "model_info": {model_info}}}"#
+        r#"{{"model": "{model}", "input": "hi", "params": {{"tools": [{{"type": "function", "name": "f", "parameters": {COMBINER}}}]}}, "model_info": {model_info}}}"#
     ))
 }
 
@@ -457,39 +457,43 @@ fn gpt5_keeps_combinators() {
     );
 }
 
+fn assert_gate(model: &str, model_info: &str, parameters: &str) {
+    assert_eq!(
+        expect_body(gate_request(model, model_info)),
+        schema_body(model, parameters)
+    );
+}
+
 fn base_model_gate() {
-    assert_eq!(
-        expect_body(gate_request(r#"{"base_model": "gpt-4o"}"#)),
-        schema_body("my-deployment", FLATTENED)
+    assert_gate("my-deployment", r#"{"base_model": "gpt-4o"}"#, FLATTENED);
+    assert_gate(
+        "my-deployment",
+        r#"{"base_model": "gpt-5"}"#,
+        KEPT_WITH_REGEX_DROPPED,
     );
-    assert_eq!(
-        expect_body(gate_request(r#"{"base_model": "gpt-5"}"#)),
-        schema_body("my-deployment", KEPT_WITH_REGEX_DROPPED)
+    assert_gate(
+        "my-deployment",
+        r#"{"base_model": "openai/gpt-4o"}"#,
+        FLATTENED,
     );
-    assert_eq!(
-        expect_body(gate_request(r#"{"base_model": "openai/gpt-4o"}"#)),
-        schema_body("my-deployment", FLATTENED)
+    assert_gate(
+        "my-deployment",
+        r#"{"base_model": ""}"#,
+        KEPT_WITH_REGEX_DROPPED,
     );
-    assert_eq!(
-        expect_body(gate_request(r#"{"base_model": ""}"#)),
-        schema_body("my-deployment", KEPT_WITH_REGEX_DROPPED)
+    assert_gate("gpt-4o", r#"{"base_model": ""}"#, FLATTENED);
+    assert_gate(
+        "my-deployment",
+        r#"{"base_model": 5}"#,
+        KEPT_WITH_REGEX_DROPPED,
     );
-    assert_eq!(
-        expect_body(gate_request(r#"{"base_model": 5}"#)),
-        schema_body("my-deployment", KEPT_WITH_REGEX_DROPPED)
+    assert_gate(
+        "my-deployment",
+        r#"{"base_model": null}"#,
+        KEPT_WITH_REGEX_DROPPED,
     );
-    assert_eq!(
-        expect_body(gate_request(r#"{"base_model": null}"#)),
-        schema_body("my-deployment", KEPT_WITH_REGEX_DROPPED)
-    );
-    assert_eq!(
-        expect_body(gate_request(r#"{"other": 1}"#)),
-        schema_body("my-deployment", KEPT_WITH_REGEX_DROPPED)
-    );
-    assert_eq!(
-        expect_body(gate_request("null")),
-        schema_body("my-deployment", KEPT_WITH_REGEX_DROPPED)
-    );
+    assert_gate("my-deployment", r#"{"other": 1}"#, KEPT_WITH_REGEX_DROPPED);
+    assert_gate("my-deployment", "null", KEPT_WITH_REGEX_DROPPED);
 }
 
 fn assert_overlay_bodies() {
