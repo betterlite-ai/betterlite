@@ -25,9 +25,10 @@ deviations:
       stable equivalent for every deployment whose host runs UTC.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L378-L384
   - what: >-
-      The credential chain covers the deployment identity link order workload identity, user-assigned managed
-      identity, system-assigned managed identity over IMDS. The SDK's hosted environments (App Service, Service
-      Fabric, Azure Arc, Azure ML, Cloud Shell) and its IMDS retry policy are not reproduced.
-    why: Those protocols belong to B676/B699 and the dependency cycle through betterlite-openai keeps
-      betterlite-azure out of betterlite-logging; a setup using a hosted identity endpoint would need that wiring.
+      The DeploymentIdentityCredential chain provider is an unwired seam: without tenant, client and secret the token
+      path calls the injected factory, which reports that no chain is wired instead of walking workload identity and
+      IMDS. A deployment that relied on managed identity through AZURE_STORAGE_* fails with an authentication error.
+    why: The chain belongs to B677 in betterlite-azure, and betterlite-azure depends on betterlite-openai, which
+      depends on betterlite-logging, so importing it here is a crate cycle; the architect must wire it from a crate
+      that may depend on both.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/get_azure_ad_token_provider.py#L37-L135
