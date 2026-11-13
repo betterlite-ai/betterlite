@@ -795,8 +795,8 @@ fn stream_caps_an_unterminated_line(#[case] size: usize, #[case] accepted: bool)
     if !accepted {
         assert!(
             matches!(
-                result,
-                Err(StreamLineError::TooLarge { limit }) if limit == MAX_LINE_BYTES
+                &result,
+                Err(StreamLineError::TooLarge { limit }) if *limit == MAX_LINE_BYTES
             ),
             "{result:?}"
         );
