@@ -1,0 +1,16 @@
+kind: helper
+name: openai-image-edits-seed-transform
+call:
+  openai_image_edits:
+    transform:
+      - model: gpt-image-1
+        prompt: change
+        image: [{content_base64: /9j/, name: null}]
+        mask: null
+        options: {}
+        params: {api_key: sk-seed, api_base: 'https://example.test/v1'}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+env: {}
+compare: {ignore: []}

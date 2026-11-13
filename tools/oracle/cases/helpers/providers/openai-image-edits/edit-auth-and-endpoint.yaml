@@ -1,0 +1,79 @@
+kind: helper
+name: openai-image-edits-edit-auth-and-endpoint
+call:
+  openai_image_edits:
+    environment:
+      - model: gpt-image-1
+        prompt: change
+        image: [{content_base64: iVBORw0KGgo=, name: null}]
+        mask: null
+        options: {}
+        params: {api_key: explicit-key, api_base: 'https://explicit.test/v1'}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: gpt-image-1
+        prompt: change
+        image: [{content_base64: iVBORw0KGgo=, name: null}]
+        mask: null
+        options: {}
+        params: {}
+        globals: {api_key: global-key, api_base: 'https://global.test/v1'}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: gpt-image-1
+        prompt: change
+        image: [{content_base64: iVBORw0KGgo=, name: null}]
+        mask: null
+        options: {}
+        params: {}
+        globals: {openai_key: openai-key}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: gpt-image-1
+        prompt: change
+        image: [{content_base64: iVBORw0KGgo=, name: null}]
+        mask: null
+        options: {}
+        params: {}
+        globals: {}
+        environment: {OPENAI_API_KEY: env-key, OPENAI_BASE_URL: 'https://env.test/v1'}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: gpt-image-1
+        prompt: change
+        image: [{content_base64: iVBORw0KGgo=, name: null}]
+        mask: null
+        options: {}
+        params: {}
+        globals: {}
+        environment: {OPENAI_API_KEY: env-key, OPENAI_API_BASE: 'https://env2.test/v1/'}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: gpt-image-1
+        prompt: change
+        image: [{content_base64: iVBORw0KGgo=, name: null}]
+        mask: null
+        options: {}
+        params: {}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: gpt-image-1
+        prompt: change
+        image: [{content_base64: iVBORw0KGgo=, name: null}]
+        mask: null
+        options: {}
+        params: {api_key: '', api_base: ''}
+        globals: {api_key: global-key, api_base: 'https://global.test/v1'}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: gpt_image_1
+        prompt: change
+        image: [{content_base64: iVBORw0KGgo=, name: null}]
+        mask: null
+        options: {}
+        params: {api_key: slash-key, api_base: 'https://slash.test/v1///'}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+env: {}
+compare: {ignore: []}
