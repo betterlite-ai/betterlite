@@ -13,9 +13,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::yield_now;
 
 use super::super::super::refresh_store::InProcessRefreshCoordinator;
-use super::super::super::{
-    InMemoryTokenCacheBackend, OAuthToken, TokenCacheEntries, TokenKey, WallClock,
-};
+use super::super::super::{InMemoryTokenCacheBackend, OAuthToken, TokenCacheEntries, WallClock};
 use super::super::{
     DEFAULT_TTL, EXPIRY_BUFFER, ExchangeBody, ExchangeHttpPost, ExchangeRejection, MIN_TTL,
     OboTokenExchanger,
