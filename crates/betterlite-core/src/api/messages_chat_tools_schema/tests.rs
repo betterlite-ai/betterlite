@@ -185,16 +185,32 @@ fn a_description_is_copied_whatever_its_value() {
 }
 
 #[rstest]
-#[case::missing("[{}]", "litellm_unnamed_tool_0")]
-#[case::null(r#"[{"name": null}]"#, "litellm_unnamed_tool_0")]
-#[case::empty(r#"[{"name": ""}]"#, "litellm_unnamed_tool_0")]
-#[case::whitespace(r#"[{"name": "   "}]"#, "litellm_unnamed_tool_0")]
-#[case::second_slot(r#"[{"name": "a"}, {"name": " "}]"#, "litellm_unnamed_tool_1")]
-#[case::number(r#"[{"name": 7}]"#, "7")]
+#[case::missing(
+    "[{}]",
+    r#"[{"type": "function", "function": {"name": "litellm_unnamed_tool_0"}}]"#
+)]
+#[case::null(
+    r#"[{"name": null}]"#,
+    r#"[{"type": "function", "function": {"name": "litellm_unnamed_tool_0"}}]"#
+)]
+#[case::empty(
+    r#"[{"name": ""}]"#,
+    r#"[{"type": "function", "function": {"name": "litellm_unnamed_tool_0"}}]"#
+)]
+#[case::whitespace(
+    r#"[{"name": "   "}]"#,
+    r#"[{"type": "function", "function": {"name": "litellm_unnamed_tool_0"}}]"#
+)]
+#[case::second_slot(
+    r#"[{"name": "a"}, {"name": " "}]"#,
+    r#"[{"type": "function", "function": {"name": "a"}}, {"type": "function", "function": {"name": "litellm_unnamed_tool_1"}}]"#
+)]
+#[case::number(
+    r#"[{"name": 7}]"#,
+    r#"[{"type": "function", "function": {"name": "7"}}]"#
+)]
 fn unnamed_tools_take_the_index_or_the_number_as_text(#[case] input: &str, #[case] expected: &str) {
-    let expected_tools =
-        format!(r#"[{{"type": "function", "function": {{"name": "{expected}"}}}}]"#);
-    assert_eq!(translated(input, None), json(&expected_tools));
+    assert_eq!(translated(input, None), json(expected));
 }
 
 #[rstest]
@@ -211,7 +227,6 @@ fn a_non_text_type_is_an_attribute_failure(#[case] input: &str) {
 #[rstest]
 #[case::number("7")]
 #[case::text(r#""tool""#)]
-#[case::object(r#"{"name": "a"}"#)]
 fn a_tool_that_is_not_an_object_fails(#[case] tool: &str) {
     let input = format!("[{tool}]");
     assert!(matches!(
@@ -291,7 +306,7 @@ fn an_extra_field_overwrites_the_schema_key_of_the_same_name() {
 #[rstest]
 #[case::bool_false("false", false)]
 #[case::bool_true("true", true)]
-#[case::string("false", true)]
+#[case::string(r#""false""#, true)]
 #[case::zero("0", false)]
 #[case::null("null", false)]
 #[case::object(r#"{"a": 1}"#, true)]
