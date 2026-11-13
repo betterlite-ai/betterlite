@@ -1,0 +1,21 @@
+kind: helper
+name: responses-to-chat-stream-tool-indices
+call:
+  responses_to_chat_stream:
+    mode: event
+    events:
+      - {"type": "response.created", "response": {"id": "resp_a"}}
+      - {"type": "response.output_item.added", "output_index": 2, "item": {"type": "function_call", "id": "fc_a", "call_id": "call_a", "name": "f", "arguments": "{}"}}
+      - {"type": "response.function_call_arguments.delta", "output_index": 2, "delta": "x"}
+      - {"type": "response.completed", "response": {"id": "resp_a", "output": [{"type": "function_call"}]}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/steps/0/created
+      why: the chunk's created timestamp is the wall clock
+    - pointer: /value/steps/1/created
+      why: the chunk's created timestamp is the wall clock
+    - pointer: /value/steps/2/created
+      why: the chunk's created timestamp is the wall clock
+    - pointer: /value/steps/3/created
+      why: the chunk's created timestamp is the wall clock

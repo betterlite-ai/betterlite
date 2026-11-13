@@ -1,0 +1,25 @@
+task: B920
+deviations:
+  - what: >-
+      An output_item.added whose item carries provider_specific_fields keeps those fields on the tool
+      call, instead of the AttributeError LiteLLM raises from assigning a key on the TypedDict.
+    why: >-
+      LiteLLM answers this input with a 500 from an unhandled AttributeError, so no working setup can
+      depend on it; betterlite carries the provider fields the event declares.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1461-L1466
+  - what: >-
+      An event whose response member is null completes with no output and no usage, instead of the
+      AttributeError LiteLLM raises when it reads usage from the null payload.
+    why: >-
+      docs/compatibility.md takes the default for a declared field that is absent or null, and
+      LiteLLM's crash is Python duck typing no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1591-L1592
+  - what: >-
+      The terminal chunk's usage is B906's shared Responses-to-chat projection, so an input or output
+      token detail block keeps only the counters B906 models, while LiteLLM dumps the pydantic
+      PromptTokensDetails and CompletionTokensDetails wrappers with a null for every unset field.
+    why: >-
+      The task routes usage through B906; one projection serves the streaming and non-streaming
+      bridges, and the counters a client reads (prompt, completion, total, cached and reasoning
+      tokens) stay identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1193-L1239
