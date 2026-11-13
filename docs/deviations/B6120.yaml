@@ -1,0 +1,8 @@
+task: B6120
+deviations:
+  - what: Costs are exact Decimal values. LiteLLM returns binary floats, so the last digits can differ.
+    why: B204 forbids binary floating point in prices. Oracle cases compare the two as decimal numbers rounded to 12 places.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/cost_calculator.py#L14-L119
+  - what: Environment values and the billing instant are arguments, not process globals.
+    why: Provider modules take credentials and clocks from the caller, so tests need no process state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/chat/transformation.py#L21-L29

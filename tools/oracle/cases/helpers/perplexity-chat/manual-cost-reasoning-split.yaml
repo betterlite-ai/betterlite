@@ -1,0 +1,77 @@
+kind: helper
+name: perplexity-manual-cost-reasoning-split
+call:
+  b6120:
+    function: cost
+    steps:
+      - model: perplexity/sonar
+        current_time: '2024-06-16T12:00:00Z'
+        model_info:
+          key: perplexity/sonar
+          max_tokens: 4096
+          max_input_tokens: 4096
+          max_output_tokens: 4096
+          input_cost_per_token: '0'
+          output_cost_per_token: '0.5'
+          output_cost_per_reasoning_token: '2'
+          litellm_provider: perplexity
+          mode: chat
+          supported_openai_params: null
+        usage:
+          prompt_tokens: 10
+          completion_tokens: 10
+          reasoning_tokens: 4
+      - model: perplexity/sonar
+        current_time: '2024-06-16T12:00:00Z'
+        model_info:
+          key: perplexity/sonar
+          max_tokens: 4096
+          max_input_tokens: 4096
+          max_output_tokens: 4096
+          input_cost_per_token: '0'
+          output_cost_per_token: '0.5'
+          output_cost_per_reasoning_token: '2'
+          litellm_provider: perplexity
+          mode: chat
+          supported_openai_params: null
+        usage:
+          prompt_tokens: 10
+          completion_tokens: 10
+          completion_tokens_details:
+            reasoning_tokens: 4
+      - model: perplexity/sonar
+        current_time: '2024-06-16T12:00:00Z'
+        model_info:
+          key: perplexity/sonar
+          max_tokens: 4096
+          max_input_tokens: 4096
+          max_output_tokens: 4096
+          input_cost_per_token: '0'
+          output_cost_per_token: '0.5'
+          litellm_provider: perplexity
+          mode: chat
+          supported_openai_params: null
+        usage:
+          prompt_tokens: 10
+          completion_tokens: 10
+          completion_tokens_details:
+            reasoning_tokens: 4
+      - model: perplexity/sonar
+        current_time: '2024-06-16T12:00:00Z'
+        model_info:
+          key: perplexity/sonar
+          max_tokens: 4096
+          max_input_tokens: 4096
+          max_output_tokens: 4096
+          input_cost_per_token: '0'
+          output_cost_per_token: '0.5'
+          output_cost_per_reasoning_token: '2'
+          litellm_provider: perplexity
+          mode: chat
+          supported_openai_params: null
+        usage:
+          prompt_tokens: 10
+          completion_tokens: 3
+          reasoning_tokens: 5
+env: {}
+compare: {ignore: []}

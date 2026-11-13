@@ -1,0 +1,11 @@
+kind: helper
+name: perplexity-supported-params-deep-research
+call:
+  b6120:
+    function: supported_params
+    steps:
+      - model: sonar-deep-research
+        reasoning: true
+        web_search: true
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,28 @@
+kind: helper
+name: perplexity-annotations-early-returns
+call:
+  b6120:
+    function: reply
+    steps:
+      - model: sonar
+        id: resp-1
+        start_time: '2026-01-01T00:00:00+00:00'
+        body: '{"id":"resp-1","object":"chat.completion","created":1,"model":"sonar","choices":[],"citations":["https://a.example"],"search_results":[{"url":"https://a.example","title":"A"}]}'
+      - model: sonar
+        id: resp-2
+        start_time: '2026-01-01T00:00:00+00:00'
+        body: '{"id":"resp-2","object":"chat.completion","created":1,"model":"sonar","choices":[{"index":0,"message":{"role":"assistant","content":""},"finish_reason":"stop"}],"citations":["https://a.example"]}'
+      - model: sonar
+        id: resp-3
+        start_time: '2026-01-01T00:00:00+00:00'
+        body: '{"id":"resp-3","object":"chat.completion","created":1,"model":"sonar","choices":[{"index":0,"finish_reason":"stop"}],"citations":["https://a.example"]}'
+      - model: sonar
+        id: resp-4
+        start_time: '2026-01-01T00:00:00+00:00'
+        body: '{"id":"resp-4","object":"chat.completion","created":1,"model":"sonar","choices":[{"index":0,"message":{"role":"assistant","content":"no marker here"},"finish_reason":"stop"}],"citations":["https://a.example"],"search_results":[{"url":"https://a.example","title":"A"}]}'
+      - model: sonar
+        id: resp-5
+        start_time: '2026-01-01T00:00:00+00:00'
+        body: '{"id":"resp-5","object":"chat.completion","created":1,"model":"sonar","choices":[{"index":0,"message":{"role":"assistant","content":"[1]","annotations":null},"finish_reason":"stop"}],"citations":["https://a.example"]}'
+env: {}
+compare: {ignore: []}

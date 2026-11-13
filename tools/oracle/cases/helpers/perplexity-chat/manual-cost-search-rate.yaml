@@ -1,0 +1,86 @@
+kind: helper
+name: perplexity-manual-cost-search-rate
+call:
+  b6120:
+    function: cost
+    steps:
+      - model: perplexity/sonar
+        current_time: '2024-06-16T12:00:00Z'
+        model_info:
+          key: perplexity/sonar
+          max_tokens: 4096
+          max_input_tokens: 4096
+          max_output_tokens: 4096
+          input_cost_per_token: '0'
+          output_cost_per_token: '0.5'
+          search_context_cost_per_query:
+            search_context_size_low: '0.005'
+          litellm_provider: perplexity
+          mode: chat
+          supported_openai_params: null
+        usage:
+          prompt_tokens: 10
+          completion_tokens: 10
+          prompt_tokens_details:
+            web_search_requests: 2
+      - model: perplexity/sonar
+        current_time: '2024-06-16T12:00:00Z'
+        model_info:
+          key: perplexity/sonar
+          max_tokens: 4096
+          max_input_tokens: 4096
+          max_output_tokens: 4096
+          input_cost_per_token: '0'
+          output_cost_per_token: '0.5'
+          search_queries_cost_per_query: '0.01'
+          search_context_cost_per_query:
+            search_context_size_low: '0.005'
+          litellm_provider: perplexity
+          mode: chat
+          supported_openai_params: null
+        usage:
+          prompt_tokens: 10
+          completion_tokens: 10
+          prompt_tokens_details:
+            web_search_requests: 3
+      - model: perplexity/sonar
+        current_time: '2024-06-16T12:00:00Z'
+        model_info:
+          key: perplexity/sonar
+          max_tokens: 4096
+          max_input_tokens: 4096
+          max_output_tokens: 4096
+          input_cost_per_token: '0'
+          output_cost_per_token: '0.5'
+          search_queries_cost_per_query: 0
+          search_context_cost_per_query:
+            search_context_size_low: '0.005'
+          litellm_provider: perplexity
+          mode: chat
+          supported_openai_params: null
+        usage:
+          prompt_tokens: 10
+          completion_tokens: 10
+          prompt_tokens_details:
+            web_search_requests: 3
+      - model: perplexity/sonar
+        current_time: '2024-06-16T12:00:00Z'
+        model_info:
+          key: perplexity/sonar
+          max_tokens: 4096
+          max_input_tokens: 4096
+          max_output_tokens: 4096
+          input_cost_per_token: '0'
+          output_cost_per_token: '0.5'
+          search_context_cost_per_query:
+            search_context_size_medium: '0.005'
+          litellm_provider: perplexity
+          mode: chat
+          supported_openai_params: null
+        usage:
+          prompt_tokens: 10
+          completion_tokens: 10
+          prompt_tokens_details:
+            web_search_requests: 3
+env: {}
+compare: {ignore: []}

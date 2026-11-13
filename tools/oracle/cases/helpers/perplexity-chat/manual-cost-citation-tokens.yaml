@@ -1,0 +1,58 @@
+kind: helper
+name: perplexity-manual-cost-citation-tokens
+call:
+  b6120:
+    function: cost
+    steps:
+      - model: perplexity/sonar
+        current_time: '2024-06-16T12:00:00Z'
+        model_info:
+          key: perplexity/sonar
+          max_tokens: 4096
+          max_input_tokens: 4096
+          max_output_tokens: 4096
+          input_cost_per_token: '0.000001'
+          output_cost_per_token: '0.000002'
+          citation_cost_per_token: '0.0000002'
+          litellm_provider: perplexity
+          mode: chat
+          supported_openai_params: null
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 50
+          citation_tokens: 8
+      - model: perplexity/sonar
+        current_time: '2024-06-16T12:00:00Z'
+        model_info:
+          key: perplexity/sonar
+          max_tokens: 4096
+          max_input_tokens: 4096
+          max_output_tokens: 4096
+          input_cost_per_token: '0.000001'
+          output_cost_per_token: '0.000002'
+          citation_cost_per_token: '0.0000002'
+          litellm_provider: perplexity
+          mode: chat
+          supported_openai_params: null
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 50
+          citation_tokens: 0
+      - model: perplexity/sonar
+        current_time: '2024-06-16T12:00:00Z'
+        model_info:
+          key: perplexity/sonar
+          max_tokens: 4096
+          max_input_tokens: 4096
+          max_output_tokens: 4096
+          input_cost_per_token: '0.000001'
+          output_cost_per_token: '0.000002'
+          litellm_provider: perplexity
+          mode: chat
+          supported_openai_params: null
+        usage:
+          prompt_tokens: 100
+          completion_tokens: 50
+          citation_tokens: 8
+env: {}
+compare: {ignore: []}
