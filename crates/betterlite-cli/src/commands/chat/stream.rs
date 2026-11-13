@@ -93,13 +93,16 @@ pub(super) fn stream_reply(
         }
     };
     let status = response.status().as_u16();
+    if status == 401 {
+        return report(terminal, ChatError::Status { status });
+    }
     if status >= 400 {
         let read = client.runtime.block_on(timeout(
             STREAM_TIMEOUT,
             read_bounded(&mut response, BODY_LIMIT_BYTES),
         ));
-        let body = match read {
-            Ok(Ok(body)) => body,
+        let error_body = match read {
+            Ok(Ok(error_body)) => error_body,
             Ok(Err(ReadError::TooLarge { limit })) => {
                 return report(terminal, ChatError::BodyTooLarge { limit });
             }
@@ -115,7 +118,7 @@ pub(super) fn stream_reply(
                 );
             }
         };
-        return report_http_error(terminal, status, &body);
+        return report_http_error(terminal, status, &error_body);
     }
     let header_limit = client.http.limits.header_bytes;
     if check_headers(response.headers(), header_limit).is_err() {
@@ -138,14 +141,18 @@ pub(super) fn stream_reply(
                     Ok(events) => events,
                     Err(source) => return report(terminal, ChatError::Line(source)),
                 };
-                if write_events(terminal, events, &mut content)? {
-                    break;
+                match write_events(terminal, events, &mut content) {
+                    Ok(true) => break,
+                    Ok(false) => {}
+                    Err(error) => return report(terminal, error),
                 }
             }
             Ok(Ok(None)) => {
                 match lines.finish() {
                     Ok(Some(event)) => {
-                        let _done = write_events(terminal, vec![event], &mut content)?;
+                        if let Err(error) = write_events(terminal, vec![event], &mut content) {
+                            return report(terminal, error);
+                        }
                     }
                     Ok(None) => {}
                     Err(source) => return report(terminal, ChatError::Line(source)),
@@ -169,7 +176,7 @@ pub(super) fn stream_reply(
     Ok(content)
 }
 
-fn write_events(
+pub(super) fn write_events(
     terminal: &mut dyn Terminal,
     events: Vec<LineEvent>,
     content: &mut String,
@@ -180,6 +187,11 @@ fn write_events(
             LineEvent::Content(fragment) => {
                 terminal.write_fragment(&fragment)?;
                 content.push_str(&fragment);
+                if content.len() > BODY_LIMIT_BYTES {
+                    return Err(ChatError::ReplyTooLarge {
+                        limit: BODY_LIMIT_BYTES,
+                    });
+                }
             }
             LineEvent::Done => return Ok(true),
         }

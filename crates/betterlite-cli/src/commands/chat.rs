@@ -65,6 +65,8 @@ pub enum ChatError {
     Headers { limit: usize },
     #[error("the error body is larger than {limit} bytes")]
     BodyTooLarge { limit: usize },
+    #[error("the streamed reply is larger than {limit} bytes")]
+    ReplyTooLarge { limit: usize },
     #[error(transparent)]
     Line(#[from] stream_line::StreamLineError),
     #[error("the error body is not valid UTF-8")]

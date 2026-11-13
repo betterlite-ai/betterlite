@@ -2,6 +2,8 @@
 
 mod support;
 
+mod models_cases;
+
 mod session_cases;
 
 use std::fs;
@@ -11,15 +13,14 @@ use std::path::PathBuf;
 use rstest::rstest;
 use serde::Deserialize;
 
+use crate::commands::BODY_LIMIT_BYTES;
 use crate::commands::chat::stream_line::{
     LineEvent, MAX_LINE_BYTES, StreamLineError, StreamLines, decode_line,
 };
 use crate::commands::tests::support::{Answer, TestServer, client as plain_client};
 
 use super::{ChatArgs, Message};
-use support::{
-    FakeStore, FakeTerminal, chat_args, client, run_chat, server_with_models, stream_body,
-};
+use support::{FakeStore, FakeTerminal, chat_args, client, run_chat, stream_body};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -56,279 +57,6 @@ fn chat_body(requests: &[crate::commands::tests::support::RecordedRequest]) -> R
         .find(|request| request.path() == "/chat/completions")
         .expect("a chat completion request");
     serde_json::from_slice(&chat.body).expect("the chat body is JSON")
-}
-
-#[test]
-fn models_picker_shows_the_table_and_picks_by_index() {
-    let server = TestServer::start(vec![
-        Answer::json(
-            200,
-            &support::models_body(&[("gpt-4o", "openai"), ("claude", "anthropic")]),
-        ),
-        Answer::json(200, &stream_body(&["Hello"])),
-    ]);
-    let args = chat_args(None);
-    let mut store = FakeStore::default();
-
-    let (result, terminal) = run_once(&args, &server, &["2", "hi"], &mut store);
-
-    result.unwrap();
-    assert!(
-        terminal.stdout.contains("Available Models"),
-        "{}",
-        terminal.stdout
-    );
-    assert!(terminal.stdout.contains("Model ID"), "{}", terminal.stdout);
-    assert!(terminal.stdout.contains("Owned By"), "{}", terminal.stdout);
-    assert!(terminal.stdout.contains("gpt-4o"), "{}", terminal.stdout);
-    assert!(terminal.stdout.contains("anthropic"), "{}", terminal.stdout);
-    assert!(
-        !terminal.stdout.contains("more models"),
-        "{}",
-        terminal.stdout
-    );
-    let requests = server.finish();
-    assert_eq!(requests[0].request_line, "GET /models HTTP/1.1");
-    assert_eq!(requests[0].header("authorization"), Some("Bearer sk-test"));
-    let body = chat_body(&requests);
-    assert_eq!(body.model, "claude");
-}
-
-#[test]
-fn models_blank_answer_picks_the_first_model() {
-    let server = TestServer::start(vec![
-        Answer::json(
-            200,
-            &support::models_body(&[("gpt-4o", "openai"), ("claude", "anthropic")]),
-        ),
-        Answer::json(200, &stream_body(&["Hello"])),
-    ]);
-    let args = chat_args(None);
-    let mut store = FakeStore::default();
-
-    let (result, _terminal) = run_once(&args, &server, &["", "hi"], &mut store);
-
-    result.unwrap();
-    let requests = server.finish();
-    assert_eq!(chat_body(&requests).model, "gpt-4o");
-}
-
-#[test]
-fn models_out_of_range_index_reprompts_with_the_valid_range() {
-    let server = TestServer::start(vec![
-        Answer::json(
-            200,
-            &support::models_body(&[("gpt-4o", "openai"), ("claude", "anthropic")]),
-        ),
-        Answer::json(200, &stream_body(&["Hello"])),
-    ]);
-    let args = chat_args(None);
-    let mut store = FakeStore::default();
-
-    let (result, terminal) = run_once(&args, &server, &["9", "1", "hi"], &mut store);
-
-    result.unwrap();
-    assert!(
-        terminal
-            .stdout
-            .contains("Invalid index. Please enter a number between 1 and 2"),
-        "{}",
-        terminal.stdout
-    );
-    let requests = server.finish();
-    assert_eq!(chat_body(&requests).model, "gpt-4o");
-}
-
-#[test]
-fn models_type_a_name_uses_it_directly() {
-    let server = TestServer::start(vec![
-        Answer::json(200, &support::models_body(&[("gpt-4o", "openai")])),
-        Answer::json(200, &stream_body(&["Hello"])),
-    ]);
-    let args = chat_args(None);
-    let mut store = FakeStore::default();
-
-    let (result, _terminal) = run_once(&args, &server, &["my-model", "hi"], &mut store);
-
-    result.unwrap();
-    let requests = server.finish();
-    assert_eq!(chat_body(&requests).model, "my-model");
-}
-
-#[test]
-fn models_a_model_without_an_id_is_no_selection() {
-    let server = server_with_models(&[("", "openai")]);
-    let args = chat_args(None);
-    let mut store = FakeStore::default();
-
-    let (result, terminal) = run_once(&args, &server, &[""], &mut store);
-
-    result.unwrap();
-    assert!(
-        terminal.stdout.contains("No model selected. Exiting."),
-        "{}",
-        terminal.stdout
-    );
-    assert_eq!(server.finish().len(), 1);
-}
-
-#[test]
-fn models_end_of_input_cancels_the_selection() {
-    let server = server_with_models(&[("gpt-4o", "openai")]);
-    let args = chat_args(None);
-    let mut store = FakeStore::default();
-
-    let (result, terminal) = run_once(&args, &server, &[], &mut store);
-
-    result.unwrap();
-    assert!(
-        terminal.stdout.contains("Model selection cancelled."),
-        "{}",
-        terminal.stdout
-    );
-    assert!(
-        terminal.stdout.contains("No model selected. Exiting."),
-        "{}",
-        terminal.stdout
-    );
-    assert_eq!(server.finish().len(), 1);
-}
-
-#[rstest]
-#[case::blank("")]
-#[case::whitespace("   ")]
-fn models_blank_name_prompt_returns_no_model(#[case] answer: &str) {
-    let server = TestServer::start(vec![Answer::json(200, r#"{"data":[]}"#)]);
-    let args = chat_args(None);
-    let mut store = FakeStore::default();
-
-    let (result, terminal) = run_once(&args, &server, &[answer], &mut store);
-
-    result.unwrap();
-    assert!(
-        terminal
-            .stdout
-            .contains("No models available or could not fetch models list."),
-        "{}",
-        terminal.stdout
-    );
-    assert!(
-        terminal.stdout.contains("Please enter a model name"),
-        "{}",
-        terminal.stdout
-    );
-    assert!(
-        terminal.stdout.contains("No model selected. Exiting."),
-        "{}",
-        terminal.stdout
-    );
-}
-
-#[test]
-fn models_fetch_failure_prints_a_warning_and_asks_for_a_name() {
-    let server = TestServer::start(vec![
-        Answer::json(500, r#"{"detail":"boom"}"#),
-        Answer::json(200, &stream_body(&["Hello"])),
-    ]);
-    let args = chat_args(None);
-    let mut store = FakeStore::default();
-
-    let (result, terminal) = run_once(&args, &server, &["gpt-4o", "hi"], &mut store);
-
-    result.unwrap();
-    assert!(
-        terminal
-            .stderr
-            .contains("Warning: Could not fetch models list: the proxy answered HTTP 500"),
-        "{}",
-        terminal.stderr
-    );
-    let requests = server.finish();
-    assert_eq!(chat_body(&requests).model, "gpt-4o");
-}
-
-#[test]
-fn models_missing_data_field_prints_a_warning() {
-    let server = TestServer::start(vec![
-        Answer::json(200, "{}"),
-        Answer::json(200, &stream_body(&["Hello"])),
-    ]);
-    let args = chat_args(None);
-    let mut store = FakeStore::default();
-
-    let (result, terminal) = run_once(&args, &server, &["gpt-4o", "hi"], &mut store);
-
-    result.unwrap();
-    assert!(
-        terminal.stderr.contains(
-            "Warning: Could not fetch models list: the models response has no data field"
-        ),
-        "{}",
-        terminal.stderr
-    );
-}
-
-#[rstest]
-#[case::an_object(r#"{"data":{}}"#)]
-#[case::a_string(r#"{"data":"text"}"#)]
-#[case::a_number(r#"{"data":7}"#)]
-#[case::a_bool(r#"{"data":true}"#)]
-#[case::null(r#"{"data":null}"#)]
-fn models_data_that_is_not_an_array_is_silently_empty(#[case] models: &str) {
-    let server = TestServer::start(vec![
-        Answer::json(200, models),
-        Answer::json(200, &stream_body(&["Hello"])),
-    ]);
-    let args = chat_args(None);
-    let mut store = FakeStore::default();
-
-    let (result, terminal) = run_once(&args, &server, &["gpt-4o", "hi"], &mut store);
-
-    result.unwrap();
-    assert!(terminal.stderr.is_empty(), "{}", terminal.stderr);
-    assert!(
-        terminal.stdout.contains("Please enter a model name"),
-        "{}",
-        terminal.stdout
-    );
-}
-
-#[rstest]
-#[case::at_the_cap(200, false)]
-#[case::past_the_cap(205, true)]
-fn models_table_caps_at_two_hundred_rows(#[case] count: usize, #[case] expects_more: bool) {
-    let models: Vec<(String, String)> = (1..=count)
-        .map(|index| (format!("m-{index}"), String::from("owner")))
-        .collect();
-    let entries: Vec<(&str, &str)> = models
-        .iter()
-        .map(|(id, owner)| (id.as_str(), owner.as_str()))
-        .collect();
-    let server = TestServer::start(vec![
-        Answer::json(200, &support::models_body(&entries)),
-        Answer::json(200, &stream_body(&["Hello"])),
-    ]);
-    let args = chat_args(None);
-    let mut store = FakeStore::default();
-
-    let (result, terminal) = run_once(&args, &server, &["1", "hi"], &mut store);
-
-    result.unwrap();
-    assert!(terminal.stdout.contains("m-200"), "{}", terminal.stdout);
-    assert!(!terminal.stdout.contains("m-201"), "{}", terminal.stdout);
-    assert_eq!(
-        terminal.stdout.contains("more models"),
-        expects_more,
-        "{}",
-        terminal.stdout
-    );
-    if expects_more {
-        assert!(
-            terminal.stdout.contains("... and 5 more models"),
-            "{}",
-            terminal.stdout
-        );
-    }
 }
 
 #[rstest]
@@ -641,6 +369,27 @@ fn commands_model_switch_updates_the_model() {
 }
 
 #[test]
+fn commands_model_switch_ignores_an_empty_id() {
+    let server = TestServer::start(vec![
+        Answer::json(200, &support::models_body(&[("", "openai")])),
+        Answer::json(200, &stream_body(&["Hello"])),
+    ]);
+    let args = chat_args(Some("gpt-4o"));
+    let mut store = FakeStore::default();
+
+    let (result, terminal) = run_once(&args, &server, &["/model", "", "hi"], &mut store);
+
+    result.unwrap();
+    assert!(
+        !terminal.stdout.contains("Switched to model"),
+        "{}",
+        terminal.stdout
+    );
+    let requests = server.finish();
+    assert_eq!(chat_body(&requests).model, "gpt-4o");
+}
+
+#[test]
 fn stream_sends_the_completion_request_fields() {
     let server = TestServer::start(vec![Answer::json(200, &stream_body(&["Hello"]))]);
     let mut args = chat_args(Some("gpt-4o"));
@@ -687,6 +436,11 @@ fn stream_omits_max_tokens_when_it_is_not_given() {
         .iter()
         .find(|request| request.path() == "/chat/completions")
         .expect("a chat completion request");
+    assert!(
+        !chat.body_text().contains("max_tokens"),
+        "{}",
+        chat.body_text()
+    );
     let body: RecordedChat = serde_json::from_slice(&chat.body).expect("the chat body");
     assert_eq!(body.max_tokens, None);
     assert_eq!(body.temperature, 0.7);
@@ -710,6 +464,32 @@ fn stream_writes_the_deltas_as_fragments_and_stops_at_done() {
         terminal.stdout
     );
     assert!(!terminal.stdout.contains("after"), "{}", terminal.stdout);
+}
+
+#[test]
+fn stream_prints_one_newline_after_a_reply() {
+    let server = TestServer::start(vec![Answer::json(200, &stream_body(&["Hello"]))]);
+    let args = chat_args(Some("gpt-4o"));
+    let mut store = FakeStore::default();
+
+    let (result, terminal) = run_once(&args, &server, &["hi"], &mut store);
+
+    result.unwrap();
+    assert_eq!(
+        terminal.stdout,
+        "LiteLLM Interactive Chat\n\
+         Model: gpt-4o\n\
+         Temperature: 0.7\n\
+         Max Tokens: unlimited\n\
+         \n\
+         Type your messages and press Enter. Type '/quit' or '/exit' to end the session.\n\
+         Type '/help' for more commands.\n\
+         \n\
+         You: Assistant:\n\
+         Hello\n\
+         \n\
+         You: Chat session ended.\n"
+    );
 }
 
 #[test]
@@ -854,6 +634,33 @@ fn stream_prints_the_http_status_and_the_error_message() {
 }
 
 #[test]
+fn stream_reports_a_401_as_one_error_line() {
+    let server = TestServer::start(vec![Answer::json(
+        401,
+        r#"{"error":{"message":"secret detail"}}"#,
+    )]);
+    let args = chat_args(Some("gpt-4o"));
+    let mut store = FakeStore::default();
+
+    let (result, terminal) = run_once(&args, &server, &["hi"], &mut store);
+
+    result.unwrap();
+    assert_eq!(terminal.stderr, "Error: the proxy answered HTTP 401\n");
+    assert!(
+        terminal
+            .stdout
+            .contains("Error: No content received from the model"),
+        "{}",
+        terminal.stdout
+    );
+    assert!(
+        !terminal.stdout.contains("secret detail"),
+        "{}",
+        terminal.stdout
+    );
+}
+
+#[test]
 fn stream_defaults_to_unknown_error_without_the_message_field() {
     let server = TestServer::start(vec![Answer::json(500, "{}")]);
     let args = chat_args(Some("gpt-4o"));
@@ -930,6 +737,28 @@ fn stream_reports_response_headers_past_the_limit() {
         "{}",
         terminal.stderr
     );
+}
+
+#[rstest]
+#[case::at_the_cap(0, false)]
+#[case::past_the_cap(1, true)]
+fn stream_caps_the_collected_reply(#[case] extra: usize, #[case] rejected: bool) {
+    let mut terminal = FakeTerminal::new(&[]);
+    let mut collected = "x".repeat(BODY_LIMIT_BYTES + extra);
+    let events = vec![LineEvent::Content(String::new())];
+
+    let result = super::stream::write_events(&mut terminal, events, &mut collected);
+
+    assert_eq!(result.is_err(), rejected, "{result:?}");
+    if rejected {
+        assert!(
+            matches!(
+                result,
+                Err(super::ChatError::ReplyTooLarge { limit }) if limit == BODY_LIMIT_BYTES
+            ),
+            "{result:?}"
+        );
+    }
 }
 
 #[rstest]

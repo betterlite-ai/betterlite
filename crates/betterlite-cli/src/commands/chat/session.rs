@@ -102,7 +102,6 @@ impl Session<'_> {
                 max_tokens: self.max_tokens,
             },
         )?;
-        self.terminal.write_line("")?;
         if content.is_empty() {
             self.terminal
                 .write_line("Error: No content received from the model")?;
@@ -138,7 +137,8 @@ impl Session<'_> {
 
     fn clear(&mut self) -> Result<(), ChatError> {
         self.fallback();
-        self.terminal.write_line("Conversation history cleared.")
+        self.terminal.write_line("Conversation history cleared.")?;
+        Ok(())
     }
 
     fn fallback(&mut self) {
@@ -156,12 +156,13 @@ impl Session<'_> {
             return Ok(());
         };
         if let Err(error) = self.store.save(&filename, &self.messages) {
-            return self
-                .terminal
-                .write_line(&format!("Error saving conversation: {error}"));
+            self.terminal
+                .write_line(&format!("Error saving conversation: {error}"))?;
+            return Ok(());
         }
         self.terminal
-            .write_line(&format!("Conversation saved to {filename}"))
+            .write_line(&format!("Conversation saved to {filename}"))?;
+        Ok(())
     }
 
     fn load(&mut self, input: &str) -> Result<(), ChatError> {
@@ -172,7 +173,8 @@ impl Session<'_> {
             Ok(messages) => {
                 self.messages = messages;
                 self.terminal
-                    .write_line(&format!("Conversation loaded from {filename}"))
+                    .write_line(&format!("Conversation loaded from {filename}"))?;
+                Ok(())
             }
             Err(error) => self.report_load(&error, &filename),
         }
@@ -200,9 +202,13 @@ impl Session<'_> {
         let Some(model) = models::pick(self.client, self.terminal)? else {
             return Ok(());
         };
+        if model.is_empty() {
+            return Ok(());
+        }
         self.model = model;
         self.terminal
-            .write_line(&format!("Switched to model: {}", self.model))
+            .write_line(&format!("Switched to model: {}", self.model))?;
+        Ok(())
     }
 }
 

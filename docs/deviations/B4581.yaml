@@ -92,3 +92,24 @@ deviations:
       parses but has no error.message prints "Unknown error". A proxy answering an HTTP error
       with a JSON array is not something a working setup relies on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L408-L414
+  - what: >-
+      Chat's stream error lines print on stderr: the transport or decode error text, and an HTTP
+      status with its message on two lines ("Error: HTTP 401" then the detail). chat.py prints
+      them through rich's Console to stdout, with a leading blank line before "Error: HTTP ...".
+    why: >-
+      Every other command in this CLI writes errors to stderr (the http command's click.echo(...,
+      err=True) and the B4579, B4580 table commands), and a person running chat in a terminal
+      sees both streams. A script that captures chat's stdout gets the conversation without the
+      error text, which is the improvement, not a loss; interactive chat output is for a person
+      to read and no working setup parses it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L408-L417
+  - what: >-
+      The reply text chat collects from the stream is capped at 64 MiB; a longer reply ends the
+      turn with "Error: the streamed reply is larger than 67108864 bytes" instead of growing the
+      collected string without a bound.
+    why: >-
+      Rule bounded-inputs caps everything allocated in proportion to untrusted input. chat.py
+      appends every delta to one string for the whole reply. A working model reply never reaches
+      64 MiB of text, which is larger than the proxy's own buffered body limit, and the failure
+      prints an error the session survives rather than killing the process.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/chat.py#L401

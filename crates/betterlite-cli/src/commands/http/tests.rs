@@ -94,6 +94,24 @@ fn request_build_json_is_sent_as_the_body() {
 }
 
 #[test]
+fn request_build_keeps_a_caller_content_type() {
+    let server = TestServer::start(vec![Answer::json(200, "{}")]);
+    let mut request = options("POST", "/credentials");
+    request.json = Some(String::from(r#"{"a":1}"#));
+    request.header = vec![String::from("Content-Type: application/merge-patch+json")];
+
+    let (result, _stdout, _stderr) = run_against(&server, request);
+
+    result.unwrap();
+    let requests = server.finish();
+    assert_eq!(
+        requests[0].header("content-type"),
+        Some("application/merge-patch+json")
+    );
+    assert_eq!(requests[0].body_text(), r#"{"a":1}"#);
+}
+
+#[test]
 fn request_build_data_is_tried_as_json_first() {
     let server = TestServer::start(vec![Answer::json(200, "{}")]);
     let mut request = options("POST", "/credentials");

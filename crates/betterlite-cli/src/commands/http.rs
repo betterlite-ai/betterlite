@@ -99,11 +99,20 @@ fn send_request(
                 source,
             }
         })?;
+    let headers = parse_headers(&options.header)?;
+    let keep_content_type = headers
+        .iter()
+        .any(|(name, _value)| name.eq_ignore_ascii_case("content-type"));
+    let payload = json_body::request_payload(
+        options.json.as_deref(),
+        options.data.as_deref(),
+        keep_content_type,
+    )?;
     let request = Request {
         method,
         url: client.resolve(&options.uri)?,
-        headers: parse_headers(&options.header)?,
-        payload: json_body::request_payload(options.json.as_deref(), options.data.as_deref())?,
+        headers,
+        payload,
     };
     let response = client.send(request)?;
     if response.status >= 400 {

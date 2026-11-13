@@ -34,7 +34,8 @@ pub(super) fn write_welcome(
     terminal.write_line(
         "Type your messages and press Enter. Type '/quit' or '/exit' to end the session.",
     )?;
-    terminal.write_line("Type '/help' for more commands.")
+    terminal.write_line("Type '/help' for more commands.")?;
+    Ok(())
 }
 
 pub(super) fn write_help(terminal: &mut dyn Terminal) -> Result<(), ChatError> {

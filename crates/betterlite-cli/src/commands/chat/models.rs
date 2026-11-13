@@ -68,10 +68,10 @@ fn fetch_models(client: &Client) -> Result<Vec<ModelRow>, ChatError> {
 
 fn parse_models(body: &[u8]) -> Result<Vec<ModelRow>, ChatError> {
     let view: ModelsResponse = serde_json::from_slice(body).map_err(ChatError::Models)?;
-    let Some(data) = view.data else {
+    let Some(present) = view.data else {
         return Err(ChatError::ModelsData);
     };
-    let Some(data) = data else {
+    let Some(data) = present else {
         return Ok(Vec::new());
     };
     let Ok(items) = serde_json::from_str::<Vec<&RawValue>>(data.get()) else {
