@@ -1,0 +1,28 @@
+kind: sdk_http
+name: provider-headers-survive-stream
+env: {}
+call:
+  messages_header_stream:
+    body:
+      model: claude-sonnet-4-20250514
+      max_tokens: 1
+      messages:
+        - {role: user, content: hi}
+    buffered_provider_output: true
+upstream:
+  - status: 200
+    headers:
+      content-type: text/event-stream
+      x-amzn-requestid: req_a
+      x-amzn-trace-id: trace_a
+      x-litellm-attempted-fallbacks: spoof
+    events:
+      - '{"type": "message_start", "message": {"content": []}}'
+      - '{"type": "message_stop"}'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /messages_header_stream/value/hidden_params/additional_headers/llm_provider-date
+      why: a transport date header differs between two clients by the second it arrived.
