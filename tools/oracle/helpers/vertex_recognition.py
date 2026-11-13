@@ -30,21 +30,13 @@ class Config(Protocol):
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
-    def get_complete_url(
-        self,
-        api_base: str | None,
-        api_key: str | None,
-        model: str,
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-    ) -> str: ...
+    def get_complete_url(self, api_base: str | None, api_key: str | None, model: str,
+                         optional_params: dict[str, JsonValue],
+                         litellm_params: dict[str, JsonValue]) -> str: ...
 
     def transform_audio_transcription_request(
-        self,
-        model: str,
-        audio_file: bytes,
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
+        self, model: str, audio_file: bytes,
+        optional_params: dict[str, JsonValue], litellm_params: dict[str, JsonValue],
     ) -> RequestData: ...
 
     def transform_audio_transcription_response(
@@ -108,10 +100,7 @@ def url_step(step: Url) -> JsonValue:
         api_key=None,
         model="",
         optional_params={},
-        litellm_params={
-            "vertex_project": step["project"],
-            "vertex_location": step["location"],
-        },
+        litellm_params={"vertex_project": step["project"], "vertex_location": step["location"]},
     )
 
 
@@ -135,24 +124,18 @@ def reply_step(step: Reply) -> JsonValue:
     return JSON.validate_json(result.model_dump_json(exclude_none=True))
 
 
-def outcome(step: Step) -> JsonValue:
-    match step["step"]:
-        case "params":
-            return params_step(step)
-        case "url":
-            return url_step(step)
-        case "request":
-            return request_step(step)
-        case "reply":
-            return reply_step(step)
-
-
 def guarded(step: Step) -> JsonValue:
     try:
-        return outcome(step)
-    except VertexAIError as error:
-        return {"raised": error.status_code}
-    except UnsupportedParamsError as error:
+        match step["step"]:
+            case "params":
+                return params_step(step)
+            case "url":
+                return url_step(step)
+            case "request":
+                return request_step(step)
+            case "reply":
+                return reply_step(step)
+    except (VertexAIError, UnsupportedParamsError) as error:
         return {"raised": error.status_code}
     except ValueError:
         return {"raised": None}

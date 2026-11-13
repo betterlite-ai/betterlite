@@ -73,7 +73,10 @@ pub fn map_openai_params(
     let Some(format) = mapped.get("response_format") else {
         return Ok(mapped);
     };
-    if format.is_null() || accepted_response_format(format) {
+    let accepted = format
+        .as_str()
+        .is_some_and(|text| SUPPORTED_RESPONSE_FORMATS.contains(&text));
+    if format.is_null() || accepted {
         return Ok(mapped);
     }
     if drop_params.global || drop_params.request {
@@ -83,12 +86,6 @@ pub fn map_openai_params(
     Err(VertexRecognitionError::ResponseFormat {
         format: format.to_string(),
     })
-}
-
-fn accepted_response_format(value: &Value) -> bool {
-    value
-        .as_str()
-        .is_some_and(|format| SUPPORTED_RESPONSE_FORMATS.contains(&format))
 }
 
 // LiteLLM replaces these three headers after the caller's own, so a caller cannot point the request elsewhere

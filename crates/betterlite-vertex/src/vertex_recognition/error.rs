@@ -1,4 +1,3 @@
-use betterlite_openai::transcription::error::TranscriptionError;
 use http::header::InvalidHeaderValue;
 use thiserror::Error;
 
@@ -39,11 +38,6 @@ pub enum VertexRecognitionError {
         #[source]
         source: InvalidHeaderValue,
     },
-    #[error("the billed duration cannot be written as a JSON number")]
-    Duration {
-        #[source]
-        source: TranscriptionError,
-    },
 }
 
 impl VertexRecognitionError {
@@ -56,10 +50,7 @@ impl VertexRecognitionError {
             | Self::Project { .. }
             | Self::ResponseFormat { .. } => Some(400),
             Self::NotJson { status, .. } => Some(*status),
-            Self::Shape { .. }
-            | Self::Authorization { .. }
-            | Self::UserProject { .. }
-            | Self::Duration { .. } => None,
+            Self::Shape { .. } | Self::Authorization { .. } | Self::UserProject { .. } => None,
         }
     }
 }

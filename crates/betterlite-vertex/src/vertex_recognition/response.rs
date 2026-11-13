@@ -9,7 +9,6 @@ use serde_json::Deserializer;
 
 use crate::vertex_recognition::error::VertexRecognitionError;
 use crate::vertex_recognition::types::RecognizeResponse;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TranscriptionTask {
@@ -28,7 +27,6 @@ pub struct RecognitionResponse {
     #[serde(skip)]
     pub metadata: RecognizeResponse,
 }
-
 // LiteLLM's _parse_duration_seconds reads a decimal number with a trailing s and drops everything else
 #[must_use]
 pub fn parse_duration_seconds(duration: Option<&str>) -> Option<Decimal> {
@@ -37,7 +35,6 @@ pub fn parse_duration_seconds(duration: Option<&str>) -> Option<Decimal> {
         .or_else(|_error| Decimal::from_scientific(text))
         .ok()
 }
-
 pub fn decode_vertex_recognition(
     reply: &UpstreamResponse,
 ) -> Result<RecognitionResponse, VertexRecognitionError> {
@@ -50,9 +47,8 @@ pub fn decode_vertex_recognition(
             status: reply.status,
             source,
         })?;
-    project(parsed)
+    Ok(project(parsed))
 }
-
 // a syntax failure is the source's non-JSON reply, while a typed field that fails is pydantic's ValidationError
 fn decode_error(
     status: u16,
@@ -65,8 +61,7 @@ fn decode_error(
     }
     VertexRecognitionError::NotJson { status, source }
 }
-
-fn project(parsed: RecognizeResponse) -> Result<RecognitionResponse, VertexRecognitionError> {
+fn project(parsed: RecognizeResponse) -> RecognitionResponse {
     let text = {
         let mut transcripts = Vec::new();
         for result in &parsed.results {
@@ -94,23 +89,19 @@ fn project(parsed: RecognizeResponse) -> Result<RecognitionResponse, VertexRecog
                 .filter(|code| !code.is_empty())
         })
         .map(str::to_owned);
-    let duration = match parse_duration_seconds(
+    // every Decimal renders as a JSON number, so a render failure omits the duration like an invalid one
+    let duration = parse_duration_seconds(
         parsed
             .metadata
             .as_ref()
             .and_then(|metadata| metadata.total_billed_duration.as_deref()),
-    ) {
-        Some(seconds) => Some(
-            duration_number(Some(seconds))
-                .map_err(|source| VertexRecognitionError::Duration { source })?,
-        ),
-        None => None,
-    };
-    Ok(RecognitionResponse {
+    )
+    .and_then(|seconds| duration_number(Some(seconds)).ok());
+    RecognitionResponse {
         text,
         task: TranscriptionTask::Transcribe,
         language,
         duration,
         metadata: parsed,
-    })
+    }
 }

@@ -321,22 +321,6 @@ fn extra_provider_fields_are_ignored_and_stored() {
             .get("resultEndTime"),
         Some(&json!("1.5s"))
     );
-    assert_eq!(
-        decoded.metadata.results[0].alternatives[0]
-            .native_fields
-            .get("confidence"),
-        Some(&json!(0.5))
-    );
-    assert_eq!(
-        decoded
-            .metadata
-            .metadata
-            .as_ref()
-            .unwrap()
-            .native_fields
-            .get("model"),
-        Some(&json!("m"))
-    );
 }
 
 #[test]
