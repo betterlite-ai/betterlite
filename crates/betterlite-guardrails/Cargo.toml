@@ -44,6 +44,7 @@ sha2.workspace = true
 strfmt = "0.2.6"
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake", "rustls-tls-webpki-roots"] }
 tracing.workspace = true
 tree-sitter = "0.27.1"
 tree-sitter-python = "0.25.0"
