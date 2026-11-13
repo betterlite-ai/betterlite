@@ -75,8 +75,8 @@ impl DeploymentCatalog {
                 self.provider_default_ids.push(id.to_owned());
             }
         }
-        if let (Some(team), Some(public_name)) = (
-            info_text(spec, "team_id"),
+        if let (Some(Json::Text(team)), Some(public_name)) = (
+            spec.model_info.get("team_id"),
             info_text(spec, "team_public_model_name").filter(|name| name.contains('*')),
         ) {
             let patterns = self

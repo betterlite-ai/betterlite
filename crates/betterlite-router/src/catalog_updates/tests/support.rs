@@ -326,7 +326,7 @@ fn render_models(catalog: &DeploymentCatalog) -> String {
         write!(keyed, "{id}:{index},").unwrap();
     }
     let names = indices(&catalog.name_index);
-    let set = joined(&catalog.model_names);
+    let set = joined(catalog.model_names.iter().map(|name| format!("{name:?}")));
     let (models, ids) = (listed.trim_end_matches(','), keyed.trim_end_matches(','));
     format!("models=[{models}] ids({ids}) names({names}) set=[{set}]")
 }
