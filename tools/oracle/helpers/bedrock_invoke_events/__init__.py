@@ -10,10 +10,12 @@ from litellm.llms.bedrock.chat.invoke_handler import (
     MockResponseIterator,
 )
 from litellm.llms.bedrock.common_utils import BedrockError
-from litellm.types.utils import ModelResponse, ModelResponseStream
+from litellm.types.utils import ModelResponseStream
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from .types import (
+    RESPONSE,
+    STREAM,
     ChunkLike,
     ChunkView,
     DoneStep,
@@ -35,11 +37,9 @@ from .types import (
 )
 
 GENERIC: TypeAdapter[GenericRaw] = TypeAdapter(GenericRaw)
-STREAM: TypeAdapter[ModelResponseStream] = TypeAdapter(ModelResponseStream)
 CHUNK: TypeAdapter[ChunkView] = TypeAdapter(ChunkView)
 USAGE: TypeAdapter[UsageView] = TypeAdapter(UsageView)
 TOOLS: TypeAdapter[list[ToolCallView]] = TypeAdapter(list[ToolCallView])
-RESPONSE: TypeAdapter[ModelResponse] = TypeAdapter(ModelResponse)
 
 
 def usage_view(raw: JsonValue) -> UsageView | None:

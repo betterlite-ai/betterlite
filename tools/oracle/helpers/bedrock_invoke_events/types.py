@@ -1,11 +1,15 @@
 from collections.abc import AsyncIterator, Iterator, Mapping
 from typing import Literal, NotRequired, Protocol, TypedDict
 
-from pydantic import JsonValue
+from litellm.types.utils import ModelResponse, ModelResponseStream
+from pydantic import JsonValue, TypeAdapter
 
 Provider = Literal["anthropic", "deepseek_r1", "moonshot"]
 Construction = Literal["legacy", "anthropic", "deepseek_r1", "moonshot", "base"]
 Step = Literal["next", "anext"]
+
+STREAM: TypeAdapter[ModelResponseStream] = TypeAdapter(ModelResponseStream)
+RESPONSE: TypeAdapter[ModelResponse] = TypeAdapter(ModelResponse)
 
 
 class FramedInput(TypedDict):
