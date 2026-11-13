@@ -1,0 +1,13 @@
+kind: helper
+name: unicode-jsonl-and-error-code
+call:
+  xai_batches:
+    operation: jsonl
+    calls:
+      - results:
+          - {batch_request_id: "réq-1", batch_result: {response: {chat: {id: "chatcmpl-é", text: "héllo 世界"}}}}
+          - {batch_request_id: r2, batch_result: {error: {code: 42, message: "bad é"}}}
+          - {batch_request_id: r3, batch_result: {error: {code: "invalid_request", message: "text code"}}}
+          - {batch_request_id: r4, batch_result: {}}
+env: {}
+compare: {ignore: []}

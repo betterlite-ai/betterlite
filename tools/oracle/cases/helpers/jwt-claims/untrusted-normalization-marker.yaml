@@ -1,0 +1,56 @@
+kind: helper
+name: jwt-claims-untrusted-normalization-marker
+call:
+  jwt_claims:
+    scenarios:
+      - settings: {team_id_jwt_field: team, team_ids_jwt_field: teams, user_id_jwt_field: sub, user_email_jwt_field: email, org_id_jwt_field: org, end_user_id_jwt_field: eid}
+        trusted_issuers: [https://idp.example]
+        claims: {_litellm_jwt_issuer: https://idp.example, _litellm_team_id: trusted-team, _litellm_team_ids: [trusted-a, trusted-b], _litellm_user_id: trusted-user, _litellm_user_email: trusted@example.com, _litellm_org_id: trusted-org, _litellm_end_user_id: trusted-end, team: raw-team, teams: [raw-a], sub: raw-user, email: raw@example.com, org: raw-org, eid: raw-end}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: team, team_ids_jwt_field: teams, user_id_jwt_field: sub, user_email_jwt_field: email, org_id_jwt_field: org, end_user_id_jwt_field: eid}
+        trusted_issuers: []
+        claims: {_litellm_jwt_issuer: https://idp.example, _litellm_team_id: trusted-team, _litellm_team_ids: [trusted-a, trusted-b], _litellm_user_id: trusted-user, _litellm_user_email: trusted@example.com, _litellm_org_id: trusted-org, _litellm_end_user_id: trusted-end, team: raw-team, teams: [raw-a], sub: raw-user, email: raw@example.com, org: raw-org, eid: raw-end}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: team, user_id_jwt_field: sub}
+        trusted_issuers: [https://idp.example]
+        claims: {_litellm_jwt_issuer: https://other.example, _litellm_team_id: trusted-team, _litellm_user_id: trusted-user, team: raw-team, sub: raw-user}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: team, user_id_jwt_field: sub}
+        trusted_issuers: [https://idp.example]
+        claims: {_litellm_jwt_issuer: "", _litellm_team_id: trusted-team, _litellm_user_id: trusted-user, team: raw-team, sub: raw-user}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: team, user_id_jwt_field: sub}
+        trusted_issuers: [https://idp.example]
+        claims: {_litellm_jwt_issuer: 5, _litellm_team_id: trusted-team, _litellm_user_id: trusted-user, team: raw-team, sub: raw-user}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: team, user_id_jwt_field: sub}
+        trusted_issuers: [https://idp.example]
+        claims: {_litellm_jwt_issuer: https://idp.example, _litellm_team_id: null, _litellm_user_id: null, team: raw-team, sub: raw-user}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_id_jwt_field: team, team_ids_jwt_field: teams}
+        trusted_issuers: [https://idp.example]
+        claims: {_litellm_jwt_issuer: https://idp.example, _litellm_team_ids: trusted-a, _litellm_team_id: [trusted-c, trusted-a], teams: [raw-a], team: raw-team}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+      - settings: {team_alias_jwt_field: team.name, org_alias_jwt_field: org_name}
+        trusted_issuers: [https://idp.example]
+        claims: {_litellm_jwt_issuer: https://idp.example, team: {name: raw-alias}, org_name: raw-org-name}
+        default_value: null
+        valid_user_email: null
+        leeway: 0
+    tokens: []
+env: {}
+compare: {ignore: []}

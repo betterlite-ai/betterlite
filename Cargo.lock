@@ -1130,7 +1130,9 @@ dependencies = [
  "betterlite-db",
  "betterlite-error",
  "betterlite-models",
+ "betterlite-paths",
  "betterlite-redis",
+ "betterlite-secrets",
  "chrono",
  "hex",
  "lru",
@@ -1159,7 +1161,9 @@ name = "betterlite-auth-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-secrets",
  "libfuzzer-sys",
+ "secrecy",
 ]
 
 [[package]]
@@ -1501,11 +1505,13 @@ dependencies = [
  "betterlite-context",
  "betterlite-env",
  "betterlite-error",
+ "betterlite-foundry",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-paths",
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-tokenizer",
@@ -2582,6 +2588,7 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-env",
  "betterlite-error",
  "betterlite-http",
@@ -2846,6 +2853,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "tracing-subscriber",
  "unicode-general-category",
 ]
 

@@ -1,0 +1,6 @@
+kind: helper
+name: mask-negative-start
+call:
+  b5471: {"function": "mask", "content": "hello", "mask": "***", "start": -1, "end": 3}
+env: {}
+compare: {ignore: []}

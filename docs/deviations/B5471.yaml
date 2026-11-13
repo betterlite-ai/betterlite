@@ -1,0 +1,11 @@
+task: B5471
+deviations:
+  - what: A violation_message_template that uses str.format features beyond named fields and width or alignment specs ({a!r}, {a.b}, {a[0]}) renders the default message, where LiteLLM expands them.
+    why: strfmt, already used by panw_prisma_airs, has no such syntax, and a template that fails to format takes LiteLLM's own fallback to the default message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L274-L291
+  - what: get_config_model returns an opaque GuardrailValue in place of a Pydantic class.
+    why: Rust has no class to return, and the default is None until a provider fills it in.
+    link: ""
+  - what: The detail of an HTTP error object is an IndexMap of GuardrailValue, not of serde_json::Value.
+    why: The workspace lints disallow serde_json::Value, and GuardrailValue holds the same JSON shapes.
+    link: ""

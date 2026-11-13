@@ -1,0 +1,15 @@
+kind: helper
+name: session-token-codec-ui-token
+call:
+  session_token_codec:
+    salt_key: salt-one
+    master_key: null
+    max_ui_session_budget: 1.0
+    env: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f"
+    now: "2026-11-12T17:50:00.123456+00:00"
+    steps:
+      - op: ui_token
+        user: {user_id: user-1, user_role: internal_user, models: [gpt-4o], teams: []}
+env: {}
+compare: {ignore: []}

@@ -103,7 +103,7 @@
           "minimum": 1
         },
         "max_new_expects": {
-          "description": "New #[expect(...)] attributes the task may add.",
+          "description": "New #[expect(...)] attributes plus new Python lines with a cast, type: ignore, pyright: ignore or noqa the task may add.",
           "type": "integer",
           "format": "uint",
           "minimum": 0
