@@ -49,6 +49,9 @@ impl HttpClients {
         litellm_params: &Params,
         supplied: Option<BlockingClient>,
     ) -> Result<BlockingClient, ClientError> {
+        if let Some(client) = supplied {
+            return Ok(client);
+        }
         let key = ssl_verify(litellm_params)?;
         let tls = &self.tls;
         let build = |key: Option<bool>| {
@@ -56,7 +59,7 @@ impl HttpClients {
                 .build()
                 .map_err(ClientError::Build)
         };
-        cached(&mut self.sync_clients, supplied, key, build)
+        cached(&mut self.sync_clients, key, build)
     }
 }
 
@@ -75,7 +78,6 @@ pub fn async_client(
 
 fn cached<ClientType, Key, Build>(
     cache: &mut BTreeMap<Key, ClientType>,
-    supplied: Option<ClientType>,
     key: Key,
     build: Build,
 ) -> Result<ClientType, ClientError>
@@ -84,9 +86,6 @@ where
     Key: Copy + Ord,
     Build: FnOnce(Key) -> Result<ClientType, ClientError>,
 {
-    if let Some(client) = supplied {
-        return Ok(client);
-    }
     if let Some(client) = cache.get(&key) {
         return Ok(client.clone());
     }

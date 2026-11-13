@@ -10,6 +10,9 @@ pub(crate) fn async_client_for(
     litellm_params: &Params,
     supplied: Option<Client>,
 ) -> Result<Client, ClientError> {
+    if let Some(client) = supplied {
+        return Ok(client);
+    }
     let key = ClientKey {
         provider,
         ssl_verify: ssl_verify(litellm_params)?,
@@ -20,5 +23,5 @@ pub(crate) fn async_client_for(
             .build()
             .map_err(ClientError::Build)
     };
-    cached(&mut clients.async_clients, supplied, key, build)
+    cached(&mut clients.async_clients, key, build)
 }

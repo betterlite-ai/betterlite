@@ -124,7 +124,7 @@ fn sync_client_returns_the_supplied_client() {
         .unwrap();
 
     let client = clients
-        .sync_client(&support::params("{}"), Some(supplied))
+        .sync_client(&support::params(r#"{"ssl_verify": "yes"}"#), Some(supplied))
         .unwrap();
     let outcome = client.get(format!("http://{}/x", serving.address)).send();
 
