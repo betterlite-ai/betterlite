@@ -61,10 +61,10 @@ impl From<PostError> for VertexEmbeddingCallError {
     fn from(source: PostError) -> Self {
         match source {
             PostError::Timeout => Self::Timeout,
-            PostError::Url(_)
+            other @ (PostError::Url(_)
             | PostError::HeaderName { .. }
             | PostError::HeaderValue { .. }
-            | PostError::Send { .. } => Self::Transport { source },
+            | PostError::Send { .. }) => Self::Transport { source: other },
         }
     }
 }
