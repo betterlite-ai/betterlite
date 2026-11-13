@@ -391,6 +391,11 @@ fn search_query_fields_embedding_configuration() {
     let with_list = params(r#"{"litellm_embedding_config":[1]}"#);
     assert!(query_embedding_configuration(&with_list).is_empty());
     assert!(query_embedding_model(&params("{}")).is_err());
+    assert!(query_embedding_model(&params(r#"{"litellm_embedding_model":""}"#)).is_err());
+    assert_eq!(
+        query_embedding_model(&params(r#"{"litellm_embedding_model":"m"}"#)).expect("model"),
+        "m"
+    );
 }
 
 fn vector_query_with_embedding() {
