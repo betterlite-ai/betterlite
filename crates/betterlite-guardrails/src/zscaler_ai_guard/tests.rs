@@ -286,6 +286,14 @@ fn settings_refuse_an_unparsable_send_flag() {
 }
 
 #[test]
+fn a_false_send_flag_argument_beats_a_true_environment_value() {
+    let mut args = args();
+    args.send_user_api_key_alias = Some(false);
+    let resolved = Settings::resolve(&args, &environment(&[(SEND_ALIAS_ENV, "true")])).unwrap();
+    assert!(!resolved.send.alias);
+}
+
+#[test]
 fn user_id_and_team_id_flags_read_their_own_environment_variables() {
     let mut args = args();
     args.send_user_api_key_user_id = None;
@@ -310,6 +318,12 @@ fn settings_default_the_timeout_when_it_is_absent() {
     args.timeout = None;
     let resolved = Settings::resolve(&args, &environment(&[])).unwrap();
     assert_eq!(resolved.timeout, DEFAULT_TIMEOUT_DURATION);
+}
+
+#[test]
+fn a_zero_timeout_falls_back_to_five_seconds() {
+    let (timeout, _written) = captured(|| settings::resolve_timeout(Some(0.0)).unwrap());
+    assert_eq!(timeout, DEFAULT_TIMEOUT_DURATION);
 }
 
 #[rstest]
