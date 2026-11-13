@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-content-single-reference
+call: {"messages_content_primitives": {"operation": "tool_result_content", "raw_content": [{"type": "tool_reference", "tool_name": "w"}]}}
+env: {}
+compare: {ignore: []}

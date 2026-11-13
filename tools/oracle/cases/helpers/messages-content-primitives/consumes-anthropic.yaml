@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-consumes-anthropic
+call: {"messages_content_primitives": {"operation": "consumes_cache_control", "model": "ANTHROPIC/x"}}
+env: {}
+compare: {ignore: []}
