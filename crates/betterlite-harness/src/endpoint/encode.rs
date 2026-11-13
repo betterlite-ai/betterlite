@@ -1,3 +1,4 @@
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::types::JsonObject;
@@ -46,46 +47,48 @@ fn encode_anthropic(chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
     match chunk {
         Chunk::Bytes(bytes) => Ok(bytes.to_vec()),
         Chunk::Text(text) => Ok(text.as_bytes().to_vec()),
-        Chunk::Json(event) => framed(event),
+        Chunk::Json(event) => event_frame(event),
     }
 }
 
 fn encode_chat(chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
     match chunk {
-        Chunk::Json(object) => {
-            let data =
-                serde_json::to_string(object).map_err(|source| EncodeError::Json { source })?;
-            Ok(format!("data: {data}\n\n").into_bytes())
-        }
-        Chunk::Text(text) => {
-            let data =
-                serde_json::to_string(text).map_err(|source| EncodeError::Json { source })?;
-            Ok(format!("data: {data}\n\n").into_bytes())
-        }
         Chunk::Bytes(_) => Err(EncodeError::BytesNotJson { route: ROUTE_CHAT }),
+        Chunk::Text(text) => Ok(frame_event(None, &json(text)?)),
+        Chunk::Json(object) => Ok(frame_event(None, &json(object)?)),
     }
 }
 
 fn encode_responses(chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
     match chunk {
-        Chunk::Json(event) => framed(event),
-        Chunk::Text(text) => {
-            let data =
-                serde_json::to_string(text).map_err(|source| EncodeError::Json { source })?;
-            Ok(format!("event: message\ndata: {data}\n\n").into_bytes())
-        }
         Chunk::Bytes(_) => Err(EncodeError::BytesNotJson {
             route: ROUTE_RESPONSES,
         }),
+        Chunk::Text(text) => Ok(frame_event(Some("message"), &json(text)?)),
+        Chunk::Json(event) => event_frame(event),
     }
 }
 
-fn framed(event: &JsonObject) -> Result<Vec<u8>, EncodeError> {
+fn event_frame(event: &JsonObject) -> Result<Vec<u8>, EncodeError> {
     let event_type = event
         .get("type")
         .and_then(|value| value.as_str())
         .filter(|name| !name.is_empty() && !name.contains('\n') && !name.contains('\r'))
         .unwrap_or("message");
-    let data = serde_json::to_string(event).map_err(|source| EncodeError::Json { source })?;
-    Ok(format!("event: {event_type}\ndata: {data}\n\n").into_bytes())
+    let data = json(event)?;
+    Ok(frame_event(Some(event_type), &data))
+}
+
+fn frame_event(event_type: Option<&str>, data: &str) -> Vec<u8> {
+    match event_type {
+        Some(name) => format!("event: {name}\ndata: {data}\n\n").into_bytes(),
+        None => format!("data: {data}\n\n").into_bytes(),
+    }
+}
+
+fn json<T: Serialize>(value: &T) -> Result<String, EncodeError> {
+    match serde_json::to_string(value) {
+        Ok(data) => Ok(data),
+        Err(source) => Err(EncodeError::Json { source }),
+    }
 }

@@ -52,6 +52,16 @@ impl CatalogPrices {
         let entry = self.catalog.entries.get(canonical.as_ref())?;
         serde_json::from_value(serde_json::to_value(&entry.prices).ok()?).ok()
     }
+
+    fn lookup(&self, model: &str, custom_llm_provider: Option<&str>) -> Option<PriceRecord> {
+        if let Some(provider) = custom_llm_provider {
+            let key = format!("{provider}/{model}");
+            if let Some(record) = self.record(&key) {
+                return Some(record);
+            }
+        }
+        self.record(model)
+    }
 }
 
 impl PriceLookup for CatalogPrices {
@@ -60,12 +70,7 @@ impl PriceLookup for CatalogPrices {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
-        if let Some(provider) = custom_llm_provider
-            && let Some(record) = self.record(&format!("{provider}/{model}"))
-        {
-            return Some(record);
-        }
-        self.record(model)
+        self.lookup(model, custom_llm_provider)
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {

@@ -171,10 +171,10 @@ fn usage_from_mapping_reads_both_field_families(
     #[case] input_tokens: u64,
     #[case] output_tokens: u64,
 ) {
-    assert_eq!(
-        usage_from_mapping(&object(json)),
-        (input_tokens, output_tokens)
-    );
+    let usage = object(json);
+    let (input, output) = usage_from_mapping(&usage);
+    assert_eq!(input, input_tokens);
+    assert_eq!(output, output_tokens);
 }
 
 #[rstest]
