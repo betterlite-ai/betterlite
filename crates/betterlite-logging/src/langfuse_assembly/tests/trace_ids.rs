@@ -2,7 +2,7 @@
 
 use betterlite_models::decisions::Json;
 
-use super::support::{Fixture, fixture, hashed, payload, run, text, trace_id, value};
+use super::support::{Fixture, capture_logs, fixture, hashed, payload, run, text, trace_id, value};
 
 const CALL_ID: &str = "0102030405060708090a0b0c0d0e0f10";
 const SESSION: &str = "session-abc-123";
@@ -88,6 +88,26 @@ fn a_session_header_gives_each_call_its_own_trace() {
         text(generation, "langfuse.trace.session_id").as_deref(),
         Some(SESSION)
     );
+}
+
+#[test]
+fn session_reuse_logs_the_call_trace_that_replaces_the_session_trace() {
+    let (captured, _guard) = capture_logs();
+    let mut case = session_fixture();
+    case.inputs.litellm_call_id = Some(CALL_ID);
+    case.inputs.litellm_params = with_headers(r#"{"x-litellm-session-id": "session-abc-123"}"#);
+    let _outcome = run(case.assemble());
+    assert!(captured.text().contains("came from a session header"));
+}
+
+#[test]
+fn a_plain_trace_id_logs_no_session_reuse() {
+    let (captured, _guard) = capture_logs();
+    let mut case = fixture();
+    case.inputs.payload = Some(payload("{}"));
+    case.inputs.litellm_call_id = Some(CALL_ID);
+    let _outcome = run(case.assemble());
+    assert!(!captured.text().contains("came from a session header"));
 }
 
 #[test]
