@@ -1,0 +1,5 @@
+task: B383
+deviations:
+  - what: Tag budgets are available without a paid-tier flag.
+    why: The accepted product decision removes licensing gates and ships all MIT features; LiteLLM raises before creating the limiter whenever tag_budget_config is set and premium_user is not True.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L915-L935

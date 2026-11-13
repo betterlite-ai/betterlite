@@ -1,11 +1,186 @@
+import asyncio
+import warnings
+from collections.abc import Mapping
+from decimal import Decimal
+from typing import Annotated, Final, Literal, Protocol
+
+import litellm
+from litellm.caching.in_memory_cache import InMemoryCache
+from litellm.router import Router
+from pydantic import Field, TypeAdapter
 from typing_extensions import override
 
 from probes.protocol import Operation, ProbeError, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
 
+MONEY: Final = TypeAdapter(float | None)
+DEFAULT_MODEL: Final = "openai/gpt-4o-mini"
+MODEL_GROUP: Final = "gpt"
+
+
+class Deployment(Strict):
+    model_id: str
+    max_budget: str | None = None
+    budget_duration: str | None = None
+
+
+class Tag(Strict):
+    max_budget: str | None = None
+    budget_duration: str | None = None
+
+
+class Step(Strict):
+    kind: Literal["build", "start", "reset"]
+    model_id: str | None = None
+    start_time_key: str | None = None
+    spend_key: str | None = None
+    current_time: str | None = None
+    response_cost: str | None = None
+    ttl_seconds: int | None = None
+
+
+class StepOutput(Strict):
+    kind: str
+    should_init: bool | None
+    limiter: bool | None
+    tags: list[str] | None
+    window_started: bool | None
+    spend: str | None
+
+
+class Output(Strict):
+    steps: list[StepOutput]
+
+
+class Cache(Protocol):
+    async def async_get_cache(self, key: str) -> object: ...
+
+    async def async_set_cache(
+        self, key: str, value: object, *, local_only: bool = False, **kwargs: object
+    ) -> None: ...
+
+
+class Limiter(Protocol):
+    @property
+    def tag_budget_config(self) -> Mapping[str, object] | None: ...
+
+    async def async_log_success_event(
+        self, kwargs: dict[str, object], response_obj: object, start_time: object, end_time: object
+    ) -> None: ...
+
+
+def deployment_entry(deployment: Deployment) -> dict[str, object]:
+    params: dict[str, object] = {"model": DEFAULT_MODEL}
+    if deployment.max_budget is not None:
+        params["max_budget"] = float(deployment.max_budget)
+    if deployment.budget_duration is not None:
+        params["budget_duration"] = deployment.budget_duration
+    return {"model_name": MODEL_GROUP, "litellm_params": params, "model_info": {"id": deployment.model_id}}
+
+
+def tag_names(tags: dict[str, Tag] | None, model_list: list[dict[str, object]]) -> list[str] | None:
+    if tags is None:
+        litellm.tag_budget_config = None
+        return None
+    configured: dict[str, object] = {}
+    for name, tag in tags.items():
+        budget: dict[str, object] = {"budget_duration": tag.budget_duration}
+        if tag.max_budget is not None:
+            budget["max_budget"] = float(tag.max_budget)
+        configured[name] = budget
+    litellm.tag_budget_config = configured
+    try:
+        _router = Router(model_list=model_list)
+    except ValueError:
+        return None
+    finally:
+        litellm.tag_budget_config = None
+    return sorted(tags)
+
+
+async def success_event(limiter: Limiter, model_id: str, cost: float) -> None:
+    payload: dict[str, object] = {
+        "standard_logging_object": {"response_cost": cost, "model_id": model_id, "custom_llm_provider": None},
+    }
+    await limiter.async_log_success_event(payload, None, None, None)
+
+
+async def start_step(step: Step, limiter: Limiter, memory: InMemoryCache) -> StepOutput:
+    if step.model_id is None or step.start_time_key is None:
+        raise ProbeError("invalid_request", "the start step needs model_id and start_time_key")
+    await success_event(limiter, step.model_id, 0.0)
+    started = await memory.async_get_ttl(step.start_time_key) is not None
+    return StepOutput(
+        kind=step.kind,
+        should_init=None,
+        limiter=None,
+        tags=None,
+        window_started=started,
+        spend=None,
+    )
+
+
+async def reset_step(step: Step, limiter: Limiter, cache: Cache, memory: InMemoryCache) -> StepOutput:
+    if step.model_id is None or step.start_time_key is None or step.spend_key is None:
+        raise ProbeError("invalid_request", "the reset step needs model_id, spend_key and start_time_key")
+    if step.response_cost is None or step.ttl_seconds is None:
+        raise ProbeError("invalid_request", "the reset step needs response_cost and ttl_seconds")
+    await cache.async_set_cache(step.start_time_key, 0.0, ttl=step.ttl_seconds)
+    await success_event(limiter, step.model_id, float(step.response_cost))
+    value = MONEY.validate_python(await cache.async_get_cache(step.spend_key))
+    spend = None if value is None else format(Decimal(str(value)).normalize(), "f")
+    started = await memory.async_get_ttl(step.start_time_key) is not None
+    return StepOutput(
+        kind=step.kind,
+        should_init=None,
+        limiter=None,
+        tags=None,
+        window_started=started,
+        spend=spend,
+    )
+
+
+async def run_steps(
+    deployments: list[Deployment], tag_budget_config: dict[str, Tag] | None, steps: list[Step]
+) -> Output:
+    model_list: list[dict[str, object]] = [deployment_entry(deployment) for deployment in deployments]
+    litellm.tag_budget_config = None
+    router = Router(model_list=model_list)
+    created = router.router_budget_logger
+    if created is None:
+        raise ProbeError("invalid_request", "the router did not create a budget limiter")
+    limiter: Limiter = created
+    cache: Cache = router.cache
+    memory: InMemoryCache = router.cache.in_memory_cache
+    outputs: list[StepOutput] = []
+    for step in steps:
+        if step.kind == "build":
+            outputs.append(
+                StepOutput(
+                    kind=step.kind,
+                    should_init=True,
+                    limiter=True,
+                    tags=tag_names(tag_budget_config, model_list),
+                    window_started=None,
+                    spend=None,
+                )
+            )
+        elif step.kind == "start":
+            outputs.append(await start_step(step, limiter, memory))
+        else:
+            outputs.append(await reset_step(step, limiter, cache, memory))
+    return Output(steps=outputs)
+
 
 class BudgetWindows(Operation):
+    deployments: list[Deployment]
+    tag_budget_config: dict[str, Tag] | None = None
+    steps: Annotated[list[Step], Field(min_length=1)]
+
     @override
-    def run(self) -> Strict:
-        raise ProbeError("unknown_operation", "budget_windows is not built")
+    def run(self) -> Output:
+        # pydantic emits ReadOnly-qualifier warnings while LiteLLM builds its logging models; neither side compares them
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return asyncio.run(run_steps(self.deployments, self.tag_budget_config, self.steps))
