@@ -1,16 +1,16 @@
 use betterlite_models::decisions::Json;
 
-use crate::vertex_batch_rows::correlation::{
-    CorrelationInput, custom_id_from_row, decode_batch_correlation,
-};
+use crate::vertex_batch_rows::correlation::{CorrelationInput, decode_batch_correlation};
 use crate::vertex_batch_rows::error::BatchRowsError;
+use crate::vertex_batch_rows::labels::{UNKNOWN_ID, custom_id_from_labels};
 use crate::vertex_batch_rows::types::{BatchKey, RowField, VertexBatchRow};
 
 pub fn decode_vertex_batch_row(bytes: &[u8]) -> Result<VertexBatchRow, BatchRowsError> {
-    match serde_json::from_slice(bytes) {
-        Ok(row) => Ok(row),
-        Err(source) => Err(BatchRowsError::Decode { source }),
+    // serde would read a JSON array as a row, but LiteLLM only accepts an object
+    if bytes.trim_ascii_start().first() == Some(&b'[') {
+        return Err(BatchRowsError::NotAnObject);
     }
+    serde_json::from_slice(bytes).map_err(|source| BatchRowsError::Decode { source })
 }
 
 #[must_use]
@@ -24,41 +24,33 @@ pub fn is_embeddings_output_row(row: &VertexBatchRow) -> bool {
     if matches!(embedding, Some(Json::Object(_))) {
         return true;
     }
-    match row.request.as_ref().and_then(RowField::value) {
-        Some(Json::Object(request)) => {
-            !row.status.as_deref().unwrap_or_default().is_empty() && request.contains_key("content")
-        }
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | None => false,
-    }
+    let Some(RowField::Value(Json::Object(request))) = row.request.as_ref() else {
+        return false;
+    };
+    !row.status.as_deref().unwrap_or_default().is_empty() && request.contains_key("content")
 }
 
 #[must_use]
 pub fn is_generate_output_row(row: &VertexBatchRow) -> bool {
-    if row.request.is_none() || row.response.is_none() || row.processed_time.is_none() {
-        return false;
-    }
+    let marked = row.request.is_some() && row.response.is_some() && row.processed_time.is_some();
     let generated = row.response_object().is_some_and(|response| {
         response.contains_key("candidates") || response.contains_key("promptFeedback")
     });
-    generated || !row.status.as_deref().unwrap_or_default().is_empty()
+    marked && (generated || !row.status.as_deref().unwrap_or_default().is_empty())
 }
 
 pub fn split_vertex_batch_key(row: &VertexBatchRow) -> Result<BatchKey, BatchRowsError> {
     let Some(key) = row.key.as_deref() else {
+        let custom_id = row
+            .labels()
+            .map_or_else(|| Ok(String::from(UNKNOWN_ID)), custom_id_from_labels)?;
         return Ok(BatchKey {
-            custom_id: custom_id_from_row(row)?,
+            custom_id,
             index: 0,
             total: 1,
         });
     };
-    let Some((custom_id, index, total)) = fan_out_suffix(key) else {
-        return Ok(BatchKey {
-            custom_id: decode_batch_correlation(CorrelationInput::Key(key.as_bytes()))?,
-            index: 0,
-            total: 1,
-        });
-    };
+    let (custom_id, index, total) = fan_out_suffix(key).unwrap_or((key, 0, 1));
     Ok(BatchKey {
         custom_id: decode_batch_correlation(CorrelationInput::Key(custom_id.as_bytes()))?,
         index,

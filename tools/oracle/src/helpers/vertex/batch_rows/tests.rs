@@ -54,11 +54,11 @@ fn encode_reports_the_lossy_and_raw_labels() {
 }
 
 #[test]
-fn resolve_reports_the_identifier_and_the_row_kind() {
+fn rows_report_the_identifier_and_the_row_kind() {
     let value = run(json!({
-        "operation": "resolve",
+        "operation": "rows",
         "rows": [
-            {"request": {}, "response": {"embedding": {"values": [1]}}},
+            {"request": {}, "response": {"embedding": {"values": [1_i32]}}},
             {"request": {}, "response": {"candidates": []}, "processed_time": ""},
             {"request": {"labels": {"litellm_custom_id_raw": "b32_zz"}}},
         ],
@@ -71,9 +71,11 @@ fn resolve_reports_the_identifier_and_the_row_kind() {
 }
 
 #[test]
-fn split_reports_the_fan_out_suffix() {
-    let value = run(json!({"operation": "split", "rows": [{"key": "a%23b#1/2"}]}));
-    assert_eq!(value["rows"][0], json!(["a#b", 1, 2]));
+fn rows_report_the_fan_out_suffix() {
+    let value = run(json!({"operation": "rows", "rows": [{"key": "a%23b#1/2"}]}));
+    assert_eq!(value["rows"][0]["custom_id"], json!("a#b"));
+    assert_eq!(value["rows"][0]["index"], json!(1_u32));
+    assert_eq!(value["rows"][0]["total"], json!(2_u32));
 }
 
 #[test]
@@ -81,8 +83,8 @@ fn regroup_builds_one_output_row_per_identifier() {
     let value = run(json!({
         "operation": "regroup",
         "rows": [
-            {"key": "id#1/2", "request": {}, "status": "", "response": {"embedding": {"values": [2]}, "tokenCount": 1}},
-            {"key": "id#0/2", "request": {}, "status": "", "response": {"embedding": {"values": [1]}, "tokenCount": 1}},
+            {"key": "id#1/2", "request": {}, "status": "", "response": {"embedding": {"values": [2_i32]}, "tokenCount": 1_i64}},
+            {"key": "id#0/2", "request": {}, "status": "", "response": {"embedding": {"values": [1_i32]}, "tokenCount": 1_i64}},
         ],
         "model": "text-embedding-005",
     }));
@@ -92,12 +94,15 @@ fn regroup_builds_one_output_row_per_identifier() {
         json!("batch_req_00000000-0000-0000-0000-000000000001")
     );
     assert_eq!(row["custom_id"], json!("id"));
-    assert_eq!(row["response"]["status_code"], json!(200));
+    assert_eq!(row["response"]["status_code"], json!(200_u16));
     assert_eq!(
         row["response"]["body"]["model"],
         json!("text-embedding-005")
     );
-    assert_eq!(row["response"]["body"]["usage"]["total_tokens"], json!(2));
+    assert_eq!(
+        row["response"]["body"]["usage"]["total_tokens"],
+        json!(2_u32)
+    );
 }
 
 #[test]

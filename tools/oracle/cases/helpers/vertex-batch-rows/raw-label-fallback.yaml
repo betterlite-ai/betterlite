@@ -2,7 +2,7 @@ kind: helper
 name: vertex-batch-rows-raw-label-fallback
 call:
   vertex_batch_rows:
-    operation: resolve
+    operation: rows
     rows:
       - request: {labels: {litellm_custom_id_raw: "b32_zz", litellm_custom_id: lossy}}
       - request: {labels: {litellm_custom_id_raw: notbase32, litellm_custom_id: lossy}}

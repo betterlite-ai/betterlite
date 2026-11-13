@@ -2,7 +2,7 @@ kind: helper
 name: vertex-batch-rows-empty-id
 call:
   vertex_batch_rows:
-    operation: resolve
+    operation: rows
     rows:
       - {key: ""}
       - request: {labels: {litellm_custom_id_raw: "b32_"}}

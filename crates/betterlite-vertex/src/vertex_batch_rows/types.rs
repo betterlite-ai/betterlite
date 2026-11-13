@@ -10,16 +10,6 @@ pub enum RowField {
     Value(Json),
 }
 
-impl RowField {
-    #[must_use]
-    pub const fn value(&self) -> Option<&Json> {
-        match self {
-            Self::Null => None,
-            Self::Value(value) => Some(value),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct VertexBatchRow {
     #[serde(default)]
@@ -38,26 +28,21 @@ impl VertexBatchRow {
     // LiteLLM reads labels off a request that is a mapping and ignores any other shape
     #[must_use]
     pub fn labels(&self) -> Option<&IndexMap<String, Json>> {
-        match self.request.as_ref().and_then(RowField::value) {
-            Some(Json::Object(request)) => match request.get("labels") {
-                Some(Json::Object(labels)) => Some(labels),
-                Some(
-                    Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_),
-                )
-                | None => None,
-            },
-            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-            | None => None,
-        }
+        let Some(RowField::Value(Json::Object(request))) = self.request.as_ref() else {
+            return None;
+        };
+        let Some(Json::Object(labels)) = request.get("labels") else {
+            return None;
+        };
+        Some(labels)
     }
 
     #[must_use]
-    pub fn response_object(&self) -> Option<&IndexMap<String, Json>> {
-        match self.response.as_ref().and_then(RowField::value) {
-            Some(Json::Object(response)) => Some(response),
-            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-            | None => None,
-        }
+    pub const fn response_object(&self) -> Option<&IndexMap<String, Json>> {
+        let Some(RowField::Value(Json::Object(response))) = self.response.as_ref() else {
+            return None;
+        };
+        Some(response)
     }
 }
 
@@ -79,7 +64,7 @@ pub struct OpenAiBatchOutput {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct OpenAiBatchOutputResponse {
     pub status_code: u16,
-    pub request_id: String,
+    pub request_id: Json,
     pub body: Json,
 }
 

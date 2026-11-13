@@ -2,7 +2,7 @@ kind: helper
 name: vertex-batch-rows-encoded-hash-suffix
 call:
   vertex_batch_rows:
-    operation: split
+    operation: rows
     rows:
       - {key: "req%23one#1/2"}
       - {key: "req%23one#0/2"}

@@ -2,7 +2,7 @@ kind: helper
 name: vertex-batch-rows-numeric-suffix-order
 call:
   vertex_batch_rows:
-    operation: resolve
+    operation: rows
     rows:
       - request:
           labels:

@@ -1,13 +1,12 @@
 use betterlite_models::decisions::Json;
-use betterlite_vertex::vertex_batch_rows::correlation::custom_id_from_row;
-use betterlite_vertex::vertex_batch_rows::decode::{
-    decode_vertex_batch_row, is_embeddings_output_row, is_generate_output_row,
-    split_vertex_batch_key,
-};
-use betterlite_vertex::vertex_batch_rows::embeddings::regroup_embeddings;
-use betterlite_vertex::vertex_batch_rows::labels::{custom_id_from_labels, set_custom_id_labels};
-use betterlite_vertex::vertex_batch_rows::paths::{
-    is_passthrough_managed_gcs_url, model_from_managed_gcs_url,
+use betterlite_vertex::vertex_batch_rows::{
+    decode::{
+        decode_vertex_batch_row, is_embeddings_output_row, is_generate_output_row,
+        split_vertex_batch_key,
+    },
+    embeddings::regroup_embeddings,
+    labels::{custom_id_from_labels, set_custom_id_labels},
+    paths::{is_passthrough_managed_gcs_url, model_from_managed_gcs_url},
 };
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -22,10 +21,7 @@ pub(crate) enum Input {
     Encode {
         custom_ids: Vec<String>,
     },
-    Resolve {
-        rows: Vec<Json>,
-    },
-    Split {
+    Rows {
         rows: Vec<Json>,
     },
     Regroup {
@@ -40,8 +36,7 @@ pub(crate) enum Input {
 pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
     match input {
         Input::Encode { custom_ids } => encode(custom_ids),
-        Input::Resolve { rows } => resolve(rows),
-        Input::Split { rows } => split(rows),
+        Input::Rows { rows } => batch_rows(rows),
         Input::Regroup { rows, model } => regroup(rows, model.as_deref()),
         Input::Urls { urls } => Ok(managed_urls(urls)),
     }
@@ -58,40 +53,31 @@ fn encode(custom_ids: &[String]) -> crate::helpers::HelperResult {
     Ok(json!({"rows": rows}))
 }
 
-fn resolve(rows: &[Json]) -> crate::helpers::HelperResult {
-    let mut found = Vec::with_capacity(rows.len());
-    for value in rows {
+fn batch_rows(values: &[Json]) -> crate::helpers::HelperResult {
+    let mut found = Vec::with_capacity(values.len());
+    for value in values {
         let bytes = serde_json::to_vec(value).or_value_error()?;
         let row = decode_vertex_batch_row(&bytes).or_value_error()?;
-        let custom_id = custom_id_from_row(&row).or_value_error()?;
+        let key = split_vertex_batch_key(&row).or_value_error()?;
         found.push(json!({
-            "custom_id": custom_id,
+            "custom_id": key.custom_id,
             "embeddings": is_embeddings_output_row(&row),
             "generate": is_generate_output_row(&row),
+            "index": key.index,
+            "total": key.total,
         }));
     }
     Ok(json!({"rows": found}))
 }
 
-fn split(rows: &[Json]) -> crate::helpers::HelperResult {
-    let mut found = Vec::with_capacity(rows.len());
-    for value in rows {
-        let bytes = serde_json::to_vec(value).or_value_error()?;
-        let row = decode_vertex_batch_row(&bytes).or_value_error()?;
-        let key = split_vertex_batch_key(&row).or_value_error()?;
-        found.push(json!([key.custom_id, key.index, key.total]));
-    }
-    Ok(json!({"rows": found}))
-}
-
-fn regroup(rows: &[Json], model: Option<&str>) -> crate::helpers::HelperResult {
-    let mut decoded = Vec::with_capacity(rows.len());
-    for value in rows {
+fn regroup(values: &[Json], model: Option<&str>) -> crate::helpers::HelperResult {
+    let mut decoded = Vec::with_capacity(values.len());
+    for value in values {
         let bytes = serde_json::to_vec(value).or_value_error()?;
         decoded.push(decode_vertex_batch_row(&bytes).or_value_error()?);
     }
     let mut next = 0_u128;
-    let outputs = regroup_embeddings(&decoded, model, || {
+    let outputs = regroup_embeddings(&decoded, model, &mut || {
         next = next.saturating_add(1);
         Uuid::from_u128(next)
     })
@@ -99,13 +85,15 @@ fn regroup(rows: &[Json], model: Option<&str>) -> crate::helpers::HelperResult {
     Ok(json!({"rows": outputs}))
 }
 
-fn managed_urls(urls: &[String]) -> Value {
-    let mut rows = Vec::with_capacity(urls.len());
-    for url in urls {
-        rows.push(json!({
-            "passthrough": is_passthrough_managed_gcs_url(url),
-            "model": model_from_managed_gcs_url(url),
-        }));
-    }
+fn managed_urls(values: &[String]) -> Value {
+    let rows: Vec<Value> = values
+        .iter()
+        .map(|url| {
+            json!({
+                "passthrough": is_passthrough_managed_gcs_url(url),
+                "model": model_from_managed_gcs_url(url),
+            })
+        })
+        .collect();
     json!({"rows": rows})
 }

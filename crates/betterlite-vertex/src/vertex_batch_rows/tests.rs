@@ -9,9 +9,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use uuid::Uuid;
 
-use crate::vertex_batch_rows::correlation::{
-    CorrelationInput, custom_id_from_row, decode_batch_correlation,
-};
+use crate::vertex_batch_rows::correlation::{CorrelationInput, decode_batch_correlation};
 use crate::vertex_batch_rows::decode::{
     decode_vertex_batch_row, is_embeddings_output_row, is_generate_output_row,
     split_vertex_batch_key,
@@ -22,7 +20,7 @@ use crate::vertex_batch_rows::embeddings::{
 use crate::vertex_batch_rows::error::BatchRowsError;
 use crate::vertex_batch_rows::labels::{
     GCP_LABEL_VALUE_MAX_LEN, RAW_LABEL, custom_id_from_labels, decode_gcp_label_value_chunks,
-    encode_gcp_label_value_chunks, sanitize_gcp_label_value, set_custom_id_labels,
+    set_custom_id_labels,
 };
 use crate::vertex_batch_rows::paths::{is_passthrough_managed_gcs_url, model_from_managed_gcs_url};
 use crate::vertex_batch_rows::types::{OpenAiBatchOutput, OpenAiBatchOutputError, VertexBatchRow};
@@ -38,6 +36,19 @@ fn labels(pairs: &[(&str, &str)]) -> IndexMap<String, Json> {
         .collect()
 }
 
+fn written_labels(custom_id: &str) -> IndexMap<String, Json> {
+    let mut written = IndexMap::new();
+    set_custom_id_labels(&mut written, custom_id);
+    written
+}
+
+fn label_text(written: &IndexMap<String, Json>, name: &str) -> String {
+    let Json::Text(text) = written.get(name).unwrap() else {
+        panic!("the {name} label is not text");
+    };
+    text.clone()
+}
+
 fn ids() -> impl FnMut() -> Uuid {
     let mut next = 0_u128;
     move || {
@@ -47,7 +58,7 @@ fn ids() -> impl FnMut() -> Uuid {
 }
 
 fn regroup(rows: &[VertexBatchRow], model: Option<&str>) -> Vec<OpenAiBatchOutput> {
-    regroup_embeddings(rows, model, ids()).unwrap()
+    regroup_embeddings(rows, model, &mut ids()).unwrap()
 }
 
 fn output_value(output: &OpenAiBatchOutput) -> Json {
@@ -58,19 +69,21 @@ fn output_value(output: &OpenAiBatchOutput) -> Json {
 #[case::lowers_and_replaces("H\u{e9}llo_WORLD.x", "h_llo_world_x")]
 #[case::keeps_allowed_punctuation("a-b_c9", "a-b_c9")]
 #[case::drops_unicode_symbols("w\u{f6}rld\u{2713}", "w_rld_")]
+#[case::folds_turkish_capital_i("\u{130}stanbul", "i_stanbul")]
 #[case::keeps_empty("", "")]
-fn sanitize_gcp_label_value_follows_the_label_alphabet(
-    #[case] value: &str,
+fn set_custom_id_labels_writes_the_gcp_safe_identifier(
+    #[case] custom_id: &str,
     #[case] expected: &str,
 ) {
-    assert_eq!(sanitize_gcp_label_value(value), expected);
+    let written = written_labels(custom_id);
+    assert_eq!(label_text(&written, "litellm_custom_id"), expected);
 }
 
 #[test]
-fn sanitize_gcp_label_value_truncates_at_the_gcp_limit() {
+fn set_custom_id_labels_truncates_the_identifier_at_the_gcp_limit() {
     let long = "a".repeat(GCP_LABEL_VALUE_MAX_LEN.saturating_add(5));
     assert_eq!(
-        sanitize_gcp_label_value(&long).len(),
+        label_text(&written_labels(&long), "litellm_custom_id").len(),
         GCP_LABEL_VALUE_MAX_LEN
     );
 }
@@ -78,28 +91,36 @@ fn sanitize_gcp_label_value_truncates_at_the_gcp_limit() {
 #[rstest]
 #[case::short("req-1", vec!["b32_ojsxcljr"])]
 #[case::empty("", vec!["b32_"])]
-fn encode_gcp_label_value_chunks_prefixes_each_chunk(
-    #[case] value: &str,
+#[case::unicode("H\u{e9}llo_WORLD.x", vec!["b32_jdb2s3dmn5pvot2sjrcc46a"])]
+fn set_custom_id_labels_writes_the_raw_chunks(
+    #[case] custom_id: &str,
     #[case] expected: Vec<&str>,
 ) {
-    assert_eq!(encode_gcp_label_value_chunks(value), expected);
+    let written = written_labels(custom_id);
+    let mut chunks = vec![label_text(&written, RAW_LABEL)];
+    for index in 1..=written.len().saturating_sub(2) {
+        let name = format!("litellm_custom_id_raw_{index}");
+        chunks.push(label_text(&written, &name));
+    }
+    assert_eq!(chunks, expected);
 }
 
 #[test]
-fn encode_gcp_label_value_chunks_splits_payloads_after_the_prefix() {
-    let chunks = encode_gcp_label_value_chunks(&"x".repeat(40));
+fn set_custom_id_labels_splits_payloads_after_the_prefix() {
+    let written = written_labels(&"x".repeat(40));
+    let first = label_text(&written, RAW_LABEL);
+    let second = label_text(&written, "litellm_custom_id_raw_1");
     assert_eq!(
-        chunks,
+        vec![first, second],
         vec![
             "b32_pb4hq6dypb4hq6dypb4hq6dypb4hq6dypb4hq6dypb4hq6dypb4hq6dypb4",
             "b32_hq6dy",
         ]
     );
-    assert!(
-        chunks
-            .iter()
-            .all(|chunk| chunk.len() <= GCP_LABEL_VALUE_MAX_LEN)
-    );
+    assert!(written.values().all(|value| match value {
+        Json::Text(text) => text.len() <= GCP_LABEL_VALUE_MAX_LEN,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => false,
+    }));
 }
 
 #[rstest]
@@ -110,8 +131,9 @@ fn encode_gcp_label_value_chunks_splits_payloads_after_the_prefix() {
 #[case::invalid_utf8_bytes(vec!["b32_zz"], None)]
 #[case::rejects_bad_padding(vec!["b32_a"], None)]
 #[case::ignores_trailing_bits(vec!["b32_ab"], Some("\u{0}"))]
-#[case::joins_chunks(vec!["b32_jbswy3dp", "b32_orugs"], Some("Hellothi"))]
+#[case::joins_whole_quanta(vec!["b32_jbswy3dp", "b32_orugs"], Some("Hellothi"))]
 #[case::accepts_python_padding(vec!["b32_jbswy3dp", "b32_orugs==="], Some("Hellothi"))]
+#[case::rejects_unaligned_join(vec!["b32_jbswy3dp", "b32_orugs", "b32_mzxw6"], None)]
 #[case::rejects_uppercase_prefix(vec!["B32_JB"], None)]
 fn decode_gcp_label_value_chunks_matches_the_litellm_decoder(
     #[case] chunks: Vec<&str>,
@@ -121,13 +143,8 @@ fn decode_gcp_label_value_chunks_matches_the_litellm_decoder(
 }
 
 #[test]
-fn set_custom_id_labels_writes_the_lossy_and_raw_labels() {
-    let mut written = IndexMap::new();
-    set_custom_id_labels(&mut written, "H\u{e9}llo World.req-1");
-    assert_eq!(
-        written.get("litellm_custom_id"),
-        Some(&Json::Text("h_llo_world_req-1".to_owned()))
-    );
+fn set_custom_id_labels_round_trips_a_unicode_identifier() {
+    let written = written_labels("H\u{e9}llo World.req-1");
     assert_eq!(written.len(), 2);
     assert_eq!(
         custom_id_from_labels(&written).unwrap(),
@@ -136,9 +153,8 @@ fn set_custom_id_labels_writes_the_lossy_and_raw_labels() {
 }
 
 #[test]
-fn set_custom_id_labels_numbers_every_chunk_past_the_first() {
-    let mut written = IndexMap::new();
-    set_custom_id_labels(&mut written, &"x".repeat(40));
+fn set_custom_id_labels_round_trips_an_identifier_across_chunks() {
+    let written = written_labels(&"x".repeat(40));
     assert!(written.contains_key("litellm_custom_id_raw_1"));
     assert_eq!(custom_id_from_labels(&written).unwrap(), "x".repeat(40));
 }
@@ -177,9 +193,18 @@ fn custom_id_from_labels_orders_numbered_chunks_numerically() {
     let written = labels(&[
         (RAW_LABEL, "b32_jbswy3dp"),
         ("litellm_custom_id_raw_10", "b32_mzxw6"),
+    ]);
+    assert_eq!(custom_id_from_labels(&written).unwrap(), "Hellofoo");
+}
+
+#[test]
+fn custom_id_from_labels_falls_back_when_the_joined_chunks_do_not_decode() {
+    let written = labels(&[
+        (RAW_LABEL, "b32_jbswy3dp"),
+        ("litellm_custom_id_raw_10", "b32_mzxw6"),
         ("litellm_custom_id_raw_2", "b32_orugs"),
     ]);
-    assert_eq!(custom_id_from_labels(&written).unwrap(), "Hellothifoo");
+    assert_eq!(custom_id_from_labels(&written).unwrap(), "b32_jbswy3dp");
 }
 
 #[test]
@@ -190,7 +215,7 @@ fn custom_id_from_labels_keeps_numbered_chunks_across_a_gap() {
         ("litellm_custom_id_raw_2", "b32_orugs"),
         ("litellm_custom_id_raw_7", "b32_a"),
     ]);
-    assert_eq!(custom_id_from_labels(&written).unwrap(), "Hellothi");
+    assert_eq!(custom_id_from_labels(&written).unwrap(), "b32_jbswy3dp");
 }
 
 #[test]
@@ -200,6 +225,15 @@ fn custom_id_from_labels_keeps_a_zero_numbered_chunk_after_the_raw_one() {
         ("litellm_custom_id_raw_0", "b32_mzxw6ztf"),
     ]);
     assert_eq!(custom_id_from_labels(&written).unwrap(), "foofe");
+}
+
+#[test]
+fn custom_id_from_labels_ignores_a_suffix_that_is_not_numeric() {
+    let written = labels(&[
+        (RAW_LABEL, "b32_jbswy3dp"),
+        ("litellm_custom_id_raw_x", "b32_a"),
+    ]);
+    assert_eq!(custom_id_from_labels(&written).unwrap(), "Hello");
 }
 
 #[test]
@@ -234,7 +268,7 @@ fn custom_id_from_labels_rejects_a_chunk_number_past_u64() {
     let chunk = "litellm_custom_id_raw_99999999999999999999999";
     let written = labels(&[(RAW_LABEL, "b32_jbswy3dp"), (chunk, "b32_orugs")]);
     let error = custom_id_from_labels(&written).unwrap_err();
-    assert!(matches!(error, BatchRowsError::ChunkIndex { label } if label == chunk));
+    assert!(matches!(error, BatchRowsError::Label { label } if label == chunk));
 }
 
 #[test]
@@ -263,6 +297,9 @@ fn a_null_processed_time_still_counts_as_present(#[case] source: &str, #[case] p
 #[rstest]
 #[case::not_json("{")]
 #[case::not_an_object("[1]")]
+#[case::empty_array("[]")]
+#[case::array_of_nulls("[null, null]")]
+#[case::padded_array("\n [] ")]
 #[case::null_row("null")]
 #[case::text_row("\"row\"")]
 fn decode_vertex_batch_row_rejects_bytes_that_are_not_a_row(#[case] source: &str) {
@@ -280,6 +317,14 @@ fn decode_vertex_batch_row_rejects_invalid_utf8() {
 #[case::without_request(r#"{"response": {"embedding": {"values": [1]}}}"#, false)]
 #[case::without_content(r#"{"request": {}, "status": "failed"}"#, false)]
 #[case::without_status(r#"{"request": {"content": {}}}"#, false)]
+#[case::null_request(
+    r#"{"request": null, "response": {"embedding": {"values": [1]}}}"#,
+    true
+)]
+#[case::embedding_not_an_object(
+    r#"{"request": {}, "status": "failed", "response": {"embedding": "x"}}"#,
+    false
+)]
 fn is_embeddings_output_row_matches_the_row_shape(#[case] source: &str, #[case] expected: bool) {
     assert_eq!(is_embeddings_output_row(&row(source)), expected);
 }
@@ -300,6 +345,11 @@ fn is_embeddings_output_row_matches_the_row_shape(#[case] source: &str, #[case] 
 #[case::empty_status(r#"{"request": {}, "response": {}, "processed_time": ""}"#, false)]
 #[case::without_processed_time(r#"{"request": {}, "response": {}}"#, false)]
 #[case::without_request(r#"{"response": {}, "processed_time": ""}"#, false)]
+#[case::without_response(r#"{"request": {}, "processed_time": "", "status": "bad"}"#, false)]
+#[case::null_processed_time(
+    r#"{"request": {}, "response": {}, "processed_time": null, "status": "bad"}"#,
+    true
+)]
 fn is_generate_output_row_matches_the_row_shape(#[case] source: &str, #[case] expected: bool) {
     assert_eq!(is_generate_output_row(&row(source)), expected);
 }
@@ -312,6 +362,7 @@ fn is_generate_output_row_matches_the_row_shape(#[case] source: &str, #[case] ex
 #[case::not_a_number("a#x/2", "a#x/2", 0, 1)]
 #[case::decoded_index("%C3%A9#0/1", "\u{e9}", 0, 1)]
 #[case::empty_identifier("#1/2", "", 1, 2)]
+#[case::leading_zeros("a#01/02", "a", 1, 2)]
 fn split_vertex_batch_key_reads_the_fan_out_suffix(
     #[case] key: &str,
     #[case] custom_id: &str,
@@ -344,13 +395,19 @@ fn split_vertex_batch_key_reports_unknown_without_a_key_or_labels() {
 fn a_key_wins_over_the_labels() {
     let source =
         r#"{"key": "from-key", "request": {"labels": {"litellm_custom_id": "from-label"}}}"#;
-    assert_eq!(custom_id_from_row(&row(source)).unwrap(), "from-key");
+    assert_eq!(
+        split_vertex_batch_key(&row(source)).unwrap().custom_id,
+        "from-key"
+    );
 }
 
 #[test]
 fn a_null_key_falls_back_to_the_labels() {
     let source = r#"{"key": null, "request": {"labels": {"litellm_custom_id": "from-label"}}}"#;
-    assert_eq!(custom_id_from_row(&row(source)).unwrap(), "from-label");
+    assert_eq!(
+        split_vertex_batch_key(&row(source)).unwrap().custom_id,
+        "from-label"
+    );
 }
 
 #[test]
@@ -463,6 +520,26 @@ fn embedding_groups_name_their_batch_model() {
 }
 
 #[test]
+fn embedding_values_may_be_a_base64_string() {
+    let rows = embedding_rows(&[("id#0/1", r#""AAAA""#, "")]);
+    let outputs = regroup(&rows, None);
+    let body = &outputs[0].response.as_ref().unwrap().body;
+    let Json::Object(fields) = body else {
+        panic!("the embedding body is not an object");
+    };
+    let Some(Json::List(data)) = fields.get("data") else {
+        panic!("the embedding data is not a list");
+    };
+    assert_eq!(
+        data.first(),
+        Some(
+            &serde_json::from_str::<Json>(r#"{"object":"embedding","embedding":"AAAA","index":0}"#)
+                .unwrap()
+        )
+    );
+}
+
+#[test]
 fn a_missing_embedding_position_fails_the_whole_entry() {
     let rows = embedding_rows(&[("id#0/3", "[1]", ""), ("id#2/3", "[3]", "")]);
     let outputs = regroup(&rows, None);
@@ -504,37 +581,44 @@ fn a_failed_element_reports_its_status() {
 #[test]
 fn an_embedding_row_without_a_response_is_refused() {
     let source = r#"{"key": "id#0/1", "request": {}, "status": ""}"#;
-    let error = regroup_embeddings(&[row(source)], None, ids()).unwrap_err();
-    assert!(matches!(error, BatchRowsError::Shape { field: "response" }));
+    let error = regroup_embeddings(&[row(source)], None, &mut ids()).unwrap_err();
+    assert!(
+        matches!(error, BatchRowsError::Shape { custom_id, field } if custom_id == "id" && field == "response")
+    );
 }
 
 #[test]
 fn embedding_values_that_are_not_numbers_are_refused() {
     let rows = embedding_rows(&[("id#0/1", r#"["a"]"#, "")]);
-    let error = regroup_embeddings(&rows, None, ids()).unwrap_err();
-    assert!(matches!(error, BatchRowsError::Values { custom_id } if custom_id == "id"));
+    let error = regroup_embeddings(&rows, None, &mut ids()).unwrap_err();
+    assert!(
+        matches!(error, BatchRowsError::Shape { custom_id, field } if custom_id == "id" && field == "embedding.values")
+    );
 }
 
 #[test]
 fn embedding_values_that_are_missing_are_refused() {
     let source = r#"{"key": "id#0/1", "request": {}, "status": "", "response": {"embedding": {}}}"#;
-    let error = regroup_embeddings(&[row(source)], None, ids()).unwrap_err();
-    assert!(matches!(error, BatchRowsError::Values { custom_id } if custom_id == "id"));
+    let error = regroup_embeddings(&[row(source)], None, &mut ids()).unwrap_err();
+    assert!(
+        matches!(error, BatchRowsError::Shape { custom_id, field } if custom_id == "id" && field == "embedding.values")
+    );
 }
 
 #[test]
 fn a_prompt_token_count_past_u32_is_refused() {
     let rows = embedding_rows(&[("id#0/1", "[1]", r#", "tokenCount": 4294967296"#)]);
-    let error = regroup_embeddings(&rows, None, ids()).unwrap_err();
-    assert!(matches!(error, BatchRowsError::Tokens { custom_id } if custom_id == "id"));
+    let error = regroup_embeddings(&rows, None, &mut ids()).unwrap_err();
+    assert!(
+        matches!(error, BatchRowsError::Shape { custom_id, field } if custom_id == "id" && field == "usage")
+    );
 }
 
 #[test]
 fn batch_output_rows_inject_the_given_id() {
     let body = serde_json::from_str::<Json>(r#"{"object": "list"}"#).unwrap();
     let output =
-        openai_batch_output_row(String::from("req-1"), Some(body), None, Uuid::from_u128(7))
-            .unwrap();
+        openai_batch_output_row(String::from("req-1"), Some(body), None, Uuid::from_u128(7));
     assert_eq!(output.id, "batch_req_00000000-0000-0000-0000-000000000007");
     assert_eq!(output.response.unwrap().status_code, 200);
 }
@@ -543,9 +627,33 @@ fn batch_output_rows_inject_the_given_id() {
 fn batch_output_rows_read_the_body_id_as_the_request_id() {
     let body = serde_json::from_str::<Json>(r#"{"id": "chatcmpl-1"}"#).unwrap();
     let output =
-        openai_batch_output_row(String::from("req-1"), Some(body), None, Uuid::from_u128(1))
-            .unwrap();
-    assert_eq!(output.response.unwrap().request_id, "chatcmpl-1");
+        openai_batch_output_row(String::from("req-1"), Some(body), None, Uuid::from_u128(1));
+    assert_eq!(
+        output.response.unwrap().request_id,
+        Json::Text(String::from("chatcmpl-1"))
+    );
+}
+
+#[test]
+fn batch_output_rows_copy_a_body_id_of_any_type() {
+    let body = serde_json::from_str::<Json>(r#"{"id": 5}"#).unwrap();
+    let output =
+        openai_batch_output_row(String::from("req-1"), Some(body), None, Uuid::from_u128(1));
+    assert_eq!(
+        output.response.unwrap().request_id,
+        Json::Number(serde_json::Number::from(5_i32))
+    );
+}
+
+#[test]
+fn batch_output_rows_without_a_body_id_report_an_empty_request_id() {
+    let body = serde_json::from_str::<Json>(r#"{"object": "list"}"#).unwrap();
+    let output =
+        openai_batch_output_row(String::from("req-1"), Some(body), None, Uuid::from_u128(1));
+    assert_eq!(
+        output.response.unwrap().request_id,
+        Json::Text(String::new())
+    );
 }
 
 #[test]
@@ -555,8 +663,7 @@ fn batch_output_rows_report_an_error_without_a_response() {
         message: String::from("bad"),
     };
     let output =
-        openai_batch_output_row(String::from("req-1"), None, Some(error), Uuid::from_u128(1))
-            .unwrap();
+        openai_batch_output_row(String::from("req-1"), None, Some(error), Uuid::from_u128(1));
     assert!(output.response.is_none());
     let value = output_value(&output);
     assert_eq!(
@@ -576,6 +683,7 @@ fn batch_output_rows_report_an_error_without_a_response() {
     false
 )]
 #[case::not_passthrough("gs://b/litellm-vertex-files/x", false)]
+#[case::encoded_prefix("gs://b/%6Citemm-vertex-files/passthrough/x", false)]
 #[case::plain("gs://b/x", false)]
 fn is_passthrough_managed_gcs_url_reads_the_first_prefix(
     #[case] url: &str,
@@ -604,10 +712,7 @@ fn replays_the_vertex_batch_rows_corpus(#[files("fuzz/corpus/vertex_batch_rows/*
     let bytes = fs::read(path).unwrap();
     if let Ok(row) = decode_vertex_batch_row(&bytes) {
         if is_embeddings_output_row(&row) {
-            drop(regroup_embeddings(from_ref(&row), None, ids()));
-        }
-        if is_generate_output_row(&row) {
-            drop(custom_id_from_row(&row));
+            drop(regroup_embeddings(from_ref(&row), None, &mut ids()));
         }
         drop(split_vertex_batch_key(&row));
     }
