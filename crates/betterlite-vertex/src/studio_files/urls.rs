@@ -15,7 +15,7 @@ pub struct FileTarget {
 // A file ID may be a full URL, but only its path names the file: the host always comes from the base.
 pub fn normalize_file_id(file_id: &str) -> Result<String, StudioFilesError> {
     let candidate = if file_id.starts_with("http://") || file_id.starts_with("https://") {
-        url_path(file_id)
+        from_first_files(url_path(file_id))
     } else {
         file_id
     };
@@ -23,6 +23,14 @@ pub fn normalize_file_id(file_id: &str) -> Result<String, StudioFilesError> {
     let body = trimmed.strip_prefix("files/").unwrap_or(trimmed);
     let encoded = encode_segment(body, "file_id")?;
     Ok(format!("files/{encoded}"))
+}
+
+// LiteLLM takes a URL path from the first files/ occurrence, otherwise the whole path.
+fn from_first_files(path: &str) -> &str {
+    let Some(index) = path.find("files/") else {
+        return path;
+    };
+    path.get(index..).unwrap_or(path)
 }
 
 // urllib.parse.urlparse's path stops at the query, fragment or the last segment's ';params'.

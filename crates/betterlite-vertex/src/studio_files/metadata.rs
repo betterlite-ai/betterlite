@@ -1,12 +1,15 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::records::{FileKind, FileObject, FileStatus, FilesPurpose};
+use regex::Regex;
 use serde::Deserialize;
 
 use super::error::StudioFilesError;
 use crate::provider_metadata::timestamp::{LocalTimeContext, decode_vertex_timestamp};
 
 pub const METADATA_BODY_LIMIT: usize = 1024 * 1024;
-const MAX_TIMESTAMP_BYTES: usize = 64;
+
+// CPython's %z shape, ASCII digits only: [+-]HH[:]MM([:]SS(.ffffff)?)? with minutes and seconds 00-59.
+const UTC_OFFSET_PATTERN: &str = r"^[+-][0-9]{2}:?[0-5][0-9](:?[0-5][0-9](\.[0-9]{1,6})?)?$";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -21,25 +24,23 @@ struct CreateEnvelope {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct CreateMetadata {
     uri: String,
-    #[serde(rename = "sizeBytes")]
     size_bytes: String,
-    #[serde(rename = "createTime")]
     create_time: String,
-    #[serde(rename = "displayName")]
     display_name: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RetrieveMetadata {
     #[serde(default)]
     uri: Option<String>,
-    #[serde(rename = "sizeBytes", default)]
+    #[serde(default)]
     size_bytes: Option<String>,
-    #[serde(rename = "createTime")]
     create_time: String,
-    #[serde(rename = "displayName", default)]
+    #[serde(default)]
     display_name: Option<String>,
     #[serde(default)]
     state: Option<String>,
@@ -134,12 +135,6 @@ fn size_bytes(text: &str) -> Result<i64, StudioFilesError> {
 
 // LiteLLM replaces every Z with +00:00, parses the %z suffix, then mktime drops the offset it read.
 fn decode_created_at(text: &str, local: &LocalTimeContext) -> Result<i64, StudioFilesError> {
-    if text.len() > MAX_TIMESTAMP_BYTES {
-        return Err(StudioFilesError::TimestampTooLong {
-            size: text.len(),
-            limit: MAX_TIMESTAMP_BYTES,
-        });
-    }
     let replaced = text.replace('Z', "+00:00");
     let Some((civil, tail)) = replaced.split_once('.') else {
         return Err(StudioFilesError::TimestampFormat);
@@ -151,51 +146,16 @@ fn decode_created_at(text: &str, local: &LocalTimeContext) -> Result<i64, Studio
     let offset = tail
         .get(digits..)
         .ok_or(StudioFilesError::TimestampFormat)?;
-    if !valid_utc_offset(offset) {
+    let Ok(pattern) = Regex::new(UTC_OFFSET_PATTERN) else {
+        return Err(StudioFilesError::TimestampFormat);
+    };
+    if !pattern.is_match(offset) {
         return Err(StudioFilesError::TimestampFormat);
     }
     // struct_time holds whole seconds, so the fraction is parsed and then dropped.
     let zoned = format!("{civil}.000000Z");
     decode_vertex_timestamp(zoned.as_bytes(), local)
         .map_err(|source| StudioFilesError::Timestamp { source })
-}
-
-// CPython's %z: [+-]HH[:]MM([:]SS(.ffffff)?)? with two-digit hours and 00-59 minutes and seconds.
-fn valid_utc_offset(offset: &str) -> bool {
-    let Some(rest) = offset.strip_prefix(['+', '-']) else {
-        return false;
-    };
-    let Some((hour, after_hour)) = rest.split_at_checked(2) else {
-        return false;
-    };
-    if !hour.bytes().all(|byte| byte.is_ascii_digit()) {
-        return false;
-    }
-    let Some((_minute, after_minute)) = minute_field(after_hour) else {
-        return false;
-    };
-    if after_minute.is_empty() {
-        return true;
-    }
-    let Some((_second, after_second)) = minute_field(after_minute) else {
-        return false;
-    };
-    if after_second.is_empty() {
-        return true;
-    }
-    let Some(fraction) = after_second.strip_prefix('.') else {
-        return false;
-    };
-    (1..=6).contains(&fraction.len()) && fraction.bytes().all(|byte| byte.is_ascii_digit())
-}
-
-fn minute_field(text: &str) -> Option<(&str, &str)> {
-    let stripped = text.strip_prefix(':').unwrap_or(text);
-    let (field, rest) = stripped.split_at_checked(2)?;
-    let mut bytes = field.bytes();
-    let first = bytes.next()?;
-    let second = bytes.next()?;
-    ((b'0'..=b'5').contains(&first) && second.is_ascii_digit()).then_some((field, rest))
 }
 
 // The declared status_details is text, and betterlite writes the provider error as standard JSON.

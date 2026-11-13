@@ -32,8 +32,6 @@ pub enum StudioFilesError {
         #[source]
         source: ParseIntError,
     },
-    #[error("the file timestamp is {size} bytes, over the {limit} byte limit")]
-    TimestampTooLong { size: usize, limit: usize },
     #[error("the file timestamp does not match the %Y-%m-%dT%H:%M:%S.%f%z format")]
     TimestampFormat,
     #[error("the file timestamp names an invalid date or time")]
@@ -43,6 +41,4 @@ pub enum StudioFilesError {
     },
     #[error("Failed to delete file: {body}")]
     DeleteFailed { status: u16, body: String },
-    #[error("{operation} is not supported by the Google AI Studio files API")]
-    Unsupported { operation: &'static str },
 }

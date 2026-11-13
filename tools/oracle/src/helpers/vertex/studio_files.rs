@@ -2,13 +2,13 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::studio_identity::{DEFAULT_API_BASE, Settings};
 use betterlite_openai::api::file_type_records::{TwoStepFileUploadConfig, UploadData};
-use betterlite_openai::files::records::{FileObject, FileStatus};
+use betterlite_openai::files::records::FileStatus;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use betterlite_vertex::provider_metadata::timestamp::LocalTimeContext;
 use betterlite_vertex::studio_files::RequestParams;
 use betterlite_vertex::studio_files::metadata::{MetadataShape, decode_studio_file_metadata};
 use betterlite_vertex::studio_files::plan::create_file_plan;
-use betterlite_vertex::studio_files::urls::{FileTarget, decode_delete_response, target};
+use betterlite_vertex::studio_files::urls::{decode_delete_response, target};
 use jiff::tz::TimeZone;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -144,9 +144,27 @@ fn reply_views(bodies: &[String], timezone: &str, shape: MetadataShape) -> Helpe
     for body in bodies {
         let file =
             decode_studio_file_metadata(body.as_bytes(), shape, &context).or_value_error()?;
-        files.push(file_view(&file));
+        files.push(json!({
+            "id": file.id,
+            "bytes": file.bytes,
+            "created_at": file.created_at,
+            "filename": file.filename,
+            "object": "file",
+            "purpose": "user_data",
+            "status": file.status.map(status_name),
+            "status_details": file.status_details,
+        }));
     }
     Ok(json!({ "files": files }))
+}
+
+const fn status_name(status: FileStatus) -> &'static str {
+    match status {
+        FileStatus::Uploaded => "uploaded",
+        FileStatus::Processed => "processed",
+        FileStatus::Error => "error",
+        FileStatus::Pending => "pending",
+    }
 }
 
 fn target_views(
@@ -156,7 +174,14 @@ fn target_views(
     environment: &BTreeMap<String, String>,
     delete: bool,
 ) -> HelperResult {
-    let settings = settings(environment);
+    let settings = Settings {
+        environment_key: non_empty(environment, "GOOGLE_API_KEY")
+            .or_else(|| non_empty(environment, "GEMINI_API_KEY"))
+            .map(SecretString::from),
+        generic_api_key: None,
+        api_base: non_empty(environment, "GEMINI_API_BASE")
+            .map_or_else(|| DEFAULT_API_BASE.to_owned(), str::to_owned),
+    };
     let params = RequestParams {
         api_key: api_key.map(SecretString::from),
         api_base: api_base.map(str::to_owned),
@@ -164,9 +189,21 @@ fn target_views(
     let mut targets = Vec::with_capacity(file_ids.len());
     for file_id in file_ids {
         let found = target(file_id, &params, &settings, !delete).or_value_error()?;
-        targets.push(target_view(&found));
+        let query: Vec<[&str; 2]> = found
+            .query
+            .iter()
+            .map(|(name, value)| [name.as_str(), value.as_str()])
+            .collect();
+        targets.push(json!({ "url": found.url, "query": query }));
     }
     Ok(json!({ "targets": targets }))
+}
+
+fn non_empty<'env>(environment: &'env BTreeMap<String, String>, name: &str) -> Option<&'env str> {
+    environment
+        .get(name)
+        .map(String::as_str)
+        .filter(|value| !value.is_empty())
 }
 
 fn delete_views(replies: &[DeleteReply]) -> HelperResult {
@@ -182,53 +219,4 @@ fn delete_views(replies: &[DeleteReply]) -> HelperResult {
         }));
     }
     Ok(json!({ "replies": deleted }))
-}
-
-fn settings(environment: &BTreeMap<String, String>) -> Settings {
-    Settings {
-        environment_key: non_empty(environment, "GOOGLE_API_KEY")
-            .or_else(|| non_empty(environment, "GEMINI_API_KEY"))
-            .map(SecretString::from),
-        generic_api_key: None,
-        api_base: non_empty(environment, "GEMINI_API_BASE")
-            .map_or_else(|| DEFAULT_API_BASE.to_owned(), str::to_owned),
-    }
-}
-
-fn non_empty<'env>(environment: &'env BTreeMap<String, String>, name: &str) -> Option<&'env str> {
-    environment
-        .get(name)
-        .map(String::as_str)
-        .filter(|value| !value.is_empty())
-}
-
-fn file_view(file: &FileObject) -> Value {
-    json!({
-        "id": file.id,
-        "bytes": file.bytes,
-        "created_at": file.created_at,
-        "filename": file.filename,
-        "object": "file",
-        "purpose": "user_data",
-        "status": file.status.map(status_name),
-        "status_details": file.status_details,
-    })
-}
-
-const fn status_name(status: FileStatus) -> &'static str {
-    match status {
-        FileStatus::Uploaded => "uploaded",
-        FileStatus::Processed => "processed",
-        FileStatus::Error => "error",
-        FileStatus::Pending => "pending",
-    }
-}
-
-fn target_view(target: &FileTarget) -> Value {
-    let query: Vec<[&str; 2]> = target
-        .query
-        .iter()
-        .map(|(name, value)| [name.as_str(), value.as_str()])
-        .collect();
-    json!({ "url": target.url, "query": query })
 }

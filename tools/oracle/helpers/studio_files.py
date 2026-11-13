@@ -86,10 +86,9 @@ class Plan(TypedDict):
 
 
 INPUT = TypeAdapter(Input)
-PLAN = TypeAdapter(Plan)
 HANDLER: Final = GoogleAIStudioFilesHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L55
 CREATE_PLAN: Final = cast(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L124
-    "Callable[[str, CreateFileRequest, Object, Object], Object]",
+    "Callable[[str, CreateFileRequest, Object, Object], Plan]",
     HANDLER.transform_create_file_request,
 )
 CREATE_RESPONSE: Final = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L176
@@ -133,9 +132,7 @@ def create_plan(call: CreatePlan) -> Json:
     saved = time.time
     time.time = partial(float, call["now"])
     try:
-        plan = PLAN.validate_python(
-            CREATE_PLAN("", {"file": file_value(call["file"]), "purpose": "batch"}, {}, {})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L472
-        )
+        plan = CREATE_PLAN("", {"file": file_value(call["file"]), "purpose": "batch"}, {}, {})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L472
     finally:
         time.time = saved
     return {
@@ -143,19 +140,6 @@ def create_plan(call: CreatePlan) -> Json:
         "data": plan["initial_request"]["data"],
         "upload_headers": dict(plan["upload_request"]["headers"]),
         "upload_data": list(plan["upload_request"]["data"]),
-    }
-
-
-def file_view(file: FileObject) -> Object:
-    return {
-        "id": file.id,
-        "bytes": file.bytes,
-        "created_at": file.created_at,
-        "filename": file.filename,
-        "object": file.object,
-        "purpose": file.purpose,
-        "status": file.status,
-        "status_details": file.status_details,
     }
 
 
@@ -169,7 +153,18 @@ def replies(call: Replies) -> Json:
             file = CREATE_RESPONSE(None, response, LOGGING, {})
         else:
             file = RETRIEVE_RESPONSE(response, LOGGING, {})
-        files.append(file_view(file))
+        files.append(
+            {
+                "id": file.id,
+                "bytes": file.bytes,
+                "created_at": file.created_at,
+                "filename": file.filename,
+                "object": file.object,
+                "purpose": file.purpose,
+                "status": file.status,
+                "status_details": file.status_details,
+            }
+        )
     return {"files": files}
 
 
