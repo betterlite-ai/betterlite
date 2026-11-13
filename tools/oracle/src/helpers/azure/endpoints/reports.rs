@@ -2,7 +2,7 @@ use betterlite_azure::azure_urls::EndpointSelection;
 use betterlite_azure::endpoints::cloudflare::{CloudflareClient, CloudflareOutcome};
 use betterlite_azure::endpoints::projection::{
     AzureClientInputs, ClientIdentity, ClientInputs, ClientKind, ClientOutcome, ClientSource,
-    HttpClient, OpenAiV1ClientInputs, V1Key,
+    OpenAiV1ClientInputs, V1Key,
 };
 use secrecy::ExposeSecret;
 use serde_json::{Value, json};
@@ -19,7 +19,7 @@ pub(super) fn initialize_report(
         "api_version": &inputs.api_version,
         "max_retries": inputs.max_retries,
         "timeout": inputs.timeout,
-        "http_client": http_json(inputs.http_client),
+        "http_client": json!({"is_async": inputs.http_client.is_async, "shared": inputs.http_client.shared}),
         "endpoint": endpoint_json(&inputs.endpoint),
         "api_key": inputs.api_key.as_ref().map(ExposeSecret::expose_secret),
         "azure_ad_token": inputs.azure_ad_token.as_ref().map(ExposeSecret::expose_secret),
@@ -95,7 +95,7 @@ fn azure_json(inputs: &AzureClientInputs<'_>) -> Value {
         "token_provider": inputs.token_provider.is_some(),
         "max_retries": inputs.max_retries,
         "timeout": inputs.timeout,
-        "http_client": http_json(inputs.http_client),
+        "http_client": json!({"is_async": inputs.http_client.is_async, "shared": inputs.http_client.shared}),
     })
 }
 
@@ -105,7 +105,7 @@ fn v1_json(inputs: &OpenAiV1ClientInputs<'_>) -> Value {
         "base_url": &inputs.base_url,
         "timeout": inputs.timeout,
         "max_retries": inputs.max_retries,
-        "http_client": http_json(inputs.http_client),
+        "http_client": json!({"is_async": inputs.http_client.is_async, "shared": inputs.http_client.shared}),
     })
 }
 
@@ -130,10 +130,6 @@ fn endpoint_json(endpoint: &EndpointSelection) -> Value {
         "azure_endpoint": &endpoint.azure_endpoint,
         "base_url": &endpoint.base_url,
     })
-}
-
-fn http_json(http: HttpClient) -> Value {
-    json!({"is_async": http.is_async, "shared": http.shared})
 }
 
 fn provider_kind(provider_was_passed: bool, calls: &[Value]) -> &'static str {
