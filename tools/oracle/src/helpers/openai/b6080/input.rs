@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::embedding::EmbeddingInput;
 use betterlite_openai::openai_base_config::Headers;
 use serde::Deserialize;
@@ -15,6 +16,9 @@ pub(crate) enum Input {
     Responses { cases: Vec<ResponsesCase> },
     Decisions { cases: Vec<DecisionsCase> },
     ErrorClass { cases: Vec<ErrorCase> },
+    Request { cases: Vec<RequestCase> },
+    Response { cases: Vec<ReplyCase> },
+    EmbeddingReply { cases: Vec<ReplyCase> },
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,4 +75,18 @@ pub(crate) struct EmbeddingCase {
     pub(crate) input: EmbeddingInput,
     pub(crate) optional_params: Map<String, Value>,
     pub(crate) non_default_params: Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RequestCase {
+    pub(crate) model: String,
+    pub(crate) messages: Vec<ChatMessage>,
+    pub(crate) optional_params: Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ReplyCase {
+    pub(crate) body: String,
 }

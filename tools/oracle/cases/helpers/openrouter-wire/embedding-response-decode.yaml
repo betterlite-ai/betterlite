@@ -1,0 +1,13 @@
+kind: helper
+name: openrouter-wire-embedding-response-decode
+call:
+  b6080:
+    op: embedding_reply
+    cases:
+      - body: '{"object":"list","data":[{"object":"embedding","embedding":[0.5,-0.25,0.125],"index":0},{"object":"embedding","embedding":[0.0625,0.75,-0.5],"index":1}],"model":"openai/text-embedding-3-small","usage":{"prompt_tokens":3,"total_tokens":3}}'
+      - body: '{"object":"list","data":[{"object":"embedding","embedding":"AAAAPwAAgL4=","index":0}],"model":"m","usage":{"prompt_tokens":2,"completion_tokens":0,"total_tokens":2}}'
+      - body: '{"object":"list","data":[],"model":"mödel","usage":{"prompt_tokens":0,"total_tokens":0}}'
+      - body: '{"object":"list","data":[{"object":"embedding","embedding":[0.5],"index":4}],"model":"m","usage":{"prompt_tokens":7,"completion_tokens":1,"total_tokens":8}}'
+env: {}
+compare:
+  ignore: []

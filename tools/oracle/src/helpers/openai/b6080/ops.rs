@@ -19,6 +19,7 @@ use crate::helpers::{HelperResult, OrHelperError as _};
 
 use super::chat::{chat_params, chunks, config, error_class, prompt_object};
 use super::input::{DecisionsCase, EmbeddingCase, Input, ResponsesCase};
+use super::wire::{embedding_replies, requests, responses as chat_responses};
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
@@ -34,6 +35,9 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::Responses { cases } => responses(cases),
         Input::Decisions { cases } => Ok(decisions(cases)),
         Input::ErrorClass { cases } => Ok(Value::Array(cases.iter().map(error_class).collect())),
+        Input::Request { cases } => requests(cases),
+        Input::Response { cases } => chat_responses(cases),
+        Input::EmbeddingReply { cases } => embedding_replies(cases),
     }
 }
 

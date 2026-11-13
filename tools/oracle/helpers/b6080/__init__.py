@@ -16,8 +16,21 @@ from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import LlmProviders
 from pydantic import JsonValue, TypeAdapter
 
+from .wire import (
+    JSON,
+    EmbeddingReplyInput,
+    RequestInput,
+    ResponseInput,
+    embedding_reply,
+    request,
+    response,
+)
+
 MODEL = "m"
-JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+
+
+# LiteLLM declares non_default_params as dict[str, object]
+class Params(dict[str, object]): ...
 
 
 class ChatConfig(Protocol):
@@ -25,7 +38,7 @@ class ChatConfig(Protocol):
 
     def map_openai_params(
         self,
-        non_default_params: dict[str, object],
+        non_default_params: Params,
         optional_params: dict[str, JsonValue],
         model: str,
         drop_params: bool,
@@ -70,7 +83,7 @@ class EmbeddingConfig(Protocol):
 
     def map_openai_params(
         self,
-        non_default_params: dict[str, object],
+        non_default_params: Params,
         optional_params: dict[str, JsonValue],
         model: str,
         drop_params: bool,
@@ -108,7 +121,7 @@ class SupportedInput(TypedDict):
 
 class ChatParamsCase(TypedDict):
     model: str
-    requested: dict[str, object]
+    requested: dict[str, JsonValue]
 
 
 class ChatParamsInput(TypedDict):
@@ -117,7 +130,7 @@ class ChatParamsInput(TypedDict):
 
 
 class ChunkCase(TypedDict):
-    chunk: dict[str, object]
+    chunk: dict[str, JsonValue]
 
 
 class ChunkInput(TypedDict):
@@ -151,7 +164,7 @@ class EmbeddingCase(TypedDict):
     model: str
     input: str | list[str] | list[int] | list[list[int]]
     optional_params: dict[str, JsonValue]
-    non_default_params: dict[str, object]
+    non_default_params: dict[str, JsonValue]
 
 
 class EmbeddingInput(TypedDict):
@@ -201,13 +214,16 @@ Input: TypeAlias = (
     | ResponsesInput
     | DecisionsInput
     | ErrorInput
+    | RequestInput
+    | ResponseInput
+    | EmbeddingReplyInput
 )
 
 CHUNK_OUT: TypeAdapter[ChunkOut] = TypeAdapter(ChunkOut)
 
 
 def chat_params(case: ChatParamsCase) -> dict[str, JsonValue]:
-    return CHAT.map_openai_params(dict(case["requested"]), {}, case["model"], False)
+    return CHAT.map_openai_params(Params(case["requested"]), {}, case["model"], False)
 
 
 def chunk(case: ChunkCase) -> JsonValue:
@@ -236,7 +252,7 @@ def embedding(case: EmbeddingCase) -> JsonValue:
         case["model"], case["input"], case["optional_params"], headers
     )
     params = EMBEDDING.map_openai_params(
-        dict(case["non_default_params"]), {}, case["model"], False
+        Params(case["non_default_params"]), {}, case["model"], False
     )
     result: dict[str, JsonValue] = {
         "supported": JSON.validate_python(EMBEDDING.get_supported_openai_params(case["model"])),
@@ -314,4 +330,10 @@ def run(input_value: Input) -> JsonValue:
         return JSON.validate_python([responses(case) for case in input_value["cases"]])
     if input_value["op"] == "decisions":
         return decisions(input_value["cases"])
+    if input_value["op"] == "request":
+        return JSON.validate_python([request(case) for case in input_value["cases"]])
+    if input_value["op"] == "response":
+        return JSON.validate_python([response(case) for case in input_value["cases"]])
+    if input_value["op"] == "embedding_reply":
+        return JSON.validate_python([embedding_reply(case) for case in input_value["cases"]])
     return JSON.validate_python([error_class(case) for case in input_value["cases"]])

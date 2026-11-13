@@ -15,7 +15,7 @@ use crate::helpers::{HelperResult, OrHelperError as _};
 
 use super::input::{ChatParamsCase, ChunkCase, ErrorCase};
 
-// B668, B503 and B504 supply these calls at composition; the helper only needs the supported list and the copy
+// B668, B503 and B504 supply these calls at composition; the helper keeps the supported list, the base request fields and the parsed body
 struct OpenAiPolicy;
 
 impl ChatPolicy for OpenAiPolicy {
@@ -39,18 +39,23 @@ impl ChatPolicy for OpenAiPolicy {
     ) {
     }
 
-    fn request_body(&self, _request: BaseRequest<'_>) -> Result<Object, OpenRouterError> {
-        Err(unavailable())
+    fn request_body(&self, request: BaseRequest<'_>) -> Result<Object, OpenRouterError> {
+        let messages = serde_json::to_value(request.messages).map_err(|error| failure(&error))?;
+        let mut body = Object::new();
+        body.insert(String::from("model"), Json::Text(request.model.to_owned()));
+        body.insert(String::from("messages"), prompt_json(&messages));
+        body.extend(request.optional_params.clone());
+        Ok(body)
     }
 
-    fn response_body(&self, _raw: &[u8]) -> Result<Value, OpenRouterError> {
-        Err(unavailable())
+    fn response_body(&self, raw: &[u8]) -> Result<Value, OpenRouterError> {
+        serde_json::from_slice(raw).map_err(|error| failure(&error))
     }
 }
 
-fn unavailable() -> OpenRouterError {
+fn failure(error: &serde_json::Error) -> OpenRouterError {
     OpenRouterError {
-        message: String::from("this helper operation does not build a request"),
+        message: error.to_string(),
         status_code: 500,
         headers: Headers::new(),
     }

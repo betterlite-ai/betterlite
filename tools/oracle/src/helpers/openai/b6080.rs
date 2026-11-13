@@ -1,6 +1,7 @@
 mod chat;
 mod input;
 mod ops;
+mod wire;
 
 use crate::helpers::{Helper, HelperResult};
 
