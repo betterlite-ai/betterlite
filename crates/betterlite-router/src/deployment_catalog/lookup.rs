@@ -9,7 +9,7 @@ use crate::deployment_catalog::types::{
     AliasSource, AliasStep, CandidateView, Candidates, CatalogMatch, LookupRequest,
 };
 use crate::deployment_identity::spec::DeploymentSpec;
-use crate::wildcard_catalog::{Candidate, PatternCatalog};
+use crate::wildcard_catalog::PatternCatalog;
 
 const STRATEGY_MARKER_PREFIX: &str = "auto_router/";
 
@@ -88,8 +88,7 @@ impl CatalogResolver<'_> {
         model: &str,
     ) -> Result<Vec<DeploymentSpec>, CatalogLookupError> {
         let provider = self.view.inferred_provider(model);
-        let candidates: Vec<Candidate> =
-            router.get_deployments_by_pattern(model, provider.as_deref());
+        let candidates = router.get_deployments_by_pattern(model, provider.as_deref());
         let mut pool = Vec::with_capacity(candidates.len());
         for candidate in candidates {
             let registered = candidate

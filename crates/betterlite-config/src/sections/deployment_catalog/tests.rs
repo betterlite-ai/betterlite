@@ -62,6 +62,16 @@ fn model_group_alias_keeps_the_declared_order() {
     assert_eq!(names, ["zeta", "alpha", "mid"]);
 }
 
+#[test]
+fn model_group_alias_names_an_unknown_item_key() {
+    let source = "router_settings:\n  model_group_alias:\n    fast: {model: gpt-4, visible: true}\n    ok: {model: a}";
+    let error = settings(source, &[]).unwrap_err();
+    assert_eq!(
+        error,
+        r#"unsupported config keys: ["router_settings.model_group_alias.fast.visible"]"#
+    );
+}
+
 #[rstest]
 #[case::number_target("gpt: 4")]
 #[case::list_target("gpt: [a]")]
