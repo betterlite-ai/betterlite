@@ -67,7 +67,6 @@ where
                 )
                 .await?;
             }
-            "user" => options::apply_user(optional_params, value)?,
             "thinking" => {
                 thinking::apply_thinking(
                     request,
@@ -86,9 +85,6 @@ where
             "extra_headers" => {
                 optional_params.insert("extra_headers".to_owned(), value.clone());
             }
-            "context_management" => options::apply_context_management(optional_params, value)?,
-            "speed" => options::apply_speed(request, optional_params, value)?,
-            "cache_control" => options::apply_cache_control(optional_params, value),
             _ => {}
         }
     }

@@ -19,30 +19,55 @@ pub fn apply_stream(optional_params: &mut IndexMap<String, Json>, value: &Json) 
     }
 }
 
-pub fn apply_stop(
+// The projections LiteLLM maps without a model gate: stop, user, context_management, cache_control
+pub fn apply_small(
     optional_params: &mut IndexMap<String, Json>,
+    param: &str,
     value: &Json,
     global_drop: bool,
 ) -> Result<(), ParamsError> {
-    if !matches!(value, Json::Text(_) | Json::List(_)) {
-        return Ok(());
-    }
-    match map_stop_sequences(value, global_drop)? {
-        Some(sequences) => {
+    match param {
+        "stop" if matches!(value, Json::Text(_) | Json::List(_)) => {
+            let Some(sequences) = map_stop_sequences(value, global_drop)? else {
+                return Ok(());
+            };
             let mapped = sequences.into_iter().map(Json::Text).collect();
             optional_params.insert("stop_sequences".to_owned(), Json::List(mapped));
-            Ok(())
         }
-        None => Ok(()),
+        "user" => {
+            let Some(user_id) = value::as_str(value) else {
+                return Ok(());
+            };
+            if !UserIdPolicy::compile()?.accepts(user_id) {
+                return Ok(());
+            }
+            let mut metadata = IndexMap::new();
+            metadata.insert("user_id".to_owned(), Json::Text(user_id.to_owned()));
+            optional_params.insert("metadata".to_owned(), Json::Object(metadata));
+        }
+        "context_management" if matches!(value, Json::List(_) | Json::Object(_)) => {
+            if let Some(mapped) = map_context_management(value)? {
+                optional_params.insert("context_management".to_owned(), Json::Object(mapped));
+            }
+        }
+        "cache_control" if matches!(value, Json::Object(_)) => {
+            optional_params.insert("cache_control".to_owned(), value.clone());
+        }
+        _ => {}
     }
+    Ok(())
 }
 
-pub fn apply_sampling(
+// temperature and top_p fall to the sampling gate, speed to the fast-mode gate
+pub fn apply_gated(
     request: &ParamsRequest<'_>,
     optional_params: &mut IndexMap<String, Json>,
     param: &str,
     value: &Json,
 ) -> Result<(), ParamsError> {
+    if param == "speed" {
+        return apply_speed(request, optional_params, value);
+    }
     let sampling_param = if param == "temperature" {
         SamplingParam::Temperature
     } else {
@@ -63,37 +88,7 @@ pub fn apply_sampling(
     Ok(())
 }
 
-// An invalid, non-text or email-shaped user id is ignored rather than sent
-pub fn apply_user(
-    optional_params: &mut IndexMap<String, Json>,
-    value: &Json,
-) -> Result<(), ParamsError> {
-    let Some(user_id) = value::as_str(value) else {
-        return Ok(());
-    };
-    if !UserIdPolicy::compile()?.accepts(user_id) {
-        return Ok(());
-    }
-    let mut metadata = IndexMap::new();
-    metadata.insert("user_id".to_owned(), Json::Text(user_id.to_owned()));
-    optional_params.insert("metadata".to_owned(), Json::Object(metadata));
-    Ok(())
-}
-
-pub fn apply_context_management(
-    optional_params: &mut IndexMap<String, Json>,
-    value: &Json,
-) -> Result<(), ParamsError> {
-    if !matches!(value, Json::List(_) | Json::Object(_)) {
-        return Ok(());
-    }
-    if let Some(mapped) = map_context_management(value)? {
-        optional_params.insert("context_management".to_owned(), Json::Object(mapped));
-    }
-    Ok(())
-}
-
-pub fn apply_speed(
+fn apply_speed(
     request: &ParamsRequest<'_>,
     optional_params: &mut IndexMap<String, Json>,
     value: &Json,
@@ -114,11 +109,5 @@ pub fn apply_speed(
             optional_params.shift_remove("speed");
             Ok(())
         }
-    }
-}
-
-pub fn apply_cache_control(optional_params: &mut IndexMap<String, Json>, value: &Json) {
-    if matches!(value, Json::Object(_)) {
-        optional_params.insert("cache_control".to_owned(), value.clone());
     }
 }
