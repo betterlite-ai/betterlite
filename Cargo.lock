@@ -1503,6 +1503,7 @@ dependencies = [
  "betterlite-auth",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-db",
  "betterlite-env",
  "betterlite-error",
  "betterlite-foundry",
