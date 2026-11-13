@@ -56,8 +56,7 @@ pub fn translate_responses_chunk_to_openai_stream(
         Some("response.completed" | "response.incomplete") => {
             Some(terminal_chunk(fields, event_type, factory)?)
         }
-        None => None,
-        Some(_) => None,
+        None | Some(_) => None,
     };
     if let Some(chunk) = branch {
         return Ok(chunk);
@@ -317,7 +316,7 @@ fn text_delta_chunk(
             factory,
             None,
             Some(0),
-            delta(Some(text)),
+            delta(Some(text.as_str())),
             None,
         )),
         Some(Value::Null) | None => Err(ResponsesChatStreamError::InvalidTextDelta {

@@ -1,17 +1,19 @@
-from typing import Literal, NotRequired, TypeAlias, TypedDict
+from typing import Literal, TypeAlias, TypedDict
 
 from litellm.completion_extras.litellm_responses_transformation.transformation import (
-    OpenAiResponsesToChatCompletionStreamIterator,
+    OpenAiResponsesToChatCompletionStreamIterator as ResponsesStream,
 )
 from litellm.types.utils import ModelResponseStream
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+
+class StreamEvent(TypedDict, total=False):
+    type: str
 
 
 class EventCall(TypedDict):
     mode: Literal["event"]
-    events: list[dict[str, Json]]
+    events: list[StreamEvent]
 
 
 class LineCall(TypedDict):
@@ -19,59 +21,38 @@ class LineCall(TypedDict):
     lines: list[str]
 
 
-class StatelessCall(TypedDict):
-    mode: Literal["stateless"]
-    events: list[dict[str, Json]]
-    tool_call_index_map: NotRequired[dict[str, int] | None]
+Input: TypeAlias = EventCall | LineCall
 
-
-Input: TypeAlias = EventCall | LineCall | StatelessCall
-
-DUMP = TypeAdapter(dict[str, Json])
+DUMP = TypeAdapter(dict[str, JsonValue])
 MODEL = TypeAdapter(ModelResponseStream)
+EVENT = TypeAdapter(dict[str, object])
 
 
-class LineReader(OpenAiResponsesToChatCompletionStreamIterator):
+class LineReader(ResponsesStream):
     def read(self, line: str) -> ModelResponseStream:
         return MODEL.validate_python(self._handle_string_chunk(line))
 
 
-def dump(chunk: ModelResponseStream) -> Json:
-    return DUMP.validate_json(chunk.model_dump_json())
-
-
-def run(input_value: Input) -> Json:
+def run(input_value: Input) -> JsonValue:
     if input_value["mode"] == "line":
         return _lines(input_value)
-    if input_value["mode"] == "stateless":
-        return _stateless(input_value)
     return _events(input_value)
 
 
-def _iterator() -> OpenAiResponsesToChatCompletionStreamIterator:
-    return OpenAiResponsesToChatCompletionStreamIterator(iter([]), sync_stream=True)
+def _events(call: EventCall) -> JsonValue:
+    iterator = ResponsesStream(iter([]), sync_stream=True)
+    steps: list[JsonValue] = [
+        DUMP.validate_json(iterator.chunk_parser(EVENT.validate_python(event)).model_dump_json())
+        for event in call["events"]
+    ]
+    result: dict[str, JsonValue] = {"steps": steps}
+    return result
 
 
-def _events(call: EventCall) -> Json:
-    iterator = _iterator()
-    return {"steps": [dump(iterator.chunk_parser(event)) for event in call["events"]]}
-
-
-def _lines(call: LineCall) -> Json:
+def _lines(call: LineCall) -> JsonValue:
     reader = LineReader(iter([]), sync_stream=True)
-    return {"steps": [{"kind": "chunk", "chunk": dump(reader.read(line))} for line in call["lines"]]}
-
-
-def _stateless(call: StatelessCall) -> Json:
-    shared = call.get("tool_call_index_map")
-    indices = None if shared is None else {int(key): value for key, value in shared.items()}
-    return {
-        "steps": [
-            dump(
-                OpenAiResponsesToChatCompletionStreamIterator.translate_responses_chunk_to_openai_stream(
-                    event, indices
-                )
-            )
-            for event in call["events"]
-        ]
-    }
+    steps: list[JsonValue] = [
+        {"chunk": DUMP.validate_json(reader.read(line).model_dump_json())} for line in call["lines"]
+    ]
+    result: dict[str, JsonValue] = {"steps": steps}
+    return result

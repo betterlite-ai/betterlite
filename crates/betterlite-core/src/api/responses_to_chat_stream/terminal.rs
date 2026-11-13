@@ -28,7 +28,7 @@ pub(super) fn terminal_chunk(
         }
     };
     let output: &[Value] = match response.get("output") {
-        Some(Value::Array(items)) => items,
+        Some(Value::Array(items)) => items.as_slice(),
         None | Some(Value::Null) => &[],
         Some(_) => {
             return Err(ResponsesChatStreamError::Field {
@@ -55,8 +55,9 @@ pub(super) fn terminal_chunk(
         Some(Value::String(tier)) => Some(tier.clone()),
         None | Some(_) => None,
     };
+    let records = output_reasoning_records(output)?;
     let mut delta = delta(Some(""));
-    delta.reasoning_items = chat_reasoning_items(&output_reasoning_records(output)?);
+    delta.reasoning_items = chat_reasoning_items(&records);
     Ok(ChatChunk {
         id: format!("{CHAT_COMPLETION_ID_PREFIX}{}", (factory.identifier)()),
         object: CHUNK_OBJECT,

@@ -65,7 +65,7 @@ fn choice(delta: Value, finish_reason: Value, index: Value) -> Value {
     json!({"index": index, "delta": delta, "finish_reason": finish_reason, "logprobs": null})
 }
 
-fn chunk(id: &str, choices: Value) -> Value {
+fn chunk_of(id: &str, choices: Value) -> Value {
     json!({
         "id": id,
         "object": "chat.completion.chunk",
@@ -99,7 +99,7 @@ where
     (output, lines)
 }
 
-fn padding() -> Value {
+fn padding_value() -> Value {
     json!({
         "text": "",
         "tool_use": null,
@@ -270,7 +270,7 @@ fn stateless_translation_maps_an_unhandled_type_to_an_empty_chunk() {
     let chunk = translated(&json!({"type": "response.failed"})).unwrap();
     assert_eq!(
         chunk,
-        chunk(
+        chunk_of(
             GENERATED_ID,
             json!([choice(empty_delta(), json!(null), json!(0))])
         )
@@ -286,7 +286,7 @@ fn stateless_translation_creates_an_id_from_the_created_event() {
     .unwrap();
     assert_eq!(
         chunk,
-        chunk(
+        chunk_of(
             "resp_a",
             json!([choice(empty_delta(), json!(null), json!(0))])
         )
@@ -329,7 +329,7 @@ fn stateless_translation_carries_tool_calls_on_a_new_item() {
     });
     assert_eq!(
         chunk,
-        chunk(GENERATED_ID, json!([choice(delta, json!(null), json!(0))]))
+        chunk_of(GENERATED_ID, json!([choice(delta, json!(null), json!(0))]))
     );
 }
 
@@ -446,7 +446,7 @@ fn stateless_translation_makes_an_empty_reasoning_delta_an_unhandled_event() {
     .unwrap();
     assert_eq!(
         chunk,
-        chunk(
+        chunk_of(
             GENERATED_ID,
             json!([choice(empty_delta(), json!(null), json!(0))])
         )
@@ -477,7 +477,7 @@ fn stateless_translation_done_item_is_not_terminal() {
     });
     assert_eq!(
         complete,
-        chunk(GENERATED_ID, json!([choice(delta, json!(null), json!(0))]))
+        chunk_of(GENERATED_ID, json!([choice(delta, json!(null), json!(0))]))
     );
 
     // the stateful stream already sent the call, so its done event carries an empty delta and never a finish reason
@@ -498,7 +498,7 @@ fn stateless_translation_done_item_is_not_terminal() {
     });
     assert_eq!(
         rendered(&stateful),
-        chunk(GENERATED_ID, json!([choice(empty, json!(null), json!(0))]))
+        chunk_of(GENERATED_ID, json!([choice(empty, json!(null), json!(0))]))
     );
 }
 
@@ -842,7 +842,7 @@ fn stream_parse_line_feeds_decoded_events_and_padding() {
         .unwrap();
     match padding {
         ParsedChatLine::Padding(chunk) => {
-            assert_eq!(serde_json::to_value(chunk).unwrap(), padding());
+            assert_eq!(serde_json::to_value(chunk).unwrap(), padding_value());
         }
         ParsedChatLine::Chunk(_) => panic!("an event line is no chunk"),
     }

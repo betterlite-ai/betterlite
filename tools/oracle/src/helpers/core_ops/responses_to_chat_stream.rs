@@ -2,9 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::responses_to_chat_stream::error::ResponsesChatStreamError;
-use betterlite_core::api::responses_to_chat_stream::records::{
-    ChatChunk, ChunkFactory, PaddingChunk,
-};
+use betterlite_core::api::responses_to_chat_stream::records::{ChatChunk, ChunkFactory};
 use betterlite_core::api::responses_to_chat_stream::stream::{
     ParsedChatLine, get_model_response_iterator,
 };
@@ -53,16 +51,8 @@ impl Helper for Op {
     }
 }
 
-fn fixed_identifier() -> Uuid {
-    Uuid::from_u128(FIXED_ID)
-}
-
-fn fixed_clock() -> i64 {
-    FIXED_CLOCK
-}
-
 fn event_steps(events: &[Map<String, Value>]) -> HelperResult {
-    let mut iterator = get_model_response_iterator(Some(false), fixed_identifier, fixed_clock);
+    let mut iterator = get_model_response_iterator(Some(false), || Uuid::from_u128(FIXED_ID), || FIXED_CLOCK);
     let mut steps = Vec::with_capacity(events.len());
     for event in events {
         let chunk = iterator
@@ -73,18 +63,26 @@ fn event_steps(events: &[Map<String, Value>]) -> HelperResult {
     Ok(json!({ "steps": steps }))
 }
 
+// the Python side can only answer with a chunk, so a padding line is the helper's own error there too
 fn line_steps(lines: &[String]) -> HelperResult {
-    let mut iterator = get_model_response_iterator(Some(false), fixed_identifier, fixed_clock);
+    let mut iterator = get_model_response_iterator(Some(false), || Uuid::from_u128(FIXED_ID), || FIXED_CLOCK);
     let mut steps = Vec::with_capacity(lines.len());
     for line in lines {
         match iterator
             .parse_line(line.as_bytes(), &ApiLimits::default())
             .map_err(|error| failure(&error))?
         {
-            ParsedChatLine::Padding(padding) => steps.push(padding_row(&padding)?),
-            ParsedChatLine::Chunk(chunk) => {
-                steps.push(json!({ "kind": "chunk", "chunk": rendered(&chunk)? }));
+            ParsedChatLine::Padding(_) => {
+                return Err(Box::new(HelperError {
+                    class: "ValueError".to_owned(),
+                    status: None,
+                    error_type: Some(None),
+                    param: Some(None),
+                    code: Some(None),
+                    message: "the padding line carries no chunk".to_owned(),
+                }));
             }
+            ParsedChatLine::Chunk(chunk) => steps.push(rendered(&chunk)?),
         }
     }
     Ok(json!({ "steps": steps }))
@@ -97,8 +95,8 @@ fn stateless_steps(
     let shares_map = shared_map.is_some();
     let mut map: ToolCallIndices = shared_map.unwrap_or_default();
     let factory = ChunkFactory {
-        identifier: fixed_identifier,
-        clock: fixed_clock,
+        identifier: || Uuid::from_u128(FIXED_ID),
+        clock: || FIXED_CLOCK,
     };
     let mut steps = Vec::with_capacity(events.len());
     for event in events {
@@ -112,10 +110,6 @@ fn stateless_steps(
         steps.push(rendered(&chunk)?);
     }
     Ok(json!({ "steps": steps }))
-}
-
-fn padding_row(padding: &PaddingChunk) -> HelperResult {
-    Ok(json!({ "kind": "padding", "chunk": serde_json::to_value(padding) }))
 }
 
 fn rendered(chunk: &ChatChunk) -> HelperResult {
