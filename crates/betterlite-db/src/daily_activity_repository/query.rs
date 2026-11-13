@@ -1,16 +1,15 @@
+pub mod leakage;
+pub mod models;
+pub mod search;
+
 use super::database::{DailyActivityDatabase, DailyRowFilter};
 use super::rows::DatabaseRow;
-use super::rows::adapters::{entity_rows, grouping_rows, key_page, key_spend_rows};
-use super::{
-    DailyActivityRepository, DailyActivityRepositoryError, Result, USAGE_CACHE_LEAKAGE_KEYS_MAX,
-    USAGE_KEY_SEARCH_MAX, USAGE_MODEL_TOP_KEYS_MAX,
-};
+use super::rows::adapters::entity::entity_rows;
+use super::rows::adapters::grouping::grouping_rows;
+use super::rows::adapters::key_page::key_page;
+use super::{DailyActivityRepository, DailyActivityRepositoryError, Result};
 use crate::daily_activity_contracts::{
-    AggregatedRows, DailyActivityProxyReads, DailyActivityScope, DailyRowsPage, KeyPage,
-    KeySpendRow, SqlQuery,
-};
-use crate::daily_activity_export::{
-    build_cache_leakage_keys_sql, build_key_search_sql, build_model_top_keys_sql,
+    AggregatedRows, DailyActivityProxyReads, DailyActivityScope, DailyRowsPage, KeyPage, SqlQuery,
 };
 use crate::daily_activity_sql::filters::adjust_dates_for_timezone;
 use crate::daily_activity_sql::key_page::build_key_page_sql;
@@ -71,56 +70,6 @@ where
             entity_rows,
             distinct_api_keys,
         })
-    }
-
-    pub async fn search_keys(
-        &self,
-        scope: &DailyActivityScope,
-        search: &str,
-        limit: i64,
-    ) -> Result<Vec<String>> {
-        if !(1..=USAGE_KEY_SEARCH_MAX).contains(&limit) {
-            return Err(DailyActivityRepositoryError::Limit {
-                maximum: USAGE_KEY_SEARCH_MAX,
-            });
-        }
-        let query = build_key_search_sql(scope, search, limit, &self.clock)?;
-        let rows = self.query(&query).await?;
-        let decoded = key_spend_rows(&rows)?;
-        Ok(decoded.into_iter().map(|row| row.api_key).collect())
-    }
-
-    pub async fn model_top_keys(
-        &self,
-        scope: &DailyActivityScope,
-        model_group: &str,
-        by_model_group: bool,
-        limit: i64,
-    ) -> Result<Vec<KeySpendRow>> {
-        if !(1..=USAGE_MODEL_TOP_KEYS_MAX).contains(&limit) {
-            return Err(DailyActivityRepositoryError::Limit {
-                maximum: USAGE_MODEL_TOP_KEYS_MAX,
-            });
-        }
-        let query =
-            build_model_top_keys_sql(scope, model_group, by_model_group, limit, &self.clock)?;
-        let rows = self.query(&query).await?;
-        Ok(key_spend_rows(&rows)?)
-    }
-
-    pub async fn cache_leakage_keys(
-        &self,
-        scope: &DailyActivityScope,
-        limit: i64,
-    ) -> Result<Vec<KeySpendRow>> {
-        if !(1..=USAGE_CACHE_LEAKAGE_KEYS_MAX).contains(&limit) {
-            return Err(DailyActivityRepositoryError::Limit {
-                maximum: USAGE_CACHE_LEAKAGE_KEYS_MAX,
-            });
-        }
-        let query = build_cache_leakage_keys_sql(scope, limit, &self.clock)?;
-        let rows = self.query(&query).await?;
-        Ok(key_spend_rows(&rows)?)
     }
 
     pub async fn key_page(

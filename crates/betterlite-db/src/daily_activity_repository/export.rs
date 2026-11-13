@@ -1,5 +1,5 @@
 use super::database::DailyActivityDatabase;
-use super::rows::adapters;
+use super::rows::adapters::export::export_rows;
 use super::{
     DailyActivityRepository, DailyActivityRepositoryError, Result, USAGE_EXPORT_BATCH_SIZE,
 };
@@ -76,7 +76,7 @@ where
             &self.repository.clock,
         )?;
         let rows = self.repository.query(&query).await?;
-        Ok(adapters::export_rows(&rows)?)
+        Ok(export_rows(&rows)?)
     }
 }
 
