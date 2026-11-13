@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-content-null
+call: {"messages_content_primitives": {"operation": "tool_result_content", "raw_content": null}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-consumes-sagemaker
+call: {"messages_content_primitives": {"operation": "consumes_cache_control", "model": "arn:aws:sagemaker:::bedrock"}}
+env: {}
+compare: {ignore: []}
