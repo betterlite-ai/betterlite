@@ -19,29 +19,6 @@ struct Builder {
 }
 
 impl Builder {
-    fn run<R>(&mut self, replacement_for: &mut R) -> Result<(), MigrationError>
-    where
-        R: FnMut(&str) -> Result<Option<String>, MigrationError>,
-    {
-        while let Some(stage) = self.stages.pop() {
-            match stage {
-                Stage::Visit(value, depth) => self.visit(value, depth, replacement_for)?,
-                Stage::CollectArray(start) => {
-                    let children = self.results.split_off(start);
-                    self.results.push(MigrationJson::Array(children));
-                }
-                Stage::CollectObject(keys) => {
-                    let start = self.results.len().saturating_sub(keys.len());
-                    let children = self.results.split_off(start);
-                    self.results.push(MigrationJson::Object(
-                        keys.into_iter().zip(children).collect(),
-                    ));
-                }
-            }
-        }
-        Ok(())
-    }
-
     fn visit<R>(
         &mut self,
         value: MigrationJson,
