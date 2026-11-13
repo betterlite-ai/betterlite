@@ -17,8 +17,8 @@ use rstest::rstest;
 
 use super::settings::SettingsJson;
 use super::{
-    event_type_from_name, exact_data, exact_value, hook_from_name, read, settings_from_text,
-    suppressed_from_text, text_context_from_text,
+    event_type_from_name, exact_data, exact_value, hook_from_name, is_integer_literal, read,
+    settings_from_text, suppressed_from_text, text_context_from_text,
 };
 use crate::guardrail_call::context::{RecordStep, record_call, record_parts};
 use crate::guardrail_call::convert::record_input::record_input_from_text;
@@ -378,6 +378,15 @@ fn data_rejects_an_integer_past_u64() {
         error.to_string().contains("123456789012345678901234567890"),
         "{error}"
     );
+}
+
+#[test]
+fn integer_literals_keep_their_sign_and_digits() {
+    assert!(is_integer_literal("42"));
+    assert!(is_integer_literal("-7"));
+    assert!(!is_integer_literal("1.5"));
+    assert!(!is_integer_literal("-"));
+    assert!(!is_integer_literal(""));
 }
 
 #[test]

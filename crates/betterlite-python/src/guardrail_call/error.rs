@@ -85,8 +85,10 @@ impl CallError {
         }
     }
 
-    fn guardrail_name(&self) -> Option<&str> {
-        match self {
+    pub(crate) fn into_exception(self) -> PyErr {
+        let kind = self.kind();
+        // only a selection error carries a guardrail name, and it comes from the request rather than the message
+        let guardrail_name = match &self {
             Self::Selection { source } => match source {
                 GuardrailSelectionError::TagMode { guardrail_name } => guardrail_name.as_deref(),
                 GuardrailSelectionError::DynamicParamsNotObject { guardrail_name } => {
@@ -103,12 +105,7 @@ impl CallError {
             | Self::Record { .. }
             | Self::Cache { .. }
             | Self::Finished => None,
-        }
-    }
-
-    pub(crate) fn into_exception(self) -> PyErr {
-        let kind = self.kind();
-        let guardrail_name = self.guardrail_name();
+        };
         let payload = NativeErrorPayload {
             kind,
             message: self.to_string(),
