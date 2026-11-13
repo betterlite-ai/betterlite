@@ -149,16 +149,15 @@ impl ProxyWorkerHeartbeat {
         })
     }
 
-    pub async fn beat<Database>(&self, database: &Database)
-    where
-        Database: HeartbeatDatabase,
-    {
-        let outcome = match database.upsert(&self.worker_id, &self.hostname).await {
-            Ok(()) => database.prune(f64::from(STALE_ROW_RETENTION_SECONDS)).await,
-            Err(error) => Err(error),
-        };
-        if let Err(error) = outcome {
-            tracing::debug!("Proxy worker heartbeat write failed: {error}");
+    pub async fn beat<Database: HeartbeatDatabase>(&self, database: &Database) {
+        let retention = f64::from(STALE_ROW_RETENTION_SECONDS);
+        match database.upsert(&self.worker_id, &self.hostname).await {
+            Ok(()) => {
+                if let Err(error) = database.prune(retention).await {
+                    tracing::debug!("Proxy worker heartbeat write failed: {error}");
+                }
+            }
+            Err(error) => tracing::debug!("Proxy worker heartbeat write failed: {error}"),
         }
     }
 

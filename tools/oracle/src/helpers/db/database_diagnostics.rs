@@ -141,48 +141,41 @@ fn format_scenarios(scenarios: &[FormatScenario]) -> HelperResult {
             arguments,
             exception,
         };
-        let rendered = match scenario.format {
-            ScenarioFormat::Json => render_json(&local, &redactor, &record)?,
-            ScenarioFormat::Text => render_text(&local, &redactor, &record)?,
-        };
-        results.push(rendered);
+        results.push(render(scenario.format, &local, &redactor, &record)?);
     }
     Ok(serde_json::Value::Array(results))
 }
 
-fn render_json(
+fn render(
+    format: ScenarioFormat,
     local: &FixedLocalTime,
     redactor: &Redactor,
     record: &LogRecord<'_>,
 ) -> Result<serde_json::Value, Box<HelperError>> {
-    let formatter = JsonFormatter {
-        local_time: local,
-        redactor,
-    };
-    let rendered = formatter
+    match format {
+        ScenarioFormat::Json => {
+            let rendered = JsonFormatter {
+                local_time: local,
+                redactor,
+            }
+            .format(record)
+            .map_err(|error| helper_error("ValueError", &error.to_string()))?;
+            let parsed: FormattedOutput = serde_json::from_str(&rendered)?;
+            Ok(serde_json::json!({
+                "message": parsed.message,
+                "level": parsed.level,
+                "timestamp": parsed.timestamp,
+                "stacktrace": parsed.stacktrace,
+            }))
+        }
+        ScenarioFormat::Text => TextFormatter {
+            local_time: local,
+            redactor,
+        }
         .format(record)
-        .map_err(|error| helper_error("ValueError", &error.to_string()))?;
-    let parsed: FormattedOutput = serde_json::from_str(&rendered)?;
-    Ok(serde_json::json!({
-        "message": parsed.message,
-        "level": parsed.level,
-        "timestamp": parsed.timestamp,
-        "stacktrace": parsed.stacktrace,
-    }))
-}
-
-fn render_text(
-    local: &FixedLocalTime,
-    redactor: &Redactor,
-    record: &LogRecord<'_>,
-) -> Result<serde_json::Value, Box<HelperError>> {
-    let rendered = TextFormatter {
-        local_time: local,
-        redactor,
+        .map(serde_json::Value::String)
+        .map_err(|error| helper_error("ValueError", &error.to_string())),
     }
-    .format(record)
-    .map_err(|error| helper_error("ValueError", &error.to_string()))?;
-    Ok(serde_json::Value::String(rendered))
 }
 
 fn enabled_scenarios(scenarios: &[EnabledScenario]) -> HelperResult {

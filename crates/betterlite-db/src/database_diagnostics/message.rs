@@ -161,15 +161,10 @@ fn display_value(value: &LogValue) -> String {
 }
 
 fn repr_value(value: &LogValue) -> String {
-    match value {
-        LogValue::Text(text) => format!("'{}'", quote(text)),
-        LogValue::Null
-        | LogValue::Bool(_)
-        | LogValue::Integer(_)
-        | LogValue::Float(_)
-        | LogValue::List(_)
-        | LogValue::Object(_) => display_value(value),
+    if let LogValue::Text(text) = value {
+        return format!("'{}'", quote(text));
     }
+    display_value(value)
 }
 
 fn quote(text: &str) -> String {
@@ -213,15 +208,11 @@ fn float_text(number: f64) -> String {
     text
 }
 
-fn integer_value(value: &LogValue) -> Result<String, MessageError> {
+fn decimal_of(value: &LogValue) -> Result<Decimal, MessageError> {
     match value {
-        LogValue::Integer(number) => Ok(number.to_string()),
-        LogValue::Float(number) => {
-            let scaled = Decimal::from_f64_retain(*number).ok_or(MessageError::UnsupportedValue)?;
-            let truncated = scaled.trunc();
-            i64::try_from(truncated)
-                .map(|value| value.to_string())
-                .map_err(|_source| MessageError::UnsupportedValue)
+        LogValue::Integer(integer) => Ok(Decimal::from(*integer)),
+        LogValue::Float(float) => {
+            Decimal::from_f64_retain(*float).ok_or(MessageError::UnsupportedValue)
         }
         LogValue::Null
         | LogValue::Bool(_)
@@ -231,17 +222,12 @@ fn integer_value(value: &LogValue) -> Result<String, MessageError> {
     }
 }
 
+fn integer_value(value: &LogValue) -> Result<String, MessageError> {
+    i64::try_from(decimal_of(value)?.trunc())
+        .map(|truncated| truncated.to_string())
+        .map_err(|_source| MessageError::UnsupportedValue)
+}
+
 fn float_value(value: &LogValue) -> Result<String, MessageError> {
-    let number = match value {
-        LogValue::Integer(integer) => Decimal::from(*integer),
-        LogValue::Float(float) => {
-            Decimal::from_f64_retain(*float).ok_or(MessageError::UnsupportedValue)?
-        }
-        LogValue::Null
-        | LogValue::Bool(_)
-        | LogValue::Text(_)
-        | LogValue::List(_)
-        | LogValue::Object(_) => return Err(MessageError::UnsupportedValue),
-    };
-    Ok(format!("{}", number.round_dp(6)))
+    Ok(format!("{}", decimal_of(value)?.round_dp(6)))
 }
