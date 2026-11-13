@@ -64,10 +64,7 @@ pub struct SignedRequest {
     pub body: Vec<u8>,
 }
 
-fn request_scoped_runtime_session_id(
-    params: &MessageSendParams,
-    principal: Option<&str>,
-) -> Option<String> {
+fn scoped_session_id(params: &MessageSendParams, principal: Option<&str>) -> Option<String> {
     let context_id = get_session_id_from_a2a_params(params).ok().flatten()?;
     if context_id.is_empty() {
         return None;
@@ -117,8 +114,7 @@ where
         .map_err(AgentCoreError::Runtime)?;
     let request_data = envelope(call.request_id, call.method, call.params)?;
     let mut headers = BTreeMap::new();
-    let derived =
-        request_scoped_runtime_session_id(call.params, call.litellm_params.principal.as_deref());
+    let derived = scoped_session_id(call.params, call.litellm_params.principal.as_deref());
     let session_id = match derived {
         Some(session_id) => session_id,
         None => runtime

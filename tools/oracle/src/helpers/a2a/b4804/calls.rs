@@ -44,10 +44,6 @@ pub(super) fn failed(error: &AgentCoreError<Failure>) -> Box<HelperError> {
     })
 }
 
-fn parameters(raw: &BTreeMap<String, AgentJson>) -> Result<LitellmParams, Box<HelperError>> {
-    LitellmParams::parse(raw).map_err(|error| helper_failure("TransformError", error.to_string()))
-}
-
 fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
     tokio::runtime::Builder::new_current_thread()
         .build()
@@ -87,7 +83,8 @@ pub(super) fn call(
     agent_extra_headers: Option<&BTreeMap<String, String>>,
     mode: Mode<'_>,
 ) -> HelperResult {
-    let parameters = parameters(litellm_params)?;
+    let parameters = LitellmParams::parse(litellm_params)
+        .map_err(|error| helper_failure("TransformError", error.to_string()))?;
     let runtime = runtime()?;
     match mode {
         Mode::Signed => {

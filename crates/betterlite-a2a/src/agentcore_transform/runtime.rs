@@ -28,8 +28,7 @@ impl RpcMethod {
     }
 }
 
-// Everything LiteLLM reaches through AmazonAgentCoreConfig, the AWS signer and the A2A httpx client,
-// behind one injected seam: the URL from the model ARN, the runtime identifiers, the signature and the wire.
+// Everything LiteLLM reaches through AmazonAgentCoreConfig, the AWS signer and the A2A httpx client sits behind this seam
 pub trait AgentCoreRuntime: Send + Sync {
     type Error: Error + Send + Sync + 'static;
     type Lines: Stream<Item = Result<String, Self::Error>> + Send + 'static;

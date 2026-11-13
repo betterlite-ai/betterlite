@@ -145,8 +145,7 @@ fn an_empty_header_map_filters_to_nothing() {
 fn the_context_id_becomes_a_principal_scoped_session() {
     let request = params(Some(json!(CONTEXT_ID)));
 
-    let derived =
-        crate::agentcore_transform::request_scoped_runtime_session_id(&request, Some("key-2"));
+    let derived = crate::agentcore_transform::scoped_session_id(&request, Some("key-2"));
 
     assert_eq!(derived, Some(format!("{SCOPED_PREFIX}-{CONTEXT_ID}")));
 }
@@ -155,7 +154,7 @@ fn the_context_id_becomes_a_principal_scoped_session() {
 fn a_context_id_without_a_principal_keeps_its_value() {
     let request = params(Some(json!(CONTEXT_ID)));
 
-    let derived = crate::agentcore_transform::request_scoped_runtime_session_id(&request, None);
+    let derived = crate::agentcore_transform::scoped_session_id(&request, None);
 
     assert_eq!(derived, Some(CONTEXT_ID.to_owned()));
 }
@@ -164,7 +163,7 @@ fn a_context_id_without_a_principal_keeps_its_value() {
 fn a_missing_context_id_has_no_session() {
     let request = params(None);
 
-    let derived = crate::agentcore_transform::request_scoped_runtime_session_id(&request, None);
+    let derived = crate::agentcore_transform::scoped_session_id(&request, None);
 
     assert_eq!(derived, None);
 }
@@ -173,7 +172,7 @@ fn a_missing_context_id_has_no_session() {
 fn a_non_text_context_id_has_no_session() {
     let request = params(Some(json!(5)));
 
-    let derived = crate::agentcore_transform::request_scoped_runtime_session_id(&request, None);
+    let derived = crate::agentcore_transform::scoped_session_id(&request, None);
 
     assert_eq!(derived, None);
 }
@@ -182,7 +181,7 @@ fn a_non_text_context_id_has_no_session() {
 fn an_empty_context_id_has_no_session() {
     let request = params(Some(json!("")));
 
-    let derived = crate::agentcore_transform::request_scoped_runtime_session_id(&request, None);
+    let derived = crate::agentcore_transform::scoped_session_id(&request, None);
 
     assert_eq!(derived, None);
 }
