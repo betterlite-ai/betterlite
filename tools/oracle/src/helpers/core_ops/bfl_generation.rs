@@ -155,14 +155,8 @@ fn append_results(params: &AppendParams) -> HelperResult {
 fn poll_host(params: &PollParams) -> HelperResult {
     let mut outcomes = Vec::new();
     for url in &params.urls {
-        match check_bfl_poll_url(url) {
-            Ok(_) => outcomes.push(json!({"url": url, "accepted": true, "status": null})),
-            Err(error) => outcomes.push(json!({
-                "url": url,
-                "accepted": false,
-                "status": error.status(),
-            })),
-        }
+        let accepted = check_bfl_poll_url(url).is_ok();
+        outcomes.push(json!({"url": url, "accepted": accepted}));
     }
     Ok(json!({"urls": outcomes}))
 }

@@ -1,10 +1,10 @@
 import json
-from collections.abc import Callable
-from typing import Literal, TypeAlias, TypedDict, cast
+from collections.abc import Callable, Sequence
+from contextlib import suppress
+from typing import Literal, Protocol, TypedDict, cast
 
 import httpx
-import litellm
-from litellm.llms.black_forest_labs.common_utils import BlackForestLabsError, assert_bfl_polling_url
+from litellm.llms.black_forest_labs.common_utils import assert_bfl_polling_url
 from litellm.llms.black_forest_labs.image_generation.transformation import (
     get_black_forest_labs_image_generation_config,
 )
@@ -28,14 +28,47 @@ class ImageResponseFields(TypedDict):
 
 IMAGES: TypeAdapter[ImageResponseFields] = TypeAdapter(ImageResponseFields)
 
-Calls: TypeAlias = tuple[
-    Callable[[str], list[str]],
-    Callable[..., dict[str, JsonValue]],
-    Callable[..., dict[str, str]],
-    Callable[..., str],
-    Callable[..., dict[str, JsonValue]],
-    Callable[..., ImageResponse],
-]
+
+class GenerationConfig(Protocol):
+    get_supported_openai_params: Callable[[str], Sequence[str]]
+    map_openai_params: Callable[
+        [dict[str, JsonValue], dict[str, JsonValue], str, bool],
+        dict[str, JsonValue],
+    ]
+    validate_environment: Callable[
+        [
+            dict[str, str],
+            str,
+            list[JsonValue],
+            dict[str, JsonValue],
+            dict[str, JsonValue],
+            str | None,
+        ],
+        dict[str, str],
+    ]
+    get_complete_url: Callable[
+        [str | None, str | None, str, dict[str, JsonValue], dict[str, JsonValue]],
+        str,
+    ]
+    # ast-grep-ignore: no-long-names
+    transform_image_generation_request: Callable[
+        [str, str, dict[str, JsonValue], dict[str, JsonValue], dict[str, str]],
+        dict[str, JsonValue],
+    ]
+    # ast-grep-ignore: no-long-names
+    transform_image_generation_response: Callable[
+        [
+            str,
+            httpx.Response,
+            ImageResponse,
+            JsonValue,
+            dict[str, JsonValue],
+            dict[str, JsonValue],
+            dict[str, JsonValue],
+            None,
+        ],
+        ImageResponse,
+    ]
 
 
 class MappingRequest(TypedDict):
@@ -82,100 +115,110 @@ class PollCall(TypedDict):
 Input = MappingCall | CredentialsCall | AppendCall | PollCall
 
 
-def calls_for(model: str) -> Calls:
-    config = get_black_forest_labs_image_generation_config(model)
-    return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/transformation.py#L237-L294
-        Calls,
-        (
-            config.get_supported_openai_params,
-            config.map_openai_params,
-            config.validate_environment,
-            config.get_complete_url,
-            config.transform_image_generation_request,
-            config.transform_image_generation_response,
-        ),
+def config_for(model: str) -> GenerationConfig:
+    config: GenerationConfig = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/transformation.py#L313-L322
+        GenerationConfig,
+        get_black_forest_labs_image_generation_config(model),
     )
+    return config
 
 
-def mapped_body(call: MappingCall, request: MappingRequest) -> JsonValue:
-    _supported, map_params, _validate, _url, body_of, _response = calls_for(call["model"])
-    mapped = map_params(
+def mapped_body(config: GenerationConfig, call: MappingCall, request: MappingRequest) -> JsonValue:
+    mapped = config.map_openai_params(
         request["params"],
         request["optional_params"],
         call["model"],
         call["drop_params"],
     )
-    body = body_of(call["model"], call["prompt"], mapped, {}, {})
-    return JSON.validate_python({"params": mapped, "body": body})
+    body = config.transform_image_generation_request(
+        call["model"], call["prompt"], mapped, {}, {}
+    )
+    answer: dict[str, JsonValue] = {"params": mapped, "body": body}
+    return JSON.validate_python(answer)
 
 
 def mapping(call: MappingCall) -> JsonValue:
-    supported, _map, _validate, _url, _body, _response = calls_for(call["model"])
-    results = [mapped_body(call, request) for request in call["requests"]]
-    return JSON.validate_python({"supported": supported(call["model"]), "results": results})
+    config = config_for(call["model"])
+    supported = JSON.validate_python(config.get_supported_openai_params(call["model"]))
+    results = [mapped_body(config, call, request) for request in call["requests"]]
+    answer: dict[str, JsonValue] = {"supported": supported, "results": results}
+    return JSON.validate_python(answer)
 
 
-def credential_outcome(call: CredentialsCall, request: CredentialRequest) -> JsonValue:
-    _supported, _map, validate, complete_url, _body, _response = calls_for(call["model"])
-    headers = validate(
+def credential_outcome(
+    config: GenerationConfig, call: CredentialsCall, request: CredentialRequest
+) -> JsonValue:
+    headers = config.validate_environment(
         {},
         call["model"],
         [],
         {},
         {},
-        api_key=request["api_key"],
-        api_base=request["api_base"],
+        request["api_key"],
     )
-    url = complete_url(request["api_base"], request["api_key"], call["model"], {}, {})
-    lowered = {name.lower(): value for name, value in headers.items()}
-    return JSON.validate_python({"headers": lowered, "url": url})
+    url = config.get_complete_url(
+        request["api_base"], request["api_key"], call["model"], {}, {}
+    )
+    lowered_headers: dict[str, str] = {
+        name.lower(): value for name, value in headers.items()
+    }
+    lowered = JSON.validate_python(lowered_headers)
+    answer: dict[str, JsonValue] = {"headers": lowered, "url": url}
+    return JSON.validate_python(answer)
 
 
 def credentials(call: CredentialsCall) -> JsonValue:
-    outcomes = [credential_outcome(call, request) for request in call["requests"]]
-    return JSON.validate_python({"outcomes": outcomes})
+    config = config_for(call["model"])
+    outcomes = [credential_outcome(config, call, request) for request in call["requests"]]
+    answer: dict[str, JsonValue] = {"outcomes": outcomes}
+    return JSON.validate_python(answer)
 
 
-def appended_reply(reply: ReplyCall) -> JsonValue:
-    _supported, _map, _validate, _url, _body, response_of = calls_for("")
-    model_response = ImageResponse.model_validate({"created": 0, "data": reply["existing"]})
+def appended_reply(config: GenerationConfig, reply: ReplyCall) -> JsonValue:
+    payload: dict[str, JsonValue] = {
+        "created": 0,
+        "data": JSON.validate_python(reply["existing"]),
+    }
+    model_response = TypeAdapter(ImageResponse).validate_python(payload)
     request = httpx.Request("POST", "https://api.bfl.ai")
     raw_response = httpx.Response(200, content=json.dumps(reply["body"]).encode(), request=request)
-    result = response_of(
-        model="",
-        raw_response=raw_response,
-        model_response=model_response,
-        logging_obj=None,
-        request_data={},
-        optional_params={},
-        litellm_params={},
-        encoding=None,
-        api_key=None,
+    result = config.transform_image_generation_response(
+        "",
+        raw_response,
+        model_response,
+        None,
+        {},
+        {},
+        {},
+        None,
     )
     return JSON.validate_python(IMAGES.validate_json(result.model_dump_json()))
 
 
 def append_results(call: AppendCall) -> JsonValue:
     _ = call["now"]
-    responses = [appended_reply(reply) for reply in call["replies"]]
-    return JSON.validate_python({"responses": responses})
+    config = config_for("")
+    responses = [appended_reply(config, reply) for reply in call["replies"]]
+    answer: dict[str, JsonValue] = {"responses": responses}
+    return JSON.validate_python(answer)
 
 
 def poll_outcome(url: str) -> JsonValue:
-    try:
+    accepted = False
+    with suppress(Exception):
         assert_bfl_polling_url(url)
-    except BlackForestLabsError as error:
-        return JSON.validate_python({"url": url, "accepted": False, "status": error.status_code})
-    return JSON.validate_python({"url": url, "accepted": True, "status": None})
+        accepted = True
+    answer: dict[str, JsonValue] = {"url": url, "accepted": accepted}
+    return JSON.validate_python(answer)
 
 
 def poll_host(call: PollCall) -> JsonValue:
     outcomes = [poll_outcome(url) for url in call["urls"]]
-    return JSON.validate_python({"urls": outcomes})
+    answer: dict[str, JsonValue] = {"urls": outcomes}
+    return JSON.validate_python(answer)
 
 
 def run(input_value: Input) -> JsonValue:
-    _ = litellm
     match input_value["operation"]:
         case "mapping":
             return mapping(input_value)
