@@ -6,7 +6,9 @@ use tokio::task::yield_now;
 use tokio::time::advance;
 use tracing::subscriber::set_default;
 
-use super::fixtures::fakes::{EXPIRY_100, EXPIRY_900, UNPARSABLE_TOKEN_URL, lock, token_url};
+use super::fixtures::fakes::{
+    EXPIRY_100, EXPIRY_900, MINTED_900, UNPARSABLE_TOKEN_URL, lock, token_url,
+};
 use super::fixtures::logs::capture_logs;
 use super::fixtures::loops::{FakeLoop, LoopSpec, MintOutcome, build_loop, install_finished_task};
 use crate::database_tokens::expiry::TokenAuthKind;
@@ -25,7 +27,7 @@ async fn disabled_start() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_900)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -51,7 +53,7 @@ async fn duplicate_handle_start() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_900)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -85,7 +87,7 @@ async fn loop_log_levels() {
         log_prefix: "[writer]".to_owned(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_100)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -132,7 +134,7 @@ async fn fixed_schedule_no_jitter() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_900)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -210,7 +212,7 @@ async fn cancel_normal_vs_error_sleep() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_900)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -255,7 +257,7 @@ async fn stop_clears_handle() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_900)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -283,7 +285,7 @@ async fn shutdown_joins() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_900)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;

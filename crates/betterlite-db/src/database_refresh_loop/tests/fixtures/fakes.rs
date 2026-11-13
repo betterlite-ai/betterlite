@@ -20,6 +20,8 @@ use crate::rds_credentials::error::RdsCredentialsError;
 
 pub(crate) const EXPIRY_900: &str = "?X-Amz-Date=20240101T000000Z&X-Amz-Expires=900";
 pub(crate) const EXPIRY_100: &str = "?X-Amz-Date=20240101T000000Z&X-Amz-Expires=100";
+// a provider returns the token in wire form, so a minted one is already percent-encoded
+pub(crate) const MINTED_900: &str = "%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900";
 pub(crate) const UNPARSABLE_TOKEN_URL: &str = "postgresql://user:password@db.example:5432/litellm";
 
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

@@ -10,8 +10,8 @@ use tokio::task::{JoinSet, yield_now};
 use tracing::subscriber::set_default;
 
 use super::fixtures::fakes::{
-    ConnectStep, EXPIRY_100, EXPIRY_900, FakeError, FakeRdsProvider, UNPARSABLE_TOKEN_URL,
-    UnusedAzureFactory, lock, naive, slot_url, token_url, utc,
+    ConnectStep, EXPIRY_100, EXPIRY_900, FakeError, FakeRdsProvider, MINTED_900,
+    UNPARSABLE_TOKEN_URL, UnusedAzureFactory, lock, naive, slot_url, token_url, utc,
 };
 use super::fixtures::logs::capture_logs;
 use super::fixtures::loops::{LoopSpec, MintOutcome, build_loop, wait_for_event};
@@ -169,7 +169,7 @@ async fn lock_rechecks_freshness() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_100)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -259,7 +259,7 @@ async fn candidate_failure_restores_url() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_100)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -287,7 +287,7 @@ async fn cancel_restores_absent_url() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: None,
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -314,7 +314,7 @@ async fn callback_error_after_swap() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_100)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: Some(Arc::new(|| Err(FakeError::Callback))),
     })
     .await;
@@ -342,7 +342,7 @@ async fn success_sets_timestamp() {
         log_prefix: "[writer]".to_owned(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_100)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -369,7 +369,7 @@ async fn refresh_failure_keeps_pool() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_100)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -410,7 +410,7 @@ async fn reader_token_refresh() {
             schema: Some("reporting".to_owned()),
         }),
         initial_url: Some(token_url(EXPIRY_100)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -435,7 +435,7 @@ async fn writer_reader_isolation() {
         log_prefix: "[writer]".to_owned(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_100)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -450,7 +450,7 @@ async fn writer_reader_isolation() {
             schema: None,
         }),
         initial_url: Some(token_url(EXPIRY_100)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -480,7 +480,7 @@ async fn writer_refresh_leaves_reader() {
         log_prefix: "[writer]".to_owned(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_100)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -495,7 +495,7 @@ async fn writer_refresh_leaves_reader() {
             schema: None,
         }),
         initial_url: Some(token_url(EXPIRY_100)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -574,7 +574,7 @@ async fn token_expired_reports_fresh_token() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_900)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -588,7 +588,7 @@ async fn token_expired_reports_missing_url() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: None,
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -602,7 +602,7 @@ async fn minted_url_publishes_token() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_100)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -664,7 +664,7 @@ async fn stop_propagates_task_errors() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token_url(EXPIRY_900)),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
@@ -694,7 +694,7 @@ async fn out_of_range_entra_expiry_is_treated_as_expired() {
         log_prefix: String::new(),
         iam_endpoint: None,
         initial_url: Some(token.clone()),
-        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        mint: MintOutcome::Token(MINTED_900.to_owned()),
         on_replaced: None,
     })
     .await;
