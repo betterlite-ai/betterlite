@@ -148,6 +148,7 @@ fn rejects_other_generation_models(#[case] model: &str) {
         generation_endpoint(model),
         Err(BflError::UnknownModel { .. })
     ));
+    assert!(GenerationConfig::for_model(model).is_err());
 }
 
 #[test]
@@ -577,7 +578,18 @@ fn a_reply_past_the_size_limit_is_refused() {
     assert!(matches!(&error, BflError::ReplyTooLarge { limit } if *limit == MAX_REPLY_BYTES));
 }
 
+#[test]
+fn a_reply_at_the_size_limit_is_accepted() {
+    let padding = "a".repeat(MAX_REPLY_BYTES - 13);
+    let body = format!("{{\"status\":\"{padding}\"}}");
+    let decoded = decode_bfl_reply(body.as_bytes()).unwrap();
+
+    assert_eq!(body.len(), MAX_REPLY_BYTES);
+    assert_eq!(decoded.status.as_deref().map(str::len), Some(padding.len()));
+}
+
 #[rstest]
+#[case::registered_domain("https://bfl.ai/v1/get_result")]
 #[case::api_host("https://api.bfl.ai/v1/get_result?id=1")]
 #[case::gateway("https://gateway.bfl.ai/v1/get_result?id=1")]
 #[case::upper_case("HTTPS://GATEWAY.BFL.AI/v1/get_result")]
