@@ -95,18 +95,18 @@ def text_result(scenario: FormatScenario) -> JsonValue:
 
 
 def log_record(scenario: FormatScenario) -> logging.LogRecord:
-    created = scenario["created"]
+    level = logging.getLevelNamesMapping()[scenario["level"].upper()]
     record = logging.LogRecord(
-        name="litellm_proxy_extras",
-        level=logging.getLevelNamesMapping()[scenario["level"].upper()],
-        pathname="database_diagnostics.py",
-        lineno=1,
-        msg=scenario["message"],
-        args=arguments_for(scenario),
-        exc_info=exception_info(scenario),
+        "litellm_proxy_extras",
+        level,
+        "database_diagnostics.py",
+        1,
+        scenario["message"],
+        arguments_for(scenario),
+        exception_info(scenario),
     )
-    record.created = created
-    record.msecs = (created - int(created)) * 1000
+    record.created = scenario["created"]
+    record.msecs = (record.created - int(record.created)) * 1000
     return record
 
 
