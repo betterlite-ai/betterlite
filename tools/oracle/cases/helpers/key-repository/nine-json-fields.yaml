@@ -1,0 +1,54 @@
+kind: helper
+name: key-repository-nine-json-fields
+call:
+  key_repository:
+    cases:
+      each_nine_json_fields_decodes_once:
+        records:
+          - mapping:
+              token: k1
+              aliases: '{"a": 1}'
+              config: '{"b": 2}'
+              permissions: '{"c": 3}'
+              metadata: '{"d": 4}'
+              model_spend: '{"e": 5}'
+              model_max_budget: '{"f": 6}'
+              router_settings: '{"g": 7}'
+              budget_limits: '[{"h": 8}]'
+              litellm_budget_table: '{"budget_id": "b"}'
+      already_decoded_values_unchanged:
+        records:
+          - mapping:
+              token: k2
+              aliases: {a: 1}
+              config: {b: 2}
+              permissions: {c: 3}
+              metadata: {d: 4}
+              model_spend: {e: 5}
+              model_max_budget: {f: 6}
+              router_settings: {g: 7}
+              budget_limits: [{h: 8}]
+              litellm_budget_table: {budget_id: b}
+      unlisted_fields_are_not_json_decoded:
+        records:
+          - mapping: {token: k3, budget_fallbacks: '{"a": ["b"]}'}
+          - mapping: {token: k4, models: '["m"]'}
+          - mapping: {token: k5, allowed_routes: '["r"]'}
+          - mapping: {token: k6, object_permission: '{"object_permission_id": "p"}'}
+      double_encoded_text_not_recursively_decoded:
+        records:
+          - mapping: {token: k7, aliases: '{"a": "{\"b\": 1}"}'}
+          - mapping: {token: k8, metadata: '"{\"b\": 1}"'}
+      scalar_and_array_values_reach_row_validation:
+        records:
+          - mapping: {token: k9, metadata: '3'}
+          - mapping: {token: k10, budget_limits: '[]'}
+          - mapping: {token: k11, budget_limits: '[{"max_budget": 3}]'}
+          - mapping: {token: k12, budget_limits: '3'}
+      nullable_json_null_vs_required_dict:
+        records:
+          - mapping: {token: k13, router_settings: 'null', litellm_budget_table: 'null', budget_limits: 'null'}
+          - mapping: {token: k14, aliases: 'null'}
+          - mapping: {token: k15, metadata: 'null'}
+env: {}
+compare: {ignore: []}

@@ -1,7 +1,7 @@
 id: B1689
 milestone: M4 keys, spend and management
 title: Calculate early-return charges for media, realtime and protocol calls
-status: todo
+status: done
 depends_on: [B002, B171, B174, B193, B198, B204, B1649, B1676, B1678, B1681, B1682, B1686, B1687, B1688]
 file: tasks/B1689-special-call-charges.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/_experimental/mcp_server/cost_calculator.py"
 parent: B136
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1538

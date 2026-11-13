@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-passthrough-guardrail-input-texts-seed
+call:
+  b3678:
+    function: input_texts
+    endpoint: model/x/converse
+    data: {data: {messages: [{content: [{text: hello}]}]}}
+    skip_system: false
+    skip_tool: false
+env: {}
+compare: {ignore: []}

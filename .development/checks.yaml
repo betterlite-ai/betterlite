@@ -151,11 +151,11 @@ base:
         mapfile -t flags <<< "${packages}"
         cargo nextest run --locked --no-tests=warn "${flags[@]}" -E 'test(/replays_the_/)'
     - id: hooks
-      why: the prek pre-commit hooks (hygiene, test placement, ast-grep rules, typos, rustfmt, ruff, mypy and the Python rules) pass on the files the change touches, and on every file when it touches hook config or tool versions; on this machine basedpyright checks only the helper files the change touches, and CI runs it over the whole helpers folder
+      why: the prek pre-commit hooks (hygiene, test placement, ast-grep rules, typos, rustfmt, ruff, mypy and the Python rules) pass on the files the change touches, and on every file when it touches hook config or tool versions; on this machine basedpyright checks only the helper files the change touches, and CI runs it over the whole helpers folder; a change to hook config runs it over the whole folder here too, since prek's batches of all 740 files fail on files the change never touched (B9951, 11-13)
       run: |-
         config=(.pre-commit-config.yaml sgconfig.yml .ast-grep .development/hooks .shellcheckrc rust-toolchain.toml .development/checks.yaml typos.toml ruff.toml tools/oracle/helpers/pyrightconfig.json tools/oracle/litellm/pyproject.toml tools/oracle/litellm/mypy.toml tools/oracle/litellm/uv.lock)
         if [[ ${GITHUB_ACTIONS} == true ]]; then export SKIP=basedpyright-changed-helpers; else export SKIP=basedpyright-helpers; fi
-        if git diff --quiet "${GATE_BASE}" HEAD -- "${config[@]}"; then prek run --from-ref "${GATE_BASE}" --to-ref HEAD; else prek run --all-files; fi
+        if git diff --quiet "${GATE_BASE}" HEAD -- "${config[@]}"; then prek run --from-ref "${GATE_BASE}" --to-ref HEAD; else SKIP=basedpyright-changed-helpers prek run --all-files; fi
     - id: python-legacy
       why: python-legacy.txt, the Python files that still wait for mypy and the Python rules, only shrinks and names files that exist, and a file that leaves it passes the checks it waited for
       run: |-

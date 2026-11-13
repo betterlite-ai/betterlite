@@ -98,8 +98,27 @@ impl<'agents> Chain<'agents> {
                 stand_ins.push(link);
             }
         }
+        let own_limited = vendor::limited(git, agents, &own.runner.vendor)?;
+        // with no open rung left on an available vendor, a grant takes the last rung's granted starts there or on its stand-ins (B8800, 11-13)
+        let granted = self.links.last().filter(|link| {
+            own_limited && stand_ins.is_empty() && progress.granted > 0 && link.index != own.index
+        });
+        let ladder = &agents.roles.worker.ladder;
+        let takers = granted
+            .into_iter()
+            .filter(|link| progress.open_granted(ladder, link.index))
+            .chain(
+                granted
+                    .into_iter()
+                    .flat_map(|link| self.across(progress, link)),
+            );
+        for link in takers {
+            if !vendor::limited(git, agents, &link.runner.vendor)? {
+                stand_ins.push(link);
+            }
+        }
         // the run goes to another vendor at the same level, so this rung keeps its starts for when its vendor is back
-        if vendor::limited(git, agents, &own.runner.vendor)? {
+        if own_limited {
             return Ok(stand_ins.first().copied());
         }
         let account = vendor::find_vendor(agents, &own.runner.vendor)?;
