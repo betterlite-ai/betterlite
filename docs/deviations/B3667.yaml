@@ -1,5 +1,5 @@
 task: B3667
 deviations:
-  - what: A response tool call that is not a JSON object is dropped, and no object-to-dict conversion fills in the function name, arguments or the default type "function".
-    why: betterlite reads responses as JSON, so every tool call is already an object that carries the type pydantic would have set. The attribute-based branch for typed objects has no input here.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L998-L1018
+  - what: A response tool call that is a JSON object is passed to the guardrail as it is, with every attribute it carries (the streaming index and any extra provider fields included). LiteLLM's typed-object branch rebuilds it as exactly id, type and function, with only name and arguments inside function, so those extra attributes never reach the guardrail there. A tool call that is not a JSON object is dropped, and no conversion fills in the function name, arguments or the default type "function".
+    why: betterlite reads responses as JSON, so every tool call is already an object that carries the type pydantic would have set. The attribute-based branch for typed objects has no input here, and a guardrail that reads the extra fields only sees more of the call than it does under LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/handler.py#L998-L1020
