@@ -1,9 +1,16 @@
-use reqwest::StatusCode;
+use std::time::Duration;
 
-use super::support::{legacy, mock, mock_body, threshold_map};
+use reqwest::StatusCode;
+use rstest::rstest;
+
+use super::support::{Reply, legacy, mock, mock_body, mock_slow, mock_with, reply, threshold_map};
 use crate::azure_content_safety::error::{AzureContentSafetyError, VIOLATION_MESSAGE};
 use crate::azure_content_safety::legacy::LegacyAzureContentSafety;
 use crate::azure_content_safety::legacy_wire::{AnalyzeTextResponse, TextCategory};
+
+mod retry_policy;
+
+const HATEFUL: &str = r#"{"categoriesAnalysis":[{"category":"Hate","severity":6}]}"#;
 
 async fn hook_against(payload: &'static str) -> (super::support::Mock, LegacyAzureContentSafety) {
     let server = mock(200, payload).await;
@@ -88,7 +95,7 @@ async fn skips_a_category_with_a_null_severity() {
 async fn sends_the_legacy_sdk_request() {
     let (server, hook) = hook_against(r#"{"categoriesAnalysis":[]}"#).await;
     hook.test_violation("hello", Some("input")).await.unwrap();
-    let seen = server.seen.lock().unwrap();
+    let seen = server.seen.lock().unwrap().clone();
     assert_eq!(seen.len(), 1);
     let request = seen.first().unwrap();
     assert_eq!(request.path, "/contentsafety/text:analyze");
@@ -137,12 +144,12 @@ async fn surfaces_a_transport_failure() {
 
 #[tokio::test]
 async fn rejects_a_response_larger_than_the_limit() {
-    let server = mock_body(200, " ".repeat(1_048_577)).await;
+    let server = mock_body(200, &" ".repeat(0x0010_0001)).await;
     let hook = legacy(&server.base, None);
     let error = hook.test_violation("hello", None).await.unwrap_err();
     assert!(matches!(
         error,
-        AzureContentSafetyError::ResponseTooLarge { limit } if limit == 1_048_576
+        AzureContentSafetyError::ResponseTooLarge { limit } if limit == 0x0010_0000
     ));
 }
 
@@ -155,13 +162,13 @@ fn computes_a_verdict_for_every_reported_category() {
     .unwrap();
     let result = hook.compute_result(&response);
     assert_eq!(result.len(), 2);
-    let hate = result.get(&TextCategory::Hate).unwrap();
+    let hate = &result[&TextCategory::Hate];
     assert!(!hate.filtered);
     assert_eq!(hate.severity, 5);
-    let sexual = result.get(&TextCategory::Sexual).unwrap();
+    let sexual = &result[&TextCategory::Sexual];
     assert!(sexual.filtered);
     assert_eq!(sexual.severity, 5);
-    assert!(result.get(&TextCategory::Violence).is_none());
+    assert!(!result.contains_key(&TextCategory::Violence));
 }
 
 #[test]
@@ -172,6 +179,76 @@ fn keeps_the_last_severity_for_a_duplicated_category() {
     )
     .unwrap();
     let result = hook.compute_result(&response);
-    assert_eq!(result.get(&TextCategory::Hate).unwrap().severity, 6);
-    assert!(result.get(&TextCategory::Hate).unwrap().filtered);
+    assert_eq!(result[&TextCategory::Hate].severity, 6);
+    assert!(result[&TextCategory::Hate].filtered);
+}
+
+#[rstest]
+#[case::internal_server_error(500)]
+#[case::service_unavailable(503)]
+#[case::gateway_timeout(504)]
+#[tokio::test]
+async fn retries_a_server_error_and_scans_the_next_answer(#[case] status: u16) {
+    let server = mock_with(vec![reply(status, "{}"), reply(200, HATEFUL)], None).await;
+    let hook = legacy(&server.base, None);
+    let error = hook.test_violation("hello", None).await.unwrap_err();
+    assert!(matches!(
+        error,
+        AzureContentSafetyError::Violation {
+            category: TextCategory::Hate,
+            severity: 6,
+            ..
+        }
+    ));
+    assert_eq!(server.seen.lock().unwrap().len(), 2);
+}
+
+#[rstest]
+#[case::bad_request(400)]
+#[case::request_timeout(408)]
+#[case::too_many_requests(429)]
+#[case::bad_gateway(502)]
+#[case::http_version_not_supported(505)]
+#[case::variant_also_negotiates(506)]
+#[tokio::test]
+async fn does_not_retry_a_post_on_a_status_off_the_post_list(#[case] status: u16) {
+    let server = mock_with(vec![reply(status, "{}"), reply(200, HATEFUL)], None).await;
+    let hook = legacy(&server.base, None);
+    let error = hook.test_violation("hello", None).await.unwrap_err();
+    assert!(matches!(error, AzureContentSafetyError::HttpStatus { .. }));
+    assert_eq!(error.status_code().as_u16(), status);
+    assert_eq!(server.seen.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn retries_any_error_status_that_sends_retry_after() {
+    let throttled = Reply {
+        status: 429,
+        payload: "{}".to_owned(),
+        headers: vec![("retry-after", "0")],
+    };
+    let server = mock_with(vec![throttled, reply(200, HATEFUL)], None).await;
+    let hook = legacy(&server.base, None);
+    let error = hook.test_violation("hello", None).await.unwrap_err();
+    assert!(matches!(error, AzureContentSafetyError::Violation { .. }));
+    assert_eq!(server.seen.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn gives_up_after_three_retries_with_the_last_status() {
+    let server = mock(503, "{}").await;
+    let hook = legacy(&server.base, None);
+    let error = hook.test_violation("hello", None).await.unwrap_err();
+    assert_eq!(error.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(server.seen.lock().unwrap().len(), 4);
+}
+
+#[tokio::test]
+async fn a_legacy_timeout_answers_with_a_server_error() {
+    let server = mock_slow(200, "{}", Duration::from_millis(300)).await;
+    let mut hook = legacy(&server.base, None);
+    hook.timeout = Duration::from_millis(50);
+    let error = hook.test_violation("hello", None).await.unwrap_err();
+    assert!(matches!(error, AzureContentSafetyError::Timeout { .. }));
+    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
 }

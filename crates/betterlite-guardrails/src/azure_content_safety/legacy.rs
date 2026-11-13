@@ -1,11 +1,16 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use betterlite_http::proxy::limits::read_bounded;
+use jiff::Timestamp;
+use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::time::sleep;
 
-use super::base::DEFAULT_TIMEOUT;
+use super::base::{MAX_RESPONSE_BYTES, SUBSCRIPTION_KEY};
 use super::error::{AzureContentSafetyError, read_error, request_error};
+use super::legacy_retry::{BACKOFF_FACTOR, STATUS_RETRIES, is_retry, retry_delay};
 use super::legacy_thresholds::{SeverityThresholds, configure_thresholds};
 use super::legacy_wire::{
     AnalyzeTextOutputType, AnalyzeTextRequest, AnalyzeTextResponse, TextCategory,
@@ -14,8 +19,10 @@ use super::legacy_wire::{
 // azure-ai-contentsafety 1.0.0 chooses its own version for the legacy path, which the hook keeps.
 const LEGACY_API_VERSION: &str = "2023-10-01";
 const ANALYZE_TEXT_PATH: &str = "text:analyze";
-const SUBSCRIPTION_KEY: &str = "ocp-apim-subscription-key";
-const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+// azure-core's aiohttp transport waits 300 seconds to connect and 300 seconds per read.
+pub const LEGACY_TIMEOUT: Duration = Duration::from_secs(300);
+// An azure-core timeout carries no status_code, so the proxy answers it with 500.
+const TIMEOUT_STATUS: StatusCode = StatusCode::INTERNAL_SERVER_ERROR;
 
 #[derive(Debug)]
 pub struct LegacyAzureContentSafetyParams {
@@ -30,6 +37,9 @@ pub struct LegacyAzureContentSafety {
     pub api_key: SecretString,
     pub client: reqwest::Client,
     pub thresholds: SeverityThresholds,
+    pub timeout: Duration,
+    pub retry_backoff_factor: Duration,
+    pub clock: fn() -> Timestamp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +62,9 @@ impl LegacyAzureContentSafety {
             api_key: params.api_key,
             client,
             thresholds,
+            timeout: LEGACY_TIMEOUT,
+            retry_backoff_factor: BACKOFF_FACTOR,
+            clock: Timestamp::now,
         })
     }
 
@@ -114,31 +127,17 @@ impl LegacyAzureContentSafety {
         &self,
         text: &str,
     ) -> Result<AnalyzeTextResponse, AzureContentSafetyError> {
-        let url = format!(
-            "{}/contentsafety/{ANALYZE_TEXT_PATH}?api-version={LEGACY_API_VERSION}",
-            self.endpoint
-        );
-        let mut subscription_key = HeaderValue::from_str(self.api_key.expose_secret())
-            .map_err(|source| AzureContentSafetyError::InvalidApiKey { source })?;
-        subscription_key.set_sensitive(true);
         let mut response = self
-            .client
-            .post(url)
-            .header(HeaderName::from_static(SUBSCRIPTION_KEY), subscription_key)
-            .header(CONTENT_TYPE, "application/json")
-            .json(&AnalyzeTextRequest {
+            .send_with_retries(&AnalyzeTextRequest {
                 text,
                 output_type: AnalyzeTextOutputType::EightSeverityLevels,
             })
-            .timeout(DEFAULT_TIMEOUT)
-            .send()
-            .await
-            .map_err(request_error)?;
+            .await?;
         let status = response.status();
         let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
             .await
-            .map_err(read_error)?;
-        if status != reqwest::StatusCode::OK {
+            .map_err(|error| read_error(error, TIMEOUT_STATUS))?;
+        if status != StatusCode::OK {
             return Err(AzureContentSafetyError::HttpStatus {
                 status,
                 body: String::from_utf8(body).unwrap_or_default(),
@@ -146,5 +145,44 @@ impl LegacyAzureContentSafety {
         }
         serde_json::from_slice(&body)
             .map_err(|source| AzureContentSafetyError::ResponseJson { source })
+    }
+
+    // azure-core sends a retryable answer again up to STATUS_RETRIES times, then hands back the last one.
+    async fn send_with_retries(
+        &self,
+        request: &AnalyzeTextRequest<'_>,
+    ) -> Result<reqwest::Response, AzureContentSafetyError> {
+        let url = format!(
+            "{}/contentsafety/{ANALYZE_TEXT_PATH}?api-version={LEGACY_API_VERSION}",
+            self.endpoint
+        );
+        let mut subscription_key = HeaderValue::from_str(self.api_key.expose_secret())
+            .map_err(|source| AzureContentSafetyError::InvalidApiKey { source })?;
+        subscription_key.set_sensitive(true);
+        let mut retries = 0_u32;
+        loop {
+            let response = self
+                .client
+                .post(&url)
+                .header(HeaderName::from_static(SUBSCRIPTION_KEY), &subscription_key)
+                .header(CONTENT_TYPE, "application/json")
+                .json(request)
+                .timeout(self.timeout)
+                .send()
+                .await
+                .map_err(|source| request_error(source, TIMEOUT_STATUS))?;
+            if retries >= STATUS_RETRIES || !is_retry(response.status(), response.headers()) {
+                return Ok(response);
+            }
+            retries = retries.saturating_add(1);
+            let now = (self.clock)();
+            sleep(retry_delay(
+                response.headers(),
+                retries,
+                self.retry_backoff_factor,
+                now,
+            ))
+            .await;
+        }
     }
 }

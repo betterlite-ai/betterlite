@@ -24,7 +24,7 @@ async fn posts_to_the_endpoint_with_the_azure_headers() {
         .await
         .unwrap();
     assert!(response.categories_analysis.is_empty());
-    let seen = server.seen.lock().unwrap();
+    let seen = server.seen.lock().unwrap().clone();
     assert_eq!(seen.len(), 1);
     let request = seen.first().unwrap();
     assert_eq!(request.path, "/contentsafety/text:analyze");
@@ -43,7 +43,7 @@ async fn sends_a_configured_api_version_in_the_url() {
         .post_to_content_safety("text:analyze", &body)
         .await
         .unwrap();
-    let seen = server.seen.lock().unwrap();
+    let seen = server.seen.lock().unwrap().clone();
     assert_eq!(
         seen.first().unwrap().query.as_deref(),
         Some("api-version=2023-01-01")
@@ -61,7 +61,7 @@ async fn resolves_the_javelin_version_to_the_modern_default_before_the_post() {
         .post_to_content_safety("text:analyze", &body)
         .await
         .unwrap();
-    let seen = server.seen.lock().unwrap();
+    let seen = server.seen.lock().unwrap().clone();
     assert_eq!(
         seen.first().unwrap().query.as_deref(),
         Some("api-version=2024-09-01")
@@ -101,10 +101,13 @@ async fn reports_a_non_success_status_with_its_bounded_body() {
         error,
         AzureContentSafetyError::HttpStatus { status, .. } if status == StatusCode::UNAUTHORIZED
     ));
-    let AzureContentSafetyError::HttpStatus { body, .. } = error else {
+    let AzureContentSafetyError::HttpStatus {
+        body: error_body, ..
+    } = error
+    else {
         panic!("expected an HTTP status error");
     };
-    assert_eq!(body, r#"{"categoriesAnalysis":[]}"#);
+    assert_eq!(error_body, r#"{"categoriesAnalysis":[]}"#);
 }
 
 #[tokio::test]
@@ -136,11 +139,12 @@ async fn times_out_after_the_configured_timeout() {
         .await
         .unwrap_err();
     assert!(matches!(error, AzureContentSafetyError::Timeout { .. }));
+    assert_eq!(error.status_code(), StatusCode::REQUEST_TIMEOUT);
 }
 
 #[tokio::test]
 async fn rejects_a_response_larger_than_the_limit() {
-    let server = mock_body(200, " ".repeat(1_048_577)).await;
+    let server = mock_body(200, &" ".repeat(0x0010_0001)).await;
     let guardrail_base = base(&server.base, DEFAULT_API_VERSION, None);
     let body = TextBody { text: "hello" };
     let error = guardrail_base
@@ -149,7 +153,7 @@ async fn rejects_a_response_larger_than_the_limit() {
         .unwrap_err();
     assert!(matches!(
         error,
-        AzureContentSafetyError::ResponseTooLarge { limit } if limit == 1_048_576
+        AzureContentSafetyError::ResponseTooLarge { limit } if limit == 0x0010_0000
     ));
 }
 
@@ -162,4 +166,5 @@ async fn reports_a_failed_request() {
         .await
         .unwrap_err();
     assert!(matches!(error, AzureContentSafetyError::Request { .. }));
+    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
 }

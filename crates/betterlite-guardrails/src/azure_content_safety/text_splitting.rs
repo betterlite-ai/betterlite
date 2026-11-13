@@ -1,3 +1,5 @@
+use std::mem;
+
 #[must_use]
 pub fn split_text_by_words(text: &str, max_length: usize) -> Vec<String> {
     // LiteLLM loops forever on a zero limit, so a zero limit splits to single characters instead.
@@ -13,7 +15,7 @@ pub fn split_text_by_words(text: &str, max_length: usize) -> Vec<String> {
             continue;
         }
         if !current.is_empty() {
-            chunks.push(std::mem::take(&mut current));
+            chunks.push(mem::take(&mut current));
         }
         let mut pieces: Vec<String> = token
             .chars()
@@ -39,7 +41,7 @@ fn word_and_space_runs(text: &str) -> Vec<String> {
         // Python's `\s` follows str.isspace(), which also counts the U+001C to U+001F separators.
         let is_space = character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character);
         if run_in_space != is_space && !run.is_empty() {
-            runs.push(std::mem::take(&mut run));
+            runs.push(mem::take(&mut run));
         }
         run_in_space = is_space;
         run.push(character);

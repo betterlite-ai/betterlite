@@ -6,17 +6,20 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::body::Bytes;
-use axum::http::{HeaderMap, StatusCode, Uri};
+use axum::http::header::CONTENT_TYPE;
+use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, Uri};
 use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use crate::azure_content_safety::base::{AzureGuardrailBase, DEFAULT_TIMEOUT};
 use crate::azure_content_safety::legacy::{
     LegacyAzureContentSafety, LegacyAzureContentSafetyParams,
 };
 
+#[derive(Clone)]
 pub(crate) struct Seen {
     pub(crate) path: String,
     pub(crate) query: Option<String>,
@@ -25,35 +28,51 @@ pub(crate) struct Seen {
     pub(crate) body: String,
 }
 
+pub(crate) struct Reply {
+    pub(crate) status: u16,
+    pub(crate) payload: String,
+    pub(crate) headers: Vec<(&'static str, &'static str)>,
+}
+
 pub(crate) struct Mock {
     pub(crate) base: String,
     pub(crate) seen: Arc<Mutex<Vec<Seen>>>,
     _server: JoinSet<io::Result<()>>,
 }
 
+pub(crate) fn reply(status: u16, payload: &str) -> Reply {
+    Reply {
+        status,
+        payload: payload.to_owned(),
+        headers: Vec::new(),
+    }
+}
+
 pub(crate) async fn mock(status: u16, payload: &'static str) -> Mock {
-    mock_with(status, payload.to_owned(), None).await
+    mock_with(vec![reply(status, payload)], None).await
 }
 
 pub(crate) async fn mock_slow(status: u16, payload: &'static str, delay: Duration) -> Mock {
-    mock_with(status, payload.to_owned(), Some(delay)).await
+    mock_with(vec![reply(status, payload)], Some(delay)).await
 }
 
-pub(crate) async fn mock_body(status: u16, payload: String) -> Mock {
-    mock_with(status, payload, None).await
+pub(crate) async fn mock_body(status: u16, payload: &str) -> Mock {
+    mock_with(vec![reply(status, payload)], None).await
 }
 
-async fn mock_with(status: u16, payload: String, delay: Option<Duration>) -> Mock {
+// The mock answers the n-th request with the n-th reply and every later one with the last.
+pub(crate) async fn mock_with(replies: Vec<Reply>, delay: Option<Duration>) -> Mock {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let seen = Arc::new(Mutex::new(Vec::new()));
     let recorder = Arc::clone(&seen);
+    let script = Arc::new(replies);
     let answer = move |uri: Uri, headers: HeaderMap, bytes: Bytes| {
-        let recorder = Arc::clone(&recorder);
-        let reply = payload.clone();
+        let request_log = Arc::clone(&recorder);
+        let answers = Arc::clone(&script);
         async move {
-            if let Some(delay) = delay {
-                tokio::time::sleep(delay).await;
+            if let Some(pause) = delay {
+                sleep(pause).await;
             }
             let header = |name: &str| {
                 headers
@@ -61,17 +80,30 @@ async fn mock_with(status: u16, payload: String, delay: Option<Duration>) -> Moc
                     .and_then(|value| value.to_str().ok())
                     .map(str::to_owned)
             };
-            recorder.lock().unwrap().push(Seen {
-                path: uri.path().to_owned(),
-                query: uri.query().map(str::to_owned),
-                subscription_key: header("ocp-apim-subscription-key"),
-                content_type: header("content-type"),
-                body: String::from_utf8(bytes.to_vec()).unwrap(),
-            });
+            let index = {
+                let mut log = request_log.lock().unwrap();
+                log.push(Seen {
+                    path: uri.path().to_owned(),
+                    query: uri.query().map(str::to_owned),
+                    subscription_key: header("ocp-apim-subscription-key"),
+                    content_type: header("content-type"),
+                    body: String::from_utf8(bytes.to_vec()).unwrap(),
+                });
+                log.len().saturating_sub(1)
+            };
+            let chosen = answers.get(index).or_else(|| answers.last()).unwrap();
+            let mut reply_headers = HeaderMap::new();
+            reply_headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+            for &(name, value) in &chosen.headers {
+                reply_headers.insert(
+                    HeaderName::from_static(name),
+                    HeaderValue::from_static(value),
+                );
+            }
             (
-                StatusCode::from_u16(status).unwrap(),
-                [("content-type", "application/json")],
-                reply,
+                StatusCode::from_u16(chosen.status).unwrap(),
+                reply_headers,
+                chosen.payload.clone(),
             )
         }
     };
@@ -98,11 +130,12 @@ pub(crate) fn base(
     }
 }
 
+// Retries skip the SDK's 0.8s backoff here; legacy_retry's own cases check the delays.
 pub(crate) fn legacy(
     endpoint: &str,
     thresholds: Option<BTreeMap<String, i64>>,
 ) -> LegacyAzureContentSafety {
-    LegacyAzureContentSafety::new(
+    let mut hook = LegacyAzureContentSafety::new(
         LegacyAzureContentSafetyParams {
             endpoint: endpoint.to_owned(),
             api_key: SecretString::from("azure-key".to_owned()),
@@ -110,7 +143,9 @@ pub(crate) fn legacy(
         },
         base_builder().build().unwrap(),
     )
-    .unwrap()
+    .unwrap();
+    hook.retry_backoff_factor = Duration::ZERO;
+    hook
 }
 
 pub(crate) fn threshold_map(entries: &[(&str, i64)]) -> BTreeMap<String, i64> {

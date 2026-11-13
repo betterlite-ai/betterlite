@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use betterlite_http::proxy::limits::read_bounded;
+use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
@@ -10,8 +11,10 @@ use super::error::{AzureContentSafetyError, read_error, request_error};
 
 // The fallback httpx applies when a guardrail config sets no timeout of its own.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
-const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
-const SUBSCRIPTION_KEY: &str = "ocp-apim-subscription-key";
+pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+pub const SUBSCRIPTION_KEY: &str = "ocp-apim-subscription-key";
+// AsyncHTTPHandler turns httpx's timeout into litellm.Timeout, whose status the proxy answers with.
+const TIMEOUT_STATUS: StatusCode = StatusCode::REQUEST_TIMEOUT;
 
 #[derive(Debug, Clone)]
 pub struct AzureGuardrailBase {
@@ -50,11 +53,11 @@ impl AzureGuardrailBase {
             .timeout(self.timeout)
             .send()
             .await
-            .map_err(request_error)?;
+            .map_err(|source| request_error(source, TIMEOUT_STATUS))?;
         let status = response.status();
         let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
             .await
-            .map_err(read_error)?;
+            .map_err(|error| read_error(error, TIMEOUT_STATUS))?;
         if !status.is_success() {
             return Err(AzureContentSafetyError::HttpStatus {
                 status,

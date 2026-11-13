@@ -5,9 +5,12 @@ use super::api_version::resolve_api_version;
 
 #[derive(Deserialize)]
 struct RawConfig {
-    api_key: Option<SecretString>,
-    api_base: Option<String>,
-    api_version: Option<String>,
+    #[serde(rename = "api_key")]
+    key: Option<SecretString>,
+    #[serde(rename = "api_base")]
+    base: Option<String>,
+    #[serde(rename = "api_version")]
+    version: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -21,9 +24,9 @@ pub struct AzureContentSafetyConfigModel {
 impl From<RawConfig> for AzureContentSafetyConfigModel {
     fn from(raw: RawConfig) -> Self {
         Self {
-            api_key: raw.api_key,
-            api_base: raw.api_base,
-            api_version: resolve_api_version(raw.api_version.as_deref()).to_owned(),
+            api_key: raw.key,
+            api_base: raw.base,
+            api_version: resolve_api_version(raw.version.as_deref()).to_owned(),
         }
     }
 }

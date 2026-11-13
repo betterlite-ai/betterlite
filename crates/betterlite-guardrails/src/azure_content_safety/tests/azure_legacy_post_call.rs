@@ -2,6 +2,7 @@ use reqwest::StatusCode;
 
 use super::support::{legacy, mock};
 use crate::azure_content_safety::error::AzureContentSafetyError;
+use crate::azure_content_safety::legacy_hooks::async_post_call_success_hook;
 use crate::azure_content_safety::legacy_wire::{ModelResponse, TextCategory};
 
 const VIOLATION: &str = r#"{"categoriesAnalysis":[{"category":"Violence","severity":6}]}"#;
@@ -22,8 +23,7 @@ async fn blocks_violating_response_content() {
     let server = mock(200, VIOLATION).await;
     let hook = legacy(&server.base, None);
     let model_response = one_message("bad");
-    let error = hook
-        .async_post_call_success_hook(Some(&model_response))
+    let error = async_post_call_success_hook(&hook, Some(&model_response))
         .await
         .unwrap_err();
     assert!(matches!(
@@ -44,7 +44,7 @@ async fn skips_a_content_list() {
     let hook = legacy(&server.base, None);
     let model_response =
         response(r#"{"choices":[{"message":{"content":[{"type":"text","text":"bad"}]}}]}"#);
-    hook.async_post_call_success_hook(Some(&model_response))
+    async_post_call_success_hook(&hook, Some(&model_response))
         .await
         .unwrap();
     assert!(server.seen.lock().unwrap().is_empty());
@@ -55,7 +55,7 @@ async fn skips_a_missing_message_or_content() {
     let server = mock(200, VIOLATION).await;
     let hook = legacy(&server.base, None);
     let model_response = response(r#"{"choices":[{},{"message":null},{"message":{}}]}"#);
-    hook.async_post_call_success_hook(Some(&model_response))
+    async_post_call_success_hook(&hook, Some(&model_response))
         .await
         .unwrap();
     assert!(server.seen.lock().unwrap().is_empty());
@@ -65,7 +65,7 @@ async fn skips_a_missing_message_or_content() {
 async fn passes_when_the_response_is_not_a_model_response() {
     let server = mock(200, VIOLATION).await;
     let hook = legacy(&server.base, None);
-    hook.async_post_call_success_hook(None).await.unwrap();
+    async_post_call_success_hook(&hook, None).await.unwrap();
     assert!(server.seen.lock().unwrap().is_empty());
 }
 
@@ -74,8 +74,7 @@ async fn propagates_a_transport_failure_unmodified() {
     let server = mock(500, "{}").await;
     let hook = legacy(&server.base, None);
     let model_response = one_message("bad");
-    let error = hook
-        .async_post_call_success_hook(Some(&model_response))
+    let error = async_post_call_success_hook(&hook, Some(&model_response))
         .await
         .unwrap_err();
     assert!(matches!(
@@ -90,7 +89,7 @@ async fn scans_every_choice() {
     let hook = legacy(&server.base, None);
     let model_response =
         response(r#"{"choices":[{"message":{"content":"one"}},{"message":{"content":"two"}}]}"#);
-    hook.async_post_call_success_hook(Some(&model_response))
+    async_post_call_success_hook(&hook, Some(&model_response))
         .await
         .unwrap();
     assert_eq!(server.seen.lock().unwrap().len(), 2);
@@ -102,7 +101,7 @@ async fn stops_on_the_first_violation() {
     let hook = legacy(&server.base, None);
     let model_response =
         response(r#"{"choices":[{"message":{"content":"one"}},{"message":{"content":"two"}}]}"#);
-    hook.async_post_call_success_hook(Some(&model_response))
+    async_post_call_success_hook(&hook, Some(&model_response))
         .await
         .unwrap_err();
     assert_eq!(server.seen.lock().unwrap().len(), 1);
@@ -113,7 +112,7 @@ async fn passes_clean_content() {
     let server = mock(200, CLEAN).await;
     let hook = legacy(&server.base, None);
     let model_response = one_message("fine");
-    hook.async_post_call_success_hook(Some(&model_response))
+    async_post_call_success_hook(&hook, Some(&model_response))
         .await
         .unwrap();
 }

@@ -17,7 +17,10 @@ pub enum AzureContentSafetyError {
     #[error("the Azure Content Safety API key cannot be sent as a header value")]
     InvalidApiKey { source: InvalidHeaderValue },
     #[error("the Azure Content Safety request timed out")]
-    Timeout { source: reqwest::Error },
+    Timeout {
+        source: reqwest::Error,
+        status: StatusCode,
+    },
     #[error("the Azure Content Safety API could not be reached")]
     Request { source: reqwest::Error },
     #[error("the Azure Content Safety API answered with status {status}")]
@@ -48,6 +51,7 @@ impl AzureContentSafetyError {
     pub fn status_code(&self) -> StatusCode {
         match self {
             Self::Violation { .. } => StatusCode::BAD_REQUEST,
+            Self::Timeout { status, .. } => *status,
             Self::HttpStatus { status, .. }
                 if status.is_client_error() || status.is_server_error() =>
             {
@@ -55,7 +59,6 @@ impl AzureContentSafetyError {
             }
             Self::UnknownCategory { .. }
             | Self::InvalidApiKey { .. }
-            | Self::Timeout { .. }
             | Self::Request { .. }
             | Self::HttpStatus { .. }
             | Self::ResponseTooLarge { .. }
@@ -92,18 +95,25 @@ impl AzureContentSafetyError {
     }
 }
 
-pub(crate) fn request_error(source: reqwest::Error) -> AzureContentSafetyError {
+// The caller names the status its timeout answers with, since httpx and azure-core report it differently.
+pub(crate) fn request_error(
+    source: reqwest::Error,
+    timeout_status: StatusCode,
+) -> AzureContentSafetyError {
     if source.is_timeout() {
-        AzureContentSafetyError::Timeout { source }
+        AzureContentSafetyError::Timeout {
+            source,
+            status: timeout_status,
+        }
     } else {
         AzureContentSafetyError::Request { source }
     }
 }
 
-pub(crate) fn read_error(error: ReadError) -> AzureContentSafetyError {
+pub(crate) fn read_error(error: ReadError, timeout_status: StatusCode) -> AzureContentSafetyError {
     match error {
         ReadError::TooLarge { limit } => AzureContentSafetyError::ResponseTooLarge { limit },
-        ReadError::Failed(source) => AzureContentSafetyError::Request { source },
+        ReadError::Failed(source) => request_error(source, timeout_status),
     }
 }
 

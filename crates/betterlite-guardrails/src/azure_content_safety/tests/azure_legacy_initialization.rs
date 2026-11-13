@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use betterlite_http::proxy::base_builder;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -58,7 +59,22 @@ fn rejects_an_unknown_threshold_category() {
 
 #[test]
 fn enforces_request_content() {
-    assert!(LegacyAzureContentSafety::ENFORCES_REQUEST_CONTENT);
+    const { assert!(LegacyAzureContentSafety::ENFORCES_REQUEST_CONTENT) };
+}
+
+#[test]
+fn keeps_the_sdk_transport_defaults() {
+    let hook = LegacyAzureContentSafety::new(
+        LegacyAzureContentSafetyParams {
+            endpoint: "http://127.0.0.1:1".to_owned(),
+            api_key: SecretString::from("azure-key".to_owned()),
+            thresholds: BTreeMap::new(),
+        },
+        base_builder().build().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(hook.timeout, Duration::from_secs(300));
+    assert_eq!(hook.retry_backoff_factor, Duration::from_millis(800));
 }
 
 #[test]
