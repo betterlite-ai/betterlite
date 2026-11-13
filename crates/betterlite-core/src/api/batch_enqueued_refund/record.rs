@@ -33,18 +33,6 @@ impl From<&BatchEnqueuedTokenReservation> for ReservationRecord {
     }
 }
 
-impl From<&ReservationRecord> for BatchEnqueuedTokenReservation {
-    fn from(record: &ReservationRecord) -> Self {
-        Self {
-            tokens: record.tokens,
-            scopes: record.scopes.clone(),
-            backend: record.backend,
-            owner: record.owner.clone(),
-            reserved_at_monotonic: record.reserved_at_monotonic,
-        }
-    }
-}
-
 // the source keeps a record alive until the counters it refunds expire, shortened by the seconds it has already run
 pub(crate) fn record_ttl(ttl_seconds: i64, elapsed_seconds: f64) -> i64 {
     let Some(elapsed) = cast::<f64, i64>(elapsed_seconds.ceil()) else {

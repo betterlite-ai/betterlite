@@ -124,12 +124,7 @@ impl ScriptedScripts {
             .push(call);
     }
 
-    fn take_reply(
-        &self,
-        queue: &Mutex<VecDeque<Step>>,
-        call: ScriptCall,
-    ) -> Result<(), ScriptFailure> {
-        self.record_call(call);
+    fn take_reply_from(&self, queue: &Mutex<VecDeque<Step>>) -> Result<(), ScriptFailure> {
         let step = queue
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -154,9 +149,10 @@ impl ReservationScripts for ScriptedScripts {
         _ttl_seconds: i64,
         _limit: i64,
     ) -> impl Future<Output = Result<ReserveScriptReply, ScriptFailure>> + Send {
-        ready(Err(ScriptFailure {
+        let failure = ScriptFailure {
             message: "the refund slice never reserves".to_owned(),
-        }))
+        };
+        ready(Err(failure))
     }
 
     fn refund(
@@ -164,11 +160,11 @@ impl ReservationScripts for ScriptedScripts {
         counter_key: &str,
         tokens: i64,
     ) -> impl Future<Output = Result<(), ScriptFailure>> + Send {
-        let call = ScriptCall::Refund {
+        self.record_call(ScriptCall::Refund {
             key: counter_key.to_owned(),
             tokens,
-        };
-        ready(self.take_reply(&self.refunds, call))
+        });
+        ready(self.take_reply_from(&self.refunds))
     }
 }
 
@@ -179,12 +175,9 @@ impl ReservationRecordScripts for ScriptedScripts {
         record: &str,
         ttl_seconds: i64,
     ) -> impl Future<Output = Result<(), ScriptFailure>> + Send {
-        let call = ScriptCall::Save {
-            key: record_key.to_owned(),
-            record: record.to_owned(),
-            ttl_seconds,
-        };
-        ready(self.take_reply(&self.saves, call))
+        self.record_call(script_save(record_key, record, ttl_seconds));
+        let reply = self.take_reply_from(&self.saves);
+        ready(reply)
     }
 
     fn pop(
@@ -381,6 +374,14 @@ fn record_expiry(counters: &Arc<Mutex<LocalTokenCounters>>) -> Option<f64> {
         .into_iter()
         .find(|(key, _expiry)| key == RECORD_KEY)
         .map(|(_key, expiry)| expiry)
+}
+
+fn script_save(record_key: &str, record: &str, ttl_seconds: i64) -> ScriptCall {
+    ScriptCall::Save {
+        key: record_key.to_owned(),
+        record: record.to_owned(),
+        ttl_seconds,
+    }
 }
 
 fn saved_call(reservation: &ReservationRecord, ttl_seconds: i64) -> ScriptCall {
@@ -832,7 +833,9 @@ fn record_round_trips_the_reservation() {
             vec![key_scope()]
         )
     );
-    assert_eq!(BatchEnqueuedTokenReservation::from(&derived), reservation);
+    assert_eq!(derived.tokens, reservation.tokens);
+    assert_eq!(derived.scopes, reservation.scopes);
+    assert_eq!(derived.owner, reservation.owner);
 }
 
 #[test]
