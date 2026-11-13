@@ -5,7 +5,7 @@ use betterlite_models::decisions::Json;
 use super::log_json_data_on_gcs;
 use crate::gcs_client::gcs_storage_auth::error::GcsClientError;
 use crate::gcs_client::gcs_storage_auth::tests::support::{
-    Harness, RecordingClient, headers, logging_payload,
+    Harness, RecordingClient, capture_logs, headers, logging_payload,
 };
 use crate::gcs_mock::request::GcsRequest;
 use crate::types::gcs_storage_auth::type_definitions::GcsLoggingPayload;
@@ -229,4 +229,19 @@ async fn the_mock_upload_answers_with_the_canned_object() {
         Some(&Json::Text("mock-object".to_owned()))
     );
     assert!(harness.requests().is_empty(), "the real client was reached");
+}
+
+#[tokio::test]
+async fn only_a_success_other_than_200_is_logged_as_an_error() {
+    let (captured, _guard) = capture_logs();
+    for status in [200, 201] {
+        let harness = harness_with(RecordingClient::responding(status, "{}"));
+        let base = harness.build(None);
+        let payload = GcsLoggingPayload::Text("body".to_owned());
+        log_json_data_on_gcs(&base, &headers(&[]), "bucket", "object", &payload)
+            .await
+            .expect("a 2xx response is parsed");
+        let logged = captured.text();
+        assert_eq!(logged.contains("GCS Bucket logging error"), status == 201);
+    }
 }

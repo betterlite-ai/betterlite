@@ -16,3 +16,5 @@ impl EnvironmentSource for BTreeMap<String, String> {
         self.clone()
     }
 }
+
+mod tests;

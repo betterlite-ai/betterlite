@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -6,6 +7,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use http::HeaderMap;
 use secrecy::SecretString;
+use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::fields::payload::StandardLoggingPayload;
 use crate::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource;
@@ -359,3 +361,43 @@ const LOGGING_PAYLOAD: &str = r#"{
     "guardrail_information": null,
     "standard_built_in_tools_params": null
 }"#;
+
+#[derive(Clone, Default)]
+pub(crate) struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Captured {
+    pub(crate) fn text(&self) -> String {
+        let bytes = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        String::from_utf8(bytes).expect("captured logs are UTF-8")
+    }
+}
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+pub(crate) fn capture_logs() -> (Captured, DefaultGuard) {
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(move || writer.clone())
+        .finish();
+    (captured, set_default(subscriber))
+}
