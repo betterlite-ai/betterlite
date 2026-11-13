@@ -6,8 +6,8 @@ use betterlite_config::sections::xai_identity::Settings;
 use betterlite_openai::api::audio_file_input::{
     AudioFile, AudioTuple, AuthorizedAudioFiles, TupleContent, process_audio_file,
 };
-use betterlite_openai::xai_stt::reply::decode_xai_stt_reply;
-use betterlite_openai::xai_stt::request::{
+use betterlite_openai::xai_stt::decode_xai_stt_reply;
+use betterlite_openai::xai_stt::{
     FormValue, SUPPORTED_OPENAI_PARAMS, authorization_headers, map_openai_params, stt_url,
     transcription_form,
 };

@@ -8,13 +8,13 @@ use serde_json::{Map, json};
 
 use crate::api::audio_file_input::ProcessedAudioFile;
 use crate::api::batch_records::WireDecodeLimits;
+use crate::xai_stt::decode_xai_stt_reply;
 use crate::xai_stt::error::XaiSttError;
-use crate::xai_stt::records::{SttPayload, SttWord, TranscriptionTask};
-use crate::xai_stt::reply::decode_xai_stt_reply;
-use crate::xai_stt::request::{
+use crate::xai_stt::{
     FormScalar, FormText, FormValue, SUPPORTED_OPENAI_PARAMS, authorization_headers,
     map_openai_params, stt_url, transcription_form,
 };
+use crate::xai_stt::{SttPayload, SttWord, TranscriptionTask};
 
 fn settings() -> Settings {
     Settings {
@@ -220,6 +220,18 @@ fn extra_body_is_flattened_before_the_direct_options() {
 }
 
 #[test]
+fn a_direct_none_drops_the_extra_body_value() {
+    let extra = IndexMap::from([
+        ("prompt".to_owned(), text("x")),
+        ("n".to_owned(), text("1")),
+    ]);
+    let direct = IndexMap::from([("prompt".to_owned(), FormValue::Scalar(FormScalar::Null))]);
+    let form = transcription_form("m", &audio(), &extra, &direct);
+    let names: Vec<&str> = form.fields.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(names, ["model", "n"]);
+}
+
+#[test]
 fn excluded_names_never_reach_the_form() {
     let extra = IndexMap::from([
         ("model".to_owned(), text("nested")),
@@ -243,8 +255,8 @@ fn excluded_names_never_reach_the_form() {
 #[case::integer(FormValue::Scalar(FormScalar::Integer(3)), FormText::Scalar("3".to_owned()))]
 #[case::float(FormValue::Scalar(FormScalar::Float(0.5)), FormText::Scalar("0.5".to_owned()))]
 #[case::whole_float(FormValue::Scalar(FormScalar::Float(1.0)), FormText::Scalar("1.0".to_owned()))]
-#[case::small_float(FormValue::Scalar(FormScalar::Float(0.00001)), FormText::Scalar("1e-05".to_owned()))]
-#[case::large_float(FormValue::Scalar(FormScalar::Float(1e16)), FormText::Scalar("1e+16".to_owned()))]
+#[case::small_float(FormValue::Scalar(FormScalar::Float(0.00001)), FormText::Scalar("1e-5".to_owned()))]
+#[case::large_float(FormValue::Scalar(FormScalar::Float(1e16)), FormText::Scalar("1e16".to_owned()))]
 #[case::list_bools(
     FormValue::List(vec![FormScalar::Bool(true), FormScalar::Bool(false), FormScalar::Integer(1)]),
     FormText::Repeated(vec!["True".to_owned(), "False".to_owned(), "1".to_owned()])

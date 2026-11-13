@@ -6,19 +6,16 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use rstest::rstest;
-use serde_json::Value;
 
 use crate::api::batch_records::WireDecodeLimits;
 use crate::files::records::{FileDeleted, FileObject};
 use crate::files::records::{FileKind, FileStatus, FilesPurpose};
 use crate::xai_batches::error::XaiBatchesError;
 use crate::xai_files::error::XaiFilesError;
-use crate::xai_files::records::{XaiFile, XaiFileDeleted, XaiFileList, decode_xai_upload_reply};
-use crate::xai_files::reply::{decode_file_reply, to_file_deleted, to_file_list, to_file_object};
-use crate::xai_files::request::{
-    FilesTarget, SUPPORTED_OPENAI_PARAMS, create_upload, files_url, map_openai_params, next_page,
-};
-use crate::xai_stt::reply::decode_xai_stt_reply;
+use crate::xai_files::{FilesTarget, SUPPORTED_OPENAI_PARAMS, create_upload, files_url, next_page};
+use crate::xai_files::{XaiFile, XaiFileDeleted, XaiFileList, decode_xai_upload_reply};
+use crate::xai_files::{decode_file_reply, to_file_deleted, to_file_list, to_file_object};
+use crate::xai_stt::decode_xai_stt_reply;
 
 fn settings() -> Settings {
     Settings {
@@ -387,23 +384,8 @@ fn an_answer_over_the_byte_limit_is_rejected_before_parsing() {
 }
 
 #[test]
-fn the_option_mapper_keeps_the_callers_options() {
+fn only_purpose_is_advertised() {
     assert_eq!(SUPPORTED_OPENAI_PARAMS, ["purpose"]);
-    let mut anchor = serde_json::Map::new();
-    anchor.insert("anchor".to_owned(), Value::String("created_at".to_owned()));
-    let optional = serde_json::Map::from_iter([
-        ("purpose".to_owned(), Value::String("batch".to_owned())),
-        ("expires_after".to_owned(), Value::Object(anchor)),
-    ]);
-    let mapped = map_openai_params(
-        optional.clone(),
-        &[
-            ("purpose".to_owned(), Value::String("assistants".to_owned())),
-            ("temperature".to_owned(), Value::from(2_i32)),
-        ],
-        false,
-    );
-    assert_eq!(mapped, optional);
 }
 
 fn decode_tagged(bytes: &[u8]) -> Option<()> {

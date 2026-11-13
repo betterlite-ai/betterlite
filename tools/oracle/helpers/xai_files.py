@@ -26,12 +26,6 @@ LOG: Final = Logging(
 )
 
 
-class Params(TypedDict):
-    step: Literal["params"]
-    optional: dict[str, JsonValue]
-    non_default: dict[str, JsonValue]
-
-
 class Auth(TypedDict):
     step: Literal["auth"]
     api_key: str | None
@@ -60,7 +54,7 @@ class Content(TypedDict):
     body: str
 
 
-Step: TypeAlias = Params | Auth | Url | Reply | Content
+Step: TypeAlias = Auth | Url | Reply | Content
 
 
 class Input(TypedDict):
@@ -131,14 +125,6 @@ def url_step(step: Url) -> JsonValue:
 
 def outcome(step: Step) -> JsonValue:
     match step["step"]:
-        case "params":
-            mapped = CONFIG.map_openai_params(
-                step["non_default"], dict(step["optional"]), model="", drop_params=False
-            )
-            supported: list[JsonValue] = [
-                str(name) for name in CONFIG.get_supported_openai_params("")
-            ]
-            return {"supported": supported, "mapped": JSON.validate_python(mapped)}
         case "auth":
             headers = CONFIG.validate_environment(
                 headers={},

@@ -5,19 +5,15 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::api::batch_records::WireDecodeLimits;
 use betterlite_openai::files::records::BinaryContent;
 use betterlite_openai::xai_batches::transformation::get_xai_auth_headers;
-use betterlite_openai::xai_files::records::{
-    XaiFile, XaiFileDeleted, XaiFileList, decode_xai_upload_reply,
-};
-use betterlite_openai::xai_files::reply::{
+use betterlite_openai::xai_files::{FilesTarget, files_url, next_page};
+use betterlite_openai::xai_files::{XaiFile, XaiFileDeleted, XaiFileList, decode_xai_upload_reply};
+use betterlite_openai::xai_files::{
     decode_file_reply, to_file_deleted, to_file_list, to_file_object,
-};
-use betterlite_openai::xai_files::request::{
-    FilesTarget, SUPPORTED_OPENAI_PARAMS, files_url, map_openai_params, next_page,
 };
 use http::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 use crate::helpers::{HelperError, OrHelperError as _};
 
@@ -56,10 +52,6 @@ pub(crate) enum Parse {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "step", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Step {
-    Params {
-        optional: Map<String, Value>,
-        non_default: Map<String, Value>,
-    },
     Auth {
         api_key: Option<String>,
     },
@@ -176,14 +168,6 @@ fn reply_step(step: &ReplyStep, settings: &Settings) -> Result<Value, Box<Helper
 
 fn step(step: &Step, settings: &Settings) -> Result<Value, Box<HelperError>> {
     match step {
-        Step::Params {
-            optional,
-            non_default,
-        } => {
-            let pairs: Vec<(String, Value)> = non_default.clone().into_iter().collect();
-            let mapped = map_openai_params(optional.clone(), &pairs, false);
-            Ok(json!({ "supported": SUPPORTED_OPENAI_PARAMS, "mapped": mapped }))
-        }
         Step::Auth { api_key } => {
             let key = api_key.as_deref().map(SecretString::from);
             let headers = get_xai_auth_headers(HeaderMap::new(), key.as_ref(), settings);

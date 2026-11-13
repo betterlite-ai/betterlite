@@ -5,9 +5,6 @@ call:
     env: {}
     xai_key: null
     steps:
-      - step: params
-        optional: {purpose: batch, expires_after: {anchor: created_at}}
-        non_default: {purpose: assistants, temperature: 2}
       - {step: auth, api_key: sk-key}
       - {step: url, api_base: null, target: collection, file_id: null}
       - {step: url, api_base: "https://proxy.example/v1/", target: collection, file_id: null}

@@ -2,10 +2,8 @@
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::api::batch_records::WireDecodeLimits;
-use betterlite_openai::xai_files::records::{
-    XaiFile, XaiFileDeleted, XaiFileList, decode_xai_upload_reply,
-};
-use betterlite_openai::xai_stt::reply::decode_xai_stt_reply;
+use betterlite_openai::xai_files::{XaiFile, XaiFileDeleted, XaiFileList, decode_xai_upload_reply};
+use betterlite_openai::xai_stt::decode_xai_stt_reply;
 use http::header::HeaderMap;
 use libfuzzer_sys::fuzz_target;
 

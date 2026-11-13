@@ -34,8 +34,8 @@ call:
         model: m
         filename: null
         content: raw
-        extra_body: {flag: false, n: 3, f: 1.5, items: [true, false, 1]}
-        options: {}
+        extra_body: {flag: false, n: 3, f: 1.5, items: [true, false, 1], prompt: dropped}
+        options: {prompt: null}
       - {step: form, model: m, filename: sound.flac, content: abc, extra_body: {}, options: {}}
 env: {}
 compare: {ignore: []}
