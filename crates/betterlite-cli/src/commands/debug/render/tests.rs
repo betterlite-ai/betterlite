@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use rstest::rstest;
 
-use super::{Clock, ReportContext, build_report, render_report};
+use super::{Clock, ReportContext, build_report};
 use crate::commands::debug::error::DebugError;
 use crate::commands::debug::wire::{RequestResponsePayload, SpendLogRow};
 
@@ -49,7 +49,7 @@ fn render_at(clock: &FixedClock, rows: &str, bodies: &Payloads, max_body_chars: 
         max_body_chars,
         clock,
     };
-    render_report(&context, &rows_from(rows), bodies).unwrap()
+    build_report(&context, &rows_from(rows), bodies).unwrap()
 }
 
 fn report(rows: &str) -> String {
@@ -189,7 +189,7 @@ fn render_reports_a_total_that_does_not_fit_a_decimal() {
         r#"[{"request_id":"a","spend":79228162514264337593543950335},{"request_id":"b","spend":1}]"#,
     );
 
-    let error = render_report(&context, &rows, &Payloads::new()).unwrap_err();
+    let error = build_report(&context, &rows, &Payloads::new()).unwrap_err();
 
     assert!(matches!(error, DebugError::SpendOverflow));
 }
@@ -203,29 +203,20 @@ fn render_lists_the_sorted_distinct_models() {
     assert!(rendered.contains("\n- models: ?, alpha, mid, zeta\n"));
 }
 
-#[test]
-fn render_lists_n_a_when_there_are_no_turns() {
-    let rendered = report("[]");
-
-    assert!(
-        rendered.contains("\n- turns: 0, failed: 0\n- total spend: $0.000000\n- models: n/a\n")
-    );
-}
-
 #[rstest]
 #[case::whole_seconds(0, "2026-01-01T00:00:00+00:00")]
 #[case::fraction_is_dropped(999_999_999, "2026-01-01T00:00:00+00:00")]
 fn render_stamps_the_report_in_utc_to_the_second(#[case] nanos: u32, #[case] expected: &str) {
     let clock = FixedClock(DateTime::from_timestamp(1_767_225_600, nanos).unwrap());
 
-    let rendered = render_at(&clock, "[]", &Payloads::new(), 10);
+    let rendered = render_at(&clock, r#"[{"request_id":"a"}]"#, &Payloads::new(), 10);
 
     assert!(rendered.contains(&format!("\n- generated: {expected}\n")));
 }
 
 #[test]
 fn render_explains_when_the_bodies_are_empty() {
-    let rendered = report("[]");
+    let rendered = report(r#"[{"request_id":"a"}]"#);
 
     assert!(rendered.contains(&format!("\n\n{NOTE}\n\n## Turns\n")));
 }

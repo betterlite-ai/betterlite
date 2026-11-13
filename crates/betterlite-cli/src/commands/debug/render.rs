@@ -39,14 +39,6 @@ pub fn build_report(
             base_url: context.base_url.to_owned(),
         });
     }
-    render_report(context, rows, payloads)
-}
-
-pub fn render_report(
-    context: &ReportContext<'_>,
-    rows: &[SpendLogRow],
-    payloads: &BTreeMap<String, Option<RequestResponsePayload>>,
-) -> Result<String, DebugError> {
     let summary = summary_lines(context, rows)?;
     let sections: Vec<String> = rows
         .iter()
@@ -113,9 +105,6 @@ fn total_spend(rows: &[SpendLogRow]) -> Result<Decimal, DebugError> {
 
 fn model_list(rows: &[SpendLogRow]) -> String {
     let model_names: BTreeSet<&str> = rows.iter().map(SpendLogRow::model_label).collect();
-    if model_names.is_empty() {
-        return String::from("n/a");
-    }
     model_names.into_iter().collect::<Vec<_>>().join(", ")
 }
 
