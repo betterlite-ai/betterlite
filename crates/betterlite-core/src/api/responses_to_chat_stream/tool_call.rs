@@ -3,33 +3,44 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value};
 
 use super::error::ResponsesChatStreamError;
+use super::fields::Fields;
 use super::records::ChatToolCall;
 use crate::api::response_chat_history::tool_fields::output_tool_fields;
 
-// the conversion's own index is overwritten by the chat index, so its value carries no meaning here
 const CONVERTED_INDEX: usize = 0;
 
-pub fn added_tool_call(
-    event: &Map<String, Value>,
-    item: &Map<String, Value>,
-    tool_call_index: i64,
+pub enum CallShape<'a> {
+    Added { event: &'a Fields, index: i64 },
+    Done { index: i64 },
+}
+
+pub fn convert(
+    item: &Fields,
+    shape: CallShape<'_>,
 ) -> Result<ChatToolCall, ResponsesChatStreamError> {
     let converted = output_tool_fields(item, CONVERTED_INDEX)?;
-    let arguments = if converted.function.arguments.is_empty() {
-        event_arguments(event)?
-    } else {
-        converted.function.arguments.clone()
+    let arguments = match shape {
+        CallShape::Added { event, .. } if converted.function.arguments.is_empty() => {
+            event_arguments(event)?
+        }
+        CallShape::Added { .. } | CallShape::Done { .. } => converted.function.arguments.clone(),
     };
-    let name = converted.function.name;
+    let name = match shape {
+        CallShape::Added { .. } if converted.function.name.is_empty() => None,
+        CallShape::Added { .. } | CallShape::Done { .. } => Some(converted.function.name.as_str()),
+    };
+    let index = match shape {
+        CallShape::Added { index, .. } | CallShape::Done { index } => index,
+    };
     let function = function_value(
-        if name.is_empty() { None } else { Some(&name) },
+        name,
         &arguments,
         converted.provider_specific_fields.as_ref(),
     )?;
     Ok(ChatToolCall {
-        id: Some(converted.id.clone()),
-        index: Some(tool_call_index),
-        kind: Some(converted.kind.clone()),
+        id: Some(converted.id),
+        index: Some(index),
+        kind: Some(converted.kind),
         function: Some(function),
         custom: None,
         provider_specific_fields: converted.provider_specific_fields,
@@ -37,23 +48,14 @@ pub fn added_tool_call(
     })
 }
 
-pub fn done_tool_call(
-    item: &Map<String, Value>,
-    output_index: i64,
-) -> Result<ChatToolCall, ResponsesChatStreamError> {
-    let converted = output_tool_fields(item, CONVERTED_INDEX)?;
-    let function = function_value(
-        Some(&converted.function.name),
-        &converted.function.arguments,
-        converted.provider_specific_fields.as_ref(),
-    )?;
+pub fn delta_call(index: i64, arguments: &str) -> Result<ChatToolCall, ResponsesChatStreamError> {
     Ok(ChatToolCall {
-        id: Some(converted.id),
-        index: Some(output_index),
-        kind: Some(converted.kind),
-        function: Some(function),
+        id: None,
+        index: Some(index),
+        kind: Some("function".to_owned()),
+        function: Some(function_value(None, arguments, None)?),
         custom: None,
-        provider_specific_fields: converted.provider_specific_fields,
+        provider_specific_fields: None,
         extra: Map::new(),
     })
 }
@@ -79,8 +81,7 @@ pub fn function_value(
     Ok(Value::Object(fields))
 }
 
-// the event's own arguments stand in when the converted call carries none
-fn event_arguments(event: &Map<String, Value>) -> Result<String, ResponsesChatStreamError> {
+fn event_arguments(event: &Fields) -> Result<String, ResponsesChatStreamError> {
     match event.get("arguments") {
         None | Some(Value::Null) => Ok(String::new()),
         Some(Value::String(text)) => Ok(text.clone()),

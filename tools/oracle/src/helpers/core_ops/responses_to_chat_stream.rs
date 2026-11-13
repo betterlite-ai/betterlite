@@ -7,7 +7,7 @@ use betterlite_core::api::responses_to_chat_stream::stream::{
     ParsedChatLine, get_model_response_iterator,
 };
 use betterlite_core::api::responses_to_chat_stream::translate::{
-    ToolCallIndices, translate_responses_chunk_to_openai_stream,
+    ToolCallIndices, translate_event,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -17,6 +17,10 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 
 const FIXED_ID: u128 = 0x0123_4567_89ab_4def_8123_4567_89ab_cdef;
 const FIXED_CLOCK: i64 = 1_700_000_000;
+const FACTORY: ChunkFactory = ChunkFactory {
+    identifier: || Uuid::from_u128(FIXED_ID),
+    clock: || FIXED_CLOCK,
+};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
@@ -52,7 +56,8 @@ impl Helper for Op {
 }
 
 fn event_steps(events: &[Map<String, Value>]) -> HelperResult {
-    let mut iterator = get_model_response_iterator(Some(false), || Uuid::from_u128(FIXED_ID), || FIXED_CLOCK);
+    let mut iterator =
+        get_model_response_iterator(Some(false), FACTORY.identifier, FACTORY.clock);
     let mut steps = Vec::with_capacity(events.len());
     for event in events {
         let chunk = iterator
@@ -65,7 +70,8 @@ fn event_steps(events: &[Map<String, Value>]) -> HelperResult {
 
 // the Python side can only answer with a chunk, so a padding line is the helper's own error there too
 fn line_steps(lines: &[String]) -> HelperResult {
-    let mut iterator = get_model_response_iterator(Some(false), || Uuid::from_u128(FIXED_ID), || FIXED_CLOCK);
+    let mut iterator =
+        get_model_response_iterator(Some(false), FACTORY.identifier, FACTORY.clock);
     let mut steps = Vec::with_capacity(lines.len());
     for line in lines {
         match iterator
@@ -94,17 +100,13 @@ fn stateless_steps(
 ) -> HelperResult {
     let shares_map = shared_map.is_some();
     let mut map: ToolCallIndices = shared_map.unwrap_or_default();
-    let factory = ChunkFactory {
-        identifier: || Uuid::from_u128(FIXED_ID),
-        clock: || FIXED_CLOCK,
-    };
     let mut steps = Vec::with_capacity(events.len());
     for event in events {
         let indices = if shares_map { Some(&mut map) } else { None };
-        let chunk = translate_responses_chunk_to_openai_stream(
+        let chunk = translate_event(
             &Value::Object(event.clone()),
             indices,
-            factory,
+            FACTORY,
         )
         .map_err(|error| failure(&error))?;
         steps.push(rendered(&chunk)?);

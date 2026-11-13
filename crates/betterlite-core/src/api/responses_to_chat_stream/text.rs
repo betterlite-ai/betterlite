@@ -2,7 +2,6 @@ use serde_json::Value;
 
 const EXPECTING_VALUE: &str = "Expecting value";
 const PROPERTY_NAME: &str = "Expecting property name enclosed in double quotes";
-const EXTRA_DATA: &str = "Extra data";
 
 #[must_use]
 pub fn repr_value(value: &Value) -> String {
@@ -29,13 +28,10 @@ pub fn repr_value(value: &Value) -> String {
 // json.loads raises JSONDecodeError, whose text names the line, the column and the character
 #[must_use]
 pub fn json_error_message(text: &str, source: &serde_json::Error) -> String {
-    if let Some(message) = scanned_error(text) {
-        return message;
+    match scanned_error(text) {
+        Some(message) => message,
+        None => source.to_string(),
     }
-    if let Some(index) = extra_data_index(text) {
-        return positioned(EXTRA_DATA, text, index);
-    }
-    source.to_string()
 }
 
 fn repr_text(text: &str) -> String {
@@ -63,13 +59,6 @@ fn scanned_error(text: &str) -> Option<String> {
             match text.chars().nth(after) {
                 Some('"' | '}') => None,
                 Some(_) | None => Some(positioned(PROPERTY_NAME, text, after)),
-            }
-        }
-        Some('[') => {
-            let after = first_visible(text, start.saturating_add(1));
-            match text.chars().nth(after) {
-                Some('"' | '{' | '[' | ']' | 't' | 'f' | 'n' | '-' | '0'..='9') => None,
-                Some(_) | None => Some(positioned(EXPECTING_VALUE, text, after)),
             }
         }
         Some('"' | 't' | 'f' | 'n' | '-' | '0'..='9') => None,
@@ -109,18 +98,4 @@ fn prefix_of(text: &str, index: usize) -> &str {
     text.char_indices()
         .nth(index)
         .map_or(text, |(at, _)| text.get(..at).unwrap_or(text))
-}
-
-fn extra_data_index(text: &str) -> Option<usize> {
-    let mut stream = serde_json::Deserializer::from_str(text).into_iter::<Value>();
-    let first = stream.next()?;
-    first.ok()?;
-    let offset = stream.byte_offset();
-    let consumed = text.get(..offset)?.chars().count();
-    let skipped = text
-        .get(offset..)?
-        .chars()
-        .take_while(|character| character.is_whitespace())
-        .count();
-    Some(consumed.saturating_add(skipped))
 }

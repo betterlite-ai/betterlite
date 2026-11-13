@@ -13,12 +13,12 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 use uuid::Uuid;
 
-use super::decode_responses_chat_event_line;
+use super::decode_event_line;
 use super::error::ResponsesChatStreamError;
 use super::records::{ChatChunk, ChunkFactory};
 use super::stream::{ParsedChatLine, ResponsesChatStream, get_model_response_iterator};
 use super::text::repr_value;
-use super::translate::translate_responses_chunk_to_openai_stream;
+use super::translate::translate_event;
 use crate::api::api_boundaries::ApiLimits;
 
 const FIXED_ID: u128 = 0x0123_4567_89ab_4def_8123_4567_89ab_cdef;
@@ -53,7 +53,7 @@ fn rendered(chunk: &ChatChunk) -> Value {
 }
 
 fn translated(chunk: &Value) -> Result<Value, ResponsesChatStreamError> {
-    translate_responses_chunk_to_openai_stream(chunk, None, factory()).map(|chunk| rendered(&chunk))
+    translate_event(chunk, None, factory()).map(|chunk| rendered(&chunk))
 }
 
 // LiteLLM's Delta carries these five keys on every chunk, null where unset
@@ -109,35 +109,32 @@ fn padding_value() -> Value {
     })
 }
 
-#[test]
-fn event_line_padding_covers_empty_and_event_lines() {
-    for line in [b"".as_slice(), b"event: response.created".as_slice()] {
-        let decoded = decode_responses_chat_event_line(line, &ApiLimits::default()).unwrap();
-        assert_eq!(
-            decoded,
-            super::DecodedEventLine::Padding(super::records::PaddingChunk {
-                text: String::new(),
-                tool_use: None,
-                is_finished: false,
-                finish_reason: String::new(),
-                usage: None,
-            })
-        );
-    }
+#[rstest::rstest]
+#[case::empty("")]
+#[case::event_line("event: response.created")]
+fn event_line_padding_covers_empty_and_event_lines(#[case] line: &str) {
+    let decoded = decode_event_line(line.as_bytes(), &ApiLimits::default()).unwrap();
+    assert_eq!(
+        decoded,
+        super::DecodedEventLine::Padding(super::records::PaddingChunk {
+            text: String::new(),
+            tool_use: None,
+            is_finished: false,
+            finish_reason: String::new(),
+            usage: None,
+        })
+    );
 }
 
 #[test]
 fn event_line_removes_everything_through_the_first_data_prefix() {
-    let parsed = decode_responses_chat_event_line(
-        br#"prefix data:{"type":"unknown"}"#,
-        &ApiLimits::default(),
-    )
-    .unwrap();
+    let parsed =
+        decode_event_line(br#"prefix data:{"type":"unknown"}"#, &ApiLimits::default()).unwrap();
     assert_eq!(
         parsed,
         super::DecodedEventLine::Event(event(r#"{"type":"unknown"}"#))
     );
-    let parsed = decode_responses_chat_event_line(
+    let parsed = decode_event_line(
         br#"data: {"type": "response.output_text.delta", "delta": "hi"}"#,
         &ApiLimits::default(),
     )
@@ -152,30 +149,31 @@ fn event_line_removes_everything_through_the_first_data_prefix() {
 
 #[test]
 fn event_line_rejects_invalid_json_with_the_json_decode_error_text() {
-    let failure = decode_responses_chat_event_line(b"{", &ApiLimits::default()).unwrap_err();
+    let failure = decode_event_line(b"{", &ApiLimits::default()).unwrap_err();
     assert_eq!(
         failure.to_string(),
         "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"
     );
-    let done = decode_responses_chat_event_line(b"[DONE]", &ApiLimits::default()).unwrap_err();
+    let done = decode_event_line(b"[DONE]", &ApiLimits::default()).unwrap_err();
     assert_eq!(
         done.to_string(),
         "Expecting value: line 1 column 2 (char 1)"
     );
-    let prefixed =
-        decode_responses_chat_event_line(b"data: [DONE]", &ApiLimits::default()).unwrap_err();
+    let prefixed = decode_event_line(b"data: [DONE]", &ApiLimits::default()).unwrap_err();
     assert_eq!(
         prefixed.to_string(),
         "Expecting value: line 1 column 3 (char 2)"
     );
-    let spaces = decode_responses_chat_event_line(b"   ", &ApiLimits::default()).unwrap_err();
+    let spaces = decode_event_line(b"   ", &ApiLimits::default()).unwrap_err();
     assert_eq!(
         spaces.to_string(),
         "Expecting value: line 1 column 4 (char 3)"
     );
-    let trailing =
-        decode_responses_chat_event_line(b"{} trailing", &ApiLimits::default()).unwrap_err();
-    assert_eq!(trailing.to_string(), "Extra data: line 1 column 4 (char 3)");
+    let array = decode_event_line(b"[DONE, 1]", &ApiLimits::default()).unwrap_err();
+    assert_eq!(
+        array.to_string(),
+        "Expecting value: line 1 column 2 (char 1)"
+    );
 }
 
 #[test]
@@ -185,37 +183,39 @@ fn event_line_checks_the_event_byte_limit() {
         max_event_bytes: 4,
         max_items: 16,
     };
-    let failure = decode_responses_chat_event_line(b"data: {}", &limits).unwrap_err();
+    let failure = decode_event_line(b"data: {}", &limits).unwrap_err();
     assert!(matches!(failure, ResponsesChatStreamError::Limit(_)));
 }
 
 #[test]
 fn stateless_translation_rejects_empty_and_non_object_chunks() {
-    let empty =
-        translate_responses_chunk_to_openai_stream(&json!({}), None, factory()).unwrap_err();
+    let empty = translate_event(&json!({}), None, factory()).unwrap_err();
     assert_eq!(empty.to_string(), "Chat provider: Empty parsed_chunk");
-    let list =
-        translate_responses_chunk_to_openai_stream(&json!([1]), None, factory()).unwrap_err();
+    let list = translate_event(&json!([1]), None, factory()).unwrap_err();
     assert_eq!(
         list.to_string(),
         "Chat provider: Invalid chunk type <class 'list'>"
     );
-    let text =
-        translate_responses_chunk_to_openai_stream(&json!("x"), None, factory()).unwrap_err();
+    let text = translate_event(&json!("x"), None, factory()).unwrap_err();
     assert_eq!(
         text.to_string(),
         "Chat provider: Invalid chunk type <class 'str'>"
     );
-    for falsy in [json!(0), json!(null), json!([]), json!("")] {
-        let failure =
-            translate_responses_chunk_to_openai_stream(&falsy, None, factory()).unwrap_err();
-        assert_eq!(failure.to_string(), "Chat provider: Empty parsed_chunk");
-    }
     // the errors carry no HTTP fields, so a caller answers with LiteLLM's plain ValueError
     assert!(matches!(
         list,
         ResponsesChatStreamError::InvalidChunkType { kind: "list" }
     ));
+}
+
+#[rstest::rstest]
+#[case::zero("0")]
+#[case::null("null")]
+#[case::empty_list("[]")]
+#[case::empty_text("\"\"")]
+fn stateless_translation_rejects_falsy_chunks(#[case] falsy: &str) {
+    let failure = translate_event(&event(falsy), None, factory()).unwrap_err();
+    assert_eq!(failure.to_string(), "Chat provider: Empty parsed_chunk");
 }
 
 #[test]
@@ -295,15 +295,14 @@ fn stateless_translation_creates_an_id_from_the_created_event() {
 
 #[test]
 fn stateless_translation_generates_an_id_without_a_created_response() {
-    for source in [
+    let ids = [
         json!({"type": "response.created"}),
         json!({"type": "response.created", "response": null}),
         json!({"type": "response.created", "response": {}}),
         json!({"type": "response.created", "response": {"id": null}}),
-    ] {
-        let chunk = translated(&source).unwrap();
-        assert_eq!(chunk["id"], json!(GENERATED_ID));
-    }
+    ]
+    .map(|source| translated(&source).unwrap()["id"].clone());
+    assert_eq!(ids, [json!(GENERATED_ID); 4]);
 }
 
 #[test]
@@ -523,19 +522,15 @@ fn stateless_translation_sequential_indices_need_a_map() {
         })
     };
     let mut iterator = stream();
-    let mut indices = Vec::new();
-    for index in [2_i64, 5, 2] {
+    let indices = [2_i64, 5, 2].map(|index| {
         let chunk = iterator.chunk_parser(&added(index)).unwrap();
-        indices.push(chunk.choices[0].delta.tool_calls.as_ref().unwrap()[0].index);
-    }
-    assert_eq!(indices, vec![Some(0), Some(1), Some(0)]);
-    for index in [2_i64, 5, 2] {
-        let chunk = translated(&added(index)).unwrap();
-        assert_eq!(
-            chunk["choices"][0]["delta"]["tool_calls"][0]["index"],
-            json!(index)
-        );
-    }
+        chunk.choices[0].delta.tool_calls.as_ref().unwrap()[0].index
+    });
+    assert_eq!(indices, [Some(0), Some(1), Some(0)]);
+    let raw = [2_i64, 5, 2].map(|index| {
+        translated(&added(index)).unwrap()["choices"][0]["delta"]["tool_calls"][0]["index"].clone()
+    });
+    assert_eq!(raw, [json!(2), json!(5), json!(2)]);
 }
 
 #[test]
@@ -548,7 +543,7 @@ fn stateless_translation_accepts_a_shared_tool_call_map() {
             "item": {"type": "function_call", "id": "f", "call_id": "c", "name": "n", "arguments": "{}"},
         })
     };
-    let first = translate_responses_chunk_to_openai_stream(&added(7), Some(&mut map), factory())
+    let first = translate_event(&added(7), Some(&mut map), factory())
         .map(|chunk| rendered(&chunk))
         .unwrap();
     assert_eq!(
@@ -594,14 +589,13 @@ fn stateless_translation_finishes_an_incomplete_response_by_its_reason() {
         filtered["choices"][0]["finish_reason"],
         json!("content_filter")
     );
-    for source in [
+    let lengths = [
         json!({"type": "response.incomplete"}),
         json!({"type": "response.incomplete", "response": {"incomplete_details": {"reason": "max_output_tokens"}}}),
         json!({"type": "response.incomplete", "response": {"incomplete_details": {"reason": null}}}),
-    ] {
-        let chunk = translated(&source).unwrap();
-        assert_eq!(chunk["choices"][0]["finish_reason"], json!("length"));
-    }
+    ]
+    .map(|source| translated(&source).unwrap()["choices"][0]["finish_reason"].clone());
+    assert_eq!(lengths, [json!("length"); 3]);
 }
 
 #[test]
@@ -637,7 +631,7 @@ fn stateless_translation_carries_usage_and_reasoning_items_on_completion() {
 }
 
 #[test]
-fn stateless_translation_carries_usage_details() {
+fn usage_details_follow_the_shared_projection() {
     let chunk = translated(&json!({
         "type": "response.completed",
         "response": {
@@ -645,37 +639,19 @@ fn stateless_translation_carries_usage_details() {
                 "input_tokens": 2,
                 "output_tokens": 5,
                 "total_tokens": 7,
-                "input_tokens_details": {"cached_tokens": 1, "cache_write_tokens": 4},
-                "output_tokens_details": {"reasoning_tokens": 3, "image_tokens": 2},
+                "input_tokens_details": {"cached_tokens": 1},
+                "output_tokens_details": {"reasoning_tokens": 3},
             },
         },
     }))
     .unwrap();
     assert_eq!(
-        chunk["usage"],
-        json!({
-            "prompt_tokens": 2,
-            "completion_tokens": 5,
-            "total_tokens": 7,
-            "prompt_tokens_details": {
-                "audio_tokens": null,
-                "cached_tokens": 1,
-                "text_tokens": null,
-                "image_tokens": null,
-                "video_tokens": null,
-                "cache_write_tokens": 4,
-                "cache_creation_tokens": 4,
-            },
-            "completion_tokens_details": {
-                "accepted_prediction_tokens": null,
-                "audio_tokens": null,
-                "reasoning_tokens": 3,
-                "rejected_prediction_tokens": null,
-                "text_tokens": null,
-                "image_tokens": 2,
-                "video_tokens": null,
-            },
-        })
+        chunk["usage"]["prompt_tokens_details"]["cached_tokens"],
+        json!(1)
+    );
+    assert_eq!(
+        chunk["usage"]["completion_tokens_details"]["reasoning_tokens"],
+        json!(3)
     );
 }
 

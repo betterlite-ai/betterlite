@@ -4,9 +4,9 @@ use uuid::Uuid;
 use super::error::ResponsesChatStreamError;
 use super::records::{ChatChunk, ChunkFactory, PaddingChunk};
 use super::text::repr_value;
-use super::translate::{ToolCallIndices, translate_responses_chunk_to_openai_stream};
+use super::translate::{ToolCallIndices, translate_event};
 use crate::api::api_boundaries::ApiLimits;
-use crate::api::responses_to_chat_stream::{DecodedEventLine, decode_responses_chat_event_line};
+use crate::api::responses_to_chat_stream::{DecodedEventLine, decode_event_line};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParsedChatLine {
@@ -46,13 +46,18 @@ impl ResponsesChatStream {
             repr_value(event)
         );
         self.remember_served_service_tier(event);
-        let chunk = translate_responses_chunk_to_openai_stream(
-            event,
-            Some(&mut self.tool_call_index_map),
-            self.factory,
-        )?;
-        let scoped = self.with_stream_scoped_id(chunk);
-        Ok(self.with_served_service_tier(scoped))
+        let mut chunk = translate_event(event, Some(&mut self.tool_call_index_map), self.factory)?;
+        match &self.chat_completion_id {
+            Some(id) => chunk.id.clone_from(id),
+            None => self.chat_completion_id = Some(chunk.id.clone()),
+        }
+        // the terminal chunk's own service_tier, even an empty string, is kept over the remembered one
+        if let Some(tier) = &self.served_service_tier
+            && chunk.service_tier.is_none()
+        {
+            chunk.service_tier = Some(tier.clone());
+        }
+        Ok(chunk)
     }
 
     pub fn parse_line(
@@ -60,7 +65,7 @@ impl ResponsesChatStream {
         bytes: &[u8],
         limits: &ApiLimits,
     ) -> Result<ParsedChatLine, ResponsesChatStreamError> {
-        match decode_responses_chat_event_line(bytes, limits)? {
+        match decode_event_line(bytes, limits)? {
             DecodedEventLine::Padding(padding) => Ok(ParsedChatLine::Padding(padding)),
             DecodedEventLine::Event(event) => Ok(ParsedChatLine::Chunk(self.chunk_parser(&event)?)),
         }
@@ -75,28 +80,5 @@ impl ResponsesChatStream {
         {
             self.served_service_tier = Some(tier.clone());
         }
-    }
-
-    fn with_stream_scoped_id(&mut self, mut chunk: ChatChunk) -> ChatChunk {
-        match &self.chat_completion_id {
-            Some(id) => {
-                chunk.id.clone_from(id);
-                chunk
-            }
-            None => {
-                self.chat_completion_id = Some(chunk.id.clone());
-                chunk
-            }
-        }
-    }
-
-    // the terminal chunk's own service_tier, even an empty string, is kept over the remembered one
-    fn with_served_service_tier(&self, mut chunk: ChatChunk) -> ChatChunk {
-        if let Some(tier) = &self.served_service_tier
-            && chunk.service_tier.is_none()
-        {
-            chunk.service_tier = Some(tier.clone());
-        }
-        chunk
     }
 }

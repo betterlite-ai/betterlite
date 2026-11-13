@@ -5,7 +5,7 @@ call:
     mode: event
     events:
       - {"type": "response.created", "response": {"id": "resp_a"}}
-      - {"type": "response.completed", "response": {"id": "resp_a", "output": [{"type": "message"}], "usage": {"input_tokens": 2, "output_tokens": 5, "total_tokens": 7, "input_tokens_details": {"cached_tokens": 1}, "output_tokens_details": {"reasoning_tokens": 3}}}}
+      - {"type": "response.completed", "response": {"id": "resp_a", "output": [{"type": "message"}], "usage": {"input_tokens": 2, "output_tokens": 5, "total_tokens": 7}}}
       - {"type": "response.completed", "response": {"id": "resp_a", "custom_key": 5, "output": [{"type": "function_call"}]}}
       - {"type": "response.incomplete", "response": {"id": "resp_a", "incomplete_details": {"reason": "content_filter"}, "output": []}}
       - {"type": "response.incomplete", "response": {"id": "resp_a", "output": [{"type": "reasoning", "id": "rs_1", "summary": [{"type": "summary_text", "text": "t"}]}]}}

@@ -12,10 +12,7 @@ pub enum ResponsesChatStreamError {
     #[error(transparent)]
     Limit(#[from] ApiLimitError),
     #[error("the provider event line is not UTF-8")]
-    Utf8 {
-        #[source]
-        source: Utf8Error,
-    },
+    Utf8(#[from] Utf8Error),
     #[error("{message}")]
     Json { message: String },
     #[error("Chat provider: Empty parsed_chunk")]

@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 
 use super::error::ResponsesChatStreamError;
 use super::records::{CHUNK_OBJECT, ChatChoice, ChatChunk, ChunkFactory};
-use super::translate::delta;
+use super::translate::{delta, response_chunk};
 use super::usage;
 use crate::api::response_chat_history::metadata::{
     IncompleteFinish, finish_reason_for_incomplete, incomplete_reason, provider_metadata,
@@ -41,7 +41,16 @@ pub(super) fn terminal_chunk(
             IncompleteFinish::Length => "length",
             IncompleteFinish::ContentFilter => "content_filter",
         }
-    } else if has_function_calls(output) {
+    } else if output.iter().any(|item| {
+        matches!(
+            item,
+            Value::Object(fields)
+                if matches!(
+                    fields.get("type").and_then(Value::as_str),
+                    Some("function_call" | "custom_tool_call")
+                )
+        )
+    }) {
         "tool_calls"
     } else {
         "stop"
@@ -58,41 +67,21 @@ pub(super) fn terminal_chunk(
     let records = output_reasoning_records(output)?;
     let mut delta = delta(Some(""));
     delta.reasoning_items = chat_reasoning_items(&records);
-    Ok(ChatChunk {
-        id: format!("{CHAT_COMPLETION_ID_PREFIX}{}", (factory.identifier)()),
-        object: CHUNK_OBJECT,
-        created: (factory.clock)(),
-        model: None,
-        system_fingerprint: None,
-        choices: vec![ChatChoice {
-            index: Some(0),
-            delta,
-            finish_reason: Some(finish_reason.to_owned()),
-            logprobs: None,
-            extra: Map::new(),
-        }],
-        usage: Some(usage.unwrap_or(Value::Null)),
-        provider_specific_fields: if metadata.is_empty() {
-            None
-        } else {
-            Some(metadata)
-        },
-        service_tier,
-        extra: Map::new(),
-    })
-}
-
-fn has_function_calls(items: &[Value]) -> bool {
-    items.iter().any(|item| {
-        matches!(
-            item,
-            Value::Object(fields)
-                if matches!(
-                    fields.get("type").and_then(Value::as_str),
-                    Some("function_call" | "custom_tool_call")
-                )
-        )
-    })
+    let mut chunk = response_chunk(
+        factory,
+        None,
+        Some(0),
+        delta,
+        Some(finish_reason.to_owned()),
+    );
+    chunk.usage = Some(usage.unwrap_or(Value::Null));
+    chunk.provider_specific_fields = if metadata.is_empty() {
+        None
+    } else {
+        Some(metadata)
+    };
+    chunk.service_tier = service_tier;
+    Ok(chunk)
 }
 
 // the terminal payload's output items carry reasoning records a chat client replays

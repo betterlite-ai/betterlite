@@ -4,17 +4,28 @@ use betterlite_context::provider_message_primitives::CHAT_COMPLETION_ID_PREFIX;
 use serde_json::{Map, Value};
 
 use super::error::ResponsesChatStreamError;
+use super::fields::{Fields, field, json_type_name, listed_choices, sequential_index};
 use super::passthrough::passthrough_chunk;
 use super::records::{CHUNK_OBJECT, ChatChoice, ChatChunk, ChatDelta, ChatToolCall, ChunkFactory};
 use super::terminal::terminal_chunk;
 use super::text::repr_value;
-use super::tool_call;
+use super::tool_call::{self, CallShape};
 use crate::api::response_id_codecs::response::decode_previous_response_id;
 use crate::api::responses_input_content::is_truthy;
 
 pub type ToolCallIndices = BTreeMap<i64, i64>;
 
-pub fn translate_responses_chunk_to_openai_stream(
+pub enum ItemEvent {
+    Added,
+    Done,
+}
+
+enum ContentKind {
+    Created,
+    Text,
+}
+
+pub fn translate_event(
     parsed_chunk: &Value,
     tool_call_index_map: Option<&mut ToolCallIndices>,
     factory: ChunkFactory,
@@ -27,38 +38,21 @@ pub fn translate_responses_chunk_to_openai_stream(
             kind: json_type_name(parsed_chunk),
         });
     };
-    let event_type = event_type(fields)?;
-    if fields.get("object").and_then(Value::as_str) == Some(CHUNK_OBJECT)
-        || (event_type.is_none() && listed_choices(fields))
-    {
+    let event_type = field::<&str>(fields, "type")?;
+    if is_chat_passthrough(fields, event_type) {
         return passthrough_chunk(fields, factory);
     }
     tracing::debug!(
         "Chat provider: Processing event type: {}",
         event_type.unwrap_or("None")
     );
-    let branch = match event_type {
-        Some("response.created") => Some(created_chunk(parsed_chunk, fields, factory)?),
-        Some("response.output_item.added") => added_chunk(fields, tool_call_index_map, factory)?,
-        Some(
-            "response.function_call_arguments.delta" | "response.custom_tool_call_input.delta",
-        ) => Some(argument_delta_chunk(
-            parsed_chunk,
-            fields,
-            tool_call_index_map,
-            factory,
-        )?),
-        Some("response.output_item.done") => item_done_chunk(fields, tool_call_index_map, factory)?,
-        Some("response.output_text.delta") => {
-            Some(text_delta_chunk(parsed_chunk, fields, factory)?)
-        }
-        Some("response.reasoning_summary_text.delta") => reasoning_delta_chunk(fields, factory)?,
-        Some("response.completed" | "response.incomplete") => {
-            Some(terminal_chunk(fields, event_type, factory)?)
-        }
-        None | Some(_) => None,
-    };
-    if let Some(chunk) = branch {
+    if let Some(chunk) = dispatch_event(
+        parsed_chunk,
+        fields,
+        event_type,
+        tool_call_index_map,
+        factory,
+    )? {
         return Ok(chunk);
     }
     tracing::debug!(
@@ -74,42 +68,78 @@ pub fn translate_responses_chunk_to_openai_stream(
     ))
 }
 
-// an enum member of ResponsesAPIStreamEvents arrives as its value, and anything else is still compared as text
-fn event_type(fields: &Map<String, Value>) -> Result<Option<&str>, ResponsesChatStreamError> {
-    match fields.get("type") {
-        None => Ok(None),
-        Some(Value::String(kind)) => Ok(Some(kind)),
-        Some(Value::Null) => Ok(None),
-        Some(_) => Err(ResponsesChatStreamError::Field { field: "type" }),
-    }
+// an event already in chat format, or a payload with no type and a list of choices, is passed through whole
+fn is_chat_passthrough(fields: &Fields, event_type: Option<&str>) -> bool {
+    fields.get("object").and_then(Value::as_str) == Some(CHUNK_OBJECT)
+        || (event_type.is_none() && listed_choices(fields))
 }
 
-// `parsed_chunk.get("choices")` is the whole list in the missing-type branch, so an empty one never passes through
-fn listed_choices(fields: &Map<String, Value>) -> bool {
-    match fields.get("choices") {
-        Some(Value::Array(items)) => !items.is_empty(),
-        None
-        | Some(
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Object(_),
-        ) => false,
-    }
-}
-
-pub(super) fn json_type_name(value: &Value) -> &'static str {
-    match value {
-        Value::Array(_) => "list",
-        Value::Bool(_) => "bool",
-        Value::Number(number) => {
-            if number.is_i64() || number.is_u64() {
-                "int"
-            } else {
-                "float"
-            }
+fn dispatch_event(
+    parsed_chunk: &Value,
+    fields: &Fields,
+    event_type: Option<&str>,
+    tool_call_index_map: Option<&mut ToolCallIndices>,
+    factory: ChunkFactory,
+) -> Result<Option<ChatChunk>, ResponsesChatStreamError> {
+    match event_type {
+        Some("response.created") => {
+            content_chunk(parsed_chunk, fields, factory, ContentKind::Created).map(Some)
         }
-        Value::Object(_) => "dict",
-        Value::String(_) => "str",
-        Value::Null => "NoneType",
+        Some("response.output_text.delta") => {
+            content_chunk(parsed_chunk, fields, factory, ContentKind::Text).map(Some)
+        }
+        Some("response.output_item.added") => {
+            item_chunk(fields, tool_call_index_map, factory, ItemEvent::Added)
+        }
+        Some("response.output_item.done") => {
+            item_chunk(fields, tool_call_index_map, factory, ItemEvent::Done)
+        }
+        Some(
+            "response.function_call_arguments.delta" | "response.custom_tool_call_input.delta",
+        ) => argument_delta(parsed_chunk, fields, tool_call_index_map, factory),
+        Some("response.reasoning_summary_text.delta") => reasoning_delta_chunk(fields, factory),
+        Some("response.completed" | "response.incomplete") => {
+            Ok(Some(terminal_chunk(fields, event_type, factory)?))
+        }
+        None | Some(_) => Ok(None),
     }
+}
+
+fn content_chunk(
+    parsed_chunk: &Value,
+    fields: &Fields,
+    factory: ChunkFactory,
+    kind: ContentKind,
+) -> Result<ChatChunk, ResponsesChatStreamError> {
+    if matches!(kind, ContentKind::Text) {
+        let Some(text) = field::<&str>(fields, "delta")? else {
+            return Err(ResponsesChatStreamError::InvalidTextDelta {
+                event: repr_value(parsed_chunk),
+            });
+        };
+        return Ok(response_chunk(
+            factory,
+            None,
+            Some(0),
+            delta(Some(text)),
+            None,
+        ));
+    }
+    tracing::debug!(
+        "Chat provider: response.created -> {}",
+        repr_value(parsed_chunk)
+    );
+    let response = field::<&Fields>(fields, "response")?;
+    let id = match response.and_then(|payload| payload.get("id")) {
+        Some(Value::String(id)) => Some(decode_previous_response_id(id)),
+        Some(Value::Null) | None => None,
+        Some(_) => {
+            return Err(ResponsesChatStreamError::Field {
+                field: "response.id",
+            });
+        }
+    };
+    Ok(response_chunk(factory, id, Some(0), delta(Some("")), None))
 }
 
 pub(super) fn delta(content: Option<&str>) -> ChatDelta {
@@ -152,203 +182,107 @@ pub(super) fn response_chunk(
     }
 }
 
-fn created_chunk(
-    parsed_chunk: &Value,
-    fields: &Map<String, Value>,
-    factory: ChunkFactory,
-) -> Result<ChatChunk, ResponsesChatStreamError> {
-    tracing::debug!(
-        "Chat provider: response.created -> {}",
-        repr_value(parsed_chunk)
-    );
-    let id = response_id(fields)?;
-    Ok(response_chunk(factory, id, Some(0), delta(Some("")), None))
-}
-
-fn response_id(fields: &Map<String, Value>) -> Result<Option<String>, ResponsesChatStreamError> {
-    match fields.get("response") {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Object(response)) if response.is_empty() => Ok(None),
-        Some(Value::Object(response)) => match response.get("id") {
-            None | Some(Value::Null) => Ok(None),
-            Some(Value::String(id)) => Ok(Some(decode_previous_response_id(id))),
-            Some(_) => Err(ResponsesChatStreamError::Field {
-                field: "response.id",
-            }),
-        },
-        Some(_) => Err(ResponsesChatStreamError::Field { field: "response" }),
-    }
-}
-
-fn item_fields(
-    fields: &Map<String, Value>,
-) -> Result<Option<&Map<String, Value>>, ResponsesChatStreamError> {
-    match fields.get("item") {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Object(item)) => Ok(Some(item)),
-        Some(_) => Err(ResponsesChatStreamError::Field { field: "item" }),
-    }
-}
-
-pub(super) fn output_index(
-    fields: &Map<String, Value>,
-) -> Result<Option<i64>, ResponsesChatStreamError> {
-    match fields.get("output_index") {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Number(number)) => {
-            number
-                .as_i64()
-                .map(Some)
-                .ok_or(ResponsesChatStreamError::Field {
-                    field: "output_index",
-                })
-        }
-        Some(_) => Err(ResponsesChatStreamError::Field {
-            field: "output_index",
-        }),
-    }
-}
-
-pub(super) fn sequential_index(
-    map: Option<&mut ToolCallIndices>,
-    output_index: i64,
-) -> Result<i64, ResponsesChatStreamError> {
-    let Some(entries) = map else {
-        return Ok(output_index);
-    };
-    if let Some(index) = entries.get(&output_index) {
-        return Ok(*index);
-    }
-    let next = i64::try_from(entries.len())
-        .map_err(|source| ResponsesChatStreamError::IndexCount { source })?;
-    entries.insert(output_index, next);
-    Ok(next)
-}
-
-fn added_chunk(
-    fields: &Map<String, Value>,
-    tool_call_index_map: Option<&mut ToolCallIndices>,
-    factory: ChunkFactory,
-) -> Result<Option<ChatChunk>, ResponsesChatStreamError> {
-    let Some(item) = item_fields(fields)? else {
-        return Ok(None);
-    };
-    if !matches!(
-        item.get("type").and_then(Value::as_str),
-        Some("function_call" | "custom_tool_call")
-    ) {
-        return Ok(None);
-    }
-    let output_index = output_index(fields)?.unwrap_or(0);
-    let index = sequential_index(tool_call_index_map, output_index)?;
-    let call = tool_call::added_tool_call(fields, item, index)?;
+fn tool_chunk(factory: ChunkFactory, call: ChatToolCall) -> ChatChunk {
     let mut delta = delta(None);
     delta.tool_calls = Some(vec![call]);
-    Ok(Some(response_chunk(factory, None, Some(0), delta, None)))
+    response_chunk(factory, None, Some(0), delta, None)
 }
 
-fn argument_delta_chunk(
-    parsed_chunk: &Value,
-    fields: &Map<String, Value>,
+fn item_chunk(
+    fields: &Fields,
     tool_call_index_map: Option<&mut ToolCallIndices>,
     factory: ChunkFactory,
-) -> Result<ChatChunk, ResponsesChatStreamError> {
-    let arguments = match fields.get("delta") {
-        Some(Value::String(text)) if !text.is_empty() => text,
-        Some(Value::String(_) | Value::Null) | None => {
-            return Err(ResponsesChatStreamError::InvalidArgumentDelta {
-                event: repr_value(parsed_chunk),
-            });
-        }
-        Some(_) => return Err(ResponsesChatStreamError::Field { field: "delta" }),
-    };
-    let output_index = output_index(fields)?.unwrap_or(0);
-    let index = sequential_index(tool_call_index_map, output_index)?;
-    let call = ChatToolCall {
-        id: None,
-        index: Some(index),
-        kind: Some("function".to_owned()),
-        function: Some(tool_call::function_value(None, arguments, None)?),
-        custom: None,
-        provider_specific_fields: None,
-        extra: Map::new(),
-    };
-    let mut delta = delta(None);
-    delta.tool_calls = Some(vec![call]);
-    Ok(response_chunk(factory, None, Some(0), delta, None))
-}
-
-fn item_done_chunk(
-    fields: &Map<String, Value>,
-    tool_call_index_map: Option<&mut ToolCallIndices>,
-    factory: ChunkFactory,
+    event: ItemEvent,
 ) -> Result<Option<ChatChunk>, ResponsesChatStreamError> {
-    let Some(item) = item_fields(fields)? else {
+    let Some(item) = field::<&Fields>(fields, "item")? else {
         return Ok(None);
     };
-    match item.get("type").and_then(Value::as_str) {
-        Some("function_call" | "custom_tool_call") => {
-            let output_index = output_index(fields)?.unwrap_or(0);
-            let mut delta = delta(None);
-            if tool_call_index_map.is_none() {
-                delta.tool_calls = Some(vec![tool_call::done_tool_call(item, output_index)?]);
-            }
-            Ok(Some(response_chunk(factory, None, Some(0), delta, None)))
-        }
-        Some("message") => Ok(Some(response_chunk(
+    let item_type = item.get("type").and_then(Value::as_str);
+    if item_type == Some("message") {
+        return Ok(Some(response_chunk(
             factory,
             None,
             Some(0),
             delta(Some("")),
             None,
-        ))),
-        None | Some(_) => Ok(None),
+        )));
     }
-}
-
-fn text_delta_chunk(
-    parsed_chunk: &Value,
-    fields: &Map<String, Value>,
-    factory: ChunkFactory,
-) -> Result<ChatChunk, ResponsesChatStreamError> {
-    match fields.get("delta") {
-        Some(Value::String(text)) => Ok(response_chunk(
-            factory,
-            None,
-            Some(0),
-            delta(Some(text.as_str())),
-            None,
-        )),
-        Some(Value::Null) | None => Err(ResponsesChatStreamError::InvalidTextDelta {
-            event: repr_value(parsed_chunk),
-        }),
-        Some(_) => Err(ResponsesChatStreamError::Field { field: "delta" }),
+    if !matches!(item_type, Some("function_call" | "custom_tool_call")) {
+        return Ok(None);
     }
+    let output_index = field::<i64>(fields, "output_index")?.unwrap_or(0);
+    let shape = match event {
+        ItemEvent::Added => {
+            let index = sequential_index(tool_call_index_map, output_index)?;
+            CallShape::Added {
+                event: fields,
+                index,
+            }
+        }
+        ItemEvent::Done if tool_call_index_map.is_some() => {
+            return Ok(Some(response_chunk(
+                factory,
+                None,
+                Some(0),
+                delta(None),
+                None,
+            )));
+        }
+        ItemEvent::Done => CallShape::Done {
+            index: output_index,
+        },
+    };
+    Ok(Some(tool_chunk(factory, tool_call::convert(item, shape)?)))
 }
 
 fn reasoning_delta_chunk(
-    fields: &Map<String, Value>,
+    fields: &Fields,
     factory: ChunkFactory,
 ) -> Result<Option<ChatChunk>, ResponsesChatStreamError> {
-    let reasoning = match fields.get("delta") {
-        Some(Value::String(text)) if !text.is_empty() => text,
-        Some(Value::String(_) | Value::Null) | None => return Ok(None),
-        Some(_) => return Err(ResponsesChatStreamError::Field { field: "delta" }),
+    let Some(reasoning) = field::<&str>(fields, "delta")?.filter(|text| !text.is_empty()) else {
+        return Ok(None);
     };
-    let index = match fields.get("summary_index") {
-        None | Some(Value::Null) => None,
-        Some(Value::Number(number)) => {
-            Some(number.as_i64().ok_or(ResponsesChatStreamError::Field {
-                field: "summary_index",
-            })?)
-        }
-        Some(_) => {
-            return Err(ResponsesChatStreamError::Field {
-                field: "summary_index",
-            });
-        }
-    };
+    let index = field::<i64>(fields, "summary_index")?;
     let mut delta = delta(None);
     delta.reasoning_content = Some(reasoning.to_owned());
     Ok(Some(response_chunk(factory, None, index, delta, None)))
+}
+
+fn argument_delta(
+    parsed_chunk: &Value,
+    fields: &Fields,
+    tool_call_index_map: Option<&mut ToolCallIndices>,
+    factory: ChunkFactory,
+) -> Result<Option<ChatChunk>, ResponsesChatStreamError> {
+    let arguments = argument_text(parsed_chunk, fields)?;
+    Ok(Some(argument_chunk(
+        fields,
+        tool_call_index_map,
+        factory,
+        arguments,
+    )?))
+}
+
+fn argument_text<'a>(
+    parsed_chunk: &Value,
+    fields: &'a Fields,
+) -> Result<&'a str, ResponsesChatStreamError> {
+    field::<&str>(fields, "delta")?
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| ResponsesChatStreamError::InvalidArgumentDelta {
+            event: repr_value(parsed_chunk),
+        })
+}
+
+fn argument_chunk(
+    fields: &Fields,
+    tool_call_index_map: Option<&mut ToolCallIndices>,
+    factory: ChunkFactory,
+    arguments: &str,
+) -> Result<ChatChunk, ResponsesChatStreamError> {
+    let output_index = field::<i64>(fields, "output_index")?.unwrap_or(0);
+    let index = sequential_index(tool_call_index_map, output_index)?;
+    let mut delta = delta(None);
+    delta.tool_calls = Some(vec![tool_call::delta_call(index, arguments)?]);
+    Ok(response_chunk(factory, None, Some(0), delta, None))
 }
