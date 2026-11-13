@@ -7,18 +7,18 @@ use betterlite_prompts::message_content::{
 use indexmap::IndexMap;
 use serde_json::Value;
 
+use super::messages::{
+    handle_message_with_file, handle_name_in_message, handle_tool_call_message, has_media_blocks,
+    is_empty_assistant_message, strip_output_only_fields,
+};
 use super::{MistralChatError, PROVIDER};
 use crate::chat::{ChatMessage, ContentPart, MessageContent, Role};
 use crate::chat_content::{ChatContent, Mode, TransformedRequest, UrlDownloader};
 use crate::mistral_options::REASONING_SYSTEM_PROMPT;
 
-use super::messages::{
-    handle_message_with_file, handle_name_in_message, handle_tool_call_message, has_media_blocks,
-    is_empty_assistant_message, strip_output_only_fields,
-};
-
 const REASONING_FLAG: &str = "_add_reasoning_prompt";
 const CLIENT_METADATA: &str = "client_metadata";
+
 pub struct MessageTransform<'request> {
     pub model: &'request str,
     pub messages: &'request [ChatMessage],
@@ -77,8 +77,6 @@ pub fn transform_request(request: &RequestTransform<'_>) -> Result<Object, Mistr
     Ok(transformed.to_body()?)
 }
 
-// MistralConfig._transform_messages: media keeps the conversation as sent, text goes through the
-// name, tool-call and empty-message cleanup first
 fn prepared_messages(messages: &[ChatMessage]) -> Result<Prepared, MistralChatError> {
     let stripped: Vec<ChatMessage> = messages.iter().map(strip_output_only_fields).collect();
     let media = has_media_blocks(&stripped);
@@ -88,19 +86,11 @@ fn prepared_messages(messages: &[ChatMessage]) -> Result<Prepared, MistralChatEr
             media,
         });
     }
-    let prompt: Vec<Message> = stripped
+    let mut prompt: Vec<Message> = stripped
         .iter()
         .map(prompt_message)
         .collect::<Result<Vec<_>, _>>()?;
-    let cleaned = cleaned_messages(prompt)?;
-    Ok(Prepared {
-        messages: cleaned,
-        media,
-    })
-}
-
-fn cleaned_messages(mut messages: Vec<Message>) -> Result<Vec<ChatMessage>, MistralChatError> {
-    let converted = convert_message_content_lists(&mut messages);
+    let converted = convert_message_content_lists(&mut prompt);
     let mut cleaned = Vec::with_capacity(converted.len());
     for message in converted {
         let message = handle_name_in_message(message);
@@ -110,7 +100,10 @@ fn cleaned_messages(mut messages: Vec<Message>) -> Result<Vec<ChatMessage>, Mist
         }
         cleaned.push(chat_message(&strip_none_values_from_message(&message))?);
     }
-    Ok(cleaned)
+    Ok(Prepared {
+        messages: cleaned,
+        media,
+    })
 }
 
 fn parent_transform(
@@ -135,6 +128,7 @@ fn parent_transform(
     Ok(content.transform(mode)?)
 }
 
+// MistralConfig.transform_request inserts the reasoning prompt before _transform_messages runs
 #[must_use]
 pub fn add_reasoning_system_prompt_if_needed(
     model: &str,
@@ -154,46 +148,39 @@ pub fn add_reasoning_system_prompt_if_needed(
         .iter()
         .position(|message| message.role == Role::System)
     else {
-        let mut inserted = Vec::with_capacity(updated.len() + 1);
-        inserted.push(system_message(prompt));
-        inserted.append(&mut updated);
-        return inserted;
+        updated.insert(
+            0,
+            ChatMessage {
+                role: Role::System,
+                content: Some(MessageContent::Text(prompt.to_owned())),
+                name: None,
+                tool_calls: None,
+                tool_call_id: None,
+                passthrough: IndexMap::new(),
+            },
+        );
+        return updated;
     };
     if let Some(message) = updated.get_mut(index) {
         let content = message.content.take();
-        message.content = Some(with_reasoning_prefix(content, prompt));
+        message.content = Some(match content {
+            Some(MessageContent::Parts(mut parts)) => {
+                let mut fields = IndexMap::new();
+                fields.insert(String::from("text"), Value::String(format!("{prompt}\n\n")));
+                parts.insert(
+                    0,
+                    ContentPart {
+                        kind: String::from("text"),
+                        fields,
+                    },
+                );
+                MessageContent::Parts(parts)
+            }
+            Some(MessageContent::Text(text)) => MessageContent::Text(format!("{prompt}\n\n{text}")),
+            None => MessageContent::Text(format!("{prompt}\n\n")),
+        });
     }
     updated
-}
-
-fn system_message(prompt: &str) -> ChatMessage {
-    ChatMessage {
-        role: Role::System,
-        content: Some(MessageContent::Text(prompt.to_owned())),
-        name: None,
-        tool_calls: None,
-        tool_call_id: None,
-        passthrough: IndexMap::new(),
-    }
-}
-
-fn with_reasoning_prefix(content: Option<MessageContent>, prompt: &str) -> MessageContent {
-    match content {
-        Some(MessageContent::Parts(mut parts)) => {
-            let mut fields = IndexMap::new();
-            fields.insert(String::from("text"), Value::String(format!("{prompt}\n\n")));
-            parts.insert(
-                0,
-                ContentPart {
-                    kind: String::from("text"),
-                    fields,
-                },
-            );
-            MessageContent::Parts(parts)
-        }
-        Some(MessageContent::Text(text)) => MessageContent::Text(format!("{prompt}\n\n{text}")),
-        None => MessageContent::Text(format!("{prompt}\n\n")),
-    }
 }
 
 fn prompt_message(message: &ChatMessage) -> Result<Message, MistralChatError> {

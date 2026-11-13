@@ -7,7 +7,6 @@ use crate::chat_choices::wire::StreamReply;
 
 pub const THINKING_SIGNATURE: &str = "mistral";
 
-// get_model_response_iterator returns this handler, which keeps the json_mode of its call
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MistralChatResponseIterator {
     pub json_mode: bool,
@@ -35,7 +34,7 @@ struct Normalized {
     reasoning: Option<String>,
 }
 
-// a malformed block stops the custom path at the point Python would raise, so the caller falls back
+// a malformed block stops the custom path where Python would raise, so the caller falls back
 fn normalize_choices(chunk: &mut Value) -> Option<()> {
     let choices = match chunk.get_mut("choices") {
         None => return Some(()),
@@ -49,9 +48,7 @@ fn normalize_choices(chunk: &mut Value) -> Option<()> {
         let Some(delta) = choice_fields.get_mut("delta") else {
             continue;
         };
-        let Some(delta_fields) = delta.as_object_mut() else {
-            return None;
-        };
+        let delta_fields = delta.as_object_mut()?;
         let Some(Value::Array(blocks)) = delta_fields.get("content") else {
             continue;
         };
@@ -83,9 +80,6 @@ fn normalize_content_blocks(blocks: &[Value]) -> Option<Normalized> {
     let mut thinking_blocks: Vec<Value> = Vec::new();
     let mut reasoning_parts: Vec<String> = Vec::new();
     for block in blocks {
-        if !block.is_object() {
-            return None;
-        }
         let decoded: MistralContentBlock = serde_json::from_value(block.clone()).ok()?;
         match decoded.kind.as_str() {
             "thinking" => {

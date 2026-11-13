@@ -79,12 +79,12 @@ fn project_tool_call(call: &Json) -> Json {
 // _is_empty_assistant_message reads the assistant field names on every role, role itself aside
 #[must_use]
 pub fn is_empty_assistant_message(message: &Message) -> bool {
-    let content_is_empty = match &message.content {
+    let empty_content = match &message.content {
         Some(Content::Text(text)) => text.is_empty(),
         Some(Content::Parts(_)) => false,
         None => true,
     };
-    if !content_is_empty || message.name.is_some() {
+    if !empty_content || message.name.is_some() {
         return false;
     }
     !ASSISTANT_FIELDS.iter().any(|field| {
@@ -127,7 +127,7 @@ pub fn handle_message_with_file(messages: &mut [ChatMessage]) -> Result<(), Mist
     Ok(())
 }
 
-fn has_media_blocks(messages: &[ChatMessage]) -> bool {
+pub(super) fn has_media_blocks(messages: &[ChatMessage]) -> bool {
     messages.iter().any(|message| match &message.content {
         Some(MessageContent::Parts(parts)) => parts
             .iter()

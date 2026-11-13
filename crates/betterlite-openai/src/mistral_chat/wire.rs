@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-// LiteLLM's MistralTextBlock: one piece of thinking text inside a thinking block
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct MistralTextBlock {
     #[serde(rename = "type", default)]
@@ -9,7 +8,7 @@ pub struct MistralTextBlock {
     pub text: String,
 }
 
-// A native content block: text carries "text", a thinking block carries "thinking"
+// a native content block: text carries "text", a thinking block carries "thinking"
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct MistralContentBlock {
     #[serde(rename = "type", default)]

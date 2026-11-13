@@ -51,20 +51,10 @@ class Capture:
         self.model_call_details["original_response"] = original_response
 
 
-class Usage(Protocol):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-
-class ToolCall(Protocol):
-    id: str
-
-
 class ReplyMessage(Protocol):
     content: str | None
     reasoning_content: str | None
-    tool_calls: list[ToolCall] | None
+    tool_calls: list[JsonValue] | None
 
 
 class ReplyChoice(Protocol):
@@ -75,7 +65,6 @@ class ReplyChoice(Protocol):
 class Reply(Protocol):
     model: str
     choices: list[ReplyChoice]
-    usage: Usage
 
 
 class ChunkDelta(Protocol):
@@ -154,10 +143,9 @@ def request_value(api: ReplyApi, step: RequestStep) -> JsonValue:
 
 
 def reply_value(api: ReplyApi, step: ReplyStep) -> JsonValue:
-    body = json.dumps(step["reply"])
     args: ResponseArgs = {
         "model": "mistral-small-latest",
-        "raw_response": httpx.Response(200, text=body),
+        "raw_response": httpx.Response(200, text=json.dumps(step["reply"])),
         "model_response": ModelResponse(),
         "logging_obj": Capture(),
         "request_data": {},
@@ -179,11 +167,6 @@ def reply_value(api: ReplyApi, step: ReplyStep) -> JsonValue:
             "finish_reason": choice.finish_reason,
             "content": choice.message.content,
             "tool_calls": None if calls is None else len(calls),
-            "usage": [
-                result.usage.prompt_tokens,
-                result.usage.completion_tokens,
-                result.usage.total_tokens,
-            ],
         },
     }
 

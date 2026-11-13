@@ -24,6 +24,7 @@ pub struct MistralChatReply {
     pub value: Value,
 }
 
+// MistralConfig.transform_response logs the raw text, records the response headers, then converts
 pub fn transform_response(
     reply: &ResponseReply<'_>,
     state: &mut LoggingState,
@@ -45,23 +46,19 @@ pub fn transform_response(
         },
     };
     post_call(state, &call, env);
-    record_response_headers(state, reply.headers);
-    let decoded = decode_mistral_chat(reply.body)?;
-    let body = serde_json::to_vec(&decoded.value)
-        .map_err(|source| MistralChatError::ReplyEncode { source })?;
-    Ok(decode_compatible_chat_reply(&body, options)?)
-}
-
-// MistralConfig.transform_response stores the upstream headers beside the reply details
-fn record_response_headers(state: &mut LoggingState, headers: &Headers) {
-    let fields: IndexMap<String, Json> = headers
+    let headers: IndexMap<String, Json> = reply
+        .headers
         .iter()
         .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
         .collect();
     state.model_call_details.insert(
         String::from("response_headers"),
-        Json::Object(masked_headers(&fields, false)),
+        Json::Object(masked_headers(&headers, false)),
     );
+    let decoded = decode_mistral_chat(reply.body)?;
+    let body = serde_json::to_vec(&decoded.value)
+        .map_err(|source| MistralChatError::ReplyEncode { source })?;
+    Ok(decode_compatible_chat_reply(&body, options)?)
 }
 
 pub fn decode_mistral_chat(bytes: &[u8]) -> Result<MistralChatReply, MistralChatError> {
@@ -99,16 +96,23 @@ pub fn handle_content_list_to_str_conversion(reply: &mut Value) -> Result<(), Mi
         let Some(message) = choice.get_mut("message").and_then(Value::as_object_mut) else {
             continue;
         };
-        let Some(content) = message.get("content").cloned() else {
-            continue;
-        };
-        let Value::Array(blocks) = content else {
+        let Value::Array(blocks) = message.get("content").cloned().unwrap_or(Value::Null) else {
             continue;
         };
         if blocks.is_empty() {
             continue;
         }
-        let (text_content, thinking_content) = decode_blocks(blocks)?;
+        let mut text_content = String::new();
+        let mut thinking_content = String::new();
+        for block in blocks {
+            let decoded: MistralContentBlock = serde_json::from_value(block)
+                .map_err(|source| MistralChatError::ReplyBlock { source })?;
+            match decoded.kind.as_str() {
+                "thinking" => thinking_content = decoded.thinking_text(),
+                "text" => text_content = decoded.text.unwrap_or_default(),
+                _ => {}
+            }
+        }
         message.insert(String::from("content"), Value::String(text_content));
         if !thinking_content.is_empty() {
             message.insert(
@@ -118,19 +122,4 @@ pub fn handle_content_list_to_str_conversion(reply: &mut Value) -> Result<(), Mi
         }
     }
     Ok(())
-}
-
-fn decode_blocks(blocks: Vec<Value>) -> Result<(String, String), MistralChatError> {
-    let mut text_content = String::new();
-    let mut thinking_content = String::new();
-    for block in blocks {
-        let decoded: MistralContentBlock = serde_json::from_value(block)
-            .map_err(|source| MistralChatError::ReplyBlock { source })?;
-        match decoded.kind.as_str() {
-            "thinking" => thinking_content = decoded.thinking_text(),
-            "text" => text_content = decoded.text.unwrap_or_default(),
-            _ => {}
-        }
-    }
-    Ok((text_content, thinking_content))
 }
