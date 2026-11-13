@@ -80,51 +80,69 @@ def params_or_none(probe: Probe) -> Params | None:
 
 
 def create_update_probe(probe: Probe) -> JsonValue:
-    headers = headers_of(probe)
-    create = probe.get("create")
-    if create is not None:
-        try:
-            body = CONFIG.transform_create_eval_request(create, params_of(probe), headers)
-        except (ValueError, TypeError, KeyError):
-            return {"error": {"status": None}}
-        return {"create": body}
     update = probe.get("update")
     if update is not None:
         try:
             url, sent, body = CONFIG.transform_update_eval_request(
                 required(probe.get("eval_id"), "eval_id"), update,
-                required(probe.get("api_base"), "api_base"), params_of(probe), headers,
+                required(probe.get("api_base"), "api_base"), params_of(probe),
+                headers_of(probe),
             )
         except (ValueError, TypeError, KeyError):
             return {"error": {"status": None}}
         return {"update": {"url": url, "headers": sent, "body": body}}
-    create_run = probe.get("create_run")
-    if create_run is None:
-        raise ValueError("a create-update probe needs create, update or create_run")
+    create = probe.get("create")
+    if create is None:
+        return {"create_run": request_probe(probe)}
     try:
-        url, body = CONFIG.transform_create_run_request(
-            required(probe.get("eval_id"), "eval_id"), create_run, params_of(probe), headers
-        )
+        body = CONFIG.transform_create_eval_request(create, params_of(probe), headers_of(probe))
     except (ValueError, TypeError, KeyError):
         return {"error": {"status": None}}
-    return {"create_run": {"url": url, "body": body}}
+    return {"create": body}
 
 
-def list_evals_probe(probe: Probe) -> JsonValue:
-    params = probe.get("list_params")
-    if params is None:
-        raise ValueError("a list probe needs list_params")
+def request_probe(probe: Probe) -> JsonValue:
+    create_run = probe.get("create_run")
+    if create_run is not None:
+        try:
+            url, body = CONFIG.transform_create_run_request(
+                required(probe.get("eval_id"), "eval_id"), create_run, params_of(probe),
+                headers_of(probe),
+            )
+        except (ValueError, TypeError, KeyError):
+            return {"error": {"status": None}}
+        return {"url": url, "body": body}
+    eval_params = probe.get("list_params")
+    if eval_params is not None:
+        try:
+            url, query = CONFIG.transform_list_evals_request(
+                eval_params, params_of(probe), headers_of(probe)
+            )
+        except (ValueError, TypeError, KeyError):
+            return {"error": {"status": None}}
+        return {"url": url, "query": query}
+    run_params = probe.get("list_runs_params")
+    if run_params is None:
+        raise ValueError("a request probe needs create_run, list_params or list_runs_params")
     try:
-        url, query = CONFIG.transform_list_evals_request(
-            params, params_of(probe), headers_of(probe)
+        url, query = CONFIG.transform_list_runs_request(
+            required(probe.get("eval_id"), "eval_id"), run_params, params_of(probe),
+            headers_of(probe),
         )
     except (ValueError, TypeError, KeyError):
         return {"error": {"status": None}}
     return {"url": url, "query": query}
 
 
-def eval_id_probe(probe: Probe) -> JsonValue:
+def id_probe(probe: Probe) -> JsonValue:
     operation = required(probe.get("operation"), "operation")
+    run_id = probe.get("run_id")
+    if run_id is None:
+        return eval_id_probe(operation, probe)
+    return run_id_probe(operation, run_id, probe)
+
+
+def eval_id_probe(operation: str, probe: Probe) -> JsonValue:
     eval_id = required(probe.get("eval_id"), "eval_id")
     api_base = required(probe.get("api_base"), "api_base")
     params = params_of(probe)
@@ -147,58 +165,28 @@ def eval_id_probe(probe: Probe) -> JsonValue:
         return result
 
 
-def create_run_probe(probe: Probe) -> JsonValue:
-    create_run = probe.get("create_run")
-    if create_run is None:
-        raise ValueError("a run create probe needs create_run")
-    try:
-        url, body = CONFIG.transform_create_run_request(
-            required(probe.get("eval_id"), "eval_id"), create_run, params_of(probe),
-            headers_of(probe),
-        )
-    except (ValueError, TypeError, KeyError):
-        return {"error": {"status": None}}
-    return {"url": url, "body": body}
-
-
-def list_runs_probe(probe: Probe) -> JsonValue:
-    params = probe.get("list_runs_params")
-    if params is None:
-        raise ValueError("a run list probe needs list_runs_params")
-    try:
-        url, query = CONFIG.transform_list_runs_request(
-            required(probe.get("eval_id"), "eval_id"), params, params_of(probe),
-            headers_of(probe),
-        )
-    except (ValueError, TypeError, KeyError):
-        return {"error": {"status": None}}
-    return {"url": url, "query": query}
-
-
-def run_id_probe(probe: Probe) -> JsonValue:
-    operation = required(probe.get("operation"), "operation")
-    eval_id = required(probe.get("eval_id"), "eval_id")
-    run_id = required(probe.get("run_id"), "run_id")
-    api_base = required(probe.get("api_base"), "api_base")
+def run_id_probe(operation: str, run_id: str, probe: Probe) -> JsonValue:
     params = params_of(probe)
     headers = headers_of(probe)
     try:
-        if operation == "get":
-            url, sent = CONFIG.transform_get_run_request(
-                eval_id, run_id, api_base, params, headers
-            )
-            result: JsonValue = {"url": url, "headers": sent}
-        elif operation == "delete":
-            url, sent, body = CONFIG.transform_delete_run_request(
-                eval_id, run_id, api_base, params, headers
-            )
-            result = {"url": url, "headers": sent, "body": body}
-        else:
-            url, sent, body = CONFIG.transform_cancel_run_request(
-                eval_id, run_id, api_base, params, headers
-            )
-            result = {"url": url, "headers": sent, "body": body}
+        match operation:
+            case "get":
+                url, sent = CONFIG.transform_get_run_request(
+                    required(probe.get("eval_id"), "eval_id"), run_id,
+                    required(probe.get("api_base"), "api_base"), params, headers,
+                )
+                return {"url": url, "headers": sent}
+            case "delete":
+                url, sent, body = CONFIG.transform_delete_run_request(
+                    required(probe.get("eval_id"), "eval_id"), run_id,
+                    required(probe.get("api_base"), "api_base"), params, headers,
+                )
+                return {"url": url, "headers": sent, "body": body}
+            case _:
+                url, sent, body = CONFIG.transform_cancel_run_request(
+                    required(probe.get("eval_id"), "eval_id"), run_id,
+                    required(probe.get("api_base"), "api_base"), params, headers,
+                )
+                return {"url": url, "headers": sent, "body": body}
     except (ValueError, TypeError, KeyError):
         return {"error": {"status": None}}
-    else:
-        return result
