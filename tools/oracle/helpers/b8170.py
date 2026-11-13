@@ -110,7 +110,8 @@ def provider_info(step: ProviderInfoStep) -> JsonValue:
 
 def cost(step: CostStep, index: int) -> JsonValue:
     model = f"{COST_MODEL_PREFIX}-{index}"
-    litellm.register_model({f"dashscope/{model}": step["model_info"]})
+    pricing: dict[str, dict[str, JsonValue]] = {f"dashscope/{model}": step["model_info"]}
+    litellm.register_model(pricing)
     moment = datetime.fromisoformat(step["current_time"])
     prompt_cost, completion_cost = cost_per_token(
         model=model,
