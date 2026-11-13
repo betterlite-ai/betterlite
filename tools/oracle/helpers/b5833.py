@@ -127,38 +127,12 @@ class SttView(Protocol):
     ) -> Object: ...
 
 
-class SupportedFactory(Protocol):
-    def __call__(self) -> SupportedView: ...
-
-
-class MapFactory(Protocol):
-    def __call__(self) -> MapView: ...
-
-
-class RequestFactory(Protocol):
-    def __call__(self) -> RequestView: ...
-
-
-class ReplyFactory(Protocol):
-    def __call__(self) -> ReplyView: ...
-
-
-class HandlerFactory(Protocol):
-    def __call__(
-        self, streaming_response: list[Json], *, sync_stream: bool
-    ) -> HandlerView: ...
-
-
-class SttFactory(Protocol):
-    def __call__(self) -> SttView: ...
-
-
-CHAT: Final[SupportedFactory] = GroqChatConfig
-MAPPER: Final[MapFactory] = GroqChatConfig
-REQUEST: Final[RequestFactory] = GroqChatConfig
-REPLY: Final[ReplyFactory] = GroqChatConfig
-HANDLER: Final[HandlerFactory] = GroqStreamHandler
-STT: Final[SttFactory] = GroqSTTConfig
+CHAT: Final[Callable[..., SupportedView]] = GroqChatConfig
+MAPPER: Final[Callable[..., MapView]] = GroqChatConfig
+REQUEST: Final[Callable[..., RequestView]] = GroqChatConfig
+REPLY: Final[Callable[..., ReplyView]] = GroqChatConfig
+HANDLER: Final[Callable[..., HandlerView]] = GroqStreamHandler
+STT: Final[Callable[..., SttView]] = GroqSTTConfig
 COST: Final[Callable[..., float]] = cost_per_web_search_request
 EMPTY: Final[Object] = {}
 GROQ_PARAMS: Final[Object] = {"custom_llm_provider": "groq"}

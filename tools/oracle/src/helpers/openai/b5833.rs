@@ -7,7 +7,7 @@ use betterlite_openai::compatible_wire::ReplyOptions;
 use betterlite_openai::groq_chat::capabilities::{CapabilityError, GroqCapabilities};
 use betterlite_openai::groq_chat::credentials::compatible_provider_info;
 use betterlite_openai::groq_chat::error::GroqChatError;
-use betterlite_openai::groq_chat::messages::{RequestTransform, transform_request};
+use betterlite_openai::groq_chat::messages::{MessageTransform, transform_messages};
 use betterlite_openai::groq_chat::options::{
     MapParams, SupportedParams, get_supported_openai_params, map_openai_params,
 };
@@ -75,70 +75,24 @@ impl GroqCapabilities for Answers {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CredentialCall {
+// every section shares one call shape, and deny_unknown_fields still rejects a key no section reads
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct Call {
+    model: Option<String>,
+    messages: Vec<ChatMessage>,
+    environment: BTreeMap<String, String>,
+    non_default: Object,
+    optional_params: Object,
+    drop_params: bool,
+    global_drop_params: bool,
+    reply: Option<Value>,
+    json_mode: bool,
+    chunk: Option<Value>,
     api_base: Option<String>,
     api_key: Option<String>,
     environment_base: Option<String>,
     environment_key: Option<String>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SupportedCall {
-    model: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MessageCall {
-    model: String,
-    messages: Vec<ChatMessage>,
-    #[serde(default)]
-    environment: BTreeMap<String, String>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct OptionCall {
-    model: String,
-    #[serde(default)]
-    non_default: Object,
-    #[serde(default)]
-    optional_params: Object,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ReplyCall {
-    reply: Value,
-    #[serde(default)]
-    json_mode: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChunkCall {
-    chunk: Value,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct SttCall {
-    #[serde(default)]
-    non_default: Object,
-    #[serde(default)]
-    optional_params: Object,
-    #[serde(default)]
-    drop_params: bool,
-    #[serde(default)]
-    global_drop_params: bool,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct CostCall {
     web_search_requests: Option<u64>,
     browser_open_requests: Option<u64>,
     medium_rate: Option<String>,
@@ -148,14 +102,14 @@ struct CostCall {
 #[serde(default, deny_unknown_fields)]
 struct Input {
     capabilities: Answers,
-    credentials: Vec<CredentialCall>,
-    supported: Vec<SupportedCall>,
-    messages: Vec<MessageCall>,
-    options: Vec<OptionCall>,
-    replies: Vec<ReplyCall>,
-    chunks: Vec<ChunkCall>,
-    stt: Vec<SttCall>,
-    costs: Vec<CostCall>,
+    credentials: Vec<Call>,
+    supported: Vec<Call>,
+    messages: Vec<Call>,
+    options: Vec<Call>,
+    replies: Vec<Call>,
+    chunks: Vec<Call>,
+    stt: Vec<Call>,
+    costs: Vec<Call>,
 }
 
 impl crate::helpers::Helper for Op {
@@ -183,23 +137,16 @@ where
     calls.iter().map(projection).collect()
 }
 
-fn failed(error: &GroqChatError) -> Value {
-    json!({"error": {"status": status(error)}})
+// a capability or stream failure has no status the Python adapter can read, so both sides project null
+fn status(error: &GroqChatError) -> Value {
+    match error {
+        GroqChatError::Capability(_) | GroqChatError::Stream(_) => json!(null),
+        other => json!(other.status_code()),
+    }
 }
 
-fn credential(call: &CredentialCall) -> Value {
-    let key = call.api_key.as_deref().map(SecretString::from);
-    let environment_key = call.environment_key.as_deref().map(SecretString::from);
-    let (api_base, api_key) = compatible_provider_info(
-        call.api_base.as_deref(),
-        key.as_ref(),
-        call.environment_base.as_deref(),
-        environment_key.as_ref(),
-    );
-    json!({
-        "api_base": api_base,
-        "api_key": api_key.map(|key| key.expose_secret().to_owned()),
-    })
+fn failed(error: &GroqChatError) -> Value {
+    json!({"error": {"status": status(error)}})
 }
 
 fn config() -> OpenAiConfig {
@@ -218,17 +165,24 @@ fn empty_catalog() -> CatalogCapabilities {
     }
 }
 
-// a capability or stream failure has no status the Python adapter can read, so both sides project null
-fn status(error: &GroqChatError) -> Value {
-    match error {
-        GroqChatError::Capability(_) | GroqChatError::Stream(_) => json!(null),
-        other => json!(other.status_code()),
-    }
+fn credential(call: &Call) -> Value {
+    let key = call.api_key.as_deref().map(SecretString::from);
+    let environment_key = call.environment_key.as_deref().map(SecretString::from);
+    let (api_base, api_key) = compatible_provider_info(
+        call.api_base.as_deref(),
+        key.as_ref(),
+        call.environment_base.as_deref(),
+        environment_key.as_ref(),
+    );
+    json!({
+        "api_base": api_base,
+        "api_key": api_key.map(|key| key.expose_secret().to_owned()),
+    })
 }
 
-fn supported_one(answers: &Answers, call: &SupportedCall) -> Value {
+fn supported_one(answers: &Answers, call: &Call) -> Value {
     get_supported_openai_params(&SupportedParams {
-        model: &call.model,
+        model: call.model.as_deref().unwrap_or(""),
         config: &config(),
         catalog: &empty_catalog(),
         capabilities: answers,
@@ -236,33 +190,31 @@ fn supported_one(answers: &Answers, call: &SupportedCall) -> Value {
     .map_or_else(|error| failed(&error), |params| json!({"params": params}))
 }
 
-fn message_one(call: &MessageCall) -> Value {
-    let empty = Object::new();
+fn message_one(call: &Call) -> Value {
     let downloads = RefuseDownloads;
-    let result = transform_request(&RequestTransform {
-        model: &call.model,
+    let transform = MessageTransform {
+        model: call.model.as_deref().unwrap_or(""),
         messages: &call.messages,
-        optional_params: &empty,
         environment: &call.environment,
         downloads: &downloads,
-    });
-    match result {
-        Ok(body) => json!({"messages": body.get("messages").cloned().unwrap_or(Value::Null)}),
+    };
+    match transform_messages(&transform) {
+        Ok(messages) => json!({"messages": messages}),
         Err(error) => failed(&error),
     }
 }
 
-fn options_one(answers: &Answers, call: &OptionCall) -> Value {
+fn options_one(answers: &Answers, call: &Call) -> Value {
     let config = config();
     let catalog = empty_catalog();
     let mapped = match map_openai_params(&MapParams {
-        model: &call.model,
+        model: call.model.as_deref().unwrap_or(""),
         non_default: &call.non_default,
         optional_params: &call.optional_params,
         config: &config,
         catalog: &catalog,
         capabilities: answers,
-        drop_params: false,
+        drop_params: call.drop_params,
     }) {
         Ok(mapped) => mapped,
         Err(error) => return failed(&error),
@@ -273,7 +225,7 @@ fn options_one(answers: &Answers, call: &OptionCall) -> Value {
     })
 }
 
-fn reply_one(call: &ReplyCall) -> Value {
+fn reply_one(call: &Call) -> Value {
     let options = ReplyOptions {
         json_mode: call.json_mode,
         provider: None,
@@ -281,7 +233,8 @@ fn reply_one(call: &ReplyCall) -> Value {
         identifier: Uuid::nil,
         clock: i64::default,
     };
-    transform_response(call.reply.to_string().as_bytes(), &options).map_or_else(
+    let body = call.reply.clone().unwrap_or(Value::Null);
+    transform_response(body.to_string().as_bytes(), &options).map_or_else(
         |error| failed(&error),
         |converted| {
             let actions = converted.browser_actions;
@@ -294,8 +247,9 @@ fn reply_one(call: &ReplyCall) -> Value {
     )
 }
 
-fn chunk_one(call: &ChunkCall) -> Value {
-    let chunk = match chunk_parser(&call.chunk, Uuid::nil, i64::default) {
+fn chunk_one(call: &Call) -> Value {
+    let chunk = call.chunk.clone().unwrap_or(Value::Null);
+    let chunk = match chunk_parser(&chunk, Uuid::nil, i64::default) {
         Ok(chunk) => chunk,
         Err(error) => return failed(&error),
     };
@@ -319,7 +273,7 @@ fn chunk_one(call: &ChunkCall) -> Value {
     })
 }
 
-fn stt_one(call: &SttCall) -> Value {
+fn stt_one(call: &Call) -> Value {
     let params = SttMapParams {
         non_default: &call.non_default,
         optional_params: &call.optional_params,
@@ -336,7 +290,7 @@ fn stt_failed(error: &GroqSttError) -> Value {
     json!({"error": {"status": error.status_code()}})
 }
 
-fn costs(calls: &[CostCall]) -> Result<Vec<Value>, Box<HelperError>> {
+fn costs(calls: &[Call]) -> Result<Vec<Value>, Box<HelperError>> {
     let mut values = Vec::with_capacity(calls.len());
     for call in calls {
         let rate = match call.medium_rate.as_deref() {
@@ -352,11 +306,7 @@ fn costs(calls: &[CostCall]) -> Result<Vec<Value>, Box<HelperError>> {
             web_search_requests: call.web_search_requests,
             browser_open_requests: call.browser_open_requests,
         };
-        let used_pricing = if call.medium_rate.is_some() {
-            Some(&pricing)
-        } else {
-            None
-        };
+        let used_pricing = call.medium_rate.is_some().then_some(&pricing);
         let cost = web_search_cost(Some(&usage), used_pricing).map_err(|error| {
             Box::new(HelperError {
                 class: String::from("CostFailure"),

@@ -7,7 +7,6 @@ use crate::compatible_wire::{CompatibleReply, ReplyOptions, decode_compatible_ch
 use super::PROVIDER;
 use super::error::GroqChatError;
 
-const SERVICE_TIERS: [&str; 3] = ["auto", "default", "flex"];
 const SEARCH_ACTIONS: [&str; 2] = ["browser.search", "browser_search"];
 const OPEN_ACTION: &str = "browser.open";
 

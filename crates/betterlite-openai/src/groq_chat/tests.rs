@@ -706,6 +706,21 @@ fn a_falsy_error_value_is_not_an_error() {
 }
 
 #[test]
+fn an_empty_name_falls_back_to_the_type() {
+    let converted = reply(&reply_with(&json!([
+        {"name": "", "type": "browser.open"}
+    ])));
+    assert_eq!(converted.browser_actions, billed(0, 1));
+}
+
+#[test]
+fn a_zero_error_value_is_not_an_error() {
+    let chunk = json!({"id": "c", "created": 1, "model": "m", "choices": [], "error": 0});
+    let parsed = chunk_parser(&chunk, Uuid::nil, i64::default).expect("a chunk");
+    assert_eq!(parsed.object, "chat.completion.chunk");
+}
+
+#[test]
 fn delta_reasoning_becomes_reasoning_content() {
     let chunk = json!({
         "id": "c", "created": 1, "model": "m",

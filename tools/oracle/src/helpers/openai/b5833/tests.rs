@@ -46,17 +46,42 @@ fn a_capable_model_keeps_web_search_and_appends_reasoning_effort() {
 #[test]
 fn a_compound_model_keeps_web_search_options_without_reasoning_effort() {
     let entries = &run_case("supported-params-compound-model.yaml")["supported"];
-    assert!(entries[0]["params"].as_array().unwrap().contains(&json!("web_search_options")));
-    assert!(!entries[0]["params"].as_array().unwrap().contains(&json!("reasoning_effort")));
-    assert!(entries[2]["params"].as_array().unwrap().contains(&json!("web_search_options")));
-    assert!(!entries[2]["params"].as_array().unwrap().contains(&json!("reasoning_effort")));
+    assert!(
+        entries[0]["params"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("web_search_options"))
+    );
+    assert!(
+        !entries[0]["params"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("reasoning_effort"))
+    );
+    assert!(
+        entries[2]["params"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("web_search_options"))
+    );
+    assert!(
+        !entries[2]["params"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("reasoning_effort"))
+    );
 }
 
 #[test]
 fn a_failed_reasoning_lookup_leaves_the_list_without_reasoning_effort() {
-    let params = &run_case("supported-params-reasoning-lookup-failure.yaml")["supported"][0]
-        ["params"];
-    assert!(!params.as_array().unwrap().contains(&json!("reasoning_effort")));
+    let params =
+        &run_case("supported-params-reasoning-lookup-failure.yaml")["supported"][0]["params"];
+    assert!(
+        !params
+            .as_array()
+            .unwrap()
+            .contains(&json!("reasoning_effort"))
+    );
 }
 
 #[test]
@@ -72,7 +97,10 @@ fn assistant_null_members_are_dropped_and_other_roles_are_kept() {
 #[test]
 fn an_unsupported_schema_becomes_a_json_tool_call() {
     let mapped = &run_case("response-format-tool-workaround.yaml")["options"][0];
-    assert_eq!(mapped["optional_params"]["tools"][0]["function"]["name"], "json_tool_call");
+    assert_eq!(
+        mapped["optional_params"]["tools"][0]["function"]["name"],
+        "json_tool_call"
+    );
     assert_eq!(mapped["optional_params"]["json_mode"], true);
     assert_eq!(mapped["optional_params"]["fake_stream"], true);
     assert!(mapped["non_default"].get("response_format").is_none());
@@ -81,7 +109,10 @@ fn an_unsupported_schema_becomes_a_json_tool_call() {
 #[test]
 fn a_native_schema_model_keeps_its_response_format() {
     let mapped = &run_case("response-format-native-schema.yaml")["options"][0];
-    assert_eq!(mapped["optional_params"]["response_format"]["type"], "json_schema");
+    assert_eq!(
+        mapped["optional_params"]["response_format"]["type"],
+        "json_schema"
+    );
     assert!(mapped["optional_params"].get("tools").is_none());
 }
 
@@ -94,8 +125,14 @@ fn user_tools_with_a_schema_fail_with_400() {
 #[test]
 fn web_search_options_add_one_tool_without_duplicating_it() {
     let entries = &run_case("web-search-options-tool.yaml")["options"];
-    assert_eq!(entries[0]["optional_params"]["tools"], json!([{"type": "browser_search"}]));
-    assert_eq!(entries[1]["optional_params"]["tools"], json!([{"type": "browser_search"}]));
+    assert_eq!(
+        entries[0]["optional_params"]["tools"],
+        json!([{"type": "browser_search"}])
+    );
+    assert_eq!(
+        entries[1]["optional_params"]["tools"],
+        json!([{"type": "browser_search"}])
+    );
     assert!(entries[2]["optional_params"].get("tools").is_none());
     assert!(entries[3]["optional_params"].get("tools").is_none());
 }
@@ -104,7 +141,11 @@ fn web_search_options_add_one_tool_without_duplicating_it() {
 fn max_completion_tokens_is_sent_as_max_tokens() {
     let mapped = &run_case("max-completion-tokens-swap.yaml")["options"][0];
     assert_eq!(mapped["optional_params"]["max_tokens"], 128);
-    assert!(mapped["optional_params"].get("max_completion_tokens").is_none());
+    assert!(
+        mapped["optional_params"]
+            .get("max_completion_tokens")
+            .is_none()
+    );
 }
 
 #[test]
@@ -148,7 +189,10 @@ fn stream_chunks_carry_reasoning_content_and_error_chunks_fail() {
 #[test]
 fn transcription_params_copy_or_drop_by_response_format() {
     let entries = &run_case("stt-options.yaml")["stt"];
-    assert_eq!(entries[0]["optional_params"]["response_format"], "verbose_json");
+    assert_eq!(
+        entries[0]["optional_params"]["response_format"],
+        "verbose_json"
+    );
     assert_eq!(entries[0]["optional_params"]["prompt"], "keep");
     assert_eq!(entries[1]["optional_params"]["response_format"], "text");
     assert_eq!(entries[2]["optional_params"]["prompt"], "new");
@@ -159,7 +203,11 @@ fn an_unsupported_transcription_format_is_dropped_or_fails() {
     let entries = &run_case("stt-unsupported-format.yaml")["stt"];
     assert_eq!(entries[0]["error"]["status"], 400);
     assert_eq!(entries[1]["optional_params"]["temperature"], 1);
-    assert!(entries[1]["optional_params"].get("response_format").is_none());
+    assert!(
+        entries[1]["optional_params"]
+            .get("response_format")
+            .is_none()
+    );
     assert_eq!(entries[2]["optional_params"]["temperature"], 1);
 }
 

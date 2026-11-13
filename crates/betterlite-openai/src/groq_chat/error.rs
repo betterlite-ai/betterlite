@@ -22,13 +22,6 @@ pub enum GroqChatError {
     BadRequest { message: String },
     #[error("response_format json_schema is not an object with a schema")]
     SchemaShape,
-    #[error("a chat value does not convert: {source}")]
-    Shape {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("the transformed request is not an object")]
-    BodyShape,
 }
 
 impl GroqChatError {
@@ -43,9 +36,7 @@ impl GroqChatError {
             | Self::Reply(_)
             | Self::Provider(_)
             | Self::SchemaShape
-            | Self::Shape { .. }
-            | Self::Stream(_)
-            | Self::BodyShape => 500,
+            | Self::Stream(_) => 500,
         }
     }
 }
