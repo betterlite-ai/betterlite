@@ -1,0 +1,5 @@
+kind: helper
+name: cache-context-consistent
+call: {"b3154": {"operation": "cache_context", "settings": {"estimator_model": "gpt-5.2", "estimator_prompt": "Estimate this pull request."}, "models": [], "supported": []}}
+env: {}
+compare: {ignore: []}

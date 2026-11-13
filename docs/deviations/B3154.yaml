@@ -1,0 +1,8 @@
+task: B3154
+deviations:
+  - what: Estimate failures return a module-local EstimatorError whose message is LiteLLM's fixed text, where LiteLLM raises github.SourceError with that message.
+    why: SourceError (B3152) is a closed enum of GitHub transport and pagination failures with no message variant, and roi_github/error.rs is outside this task's scope; the message and the set of inputs that fail are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L153-L155
+  - what: The failure keeps its typed cause on EstimatorError as a source where LiteLLM raises from None and drops the cause.
+    why: Rule typed-errors keeps every cause; Display, which is what callers read, is still LiteLLM's exact message.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/estimator.py#L153-L155
