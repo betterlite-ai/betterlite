@@ -124,7 +124,7 @@ READERS: dict[str, Reader] = {
 }
 
 
-def run(input_value: Input) -> list[JsonValue]:
+def run(input_value: Input) -> dict[str, list[JsonValue]]:
     results: list[JsonValue] = []
     for call in input_value["rows"]:
         try:
@@ -136,6 +136,8 @@ def run(input_value: Input) -> list[JsonValue]:
         entry: dict[str, JsonValue] = {"name": call["name"], "ok": True, "row": row}
         if stored["kind"] == "autorouter_session":
             router = RouterRow.model_validate(stored["row"])
-            entry["baseline_model"] = router.baseline_model
+            baseline = router.baseline_model
+            if baseline is not None:
+                entry["baseline_model"] = baseline
         results.append(entry)
-    return results
+    return {"rows": results}

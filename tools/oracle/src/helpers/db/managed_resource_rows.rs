@@ -90,14 +90,30 @@ fn row_result(
         | ManagedResourceRow::ErrorLog(_)
         | ManagedResourceRow::Tag(_) => None,
     };
-    let row = serde_json::to_value(&decoded)
-        .map_err(|source| helper_error("InvalidOutput", &source.to_string()))?;
+    let row = inner_row(&decoded)?;
     Ok(RowResult {
         name: &call.name,
         ok: true,
         row: Some(row),
         baseline_model,
     })
+}
+
+fn inner_row(decoded: &Rows) -> Result<Value, Box<crate::helpers::HelperError>> {
+    let serialized = match decoded {
+        ManagedResourceRow::ManagedFile(row) => serde_json::to_value(row),
+        ManagedResourceRow::ManagedObject(row) => serde_json::to_value(row),
+        ManagedResourceRow::ManagedVectorStore(row) => serde_json::to_value(row),
+        ManagedResourceRow::ManagedVectorStores(row) => serde_json::to_value(row),
+        ManagedResourceRow::McpEnvVar(row) => serde_json::to_value(row),
+        ManagedResourceRow::McpServer(row) => serde_json::to_value(row),
+        ManagedResourceRow::Skill(row) => serde_json::to_value(row),
+        ManagedResourceRow::AutoRouterSession(row) => serde_json::to_value(row),
+        ManagedResourceRow::SpendLog(row) => serde_json::to_value(row),
+        ManagedResourceRow::ErrorLog(row) => serde_json::to_value(row),
+        ManagedResourceRow::Tag(row) => serde_json::to_value(row),
+    };
+    serialized.map_err(|source| helper_error("InvalidOutput", &source.to_string()))
 }
 
 impl crate::helpers::Helper for Op {
