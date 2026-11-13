@@ -1,0 +1,14 @@
+task: B4471
+deviations:
+  - what: Route filtering runs as an axum middleware on every request instead of trimming FastAPI's route table inside the startup lifespan.
+    why: axum's Router is built once and immutable, so there is no runtime route list to filter; the middleware rejects a path outside the component's allowlist with the application's 404 before any route matches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/main.py#L52-L60
+  - what: A template prefix such as /{provider}/ or /{mcp_server_name}/ matches one non-empty path segment per placeholder, where LiteLLM's startswith compares a request path with the literal template text.
+    why: LiteLLM applies startswith to registered route templates, so a literal comparison can never keep the dynamic provider and toolset routes reachable for a request; matching the placeholder as Starlette does keeps those routes served instead of returning 404.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/gateway/routes/allowlist.py#L126-L127
+  - what: The gateway and backend are separate Cargo binary targets that share the serve runtime in betterlite-server, not Python modules that import the same proxy_server.app.
+    why: betterlite runs separate Rust binaries with independent entry points; the startup, filter install and exit status live once in betterlite_server::server::component.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/backend/main.py#L7-L25
+  - what: A server startup failure exits with status 2, not the exit status uvicorn gives when the lifespan raises.
+    why: the component binaries build the app and bind the listener themselves, and the task gives status 2 to a startup failure such as a port already in use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1438-L1447
