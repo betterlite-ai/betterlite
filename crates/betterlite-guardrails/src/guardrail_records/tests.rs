@@ -927,18 +927,29 @@ fn messages_are_none_without_data() {
     );
 }
 
+const CHAT_MESSAGES: &str = r#"[{"role":"user","content":"hi"}]"#;
+const CHAT_DATA: &str = r#"{"messages":[{"role":"user","content":"hi"}],"input":"ignored"}"#;
+const RESPONSES_DATA: &str =
+    r#"{"input":"hi","instructions":"follow","messages":[{"role":"user","content":"ignored"}]}"#;
+const RESPONSES_MESSAGES: &str =
+    r#"[{"role":"system","content":"follow"},{"role":"user","content":"hi"}]"#;
+
 #[rstest]
-#[case::completion("completion")]
-#[case::acompletion("acompletion")]
-#[case::anthropic_messages("anthropic_messages")]
-#[case::call_mcp_tool("call_mcp_tool")]
-#[case::list_mcp_tools("list_mcp_tools")]
-fn messages_returns_the_messages_of_chat_like_call_types(#[case] call_type: &str) {
-    let messages = r#"[{"role":"user","content":"hi"}]"#;
-    let data = format!(r#"{{"messages":{messages},"input":"ignored"}}"#);
+#[case::completion("completion", CHAT_DATA, CHAT_MESSAGES)]
+#[case::acompletion("acompletion", CHAT_DATA, CHAT_MESSAGES)]
+#[case::anthropic_messages("anthropic_messages", CHAT_DATA, CHAT_MESSAGES)]
+#[case::call_mcp_tool("call_mcp_tool", CHAT_DATA, CHAT_MESSAGES)]
+#[case::list_mcp_tools("list_mcp_tools", CHAT_DATA, CHAT_MESSAGES)]
+#[case::responses("responses", RESPONSES_DATA, RESPONSES_MESSAGES)]
+#[case::aresponses("aresponses", RESPONSES_DATA, RESPONSES_MESSAGES)]
+fn messages_returns_the_messages_of_chat_like_call_types(
+    #[case] call_type: &str,
+    #[case] data: &str,
+    #[case] expected: &str,
+) {
     assert_eq!(
-        lookup(call_type, &data).unwrap().map(list),
-        Some(gv(messages))
+        lookup(call_type, data).unwrap().map(list),
+        Some(gv(expected))
     );
 }
 
@@ -946,19 +957,6 @@ fn messages_returns_the_messages_of_chat_like_call_types(#[case] call_type: &str
 fn messages_refuse_a_chat_request_whose_messages_are_not_a_list() {
     let error = lookup("acompletion", r#"{"messages":"hi"}"#).unwrap_err();
     assert!(matches!(error, GuardrailRecordError::MessagesShape { .. }));
-}
-
-#[rstest]
-#[case::responses("responses")]
-#[case::aresponses("aresponses")]
-fn messages_transform_the_input_of_responses_call_types(#[case] call_type: &str) {
-    let data = r#"{"input":"hi","instructions":"follow","messages":[{"role":"user","content":"ignored"}]}"#;
-    assert_eq!(
-        lookup(call_type, data).unwrap().map(list),
-        Some(gv(
-            r#"[{"role":"system","content":"follow"},{"role":"user","content":"hi"}]"#
-        ))
-    );
 }
 
 #[test]

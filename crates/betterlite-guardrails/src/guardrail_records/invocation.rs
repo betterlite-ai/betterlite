@@ -108,23 +108,38 @@ impl GuardrailInvocation {
         }
     }
 
+    fn finish(
+        &self,
+        context: &mut GuardrailRecordContext<'_>,
+        skip: bool,
+        record: (GuardrailValue, GuardrailStatus),
+        finished_at: SystemTime,
+    ) -> Result<(), GuardrailRecordError> {
+        let outcome = if skip {
+            Ok(())
+        } else {
+            let (response, status) = record;
+            add_guardrail_record(context, self.record_input(response, status, finished_at))
+        };
+        sync_context_target(context);
+        outcome
+    }
+
     pub fn finish_success(
         self,
         context: &mut GuardrailRecordContext<'_>,
         response: Option<&GuardrailValue>,
         finished_at: SystemTime,
     ) -> Result<(), GuardrailRecordError> {
-        let outcome =
-            if self.self_recorded || context.base.settings.switches.records_own_information {
-                Ok(())
-            } else {
-                let summary =
-                    summarize_guardrail_response(response, self.baseline.as_ref(), self.event_type);
-                let input = self.record_input(summary, GuardrailStatus::Success, finished_at);
-                add_guardrail_record(context, input)
-            };
-        sync_context_target(context);
-        outcome
+        let skip = self.self_recorded || context.base.settings.switches.records_own_information;
+        let summary =
+            summarize_guardrail_response(response, self.baseline.as_ref(), self.event_type);
+        self.finish(
+            context,
+            skip,
+            (summary, GuardrailStatus::Success),
+            finished_at,
+        )
     }
 
     pub fn finish_failure(
@@ -133,23 +148,23 @@ impl GuardrailInvocation {
         failure: GuardrailFailure,
         finished_at: SystemTime,
     ) -> Result<GuardrailFailure, GuardrailRecordError> {
-        let outcome = if self.self_recorded {
-            Ok(())
+        let status = if failure.is_intervention() {
+            GuardrailStatus::GuardrailIntervened
         } else {
-            let status = if failure.is_intervention() {
-                GuardrailStatus::GuardrailIntervened
-            } else {
-                GuardrailStatus::GuardrailFailedToRespond
-            };
-            let text = if context.base.settings.switches.deny_text_on_error {
-                "deny".to_owned()
-            } else {
-                failure.to_string()
-            };
-            let input = self.record_input(GuardrailValue::Text(text), status, finished_at);
-            add_guardrail_record(context, input)
+            GuardrailStatus::GuardrailFailedToRespond
         };
-        sync_context_target(context);
-        outcome.map(|()| failure)
+        let text = if context.base.settings.switches.deny_text_on_error {
+            "deny".to_owned()
+        } else {
+            failure.to_string()
+        };
+        let skip = self.self_recorded;
+        self.finish(
+            context,
+            skip,
+            (GuardrailValue::Text(text), status),
+            finished_at,
+        )?;
+        Ok(failure)
     }
 }
