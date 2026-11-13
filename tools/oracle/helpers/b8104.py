@@ -167,41 +167,42 @@ def create_body(found: ManusConfig, probe: CreateProbe) -> Body:
     )
 
 
+def url_value(found: ManusConfig, probe: UrlProbe) -> JsonValue:
+    try:
+        return {"url": found.get_complete_url(probe["api_base"], {})}
+    except ValueError:
+        return {"raised": True}
+
+
 def urls(input_value: UrlsInput) -> JsonValue:
     activate(input_value["environment"])
     activate_sdk(input_value["sdk"])
     found = config()
-    values: list[JsonValue] = []
-    for probe in input_value["probes"]:
-        try:
-            url = found.get_complete_url(probe["api_base"], {})
-        except ValueError:
-            values.append({"raised": True})
-        else:
-            values.append({"url": url})
-    return {"urls": values}
+    return {"urls": [url_value(found, probe) for probe in input_value["probes"]]}
+
+
+def create_value(found: ManusConfig, probe: CreateProbe) -> JsonValue:
+    try:
+        return {"body": create_body(found, probe)}
+    except (ValueError, TypeError, KeyError):
+        return {"raised": True}
 
 
 def creates(input_value: CreateInput) -> JsonValue:
     activate(input_value["environment"])
     activate_sdk(input_value["sdk"])
     found = config()
-    values: list[JsonValue] = []
-    for probe in input_value["probes"]:
-        try:
-            values.append({"body": create_body(found, probe)})
-        except (ValueError, TypeError, KeyError):
-            values.append({"raised": True})
-    return {"requests": values}
+    return {"requests": [create_value(found, probe) for probe in input_value["probes"]]}
 
 
 def logging_object() -> Logging:
+    started = datetime(2026, 1, 1, tzinfo=UTC)
     return Logging(
         model="manus-1.6",
         messages=None,
         stream=False,
         call_type="responses",
-        start_time=datetime(2026, 1, 1, tzinfo=UTC),
+        start_time=started,
         litellm_call_id="call-1",
         function_id="fn-1",
     )
@@ -209,11 +210,9 @@ def logging_object() -> Logging:
 
 def raw_response(probe: ReplyProbe) -> httpx.Response:
     request = httpx.Request("POST", RESPONSES_URL)
+    stream = httpx.ByteStream(probe["body"].encode())
     response = httpx.Response(
-        probe["status"],
-        stream=httpx.ByteStream(probe["body"].encode()),
-        headers=probe["headers"],
-        request=request,
+        probe["status"], stream=stream, headers=probe["headers"], request=request
     )
     response.read()
     return response
@@ -247,26 +246,16 @@ def fields_view(reply: BaseModel, logging_obj: Logging) -> JsonValue:
     }
 
 
-def reply_value(found: ManusConfig, probe: ReplyProbe) -> JsonValue:
+def reply_value(
+    found: ManusConfig, probe: ReplyProbe, endpoint: Literal["create", "retrieve"]
+) -> JsonValue:
     logging_obj = logging_object()
     try:
-        reply = found.transform_response_api_response(
-            "manus-1.6", raw_response(probe), logging_obj
-        )
-    except (ValueError, TypeError, KeyError):
-        return {"raised": True}
-    except Exception as error:
-        status = Failure.model_validate(error).status_code
-        if status is None:
-            raise
-        return {"error": {"status": status}}
-    return fields_view(reply, logging_obj)
-
-
-def retrieve_value(found: ManusConfig, probe: ReplyProbe) -> JsonValue:
-    logging_obj = logging_object()
-    try:
-        reply = found.transform_get_response_api_response(raw_response(probe), logging_obj)
+        if endpoint == "create":
+            response = raw_response(probe)
+            reply = found.transform_response_api_response("manus-1.6", response, logging_obj)
+        else:
+            reply = found.transform_get_response_api_response(raw_response(probe), logging_obj)
     except (ValueError, TypeError, KeyError):
         return {"raised": True}
     except Exception as error:
@@ -282,25 +271,28 @@ def replies(input_value: RepliesInput) -> JsonValue:
     activate_sdk(input_value["sdk"])
     found = config()
     values: list[JsonValue] = [
-        {"create": reply_value(found, probe), "retrieve": retrieve_value(found, probe)}
+        {
+            "create": reply_value(found, probe, "create"),
+            "retrieve": reply_value(found, probe, "retrieve"),
+        }
         for probe in input_value["probes"]
     ]
     return {"replies": values}
 
 
+def get_value(found: ManusConfig, probe: GetProbe) -> JsonValue:
+    try:
+        url, data = found.transform_get_response_api_request(
+            probe["response_id"], probe["api_base"], GenericLiteLLMParams(), {}
+        )
+    except (ValueError, TypeError, KeyError):
+        return {"raised": True}
+    return {"url": url, "data": data}
+
+
 def gets(input_value: GetInput) -> JsonValue:
     found = config()
-    values: list[JsonValue] = []
-    for probe in input_value["probes"]:
-        try:
-            url, data = found.transform_get_response_api_request(
-                probe["response_id"], probe["api_base"], GenericLiteLLMParams(), {}
-            )
-        except (ValueError, TypeError, KeyError):
-            values.append({"raised": True})
-        else:
-            values.append({"url": url, "data": data})
-    return {"requests": values}
+    return {"requests": [get_value(found, probe) for probe in input_value["probes"]]}
 
 
 def run(input_value: Input) -> JsonValue:

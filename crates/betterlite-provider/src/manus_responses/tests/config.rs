@@ -6,23 +6,11 @@ use crate::compatible_providers::Compatible;
 use crate::manus_responses::error::{MISSING_API_KEY_MESSAGE, ManusResponsesError};
 use crate::manus_responses::request::agent_profile;
 use crate::manus_responses::{
-    API_KEY_HEADER, CONTENT_TYPE_HEADER, JSON_CONTENT_TYPE, MANUS_API_BASE, MANUS_API_BASE_ENV,
-    MANUS_API_KEY_ENV,
+    API_KEY_HEADER, CONTENT_TYPE_HEADER, JSON_CONTENT_TYPE, MANUS_API_BASE_ENV, MANUS_API_KEY_ENV,
 };
 use crate::provider::Provider;
 
 use super::support::{NOW, config, environment, globals, params, plain_config};
-
-fn validated(
-    explicit: Option<&str>,
-    global: Option<&str>,
-    environment_pairs: &[(&str, &str)],
-) -> Headers {
-    let litellm_params = explicit.map(|key| params(&format!(r#"{{"api_key":"{key}"}}"#)));
-    config(globals(None, global), environment(environment_pairs), NOW)
-        .validate_environment(&Headers::new(), "", litellm_params.as_ref())
-        .expect("the fixture resolves a key")
-}
 
 #[test]
 fn the_provider_is_the_compatible_family() {
@@ -73,9 +61,21 @@ fn the_key_follows_the_explicit_global_environment_chain(
     #[case] environment_pairs: &[(&str, &str)],
     #[case] expected: &str,
 ) {
+    let litellm_params = match explicit {
+        Some(key) => params(&format!(r#"{{"api_key":"{key}"}}"#)),
+        None => Params::new(),
+    };
+    let settings = config(globals(None, global), environment(environment_pairs), NOW);
+    let headers = settings
+        .validate_environment(&Headers::new(), "", Some(&litellm_params))
+        .expect("the fixture resolves a key");
     assert_eq!(
-        validated(explicit, global, environment_pairs).get(API_KEY_HEADER),
-        Some(&String::from(expected))
+        headers.get(API_KEY_HEADER).map(String::as_str),
+        Some(expected)
+    );
+    assert_eq!(
+        headers.get(CONTENT_TYPE_HEADER).map(String::as_str),
+        Some(JSON_CONTENT_TYPE)
     );
 }
 
@@ -160,10 +160,7 @@ fn completed(
     environment_pairs: &[(&str, &str)],
 ) -> String {
     config(globals(global, None), environment(environment_pairs), NOW)
-        .complete_url(
-            api_base,
-            &crate::api::responses_provider_contract::records::Params::new(),
-        )
+        .complete_url(api_base, &Params::new())
         .expect("the fixture builds a url")
 }
 
@@ -174,28 +171,11 @@ fn completed(
 #[case::explicit_trailing_slashes(Some("https://explicit:1///"), None, &[], "https://explicit:1/v1/responses")]
 #[case::global_base(None, Some("https://global:2"), &[], "https://global:2/v1/responses")]
 #[case::environment_base(None, None, &[(MANUS_API_BASE_ENV, "https://env:3/v1")], "https://env:3/v1/responses")]
-fn the_url_handles_the_default_base_a_trailing_slash_and_a_base_ending_in_v1(
-    #[case] api_base: Option<&str>,
-    #[case] global: Option<&str>,
-    #[case] environment_pairs: &[(&str, &str)],
-    #[case] expected: &str,
-) {
-    assert_eq!(completed(api_base, global, environment_pairs), expected);
-}
-
-#[test]
-fn the_default_base_is_used_without_any_setting() {
-    assert_eq!(
-        completed(None, None, &[]),
-        format!("{MANUS_API_BASE}/v1/responses")
-    );
-}
-
-#[rstest]
+#[case::default_base(None, None, &[], "https://api.manus.im/v1/responses")]
 #[case::empty_explicit(Some(""), Some("https://global:2"), &[(MANUS_API_BASE_ENV, "https://env:3")], "https://global:2/v1/responses")]
 #[case::empty_global(None, Some(""), &[(MANUS_API_BASE_ENV, "https://env:3")], "https://env:3/v1/responses")]
 #[case::empty_environment(None, None, &[(MANUS_API_BASE_ENV, "")], "https://api.manus.im/v1/responses")]
-fn an_empty_setting_falls_through_to_the_next_base(
+fn the_url_handles_the_default_base_a_trailing_slash_and_a_base_ending_in_v1(
     #[case] api_base: Option<&str>,
     #[case] global: Option<&str>,
     #[case] environment_pairs: &[(&str, &str)],

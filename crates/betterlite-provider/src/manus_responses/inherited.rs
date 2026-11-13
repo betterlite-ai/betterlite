@@ -32,12 +32,10 @@ pub(super) fn map_params(
     {
         // ast-grep-ignore: no-long-names
         let minimum = i64::from(OPENAI_RESPONSES_API_MIN_MAX_OUTPUT_TOKENS);
-        if tokens < minimum {
-            fields.insert(
-                String::from(MAX_OUTPUT_TOKENS_FIELD),
-                Json::Number(Number::from(minimum)),
-            );
-        }
+        fields.insert(
+            String::from(MAX_OUTPUT_TOKENS_FIELD),
+            Json::Number(Number::from(tokens.max(minimum))),
+        );
     }
     Ok(fields.into_iter().collect())
 }

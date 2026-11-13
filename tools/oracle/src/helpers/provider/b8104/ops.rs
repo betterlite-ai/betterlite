@@ -12,7 +12,7 @@ use betterlite_provider::manus_responses::error::ManusResponsesError;
 use serde_json::{Value, json};
 
 use super::fixture;
-use super::{Creates, Gets, Replies, ReplyProbe, Urls};
+use super::{CreateProbe, Creates, GetProbe, Gets, Replies, ReplyProbe, UrlProbe, Urls};
 
 fn create_body(
     config: &ManusResponsesConfig,
@@ -30,31 +30,35 @@ fn create_body(
     config.transform_create_request(&request).ok()
 }
 
+fn url_value(config: &ManusResponsesConfig, probe: &UrlProbe) -> Value {
+    config
+        .complete_url(probe.api_base.as_deref(), &Params::new())
+        .map_or_else(|_| json!({"raised": true}), |url| json!({"url": url}))
+}
+
+fn create_value(config: &ManusResponsesConfig, probe: &CreateProbe) -> Value {
+    create_body(config, &probe.model, &probe.input, &probe.optional_params)
+        .map_or_else(|| json!({"raised": true}), |body| json!({"body": body}))
+}
+
 pub(super) fn urls(call: &Urls) -> Value {
     let config = fixture::config(&call.environment, &call.sdk, 0);
     let evaluated: Vec<Value> = call
         .probes
         .iter()
-        .map(|probe| {
-            config
-                .complete_url(probe.api_base.as_deref(), &Params::new())
-                .map_or_else(|_| json!({"raised": true}), |url| json!({"url": url}))
-        })
+        .map(|probe| url_value(&config, probe))
         .collect();
     json!({"urls": evaluated})
 }
 
 pub(super) fn creates(call: &Creates) -> Value {
     let config = fixture::config(&call.environment, &call.sdk, 0);
-    let bodies: Vec<Value> = call
+    let evaluated: Vec<Value> = call
         .probes
         .iter()
-        .map(|probe| {
-            create_body(&config, &probe.model, &probe.input, &probe.optional_params)
-                .map_or_else(|| json!({"raised": true}), |body| json!({"body": body}))
-        })
+        .map(|probe| create_value(&config, probe))
         .collect();
-    json!({"requests": bodies})
+    json!({"requests": evaluated})
 }
 
 fn upstream_response(probe: &ReplyProbe) -> ResponsesUpstream {
@@ -121,50 +125,53 @@ fn reply_fields(response: &ResponsesApiResponse, logging: &ResponsesLogging) -> 
     })
 }
 
+fn reply_value(config: &ManusResponsesConfig, probe: &ReplyProbe) -> Value {
+    let upstream = upstream_response(probe);
+    let mut create_logging = ResponsesLogging::default();
+    let created = config.transform_create_response("manus-1.6", &upstream, &mut create_logging);
+    let mut get_logging = ResponsesLogging::default();
+    let retrieved = config.transform_get_response(&upstream, &mut get_logging);
+    json!({
+        "create": created.map_or_else(
+            |error| transform_failure(&error),
+            |response| reply_fields(&response, &create_logging),
+        ),
+        "retrieve": retrieved.map_or_else(
+            |error| transform_failure(&error),
+            |response| reply_fields(&response, &get_logging),
+        ),
+    })
+}
+
 pub(super) fn replies(call: &Replies) -> Value {
     let config = fixture::config(&call.environment, &call.sdk, call.now);
     let evaluated: Vec<Value> = call
         .probes
         .iter()
-        .map(|probe| {
-            let upstream = upstream_response(probe);
-            let mut create_logging = ResponsesLogging::default();
-            let created =
-                config.transform_create_response("manus-1.6", &upstream, &mut create_logging);
-            let mut get_logging = ResponsesLogging::default();
-            let retrieved = config.transform_get_response(&upstream, &mut get_logging);
-            json!({
-                "create": created.map_or_else(
-                    |error| transform_failure(&error),
-                    |response| reply_fields(&response, &create_logging),
-                ),
-                "retrieve": retrieved.map_or_else(
-                    |error| transform_failure(&error),
-                    |response| reply_fields(&response, &get_logging),
-                ),
-            })
-        })
+        .map(|probe| reply_value(&config, probe))
         .collect();
     json!({"replies": evaluated})
 }
 
+fn get_value(config: &ManusResponsesConfig, probe: &GetProbe) -> Value {
+    let request = IdRequest {
+        response_id: probe.response_id.clone(),
+        api_base: probe.api_base.clone(),
+        litellm_params: Params::new(),
+        headers: Headers::new(),
+    };
+    config.transform_get_request(&request).map_or_else(
+        |_error| json!({"raised": true}),
+        |prepared| json!({"url": prepared.url, "data": prepared.params}),
+    )
+}
+
 pub(super) fn gets(call: &Gets) -> Value {
     let config = fixture::config(&BTreeMap::new(), &fixture::empty_sdk(), 0);
-    let prepared: Vec<Value> = call
+    let evaluated: Vec<Value> = call
         .probes
         .iter()
-        .map(|probe| {
-            let request = IdRequest {
-                response_id: probe.response_id.clone(),
-                api_base: probe.api_base.clone(),
-                litellm_params: Params::new(),
-                headers: Headers::new(),
-            };
-            config.transform_get_request(&request).map_or_else(
-                |_error| json!({"raised": true}),
-                |prepared| json!({"url": prepared.url, "data": prepared.params}),
-            )
-        })
+        .map(|probe| get_value(&config, probe))
         .collect();
-    json!({"requests": prepared})
+    json!({"requests": evaluated})
 }

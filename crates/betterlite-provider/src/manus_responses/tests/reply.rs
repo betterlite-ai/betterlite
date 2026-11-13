@@ -147,6 +147,34 @@ fn a_body_that_fails_validation_is_still_returned() {
 }
 
 #[test]
+fn a_failed_validation_keeps_the_output_and_usage_that_parse() {
+    let upstream = response(
+        200,
+        r#"{"id":7,"created_at":5,"output":[{"type":"vendor.item"}],"usage":{"input_tokens":3,"output_tokens":4,"total_tokens":7}}"#,
+    );
+    let reply = crate::manus_responses::reply::transform(
+        &plain_config(),
+        &upstream,
+        &mut ResponsesLogging::default(),
+    )
+    .expect("a mistyped id is still returned");
+    assert_eq!(reply.output.len(), 1);
+    assert_eq!(reply.usage.map(|usage| usage.total_tokens), Some(7));
+}
+
+#[test]
+fn a_failed_validation_zeroes_a_mistyped_usage() {
+    let upstream = response(200, r#"{"id":7,"created_at":5,"usage":"bad"}"#);
+    let reply = crate::manus_responses::reply::transform(
+        &plain_config(),
+        &upstream,
+        &mut ResponsesLogging::default(),
+    )
+    .expect("a mistyped usage is still returned");
+    assert_eq!(reply.usage.map(|usage| usage.total_tokens), Some(0));
+}
+
+#[test]
 fn post_call_records_the_raw_text_first() {
     let upstream = response(200, r#"{"id":"resp_1","created_at":5,"output":[]}"#);
     let (_, logging) = created(&upstream);
