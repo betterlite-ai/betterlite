@@ -1,0 +1,29 @@
+kind: helper
+name: openai-response-resources-compact-lax-response
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_resources:
+    compact_lax_response:
+      probes:
+        - endpoint: compact
+          body: '{"id":"resp_1","created_at":9,"output":[],"status":"completed"}'
+          status: 200
+          headers: {x-request-id: req-1, x-ratelimit-remaining-requests: '9', llm_provider-x-custom: keep, x-test-header: value}
+          now: 1700000000
+        - endpoint: compact
+          body: '{"id":7,"created_at":5,"output":"not-a-list"}'
+          status: 200
+          headers: {x-request-id: req-2}
+          now: 1700000000
+        - endpoint: compact
+          body: '{"id":"resp_3","created_at":"3.9","output":[],"vendor_extra":{"n":1}}'
+          status: 200
+          headers: {}
+          now: 1700000000
+        - endpoint: compact
+          body: '{"id":"resp_4","created_at":"not-a-time","output":[]}'
+          status: 200
+          headers: {}
+          now: 1700000000
+        - {endpoint: compact, body: 'not json', status: 503, headers: {}, now: 1700000000}
