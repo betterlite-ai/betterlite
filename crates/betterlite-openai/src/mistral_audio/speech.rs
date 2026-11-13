@@ -32,11 +32,9 @@ const AUDIO_BASE64: GeneralPurpose = GeneralPurpose::new(
     GeneralPurposeConfig::new().with_decode_allow_trailing_bits(true),
 );
 
-fn copy_strings(source: &Object, names: [&'static str; 2], target: &mut Object) {
-    for name in names {
-        if let Some(Value::String(text)) = source.get(name) {
-            target.insert(name.to_owned(), Value::String(text.clone()));
-        }
+fn copy_string(source: &Object, name: &str, target: &mut Object) {
+    if let Some(Value::String(text)) = source.get(name) {
+        target.insert(name.to_owned(), Value::String(text.clone()));
     }
 }
 #[must_use]
@@ -50,11 +48,8 @@ pub fn map_openai_params(
         .and_then(|value| SpeechVoice::deserialize(value).ok());
     let mapped_voice = resolve_voice(voice).or_else(|| resolve_voice(kwarg_voice.as_ref()));
     let mut mapped_params = Object::new();
-    copy_strings(
-        optional_params,
-        ["response_format", "ref_audio"],
-        &mut mapped_params,
-    );
+    copy_string(optional_params, "response_format", &mut mapped_params);
+    copy_string(kwargs, "ref_audio", &mut mapped_params);
     (mapped_voice, mapped_params)
 }
 fn resolve_voice(voice: Option<&SpeechVoice>) -> Option<String> {
@@ -115,7 +110,8 @@ pub fn request_body(
     if let Some(voice_id) = voice {
         body.insert(String::from("voice_id"), Value::String(voice_id.to_owned()));
     }
-    copy_strings(optional_params, ["response_format", "ref_audio"], &mut body);
+    copy_string(optional_params, "response_format", &mut body);
+    copy_string(optional_params, "ref_audio", &mut body);
     TextToSpeechRequestData {
         dict_body: Some(body),
         ssml_body: None,

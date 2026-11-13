@@ -84,16 +84,21 @@ fn resolves_the_voice(
 
 #[rstest]
 #[case::both(
-    r#"{"response_format":"wav","ref_audio":"data:audio/wav;base64,AA"}"#,
-    "{}",
+    r#"{"response_format":"wav"}"#,
+    r#"{"ref_audio":"data:audio/wav;base64,AA"}"#,
     r#"{"response_format":"wav","ref_audio":"data:audio/wav;base64,AA"}"#
 )]
 #[case::empty_strings(
-    r#"{"response_format":"","ref_audio":""}"#,
-    "{}",
+    r#"{"response_format":""}"#,
+    r#"{"ref_audio":""}"#,
     r#"{"response_format":"","ref_audio":""}"#
 )]
-#[case::non_strings(r#"{"response_format":5,"ref_audio":{"a":1}}"#, "{}", "{}")]
+#[case::non_strings(r#"{"response_format":5}"#, r#"{"ref_audio":{"a":1}}"#, "{}")]
+#[case::each_from_its_own_source(
+    r#"{"ref_audio":"optional"}"#,
+    r#"{"response_format":"wav"}"#,
+    "{}"
+)]
 #[case::other_params(r#"{"speed":2}"#, "{}", "{}")]
 fn keeps_only_the_string_reply_options(
     #[case] optional_params: &str,
