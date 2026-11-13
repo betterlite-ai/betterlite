@@ -14,7 +14,6 @@ use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 mod tests;
 
-// the same limits the rerank contract tests decode with
 const LIMITS: WireDecodeLimits = WireDecodeLimits {
     max_json_bytes: 0x0010_0000,
     max_event_bytes: 0x0004_0000,

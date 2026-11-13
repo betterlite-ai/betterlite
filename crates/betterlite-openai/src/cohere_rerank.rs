@@ -80,14 +80,15 @@ pub fn request_headers(
     let key = settings
         .resolve_api_key(api_key)
         .ok_or(CohereRerankError::MissingApiKey)?;
-    let mut headers = Headers::from([
-        (
-            "Authorization".to_owned(),
-            format!("Bearer {}", key.expose_secret()),
-        ),
-        ("accept".to_owned(), "application/json".to_owned()),
-        ("content-type".to_owned(), "application/json".to_owned()),
-    ]);
+    let bearer = format!("Bearer {}", key.expose_secret());
+    let mut headers = Headers::from(
+        [
+            ("Authorization", bearer.as_str()),
+            ("accept", "application/json"),
+            ("content-type", "application/json"),
+        ]
+        .map(|(name, value)| (name.to_owned(), value.to_owned())),
+    );
     headers.extend(caller.clone());
     Ok(headers)
 }
@@ -158,7 +159,6 @@ pub fn transform_rerank_request(
     Ok(body)
 }
 
-// the reply status is not checked here: Cohere's response transform reads only the body
 pub fn transform_rerank_response(
     status: u16,
     body: &[u8],
@@ -180,7 +180,6 @@ pub fn transform_rerank_response(
     }
 }
 
-// CohereError carries only the status and the message, so the response headers are dropped
 #[must_use]
 // ast-grep-ignore: no-one-line-functions
 pub fn get_error_class(
@@ -191,7 +190,6 @@ pub fn get_error_class(
     cohere_error(status_code, error_message)
 }
 
-// a key the map lacks reads as null, so an optional field decodes to None and a required one fails
 fn field<T: DeserializeOwned>(
     params: &RerankParams,
     name: &'static str,

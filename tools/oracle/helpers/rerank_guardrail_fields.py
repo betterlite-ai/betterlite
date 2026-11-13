@@ -21,7 +21,6 @@ class RerankHandler(Protocol):
 HANDLER: RerankHandler = CohereRerankHandler()
 
 
-# the handler only calls apply_guardrail, so this stands in for a real guardrail's check
 class ScriptedCheck:
     def __init__(self, texts: list[JsonValue] | None) -> None:
         self.texts = texts

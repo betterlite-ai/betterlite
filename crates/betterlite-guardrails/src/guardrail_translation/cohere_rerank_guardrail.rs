@@ -10,7 +10,6 @@ use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 
 mod tests;
 
-// LiteLLM's CohereRerankHandler scans both request strings and leaves documents to the corpus
 const SCANNED_FIELDS: [&str; 2] = ["query", "instruction"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,7 +18,6 @@ pub enum RerankCallType {
     Arerank,
 }
 
-// B037 converts these two names to its global call type when it fills the registry
 pub const GUARDRAIL_TRANSLATION_MAPPINGS: [(RerankCallType, CohereRerankHandler); 2] = [
     (RerankCallType::Rerank, CohereRerankHandler),
     (RerankCallType::Arerank, CohereRerankHandler),
@@ -76,7 +74,6 @@ impl CohereRerankHandler {
         Ok(())
     }
 
-    // LiteLLM's process_output_response logs and returns the response, because a rerank reply has no text
     pub fn process_output_response<G>(
         &self,
         response: GuardrailValue,

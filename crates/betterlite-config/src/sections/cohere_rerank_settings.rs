@@ -24,7 +24,6 @@ pub struct Settings {
 }
 
 impl Settings {
-    // LiteLLM's Cohere rerank reads the two environment aliases before the module-wide key
     #[must_use]
     pub fn resolve_api_key(&self, explicit: Option<&SecretString>) -> Option<SecretString> {
         if let Some(key) = explicit {
@@ -54,7 +53,6 @@ impl Section for Raw {
     }
 }
 
-// an empty environment string is unset, as the project's environment policy says for every value
 fn configured(value: Option<String>) -> Option<SecretString> {
     match value {
         Some(text) if !text.is_empty() => Some(SecretString::from(text)),
