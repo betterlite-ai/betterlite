@@ -35,8 +35,7 @@ pub fn initialize_typesafe(
     let name = guardrail_name.ok_or(ThirdPartyInitBError::MissingTypesafeName)?;
     let extra = &params.base.extra;
     let view = ParamsView::parse(extra)?;
-    let (relevance_threshold, min_chars_to_evaluate, max_result_chars_in_state) =
-        optional_tuning(&view)?;
+    let tuning = optional_tuning(&view)?;
     let sent = params
         .base
         .sent_fields()
@@ -51,9 +50,9 @@ pub fn initialize_typesafe(
         api_base: params.base.fields.api_base.clone(),
         api_key: params.base.fields.api_key.clone(),
         model: params.base.fields.model.clone(),
-        relevance_threshold,
-        min_chars_to_evaluate,
-        max_result_chars_in_state,
+        relevance_threshold: tuning.relevance_threshold,
+        min_chars_to_evaluate: tuning.min_chars_to_evaluate,
+        max_result_chars_in_state: tuning.max_result_chars_in_state,
         event_hook: checked_mode(&params.mode)?,
         default_on: params.base.fields.default_on.unwrap_or_default(),
         timeout: params.base.fields.timeout,
@@ -61,8 +60,14 @@ pub fn initialize_typesafe(
     })
 }
 
+struct TypeSafeTuning {
+    relevance_threshold: Option<f64>,
+    min_chars_to_evaluate: Option<i64>,
+    max_result_chars_in_state: Option<i64>,
+}
+
 // TypeSafeGuardrailOptionalParams validates these three in _optional_params before the class is built
-fn optional_tuning(view: &ParamsView<'_>) -> InitResult<(Option<f64>, Option<i64>, Option<i64>)> {
+fn optional_tuning(view: &ParamsView<'_>) -> InitResult<TypeSafeTuning> {
     let relevance_threshold = decode(
         "relevance_threshold",
         view.optional
@@ -93,11 +98,11 @@ fn optional_tuning(view: &ParamsView<'_>) -> InitResult<(Option<f64>, Option<i64
             name: "max_result_chars_in_state".to_owned(),
         });
     }
-    Ok((
+    Ok(TypeSafeTuning {
         relevance_threshold,
         min_chars_to_evaluate,
         max_result_chars_in_state,
-    ))
+    })
 }
 
 // LiteLLM's _coerce_event_hook turns every name in the mode into a GuardrailEventHooks member
