@@ -1,0 +1,17 @@
+kind: helper
+name: default-api-version
+call:
+  azure_endpoints:
+    default_api_version:
+      - params: {}
+      - api_version: "2024-02-01"
+        params: {max_retries: 5, timeout: 1.5}
+      - environment: {AZURE_API_VERSION: "2024-06-01"}
+      - environment: {AZURE_API_VERSION: ""}
+      - defaults: {default_max_retries: 7, azure_default_api_version: "2024-09-01"}
+      - is_async: true
+        session: shared
+      - api_base: https://x.openai.azure.com/openai/deployments/gpt
+        params: {timeout: 0.0}
+env: {}
+compare: {ignore: []}

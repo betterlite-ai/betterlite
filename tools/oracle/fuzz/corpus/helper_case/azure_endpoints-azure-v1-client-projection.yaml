@@ -1,0 +1,9 @@
+kind: helper
+name: azure-endpoints-azure-v1-client-projection-seed
+call:
+  azure_endpoints:
+    azure_v1_client_projection:
+      - api_version: v1
+        params: {azure_ad_token: seed-token}
+env: {}
+compare: {ignore: []}

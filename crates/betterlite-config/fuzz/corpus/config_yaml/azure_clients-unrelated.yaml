@@ -1,0 +1,3 @@
+litellm_settings:
+  AZURE_DEFAULT_API_VERSION: 2025-02-01-preview
+  DEFAULT_MAX_RETRIES_TYPO: 2
