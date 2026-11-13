@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::time::Duration;
 
-use betterlite_vertex::chirp_backend::policy::{Deliverable, Delivery, deliver, rotation_due};
+use betterlite_vertex::chirp_backend::policy::{Deliverable, deliver, rotation_due};
 use betterlite_vertex::chirp_stream::limits::{STREAM_DEADLINE_SECONDS, STREAM_ROTATION_SECONDS};
 use serde::Deserialize;
 use serde_json::json;
@@ -77,9 +77,9 @@ impl Helper for Op {
                 let mut discarded: BTreeSet<usize> =
                     input.discarded_turns.iter().copied().collect();
                 let outcome = match deliver(deliverable, &mut discarded) {
-                    Delivery::Delivered(event) => json!({ "kind": "delivered", "event": event }),
-                    Delivery::Suppressed => json!({ "kind": "suppressed" }),
-                    Delivery::Close(frame) => {
+                    Ok(Some(event)) => json!({ "kind": "delivered", "event": event }),
+                    Ok(None) => json!({ "kind": "suppressed" }),
+                    Err(frame) => {
                         json!({ "kind": "closed", "code": frame.code, "reason": frame.reason })
                     }
                 };
