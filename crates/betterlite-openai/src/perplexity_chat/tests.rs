@@ -71,6 +71,13 @@ fn provider_info_treats_an_empty_base_environment_as_unset() {
 }
 
 #[test]
+fn provider_info_skips_an_empty_explicit_key() {
+    let environment = environment(&[("PERPLEXITYAI_API_KEY", "env-key")]);
+    let (_, key) = provider_info(None, Some(&secret("")), &environment);
+    assert_eq!(key_text(key.as_ref()).as_deref(), Some("env-key"));
+}
+
+#[test]
 fn provider_info_prefers_the_explicit_key() {
     let environment = environment(&[("PERPLEXITYAI_API_KEY", "env-key")]);
     let (_, key) = provider_info(None, Some(&secret("explicit-key")), &environment);
