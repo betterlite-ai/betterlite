@@ -10,6 +10,9 @@ call:
       - {function: extensions, filename: null, allowed: [".pdf"], blocked: null}
       - {function: extensions, filename: ".env", allowed: [".pdf"], blocked: null}
       - {function: extensions, filename: "..", allowed: [".pdf"], blocked: null}
+      - {function: extensions, filename: null, allowed: null, blocked: null}
+      - {function: extensions, filename: "x", allowed: null, blocked: null}
+      - {function: extensions, filename: "x", allowed: [""], blocked: [""]}
       - {function: extensions, filename: "a.txt", allowed: [".pdf"], blocked: [".exe"]}
       - {function: extensions, filename: "a.EXE", allowed: [".pdf"], blocked: [".exe", ".sh"]}
 env: {}

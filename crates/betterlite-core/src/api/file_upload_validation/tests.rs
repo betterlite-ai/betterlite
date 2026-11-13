@@ -421,6 +421,386 @@ fn json_byte_compatibility_surrogates_and_duplicates() {
     assert!(batch_failure(duplicates, Some("x.jsonl")).is_none());
 }
 
+fn row_with_value(value: &[u8]) -> Vec<u8> {
+    let mut row = b"{\"custom_id\":".to_vec();
+    row.extend(value);
+    row.extend(b",\"method\":1,\"url\":1,\"body\":1}");
+    row
+}
+
+fn invalid_first_line() -> Option<BatchValidationFailure> {
+    Some(BatchValidationFailure::InvalidJsonLine { line_number: 1 })
+}
+
+#[rstest]
+#[case::every_escape(br#""\"\\\/\b\f\n\r\t\u0041\u00e9\ud800""#)]
+#[case::negative_infinity(b"-Infinity")]
+#[case::infinity(b"Infinity")]
+#[case::not_a_number(b"NaN")]
+#[case::zero(b"0")]
+#[case::negative_zero(b"-0")]
+#[case::negative(b"-12")]
+#[case::fraction(b"1.50")]
+#[case::exponent(b"1e5")]
+#[case::signed_exponent(b"1E+5")]
+#[case::negative_exponent(b"2.5e-3")]
+#[case::nested_array(b"[1, [2, []], {}]")]
+#[case::nested_object(br#"{"a": [true, false, null], "b": {}}"#)]
+#[case::spaced_array(b"[ 1 , 2 ]")]
+fn json_byte_compatibility_accepts_values(#[case] value: &[u8]) {
+    assert!(batch_failure(&row_with_value(value), Some("x.jsonl")).is_none());
+}
+
+#[rstest]
+#[case::double_minus(b"--1")]
+#[case::lone_minus(b"-")]
+#[case::minus_word(b"-Infinit")]
+#[case::plus_sign(b"+1")]
+#[case::leading_zero(b"01")]
+#[case::bare_point(b"1.")]
+#[case::bare_exponent(b"1e")]
+#[case::signed_bare_exponent(b"1e+")]
+#[case::lowercase_nan(b"Nan")]
+#[case::short_true(b"tru")]
+#[case::short_null(b"nul")]
+#[case::trailing_comma(b"[1,]")]
+#[case::missing_comma(b"[1 2]")]
+#[case::unclosed_array(b"[1")]
+#[case::member_without_value(br#"{"a"}"#)]
+#[case::object_trailing_comma(br#"{"a":1,}"#)]
+#[case::unterminated_string(br#""ab"#)]
+#[case::bad_escape(br#""\x""#)]
+#[case::short_unicode_escape(br#""\u12""#)]
+#[case::non_hex_unicode_escape(br#""\u12G4""#)]
+#[case::signed_unicode_escape(br#""\u+123""#)]
+#[case::control_character(b"\"a\x01\"")]
+fn json_byte_compatibility_rejects_values(#[case] value: &[u8]) {
+    let failure = batch_failure(&row_with_value(value), Some("x.jsonl"));
+    assert_eq!(failure, invalid_first_line());
+}
+
+#[rstest]
+#[case::trailing_text(b"{}x")]
+#[case::second_object(b"{}{}")]
+#[case::unclosed_object(b"{")]
+#[case::bare_word(b"abc")]
+fn json_byte_compatibility_rejects_broken_lines(#[case] source: &[u8]) {
+    assert_eq!(batch_failure(source, Some("x.jsonl")), invalid_first_line());
+}
+
+fn nested_arrays(levels: usize) -> Vec<u8> {
+    let mut value = b"[".repeat(levels);
+    value.extend(b"]".repeat(levels));
+    value
+}
+
+fn nested_objects(levels: usize) -> Vec<u8> {
+    let mut value = br#"{"a":"#.repeat(levels);
+    value.extend(b"1");
+    value.extend(b"}".repeat(levels));
+    value
+}
+
+#[rstest]
+#[case::at_the_cap(128, None)]
+#[case::over_the_cap(129, invalid_first_line())]
+fn json_byte_compatibility_depth_cap_for_arrays(
+    #[case] levels: usize,
+    #[case] expected: Option<BatchValidationFailure>,
+) {
+    let row = row_with_value(&nested_arrays(levels));
+    assert_eq!(batch_failure(&row, Some("x.jsonl")), expected);
+}
+
+#[rstest]
+#[case::at_the_cap(127, None)]
+#[case::over_the_cap(128, invalid_first_line())]
+fn json_byte_compatibility_depth_cap_for_objects(
+    #[case] levels: usize,
+    #[case] expected: Option<BatchValidationFailure>,
+) {
+    let row = row_with_value(&nested_objects(levels));
+    assert_eq!(batch_failure(&row, Some("x.jsonl")), expected);
+}
+
+#[rstest]
+#[case::at_the_cap(129, Some(BatchValidationFailure::LineNotObject { line_number: 1 }))]
+#[case::over_the_cap(130, invalid_first_line())]
+fn json_byte_compatibility_depth_cap_at_the_top(
+    #[case] levels: usize,
+    #[case] expected: Option<BatchValidationFailure>,
+) {
+    assert_eq!(
+        batch_failure(&nested_arrays(levels), Some("x.jsonl")),
+        expected
+    );
+}
+
+#[test]
+fn json_byte_compatibility_long_arrays_do_not_recurse() {
+    let mut value = b"[1".to_vec();
+    value.extend(b",1".repeat(400_000));
+    value.extend(b"]");
+    assert!(batch_failure(&row_with_value(&value), Some("x.jsonl")).is_none());
+}
+
+#[rstest]
+#[case::escaped_underscore(br#"{"custom\u005fid":1,"method":1,"url":1,"body":1}"#)]
+#[case::escaped_first_letter(br#"{"\u0063ustom_id":1,"method":1,"url":1,"body":1}"#)]
+#[case::escaped_inner_letter(br#"{"custom_id":1,"m\u0065thod":1,"url":1,"body":1}"#)]
+fn json_byte_compatibility_escaped_keys_count(#[case] source: &[u8]) {
+    assert!(batch_failure(source, Some("x.jsonl")).is_none());
+}
+
+#[rstest]
+#[case::raw_non_ascii_first(r#"{"é\u0063ustom_id":1,"method":1,"url":1,"body":1}"#)]
+#[case::escaped_non_ascii_first(r#"{"\u00e9\u0063ustom_id":1,"method":1,"url":1,"body":1}"#)]
+#[case::escaped_non_ascii_last(r#"{"custom_id\u00e9":1,"method":1,"url":1,"body":1}"#)]
+#[case::escape_at_the_ascii_edge(r#"{"custom_id\u0080":1,"method":1,"url":1,"body":1}"#)]
+fn json_byte_compatibility_non_ascii_keys_never_match(#[case] source: &str) {
+    let failure = batch_failure(source.as_bytes(), Some("x.jsonl"));
+    assert_eq!(
+        failure,
+        Some(BatchValidationFailure::MissingLineKey {
+            line_number: 1,
+            key: "custom_id",
+            line_shape: LineShape::OpenAi,
+        })
+    );
+}
+
+#[test]
+fn json_byte_compatibility_nested_keys_do_not_count() {
+    let source = br#"{"a":{"custom_id":1,"method":1,"url":1,"body":1}}"#;
+    assert_eq!(
+        batch_failure(source, Some("x.jsonl")),
+        Some(BatchValidationFailure::MissingLineKey {
+            line_number: 1,
+            key: "custom_id",
+            line_shape: LineShape::OpenAi,
+        })
+    );
+}
+
+#[rstest]
+#[case::lf(b"\n{", 2)]
+#[case::crlf(b"\r\n{", 2)]
+#[case::bare_cr(b"\r{", 2)]
+#[case::cr_cr(b"\r\r{", 3)]
+#[case::lf_cr(b"\n\r{", 3)]
+#[case::vertical_tab_is_blank(b"\x0b\n{", 2)]
+#[case::form_feed_is_blank(b"\x0c\n{", 2)]
+#[case::tab_is_blank(b"\t\n{", 2)]
+fn batch_line_failures_number_the_physical_lines(#[case] source: &[u8], #[case] line: usize) {
+    assert_eq!(
+        batch_failure(source, Some("x.jsonl")),
+        Some(BatchValidationFailure::InvalidJsonLine { line_number: line })
+    );
+}
+
+#[rstest]
+#[case::utf16_le(&[0xFF, 0xFE], false)]
+#[case::utf16_be(&[0xFE, 0xFF], true)]
+fn json_byte_compatibility_utf16_boms(#[case] bom: &[u8], #[case] big_endian: bool) {
+    let mut line = bom.to_vec();
+    for unit in OPENAI_ROW {
+        match big_endian {
+            true => line.extend([0, *unit]),
+            false => line.extend([*unit, 0]),
+        }
+    }
+    assert!(batch_failure(&line, Some("x.jsonl")).is_none());
+}
+
+#[rstest]
+#[case::utf16_le_sniffed(b"{\0}\0")]
+#[case::utf16_be_sniffed(b"\0{\0}")]
+#[case::utf32_le_sniffed(b"{\0\0\0}\0\0\0")]
+#[case::utf32_be_sniffed(b"\0\0\0{\0\0\0}")]
+fn json_byte_compatibility_sniffed_encodings(#[case] line: &[u8]) {
+    let failure = batch_failure(line, Some("x.jsonl")).unwrap();
+    assert!(matches!(
+        failure,
+        BatchValidationFailure::MissingLineKey {
+            key: "custom_id",
+            ..
+        }
+    ));
+}
+
+#[rstest]
+#[case::utf16_le_two_bytes(b"1\0")]
+#[case::utf16_be_two_bytes(b"\x001")]
+fn json_byte_compatibility_two_byte_encodings(#[case] line: &[u8]) {
+    assert_eq!(
+        batch_failure(line, Some("x.jsonl")),
+        Some(BatchValidationFailure::LineNotObject { line_number: 1 })
+    );
+}
+
+#[rstest]
+#[case::utf16_le_pair(b"{\0")]
+#[case::utf16_be_pair(b"\0{")]
+#[case::odd_utf16_length(b"\xff\xfe{\0}\0 ")]
+#[case::odd_utf32_length(b"\xff\xfe\0\0{\0\0\0}\0\0\0 ")]
+#[case::bom_only(b"\xef\xbb\xbf")]
+fn json_byte_compatibility_rejects_truncated_encodings(#[case] line: &[u8]) {
+    assert_eq!(batch_failure(line, Some("x.jsonl")), invalid_first_line());
+}
+
+#[rstest]
+#[case::overlong_two_byte(b"\"\xc0\x80\"")]
+#[case::lone_continuation(b"\"\x80\"")]
+#[case::truncated_three_byte(b"\"\xe2\x82\"")]
+#[case::bad_continuation(b"\"\xe2\x28\xa1\"")]
+#[case::overlong_three_byte(b"\"\xe0\x80\x80\"")]
+#[case::above_unicode(b"\"\xf4\x90\x80\x80\"")]
+#[case::overlong_four_byte(b"\"\xf0\x80\x80\x80\"")]
+#[case::five_byte_lead(b"\"\xf8\x88\x80\x80\x80\"")]
+fn json_byte_compatibility_rejects_malformed_utf8(#[case] value: &[u8]) {
+    let failure = batch_failure(&row_with_value(value), Some("x.jsonl"));
+    assert_eq!(failure, invalid_first_line());
+}
+
+#[rstest]
+#[case::two_byte(b"\"\xc2\x80\"")]
+#[case::three_byte(b"\"\xe2\x82\xac\"")]
+#[case::three_byte_low_lead(b"\"\xe0\xa0\x80\"")]
+#[case::encoded_surrogate(b"\"\xed\xa0\x80\"")]
+#[case::four_byte(b"\"\xf0\x9f\x98\x80\"")]
+#[case::four_byte_middle_lead(b"\"\xf1\x80\x80\x80\"")]
+#[case::highest_scalar(b"\"\xf4\x8f\xbf\xbf\"")]
+fn json_byte_compatibility_accepts_wellformed_utf8(#[case] value: &[u8]) {
+    assert!(batch_failure(&row_with_value(value), Some("x.jsonl")).is_none());
+}
+
+#[rstest]
+#[case::highest_scalar(0x0010_FFFF, None)]
+#[case::above_unicode(0x0011_0000, invalid_first_line())]
+fn json_byte_compatibility_utf32_limits(
+    #[case] scalar: u32,
+    #[case] expected: Option<BatchValidationFailure>,
+) {
+    let mut line = vec![0x00, 0x00, 0xFE, 0xFF];
+    for unit in b"{\"custom_id\":\"" {
+        line.extend(u32::from(*unit).to_be_bytes());
+    }
+    line.extend(scalar.to_be_bytes());
+    for unit in b"\",\"method\":1,\"url\":1,\"body\":1}" {
+        line.extend(u32::from(*unit).to_be_bytes());
+    }
+    assert_eq!(batch_failure(&line, Some("x.jsonl")), expected);
+}
+
+#[rstest]
+#[case::latin1_range(0x00E9)]
+#[case::above_latin1(0x20AC)]
+#[case::highest_byte(0x00FF)]
+#[case::first_non_ascii(0x0080)]
+#[case::low_byte_is_a_letter(0x0141)]
+fn json_byte_compatibility_utf16_non_ascii_values(#[case] unit: u16) {
+    let mut line = vec![0xFF, 0xFE];
+    for byte in b"{\"custom_id\":\"" {
+        line.extend(u16::from(*byte).to_le_bytes());
+    }
+    line.extend(unit.to_le_bytes());
+    for byte in b"\",\"method\":1,\"url\":1,\"body\":1}" {
+        line.extend(u16::from(*byte).to_le_bytes());
+    }
+    assert!(batch_failure(&line, Some("x.jsonl")).is_none());
+}
+
+#[test]
+fn extension_policy_missing_list_never_fails() {
+    assert!(check_extension(None, None, ExtensionRule::Allowed).is_none());
+    assert!(check_extension(Some("x"), None, ExtensionRule::Allowed).is_none());
+    assert!(check_extension(Some(".env"), None, ExtensionRule::Allowed).is_none());
+    assert!(check_extension(None, None, ExtensionRule::Blocked).is_none());
+}
+
+#[test]
+fn extension_policy_empty_entries_never_match() {
+    let blank = names(&[".pdf", ""]);
+    assert!(check_extension(Some("x"), Some(&blank), ExtensionRule::Blocked).is_none());
+    assert!(check_extension(None, Some(&blank), ExtensionRule::Blocked).is_none());
+    assert!(check_extension(Some("x.png"), Some(&blank), ExtensionRule::Blocked).is_none());
+    assert_eq!(
+        check_extension(Some("x"), Some(&blank), ExtensionRule::Allowed),
+        Some(UploadValidationFailure::ExtensionNotAllowed {
+            extension: String::new(),
+        })
+    );
+}
+
+#[rstest]
+#[case::first_entry(&[".pdf", ".txt"])]
+#[case::last_entry(&[".txt", ".pdf"])]
+#[case::middle_entry(&[".txt", ".pdf", ".md"])]
+fn extension_policy_finds_any_listed_entry(#[case] list: &[&str]) {
+    let list = names(list);
+    assert!(check_extension(Some("a.pdf"), Some(&list), ExtensionRule::Allowed).is_none());
+    assert_eq!(
+        check_extension(Some("a.pdf"), Some(&list), ExtensionRule::Blocked),
+        Some(UploadValidationFailure::BlockedExtension {
+            extension: ".pdf".to_owned(),
+        })
+    );
+}
+
+#[rstest]
+#[case::plain("report.pdf", ".pdf")]
+#[case::upper("REPORT.PDF", ".pdf")]
+#[case::last_suffix("archive.tar.gz", ".gz")]
+#[case::directory("dir/report.pdf", ".pdf")]
+#[case::backslash_directory(r"dir\report.pdf", ".pdf")]
+#[case::dotted_directory("a.b/report", "")]
+#[case::hidden(".env", "")]
+#[case::trailing_dot("report.", "")]
+#[case::only_dot("a.b.", "")]
+fn extension_policy_suffix_rules(#[case] filename: &str, #[case] extension: &str) {
+    let failure = check_extension(Some(filename), Some(&[]), ExtensionRule::Allowed);
+    assert_eq!(
+        failure,
+        Some(UploadValidationFailure::ExtensionNotAllowed {
+            extension: extension.to_owned(),
+        })
+    );
+}
+
+#[rstest]
+#[case::exactly_one_mib(1_048_576, 1, false)]
+#[case::one_byte_over(1_048_577, 1, true)]
+#[case::two_mib_boundary(2_097_152, 2, false)]
+#[case::two_mib_over(2_097_153, 2, true)]
+#[case::zero_cap_is_off(10, 0, false)]
+fn upload_size_boundaries_per_megabyte(
+    #[case] length: usize,
+    #[case] limit: i64,
+    #[case] rejected: bool,
+) {
+    let data = vec![b'x'; length];
+    assert_eq!(upload_size(&data, Some(limit)).is_some(), rejected);
+}
+
+#[rstest]
+#[case::exact_tenth(1_048_577, "1.0")]
+#[case::rounds_up(1_153_433, "1.1")]
+#[case::below_half_tenth(1_100_000, "1.0")]
+#[case::above_half_tenth(1_105_000, "1.1")]
+#[case::tie_to_even_down(1_310_720, "1.2")]
+#[case::tie_to_even_up(1_835_008, "1.8")]
+#[case::large(10_485_760, "10.0")]
+fn upload_size_boundaries_message_rounding(#[case] length: usize, #[case] shown: &str) {
+    let data = vec![b'x'; length];
+    let failure = upload_size(&data, Some(1)).unwrap();
+    assert_eq!(
+        failure.fields().message,
+        format!(
+            "Uploaded file exceeds the configured max_file_size_mb of 1 MB (read stopped at {shown} MB). The file was not forwarded to the provider."
+        )
+    );
+}
+
 #[test]
 fn replays_corpus() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/file_upload_validation");

@@ -86,8 +86,9 @@ pub fn check_extension(
     extensions: Option<&[String]>,
     rule: ExtensionRule,
 ) -> Option<UploadValidationFailure> {
+    let extensions = extensions?;
     let extension = normalized_extension(filename);
-    let listed = !extension.is_empty() && listed(extensions?, &extension);
+    let listed = !extension.is_empty() && listed(extensions, &extension);
     match rule {
         ExtensionRule::Allowed if !listed => {
             Some(UploadValidationFailure::ExtensionNotAllowed { extension })

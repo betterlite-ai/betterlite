@@ -109,16 +109,6 @@ impl Parser<'_> {
             }
         }
     }
-    fn element(&mut self, depth: usize) -> Option<()> {
-        self.skip_whitespace();
-        self.value(depth)?;
-        self.skip_whitespace();
-        match self.next_unit()? {
-            b',' => self.element(depth),
-            b']' => Some(()),
-            _ => None,
-        }
-    }
     fn array(&mut self, depth: usize) -> Option<()> {
         drop(self.next_unit()?);
         self.skip_whitespace();
@@ -126,12 +116,20 @@ impl Parser<'_> {
             drop(self.next_unit()?);
             return Some(());
         }
-        self.element(depth.saturating_add(1))
+        loop {
+            self.skip_whitespace();
+            self.value(depth.saturating_add(1))?;
+            self.skip_whitespace();
+            match self.next_unit()? {
+                b',' => {}
+                b']' => return Some(()),
+                _ => return None,
+            }
+        }
     }
     fn signed(&mut self) -> Option<()> {
-        drop(self.next_unit()?);
-        if self.rest.starts_with(b"Infinity") {
-            self.rest = self.rest.get("Infinity".len()..)?;
+        if let Some(rest) = self.rest.strip_prefix(b"-Infinity") {
+            self.rest = rest;
             return Some(());
         }
         self.number()
@@ -205,31 +203,30 @@ impl Parser<'_> {
     }
     fn escape(&mut self, text: &mut String, ascii: bool) -> Option<bool> {
         let code = match self.next_unit()? {
-            b'"' => 0x22,
-            b'\\' => 0x5C,
-            b'/' => 0x2F,
-            b'b' => 0x08,
-            b'f' => 0x0C,
-            b'n' => 0x0A,
-            b'r' => 0x0D,
-            b't' => 0x09,
-            b'u' => {
-                let mut value = 0u32;
-                for _ in 0..4 {
-                    let digit = char::from(self.next_unit()?).to_digit(16)?;
-                    value = value.checked_mul(16)?.checked_add(digit)?;
-                }
-                if ascii && value < 0x80 {
-                    text.push(char::from_u32(value)?);
-                    return Some(true);
-                }
-                return Some(false);
-            }
+            b'"' => '"',
+            b'\\' => '\\',
+            b'/' => '/',
+            b'b' => '\u{8}',
+            b'f' => '\u{c}',
+            b'n' => '\n',
+            b'r' => '\r',
+            b't' => '\t',
+            b'u' => self.unicode()?,
             _ => return None,
         };
-        if ascii {
-            text.push(char::from(code));
+        let keep = ascii && code.is_ascii();
+        if keep {
+            text.push(code);
         }
-        Some(ascii)
+        Some(keep)
+    }
+    fn unicode(&mut self) -> Option<char> {
+        let hex = self.rest.get(..4)?;
+        if !hex.iter().all(u8::is_ascii_hexdigit) {
+            return None;
+        }
+        let value = u32::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok()?;
+        self.rest = self.rest.get(4..)?;
+        Some(char::from_u32(value).unwrap_or(char::REPLACEMENT_CHARACTER))
     }
 }

@@ -7,6 +7,7 @@ use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::file_upload_validation::batch::{
     BatchValidationFailure, check_batch_file_upload,
 };
+use betterlite_core::api::file_upload_validation::error::FileUploadValidationError;
 use betterlite_core::api::file_upload_validation::failure::{FailureFields, exception};
 use betterlite_core::api::file_upload_validation::line_shape::LineShape;
 use betterlite_core::api::file_upload_validation::source::FileBody;
@@ -102,7 +103,10 @@ fn value_error(error: &dyn std::fmt::Display) -> Box<HelperError> {
         message: error.to_string(),
     })
 }
-fn failure_json(fields: FailureFields) -> Value {
+fn failure_json(fields: Option<FailureFields>) -> Value {
+    let Some(fields) = fields else {
+        return Value::Null;
+    };
     let status = fields.status;
     let exception = exception(fields);
     json!({
@@ -113,16 +117,24 @@ fn failure_json(fields: FailureFields) -> Value {
         "status": status,
     })
 }
-fn upload_failure(failure: Option<&UploadValidationFailure>) -> Value {
-    match failure {
-        None => Value::Null,
-        Some(failure) => failure_json(failure.fields()),
-    }
-}
-fn batch_failure(failure: Option<&BatchValidationFailure>) -> Value {
-    match failure {
-        None => Value::Null,
-        Some(failure) => failure_json(failure.fields()),
+fn with_source<T>(
+    source: &Source,
+    check: impl FnOnce(&mut FileBody<'_>) -> Result<T, FileUploadValidationError>,
+) -> Result<(T, Value), Box<HelperError>> {
+    let data = decode_source(source)?;
+    match source {
+        Source::Bytes { .. } => {
+            let outcome =
+                check(&mut FileBody::Bytes(&data)).map_err(|error| value_error(&error))?;
+            Ok((outcome, Value::Null))
+        }
+        Source::Seekable { position, .. } => {
+            let mut cursor = Cursor::new(data);
+            cursor.set_position(*position);
+            let outcome =
+                check(&mut FileBody::Seekable(&mut cursor)).map_err(|error| value_error(&error))?;
+            Ok((outcome, json!(cursor.position())))
+        }
     }
 }
 fn decode_source(source: &Source) -> Result<Vec<u8>, Box<HelperError>> {
@@ -171,7 +183,9 @@ fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
     match call {
         Call::UnsafeFilename { filename } => {
             let failure = check_unsafe_filename(filename.as_deref());
-            Ok(json!({ "failure": upload_failure(failure.as_ref()) }))
+            Ok(
+                json!({ "failure": failure_json(failure.as_ref().map(UploadValidationFailure::fields)) }),
+            )
         }
         Call::Extensions {
             filename,
@@ -189,39 +203,21 @@ fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
                 ExtensionRule::Blocked,
             );
             Ok(json!({
-                "allowed": upload_failure(allowed.as_ref()),
-                "blocked": upload_failure(blocked.as_ref()),
+                "allowed": failure_json(allowed.as_ref().map(UploadValidationFailure::fields)),
+                "blocked": failure_json(blocked.as_ref().map(UploadValidationFailure::fields)),
             }))
         }
         Call::UploadSize {
             source,
             max_file_size_mb,
         } => {
-            let data = decode_source(source)?;
-            match source {
-                Source::Bytes { .. } => {
-                    let mut body = FileBody::Bytes(&data);
-                    let failure = check_upload_file_size(&mut body, *max_file_size_mb)
-                        .map_err(|error| value_error(&error))?;
-                    Ok(json!({
-                        "failure": upload_failure(failure.as_ref()),
-                        "position": Value::Null,
-                    }))
-                }
-                Source::Seekable { position, .. } => {
-                    let mut cursor = Cursor::new(data);
-                    cursor.set_position(*position);
-                    let outcome = {
-                        let mut body = FileBody::Seekable(&mut cursor);
-                        check_upload_file_size(&mut body, *max_file_size_mb)
-                    };
-                    let failure = outcome.map_err(|error| value_error(&error))?;
-                    Ok(json!({
-                        "failure": upload_failure(failure.as_ref()),
-                        "position": cursor.position(),
-                    }))
-                }
-            }
+            let (failure, position) = with_source(source, |body| {
+                check_upload_file_size(body, *max_file_size_mb)
+            })?;
+            Ok(json!({
+                "failure": failure_json(failure.as_ref().map(UploadValidationFailure::fields)),
+                "position": position,
+            }))
         }
         Call::Batch {
             filename,
@@ -229,44 +225,19 @@ fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
             max_batch_file_size_mb,
             line_shape,
         } => {
-            let data = decode_source(source)?;
-            let shape = line_shape.shape();
-            match source {
-                Source::Bytes { .. } => {
-                    let mut body = FileBody::Bytes(&data);
-                    let failure = check_batch_file_upload(
-                        filename.as_deref(),
-                        &mut body,
-                        *max_batch_file_size_mb,
-                        shape,
-                        ApiLimits::default(),
-                    )
-                    .map_err(|error| value_error(&error))?;
-                    Ok(json!({
-                        "failure": batch_failure(failure.as_ref()),
-                        "position": Value::Null,
-                    }))
-                }
-                Source::Seekable { position, .. } => {
-                    let mut cursor = Cursor::new(data);
-                    cursor.set_position(*position);
-                    let outcome = {
-                        let mut body = FileBody::Seekable(&mut cursor);
-                        check_batch_file_upload(
-                            filename.as_deref(),
-                            &mut body,
-                            *max_batch_file_size_mb,
-                            shape,
-                            ApiLimits::default(),
-                        )
-                    };
-                    let failure = outcome.map_err(|error| value_error(&error))?;
-                    Ok(json!({
-                        "failure": batch_failure(failure.as_ref()),
-                        "position": cursor.position(),
-                    }))
-                }
-            }
+            let (failure, position) = with_source(source, |body| {
+                check_batch_file_upload(
+                    filename.as_deref(),
+                    body,
+                    *max_batch_file_size_mb,
+                    line_shape.shape(),
+                    ApiLimits::default(),
+                )
+            })?;
+            Ok(json!({
+                "failure": failure_json(failure.as_ref().map(BatchValidationFailure::fields)),
+                "position": position,
+            }))
         }
         Call::Settings {
             max_file_size_mb,
