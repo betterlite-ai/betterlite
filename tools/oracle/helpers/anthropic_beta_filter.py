@@ -65,7 +65,9 @@ NATIVE_BETAS: Final = cast(NativeUpdater, AnthropicMessagesConfig._update_header
 
 
 class FixtureConfig(dict[str, Json]):
-    def load(self, _url: str) -> dict[str, Json]:
+    def load(self, url: str) -> dict[str, Json]:
+        # the pinned loader reads the URL only to fetch the config the case already supplies
+        del url
         return dict(self)
 
 
