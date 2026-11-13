@@ -10,7 +10,6 @@ use aws_smithy_eventstream::frame::{read_message_from, write_message_to};
 use aws_smithy_types::event_stream::{Header, HeaderValue, Message};
 use aws_smithy_types::str_bytes::StrBytes;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use bytes::BytesMut;
 
 use super::frames::{Frame, ParsedStream, parse_event_stream, rebuild_event_stream};
 use super::groups::{GroupKey, group_texts, redistribute};
@@ -27,9 +26,9 @@ fn raw_frame(headers: &[(&str, &str)], payload: &[u8]) -> Vec<u8> {
         );
         message = message.add_header(header);
     }
-    let mut buffer = BytesMut::new();
+    let mut buffer = Vec::new();
     write_message_to(&message, &mut buffer).expect("writes a frame");
-    buffer.to_vec()
+    buffer
 }
 
 fn delta_frame(delta: &str) -> Vec<u8> {
