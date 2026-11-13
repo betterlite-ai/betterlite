@@ -1,0 +1,11 @@
+task: B3750
+deviations:
+  - what: AIM rejections carry betterlite's own messages, not LiteLLM's wording.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status 400, type invalid_request_error and the same code unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aim/aim.py#L213-L229
+  - what: A block action whose response has no analysis_result still raises the 400 rejection instead of failing with a 500.
+    why: LiteLLM reads analysis_result["policy_drill_down"] before raising, so a missing block fails with a KeyError that no working Aim setup relies on; betterlite keeps the rejection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aim/aim.py#L224-L229
+  - what: Each Aim websocket frame wait is bounded by the guardrail timeout, and the handshake by ten seconds.
+    why: LiteLLM's websockets client waits forever for a frame after the handshake, which a stalled Aim connection turns into a hung request; betterlite treats the wait as a timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/aim/aim.py#L430-L447
