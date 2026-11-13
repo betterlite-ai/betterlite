@@ -1,0 +1,58 @@
+kind: helper
+name: batch-provider-cancel-openai-seed
+call:
+  batch_provider_cancel:
+    input:
+      cancel:
+        batch_id: batch_1
+        model: null
+        provider: openai
+        extra_headers: null
+        extra_body: null
+        params:
+          api_base: null
+          api_key: null
+          api_version: null
+          organization: null
+          vertex_project: null
+          vertex_location: null
+          vertex_credentials: null
+          azure_ad_token: null
+          aws_region_name: null
+          aws_access_key_id: null
+          aws_secret_access_key: null
+          aws_session_token: null
+          timeout: null
+          request_timeout: null
+          max_retries: null
+        call: {async: {model_in_kwargs: null}}
+    settings: null
+    env: {}
+    now: 0
+    script:
+      batch:
+        id: batch_1
+        completion_window: 24h
+        created_at: 1704067200
+        endpoint: /v1/chat/completions
+        input_file_id: file_1
+        object: batch
+        status: cancelling
+        cancelled_at: null
+        cancelling_at: null
+        completed_at: null
+        error_file_id: null
+        errors: null
+        expired_at: null
+        expires_at: null
+        failed_at: null
+        finalizing_at: null
+        in_progress_at: null
+        metadata: null
+        model: null
+        output_file_id: null
+        request_counts: null
+        usage: null
+      error: null
+env: {}
+compare: {ignore: []}

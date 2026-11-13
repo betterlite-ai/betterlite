@@ -1,0 +1,11 @@
+task: B1038
+deviations:
+  - what: >-
+      An async-invoke status answer without invocationArn or modelArn is rejected when the typed
+      record is decoded, while LiteLLM reads both keys unconditionally and fails the request with a
+      KeyError-driven 500.
+    why: >-
+      The typed record names the two fields the normalizer copies into the batch, so a response
+      that lacks them fails where it enters with an error naming the field instead of a bare 500.
+      AWS GetAsyncInvoke always returns both keys, so no working setup relies on the old failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L1154-L1170

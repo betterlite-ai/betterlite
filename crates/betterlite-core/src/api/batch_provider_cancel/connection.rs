@@ -1,0 +1,235 @@
+use std::num::ParseFloatError;
+
+use betterlite_config::sections::batch_provider_cancel::Settings;
+use secrecy::{ExposeSecret as _, SecretString};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+use super::{CancelBatchCall, CancelProvider};
+
+pub const DEFAULT_TIMEOUT_SECONDS: f64 = 600.0;
+pub const DEFAULT_OPENAI_BASE: &str = "https://api.openai.com/v1";
+
+// the kwargs cancel_batch reads through GenericLiteLLMParams and get_litellm_params
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct CancelParams {
+    pub api_base: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub api_version: Option<String>,
+    pub organization: Option<String>,
+    pub vertex_project: Option<String>,
+    pub vertex_location: Option<String>,
+    pub vertex_credentials: Option<SecretString>,
+    pub azure_ad_token: Option<SecretString>,
+    pub aws_region_name: Option<String>,
+    pub aws_access_key_id: Option<String>,
+    pub aws_secret_access_key: Option<SecretString>,
+    pub aws_session_token: Option<SecretString>,
+    pub timeout: Option<TimeoutValue>,
+    pub request_timeout: Option<f64>,
+    pub max_retries: Option<i64>,
+}
+
+// GenericLiteLLMParams.timeout declares float | str | httpx.Timeout
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum TimeoutValue {
+    Seconds(f64),
+    Text(String),
+    Structured(StructuredTimeout),
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct StructuredTimeout {
+    pub connect: Option<f64>,
+    pub read: Option<f64>,
+    pub write: Option<f64>,
+    pub pool: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum CancelTimeout {
+    Seconds(f64),
+    Structured(StructuredTimeout),
+}
+
+#[derive(Debug, Error)]
+pub enum TimeoutValueError {
+    #[error("the timeout {value} is not a number of seconds")]
+    Invalid {
+        value: String,
+        #[source]
+        source: ParseFloatError,
+    },
+}
+
+// supports_httpx_timeout names openai, azure and bedrock; every other provider reads the timeout's read value
+pub const fn supports_httpx_timeout(provider: &CancelProvider) -> bool {
+    matches!(
+        provider,
+        CancelProvider::Openai | CancelProvider::Azure | CancelProvider::Bedrock
+    )
+}
+
+#[must_use]
+pub fn resolve_timeout(call: &CancelBatchCall) -> Result<CancelTimeout, TimeoutValueError> {
+    let configured = match &call.params.timeout {
+        Some(value) => Some(timeout_from(value)?),
+        None => call.params.request_timeout.map(CancelTimeout::Seconds),
+    };
+    let timeout = configured.unwrap_or(CancelTimeout::Seconds(DEFAULT_TIMEOUT_SECONDS));
+    match timeout {
+        // httpx.Timeout.read or 600: a structured timeout a provider cannot take collapses to its read value
+        CancelTimeout::Structured(structured) if !supports_httpx_timeout(&call.provider) => Ok(
+            CancelTimeout::Seconds(structured.read.unwrap_or(DEFAULT_TIMEOUT_SECONDS)),
+        ),
+        other => Ok(other),
+    }
+}
+
+fn timeout_from(value: &TimeoutValue) -> Result<CancelTimeout, TimeoutValueError> {
+    match value {
+        TimeoutValue::Seconds(seconds) => Ok(CancelTimeout::Seconds(*seconds)),
+        TimeoutValue::Structured(structured) => Ok(CancelTimeout::Structured(*structured)),
+        TimeoutValue::Text(text) => text
+            .trim()
+            .parse::<f64>()
+            .map(CancelTimeout::Seconds)
+            .map_err(|source| TimeoutValueError::Invalid {
+                value: text.clone(),
+                source,
+            }),
+    }
+}
+
+#[must_use]
+pub fn openai_base(params: &CancelParams, settings: &Settings) -> String {
+    first_text(&[
+        params.api_base.as_deref(),
+        settings.api_base.as_deref(),
+        settings.openai_base_url.as_deref(),
+        settings.openai_api_base.as_deref(),
+    ])
+    .unwrap_or(DEFAULT_OPENAI_BASE)
+    .to_owned()
+}
+
+#[must_use]
+pub fn openai_api_key<'value>(
+    params: &'value CancelParams,
+    settings: &'value Settings,
+) -> Option<&'value SecretString> {
+    first_secret(&[
+        params.api_key.as_ref(),
+        settings.api_key.as_ref(),
+        settings.openai_key.as_ref(),
+        settings.openai_api_key.as_ref(),
+    ])
+}
+
+#[must_use]
+pub fn openai_organization<'value>(
+    params: &'value CancelParams,
+    settings: &'value Settings,
+) -> Option<&'value str> {
+    first_text(&[
+        params.organization.as_deref(),
+        settings.organization.as_deref(),
+        settings.openai_organization.as_deref(),
+    ])
+}
+
+#[must_use]
+pub fn azure_base<'value>(
+    params: &'value CancelParams,
+    settings: &'value Settings,
+) -> Option<&'value str> {
+    first_text(&[
+        params.api_base.as_deref(),
+        settings.api_base.as_deref(),
+        settings.azure_api_base.as_deref(),
+    ])
+}
+
+#[must_use]
+pub fn azure_version<'value>(
+    params: &'value CancelParams,
+    settings: &'value Settings,
+) -> Option<&'value str> {
+    first_text(&[
+        params.api_version.as_deref(),
+        settings.api_version.as_deref(),
+        settings.azure_api_version.as_deref(),
+    ])
+}
+
+#[must_use]
+pub fn azure_api_key<'value>(
+    params: &'value CancelParams,
+    settings: &'value Settings,
+) -> Option<&'value SecretString> {
+    first_secret(&[
+        params.api_key.as_ref(),
+        settings.api_key.as_ref(),
+        settings.azure_key.as_ref(),
+        settings.azure_openai_api_key.as_ref(),
+        settings.azure_api_key.as_ref(),
+    ])
+}
+
+#[must_use]
+pub fn vertex_project<'value>(
+    params: &'value CancelParams,
+    settings: &'value Settings,
+) -> Option<&'value str> {
+    first_text(&[
+        params.vertex_project.as_deref(),
+        settings.vertex_project.as_deref(),
+        settings.vertexai_project.as_deref(),
+    ])
+}
+
+#[must_use]
+pub fn vertex_location<'value>(
+    params: &'value CancelParams,
+    settings: &'value Settings,
+) -> Option<&'value str> {
+    first_text(&[
+        params.vertex_location.as_deref(),
+        settings.vertex_location.as_deref(),
+        settings.vertexai_location.as_deref(),
+    ])
+}
+
+#[must_use]
+pub fn vertex_credentials<'value>(
+    params: &'value CancelParams,
+    settings: &'value Settings,
+) -> Option<&'value SecretString> {
+    first_secret(&[
+        params.vertex_credentials.as_ref(),
+        settings.vertexai_credentials.as_ref(),
+    ])
+}
+
+// LiteLLM's `a or b or c` chains treat an empty string as unset
+fn first_text<'value>(candidates: &[Option<&'value str>]) -> Option<&'value str> {
+    candidates
+        .iter()
+        .copied()
+        .flatten()
+        .find(|value| !value.is_empty())
+}
+
+fn first_secret<'value>(
+    candidates: &[Option<&'value SecretString>],
+) -> Option<&'value SecretString> {
+    candidates
+        .iter()
+        .copied()
+        .flatten()
+        .find(|value| !value.expose_secret().is_empty())
+}

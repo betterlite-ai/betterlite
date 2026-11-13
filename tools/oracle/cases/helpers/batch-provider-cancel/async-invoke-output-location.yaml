@@ -1,0 +1,20 @@
+kind: helper
+name: batch-provider-async-invoke-output-location
+call:
+  batch_provider_cancel:
+    input:
+      async_invoke:
+        invocationArn: "arn:aws:bedrock:us-east-1:123456789012:async-invoke/ghi789"
+        modelArn: "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
+        status: in_progress
+        failureMessage: ""
+        outputDataConfig: null
+        submitTime: "2024-03-01T00:00:00Z"
+        lastModifiedTime: "2024-03-01T00:00:10Z"
+        endTime: null
+    settings: null
+    env: {}
+    now: 0
+    script: {batch: null, error: null}
+env: {}
+compare: {ignore: []}

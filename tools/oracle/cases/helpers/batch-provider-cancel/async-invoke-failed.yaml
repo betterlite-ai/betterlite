@@ -1,0 +1,20 @@
+kind: helper
+name: batch-provider-async-invoke-failed
+call:
+  batch_provider_cancel:
+    input:
+      async_invoke:
+        invocationArn: "arn:aws:bedrock:us-east-1:123456789012:async-invoke/def456"
+        modelArn: "arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0"
+        status: Failed
+        failureMessage: the invocation did not finish
+        outputDataConfig: null
+        submitTime: "2024-02-01T00:00:00Z"
+        lastModifiedTime: "2024-02-01T00:00:30Z"
+        endTime: "2024-02-01T00:05:00Z"
+    settings: null
+    env: {}
+    now: 0
+    script: {batch: null, error: null}
+env: {}
+compare: {ignore: []}
