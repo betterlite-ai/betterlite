@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 
-use betterlite_error::facts::presence::Field;
 use betterlite_vertex::genai::genai_contract::config::{
     BaseGenerateContentConfig, EnvironmentRequest, GenerateContentRequest, ResponseHeaders,
     ResponseTransform,
@@ -82,22 +81,8 @@ fn construct(record: Record, fields: &Value) -> Result<Value, Box<HelperError>> 
         }
         Record::Request => {
             let request: GenerateContentRequestDict = serde_json::from_value(fields.clone())?;
-            Ok(json!({
-                "value": serde_json::to_value(&request)?,
-                "generation_config": presence(&request.generation_config)?,
-                "tools": presence(&request.tools)?,
-            }))
+            Ok(json!({ "value": serde_json::to_value(&request)? }))
         }
-    }
-}
-
-fn presence<T>(field: &Field<T>) -> Result<Value, Box<HelperError>>
-where
-    T: serde::Serialize,
-{
-    match field {
-        Field::Missing | Field::Null => Ok(Value::Null),
-        Field::Value(value) => Ok(serde_json::to_value(value)?),
     }
 }
 
