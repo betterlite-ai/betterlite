@@ -121,14 +121,14 @@ fn replies(probes: &[Probe]) -> HelperResult {
             text: body,
         };
         match transform_response(&reply, now, &mut state, &env) {
-            Ok(transformed) => results.push(reply_value(&transformed, &state)),
+            Ok(transformed) => results.push(reply_value(&transformed, &state, now)),
             Err(_failure) => results.push(json!({ "error": status })),
         }
     }
     Ok(Value::Array(results))
 }
 
-fn reply_value(transformed: &ResponsesReply, state: &LoggingState) -> Value {
+fn reply_value(transformed: &ResponsesReply, state: &LoggingState, now: i64) -> Value {
     let (id, created_at) = match &transformed.response {
         ReplyBody::Typed(response) => (Value::String(response.id.clone()), response.created_at),
         ReplyBody::Lax(fields) => (
@@ -141,6 +141,11 @@ fn reply_value(transformed: &ResponsesReply, state: &LoggingState) -> Value {
                 .and_then(|given| given.as_i64())
                 .unwrap_or_default(),
         ),
+    };
+    let created_at = if created_at == now {
+        Value::String(String::from("now"))
+    } else {
+        Value::from(created_at)
     };
     let details = &state.model_call_details;
     let recorded = |name: &str| {

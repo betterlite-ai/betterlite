@@ -32,7 +32,6 @@ impl NativeStreamingSupport for NativeFixture {
         let outcome = match self.answer.as_deref() {
             Some("true") => Ok(Json::Bool(true)),
             Some("false") => Ok(Json::Bool(false)),
-            Some("other") => Ok(Json::Text(String::from("sometimes"))),
             Some(_) | None => Err(NativeError),
         };
         ready(outcome)

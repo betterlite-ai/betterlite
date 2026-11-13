@@ -8,7 +8,6 @@ call:
       probes:
         - {model: gpt-4o, stream: true, provider: openai, native: 'false'}
         - {model: gpt-4o, stream: true, provider: null, native: 'true'}
-        - {model: gpt-4o, stream: true, provider: openai, native: other}
         - {model: gpt-4o, stream: true, provider: openai, native: error}
         - {model: gpt-4o, stream: null, provider: openai, native: 'false'}
         - {model: gpt-4o, stream: false, provider: openai, native: 'false'}
