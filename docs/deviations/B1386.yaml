@@ -1,0 +1,28 @@
+task: B1386
+deviations:
+  - what: >-
+      A buffered response object whose content, parts, part or actions/state_delta has a shape the source
+      cannot index (content null, parts null, a part that is not an object, a text value that is not a
+      string) contributes no text; LiteLLM raises VertexAgentEngineError carrying the raw status, which is
+      200 for these bodies.
+    why: >-
+      The body is a malformed provider response, and a provider error that reports the response's own 200
+      status is a bug no working setup can rely on; a first text part of "" still suppresses the state_delta
+      fallback exactly as the source does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L244-L282
+  - what: >-
+      A buffered response body that is not UTF-8 is a Vertex Agent Engine error carrying the raw status;
+      LiteLLM reads it through httpx's text decoding, which replaces invalid bytes and then ignores the
+      lines that no longer parse as JSON.
+    why: >-
+      The repository refuses bytes that are not UTF-8 instead of mangling them, so a body no line of which
+      can be read as JSON is reported instead of silently answering with empty content.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L301-L303
+  - what: >-
+      A model without a projects/ resource path and no configured vertex_project, an empty messages list,
+      and a user_id, user or session_id that is not a string answer 400 with a message naming the field;
+      LiteLLM raises ValueError, IndexError or a serialization error that a proxy answers with 500.
+    why: >-
+      The request is at fault for each of them, so the 4xx the compatibility policy assigns to a request
+      error and a message that names the field replace the source's unhandled exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L126-L128
