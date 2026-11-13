@@ -48,19 +48,21 @@ impl crate::helpers::Helper for Op {
 fn outcome(record: Option<&JsonData>) -> serde_json::Value {
     match convert(record) {
         Ok(model) => serde_json::json!({"model": model}),
-        Err(source) => serde_json::json!({"error": label(&source)}),
+        Err(reason) => serde_json::json!({"error": reason}),
     }
 }
 
-fn convert(record: Option<&JsonData>) -> Result<Option<LiteLLMTeamTable>, TeamRecordError> {
+fn convert(record: Option<&JsonData>) -> Result<Option<LiteLLMTeamTable>, String> {
     let Some(value) = record else {
         return Ok(None);
     };
-    let bytes = serde_json::to_vec(value).map_err(|source| TeamRecordError::Record {
-        source: TeamRowError::Json(source),
-    })?;
-    let parsed = TeamRecord::parse(&bytes)?;
-    decode_team_record(parsed.as_ref())
+    let Ok(bytes) = serde_json::to_vec(value) else {
+        return Err("invalid json".to_owned());
+    };
+    let Ok(parsed) = TeamRecord::parse(&bytes) else {
+        return Err("invalid json".to_owned());
+    };
+    decode_team_record(parsed.as_ref()).map_err(|error| label(&error))
 }
 
 fn label(error: &TeamRecordError) -> String {
@@ -71,14 +73,14 @@ fn label(error: &TeamRecordError) -> String {
         TeamRecordError::Field { .. }
         | TeamRecordError::Record {
             source:
-                TeamRowError::TooLarge { .. }
-                | TeamRowError::TooDeep
-                | TeamRowError::InvalidUtf8(_)
-                | TeamRowError::Json(_),
+                TeamRowError::TooLarge { .. } | TeamRowError::TooDeep | TeamRowError::InvalidUtf8(_),
         } => "invalid json".to_owned(),
         TeamRecordError::Record {
             source:
-                TeamRowError::NotAnObject | TeamRowError::MissingIdentity | TeamRowError::MissingTeamId,
+                TeamRowError::Json(_)
+                | TeamRowError::NotAnObject
+                | TeamRowError::MissingIdentity
+                | TeamRowError::MissingTeamId,
         }
         | TeamRecordError::NotAnObject
         | TeamRecordError::NotAList

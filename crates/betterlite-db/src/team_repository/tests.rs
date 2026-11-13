@@ -27,7 +27,7 @@ use tokio_postgres::{Config, NoTls};
 const STORAGE: &str = include_str!("storage.sql");
 const TEAM_ADVISORY_LOCK_SQL: &str = "SELECT pg_advisory_xact_lock(hashtext($1)) IS NULL AS locked";
 const SET_ROSTER_SQL: &str =
-    r#"UPDATE "LiteLLM_TeamTable" SET members_with_roles = $1::JSONB WHERE team_id = $2"#;
+    r#"UPDATE "LiteLLM_TeamTable" SET members_with_roles = $1::TEXT::JSONB WHERE team_id = $2"#;
 
 fn parse(text: &str) -> JsonData {
     parse_data(text.as_bytes()).unwrap()
@@ -39,6 +39,11 @@ fn string(value: &str) -> JsonData {
 
 fn doubly(value: &JsonData) -> JsonData {
     JsonData::String(serde_json::to_string(value).unwrap())
+}
+
+// the repository decodes the stored text once and the model validator decodes it again
+fn stored_twice(value: &JsonData) -> JsonData {
+    doubly(&JsonData::String(serde_json::to_string(value).unwrap()))
 }
 
 fn object(fields: Vec<(&str, JsonData)>) -> BTreeMap<String, JsonData> {
@@ -245,12 +250,12 @@ fn duplicate_key_in_stored_field_is_refused() {
 fn assert_overlapping_fields_decode_twice() {
     let team = decoded(vec![
         ("team_id", string("t")),
-        ("metadata", doubly(&parse(r#"{"a":1}"#))),
-        ("model_max_budget", doubly(&parse(r#"{"b":2}"#))),
-        ("router_settings", doubly(&parse(r#"{"rpm":3}"#))),
+        ("metadata", stored_twice(&parse(r#"{"a":1}"#))),
+        ("model_max_budget", stored_twice(&parse(r#"{"b":2}"#))),
+        ("router_settings", stored_twice(&parse(r#"{"rpm":3}"#))),
         (
             "budget_limits",
-            doubly(&parse(r#"[{"budget_duration":"1d","max_budget":1.5}]"#)),
+            stored_twice(&parse(r#"[{"budget_duration":"1d","max_budget":1.5}]"#)),
         ),
     ])
     .unwrap()
@@ -277,7 +282,7 @@ fn assert_unlisted_fields_stay_text() {
     assert!(matches!(
         decoded(vec![
             ("team_id", string("t")),
-            ("model_spend", doubly(&parse(r#"{"a":1}"#))),
+            ("model_spend", stored_twice(&parse(r#"{"a":1}"#))),
         ]),
         Err(TeamRecordError::Record { .. })
     ));
@@ -286,7 +291,7 @@ fn assert_unlisted_fields_stay_text() {
             ("team_id", string("t")),
             (
                 "members_with_roles",
-                doubly(&parse(r#"[{"user_id":"u","role":"admin"}]"#))
+                stored_twice(&parse(r#"[{"user_id":"u","role":"admin"}]"#))
             ),
         ]),
         Err(TeamRecordError::Record { .. })
@@ -457,12 +462,11 @@ fn native_team_record_limits() {
         })
     ));
     // a stored string's own decode is bounded too, and its depth hides inside the record's quotes
-    let deep_field = format!(
-        r#"{{"team_id":"t","metadata":"{}"}}"#,
-        serde_json::to_string(&format!("{}0{}", "[".repeat(65), "]".repeat(65))).unwrap()
-    );
+    let deep = (0..64).fold(JsonData::Array(vec![parse("0")]), |inner, _| {
+        JsonData::Array(vec![inner])
+    });
     assert!(matches!(
-        decode(&deep_field),
+        decoded(vec![("team_id", string("t")), ("metadata", doubly(&deep))]),
         Err(TeamRecordError::Field {
             field,
             source: TeamRowError::TooDeep
@@ -472,24 +476,18 @@ fn native_team_record_limits() {
 
 #[test]
 fn native_locked_roster_limits() {
+    // a roster column arrives as stored text, so every limit applies to the decoder's own parse
     let falsey_inside = format!("{}null", " ".repeat(MAX_ROW_BYTES - 4));
     assert_eq!(falsey_inside.len(), MAX_ROW_BYTES);
-    assert!(roster(&parse(&falsey_inside)).unwrap().is_empty());
+    assert!(roster(&string(&falsey_inside)).unwrap().is_empty());
     assert!(matches!(
-        roster(&parse(&format!("{falsey_inside} "))),
+        roster(&string(&format!("{falsey_inside} "))),
         Err(TeamRecordError::Record {
             source: TeamRowError::TooLarge { .. }
         })
     ));
     let nested = |depth: usize| format!("{}{}", "[".repeat(depth), "]".repeat(depth));
-    assert_eq!(as_failure(&roster(&parse(&nested(64)))), "not a list");
-    assert!(matches!(
-        roster(&parse(&nested(65))),
-        Err(TeamRecordError::Record {
-            source: TeamRowError::TooDeep
-        })
-    ));
-    // a stored string holding deep JSON fails inside the second decode
+    assert_eq!(as_failure(&roster(&string(&nested(64)))), "not a list");
     assert!(matches!(
         roster(&string(&nested(65))),
         Err(TeamRecordError::Record {
