@@ -11,8 +11,7 @@ use tracing_subscriber::fmt::{MakeWriter, fmt};
 
 use super::error::UndeliverableRewriteReason;
 use super::{
-    ToolCallShape, post_guardrail_tool_call_shapes, tool_call_rewrite, tool_call_shapes,
-    undeliverable_reason,
+    ToolCallShape, post_guardrail_shapes, tool_call_rewrite, tool_call_shapes, undeliverable_reason,
 };
 
 #[derive(Clone, Default)]
@@ -128,7 +127,7 @@ fn post_guardrail_returns_the_validated_shapes() {
     let pre = tool_call_shapes(&[call("lookup", "a")]);
     let returned = [call("lookup", "b")];
     assert_eq!(
-        post_guardrail_tool_call_shapes(Some(&returned), &pre, Some("pii")),
+        post_guardrail_shapes(Some(&returned), &pre, Some("pii")),
         [shape(Some("lookup"), "b")]
     );
 }
@@ -138,7 +137,7 @@ fn post_guardrail_accepts_a_null_name_and_missing_arguments() {
     let pre = tool_call_shapes(&[call("lookup", "a")]);
     let returned = [json!({"function": {"name": null}})];
     assert_eq!(
-        post_guardrail_tool_call_shapes(Some(&returned), &pre, None),
+        post_guardrail_shapes(Some(&returned), &pre, None),
         [shape(None, "")]
     );
 }
@@ -149,7 +148,7 @@ fn post_guardrail_ignores_other_returned_keys() {
     let returned =
         [json!({"id": "x", "function": {"name": "lookup", "arguments": "b", "extra": 1}})];
     assert_eq!(
-        post_guardrail_tool_call_shapes(Some(&returned), &pre, None),
+        post_guardrail_shapes(Some(&returned), &pre, None),
         [shape(Some("lookup"), "b")]
     );
 }
@@ -158,7 +157,7 @@ fn post_guardrail_ignores_other_returned_keys() {
 fn post_guardrail_empty_pre_returns_early_without_a_warning() {
     let (logs, _guard) = capture_logs();
     let returned = [call("added", "a")];
-    assert!(post_guardrail_tool_call_shapes(Some(&returned), &[], Some("pii")).is_empty());
+    assert!(post_guardrail_shapes(Some(&returned), &[], Some("pii")).is_empty());
     assert_eq!(logs.contents(), "");
 }
 
@@ -166,10 +165,7 @@ fn post_guardrail_empty_pre_returns_early_without_a_warning() {
 fn post_guardrail_missing_returned_falls_back_with_a_warning() {
     let (logs, _guard) = capture_logs();
     let pre = tool_call_shapes(&[call("lookup", "a")]);
-    assert_eq!(
-        post_guardrail_tool_call_shapes(None, &pre, Some("pii")),
-        pre
-    );
+    assert_eq!(post_guardrail_shapes(None, &pre, Some("pii")), pre);
     assert!(logs.contents().contains("pii"));
     assert!(logs.contents().contains("returned a different number"));
 }
@@ -179,10 +175,7 @@ fn post_guardrail_length_mismatch_falls_back_with_a_warning() {
     let (logs, _guard) = capture_logs();
     let pre = tool_call_shapes(&[call("lookup", "a")]);
     let returned = [call("lookup", "a"), call("other", "b")];
-    assert_eq!(
-        post_guardrail_tool_call_shapes(Some(&returned), &pre, None),
-        pre
-    );
+    assert_eq!(post_guardrail_shapes(Some(&returned), &pre, None), pre);
     assert!(logs.contents().contains("returned a different number"));
 }
 
@@ -197,7 +190,7 @@ fn post_guardrail_any_invalid_call_falls_back_with_a_warning(#[case] returned_ca
     let (logs, _guard) = capture_logs();
     let pre = tool_call_shapes(&[call("lookup", "a")]);
     assert_eq!(
-        post_guardrail_tool_call_shapes(Some(&[returned_call]), &pre, Some("pii")),
+        post_guardrail_shapes(Some(&[returned_call]), &pre, Some("pii")),
         pre
     );
     assert!(
@@ -213,10 +206,7 @@ fn post_guardrail_one_invalid_call_drops_the_whole_list() {
         call("first", "changed"),
         json!({"function": {"name": "second", "arguments": null}}),
     ];
-    assert_eq!(
-        post_guardrail_tool_call_shapes(Some(&returned), &pre, None),
-        pre
-    );
+    assert_eq!(post_guardrail_shapes(Some(&returned), &pre, None), pre);
 }
 
 #[test]

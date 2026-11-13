@@ -51,7 +51,7 @@ fn tool_call_shape(tool_call: &Value) -> ToolCallShape {
 }
 
 #[must_use]
-pub fn post_guardrail_tool_call_shapes(
+pub fn post_guardrail_shapes(
     returned: Option<&[Value]>,
     pre: &[ToolCallShape],
     guardrail_name: Option<&str>,

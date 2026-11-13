@@ -5,7 +5,7 @@ use betterlite_server::guardrails::responses_translation::input_provenance::{
     InputProvenance, input_item_provenance, item_rewrite_field, rewritten_input_item,
 };
 use betterlite_server::guardrails::tool_call_identity::{
-    ToolCallShape, post_guardrail_tool_call_shapes, tool_call_rewrite, tool_call_shapes,
+    ToolCallShape, post_guardrail_shapes, tool_call_rewrite, tool_call_shapes,
     undeliverable_reason,
 };
 use serde::Deserialize;
@@ -64,9 +64,7 @@ impl Helper for Op {
                 expected_messages,
             } => provenance_answer(raw_input, expected_messages)?,
             Request::ItemRewriteField { item } => rewrite_field_answer(item),
-            Request::RewrittenItem { item, rewritten } => {
-                rewritten_item_answer(item, rewritten)?
-            }
+            Request::RewrittenItem { item, rewritten } => rewritten_item_answer(item, rewritten)?,
             Request::ToolCallShapes { calls } => shapes_value(&tool_call_shapes(calls)),
             Request::PostGuardrailShapes {
                 returned,
@@ -80,10 +78,7 @@ impl Helper for Op {
     }
 }
 
-fn provenance_answer(
-    raw_input: &[Value],
-    expected_messages: &[Value],
-) -> HelperResult {
+fn provenance_answer(raw_input: &[Value], expected_messages: &[Value]) -> HelperResult {
     let provenance = input_item_provenance(raw_input, expected_messages).or_value_error()?;
     Ok(provenance_value(provenance.as_ref()))
 }
@@ -92,10 +87,7 @@ fn rewrite_field_answer(item: &Map<String, Value>) -> Value {
     item_rewrite_field(item).map_or(Value::Null, |field| Value::String(field.to_owned()))
 }
 
-fn rewritten_item_answer(
-    item: &Map<String, Value>,
-    rewritten: &Value,
-) -> HelperResult {
+fn rewritten_item_answer(item: &Map<String, Value>, rewritten: &Value) -> HelperResult {
     let patched = rewritten_input_item(item, rewritten).or_value_error()?;
     Ok(patched.map_or(Value::Null, Value::Object))
 }
@@ -106,7 +98,7 @@ fn post_shapes_answer(
     guardrail_name: Option<&str>,
 ) -> Value {
     let pre_shapes = tool_call_shapes(pre);
-    let shapes = post_guardrail_tool_call_shapes(returned, &pre_shapes, guardrail_name);
+    let shapes = post_guardrail_shapes(returned, &pre_shapes, guardrail_name);
     shapes_value(&shapes)
 }
 
