@@ -38,6 +38,10 @@ scope:
     - crates/betterlite-server/src/server.rs
     - crates/betterlite-server/src/server/component.rs
     - crates/betterlite-server/src/server/filter.rs
+    - crates/betterlite/src/main.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/loader/startup.rs
+    - crates/betterlite-lens-worker/src/main.rs
     - deny.toml
     - tools/oracle/helpers/b4471.py
     - tools/oracle/helpers/b4471/**
@@ -133,7 +137,8 @@ pitfalls:
   - Mount paths (e.g., /metrics, /swagger, /mcp) are matched exactly, not as prefixes. /metrics/foo returns 404 on the gateway because /metrics is in GATEWAY_MOUNT_PATHS but /metrics/foo is not.
   - Both binaries share the same CLI signature as betterlite (same flags, same defaults, same env vars). Changing one changes both.
   - The gateway defaults to port 4000, the backend to 4001. These are wired in the binary targets, not configuration.
-  - The serve code (startup, route filter install, exit status) lives once in crates/betterlite-server/src/server.rs beside run_with; each binary keeps only its CLI defaults, its path lists and main.
+  - The serve code (startup, route filter install, exit status) lives once in crates/betterlite-server/src/server.rs and its server/component.rs and server/filter.rs beside run_with; each binary keeps only its CLI defaults, its path lists and main.
+  - Reading the process environment and loading the config with its categorized error logs live once in crates/betterlite-config/src/loader/startup.rs, declared from loader.rs, and carries the one clippy::disallowed_methods expect. crates/betterlite/src/main.rs, crates/betterlite-lens-worker/src/main.rs and server/component.rs call it and keep no copy. betterlite-config depends on no binary and not on betterlite-server, so no crate cycle forms.
 review_level: security
 budget:
   max_changed_lines: 1500
