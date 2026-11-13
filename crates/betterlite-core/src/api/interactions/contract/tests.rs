@@ -381,10 +381,7 @@ fn response_transformation_receives_the_upstream_and_logging() {
         logging.model_call_details.get("model"),
         Some(&JsonValue::Text(String::from("gemini-2.5-flash")))
     );
-    assert_eq!(
-        fixture.routes(),
-        vec![String::from("response|gemini-2.5-flash|200|1")]
-    );
+    assert_eq!(fixture.routes(), vec![String::from("response|200|1")]);
 }
 
 #[test]
