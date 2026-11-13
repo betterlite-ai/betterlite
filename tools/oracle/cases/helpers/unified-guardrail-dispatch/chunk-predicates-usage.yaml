@@ -1,8 +1,0 @@
-kind: helper
-name: chunk-predicates-usage
-call:
-  b3679:
-    function: chunk_predicates
-    item: {id: chunk-2, created: 8, model: gpt-4o, object: chat.completion.chunk, choices: [{index: 0, delta: {content: ""}, finish_reason: null}], usage: {total_tokens: 3}}
-env: {}
-compare: {ignore: []}

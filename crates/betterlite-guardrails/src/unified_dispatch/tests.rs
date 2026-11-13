@@ -12,7 +12,7 @@ use rstest::rstest;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_translation::{BaseTranslation, StreamingScanKey, TranslationCall};
 use crate::unified_dispatch::emit::{
-    HttpErrorDetail, StreamHttpError, a2a_jsonrpc_error_chunk, a2a_request_id,
+    HttpErrorDetail, StreamErrorEmission, StreamHttpError, a2a_jsonrpc_error_chunk, a2a_request_id,
     emit_streaming_http_error, handle_streaming_block,
 };
 use crate::unified_dispatch::flags::{is_redundant_scan, resolve_streaming_flag};
@@ -475,11 +475,12 @@ fn emit_block_starts_a_new_message_when_the_stream_did_not_start() {
         block: BlockBehavior::Summary,
         error_items: None,
     };
+    let so_far = [chunk("hi")];
     let chunks = handle_streaming_block(
         &translation,
         GuardrailFailure::Other("blocked".to_owned()),
         false,
-        &[chunk("hi")],
+        &so_far,
     )
     .unwrap();
     assert_eq!(chunks, vec![b"started=false;items=1".to_vec()]);
@@ -502,17 +503,17 @@ fn emit_http_error_returns_the_a2a_chunk_before_the_stream_starts() {
         status_code: 400,
         detail: HttpErrorDetail::Text("blocked".to_owned()),
     };
+    let so_far = [parsed(r#"{"id": 9}"#)];
     let request_data = BTreeMap::new();
-    let items = emit_streaming_http_error(
-        Some(CallType::SendMessage),
-        error,
-        &[parsed(r#"{"id": 9}"#)],
-        &request_data,
-        Some(&translation),
-        false,
-        None,
-    )
-    .unwrap();
+    let emission = StreamErrorEmission {
+        call_type: Some(CallType::SendMessage),
+        responses_so_far: &so_far,
+        request_data: &request_data,
+        translation: Some(&translation),
+        stream_started: false,
+        responses_yielded: None,
+    };
+    let items = emit_streaming_http_error(error, &emission).unwrap();
     assert_eq!(items.len(), 1);
     let expected = parsed(
         r#"{"jsonrpc": "2.0", "id": 9, "error": {"code": -32603, "message": "blocked", "data": {}}}"#,
@@ -530,17 +531,18 @@ fn emit_http_error_uses_the_yielded_items_not_the_so_far_items() {
         status_code: 422,
         detail: HttpErrorDetail::Text("blocked".to_owned()),
     };
+    let so_far = [chunk("a"), chunk("b"), chunk("c")];
     let yielded = [chunk("sent")];
-    let items = emit_streaming_http_error(
-        Some(CallType::Completion),
-        error,
-        &[chunk("a"), chunk("b"), chunk("c")],
-        &BTreeMap::new(),
-        Some(&translation),
-        true,
-        Some(&yielded),
-    )
-    .unwrap();
+    let request_data = BTreeMap::new();
+    let emission = StreamErrorEmission {
+        call_type: Some(CallType::Completion),
+        responses_so_far: &so_far,
+        request_data: &request_data,
+        translation: Some(&translation),
+        stream_started: true,
+        responses_yielded: Some(&yielded),
+    };
+    let items = emit_streaming_http_error(error, &emission).unwrap();
     assert_eq!(items.len(), 2);
     assert_eq!(items.get(1), Some(&text("items=1;blocked")));
 }
@@ -555,15 +557,16 @@ fn emit_http_error_not_started_gives_back_the_error() {
         status_code: 400,
         detail: HttpErrorDetail::Text("blocked".to_owned()),
     };
-    let result = emit_streaming_http_error(
-        Some(CallType::Completion),
-        error.clone(),
-        &[],
-        &BTreeMap::new(),
-        Some(&translation),
-        false,
-        None,
-    );
+    let request_data = BTreeMap::new();
+    let emission = StreamErrorEmission {
+        call_type: Some(CallType::Completion),
+        responses_so_far: &[],
+        request_data: &request_data,
+        translation: Some(&translation),
+        stream_started: false,
+        responses_yielded: None,
+    };
+    let result = emit_streaming_http_error(error.clone(), &emission);
     assert_eq!(result, Err(error));
 }
 
@@ -573,33 +576,36 @@ fn emit_http_error_without_a_translation_gives_back_the_error() {
         status_code: 400,
         detail: HttpErrorDetail::Text("blocked".to_owned()),
     };
-    let result = emit_streaming_http_error(
-        Some(CallType::Completion),
-        error.clone(),
-        &[],
-        &BTreeMap::new(),
-        None::<&ProbeTranslation>,
-        true,
-        None,
-    );
+    let request_data = BTreeMap::new();
+    let emission = StreamErrorEmission {
+        call_type: Some(CallType::Completion),
+        responses_so_far: &[],
+        request_data: &request_data,
+        translation: None::<&ProbeTranslation>,
+        stream_started: true,
+        responses_yielded: None,
+    };
+    let result = emit_streaming_http_error(error.clone(), &emission);
     assert_eq!(result, Err(error));
 }
 
 #[test]
 fn emit_http_error_without_error_items_gives_back_the_error() {
+    let translation = probe();
     let error = StreamHttpError {
         status_code: 400,
         detail: HttpErrorDetail::Text("blocked".to_owned()),
     };
-    let result = emit_streaming_http_error(
-        Some(CallType::Completion),
-        error.clone(),
-        &[],
-        &BTreeMap::new(),
-        Some(&probe()),
-        true,
-        None,
-    );
+    let request_data = BTreeMap::new();
+    let emission = StreamErrorEmission {
+        call_type: Some(CallType::Completion),
+        responses_so_far: &[],
+        request_data: &request_data,
+        translation: Some(&translation),
+        stream_started: true,
+        responses_yielded: None,
+    };
+    let result = emit_streaming_http_error(error.clone(), &emission);
     assert_eq!(result, Err(error));
 }
 
@@ -613,16 +619,16 @@ fn emit_http_error_hands_a_text_detail_to_the_translation() {
         status_code: 403,
         detail: HttpErrorDetail::Text("denied".to_owned()),
     };
-    let items = emit_streaming_http_error(
-        Some(CallType::Completion),
-        error,
-        &[],
-        &BTreeMap::new(),
-        Some(&translation),
-        true,
-        None,
-    )
-    .unwrap();
+    let request_data = BTreeMap::new();
+    let emission = StreamErrorEmission {
+        call_type: Some(CallType::Completion),
+        responses_so_far: &[],
+        request_data: &request_data,
+        translation: Some(&translation),
+        stream_started: true,
+        responses_yielded: None,
+    };
+    let items = emit_streaming_http_error(error, &emission).unwrap();
     assert_eq!(items, vec![text("items=0;denied")]);
 }
 
@@ -637,16 +643,16 @@ fn emit_http_error_hands_an_object_detail_to_the_translation() {
         status_code: 403,
         detail: HttpErrorDetail::Object(detail),
     };
-    let items = emit_streaming_http_error(
-        Some(CallType::Completion),
-        error,
-        &[],
-        &BTreeMap::new(),
-        Some(&translation),
-        true,
-        None,
-    )
-    .unwrap();
+    let request_data = BTreeMap::new();
+    let emission = StreamErrorEmission {
+        call_type: Some(CallType::Completion),
+        responses_so_far: &[],
+        request_data: &request_data,
+        translation: Some(&translation),
+        stream_started: true,
+        responses_yielded: None,
+    };
+    let items = emit_streaming_http_error(error, &emission).unwrap();
     assert_eq!(items, vec![text(r#"items=0;{"message":"denied"}"#)]);
 }
 

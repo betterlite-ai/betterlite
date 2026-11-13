@@ -1,43 +1,29 @@
-from typing import TypeAlias
+from typing import Literal, TypedDict
 
+from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.unified_guardrail.unified_guardrail import (
-    UnifiedLLMGuardrails as UnifiedLLMGuardrails,
+    resolve_endpoint_translation,
 )
 from pydantic import JsonValue as Json
 
-from . import chunks, emit, flags, resolution, transform
-from .chunks import PassthroughCall, PredicateCall
-from .emit import EmissionCall
-from .flags import RedundantScanCall, StreamingFlagCall
-from .resolution import EndpointResolutionCall
-from .transform import TransformChunkCall
 
-Input: TypeAlias = (
-    TransformChunkCall
-    | PredicateCall
-    | PassthroughCall
-    | StreamingFlagCall
-    | RedundantScanCall
-    | EndpointResolutionCall
-    | EmissionCall
-)
+class EntryCall(TypedDict):
+    call_type: str
+    translation: str
+    chat_completions: bool
 
 
-def run(input_value: Input) -> Json:
-    answer: Json = None
-    match input_value["function"]:
-        case "transform_chunk":
-            answer = transform.run(input_value)
-        case "chunk_predicates":
-            answer = chunks.predicates(input_value)
-        case "tool_call_passthrough":
-            answer = chunks.passthrough(input_value)
-        case "streaming_flag":
-            answer = flags.streaming_flag(input_value)
-        case "redundant_scan":
-            answer = flags.redundant(input_value)
-        case "endpoint_resolution":
-            answer = resolution.resolve(input_value)
-        case "http_error_emission":
-            answer = emit.emission(input_value)
-    return answer
+class EndpointResolutionCall(TypedDict):
+    function: Literal["endpoint_resolution"]
+    request_route: str | None
+    first_item: Json | None
+    entries: list[EntryCall]
+
+
+def run(call: EndpointResolutionCall) -> Json:
+    auth = UserAPIKeyAuth(request_route=call["request_route"])
+    resolved = resolve_endpoint_translation(auth, call["first_item"])
+    if resolved is None:
+        return None
+    call_type, handler = resolved
+    return {"call_type": call_type, "translation": type(handler).__name__}

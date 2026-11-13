@@ -140,27 +140,33 @@ where
         .map_or_else(|| Err(failure), Ok)
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "mirrors LiteLLM's emit_streaming_http_error signature"
-)]
+// one value for the state emit_streaming_http_error reads, since the six arguments pass the five-argument limit
+pub struct StreamErrorEmission<'state, T: ?Sized> {
+    pub call_type: Option<CallType>,
+    pub responses_so_far: &'state [GuardrailValue],
+    pub request_data: &'state BTreeMap<String, GuardrailValue>,
+    pub translation: Option<&'state T>,
+    pub stream_started: bool,
+    pub responses_yielded: Option<&'state [GuardrailValue]>,
+}
+
 pub fn emit_streaming_http_error<T>(
-    call_type: Option<CallType>,
     error: StreamHttpError,
-    responses_so_far: &[GuardrailValue],
-    request_data: &BTreeMap<String, GuardrailValue>,
-    translation: Option<&T>,
-    stream_started: bool,
-    responses_yielded: Option<&[GuardrailValue]>,
+    emission: &StreamErrorEmission<'_, T>,
 ) -> Result<Vec<GuardrailValue>, StreamHttpError>
 where
     T: BaseTranslation<Failure = GuardrailFailure> + ?Sized,
 {
-    if call_type.is_some_and(|candidate| A2A_CALL_TYPES.contains(&candidate)) {
-        let request_id = a2a_request_id(responses_so_far, request_data);
+    if emission
+        .call_type
+        .is_some_and(|candidate| A2A_CALL_TYPES.contains(&candidate))
+    {
+        let request_id = a2a_request_id(emission.responses_so_far, emission.request_data);
         return Ok(vec![a2a_jsonrpc_error_chunk(&error, request_id)]);
     }
-    if stream_started && let Some(handler) = translation {
+    if emission.stream_started
+        && let Some(handler) = emission.translation
+    {
         let failure = match &error.detail {
             HttpErrorDetail::Text(text) => GuardrailFailure::Http {
                 status: error.status_code,
@@ -174,7 +180,8 @@ where
                     .collect(),
             },
         };
-        if let Some(items) = handler.build_stream_error_items(&failure, responses_yielded) {
+        if let Some(items) = handler.build_stream_error_items(&failure, emission.responses_yielded)
+        {
             return Ok(items);
         }
     }
