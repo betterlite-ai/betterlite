@@ -370,7 +370,7 @@ fn tool_choice_maps_a_string_and_a_function_object() {
     assert_eq!(
         chosen,
         json(
-            r#"{"tool_choice": {"functionCallingConfig": {"mode": "ANY", "allowedFunctionNames": ["lookup"]}}}"#
+            r#"{"tool_choice": {"functionCallingConfig": {"mode": "ANY", "allowed_function_names": ["lookup"]}}}"#
         )
     );
 }
