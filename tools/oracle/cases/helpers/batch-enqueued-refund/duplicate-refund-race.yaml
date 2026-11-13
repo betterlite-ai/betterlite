@@ -1,0 +1,18 @@
+kind: helper
+name: batch-enqueued-refund-duplicate-refund-race
+call:
+  batch_enqueued_refund:
+    plan:
+      op: post_call
+      batch_id: batch-1
+      status: completed
+    redis:
+      pop:
+        - {kind: tombstone}
+    memory:
+      counters: {}
+      records: {}
+      read: []
+    now: 20.0
+env: {}
+compare: {ignore: []}

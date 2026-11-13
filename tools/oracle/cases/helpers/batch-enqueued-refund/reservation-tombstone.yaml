@@ -1,0 +1,19 @@
+kind: helper
+name: batch-enqueued-refund-reservation-tombstone
+call:
+  batch_enqueued_refund:
+    plan:
+      op: pop
+      batch_id: batch-1
+    redis:
+      pop:
+        - {kind: tombstone}
+    memory:
+      counters: {}
+      records:
+        'batch_enqueued_token_reservation:batch-1': '{"tokens":500,"scopes":[],"reserved_at_monotonic":12.5}'
+      read:
+        - 'batch_enqueued_token_reservation:batch-1'
+    now: 0.0
+env: {}
+compare: {ignore: []}
