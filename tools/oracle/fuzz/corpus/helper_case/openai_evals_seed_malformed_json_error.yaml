@@ -1,0 +1,11 @@
+kind: helper
+name: openai-evals-seed-malformed-json-error
+call:
+  openai_evals:
+    malformed_json_error:
+      probes:
+        - reply: list_evals
+          status: 200
+          text: '{"object": "list"}'
+env: {}
+compare: {ignore: []}

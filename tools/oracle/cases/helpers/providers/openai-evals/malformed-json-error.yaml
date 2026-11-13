@@ -1,0 +1,19 @@
+kind: helper
+name: openai-evals-malformed-json-error
+call:
+  openai_evals:
+    malformed_json_error:
+      probes:
+        - {reply: create_eval, status: 200, text: '{"id": "eval-1", "created_at": 1'}
+        - {reply: list_evals, status: 200, text: '{"object": "list", "data": [{"object": "eval"}]}'}
+        - {reply: get_eval, status: 200, text: 'not json'}
+        - {reply: update_eval, status: 201, text: '{"id": 5}'}
+        - {reply: delete_eval, status: 200, text: '{"eval_id": "eval-1"}'}
+        - {reply: cancel_eval, status: 200, text: '{"id": "eval-1", "status": "queued"}'}
+        - {reply: create_run, status: 200, text: '[]'}
+        - {reply: list_runs, status: 200, text: '{"data": [{"id": "run-1"}]}'}
+        - {reply: get_run, status: 200, text: '{"id": "run-1", "status": "unknown", "created_at": 1, "data_source": {}, "eval_id": "e"}'}
+        - {reply: cancel_run, status: 200, text: ''}
+        - {reply: delete_run, status: 200, text: '{"run_id": "run-1"'}
+env: {}
+compare: {ignore: []}

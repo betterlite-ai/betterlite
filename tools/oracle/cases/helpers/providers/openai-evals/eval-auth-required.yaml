@@ -1,0 +1,21 @@
+kind: helper
+name: openai-evals-eval-auth-required
+call:
+  openai_evals:
+    eval_auth_required:
+      probes:
+        - litellm_params: {api_key: sk-explicit}
+          headers: {Authorization: 'Bearer old', X-Existing: '1'}
+          env: {}
+        - litellm_api_key: sk-global
+          litellm_openai_key: sk-openai
+          env: {OPENAI_API_KEY: sk-env}
+        - litellm_openai_key: sk-openai
+          env: {OPENAI_API_KEY: sk-env}
+        - env: {OPENAI_API_KEY: sk-env}
+        - env: {}
+        - litellm_params: {api_key: ''}
+          litellm_api_key: sk-global
+          env: {}
+env: {}
+compare: {ignore: []}

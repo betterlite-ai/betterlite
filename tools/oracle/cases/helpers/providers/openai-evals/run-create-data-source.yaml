@@ -1,0 +1,31 @@
+kind: helper
+name: openai-evals-run-create-data-source
+call:
+  openai_evals:
+    run_create_data_source:
+      probes:
+        - eval_id: eval-1
+          create_run:
+            data_source:
+              type: dataset
+              dataset_id: ds-1
+              extra: null
+              flags: [false, 0, []]
+        - eval_id: eval-2
+          create_run:
+            data_source:
+              type: inline
+              samples:
+                - {input: null, ok: false, count: 0}
+            name: run one
+            metadata: {k: v, n: null}
+          litellm_params: {api_base: 'https://runs.test'}
+        - eval_id: eval/1
+          create_run:
+            data_source: {}
+          litellm_params: {api_base: ''}
+        - eval_id: ''
+          create_run:
+            data_source: {}
+env: {}
+compare: {ignore: []}

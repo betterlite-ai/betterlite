@@ -1,0 +1,11 @@
+kind: helper
+name: openai-evals-seed-eval-create-update
+call:
+  openai_evals:
+    eval_create_update:
+      probes:
+        - create:
+            data_source_config: {type: logs}
+            testing_criteria: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+kind: helper
+name: openai-evals-eval-list-pagination
+call:
+  openai_evals:
+    eval_list_pagination:
+      probes:
+        - list_params: {limit: 5, after: eval_5, before: eval_9, order: asc, order_by: updated_at}
+          litellm_params: {api_base: 'https://evals.test/base'}
+        - list_params: {limit: 0}
+        - list_params: {after: '', before: '', order: null, order_by: null, limit: null}
+          litellm_params: {api_base: ''}
+        - list_params: {limit: 2, model: o3}
+          litellm_params: {api_base: null}
+        - list_params: {}
+env: {}
+compare: {ignore: []}
