@@ -70,8 +70,9 @@ impl BaseInteractionsAPIConfig for FixtureConfig {
         parsed_chunk: &JsonValue,
         _logging: &mut InteractionsLogging,
     ) -> Result<InteractionsStreamChunk, Self::Error> {
-        let bytes = serde_json::to_vec(parsed_chunk).map_err(FixtureConfigError::Encode)?;
-        serde_json::from_slice(&bytes).map_err(FixtureConfigError::Decode)
+        let encoded = serde_json::to_string(parsed_chunk).map_err(FixtureConfigError::Encode)?;
+        let chunk = serde_json::from_str(&encoded).map_err(FixtureConfigError::Decode)?;
+        Ok(chunk)
     }
 
     fn transform_get_request(

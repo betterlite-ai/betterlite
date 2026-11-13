@@ -54,7 +54,26 @@ pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
                 .map_err(runtime_failure)?;
             runtime.block_on(collect_async(input, &mut logging, &config, &resolver))?
         }
-        Mode::Sync => collect_sync(input, &mut logging, &config, &resolver)?,
+        Mode::Sync => {
+            let mut iterator = SyncInteractionsStreamIterator::new(
+                FakeSyncResponse::new(&input.lines),
+                InteractionsStreamSetup {
+                    model: input.model.as_deref(),
+                    config: &config,
+                    logging: &mut logging,
+                    litellm_metadata: None,
+                    custom_llm_provider: None,
+                    api_base: &resolver,
+                },
+            )
+            .map_err(failure)?;
+            let events = std::iter::from_fn(|| iterator.next_chunk())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(failure)?;
+            let finished = iterator.base.finished;
+            let completed = iterator.base.completed_response.clone();
+            output(events, finished, completed, logging.records())
+        }
     };
     Ok(output)
 }
@@ -79,33 +98,6 @@ async fn collect_async(
     .map_err(failure)?;
     let mut events = Vec::new();
     while let Some(item) = iterator.next_chunk().await {
-        events.push(item.map_err(failure)?);
-    }
-    let finished = iterator.base.finished;
-    let completed = iterator.base.completed_response.clone();
-    Ok(output(events, finished, completed, logging.records()))
-}
-
-fn collect_sync(
-    input: &Input,
-    logging: &mut RecordingLogging,
-    config: &FixtureConfig,
-    resolver: &SharedApiBase<'_>,
-) -> crate::helpers::HelperResult {
-    let mut iterator = SyncInteractionsStreamIterator::new(
-        FakeSyncResponse::new(&input.lines),
-        InteractionsStreamSetup {
-            model: input.model.as_deref(),
-            config,
-            logging: &mut *logging,
-            litellm_metadata: None,
-            custom_llm_provider: None,
-            api_base: resolver,
-        },
-    )
-    .map_err(failure)?;
-    let mut events = Vec::new();
-    while let Some(item) = iterator.next_chunk() {
         events.push(item.map_err(failure)?);
     }
     let finished = iterator.base.finished;

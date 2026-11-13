@@ -101,8 +101,9 @@ impl BaseInteractionsAPIConfig for FixtureConfig {
         parsed_chunk: &JsonValue,
         _logging: &mut InteractionsLogging,
     ) -> Result<InteractionsStreamChunk, Self::Error> {
-        let bytes = serde_json::to_vec(parsed_chunk).map_err(FixtureConfigError::Encode)?;
-        serde_json::from_slice(&bytes).map_err(FixtureConfigError::Decode)
+        let encoded = serde_json::to_string(parsed_chunk).map_err(FixtureConfigError::Encode)?;
+        let chunk = serde_json::from_str(&encoded).map_err(FixtureConfigError::Decode)?;
+        Ok(chunk)
     }
 
     fn transform_get_request(
@@ -382,44 +383,19 @@ type TestAsyncIterator<'base> =
 type TestSyncIterator<'base> =
     SyncInteractionsStreamIterator<'base, FakeSyncResponse, FixtureConfig, RecordingLogging>;
 
-fn build_async<'base>(
-    response: FakeAsyncResponse,
+fn setup<'base>(
     logging: &'base mut RecordingLogging,
     config: &'base FixtureConfig,
     api_base: &'base dyn InteractionsApiBase,
-) -> TestAsyncIterator<'base> {
-    InteractionsStreamIterator::new(
-        response,
-        InteractionsStreamSetup {
-            model: Some("gemini-2.5-flash"),
-            config,
-            logging,
-            litellm_metadata: None,
-            custom_llm_provider: None,
-            api_base,
-        },
-    )
-    .expect("the fixture iterator builds")
-}
-
-fn build_sync<'base>(
-    response: FakeSyncResponse,
-    logging: &'base mut RecordingLogging,
-    config: &'base FixtureConfig,
-    api_base: &'base dyn InteractionsApiBase,
-) -> TestSyncIterator<'base> {
-    SyncInteractionsStreamIterator::new(
-        response,
-        InteractionsStreamSetup {
-            model: Some("gemini-2.5-flash"),
-            config,
-            logging,
-            litellm_metadata: None,
-            custom_llm_provider: None,
-            api_base,
-        },
-    )
-    .expect("the fixture iterator builds")
+) -> InteractionsStreamSetup<'base, FixtureConfig, RecordingLogging> {
+    InteractionsStreamSetup {
+        model: Some("gemini-2.5-flash"),
+        config,
+        logging,
+        litellm_metadata: None,
+        custom_llm_provider: None,
+        api_base,
+    }
 }
 
 async fn drain_async(iterator: &mut TestAsyncIterator<'_>) -> Vec<InteractionsStreamChunk> {
@@ -535,12 +511,11 @@ async fn async_iterator_construction_builds_hidden_params_from_the_setup() {
 async fn async_iterator_construction_without_metadata_leaves_model_id_empty() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_async(
+    let mut iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&[]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     assert_eq!(iterator.base.hidden_params.model_id, None);
     assert_eq!(iterator.base.hidden_params.api_base, None);
     assert!(iterator.next_chunk().await.is_none());
@@ -552,7 +527,9 @@ fn sync_iterator_construction_calls_iter_lines_once() {
     let mut logging = RecordingLogging::new(litellm_params("https://sync.test"));
     let response = FakeSyncResponse::new(&[r#"data: {"id":"int_1"}"#]);
     let calls = Arc::clone(&response.calls);
-    let mut iterator = build_sync(response, &mut logging, &config, &NO_API_BASE);
+    let mut iterator =
+        SyncInteractionsStreamIterator::new(response, setup(&mut logging, &config, &NO_API_BASE))
+            .expect("the fixture iterator builds");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_eq!(
         iterator.base.hidden_params.api_base.as_deref(),
@@ -592,7 +569,9 @@ async fn async_iterator_construction_calls_aiter_lines_once() {
     let mut logging = RecordingLogging::new(Params::new());
     let response = FakeAsyncResponse::new(&[]);
     let calls = Arc::clone(&response.calls);
-    let mut iterator = build_async(response, &mut logging, &config, &NO_API_BASE);
+    let mut iterator =
+        InteractionsStreamIterator::new(response, setup(&mut logging, &config, &NO_API_BASE))
+            .expect("the fixture iterator builds");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert_eq!(drain_async(&mut iterator).await.len(), 0);
     assert!(iterator.base.finished);
@@ -602,12 +581,11 @@ async fn async_iterator_construction_calls_aiter_lines_once() {
 async fn chunk_processing_strips_the_sse_data_prefix() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_async(
+    let mut iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&[r#"data: {"id":"a"}"#, r#"data:{"id":"b"}"#, r#"{"id":"c"}"#]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     let events = drain_async(&mut iterator).await;
     assert_eq!(ids(&events), vec!["a", "b", "c"]);
 }
@@ -616,12 +594,11 @@ async fn chunk_processing_strips_the_sse_data_prefix() {
 async fn chunk_processing_ignores_blank_lines() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_async(
+    let mut iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&["", r#"data: {"id":"a"}"#, "", "", r#"data: {"id":"b"}"#]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     let events = drain_async(&mut iterator).await;
     assert_eq!(ids(&events), vec!["a", "b"]);
 }
@@ -630,12 +607,11 @@ async fn chunk_processing_ignores_blank_lines() {
 async fn chunk_processing_ignores_malformed_json() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_async(
+    let mut iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&["data: not json", r#"data: {"id":"after"}"#, "data: {"]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     let events = drain_async(&mut iterator).await;
     assert_eq!(ids(&events), vec!["after"]);
 }
@@ -644,7 +620,7 @@ async fn chunk_processing_ignores_malformed_json() {
 async fn chunk_processing_ignores_non_object_json() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_async(
+    let mut iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&[
             "data: [1, 2]",
             "data: \"text\"",
@@ -652,10 +628,9 @@ async fn chunk_processing_ignores_non_object_json() {
             "data: null",
             r#"data: {"id":"ok"}"#,
         ]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     let events = drain_async(&mut iterator).await;
     assert_eq!(ids(&events), vec!["ok"]);
 }
@@ -664,16 +639,15 @@ async fn chunk_processing_ignores_non_object_json() {
 async fn chunk_processing_treats_done_as_the_end() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_async(
+    let mut iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&[
             r#"data: {"id":"first"}"#,
             "data: [DONE]",
             r#"data: {"id":"after"}"#,
         ]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     let events = drain_async(&mut iterator).await;
     assert_eq!(ids(&events), vec!["first"]);
     assert!(iterator.base.finished);
@@ -683,12 +657,11 @@ async fn chunk_processing_treats_done_as_the_end() {
 async fn chunk_processing_detects_the_legacy_completed_status() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_async(
+    let mut iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&[&format!("data: {COMPLETED_STATUS}")]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     let events = drain_async(&mut iterator).await;
     assert_eq!(ids(&events), vec!["int_1"]);
     assert_eq!(
@@ -706,12 +679,11 @@ async fn chunk_processing_detects_the_legacy_completed_status() {
 async fn chunk_processing_detects_the_new_completed_event_type() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_async(
+    let mut iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&[&format!("data: {COMPLETED_EVENT}")]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     let events = drain_async(&mut iterator).await;
     assert_eq!(ids(&events), vec!["int_2"]);
     assert_eq!(logging.records().len(), 1);
@@ -721,15 +693,14 @@ async fn chunk_processing_detects_the_new_completed_event_type() {
 async fn async_iteration_yields_events_in_order_and_finishes() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_async(
+    let mut iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&[
             r#"data: {"id":"a","event_type":"interaction.created"}"#,
             r#"data: {"id":"b","event_type":"step.delta","index":0}"#,
         ]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     let events = drain_async(&mut iterator).await;
     assert_eq!(ids(&events), vec!["a", "b"]);
     assert!(iterator.base.finished);
@@ -741,12 +712,11 @@ async fn async_iteration_yields_events_in_order_and_finishes() {
 async fn async_iteration_dispatches_completion_with_prefer_async() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_async(
+    let mut iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&[&format!("data: {COMPLETED_STATUS}")]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     drain_async(&mut iterator).await;
     let records = logging.records();
     assert_eq!(records.len(), 1);
@@ -762,12 +732,11 @@ async fn async_iteration_dispatches_completion_with_prefer_async() {
 async fn async_iteration_skips_empty_results_between_events() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_async(
+    let mut iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&["data: ", "", r#"data: {"id":"only"}"#, "data: [DONE]"]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     let events = drain_async(&mut iterator).await;
     assert_eq!(ids(&events), vec!["only"]);
 }
@@ -776,12 +745,11 @@ async fn async_iteration_skips_empty_results_between_events() {
 fn sync_iteration_yields_events_in_order_and_finishes() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_sync(
+    let mut iterator = SyncInteractionsStreamIterator::new(
         FakeSyncResponse::new(&[r#"data: {"id":"a"}"#, r#"data: {"id":"b"}"#, "data: [DONE]"]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     let events = drain_sync(&mut iterator);
     assert_eq!(ids(&events), vec!["a", "b"]);
     assert!(iterator.base.finished);
@@ -792,12 +760,11 @@ fn sync_iteration_yields_events_in_order_and_finishes() {
 fn sync_iteration_dispatches_the_async_handler_then_the_sync_handler() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_sync(
+    let mut iterator = SyncInteractionsStreamIterator::new(
         FakeSyncResponse::new(&[&format!("data: {COMPLETED_EVENT}")]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     drain_sync(&mut iterator);
     let records = logging.records();
     assert_eq!(records.len(), 2);
@@ -821,7 +788,9 @@ async fn error_handling_async_source_error_sets_finished_and_errors() {
     let mut logging = RecordingLogging::new(Params::new());
     let mut response = FakeAsyncResponse::new(&[r#"data: {"id":"a"}"#]);
     response.lines.push(Err(FixtureSourceError));
-    let mut iterator = build_async(response, &mut logging, &config, &NO_API_BASE);
+    let mut iterator =
+        InteractionsStreamIterator::new(response, setup(&mut logging, &config, &NO_API_BASE))
+            .expect("the fixture iterator builds");
     assert!(
         iterator
             .next_chunk()
@@ -844,7 +813,9 @@ fn error_handling_sync_source_error_sets_finished_and_errors() {
     let mut logging = RecordingLogging::new(Params::new());
     let mut response = FakeSyncResponse::new(&[]);
     response.lines.push(Err(FixtureSourceError));
-    let mut iterator = build_sync(response, &mut logging, &config, &NO_API_BASE);
+    let mut iterator =
+        SyncInteractionsStreamIterator::new(response, setup(&mut logging, &config, &NO_API_BASE))
+            .expect("the fixture iterator builds");
     let failure = iterator.next_chunk().expect("the stream reports an error");
     assert!(matches!(failure, Err(InteractionStreamError::Source(_))));
     assert!(iterator.base.finished);
@@ -855,12 +826,11 @@ fn error_handling_sync_source_error_sets_finished_and_errors() {
 async fn error_handling_transform_error_is_returned_without_finishing() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_async(
+    let mut iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&[r#"data: {"id":5}"#, r#"data: {"id":"int_1"}"#]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     let failure = iterator
         .next_chunk()
         .await
@@ -878,16 +848,15 @@ async fn error_handling_transform_error_is_returned_without_finishing() {
 async fn multiple_completions_keep_the_last_response() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = build_async(
+    let mut iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&[
             &format!("data: {COMPLETED_STATUS}"),
             r#"data: {"id":"int_3","event_type":"step.delta"}"#,
             &format!("data: {COMPLETED_EVENT}"),
         ]),
-        &mut logging,
-        &config,
-        &NO_API_BASE,
-    );
+        setup(&mut logging, &config, &NO_API_BASE),
+    )
+    .expect("the fixture iterator builds");
     let events = drain_async(&mut iterator).await;
     assert_eq!(ids(&events), vec!["int_1", "int_3", "int_2"]);
     assert_eq!(

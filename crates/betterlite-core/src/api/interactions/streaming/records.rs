@@ -96,66 +96,70 @@ fn resolved_api_base(
 }
 
 fn api_base_params(logging: &InteractionsLogging) -> Result<ApiBaseParams, FieldTypeError> {
-    let fields = litellm_params(logging)?;
+    let text = |value: &JsonValue| match value {
+        JsonValue::Text(content) => Some(content.clone()),
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_) => None,
+    };
+    let flag = |value: &JsonValue| match value {
+        JsonValue::Bool(set) => Some(*set),
+        JsonValue::Null
+        | JsonValue::Number(_)
+        | JsonValue::Text(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_) => None,
+    };
+    let fields = match logging.model_call_details.get("litellm_params") {
+        None | Some(JsonValue::Null) => IndexMap::new(),
+        Some(JsonValue::Object(fields)) => fields.clone(),
+        Some(
+            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_),
+        ) => {
+            return Err(FieldTypeError {
+                field: "litellm_params",
+            });
+        }
+    };
     Ok(ApiBaseParams {
-        api_base: optional_text(&fields, "api_base", "litellm_params.api_base")?,
-        base_url: optional_text(&fields, "base_url", "litellm_params.base_url")?,
-        custom_llm_provider: optional_text(
+        api_base: optional_field(&fields, "api_base", "litellm_params.api_base", text)?,
+        base_url: optional_field(&fields, "base_url", "litellm_params.base_url", text)?,
+        custom_llm_provider: optional_field(
             &fields,
             "custom_llm_provider",
             "litellm_params.custom_llm_provider",
+            text,
         )?,
-        api_key: optional_text(&fields, "api_key", "litellm_params.api_key")?
+        api_key: optional_field(&fields, "api_key", "litellm_params.api_key", text)?
             .map(SecretString::from),
-        vertex_location: optional_text(
+        vertex_location: optional_field(
             &fields,
             "vertex_location",
             "litellm_params.vertex_location",
+            text,
         )?,
-        vertex_project: optional_text(&fields, "vertex_project", "litellm_params.vertex_project")?,
-        stream: optional_bool(&fields, "stream", "litellm_params.stream")?,
+        vertex_project: optional_field(
+            &fields,
+            "vertex_project",
+            "litellm_params.vertex_project",
+            text,
+        )?,
+        stream: optional_field(&fields, "stream", "litellm_params.stream", flag)?
+            .unwrap_or_default(),
     })
 }
 
-fn litellm_params(
-    logging: &InteractionsLogging,
-) -> Result<IndexMap<String, JsonValue>, FieldTypeError> {
-    match logging.model_call_details.get("litellm_params") {
-        None | Some(JsonValue::Null) => Ok(IndexMap::new()),
-        Some(JsonValue::Object(fields)) => Ok(fields.clone()),
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_),
-        ) => Err(FieldTypeError {
-            field: "litellm_params",
-        }),
-    }
-}
-
-fn optional_text(
+fn optional_field<T>(
     fields: &IndexMap<String, JsonValue>,
     name: &str,
     path: &'static str,
-) -> Result<Option<String>, FieldTypeError> {
+    pick: fn(&JsonValue) -> Option<T>,
+) -> Result<Option<T>, FieldTypeError> {
     match fields.get(name) {
         None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Text(text)) => Ok(Some(text.clone())),
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_),
-        ) => Err(FieldTypeError { field: path }),
-    }
-}
-
-fn optional_bool(
-    fields: &IndexMap<String, JsonValue>,
-    name: &str,
-    path: &'static str,
-) -> Result<bool, FieldTypeError> {
-    match fields.get(name) {
-        None | Some(JsonValue::Null) => Ok(false),
-        Some(JsonValue::Bool(value)) => Ok(*value),
-        Some(
-            JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_) | JsonValue::Object(_),
-        ) => Err(FieldTypeError { field: path }),
+        Some(value) => pick(value).map(Some).ok_or(FieldTypeError { field: path }),
     }
 }
 
