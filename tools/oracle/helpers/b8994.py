@@ -1,14 +1,8 @@
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict, runtime_checkable
+from typing import Final, Literal, Protocol, TypedDict, runtime_checkable
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy.common_utils import callback_utils
-from litellm.proxy.common_utils.callback_utils import (
-    add_guardrail_response_to_standard_logging_object,
-)
 from litellm.types.guardrails import GuardrailEventHooks
-from litellm.types.utils import (
-    StandardLoggingGuardrailInformation as GuardrailInformation,
-)
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 JSON: Final = TypeAdapter(JsonValue)
@@ -32,10 +26,20 @@ class HeadersFunction(Protocol):
     ) -> dict[str, JsonValue] | None: ...
 
 
+class AppendFunction(Protocol):
+    def __call__(
+        self,
+        litellm_logging_obj: Logging | None,
+        guardrail_response: dict[str, JsonValue],
+    ) -> JsonValue: ...
+
+
 @runtime_checkable
 class CallbackUtils(Protocol):
     get_logging_caching_headers: HeadersFunction
     add_guardrail_scan_id: RecordScanFunction
+    # ast-grep-ignore: no-long-names
+    add_guardrail_response_to_standard_logging_object: AppendFunction
 
 
 class CallbackUtilsRecord(BaseModel):
@@ -43,10 +47,9 @@ class CallbackUtilsRecord(BaseModel):
     utils: CallbackUtils
 
 
-# LiteLLM leaves these two helpers untyped, so this record names the signatures the cases call
-CALLBACK_UTILS: Final = CallbackUtilsRecord.model_validate(
-    {"utils": callback_utils}
-).utils
+# LiteLLM leaves these helpers untyped, so this record names the signatures the cases call
+CALLBACK_UTILS_VALUES: Final = {"utils": callback_utils}
+CALLBACK_UTILS: Final = CallbackUtilsRecord.model_validate(CALLBACK_UTILS_VALUES).utils
 
 
 class RecordScanInput(TypedDict):
@@ -66,13 +69,12 @@ class HeadersInput(TypedDict):
 class AppendInput(TypedDict):
     function: Literal["append_standard_object"]
     model_call_details: dict[str, JsonValue] | None
-    record: GuardrailInformation
-
-
-Input: TypeAlias = RecordScanInput | HeadersInput | AppendInput
+    record: dict[str, JsonValue]
 
 
 class LoggingRecord(Logging):
+    model_call_details: dict[str, JsonValue]
+
     def __init__(self, model_call_details: dict[str, JsonValue]) -> None:
         self.model_call_details = dict(model_call_details)
 
@@ -98,10 +100,12 @@ def headers_answer(input_value: HeadersInput) -> JsonValue:
 def append_answer(input_value: AppendInput) -> dict[str, JsonValue]:
     details = input_value["model_call_details"]
     if details is None:
-        add_guardrail_response_to_standard_logging_object(None, input_value["record"])
+        CALLBACK_UTILS.add_guardrail_response_to_standard_logging_object(
+            None, input_value["record"]
+        )
         return {"model_call_details": None}
     logging_object = LoggingRecord(dict(details))
-    add_guardrail_response_to_standard_logging_object(
+    CALLBACK_UTILS.add_guardrail_response_to_standard_logging_object(
         logging_object, input_value["record"]
     )
     return {
@@ -109,7 +113,7 @@ def append_answer(input_value: AppendInput) -> dict[str, JsonValue]:
     }
 
 
-def run(input_value: Input) -> JsonValue:
+def run(input_value: RecordScanInput | HeadersInput | AppendInput) -> JsonValue:
     if input_value["function"] == "record_scan_id":
         return record_scan_answer(input_value)
     if input_value["function"] == "headers":
