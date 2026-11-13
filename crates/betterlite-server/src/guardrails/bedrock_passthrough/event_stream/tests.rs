@@ -82,6 +82,7 @@ enum Mode {
     PassThrough,
     NotAnObject,
     DropFirstBlock,
+    NonTextBlock,
     Fail,
 }
 
@@ -135,6 +136,9 @@ impl PostCallSuccessHook for Hook {
             Mode::PassThrough => Ok(response),
             Mode::NotAnObject => Ok(GuardrailValue::Text("not an object".to_owned())),
             Mode::DropFirstBlock => Ok(drop_first_block(&response)),
+            Mode::NonTextBlock => Ok(with_blocks(vec![GuardrailValue::Object(BTreeMap::from([
+                ("text".to_owned(), GuardrailValue::SignedInteger(7)),
+            ]))])),
             Mode::Fail => Err(HookFailure),
         };
         ready(result)
@@ -382,6 +386,16 @@ fn a_frame_length_below_the_prelude_stops_the_walk() {
 }
 
 #[test]
+fn a_sixteen_byte_frame_that_ends_the_body_is_still_parsed() {
+    let frame = raw_frame(&[], b"");
+    assert_eq!(frame.len(), 16);
+    let parsed = parse_event_stream(&frame);
+    assert_eq!(parsed.frames.len(), 1);
+    assert_eq!(parsed.frames[0].raw, frame);
+    assert!(parsed.trailing.is_empty());
+}
+
+#[test]
 fn value_type_name_names_each_json_kind() {
     assert_eq!(value_type_name(&GuardrailValue::Null), "null");
     assert_eq!(value_type_name(&GuardrailValue::Boolean(true)), "boolean");
@@ -418,6 +432,14 @@ async fn a_missing_content_block_leaves_the_stream_unmodified() {
     ]
     .concat();
     let hook = Hook::with_mode(Mode::DropFirstBlock);
+    let output = anonymize_with(&body, &hook).await;
+    assert_eq!(output, body);
+}
+
+#[tokio::test]
+async fn a_block_text_that_is_not_a_string_leaves_the_stream_unmodified() {
+    let body = delta_frame(r#"{"text": "hello"}"#);
+    let hook = Hook::with_mode(Mode::NonTextBlock);
     let output = anonymize_with(&body, &hook).await;
     assert_eq!(output, body);
 }
