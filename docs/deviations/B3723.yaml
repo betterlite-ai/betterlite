@@ -1,0 +1,14 @@
+task: B3723
+deviations:
+  - what: "An Authorization value supplied through extra_headers that is itself an AWS SigV4 signature is kept as given; LiteLLM replaces any extra_headers Authorization value after signing."
+    why: "The shared signer in betterlite-bedrock treats a caller-supplied AWS signature as already correct rather than overwriting it with an identical one. A non-AWS value such as a bearer token is still overridden exactly as LiteLLM does."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L854-L858"
+  - what: "The ApplyGuardrail path requires guardrailIdentifier and guardrailVersion and returns an error naming the missing field; LiteLLM interpolates the text None into the URL when either is missing."
+    why: "A URL carrying None is rejected by AWS, so no working setup reaches that path. An error that names the field replaces a confusing provider failure."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L817-L820"
+  - what: "An error body that is not valid UTF-8 yields the default Bedrock guardrail request failed message; LiteLLM decodes it with replacement characters and returns those as the message."
+    why: "betterlite refuses bytes that are not UTF-8 instead of mangling them; a replacement-decoded message is not text a working setup can rely on."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L2159-L2165"
+  - what: "Signing without a bearer token and without resolved credentials returns a typed signing error; LiteLLM builds SigV4Auth(None, ...) and fails with a Python TypeError."
+    why: "The credential resolver either returns credentials or an error, so a missing credential is reported once, by name, instead of surfacing as an unhandled exception."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/bedrock_guardrails.py#L837-L850"
