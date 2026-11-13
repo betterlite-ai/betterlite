@@ -46,5 +46,128 @@ call:
       - kind: stream_event
         event:
           item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.in_progress
+          response: {id: "resp_3"}
+      - kind: stream_event
+        event:
+          type: response.incomplete
+          response: {id: "resp_3"}
+      - kind: stream_event
+        event:
+          type: response.output_item.done
+          item: {type: message}
+      - kind: stream_event
+        event:
+          type: response.content_part.added
+          item_id: "item_1"
+          part: {type: output_text, text: "hi"}
+      - kind: stream_event
+        event:
+          type: response.content_part.done
+          item_id: "item_1"
+          part: {type: refusal, refusal: "no"}
+      - kind: stream_event
+        event:
+          type: response.content_part.done
+          item_id: "item_1"
+          part: {type: reasoning_text, reasoning: "because"}
+      - kind: stream_event
+        event:
+          type: response.output_text.annotation.added
+          item_id: "item_1"
+          annotation: {type: url_citation}
+      - kind: stream_event
+        event:
+          type: response.output_text.done
+          item_id: "item_1"
+          text: "hi"
+      - kind: stream_event
+        event:
+          type: response.refusal.delta
+          item_id: "item_1"
+          delta: "n"
+      - kind: stream_event
+        event:
+          type: response.refusal.done
+          item_id: "item_1"
+          refusal: "no"
+      - kind: stream_event
+        event:
+          type: response.function_call_arguments.delta
+          item_id: "item_1"
+          delta: "{"
+      - kind: stream_event
+        event:
+          type: response.function_call_arguments.done
+          item_id: "item_1"
+          arguments: "{}"
+      - kind: stream_event
+        event:
+          type: response.file_search_call.in_progress
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.file_search_call.searching
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.file_search_call.completed
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.web_search_call.in_progress
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.web_search_call.searching
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.web_search_call.completed
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_list_tools.in_progress
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_list_tools.completed
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_list_tools.failed
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_call.in_progress
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_call.completed
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_call.failed
+          item_id: "item_1"
+      - kind: stream_event
+        event:
+          type: response.mcp_call_arguments.delta
+          item_id: "item_1"
+          delta: "{"
+      - kind: stream_event
+        event:
+          type: response.mcp_call_arguments.done
+          item_id: "item_1"
+          arguments: "{}"
+      - kind: stream_event
+        event:
+          type: image_generation.partial_image
+          b64_json: "aGk="
+      - kind: stream_event
+        event:
+          type: error
+          error: {type: invalid_request_error, code: context_length_exceeded, message: "bad"}
 env: {}
 compare: {ignore: []}

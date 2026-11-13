@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Value;
 
@@ -127,7 +128,7 @@ fn sanitize_request_filters_extra_body_keys_and_drops_an_empty_body() {
         object(r#"{"extra_body":{"instructions":"y"},"temperature":0}"#)
     );
     let emptied = sanitize_request(&object(r#"{"extra_body":{"input":1,"model":2}}"#));
-    assert_eq!(emptied, object(r#"{}"#));
+    assert_eq!(emptied, object("{}"));
     let untouched = sanitize_request(&object(r#"{"extra_body":5}"#));
     assert_eq!(untouched, object(r#"{"extra_body":5}"#));
 }
@@ -328,6 +329,57 @@ fn stream_event_recurses_into_a_nested_usage() {
     assert_eq!(decoded["response"]["usage"]["total_tokens"], 0);
 }
 
+#[rstest]
+#[case::content_part_added(r#"{"type":"response.content_part.added","item_id":"i","part":{"type":"output_text"}}"#, &["output_index", "content_index"])]
+#[case::output_text_done(r#"{"type":"response.output_text.done","item_id":"i","text":"t"}"#, &["output_index", "content_index"])]
+#[case::refusal_delta(r#"{"type":"response.refusal.delta","item_id":"i","delta":"d"}"#, &["output_index", "content_index"])]
+#[case::refusal_done(r#"{"type":"response.refusal.done","item_id":"i","refusal":"r"}"#, &["output_index", "content_index"])]
+#[case::annotation_added(r#"{"type":"response.output_text.annotation.added","item_id":"i","annotation":{"type":"url_citation"}}"#, &["output_index", "content_index", "annotation_index"])]
+#[case::function_delta(r#"{"type":"response.function_call_arguments.delta","item_id":"i","delta":"d"}"#, &["output_index"])]
+#[case::function_done(r#"{"type":"response.function_call_arguments.done","item_id":"i","arguments":"{}"}"#, &["output_index"])]
+#[case::output_item_done(r#"{"type":"response.output_item.done","item":{"type":"message"}}"#, &["output_index"])]
+#[case::file_search_call_in_progress(r#"{"type":"response.file_search_call.in_progress","item_id":"i"}"#, &["output_index"])]
+#[case::file_search_call_searching(r#"{"type":"response.file_search_call.searching","item_id":"i"}"#, &["output_index"])]
+#[case::file_search_call_completed(r#"{"type":"response.file_search_call.completed","item_id":"i"}"#, &["output_index"])]
+#[case::web_search_call_in_progress(r#"{"type":"response.web_search_call.in_progress","item_id":"i"}"#, &["output_index"])]
+#[case::web_search_call_searching(r#"{"type":"response.web_search_call.searching","item_id":"i"}"#, &["output_index"])]
+#[case::web_search_call_completed(r#"{"type":"response.web_search_call.completed","item_id":"i"}"#, &["output_index"])]
+#[case::mcp_list_tools_in_progress(r#"{"type":"response.mcp_list_tools.in_progress","item_id":"i"}"#, &["sequence_number", "output_index"])]
+#[case::mcp_list_tools_completed(r#"{"type":"response.mcp_list_tools.completed","item_id":"i"}"#, &["sequence_number", "output_index"])]
+#[case::mcp_list_tools_failed(r#"{"type":"response.mcp_list_tools.failed","item_id":"i"}"#, &["sequence_number", "output_index"])]
+#[case::mcp_call_in_progress(r#"{"type":"response.mcp_call.in_progress","item_id":"i"}"#, &["sequence_number", "output_index"])]
+#[case::mcp_call_completed(r#"{"type":"response.mcp_call.completed","item_id":"i"}"#, &["sequence_number", "output_index"])]
+#[case::mcp_call_failed(r#"{"type":"response.mcp_call.failed","item_id":"i"}"#, &["sequence_number", "output_index"])]
+#[case::mcp_call_arguments_delta(r#"{"type":"response.mcp_call_arguments.delta","item_id":"i","delta":"d"}"#, &["output_index", "sequence_number"])]
+#[case::mcp_call_arguments_done(r#"{"type":"response.mcp_call_arguments.done","item_id":"i","arguments":"{}"}"#, &["output_index", "sequence_number"])]
+#[case::image_partial(r#"{"type":"image_generation.partial_image","b64_json":"aGk="}"#, &["partial_image_index"])]
+#[case::error(r#"{"type":"error","error":{"type":"invalid_request_error","code":"c","message":"m"}}"#, &["sequence_number"])]
+fn stream_event_fills_every_integer_its_event_declares(
+    #[case] text: &str,
+    #[case] integers: &[&str],
+) {
+    let decoded = stream(text);
+    for name in integers {
+        assert_eq!(decoded[*name], 0, "{name}");
+    }
+}
+
+#[test]
+fn stream_event_gives_an_output_item_done_its_declared_default_sequence() {
+    let decoded = stream(r#"{"type":"response.output_item.done","item":{"type":"message"}}"#);
+    assert_eq!(decoded["sequence_number"], 1);
+}
+
+#[test]
+fn stream_event_rejects_an_error_event_without_a_string_code() {
+    assert!(matches!(
+        stream_error(
+            r#"{"type":"error","error":{"type":"invalid_request_error","code":null,"message":"m"}}"#
+        ),
+        VolcengineResponsesError::EventRecord { .. }
+    ));
+}
+
 #[test]
 fn stream_event_rejects_an_event_without_a_string_type() {
     assert!(matches!(
@@ -403,6 +455,23 @@ fn delete_reply_keeps_the_fields_as_sent_when_validation_fails() {
         ResourceReply::Body(body) => assert_eq!(
             serde_json::to_value(*body).unwrap(),
             serde_json::json!({"deleted": true})
+        ),
+        ResourceReply::Response(_typed) => panic!("expected a body"),
+    }
+}
+
+#[test]
+fn delete_reply_returns_the_validated_record() {
+    let headers = IndexMap::new();
+    let reply = wire_reply(
+        r#"{"id":"resp_1","object":"response","deleted":true,"extra":1}"#,
+        200,
+        &headers,
+    );
+    match transform_resource_reply(ReplyOperation::Delete, &reply).unwrap() {
+        ResourceReply::Body(body) => assert_eq!(
+            serde_json::to_value(*body).unwrap(),
+            serde_json::json!({"id": "resp_1", "object": "response", "deleted": true, "extra": 1})
         ),
         ResourceReply::Response(_typed) => panic!("expected a body"),
     }

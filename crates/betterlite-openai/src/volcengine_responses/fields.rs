@@ -199,11 +199,15 @@ fn fill_nested(value: &mut Json, nested: Option<Record>) {
         return;
     };
     match value {
-        Json::Object(fields) => fill(fields, record_table(record, fields)),
+        Json::Object(fields) => {
+            let table = record_table(record, fields);
+            fill(fields, table);
+        }
         Json::List(items) => {
             for item in items {
                 if let Json::Object(fields) = item {
-                    fill(fields, record_table(record, fields));
+                    let table = record_table(record, fields);
+                    fill(fields, table);
                 }
             }
         }

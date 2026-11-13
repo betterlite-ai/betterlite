@@ -117,7 +117,9 @@ fn delete_body(reply: &RawResponse<'_>) -> Result<Json, VolcEngineError> {
         tracing::debug!("the Volcengine delete reply did not validate; keeping its fields as sent");
         return Ok(Json::Object(fields));
     };
-    serde_json::to_value(decoded).map_err(|_encode| VolcEngineError::from(reply))
+    let validated =
+        serde_json::to_value(decoded).map_err(|_encode| VolcEngineError::from(reply))?;
+    serde_json::from_value(validated).map_err(|_decode| VolcEngineError::from(reply))
 }
 
 // get and cancel validate strictly, delete falls back to the fields as sent, and input items stay raw
