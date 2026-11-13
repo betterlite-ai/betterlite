@@ -5,8 +5,7 @@ use betterlite_server::guardrails::responses_translation::input_provenance::{
     InputProvenance, input_item_provenance, item_rewrite_field, rewritten_input_item,
 };
 use betterlite_server::guardrails::tool_call_identity::{
-    ToolCallShape, post_guardrail_shapes, tool_call_rewrite, tool_call_shapes,
-    undeliverable_reason,
+    ToolCallShape, post_guardrail_shapes, tool_call_rewrite, tool_call_shapes, undeliverable_reason,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -79,8 +78,9 @@ impl Helper for Op {
 }
 
 fn provenance_answer(raw_input: &[Value], expected_messages: &[Value]) -> HelperResult {
-    let provenance = input_item_provenance(raw_input, expected_messages).or_value_error()?;
-    Ok(provenance_value(provenance.as_ref()))
+    input_item_provenance(raw_input, expected_messages)
+        .or_value_error()
+        .map(|provenance| provenance_value(provenance.as_ref()))
 }
 
 fn rewrite_field_answer(item: &Map<String, Value>) -> Value {
@@ -88,8 +88,9 @@ fn rewrite_field_answer(item: &Map<String, Value>) -> Value {
 }
 
 fn rewritten_item_answer(item: &Map<String, Value>, rewritten: &Value) -> HelperResult {
-    let patched = rewritten_input_item(item, rewritten).or_value_error()?;
-    Ok(patched.map_or(Value::Null, Value::Object))
+    rewritten_input_item(item, rewritten)
+        .or_value_error()
+        .map(|patched| patched.map_or(Value::Null, Value::Object))
 }
 
 fn post_shapes_answer(
