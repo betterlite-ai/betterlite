@@ -101,7 +101,7 @@ def first_record(data_json: str) -> TracedRecord:
     return entries[0]
 
 
-def test_native_base_settings_round_trip() -> None:
+def test_native_base_settings() -> None:
     settings: dict[str, JsonValue] = {
         "guardrail_name": "pii",
         "supported_event_hooks": ["pre_call", "post_call"],
@@ -125,19 +125,15 @@ def test_native_base_settings_round_trip() -> None:
     assert view["sticky_session_routing"] is False
     assert view["timeout"] == CALL_TIMEOUT
     assert view["switches"]["deny_text_on_error"] is True
+    defaults = TypeAdapter(SettingsView).validate_json(build({"guardrail_name": "pii"}).settings())
+    assert defaults["event_hook"] is None
+    assert defaults["default_on"] is False
+    assert defaults["mask_request_content"] is False
+    assert defaults["sticky_session_routing"] is True
+    assert defaults["timeout"] is None
 
 
-def test_native_base_defaults() -> None:
-    view = TypeAdapter(SettingsView).validate_json(build({"guardrail_name": "pii"}).settings())
-    assert view["guardrail_name"] == "pii"
-    assert view["event_hook"] is None
-    assert view["default_on"] is False
-    assert view["mask_request_content"] is False
-    assert view["sticky_session_routing"] is True
-    assert view["timeout"] is None
-
-
-def test_native_base_rejects_unparsable_settings() -> None:
+def test_native_base_bad_json() -> None:
     with pytest.raises(_native.NativeGuardrailError) as raised:
         _native.NativeGuardrail("{", strict_modes=True)
     payload = TypeAdapter(ErrorPayload).validate_json(str(raised.value))
@@ -146,7 +142,7 @@ def test_native_base_rejects_unparsable_settings() -> None:
     assert payload["guardrail_name"] is None
 
 
-def test_native_base_rejects_an_unsupported_hook() -> None:
+def test_native_base_bad_hook() -> None:
     settings: dict[str, JsonValue] = {
         "guardrail_name": "pii",
         "supported_event_hooks": ["pre_call"],
@@ -160,7 +156,7 @@ def test_native_base_rejects_an_unsupported_hook() -> None:
     assert build(settings, strict=False).settings()
 
 
-def test_native_base_update_params() -> None:
+def test_native_base_update() -> None:
     guardrail = build(SETTINGS)
     params: dict[str, JsonValue] = {
         "guardrail": "pii",
@@ -181,7 +177,7 @@ def test_native_base_update_params() -> None:
     assert TypeAdapter(str | None).validate_json(build(SETTINGS).mode()) is None
 
 
-def test_native_base_render_violation_message() -> None:
+def test_native_base_violation() -> None:
     templated = build({"guardrail_name": "pii", "violation_message_template": "Blocked: {reason}"})
     assert templated.render_violation_message("nope", '{"reason": "pii"}') == "Blocked: pii"
     default_filled = build({"violation_message_template": "Blocked: {default_message}"})
@@ -190,7 +186,7 @@ def test_native_base_render_violation_message() -> None:
     assert build({"guardrail_name": "pii"}).render_violation_message("nope", "{}") == "nope"
 
 
-def test_native_base_inject_advisory_message() -> None:
+def test_native_base_advisory() -> None:
     guardrail = build(SETTINGS)
     body: dict[str, JsonValue] = {"messages": [{"role": "user", "content": "hi"}]}
     written, text = guardrail.inject_advisory_message(json.dumps(body), NOTE)
@@ -206,7 +202,7 @@ def test_native_base_inject_advisory_message() -> None:
     assert TypeAdapter(AdvisoryData).validate_json(text) == structured
 
 
-def test_native_select_event_hook_is_event_type() -> None:
+def test_native_select_hooks() -> None:
     pre = build({"event_hook": "pre_call"})
     assert pre.event_hook_is_event_type("pre_call") is True
     assert pre.event_hook_is_event_type("post_call") is False
@@ -234,7 +230,7 @@ def test_native_select_gate() -> None:
     assert build({"guardrail_name": "pii"}).should_run_guardrail(EMPTY, "during_call", "[]") is True
 
 
-def test_native_select_dynamic_request_body_params() -> None:
+def test_native_select_dynamic() -> None:
     guardrail = build({"guardrail_name": "pii"})
     data: dict[str, JsonValue] = {"guardrails": [{"pii": {"extra_body": {"threshold": 0.5}}}]}
     params = TypeAdapter(dict[str, JsonValue]).validate_json(
@@ -245,7 +241,7 @@ def test_native_select_dynamic_request_body_params() -> None:
     assert TypeAdapter(dict[str, JsonValue]).validate_json(empty) == {}
 
 
-def test_native_select_error_kind() -> None:
+def test_native_select_errors() -> None:
     tagged = build({"guardrail_name": "pii", "event_hook": {"tags": {"health": "pre_call"}}})
     with pytest.raises(_native.NativeGuardrailError) as raised:
         tagged.should_run_guardrail(NAMED_GUARDRAIL, "pre_call", "[]")
@@ -259,7 +255,7 @@ def test_native_select_error_kind() -> None:
     assert payload["kind"] == "RequestedNotList"
 
 
-def test_native_records_sanitize_response() -> None:
+def test_native_records_sanitize() -> None:
     response: dict[str, JsonValue] = {
         "match": None,
         "score": SCORE,
@@ -278,7 +274,7 @@ def test_native_records_sanitize_response() -> None:
     assert "gone" not in outer
 
 
-def test_native_records_add_record() -> None:
+def test_native_records_add() -> None:
     record_input: dict[str, JsonValue] = {
         "guardrail_response": {"verdict": "x", "score": SCORE},
         "guardrail_status": "success",
@@ -308,7 +304,7 @@ def test_native_records_add_record() -> None:
     assert synced == [record]
 
 
-def test_native_records_summarize_response() -> None:
+def test_native_records_summary() -> None:
     before = '{"messages": [{"role": "user", "content": "hi"}]}'
     after = '{"messages": [{"role": "user", "content": "**"}]}'
     masked = _native.summarize_guardrail_response(after, before, "pre_call")
@@ -319,7 +315,7 @@ def test_native_records_summarize_response() -> None:
     assert _native.summarize_guardrail_response("null", None, None) == "{}"
 
 
-def test_native_records_sync_log_target() -> None:
+def test_native_records_sync() -> None:
     entry: dict[str, JsonValue] = {"guardrail_name": "pii"}
     data: dict[str, JsonValue] = {"metadata": {"standard_logging_guardrail_information": [entry]}}
     target: dict[str, JsonValue] = {"litellm_params": {"metadata": {}}, "model_call_params": None}
@@ -333,7 +329,7 @@ def test_native_records_sync_log_target() -> None:
     assert synced["model_call_params"] is None
 
 
-def test_native_records_messages_for_call_type() -> None:
+def test_native_records_messages() -> None:
     chat: dict[str, JsonValue] = {"messages": [{"role": "user", "content": "hi"}]}
     messages = _native.messages_for_call_type("completion", json.dumps(chat))
     assert messages is not None
@@ -347,7 +343,7 @@ def test_native_records_messages_for_call_type() -> None:
     assert _native.messages_for_call_type("completion", None) is None
 
 
-def test_native_records_invocation_success() -> None:
+def test_native_records_invoke() -> None:
     body: dict[str, JsonValue] = {"messages": [{"role": "user", "content": "hi"}]}
     text = json.dumps(body)
     invocation = _native.NativeGuardrailInvocation.begin("async_pre_call_hook", text, None)
@@ -368,7 +364,7 @@ def test_native_records_invocation_success() -> None:
     assert payload["kind"] == "AlreadyFinished"
 
 
-def test_native_records_invocation_records_own() -> None:
+def test_native_records_own() -> None:
     body: dict[str, JsonValue] = {"messages": [{"role": "user", "content": "hi"}]}
     text = json.dumps(body)
     record_input: dict[str, JsonValue] = {
@@ -384,7 +380,7 @@ def test_native_records_invocation_records_own() -> None:
     assert first_record(data_json)["guardrail_status"] == "guardrail_flagged"
 
 
-def test_native_records_invocation_apply_guardrail() -> None:
+def test_native_records_apply() -> None:
     inputs: dict[str, JsonValue] = {"texts": ["hi"]}
     invocation = _native.NativeGuardrailInvocation.begin(
         "apply_guardrail", EMPTY, json.dumps(inputs)
