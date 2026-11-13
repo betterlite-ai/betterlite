@@ -332,6 +332,20 @@ fn a_tool_call_waits_for_its_name_before_it_emits() {
 }
 
 #[test]
+fn a_later_name_replaces_the_accumulated_one_and_an_empty_name_keeps_it() {
+    let mut state = GenAiStreamState::default();
+    let first_name = stream_chunk(tool_delta(0, Some("a"), "{\"x\":"), None, None);
+    assert!(translate_chunk(&first_name, &mut state).is_none());
+    let second_name = stream_chunk(tool_delta(0, Some("b"), ""), None, None);
+    assert!(translate_chunk(&second_name, &mut state).is_none());
+    let empty_name = stream_chunk(tool_delta(0, Some(""), "1}"), None, None);
+    assert_eq!(
+        parts_of(&translated_chunk(&empty_name, &mut state)),
+        json!([{"functionCall": {"name": "b", "args": {"x": 1}}}])
+    );
+}
+
+#[test]
 fn two_tool_calls_accumulate_separately_by_index() {
     let mut state = GenAiStreamState::default();
     let chunk = stream_chunk(
