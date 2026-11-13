@@ -1,0 +1,25 @@
+kind: helper
+name: anthropic-tools-cache-examples-callers
+call:
+  anthropic_tools:
+    calls:
+      - function: tools
+        tools:
+          - {type: function, function: {name: cached, cache_control: {ttl: 1h}}, cache_control: {type: ephemeral}}
+          - {type: function, function: {name: nested, cache_control: {type: ephemeral}}}
+          - {type: web_search_20250305, name: search, function: {cache_control: {type: ephemeral}}}
+          - {type: function, function: {name: callers, allowed_callers: [code_execution_20250825]}, allowed_callers: [direct]}
+          - {type: function, function: {name: nested-callers, allowed_callers: []}}
+          - {type: function, function: {name: top-empty-callers, allowed_callers: [direct]}, allowed_callers: []}
+          - {type: function, function: {name: fallback, input_examples: [{q: 1}]}, input_examples: {bad: true}}
+          - {type: function, function: {name: top-examples, input_examples: [{q: 1}]}, input_examples: [{q: 2}]}
+          - {type: function, function: {name: ignored}, input_examples: {bad: true}}
+          - {type: computer_20251124, function: {parameters: {display_width_px: 1, display_height_px: 2}, allowed_callers: [direct], defer_loading: true}}
+      - function: tools
+        tools:
+          - {type: function, function: {name: bad-callers, allowed_callers: [1]}}
+      - function: tools
+        tools:
+          - {type: function, function: {name: bad-top-callers}, allowed_callers: direct}
+env: {}
+compare: {ignore: []}

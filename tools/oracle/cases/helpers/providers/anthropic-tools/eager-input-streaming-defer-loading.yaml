@@ -1,0 +1,28 @@
+kind: helper
+name: anthropic-tools-eager-input-streaming-defer-loading
+call:
+  anthropic_tools:
+    calls:
+      - function: tools
+        tools:
+          - {type: function, function: {name: deferred, defer_loading: false}}
+          - {type: function, function: {name: top-defer}, defer_loading: true}
+          - {type: function, function: {name: top-false, defer_loading: true}, defer_loading: false}
+          - {type: web_search_20250305, name: nested-defer, function: {defer_loading: true}}
+          - {type: function, function: {name: nulls, defer_loading: null}, defer_loading: null}
+          - {type: custom, function: {name: eager-false, eager_input_streaming: false}}
+          - {type: computer_20241022, function: {parameters: {display_width_px: 1, display_height_px: 2}, defer_loading: true, allowed_callers: [direct]}}
+          - {type: computer_20241023, function: {parameters: {display_width_px: 1, display_height_px: 2}, defer_loading: true}}
+          - {type: web_search_20250305, name: search, defer_loading: true, allowed_callers: [direct]}
+          - {type: bash_20250124, name: shell, eager_input_streaming: yes-please}
+      - function: tools
+        tools:
+          - {type: function, function: {name: bad-defer, defer_loading: yes-please}}
+      - function: tools
+        tools:
+          - {type: function, function: {name: bad-top-defer}, defer_loading: 1}
+      - function: tools
+        tools:
+          - {type: custom, function: {name: bad-eager, eager_input_streaming: 1}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,19 @@
+kind: helper
+name: anthropic-tools-search-tool-branch-shadowing
+call:
+  anthropic_tools:
+    calls:
+      - function: tools
+        tools:
+          - {type: tool_search_tool_regex_20251119, name: regex-search, max_uses: 2, cache_control: {type: ephemeral}, defer_loading: true, allowed_callers: [direct], input_examples: [{q: 1}]}
+          - {type: tool_search_tool_bm25_20251119, name: ''}
+          - {type: tool_search_tool_regex_20251119, name: nested-only, function: {cache_control: {type: ephemeral}, defer_loading: true, allowed_callers: [direct]}}
+          - {type: tool_search_tool_bm25_20251119, name: nested-bm25, function: {defer_loading: true}}
+      - function: tools
+        tools:
+          - {type: tool_search_tool_regex_20251119, function: {}}
+      - function: tools
+        tools:
+          - {type: tool_search_tool_bm25_20251119}
+env: {}
+compare: {ignore: []}
