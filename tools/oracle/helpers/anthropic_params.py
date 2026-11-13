@@ -8,20 +8,9 @@ from pydantic import JsonValue as Json
 from typing_extensions import override
 
 
-class Budgets(TypedDict):
-    minimal: int
-    low: int
-    medium: int
-    high: int
-    xhigh: int
-    max: int
-
-
 class Fixture(TypedDict):
     model_cost: dict[str, Json]
     packaged: dict[str, Json]
-    budgets: Budgets
-    default_max_tokens: int
 
 
 class MapStep(TypedDict):
