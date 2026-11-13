@@ -74,26 +74,21 @@ impl ReasoningItemRecord {
     fn into_fields(self) -> Object {
         let mut fields = Object::new();
         fields.insert("id".to_owned(), Json::Text(self.id));
-        fields.insert(
-            "summary".to_owned(),
-            Json::List(
-                self.summary
-                    .into_iter()
-                    .map(|entry| Json::Object(entry.into_fields()))
-                    .collect(),
-            ),
-        );
+        let summary = self
+            .summary
+            .into_iter()
+            .map(|entry| Json::Object(text_fields(entry.text, entry.kind.as_str(), entry.extra)))
+            .collect();
+        fields.insert("summary".to_owned(), Json::List(summary));
         fields.insert("type".to_owned(), Json::Text(self.kind.as_str().to_owned()));
         if let Some(content) = self.content {
-            fields.insert(
-                "content".to_owned(),
-                Json::List(
-                    content
-                        .into_iter()
-                        .map(|entry| Json::Object(entry.into_fields()))
-                        .collect(),
-                ),
-            );
+            let entries = content
+                .into_iter()
+                .map(|entry| {
+                    Json::Object(text_fields(entry.text, entry.kind.as_str(), entry.extra))
+                })
+                .collect();
+            fields.insert("content".to_owned(), Json::List(entries));
         }
         if let Some(encrypted_content) = self.encrypted_content {
             fields.insert(
@@ -136,18 +131,17 @@ struct ReasoningSummary {
     extra: Object,
 }
 
-impl ReasoningSummary {
-    fn into_fields(self) -> Object {
-        let mut fields = Object::new();
-        fields.insert("text".to_owned(), Json::Text(self.text));
-        fields.insert("type".to_owned(), Json::Text(self.kind.as_str().to_owned()));
-        for (key, value) in self.extra {
-            if !matches!(value, Json::Null) {
-                fields.insert(key, value);
-            }
+// A summary or content entry dumps its text, its type and then its extra fields minus the nulls.
+fn text_fields(text: String, kind: &'static str, extra: Object) -> Object {
+    let mut fields = Object::new();
+    fields.insert("text".to_owned(), Json::Text(text));
+    fields.insert("type".to_owned(), Json::Text(kind.to_owned()));
+    for (key, value) in extra {
+        if !matches!(value, Json::Null) {
+            fields.insert(key, value);
         }
-        fields
     }
+    fields
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -171,20 +165,6 @@ struct ReasoningContent {
     kind: ContentKind,
     #[serde(flatten)]
     extra: Object,
-}
-
-impl ReasoningContent {
-    fn into_fields(self) -> Object {
-        let mut fields = Object::new();
-        fields.insert("text".to_owned(), Json::Text(self.text));
-        fields.insert("type".to_owned(), Json::Text(self.kind.as_str().to_owned()));
-        for (key, value) in self.extra {
-            if !matches!(value, Json::Null) {
-                fields.insert(key, value);
-            }
-        }
-        fields
-    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

@@ -50,6 +50,10 @@ fn expect_tool_error(value: Value) -> ResponseInputError {
     run(&probe(value)).expect_err("the tool schema is rejected")
 }
 
+fn assert_prepared(probe: &str, expected: &str) {
+    assert_eq!(expect_body(fixture(probe)), fixture(expected));
+}
+
 fn schema_body(model: &str, parameters: &str) -> Value {
     fixture(&format!(
         r#"{{"model": "{model}", "input": "hi", "tools": [{{"type": "function", "name": "f", "parameters": {parameters}}}]}}"#
@@ -94,8 +98,15 @@ fn assert_combinators_kept(model: &str) {
     );
 }
 
+fn assert_gate(model: &str, model_info: &str, parameters: &str) {
+    assert_eq!(
+        expect_body(gate_request(model, model_info)),
+        schema_body(model, parameters)
+    );
+}
+
 fn string_schema_object() {
-    let decoded = expect_body(fixture(
+    assert_prepared(
         r#"{"model": "gpt-4o", "input": "hi", "params": {"tools": [
             {"type": "function", "name": "f", "parameters": "{\"type\":\"object\"}"},
             {"type": "function", "name": "g", "parameters": {"type": "object", "title": "kept"}},
@@ -103,18 +114,13 @@ fn string_schema_object() {
             {"type": "function", "name": "i"},
             "raw-tool"
         ]}}"#,
-    ));
-    assert_eq!(
-        decoded,
-        fixture(
-            r#"{"model": "gpt-4o", "input": "hi", "tools": [
-                {"type": "function", "name": "f", "parameters": {"type": "object"}},
-                {"type": "function", "name": "g", "parameters": {"type": "object", "title": "kept"}},
-                {"type": "function", "name": "h", "parameters": null},
-                {"type": "function", "name": "i"},
-                "raw-tool"
-            ]}"#
-        )
+        r#"{"model": "gpt-4o", "input": "hi", "tools": [
+            {"type": "function", "name": "f", "parameters": {"type": "object"}},
+            {"type": "function", "name": "g", "parameters": {"type": "object", "title": "kept"}},
+            {"type": "function", "name": "h", "parameters": null},
+            {"type": "function", "name": "i"},
+            "raw-tool"
+        ]}"#,
     );
     let spaced = expect_body(fixture(
         r#"{"model": "gpt-4o", "input": "hi", "params": {"tools": [{"parameters": " { \"type\" : \"object\" , \"n\" : 1 } "}]}}"#,
@@ -174,7 +180,7 @@ fn invalid_string_schema() {
 }
 
 fn recursive_tool_namespace() {
-    let body = expect_body(fixture(
+    assert_prepared(
         r#"{"model": "gpt-4o", "input": "hi", "params": {"tools": [
             {
                 "type": "namespace",
@@ -189,30 +195,25 @@ fn recursive_tool_namespace() {
             },
             {"type": "function", "name": "plain", "parameters": {"type": "object"}}
         ]}}"#,
-    ));
-    assert_eq!(
-        body,
-        fixture(
-            r#"{"model": "gpt-4o", "input": "hi", "tools": [
-                {
-                    "type": "namespace",
-                    "name": "ns",
-                    "parameters": {"type": "object", "properties": {}},
-                    "tools": [
-                        {"type": "function", "name": "inner", "parameters": "{\"type\":\"object\"}"},
-                        "raw-inner",
-                        {"type": "function", "name": "deep", "parameters": {"properties": {"p": {}}, "type": "object"}}
-                    ],
-                    "unrelated": {"keep": true}
-                },
-                {"type": "function", "name": "plain", "parameters": {"type": "object"}}
-            ]}"#
-        )
+        r#"{"model": "gpt-4o", "input": "hi", "tools": [
+            {
+                "type": "namespace",
+                "name": "ns",
+                "parameters": {"type": "object", "properties": {}},
+                "tools": [
+                    {"type": "function", "name": "inner", "parameters": "{\"type\":\"object\"}"},
+                    "raw-inner",
+                    {"type": "function", "name": "deep", "parameters": {"properties": {"p": {}}, "type": "object"}}
+                ],
+                "unrelated": {"keep": true}
+            },
+            {"type": "function", "name": "plain", "parameters": {"type": "object"}}
+        ]}"#,
     );
 }
 
 fn assert_foreign_ids_openai() {
-    let body = expect_body(fixture(
+    assert_prepared(
         r#"{"model": "gpt-4o", "input": [
             {"type": "function_call", "id": "call_1", "call_id": "c1", "name": "f"},
             {"type": "function_call", "id": "fc_1", "call_id": "c2"},
@@ -224,64 +225,48 @@ fn assert_foreign_ids_openai() {
             {"type": "message", "id": "msg_1", "role": "user"},
             "plain-string-item"
         ], "params": {}}"#,
-    ));
-    assert_eq!(
-        body,
-        fixture(
-            r#"{"model": "gpt-4o", "input": [
-                {"type": "function_call", "call_id": "c1", "name": "f"},
-                {"type": "function_call", "id": "fc_1", "call_id": "c2"},
-                {"type": "function_call", "id": "fc", "call_id": "c3"},
-                {"type": "custom_tool_call", "call_id": "c4"},
-                {"type": "custom_tool_call", "id": "ctc_1"},
-                {"type": "custom_tool_call", "id": "ctcx"},
-                {"type": "function_call", "id": 5},
-                {"type": "message", "id": "msg_1", "role": "user"},
-                "plain-string-item"
-            ]}"#
-        )
+        r#"{"model": "gpt-4o", "input": [
+            {"type": "function_call", "call_id": "c1", "name": "f"},
+            {"type": "function_call", "id": "fc_1", "call_id": "c2"},
+            {"type": "function_call", "id": "fc", "call_id": "c3"},
+            {"type": "custom_tool_call", "call_id": "c4"},
+            {"type": "custom_tool_call", "id": "ctc_1"},
+            {"type": "custom_tool_call", "id": "ctcx"},
+            {"type": "function_call", "id": 5},
+            {"type": "message", "id": "msg_1", "role": "user"},
+            "plain-string-item"
+        ]}"#,
     );
 }
 
 fn assert_foreign_ids_azure() {
-    let body = expect_body(fixture(
+    assert_prepared(
         r#"{"model": "azure/dep", "provider": "azure", "input": [
             {"type": "function_call", "id": "call_9", "call_id": "c9"},
             {"type": "function_call", "id": "fcz"}
         ], "params": {}}"#,
-    ));
-    assert_eq!(
-        body,
-        fixture(
-            r#"{"model": "azure/dep", "input": [
-                {"type": "function_call", "call_id": "c9"},
-                {"type": "function_call", "id": "fcz"}
-            ]}"#
-        )
+        r#"{"model": "azure/dep", "input": [
+            {"type": "function_call", "call_id": "c9"},
+            {"type": "function_call", "id": "fcz"}
+        ]}"#,
     );
 }
 
 fn foreign_tool_item_id() {
     assert_foreign_ids_openai();
     assert_foreign_ids_azure();
-    let other = expect_body(fixture(
+    assert_prepared(
         r#"{"model": "gpt-4o", "provider": "hosted_vllm", "input": [{"type": "function_call", "id": "call_7"}], "params": {}}"#,
-    ));
-    assert_eq!(
-        other,
-        fixture(r#"{"model": "gpt-4o", "input": [{"type": "function_call", "id": "call_7"}]}"#)
+        r#"{"model": "gpt-4o", "input": [{"type": "function_call", "id": "call_7"}]}"#,
     );
-    let text = expect_body(fixture(
+    assert_prepared(
         r#"{"model": "gpt-4o", "input": "just a string", "params": {}}"#,
-    ));
-    assert_eq!(
-        text,
-        fixture(r#"{"model": "gpt-4o", "input": "just a string"}"#)
+        r#"{"model": "gpt-4o", "input": "just a string"}"#,
     );
 }
 
-fn assert_cache_control_removed() {
-    let body = expect_body(fixture(
+fn cache_control_in_input_and_tools() {
+    assert_prepared(
         r#"{"model": "gpt-4o", "input": [
             {
                 "role": "user",
@@ -299,47 +284,38 @@ fn assert_cache_control_removed() {
             {"parameters": "{\"cache_control\":{\"type\":\"ephemeral\"},\"type\":\"object\"}"},
             "raw-tool"
         ]}}"#,
-    ));
-    assert_eq!(
-        body,
-        fixture(
-            r#"{"model": "gpt-4o", "input": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "hi"},
-                        "raw-part",
-                        {"type": "input_image", "image_url": "u", "nested": {"keep": 2}}
-                    ]
-                },
-                "raw-item",
-                {"id": "r", "summary": [], "type": "reasoning"}
-            ], "tools": [
-                {"type": "function", "name": "f", "parameters": {"type": "object"}},
-                {"parameters": {"cache_control": {"type": "ephemeral"}, "type": "object"}},
-                "raw-tool"
-            ]}"#
-        )
+        r#"{"model": "gpt-4o", "input": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "hi"},
+                    "raw-part",
+                    {"type": "input_image", "image_url": "u", "nested": {"keep": 2}}
+                ]
+            },
+            "raw-item",
+            {"id": "r", "summary": [], "type": "reasoning"}
+        ], "tools": [
+            {"type": "function", "name": "f", "parameters": {"type": "object"}},
+            {"parameters": {"cache_control": {"type": "ephemeral"}, "type": "object"}},
+            "raw-tool"
+        ]}"#,
     );
+    assert_cache_control_runs_before_decoding();
 }
 
 fn assert_cache_control_runs_before_decoding() {
-    let body = expect_body(fixture(
+    let decoded_and_sanitized = expect_body(fixture(
         r#"{"model": "gpt-4o", "input": "hi", "params": {"tools": [{"parameters": "{\"anyOf\":[{\"type\":\"string\"}],\"type\":\"object\"}"}]}}"#,
     ));
     assert_eq!(
-        body["tools"][0]["parameters"],
+        decoded_and_sanitized["tools"][0]["parameters"],
         fixture(r#"{"type": "object"}"#)
     );
 }
 
-fn cache_control_in_input_and_tools() {
-    assert_cache_control_removed();
-    assert_cache_control_runs_before_decoding();
-}
-
 fn assert_reasoning_validated() {
-    let body = expect_body(fixture(
+    assert_prepared(
         r#"{"model": "gpt-4o", "input": [
             {
                 "type": "reasoning",
@@ -354,34 +330,29 @@ fn assert_reasoning_validated() {
             {"type": "reasoning", "id": "r2", "reasoning_content": [{"type": "summary_text", "text": "from-content"}]},
             {"type": "message", "role": "user", "status": null}
         ], "params": {}}"#,
-    ));
-    assert_eq!(
-        body,
-        fixture(
-            r#"{"model": "gpt-4o", "input": [
-                {
-                    "id": "r1",
-                    "summary": [{"text": "s", "type": "summary_text", "keep": {"n": null}}],
-                    "type": "reasoning",
-                    "content": [{"text": "c", "type": "reasoning_text"}],
-                    "encrypted_content": "enc",
-                    "status": "completed",
-                    "extra_object": {"n": null}
-                },
-                {
-                    "id": "r2",
-                    "summary": [{"text": "from-content", "type": "summary_text"}],
-                    "type": "reasoning",
-                    "reasoning_content": [{"type": "summary_text", "text": "from-content"}]
-                },
-                {"type": "message", "role": "user", "status": null}
-            ]}"#
-        )
+        r#"{"model": "gpt-4o", "input": [
+            {
+                "id": "r1",
+                "summary": [{"text": "s", "type": "summary_text", "keep": {"n": null}}],
+                "type": "reasoning",
+                "content": [{"text": "c", "type": "reasoning_text"}],
+                "encrypted_content": "enc",
+                "status": "completed",
+                "extra_object": {"n": null}
+            },
+            {
+                "id": "r2",
+                "summary": [{"text": "from-content", "type": "summary_text"}],
+                "type": "reasoning",
+                "reasoning_content": [{"type": "summary_text", "text": "from-content"}]
+            },
+            {"type": "message", "role": "user", "status": null}
+        ]}"#,
     );
 }
 
 fn assert_reasoning_fallbacks() {
-    let body = expect_body(fixture(
+    assert_prepared(
         r#"{"model": "gpt-4o", "input": [
             {"type": "reasoning", "id": "r4", "reasoning_content": "a-string"},
             {"type": "reasoning", "id": "r6", "summary": "not-a-list", "status": null, "content": null, "encrypted_content": null, "kept_null": null},
@@ -389,18 +360,13 @@ fn assert_reasoning_fallbacks() {
             {"type": "reasoning", "id": "r8"},
             {"type": "reasoning", "id": "r9", "reasoning_content": null}
         ], "params": {}}"#,
-    ));
-    assert_eq!(
-        body,
-        fixture(
-            r#"{"model": "gpt-4o", "input": [
-                {"type": "reasoning", "id": "r4", "reasoning_content": "a-string"},
-                {"type": "reasoning", "id": "r6", "summary": "not-a-list", "kept_null": null},
-                {"type": "reasoning", "id": 7, "summary": []},
-                {"type": "reasoning", "id": "r8"},
-                {"type": "reasoning", "id": "r9", "reasoning_content": null}
-            ]}"#
-        )
+        r#"{"model": "gpt-4o", "input": [
+            {"type": "reasoning", "id": "r4", "reasoning_content": "a-string"},
+            {"type": "reasoning", "id": "r6", "summary": "not-a-list", "kept_null": null},
+            {"type": "reasoning", "id": 7, "summary": []},
+            {"type": "reasoning", "id": "r8"},
+            {"type": "reasoning", "id": "r9", "reasoning_content": null}
+        ]}"#,
     );
 }
 
@@ -457,13 +423,6 @@ fn gpt5_keeps_combinators() {
     );
 }
 
-fn assert_gate(model: &str, model_info: &str, parameters: &str) {
-    assert_eq!(
-        expect_body(gate_request(model, model_info)),
-        schema_body(model, parameters)
-    );
-}
-
 fn base_model_gate() {
     assert_gate("my-deployment", r#"{"base_model": "gpt-4o"}"#, FLATTENED);
     assert_gate(
@@ -496,41 +455,29 @@ fn base_model_gate() {
     assert_gate("my-deployment", "null", KEPT_WITH_REGEX_DROPPED);
 }
 
-fn assert_overlay_bodies() {
-    assert_eq!(
-        expect_body(fixture(
-            r#"{"model": "gpt-4o", "input": "hi", "params": {}}"#
-        )),
-        fixture(r#"{"model": "gpt-4o", "input": "hi"}"#)
+fn replay_body_overlay() {
+    assert_prepared(
+        r#"{"model": "gpt-4o", "input": "hi", "params": {}}"#,
+        r#"{"model": "gpt-4o", "input": "hi"}"#,
     );
-    assert_eq!(
-        expect_body(fixture(
-            r#"{"model": "gpt-4o", "input": [{"role": "user", "content": "x"}], "params": {"temperature": 1, "stream": true, "metadata": {"a": 1}}}"#
-        )),
-        fixture(
-            r#"{"model": "gpt-4o", "input": [{"role": "user", "content": "x"}], "temperature": 1, "stream": true, "metadata": {"a": 1}}"#
-        )
+    assert_prepared(
+        r#"{"model": "gpt-4o", "input": [{"role": "user", "content": "x"}], "params": {"temperature": 1, "stream": true, "metadata": {"a": 1}}}"#,
+        r#"{"model": "gpt-4o", "input": [{"role": "user", "content": "x"}], "temperature": 1, "stream": true, "metadata": {"a": 1}}"#,
     );
-    assert_eq!(
-        expect_body(fixture(
-            r#"{"model": "gpt-4o", "input": "hi", "params": {"tools": []}}"#
-        )),
-        fixture(r#"{"model": "gpt-4o", "input": "hi", "tools": []}"#)
+    assert_prepared(
+        r#"{"model": "gpt-4o", "input": "hi", "params": {"tools": []}}"#,
+        r#"{"model": "gpt-4o", "input": "hi", "tools": []}"#,
     );
-    assert_eq!(
-        expect_body(fixture(
-            r#"{"model": "gpt-4o", "input": "hi", "params": {"tools": null}}"#
-        )),
-        fixture(r#"{"model": "gpt-4o", "input": "hi", "tools": null}"#)
+    assert_prepared(
+        r#"{"model": "gpt-4o", "input": "hi", "params": {"tools": null}}"#,
+        r#"{"model": "gpt-4o", "input": "hi", "tools": null}"#,
     );
-    assert_eq!(
-        expect_body(fixture(
-            r#"{"model": "gpt-4o", "input": "hi", "params": {"tool_choice": "auto", "tools": [{"type": "function", "name": "g", "parameters": {"type": "object"}}]}}"#
-        )),
-        fixture(
-            r#"{"model": "gpt-4o", "input": "hi", "tool_choice": "auto", "tools": [{"type": "function", "name": "g", "parameters": {"type": "object"}}]}"#
-        )
+    assert_prepared(
+        r#"{"model": "gpt-4o", "input": "hi", "params": {"tool_choice": "auto", "tools": [{"type": "function", "name": "g", "parameters": {"type": "object"}}]}}"#,
+        r#"{"model": "gpt-4o", "input": "hi", "tool_choice": "auto", "tools": [{"type": "function", "name": "g", "parameters": {"type": "object"}}]}"#,
     );
+    assert_overlay_duplicate_keys();
+    assert_overlay_tools_shape();
 }
 
 fn assert_overlay_duplicate_keys() {
@@ -571,12 +518,6 @@ fn assert_overlay_tools_shape() {
     .expect_err("an object tools value is rejected");
     assert_eq!(map_tools.http_status(), Some(400));
     assert!(map_tools.to_string().contains("'tools'"));
-}
-
-fn replay_body_overlay() {
-    assert_overlay_bodies();
-    assert_overlay_duplicate_keys();
-    assert_overlay_tools_shape();
 }
 
 #[rstest]
