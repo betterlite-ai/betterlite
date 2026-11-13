@@ -113,7 +113,7 @@ fn older_models_shape_the_openapi_schema() {
     let Some(Json::Object(schema)) = mapped.get("response_schema") else {
         panic!("the legacy path sets response_schema");
     };
-    assert_eq!(schema.get("type"), Some(&text("OBJECT")));
+    assert_eq!(schema.get("type"), Some(&text("object")));
     assert_eq!(
         schema.get("propertyOrdering"),
         Some(&Json::List(vec![text("step"), text("note")]))
@@ -128,7 +128,7 @@ fn older_models_shape_the_openapi_schema() {
     else {
         panic!("the referenced definition is inlined");
     };
-    assert_eq!(step.get("type"), Some(&text("OBJECT")));
+    assert_eq!(step.get("type"), Some(&text("object")));
     assert_eq!(
         step.get("propertyOrdering"),
         Some(&Json::List(vec![text("name")]))

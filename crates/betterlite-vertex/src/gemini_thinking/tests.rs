@@ -210,9 +210,10 @@ struct ThinkingParamCase {
 #[case::zero_suppresses(ThinkingParamCase { generation: GeminiThinkingModel::Gemini3, kind: ThinkingType::Enabled, budget_tokens: Some(0), support: Support::Supported, settings: SETTINGS, expected: ThinkingConfig { include_thoughts: Some(false), thinking_budget: None, thinking_level: None } })]
 #[case::absent_keeps_thoughts(ThinkingParamCase { generation: GeminiThinkingModel::Gemini3, kind: ThinkingType::Enabled, budget_tokens: None, support: Support::Supported, settings: SETTINGS, expected: ThinkingConfig { include_thoughts: Some(true), thinking_budget: None, thinking_level: None } })]
 #[case::budget_keeps_thoughts(ThinkingParamCase { generation: GeminiThinkingModel::Gemini3, kind: ThinkingType::Enabled, budget_tokens: Some(2000), support: Support::Supported, settings: SETTINGS, expected: ThinkingConfig { include_thoughts: Some(true), thinking_budget: None, thinking_level: None } })]
-#[case::default_low_minimal(ThinkingParamCase { generation: GeminiThinkingModel::Gemini3, kind: ThinkingType::Enabled, budget_tokens: None, support: Support::Supported, settings: SETTINGS_LOW, expected: ThinkingConfig { include_thoughts: Some(true), thinking_budget: None, thinking_level: Some(ThinkingLevel::Minimal) } })]
-#[case::default_low_falls_back(ThinkingParamCase { generation: GeminiThinkingModel::Gemini3, kind: ThinkingType::Enabled, budget_tokens: None, support: Support::OptedOut, settings: SETTINGS_LOW, expected: ThinkingConfig { include_thoughts: Some(true), thinking_budget: None, thinking_level: Some(ThinkingLevel::Low) } })]
-#[case::default_low_budget(ThinkingParamCase { generation: GeminiThinkingModel::Gemini3, kind: ThinkingType::Enabled, budget_tokens: Some(2000), support: Support::Supported, settings: SETTINGS_LOW, expected: ThinkingConfig { include_thoughts: Some(true), thinking_budget: None, thinking_level: Some(ThinkingLevel::Minimal) } })]
+#[case::default_low_minimal(ThinkingParamCase { generation: GeminiThinkingModel::Gemini3Flash, kind: ThinkingType::Enabled, budget_tokens: None, support: Support::Supported, settings: SETTINGS_LOW, expected: ThinkingConfig { include_thoughts: Some(true), thinking_budget: None, thinking_level: Some(ThinkingLevel::Minimal) } })]
+#[case::default_low_falls_back(ThinkingParamCase { generation: GeminiThinkingModel::Gemini3Flash, kind: ThinkingType::Enabled, budget_tokens: None, support: Support::OptedOut, settings: SETTINGS_LOW, expected: ThinkingConfig { include_thoughts: Some(true), thinking_budget: None, thinking_level: Some(ThinkingLevel::Low) } })]
+#[case::default_low_budget(ThinkingParamCase { generation: GeminiThinkingModel::Gemini3Flash, kind: ThinkingType::Enabled, budget_tokens: Some(2000), support: Support::Supported, settings: SETTINGS_LOW, expected: ThinkingConfig { include_thoughts: Some(true), thinking_budget: None, thinking_level: Some(ThinkingLevel::Minimal) } })]
+#[case::default_low_pro(ThinkingParamCase { generation: GeminiThinkingModel::Gemini3, kind: ThinkingType::Enabled, budget_tokens: None, support: Support::Supported, settings: SETTINGS_LOW, expected: ThinkingConfig { include_thoughts: Some(true), thinking_budget: None, thinking_level: Some(ThinkingLevel::Low) } })]
 #[case::disabled_suppresses(ThinkingParamCase { generation: GeminiThinkingModel::Gemini3, kind: ThinkingType::Disabled, budget_tokens: Some(0), support: Support::Supported, settings: SETTINGS_LOW, expected: ThinkingConfig { include_thoughts: Some(false), thinking_budget: None, thinking_level: None } })]
 #[case::adaptive_suppresses(ThinkingParamCase { generation: GeminiThinkingModel::Gemini3, kind: ThinkingType::Adaptive, budget_tokens: None, support: Support::Supported, settings: SETTINGS, expected: ThinkingConfig { include_thoughts: Some(false), thinking_budget: None, thinking_level: None } })]
 #[case::adaptive_ignores_the_default_low(ThinkingParamCase { generation: GeminiThinkingModel::Gemini3, kind: ThinkingType::Adaptive, budget_tokens: Some(5), support: Support::Supported, settings: SETTINGS_LOW, expected: ThinkingConfig { include_thoughts: Some(false), thinking_budget: None, thinking_level: None } })]
@@ -241,6 +242,7 @@ fn thinking_params_follow_the_model_generation(#[case] case: ThinkingParamCase) 
 #[derive(Clone, Copy, Debug)]
 enum GeminiThinkingModel {
     Gemini3,
+    Gemini3Flash,
     Older,
     None,
 }
@@ -249,6 +251,7 @@ impl GeminiThinkingModel {
     const fn model(self) -> Option<&'static str> {
         match self {
             Self::Gemini3 => Some("gemini-3-pro-preview"),
+            Self::Gemini3Flash => Some("gemini-3-flash-preview"),
             Self::Older => Some("gemini-2.5-flash"),
             Self::None => None,
         }

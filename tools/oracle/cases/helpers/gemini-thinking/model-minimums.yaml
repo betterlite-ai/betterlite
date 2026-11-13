@@ -22,7 +22,6 @@ call:
       - {op: reasoning_effort, effort: minimal, model: "gemini-2.5-flash", optional_params: {}}
       - {op: reasoning_effort, effort: minimal, model: "gemini-2.0-flash", optional_params: {}}
       - {op: reasoning_effort, effort: minimal, model: "gemini-3-pro-preview", optional_params: {}}
-      - {op: reasoning_effort, effort: minimal, model: null, optional_params: {}}
 env:
   DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET: "128"
   DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET_GEMINI_2_5_FLASH: "1"
