@@ -333,6 +333,30 @@ fn managed_write_fields_enabled_false_is_written() {
 }
 
 #[test]
+fn managed_write_fields_absent_identity_without_binding_is_allowed() {
+    let existing = agent(None, true, "autonomous");
+    let fields =
+        managed_write_fields(&input(IdentityUpdate::Absent, None, None), Some(&existing)).unwrap();
+    assert_eq!(fields, ManagedWriteFields::default());
+}
+
+#[test]
+fn managed_write_fields_disabling_without_active_binding_is_allowed() {
+    let existing = agent(
+        Some(&binding_json(BindingState::Inactive, CLIENT, "rev-1")),
+        true,
+        "autonomous",
+    );
+    let fields = managed_write_fields(
+        &input(IdentityUpdate::Absent, None, Some(false)),
+        Some(&existing),
+    )
+    .unwrap();
+    assert_eq!(fields.enabled, Some(false));
+    assert_eq!(fields.identity, None);
+}
+
+#[test]
 fn managed_write_fields_existing_binding_without_principal_fails() {
     let existing = agent(
         Some(&binding_json(
