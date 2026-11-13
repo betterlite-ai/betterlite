@@ -13,6 +13,12 @@ pub fn decode_vertex_batch_row(bytes: &[u8]) -> Result<VertexBatchRow, BatchRows
     Ok(serde_json::from_slice(bytes)?)
 }
 
+fn has_status(row: &VertexBatchRow) -> bool {
+    row.status
+        .as_deref()
+        .is_some_and(|status| !status.is_empty())
+}
+
 #[must_use]
 pub fn is_embeddings_output_row(row: &VertexBatchRow) -> bool {
     let embedded = matches!(
@@ -25,13 +31,7 @@ pub fn is_embeddings_output_row(row: &VertexBatchRow) -> bool {
         .request
         .object()
         .is_some_and(|fields| fields.contains_key("content"));
-    row.request != RowField::Absent
-        && (embedded
-            || (failed
-                && row
-                    .status
-                    .as_deref()
-                    .is_some_and(|status| !status.is_empty())))
+    row.request != RowField::Absent && (embedded || (failed && has_status(row)))
 }
 
 #[must_use]
@@ -42,11 +42,7 @@ pub fn is_generate_output_row(row: &VertexBatchRow) -> bool {
     let generated = row.response.object().is_some_and(|fields| {
         fields.contains_key("candidates") || fields.contains_key("promptFeedback")
     });
-    generated
-        || row
-            .status
-            .as_deref()
-            .is_some_and(|status| !status.is_empty())
+    generated || has_status(row)
 }
 
 pub fn split_vertex_batch_key(row: &VertexBatchRow) -> Result<BatchKey, BatchRowsError> {

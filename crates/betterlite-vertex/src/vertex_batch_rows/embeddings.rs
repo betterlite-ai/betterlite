@@ -28,16 +28,15 @@ pub fn regroup_embeddings(
     let mut outputs = Vec::with_capacity(groups.len());
     for (custom_id, mut group) in groups {
         group.sort_by_key(|(key, _row)| (key.index, key.total));
-        let (body, error) = match failure_message(&group) {
-            Some(message) => (
-                None,
-                Some(OpenAiBatchOutputError {
-                    code: String::from(VERTEX_AI_ERROR),
-                    message,
-                }),
-            ),
-            None => (Some(embedding_body(&custom_id, &group, model)?), None),
+        let message = failure_message(&group);
+        let body = match message {
+            Some(_) => None,
+            None => Some(embedding_body(&custom_id, &group, model)?),
         };
+        let error = message.map(|message| OpenAiBatchOutputError {
+            code: String::from(VERTEX_AI_ERROR),
+            message,
+        });
         outputs.push(openai_batch_output_row(custom_id, body, error, next_id()));
     }
     Ok(outputs)

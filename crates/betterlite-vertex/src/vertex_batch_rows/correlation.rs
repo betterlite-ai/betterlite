@@ -22,13 +22,14 @@ pub fn decode_batch_correlation(input: CorrelationInput<'_>) -> Result<String, B
                 source,
             }),
         CorrelationInput::LabelChunks(chunks) => {
-            let mut texts = Vec::with_capacity(chunks.len());
-            for chunk in chunks {
-                texts.push(from_utf8(chunk).map_err(|source| BatchRowsError::Utf8 {
+            let texts = chunks
+                .iter()
+                .map(|chunk| from_utf8(chunk))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|source| BatchRowsError::Utf8 {
                     field: RAW_LABEL,
                     source,
-                })?);
-            }
+                })?;
             let Some(first) = texts.first() else {
                 return Ok(String::new());
             };
