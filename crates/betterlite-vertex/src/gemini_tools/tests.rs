@@ -461,6 +461,37 @@ fn cleaning_keeps_property_names_that_match_removed_keys() {
 }
 
 #[test]
+fn cleaning_keeps_definition_and_pattern_names_that_match_removed_keys() {
+    let mut tool = parse::<Object>(
+        r##"{
+            "strict": true,
+            "parameters": {
+                "type": "object",
+                "properties": {"a": {"$ref": "#/$defs/strict"}, "b": {"$ref": "#/definitions/strict"}},
+                "$defs": {"strict": {"type": "string", "strict": true}},
+                "definitions": {"strict": {"type": "object", "additionalProperties": false}},
+                "patternProperties": {"strict": {"type": "number", "strict": true}},
+                "dependentSchemas": {"strict": {"type": "object", "strict": true}}
+            }
+        }"##,
+    );
+    remove_unsupported_fields(&mut tool);
+    assert_eq!(
+        as_json(&tool),
+        parse::<Json>(
+            r##"{"parameters": {
+                "type": "object",
+                "properties": {"a": {"$ref": "#/$defs/strict"}, "b": {"$ref": "#/definitions/strict"}},
+                "$defs": {"strict": {"type": "string"}},
+                "definitions": {"strict": {"type": "object"}},
+                "patternProperties": {"strict": {"type": "number"}},
+                "dependentSchemas": {"strict": {"type": "object"}}
+            }}"##
+        )
+    );
+}
+
+#[test]
 fn function_parameters_are_shaped_for_vertex() {
     let input: Vec<Object> = parse(
         r#"[{"type": "function", "function": {

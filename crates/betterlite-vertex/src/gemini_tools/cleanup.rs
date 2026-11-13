@@ -6,10 +6,13 @@ pub fn remove_unsupported_fields(tool: &mut Object) {
     }
     tool.shift_remove("strict");
     for (key, value) in tool.iter_mut() {
-        if let Json::Object(properties) = value
-            && key == "properties"
+        if let Json::Object(named) = value
+            && matches!(
+                key.as_str(),
+                "properties" | "$defs" | "definitions" | "patternProperties" | "dependentSchemas"
+            )
         {
-            properties.values_mut().for_each(strip_value);
+            named.values_mut().for_each(strip_value);
         } else {
             strip_value(value);
         }

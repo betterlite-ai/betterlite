@@ -1,5 +1,5 @@
 task: B1308
 deviations:
-  - what: A property named strict inside a schema's properties map keeps its name and its required entry, and so does a property named additionalProperties. The schemas under properties are still cleaned.
-    why: LiteLLM deletes every key named strict at any depth, so a tool argument called strict vanishes from properties while required still names it, and Gemini rejects the schema. Property names are data, not schema keywords.
+  - what: A key of a properties, $defs, definitions, patternProperties or dependentSchemas map is a name, so a property, definition or pattern called strict or additionalProperties keeps its name and its $ref and required entries. The schemas under those maps are still cleaned.
+    why: LiteLLM deletes every key named strict at any depth, so a tool argument or a definition called strict vanishes while required or a $ref still names it, and Gemini rejects the schema. Those keys are data, not schema keywords.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4127-L4145
