@@ -1,0 +1,127 @@
+kind: helper
+name: tool-and-thinking-betas
+call:
+  anthropic_beta_filter:
+    matrix:
+      anthropic: {}
+    calls:
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          tools:
+            - type: advisor_20260301
+        messages: []
+      - function: native_injection
+        custom_llm_provider: vertex_ai
+        headers: {}
+        optional_params:
+          tools:
+            - type: tool_search_tool_regex_20251119
+        messages: []
+      - function: native_injection
+        custom_llm_provider: vertex_ai_beta
+        headers: {}
+        optional_params:
+          tools:
+            - type: tool_search_tool_bm25_20251119
+        messages: []
+      - function: native_injection
+        custom_llm_provider: bedrock
+        headers: {}
+        optional_params:
+          tools:
+            - type: tool_search_tool_regex_20251119
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          tools:
+            - type: tool_search_tool_regex_20251119
+        messages: []
+      - function: native_injection
+        custom_llm_provider: azure
+        headers: {}
+        optional_params:
+          tools:
+            - type: tool_search_tool_bm25_20251119
+        messages: []
+      - function: native_injection
+        custom_llm_provider: azure_ai
+        headers: {}
+        optional_params:
+          tools:
+            - type: tool_search_tool_regex_20251119
+        messages: []
+      - function: native_injection
+        custom_llm_provider: unknown-provider
+        headers: {}
+        optional_params:
+          tools:
+            - type: tool_search_tool_bm25_20251119
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          thinking:
+            type: enabled
+            display: updates
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          thinking:
+            type: adaptive
+            display: updates
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          thinking:
+            type: disabled
+            display: updates
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params:
+          thinking:
+            type: enabled
+        messages: []
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params: {}
+        messages:
+          - role: system
+            content:
+              - type: tool_addition
+                tool:
+                  type: tool_reference
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params: {}
+        messages:
+          - role: system
+            content:
+              - type: tool_removal
+                tool:
+                  type: tool_reference
+      - function: native_injection
+        custom_llm_provider: anthropic
+        headers: {}
+        optional_params: {}
+        messages:
+          - role: user
+            content:
+              - type: tool_addition
+                tool:
+                  type: tool_reference
+env: {}
+compare:
+  ignore: []

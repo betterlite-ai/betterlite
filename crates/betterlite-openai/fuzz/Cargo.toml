@@ -385,6 +385,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_transcription"
+path = "fuzz_targets/openai_transcription.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "huggingface_embedding_response"
 path = "fuzz_targets/huggingface_embedding_response.rs"
 test = false
@@ -434,6 +441,20 @@ bench = false
 [[bin]]
 name = "xai_batch"
 path = "fuzz_targets/xai_batch.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_response_input"
+path = "fuzz_targets/openai_response_input.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_response_events"
+path = "fuzz_targets/openai_response_events.rs"
 test = false
 doc = false
 bench = false

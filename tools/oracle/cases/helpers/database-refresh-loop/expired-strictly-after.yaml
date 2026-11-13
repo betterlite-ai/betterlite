@@ -1,0 +1,28 @@
+kind: helper
+name: database-refresh-loop-expired-strictly-after
+call:
+  database_refresh_loop:
+    function: batch
+    calls:
+      - function: is_token_expired
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:15:00"
+      - function: is_token_expired
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:14:59"
+      - function: is_token_expired
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:15:01"
+      - function: is_token_expired
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:14:59.999999"
+      - function: is_token_expired
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:15:00.000001"
+env: {}
+compare: {ignore: []}

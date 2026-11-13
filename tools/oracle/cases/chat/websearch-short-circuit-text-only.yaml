@@ -1,0 +1,30 @@
+{
+  "kind": "helper",
+  "name": "websearch-short-circuit-text-only",
+  "call": {
+    "b4115": {
+      "operation": "short_circuit",
+      "model": "gpt-5",
+      "messages": [
+        {"role": "user", "content": "What is Rust?"}
+      ],
+      "tools": [
+        {"name": "litellm_web_search"}
+      ],
+      "custom_llm_provider": "openai",
+      "enabled_providers": ["openai"],
+      "native_providers": [],
+      "search_response": {
+        "results": [
+          {"title": "Rust", "url": "https://www.rust-lang.org/", "snippet": "A language empowering everyone."}
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": [
+      {"pointer": "/value/id", "why": "the synthetic message carries a fresh uuid4"}
+    ]
+  }
+}

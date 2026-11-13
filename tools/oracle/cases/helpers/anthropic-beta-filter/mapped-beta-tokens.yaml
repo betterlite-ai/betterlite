@@ -1,0 +1,43 @@
+kind: helper
+name: mapped-beta-tokens
+call:
+  anthropic_beta_filter:
+    matrix:
+      anthropic:
+        first-token: shared-beta
+        second-token: shared-beta
+        effort-2025-11-24: effort-2025-11-24
+      bedrock:
+        advanced-tool-use-2025-11-20: tool-search-tool-2025-10-19
+        fast-mode-2026-02-01: null
+      broken: not a mapping
+      provider_aliases:
+        custom: anthropic
+    calls:
+      - function: matrix_filter
+        provider: bedrock
+        tokens:
+          - " advanced-tool-use-2025-11-20 "
+          - tool-search-tool-2025-10-19
+          - fast-mode-2026-02-01
+          - invented
+        headers: null
+        body: null
+      - function: matrix_filter
+        provider: nowhere
+        tokens: [effort-2025-11-24, advanced-tool-use-2025-11-20]
+        headers: null
+        body: null
+      - function: matrix_filter
+        provider: custom
+        tokens: [first-token, second-token, first-token]
+        headers: null
+        body: null
+      - function: matrix_filter
+        provider: broken
+        tokens: []
+        headers: null
+        body: null
+env: {}
+compare:
+  ignore: []
