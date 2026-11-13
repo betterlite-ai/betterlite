@@ -1,0 +1,35 @@
+kind: helper
+name: append-route-once
+call:
+  azure_urls:
+    append_route_once:
+      - params: {api_base: https://example.openai.azure.com/openai/responses}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: "https://example.openai.azure.com/api?target=/openai/responses"}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: "https://example.openai.azure.com?target=/openai/responses"}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: https://example.openai.azure.com/openai}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: https://example.openai.azure.com/api}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+      - params: {api_base: "https://example.openai.azure.com?a=1&a=2"}
+        globals: {}
+        environment: {}
+        route: /r
+      - params: {api_base: "https://example.openai.azure.com?api-version=1&q=a", api_version: v1}
+        globals: {}
+        environment: {}
+        route: /openai/responses
+env: {}
+compare: {ignore: []}

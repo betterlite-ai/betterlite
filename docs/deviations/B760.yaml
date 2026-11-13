@@ -1,0 +1,11 @@
+task: B760
+deviations:
+  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting smaller inherited limits.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L251-L258
+  - what: A configured claim path longer than 8192 bytes or with more than 256 segments returns a typed ClaimError instead of navigating the token, because the claim lookup goes through B213's bounded dot-path lookup.
+    why: The path comes from operator configuration and B213 owns the only dot-path parser; an unbounded path would need a second parser. No working configuration uses a path near those bounds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dot_notation_indexing.py#L32-L77
+  - what: The unverified payload decoder rejects JSON that Python's json module accepts beyond the standard, such as NaN, Infinity and lone surrogate escapes, and returns a typed DecodeError instead of a claims object.
+    why: serde_json parses standard JSON only; these literals cannot come from a conforming identity provider, and accepting them would require a hand-written JSON parser.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L283-L302

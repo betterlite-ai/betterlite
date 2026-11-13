@@ -1,0 +1,11 @@
+task: B3910
+deviations:
+  - what: The dynamic header and config functions return a typed error when the params are not an object, or when a credential field is not a string. A null params value, an absent field and an empty string all count as no credential.
+    why: LiteLLM calls .get on whatever it receives and lets Python raise or coerce. betterlite names the field in the error, as docs/compatibility.md describes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L376-L420
+  - what: The Langfuse secret key and the Authorization header value are held as secret strings, and the debug log names only the endpoint.
+    why: LiteLLM keeps both as plain strings. A secret string stays out of Debug output and logs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L320-L346
+  - what: The three service hooks live in a local ServiceHooks trait, and each one does nothing.
+    why: No shared service-hook trait exists in betterlite yet. LiteLLM overrides the hooks on the logger class, and the trait keeps that call surface.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_otel.py#L421-L447

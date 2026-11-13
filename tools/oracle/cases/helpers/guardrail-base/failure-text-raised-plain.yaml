@@ -1,0 +1,6 @@
+kind: helper
+name: failure-text-raised-plain
+call:
+  b5471: {"function": "failure_text", "kind": "raised", "guardrail_name": "pii", "message": "bad input", "wrap_default_message": false}
+env: {}
+compare: {ignore: []}

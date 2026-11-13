@@ -1,0 +1,41 @@
+kind: helper
+name: native-compaction-signature
+call:
+  anthropic_feature_flags:
+    fixture: {model_cost: {}}
+    calls:
+      - {function: compaction, provider: anthropic, params: {compaction: false}, messages: []}
+      - {function: compaction, provider: anthropic, params: {compaction: null}, messages: []}
+      - {function: compaction, provider: anthropic, params: {}, messages: []}
+      - {function: compaction, provider: bedrock, params: {compaction: true}, messages: []}
+      - {function: compaction, provider: vertex_ai, params: {compaction: true}, messages: []}
+      - function: compaction
+        provider: anthropic
+        params: {}
+        messages: [{role: user, content: [{type: compaction, signature: sig}]}]
+      - function: compaction
+        provider: anthropic
+        params: {}
+        messages: [{role: user, content: [{type: compaction, signature: ""}]}]
+      - function: compaction
+        provider: anthropic
+        params: {}
+        messages: [{role: user, content: [{type: compaction, signature: 5}]}]
+      - function: compaction
+        provider: anthropic
+        params: {}
+        messages: [{role: user, content: [{type: compaction}]}]
+      - function: compaction
+        provider: anthropic
+        params: {}
+        messages: [{role: user, content: compaction}]
+      - function: compaction
+        provider: anthropic
+        params: {}
+        messages: [{content: [plain, {type: text}, {type: compaction, signature: s}]}]
+      - function: compaction
+        provider: anthropic
+        params: {}
+        messages: [7, {content: []}]
+env: {}
+compare: {ignore: []}

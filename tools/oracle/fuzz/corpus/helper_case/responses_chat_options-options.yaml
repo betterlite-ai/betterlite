@@ -1,0 +1,21 @@
+kind: helper
+name: responses-chat-options-seed
+call:
+  responses_chat_options:
+    request:
+      model: m
+      input: hi
+      reasoning: {effort: low, summary: auto}
+    provider: openai
+    stream: true
+    extra_headers: null
+    metadata: null
+    service_tier: null
+    api_base: null
+    supported_openai_params: null
+    bridge_mode: responses
+    bridge_failure: null
+    route_all_openai_to_responses: false
+    cache: []
+env: {}
+compare: {ignore: []}
