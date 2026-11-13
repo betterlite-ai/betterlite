@@ -307,6 +307,17 @@ fn the_redirect_method_rule_follows_httpx2(
 }
 
 #[test]
+fn an_upgrade_with_an_explicit_port_is_not_followed() {
+    let sent = Url::parse("http://example.com:8080/mcp").unwrap();
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        LOCATION,
+        HeaderValue::from_static("https://example.com/mcp"),
+    );
+    assert!(next_request_within_origin(&Method::GET, &sent, 307, &headers).is_none());
+}
+
+#[test]
 fn a_cross_origin_location_is_not_followed() {
     let sent = Url::parse("http://example.com/mcp").unwrap();
     let mut headers = HeaderMap::new();
@@ -329,6 +340,7 @@ fn an_upgrade_to_https_on_the_default_port_is_followed() {
 #[rstest]
 #[case::new_userinfo("http://example.com/mcp", "http://user:pass@example.com/mcp", false)]
 #[case::password_without_user("http://example.com/mcp", "http://:pass@example.com/mcp", false)]
+#[case::user_without_password("http://example.com/mcp", "http://u@example.com/mcp", false)]
 #[case::other_user("http://a:x@example.com/mcp", "http://b:x@example.com/mcp", false)]
 #[case::other_password("http://a:x@example.com/mcp", "http://a:y@example.com/mcp", false)]
 #[case::same_userinfo("http://a:x@example.com/mcp", "http://a:x@example.com/mcp", true)]
@@ -692,6 +704,47 @@ async fn an_sse_event_at_the_size_limit_is_accepted() {
     let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
     let server = TestServer::start(move |_| {
         let event = format!("event: message\ndata: {json}\n\n");
+        streamed(vec![Bytes::from(event)])
+    })
+    .await;
+    let (mut transport, _handler) = streamable(server.url("/mcp"));
+    let mut streams = enter(&mut transport).await;
+    send(&mut streams, request(7, "tools/list")).await;
+    assert!(matches!(
+        receive(&mut streams).await,
+        JsonRpcMessage::Notification(_)
+    ));
+}
+
+#[tokio::test]
+async fn a_comment_line_does_not_count_toward_the_event_limit() {
+    let prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"";
+    let suffix = "\"}}";
+    let padding = 524_288 - prefix.len() - suffix.len();
+    let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
+    let comment = format!(": {}", "c".repeat(600_000));
+    let server = TestServer::start(move |_| {
+        let event = format!("{comment}\nevent: message\ndata: {json}\n\n");
+        streamed(vec![Bytes::from(event)])
+    })
+    .await;
+    let (mut transport, _handler) = streamable(server.url("/mcp"));
+    let mut streams = enter(&mut transport).await;
+    send(&mut streams, request(7, "tools/list")).await;
+    assert!(matches!(
+        receive(&mut streams).await,
+        JsonRpcMessage::Notification(_)
+    ));
+}
+
+#[tokio::test]
+async fn an_sse_event_with_crlf_at_the_size_limit_is_accepted() {
+    let prefix = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"";
+    let suffix = "\"}}";
+    let padding = 1_048_555 - prefix.len() - suffix.len();
+    let json = format!("{prefix}{}{suffix}", "x".repeat(padding));
+    let server = TestServer::start(move |_| {
+        let event = format!("event: message\r\ndata: {json}\r\n\r\n");
         streamed(vec![Bytes::from(event)])
     })
     .await;
