@@ -404,6 +404,7 @@ async fn output_model_is_sent_only_when_it_is_a_non_empty_text(
 async fn output_adds_user_metadata_to_the_given_request_data() {
     let guardrail = FakeGuardrail::replying(&["A"]);
     let mut response = value(r#"{"choices":[{"text":"a"}]}"#);
+    let original = response.clone();
     let user_api_key_dict = body(r#"{"user_id":"u-1","team_id":null,"_internal":"hidden"}"#);
     let mut request_data = body(r#"{"model":"gpt"}"#);
     process_output_response(
@@ -424,7 +425,12 @@ async fn output_adds_user_metadata_to_the_given_request_data() {
         recorded.get("model"),
         Some(&GuardrailValue::Text("gpt".to_owned()))
     );
-    assert!(recorded.contains_key("response"));
+    assert_eq!(recorded.get("response"), Some(&original));
+    assert_eq!(
+        request_data.get("litellm_metadata"),
+        Some(&value(r#"{"user_api_key_user_id":"u-1"}"#))
+    );
+    assert_eq!(request_data.get("response"), Some(&original));
 }
 
 #[tokio::test]
