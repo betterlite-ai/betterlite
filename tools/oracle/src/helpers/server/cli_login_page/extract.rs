@@ -31,7 +31,10 @@ pub(super) const VERIFICATION_FIELDS: &[(&str, Field)] = &[
         Field::Block("<label for=\"user_code\">", "</label>"),
     ),
     ("code_input", Field::Tag("id=\"user_code\"")),
-    ("submit", Field::Block("<button type=\"submit\">", "</button>")),
+    (
+        "submit",
+        Field::Block("<button type=\"submit\">", "</button>"),
+    ),
 ];
 
 pub(super) const CONSENT_FIELDS: &[(&str, Field)] = &[
@@ -177,10 +180,10 @@ fn between<'render>(html: &'render str, opening: &str, closing: &str) -> Markup<
 }
 
 fn found<T>(value: Option<T>) -> Result<T, Box<HelperError>> {
-    value.map_or_else(
-        || Err(classified("ValueError", MISSING)),
-        Ok,
-    )
+    let Some(inner) = value else {
+        return Err(classified("ValueError", MISSING));
+    };
+    Ok(inner)
 }
 
 fn element<'render>(html: &'render str, opening: &str, closing: &str) -> Markup<'render> {
