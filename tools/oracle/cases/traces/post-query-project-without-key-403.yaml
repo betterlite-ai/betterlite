@@ -1,0 +1,20 @@
+kind: helper
+name: post-query-project-without-key-403
+call:
+  b3867:
+    request:
+      method: POST
+      path: /v1/traces/query
+      headers: {content-type: application/json}
+      body: {encoding: utf8, value: '{"sql":"SELECT 1"}'}
+    auth: {user_role: internal_user, project_id: project-1}
+    tracing: true
+    master_key: "sk-master"
+    script:
+      query:
+        value: '{"ok": true}'
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error messages, as the repository policy records

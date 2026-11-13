@@ -1,0 +1,17 @@
+kind: helper
+name: post-query-admin-scope
+call:
+  b3867:
+    request:
+      method: POST
+      path: /v1/traces/query
+      headers: {content-type: application/json}
+      body: {encoding: utf8, value: '{"sql":"SELECT 1"}'}
+    auth: {user_role: proxy_admin}
+    tracing: true
+    master_key: "sk-master"
+    script:
+      query:
+        value: '{"scope": {"kind": "admin"}}'
+env: {}
+compare: {ignore: []}

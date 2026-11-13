@@ -33,6 +33,7 @@ betterlite-redis = { path = "../betterlite-redis" }
 betterlite-roi = { path = "../betterlite-roi" }
 betterlite-router = { path = "../betterlite-router" }
 betterlite-semantic = { path = "../betterlite-semantic" }
+betterlite-tracing = { path = "../betterlite-tracing" }
 caseless = "0.2.2"
 chrono = { workspace = true }
 email_address = "0.2.9"

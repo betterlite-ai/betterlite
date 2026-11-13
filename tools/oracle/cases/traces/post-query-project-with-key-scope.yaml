@@ -1,0 +1,17 @@
+kind: helper
+name: post-query-project-with-key-scope
+call:
+  b3867:
+    request:
+      method: POST
+      path: /v1/traces/query
+      headers: {content-type: application/json}
+      body: {encoding: utf8, value: '{"sql":"SELECT 1"}'}
+    auth: {user_role: internal_user, project_id: project-1, token: hash-1}
+    tracing: true
+    master_key: "sk-master"
+    script:
+      query:
+        value: '{"scope": {"kind": "key", "team_id": "", "api_key_hash": "hash-1"}}'
+env: {}
+compare: {ignore: []}

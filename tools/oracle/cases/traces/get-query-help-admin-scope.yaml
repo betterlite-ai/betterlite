@@ -1,0 +1,15 @@
+kind: helper
+name: get-query-help-admin-scope
+call:
+  b3867:
+    request:
+      method: GET
+      path: /v1/traces/query/help
+    auth: {user_role: proxy_admin}
+    tracing: true
+    master_key: "sk-master"
+    script:
+      query_help:
+        value: '{"scope": {"kind": "admin"}}'
+env: {}
+compare: {ignore: []}

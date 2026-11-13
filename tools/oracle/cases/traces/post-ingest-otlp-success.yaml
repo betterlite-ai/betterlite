@@ -1,0 +1,46 @@
+kind: helper
+name: post-ingest-otlp-success
+call:
+  b3867:
+    request:
+      method: POST
+      path: /v1/traces
+      headers: {content-type: application/json}
+      body: {encoding: utf8, value: "{}"}
+    auth: {user_role: proxy_admin, team_id: team-1, token: hash-1, org_id: org-1}
+    tracing: true
+    master_key: "sk-master"
+    script:
+      decoder:
+        kind: ok
+        rows: [
+              {
+                Timestamp: 1000000,
+                TraceId: trace-1,
+                SpanId: span-1,
+                ParentSpanId: "",
+                TraceState: "",
+                SpanName: chat gpt-4o,
+                SpanKind: SPAN_KIND_CLIENT,
+                ServiceName: demo,
+                ResourceAttributes: {service.name: demo},
+                ScopeName: "",
+                ScopeVersion: "",
+                SpanAttributes: {gen_ai.response.id: req-1},
+                Duration: 1000000,
+                StatusCode: STATUS_CODE_OK,
+                StatusMessage: "",
+                TeamId: "",
+                ApiKeyHash: "",
+                ObservationType: llm,
+                AgentName: researcher,
+                Model: gpt-4o,
+                LiteLLMRequestId: req-1,
+                InputTokens: 3,
+                OutputTokens: 4,
+                Input: hello,
+                Output: world
+              }
+            ]
+env: {}
+compare: {ignore: []}
