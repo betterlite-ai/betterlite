@@ -23,14 +23,7 @@ where
     Http: GcsHttpClient,
 {
     let instance = vertex_instance.unwrap_or(&base.auth);
-    let access = instance
-        .ensure_access_token_async(EnsureAccessToken {
-            credentials: service_account_json.cloned(),
-            project_id: None,
-            custom_llm_provider: VertexAuthProvider::VertexAi,
-        })
-        .await
-        .map_err(|source| header_error(bucket_name, source))?;
+    let access = async_access(instance, service_account_json, bucket_name).await?;
     token_headers(instance, access, bucket_name, service_account_json)
 }
 
@@ -43,15 +36,48 @@ where
     Auth: VertexAuth + Clone,
     Http: GcsHttpClient,
 {
-    let access = base
-        .auth
-        .ensure_access_token(EnsureAccessToken {
-            credentials: service_account_path.cloned(),
-            project_id: base.environment.get(PROJECT_ID_ENV),
+    let project_id = base.environment.get(PROJECT_ID_ENV);
+    let access = sync_access(&base.auth, service_account_path, project_id, bucket_name)?;
+    token_headers(&base.auth, access, bucket_name, service_account_path)
+}
+
+async fn async_access<Auth, Http>(
+    instance: &VertexInstance<Auth>,
+    credentials: Option<&SecretString>,
+    bucket_name: &str,
+) -> Result<AccessToken, GcsClientError<Auth, Http>>
+where
+    Auth: VertexAuth,
+    Http: GcsHttpClient,
+{
+    instance
+        .ensure_access_token_async(EnsureAccessToken {
+            credentials: credentials.cloned(),
+            project_id: None,
             custom_llm_provider: VertexAuthProvider::VertexAi,
         })
-        .map_err(|source| header_error(bucket_name, source))?;
-    token_headers(&base.auth, access, bucket_name, service_account_path)
+        .await
+        .map_err(|source| header_error(bucket_name, source))
+}
+
+fn sync_access<Auth, Http>(
+    instance: &VertexInstance<Auth>,
+    credentials: Option<&SecretString>,
+    project_id: Option<String>,
+    bucket_name: &str,
+) -> Result<AccessToken, GcsClientError<Auth, Http>>
+where
+    Auth: VertexAuth,
+    Http: GcsHttpClient,
+{
+    let request = EnsureAccessToken {
+        credentials: credentials.cloned(),
+        project_id,
+        custom_llm_provider: VertexAuthProvider::VertexAi,
+    };
+    instance
+        .ensure_access_token(request)
+        .map_err(|source| header_error(bucket_name, source))
 }
 
 fn token_headers<Auth, Http>(
