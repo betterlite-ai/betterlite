@@ -2,53 +2,19 @@ kind: helper
 name: mixed-search-warning
 call:
   gemini_tools:
-    calls:
-      - tools:
-          - type: function
-            function:
-              name: f
-              parameters:
-                type: object
-          - googleSearch: {}
-        functions: []
-        web_search_options: {}
-        tool_choice: null
-        service_tier: null
-        server_side_invocations: false
-        tool_config: null
-      - tools:
-          - type: function
-            function:
-              name: f
-          - googleSearch: {}
-        functions: []
-        web_search_options: null
-        tool_choice: null
-        service_tier: null
-        server_side_invocations: false
-        tool_config: null
-      - tools: []
-        functions:
-          - name: g
-            description: d
+    call:
+      tools:
+        - type: function
+          function:
+            name: f
             parameters:
               type: object
-              properties:
-                x:
-                  type: string
-        web_search_options: null
-        tool_choice: null
-        service_tier: null
-        server_side_invocations: false
-        tool_config: null
-      - tools: []
-        functions: []
-        web_search_options:
-          search_context_size: low
-        tool_choice: null
-        service_tier: null
-        server_side_invocations: false
-        tool_config: null
+        - googleSearch: {}
+      web_search_options: {}
+      tool_choice: null
+      service_tier: null
+      server_side_invocations: false
+      tool_config: null
     settings: {}
 env: {}
 compare: {ignore: []}

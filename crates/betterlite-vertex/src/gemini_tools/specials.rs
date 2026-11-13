@@ -6,37 +6,21 @@ use super::records::{LatLng, RetrievalConfig};
 pub fn transform_type(tool: &Object) -> Object {
     match tool.get("type") {
         Some(Json::Text(kind)) if kind == "computer_use" => {
-            let mut transformed = Object::new();
-            transformed.insert("computerUse".to_owned(), Json::Object(without_type(tool)));
-            transformed
+            Object::from([("computerUse".to_owned(), Json::Object(without_type(tool)))])
         }
         Some(Json::Text(kind)) if kind == "web_search" || kind == "web_search_preview" => {
-            let mut transformed = Object::new();
-            transformed.insert("googleSearch".to_owned(), Json::Object(Object::new()));
-            transformed
+            Object::from([("googleSearch".to_owned(), Json::Object(Object::new()))])
         }
-        Some(
-            Json::Text(_)
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::List(_)
-            | Json::Object(_)
-            | Json::Null,
-        ) => without_type(tool),
+        Some(_) => without_type(tool),
         None => tool.clone(),
     }
 }
-
 fn without_type(tool: &Object) -> Object {
-    let mut stripped = Object::new();
-    for (key, value) in tool {
-        if key.as_str() != "type" {
-            stripped.insert(key.clone(), value.clone());
-        }
-    }
-    stripped
+    tool.iter()
+        .filter(|(key, _)| key.as_str() != "type")
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
 }
-
 #[must_use]
 pub fn extract_maps(config: &Object) -> (Object, Option<RetrievalConfig>) {
     let latitude = config
@@ -57,47 +41,20 @@ pub fn extract_maps(config: &Object) -> (Object, Option<RetrievalConfig>) {
             },
             language_code: language_code.cloned(),
         });
-    let mut cleaned = Object::new();
-    for (key, value) in config {
-        if !matches!(key.as_str(), "latitude" | "longitude" | "languageCode") {
-            cleaned.insert(key.clone(), value.clone());
-        }
-    }
+    let mut cleaned = config.clone();
+    cleaned.retain(|key, _| !matches!(key.as_str(), "latitude" | "longitude" | "languageCode"));
     (cleaned, retrieval)
 }
-
 #[must_use]
 pub fn transform_computer_use(config: &Object) -> Object {
     let mut transformed = Object::new();
     if let Some(environment) = config.get("environment") {
-        match environment {
-            Json::Text(text) if text == "browser" => {
-                transformed.insert(
-                    "environment".to_owned(),
-                    Json::Text("ENVIRONMENT_BROWSER".to_owned()),
-                );
-            }
-            Json::Text(text) if text == "unspecified" => {
-                transformed.insert(
-                    "environment".to_owned(),
-                    Json::Text("ENVIRONMENT_UNSPECIFIED".to_owned()),
-                );
-            }
-            Json::Text(text)
-                if text == "ENVIRONMENT_BROWSER" || text == "ENVIRONMENT_UNSPECIFIED" =>
-            {
-                transformed.insert("environment".to_owned(), Json::Text(text.clone()));
-            }
-            Json::Text(_)
-            | Json::Bool(_)
-            | Json::Number(_)
-            | Json::List(_)
-            | Json::Object(_)
-            | Json::Null => {
-                tracing::info!(
-                    "computer_use environment is not browser, unspecified, ENVIRONMENT_BROWSER or ENVIRONMENT_UNSPECIFIED; omitting it"
-                );
-            }
+        if let Some(value) = environment.as_str().and_then(environment_value) {
+            transformed.insert("environment".to_owned(), Json::Text(value.to_owned()));
+        } else {
+            tracing::info!(
+                "computer_use environment is not browser, unspecified, ENVIRONMENT_BROWSER or ENVIRONMENT_UNSPECIFIED; omitting it"
+            );
         }
     }
     if let Some(functions) = config
@@ -107,4 +64,11 @@ pub fn transform_computer_use(config: &Object) -> Object {
         transformed.insert("excludedPredefinedFunctions".to_owned(), functions.clone());
     }
     transformed
+}
+fn environment_value(value: &str) -> Option<&'static str> {
+    match value {
+        "browser" | "ENVIRONMENT_BROWSER" => Some("ENVIRONMENT_BROWSER"),
+        "unspecified" | "ENVIRONMENT_UNSPECIFIED" => Some("ENVIRONMENT_UNSPECIFIED"),
+        _ => None,
+    }
 }

@@ -8,12 +8,9 @@ from typing_extensions import override
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
-MODEL = "gemini-2.5-pro"
-
 
 class Call(TypedDict):
     tools: Json
-    functions: Json
     web_search_options: Json
     tool_choice: Json
     service_tier: Json
@@ -22,7 +19,7 @@ class Call(TypedDict):
 
 
 class Input(TypedDict):
-    calls: list[Call]
+    call: Call
     settings: dict[str, str]
 
 
@@ -36,13 +33,13 @@ class WarningCapture(logging.Handler):
         self.messages.append(record.getMessage())
 
 
-def measure(call: Call) -> Json:
+def run(input_value: Input) -> Json:
+    call = input_value["call"]
     optional_params: dict[str, Json] = {}
     if call["tool_config"] is not None:
         optional_params["toolConfig"] = call["tool_config"]
     non_default: dict[str, Json] = {
         "tools": call["tools"],
-        "functions": call["functions"],
         "tool_choice": call["tool_choice"],
         "web_search_options": call["web_search_options"],
         "service_tier": call["service_tier"],
@@ -55,7 +52,7 @@ def measure(call: Call) -> Json:
         VertexGeminiConfig().map_openai_params(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1086-L1240
             non_default_params=non_default,
             optional_params=optional_params,
-            model=MODEL,
+            model="gemini-2.5-pro",
             drop_params=False,
         )
     finally:
@@ -67,10 +64,4 @@ def measure(call: Call) -> Json:
         "service_tier": optional_params.get("service_tier"),
         "warnings": len(capture.messages),
     }
-    return output
-
-
-def run(input_value: Input) -> Json:
-    results: list[Json] = [measure(call) for call in input_value["calls"]]
-    output: dict[str, Json] = {"results": results}
     return output

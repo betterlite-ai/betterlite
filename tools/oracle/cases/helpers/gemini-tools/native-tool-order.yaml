@@ -2,26 +2,25 @@ kind: helper
 name: native-tool-order
 call:
   gemini_tools:
-    calls:
-      - tools:
-          - computerUse: {}
-          - googleMaps:
-              languageCode: en
-          - urlContext: {}
-          - code_execution:
-              code: cfg
-          - enterpriseWebSearch: {}
-          - google_search_retrieval:
-              dynamicRetrievalConfig:
-                mode: MODE_DYNAMIC
-          - google_search:
-              searchType: SEARCH_TYPE_MEDIA
-        functions: []
-        web_search_options: null
-        tool_choice: required
-        service_tier: null
-        server_side_invocations: false
-        tool_config: null
+    call:
+      tools:
+        - computerUse: {}
+        - googleMaps:
+            languageCode: en
+        - urlContext: {}
+        - code_execution:
+            code: cfg
+        - enterpriseWebSearch: {}
+        - google_search_retrieval:
+            dynamicRetrievalConfig:
+              mode: MODE_DYNAMIC
+        - google_search:
+            searchType: SEARCH_TYPE_MEDIA
+      web_search_options: null
+      tool_choice: required
+      service_tier: null
+      server_side_invocations: false
+      tool_config: null
     settings: {}
 env: {}
 compare: {ignore: []}

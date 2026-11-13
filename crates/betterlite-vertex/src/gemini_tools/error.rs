@@ -6,18 +6,10 @@ use crate::vertex_schema::error::VertexSchemaError;
 pub enum GeminiToolsError {
     #[error("tool_choice must be \"auto\", \"required\", \"none\" or a function object")]
     UnsupportedToolChoice,
-    #[error("tool_choice.function must be an object")]
-    ToolChoiceFunction,
-    #[error("tool_choice.function.name must be a string")]
-    ToolChoiceName,
-    #[error("a tool's function must be an object")]
-    Function,
-    #[error("a function declaration needs a string name")]
-    FunctionName,
-    #[error("a function declaration's description must be a string")]
-    Description,
-    #[error("function parameters must be a schema object or an empty string")]
-    Parameters,
+    #[error("tool_choice.{field} is not valid")]
+    ToolChoiceField { field: &'static str },
+    #[error("a function declaration's {field} is not valid")]
+    FunctionField { field: &'static str },
     #[error("the {tool} tool configuration must be an object")]
     ToolValue { tool: &'static str },
     #[error("shaping the function parameters failed")]

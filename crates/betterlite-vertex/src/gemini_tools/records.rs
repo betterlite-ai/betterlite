@@ -36,7 +36,6 @@ pub enum Tool {
         computer_use: Object,
     },
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionDeclaration {
     pub name: String,
@@ -45,7 +44,6 @@ pub struct FunctionDeclaration {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameters: Option<Json>,
 }
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolConfig {
     #[serde(
@@ -53,25 +51,17 @@ pub struct ToolConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub function_calling_config: Option<FunctionCallingConfig>,
-    #[serde(
-        rename = "includeServerSideToolInvocations",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub server_side_invocations: Option<bool>,
     #[serde(rename = "retrievalConfig", skip_serializing_if = "Option::is_none")]
     pub retrieval_config: Option<RetrievalConfig>,
 }
-
 impl From<FunctionCallingConfig> for ToolConfig {
     fn from(function_calling_config: FunctionCallingConfig) -> Self {
         Self {
             function_calling_config: Some(function_calling_config),
-            server_side_invocations: None,
             retrieval_config: None,
         }
     }
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionCallingConfig {
     pub mode: CallingMode,
@@ -81,7 +71,6 @@ pub struct FunctionCallingConfig {
     )]
     pub allowed_function_names: Option<Vec<String>>,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum CallingMode {
@@ -89,7 +78,6 @@ pub enum CallingMode {
     Auto,
     None,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RetrievalConfig {
     #[serde(rename = "latLng")]
@@ -97,7 +85,6 @@ pub struct RetrievalConfig {
     #[serde(rename = "languageCode", skip_serializing_if = "Option::is_none")]
     pub language_code: Option<Json>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LatLng {
     pub latitude: Json,

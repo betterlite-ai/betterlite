@@ -13,7 +13,6 @@ pub fn underscore_name(name: &str) -> String {
     }
     underscored.trim_start_matches('_').to_owned()
 }
-
 #[must_use]
 pub fn tool_value<'tool>(tool: &'tool Object, name: &str) -> Option<&'tool Json> {
     let camel = tool.get(name).filter(|value| !matches!(value, Json::Null));

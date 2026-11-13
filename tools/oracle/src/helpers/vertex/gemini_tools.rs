@@ -9,77 +9,53 @@ use betterlite_vertex::gemini_tools::options::{
     drop_mixed_search_tools, map_service_tier, map_tool_choice,
 };
 use betterlite_vertex::gemini_tools::records::{Tool, ToolConfig};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 mod tests;
-
 pub(crate) struct Op;
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct Input {
-    calls: Vec<Call>,
+    call: Call,
     settings: BTreeMap<String, String>,
 }
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct Call {
     tools: Vec<Object>,
-    functions: Vec<Object>,
     web_search_options: Option<Object>,
     tool_choice: Option<Json>,
     service_tier: Option<String>,
     server_side_invocations: bool,
     tool_config: Option<ToolConfig>,
 }
-
 impl Helper for Op {
     type Input = Input;
-
     fn run(input: &Self::Input) -> HelperResult {
         let settings = Raw::default().convert(&input.settings).or_config_error()?;
-        let results = input
-            .calls
-            .iter()
-            .map(|call| measure(call, &settings))
-            .collect::<Result<Vec<Value>, _>>()?;
-        Ok(json!({ "results": results }))
+        measure(&input.call, &settings)
     }
 }
-
 struct Sources {
     tools: Option<Vec<Tool>>,
     tool_config: Option<ToolConfig>,
     warnings: usize,
 }
-
 fn map_sources(call: &Call, settings: &Settings) -> Result<Sources, Box<HelperError>> {
-    let mut tool_config = call.tool_config.clone();
-    let mut tools: Option<Vec<Tool>> = None;
-    let mut warnings = 0_usize;
-    for source in [&call.tools, &call.functions] {
-        if source.is_empty() {
-            continue;
-        }
-        let mapped = map_tools(source, call.server_side_invocations, tool_config, settings)
-            .or_value_error()?;
-        warnings = warnings
-            .saturating_add(usize::from(mapped.search_conflict_resolved))
-            .saturating_add(mapped.invalid_tools);
-        tool_config = mapped.tool_config;
-        tools.get_or_insert_with(Vec::new).extend(mapped.tools);
-    }
+    let mapped = map_tools(
+        &call.tools,
+        call.server_side_invocations,
+        call.tool_config.clone(),
+        settings,
+    )
+    .or_value_error()?;
     Ok(Sources {
-        tools,
-        tool_config,
-        warnings,
+        tools: (!call.tools.is_empty()).then_some(mapped.tools),
+        tool_config: mapped.tool_config,
+        warnings: mapped.warnings,
     })
 }
-
 fn measure(call: &Call, settings: &Settings) -> Result<Value, Box<HelperError>> {
     let Sources {
         mut tools,
@@ -113,7 +89,6 @@ fn measure(call: &Call, settings: &Settings) -> Result<Value, Box<HelperError>> 
         "warnings": warnings,
     }))
 }
-
 fn choice_failure(error: &GeminiToolsError) -> Box<HelperError> {
     let unsupported = matches!(error, GeminiToolsError::UnsupportedToolChoice);
     let class = if unsupported {

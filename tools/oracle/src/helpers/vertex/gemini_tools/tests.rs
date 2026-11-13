@@ -45,7 +45,7 @@ fn replays_the_gemini_tools_helper_cases() {
 }
 
 #[test]
-fn the_gemini_tools_seed_parses_into_mapping_calls() {
+fn the_gemini_tools_seed_parses_into_a_mapping_call() {
     let seeds = seed_sources();
     let inputs: Vec<Input> = seeds
         .iter()
@@ -54,94 +54,82 @@ fn the_gemini_tools_seed_parses_into_mapping_calls() {
             serde_json::from_value(case.call.input).expect("seed input should decode")
         })
         .collect();
-    assert!(inputs.iter().any(|input| {
-        input
-            .calls
-            .iter()
-            .any(|call| !call.tools.is_empty() && call.web_search_options.is_some())
-    }));
+    assert!(
+        inputs.iter().any(|input| {
+            !input.call.tools.is_empty() && input.call.web_search_options.is_some()
+        })
+    );
 }
 
-fn input(calls: Value) -> Input {
-    serde_json::from_value(json!({"calls": calls, "settings": {}})).expect("input should decode")
+fn input(call: &Value) -> Input {
+    serde_json::from_value(json!({"call": call, "settings": {}})).expect("input should decode")
 }
 
 #[test]
 fn the_adapter_maps_native_tools_choices_and_tiers() {
-    let input = input(json!([{
+    let input = input(&json!({
         "tools": [
             {"google_search": {"searchType": "SEARCH_TYPE_MEDIA"}},
             {"googleMaps": {"latitude": 1.5_f64, "longitude": 2.5_f64, "languageCode": "en"}}
         ],
-        "functions": [],
         "web_search_options": null,
         "tool_choice": "auto",
         "service_tier": "AUTO",
         "server_side_invocations": false,
         "tool_config": null
-    }]));
+    }));
     let output = Op::run(&input).expect("adapter should map the tools");
     assert_eq!(
         output,
         json!({
-            "results": [{
-                "tools": [
-                    {"googleSearch": {"searchType": "SEARCH_TYPE_MEDIA"}},
-                    {"googleMaps": {}}
-                ],
-                "tool_choice": {"functionCallingConfig": {"mode": "AUTO"}},
-                "toolConfig": {"retrievalConfig": {"latLng": {"latitude": 1.5_f64, "longitude": 2.5_f64}, "languageCode": "en"}},
-                "service_tier": "priority",
-                "warnings": 0_usize
-            }]
+            "tools": [
+                {"googleSearch": {"searchType": "SEARCH_TYPE_MEDIA"}},
+                {"googleMaps": {}}
+            ],
+            "tool_choice": {"functionCallingConfig": {"mode": "AUTO"}},
+            "toolConfig": {"retrievalConfig": {"latLng": {"latitude": 1.5_f64, "longitude": 2.5_f64}, "languageCode": "en"}},
+            "service_tier": "priority",
+            "warnings": 0_usize
         })
     );
 }
 
 #[test]
 fn the_adapter_reports_the_search_conflict_warning() {
-    let input = input(json!([{
+    let input = input(&json!({
         "tools": [
             {"type": "function", "function": {"name": "f"}},
             {"googleSearch": {}}
         ],
-        "functions": [],
         "web_search_options": {},
         "tool_choice": null,
         "service_tier": null,
         "server_side_invocations": false,
         "tool_config": null
-    }]));
+    }));
     let output = Op::run(&input).expect("adapter should map the tools");
     assert_eq!(
         output,
         json!({
-            "results": [{
-                "tools": [{"function_declarations": [{"name": "f"}]}],
-                "tool_choice": null,
-                "toolConfig": null,
-                "service_tier": null,
-                "warnings": 2_usize
-            }]
+            "tools": [{"function_declarations": [{"name": "f"}]}],
+            "tool_choice": null,
+            "toolConfig": null,
+            "service_tier": null,
+            "warnings": 2_usize
         })
     );
 }
 
 #[test]
 fn the_adapter_reports_an_unsupported_tool_choice_with_status_400() {
-    let input: Input = serde_json::from_value(json!({
-        "calls": [{
-            "tools": [],
-            "functions": [],
-            "web_search_options": null,
-            "tool_choice": "mandatory",
-            "service_tier": null,
-            "server_side_invocations": false,
-            "tool_config": null
-        }],
-        "settings": {}
-    }))
-    .expect("input should decode");
+    let input = input(&json!({
+        "tools": [],
+        "web_search_options": null,
+        "tool_choice": "mandatory",
+        "service_tier": null,
+        "server_side_invocations": false,
+        "tool_config": null
+    }));
     let error = Op::run(&input).expect_err("mandatory is not a supported choice");
     assert_eq!(error.status, Some(400));
     assert_eq!(error.class, "UnsupportedParamsError");

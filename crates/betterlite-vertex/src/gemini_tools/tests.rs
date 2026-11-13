@@ -65,8 +65,7 @@ fn native_tools_keep_the_source_order_and_one_record_per_kind() {
             ]"#,
         )
     );
-    assert_eq!(mapped.invalid_tools, 0);
-    assert!(!mapped.search_conflict_resolved);
+    assert_eq!(mapped.warnings, 0);
 }
 
 #[test]
@@ -160,7 +159,7 @@ fn search_tools_mixed_with_functions_follow_the_server_side_flag(
     );
     let mapped = map_tools(&input, include_server_side, None, &Settings::default()).unwrap();
     assert_eq!(as_json(&mapped.tools), parse::<Json>(expected));
-    assert_eq!(mapped.search_conflict_resolved, !include_server_side);
+    assert_eq!(mapped.warnings, usize::from(!include_server_side));
 }
 
 #[rstest]
@@ -360,7 +359,7 @@ fn tool_choice_rejects_unsupported_values(#[case] choice: &str) {
 fn tool_choice_rejects_a_function_that_is_not_an_object() {
     assert!(matches!(
         map_tool_choice(&parse::<Json>(r#"{"function": "f"}"#)),
-        Err(GeminiToolsError::ToolChoiceFunction)
+        Err(GeminiToolsError::ToolChoiceField { field: "function" })
     ));
 }
 
@@ -368,7 +367,7 @@ fn tool_choice_rejects_a_function_that_is_not_an_object() {
 fn tool_choice_rejects_a_function_name_that_is_not_a_string() {
     assert!(matches!(
         map_tool_choice(&parse::<Json>(r#"{"function": {"name": 5}}"#)),
-        Err(GeminiToolsError::ToolChoiceName)
+        Err(GeminiToolsError::ToolChoiceField { field: "name" })
     ));
 }
 
@@ -456,14 +455,14 @@ fn unknown_tools_are_dropped_and_counted() {
     let input: Vec<Object> = parse(r#"[{"whatever": {}}, {"type": "mystery", "x": 1}]"#);
     let mapped = mapped(&input);
     assert!(mapped.tools.is_empty());
-    assert_eq!(mapped.invalid_tools, 2);
+    assert_eq!(mapped.warnings, 2);
 }
 
 #[test]
 fn a_null_search_value_emits_no_tool() {
     let mapped = mapped(&tools(r#"[{"googleSearch": null}]"#));
     assert!(mapped.tools.is_empty());
-    assert_eq!(mapped.invalid_tools, 0);
+    assert_eq!(mapped.warnings, 0);
 }
 
 #[test]
@@ -480,15 +479,15 @@ fn declaration_error(source: &str) -> GeminiToolsError {
 fn a_missing_function_name_is_rejected() {
     assert!(matches!(
         declaration_error(r#"[{"type": "function", "function": {"description": "d"}}]"#),
-        GeminiToolsError::FunctionName
+        GeminiToolsError::FunctionField { field: "name" }
     ));
     assert!(matches!(
         declaration_error(r#"[{"type": "function", "function": {"name": null}}]"#),
-        GeminiToolsError::FunctionName
+        GeminiToolsError::FunctionField { field: "name" }
     ));
     assert!(matches!(
         declaration_error(r#"[{"type": "function", "function": {"name": 5}}]"#),
-        GeminiToolsError::FunctionName
+        GeminiToolsError::FunctionField { field: "name" }
     ));
 }
 
@@ -496,7 +495,9 @@ fn a_missing_function_name_is_rejected() {
 fn a_description_that_is_not_a_string_is_rejected() {
     assert!(matches!(
         declaration_error(r#"[{"type": "function", "function": {"name": "f", "description": 5}}]"#),
-        GeminiToolsError::Description
+        GeminiToolsError::FunctionField {
+            field: "description",
+        }
     ));
 }
 
@@ -506,13 +507,17 @@ fn parameters_that_are_not_a_schema_are_rejected() {
         declaration_error(
             r#"[{"type": "function", "function": {"name": "f", "parameters": [1]}}]"#
         ),
-        GeminiToolsError::Parameters
+        GeminiToolsError::FunctionField {
+            field: "parameters",
+        }
     ));
     assert!(matches!(
         declaration_error(
             r#"[{"type": "function", "function": {"name": "f", "parameters": "abc"}}]"#
         ),
-        GeminiToolsError::Parameters
+        GeminiToolsError::FunctionField {
+            field: "parameters",
+        }
     ));
 }
 
@@ -525,7 +530,10 @@ fn a_function_that_is_not_an_object_is_rejected() {
         &Settings::default(),
     )
     .unwrap_err();
-    assert!(matches!(error, GeminiToolsError::Function));
+    assert!(matches!(
+        error,
+        GeminiToolsError::FunctionField { field: "function" }
+    ));
 }
 
 #[rstest]

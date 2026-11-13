@@ -2,17 +2,16 @@ kind: helper
 name: invalid-tool-choice
 call:
   gemini_tools:
-    calls:
-      - tools:
-          - type: function
-            function:
-              name: f
-        functions: []
-        web_search_options: null
-        tool_choice: mandatory
-        service_tier: null
-        server_side_invocations: false
-        tool_config: null
+    call:
+      tools:
+        - type: function
+          function:
+            name: f
+      web_search_options: null
+      tool_choice: mandatory
+      service_tier: null
+      server_side_invocations: false
+      tool_config: null
     settings: {}
 env: {}
 compare: {ignore: []}
