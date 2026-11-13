@@ -620,7 +620,7 @@ async fn minted_url_publishes_token() {
 
 #[test]
 fn expired_only_after_expiry() {
-    let token = token_url("X-Amz-Date=20240101T000000Z&X-Amz-Expires=1");
+    let token = token_url("?X-Amz-Date=20240101T000000Z&X-Amz-Expires=1");
     let at_expiry = is_token_expired(&RefreshQuery {
         kind: Some(Rds),
         token_url: Some(&token),
@@ -639,7 +639,7 @@ fn expired_only_after_expiry() {
 
 #[test]
 fn fresh_only_over_buffer() {
-    let at_buffer = token_url("X-Amz-Date=20240101T000000Z&X-Amz-Expires=180");
+    let at_buffer = token_url("?X-Amz-Date=20240101T000000Z&X-Amz-Expires=180");
     let not_fresh = token_refresh_not_needed(&RefreshQuery {
         kind: Some(Rds),
         token_url: Some(&at_buffer),
@@ -647,7 +647,7 @@ fn fresh_only_over_buffer() {
     })
     .expect("the token parses");
     assert!(!not_fresh);
-    let over_buffer = token_url("X-Amz-Date=20240101T000000Z&X-Amz-Expires=181");
+    let over_buffer = token_url("?X-Amz-Date=20240101T000000Z&X-Amz-Expires=181");
     let fresh = token_refresh_not_needed(&RefreshQuery {
         kind: Some(Rds),
         token_url: Some(&over_buffer),

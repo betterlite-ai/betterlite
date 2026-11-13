@@ -111,7 +111,44 @@ pub(crate) async fn row_count(pool: &Pool, table: &str) -> i64 {
 
 pub(crate) async fn close_fixture(fixture: PostgresFixture, pool: Pool) {
     pool.close();
+    // DROP DATABASE refuses while any session remains; a closed client's socket needs a moment to leave
+    sleep(Duration::from_millis(100)).await;
     fixture.close_async().await.expect("fixture cleanup");
+}
+
+// The retired and selected pools close asynchronously, so end their backends before the fixture drops the database
+async fn wait_for_other_sessions(pool: &Pool) {
+    let Ok(client) = pool.get().await else {
+        return;
+    };
+    if client
+        .batch_execute(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity \
+             WHERE datname = current_database() AND pid <> pg_backend_pid()",
+        )
+        .await
+        .is_err()
+    {
+        return;
+    }
+    let settled = timeout(Duration::from_secs(5), async {
+        loop {
+            match client
+                .query_one(
+                    "SELECT count(*) FROM pg_stat_activity \
+                     WHERE datname = current_database() AND pid <> pg_backend_pid()",
+                    &[],
+                )
+                .await
+            {
+                Ok(row) if row.get::<_, i64>(0) == 0 => break,
+                _ => sleep(Duration::from_millis(10)).await,
+            }
+        }
+    })
+    .await;
+    settled.expect("the other sessions end");
+    drop(client);
 }
 
 pub(crate) async fn closed(handle: &NativePool) {
@@ -194,6 +231,11 @@ pub(crate) async fn loop_on(
 
 pub(crate) async fn close_case(setup: FixtureLoop) {
     setup.built.generation.shutdown().await;
+    if let Some(live) = setup.built.generation.observe().handle {
+        live.close();
+    }
+    setup.initial.close();
+    wait_for_other_sessions(&setup.case.pool).await;
     close_fixture(setup.case.fixture, setup.case.pool).await;
 }
 
@@ -210,7 +252,8 @@ pub(crate) async fn assert_published(setup: &FixtureLoop) {
     drop(client);
     assert_eq!(row.get::<_, i64>(0), 1);
     assert_eq!(row_count(&setup.case.pool, "refresh_rows").await, 1);
-    assert_ne!(
+    // the minter returns the fixture password, so the reassembled URL is the fixture URL itself
+    assert_eq!(
         slot_url(&setup.slot),
         Some(setup.case.url.expose_secret().to_owned())
     );

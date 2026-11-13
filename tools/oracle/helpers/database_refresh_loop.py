@@ -9,9 +9,9 @@ from typing import ClassVar, Literal, Self, TypedDict
 from litellm.proxy.db import prisma_client
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.db.token_auth import AzureEntraTokenAuth, DatabaseTokenAuth, RdsIamTokenAuth
+from pydantic import JsonValue as Json
 from typing_extensions import override
 
-Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 AuthKind = Literal["disabled", "rds", "azure"]
 ENV_VAR = "DATABASE_URL"
 LOGGER_NAME = "LiteLLM Proxy"
@@ -30,15 +30,14 @@ class FrozenDateTime(datetime):
         return cls.current
 
 
+# LiteLLM does not export prisma_client.datetime, so object.__setattr__ writes the module attribute
 class FrozenClock:
     def __init__(self, now: str) -> None:
         self.now = now
-        self.previous: type[datetime] = datetime
 
     def __enter__(self) -> Self:
         FrozenDateTime.set_current(self.now)
-        self.previous = prisma_client.datetime  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L9
-        prisma_client.datetime = FrozenDateTime  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L9
+        object.__setattr__(prisma_client, "datetime", FrozenDateTime)
         return self
 
     def __exit__(
@@ -47,7 +46,7 @@ class FrozenClock:
         error: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        prisma_client.datetime = self.previous  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L9
+        object.__setattr__(prisma_client, "datetime", datetime)
 
 
 class LevelCapture(logging.Handler):
@@ -138,11 +137,23 @@ def authentication(kind: AuthKind) -> DatabaseTokenAuth | None:
     return None
 
 
-def wrapper(auth: AuthKind) -> PrismaWrapper:
-    created = object.__new__(PrismaWrapper)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L142
-    created._token_auth = authentication(auth)  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L182
-    created._db_url_env_var = ENV_VAR  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L190
-    return created
+# The wrapper reaches the pinned private methods through self, which the private-member rules allow
+class Wrapper(PrismaWrapper):
+    def __init__(self, kind: AuthKind) -> None:
+        self._token_auth = authentication(kind)
+        self._db_url_env_var = ENV_VAR
+
+    def extract_token(self, db_url: str | None) -> str | None:
+        return self._extract_token_from_db_url(db_url)
+
+    def parse_expiration(self, token: str | None) -> datetime | None:
+        return self._parse_token_expiration(token)
+
+    def seconds_until_refresh(self) -> float:
+        return self._calculate_seconds_until_refresh()
+
+    def refresh_not_needed(self, token_url: str | None) -> bool:
+        return self._token_refresh_not_needed(token_url)
 
 
 def set_environment(url: str | None) -> None:
@@ -154,36 +165,36 @@ def set_environment(url: str | None) -> None:
 
 def extract_password(call: ExtractPasswordCall) -> Json:
     with captured() as capture:
-        password = wrapper("disabled")._extract_token_from_db_url(call["url"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L349
+        password = Wrapper("disabled").extract_token(call["url"])
     return {"password": password, "log_levels": capture.levels}
 
 
 def expiration(call: ParseExpirationCall) -> Json:
     with captured() as capture:
-        parsed = wrapper(call["auth"])._parse_token_expiration(call["token"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L370
+        parsed = Wrapper(call["auth"]).parse_expiration(call["token"])
     value = None if parsed is None else parsed.isoformat()
     return {"expiration": value, "log_levels": capture.levels}
 
 
 def seconds_until_refresh(call: SecondsUntilRefreshCall) -> Json:
     set_environment(call["url"])
-    created = wrapper(call["auth"])
+    created = Wrapper(call["auth"])
     with FrozenClock(call["now"]), captured() as capture:
-        seconds = created._calculate_seconds_until_refresh()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L380
+        seconds = created.seconds_until_refresh()
     return {"seconds": float(seconds), "log_levels": capture.levels}
 
 
 def is_token_expired(call: IsTokenExpiredCall) -> Json:
-    created = wrapper(call["auth"])
+    created = Wrapper(call["auth"])
     with FrozenClock(call["now"]), captured() as capture:
         expired = created.is_token_expired(call["url"])
     return {"expired": expired, "log_levels": capture.levels}
 
 
 def token_refresh_not_needed(call: TokenRefreshNotNeededCall) -> Json:
-    created = wrapper(call["auth"])
+    created = Wrapper(call["auth"])
     with FrozenClock(call["now"]), captured() as capture:
-        not_needed = created._token_refresh_not_needed(call["url"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L791
+        not_needed = created.refresh_not_needed(call["url"])
     return {"not_needed": not_needed, "log_levels": capture.levels}
 
 

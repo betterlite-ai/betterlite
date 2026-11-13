@@ -18,8 +18,8 @@ use crate::database_tokens::provider::{
 use crate::rds_credentials::RdsEndpoint;
 use crate::rds_credentials::error::RdsCredentialsError;
 
-pub(crate) const EXPIRY_900: &str = "X-Amz-Date=20240101T000000Z&X-Amz-Expires=900";
-pub(crate) const EXPIRY_100: &str = "X-Amz-Date=20240101T000000Z&X-Amz-Expires=100";
+pub(crate) const EXPIRY_900: &str = "?X-Amz-Date=20240101T000000Z&X-Amz-Expires=900";
+pub(crate) const EXPIRY_100: &str = "?X-Amz-Date=20240101T000000Z&X-Amz-Expires=100";
 pub(crate) const UNPARSABLE_TOKEN_URL: &str = "postgresql://user:password@db.example:5432/litellm";
 
 pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

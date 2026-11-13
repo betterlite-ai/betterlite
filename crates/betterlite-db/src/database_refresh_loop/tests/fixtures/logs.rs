@@ -51,6 +51,7 @@ pub(crate) fn capture_logs() -> (CapturedLogs, impl tracing::Subscriber + Send +
     let logs = CapturedLogs::default();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
+        .with_max_level(tracing::Level::TRACE)
         .with_writer(logs.clone())
         .finish();
     (logs, subscriber)
