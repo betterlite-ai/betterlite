@@ -26,6 +26,8 @@ pub enum DebugError {
         #[source]
         source: ClientError,
     },
+    #[error("the proxy URL {url} cannot hold the path {uri}")]
+    BaseUrlHoldsNoPath { uri: String, url: String },
     #[error("GET {uri} failed with HTTP {status}: {body}")]
     Status {
         uri: String,

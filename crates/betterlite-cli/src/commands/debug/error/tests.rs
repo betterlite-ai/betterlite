@@ -46,6 +46,11 @@ fn client_error() -> ClientError {
     true,
     "GET /spend/logs/ui/r1 failed"
 )]
+#[case::base_url_holds_no_path(
+    DebugError::BaseUrlHoldsNoPath { uri: "/spend/logs/ui/r1".to_owned(), url: "mailto:a@b/spend/logs/ui".to_owned() },
+    false,
+    "the proxy URL mailto:a@b/spend/logs/ui cannot hold the path /spend/logs/ui/r1"
+)]
 #[case::status(
     DebugError::Status { uri: "/spend/logs/ui/r1".to_owned(), status: 502, body: "bad gateway".to_owned() },
     false,
