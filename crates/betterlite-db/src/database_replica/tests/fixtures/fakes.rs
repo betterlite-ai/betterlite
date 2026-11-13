@@ -53,6 +53,25 @@ pub(crate) enum FakeError {
     Refresh,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Action {
+    Connect,
+    Disconnect,
+    StartRefresh,
+    StopRefresh,
+}
+
+impl Action {
+    const fn event(self) -> &'static str {
+        match self {
+            Self::Connect => "connect",
+            Self::Disconnect => "disconnect",
+            Self::StartRefresh => "start_refresh",
+            Self::StopRefresh => "stop_refresh",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum Step {
     #[default]
@@ -163,23 +182,20 @@ impl FakeClient {
     }
 
     pub(crate) fn add_model(&self, name: &str) {
-        let attribute = FakeAttribute {
-            side: self.side,
-            name: name.to_owned(),
-        };
-        let mut state = self.state();
-        state.attributes.insert(name.to_owned(), attribute);
-        state.models.insert(name.to_owned());
+        self.add_attribute(name);
+        self.state().models.insert(name.to_owned());
     }
 
     pub(crate) fn add_direct(&self, name: &str) {
+        self.add_attribute(name);
+    }
+
+    fn add_attribute(&self, name: &str) {
         let attribute = FakeAttribute {
             side: self.side,
             name: name.to_owned(),
         };
-        let mut state = self.state();
-        state.attributes.insert(name.to_owned(), attribute);
-        state.models.remove(name);
+        self.state().attributes.insert(name.to_owned(), attribute);
     }
 
     pub(crate) fn fail_lookup(&self, name: &str) {
@@ -244,6 +260,49 @@ impl FakeClient {
     fn state(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
+
+    fn step_for(&self, action: Action) -> Step {
+        match action {
+            Action::Connect => self.state().connect,
+            Action::Disconnect => self.state().disconnect,
+            Action::StartRefresh => self.state().start_refresh,
+            Action::StopRefresh => self.state().stop_refresh,
+        }
+    }
+
+    fn failure_for(&self, action: Action) -> FakeError {
+        match action {
+            Action::Connect => self.state().connect_error,
+            Action::Disconnect => self.state().disconnect_error,
+            Action::StartRefresh | Action::StopRefresh => FakeError::Refresh,
+        }
+    }
+
+    fn perform(&self, action: Action) -> ClientFuture<'_, (), FakeError> {
+        Box::pin(async move {
+            let side = self.side.name();
+            self.log.record(format!("{side}:{}", action.event()));
+            match self.step_for(action) {
+                Step::Succeed => {
+                    self.settle(action);
+                    Ok(())
+                }
+                Step::Fail => Err(self.failure_for(action)),
+                Step::Blocked => {
+                    block(&self.waiting).await;
+                    Err(self.failure_for(action))
+                }
+            }
+        })
+    }
+
+    fn settle(&self, action: Action) {
+        match action {
+            Action::Connect => self.state().connected = true,
+            Action::Disconnect => self.state().connected = false,
+            Action::StartRefresh | Action::StopRefresh => {}
+        }
+    }
 }
 
 impl DatabaseLifecycle for FakeClient {
@@ -254,49 +313,13 @@ impl DatabaseLifecycle for FakeClient {
     }
 
     fn connect(&self, timeout: Option<Duration>) -> ClientFuture<'_, (), FakeError> {
-        Box::pin(async move {
-            let side = self.side.name();
-            self.log.record(format!("{side}:connect"));
-            let step = {
-                let mut state = self.state();
-                state.timeouts.push(timeout);
-                state.connect
-            };
-            match step {
-                Step::Succeed => {
-                    self.state().connected = true;
-                    Ok(())
-                }
-                Step::Fail => Err(self.state().connect_error),
-                Step::Blocked => {
-                    block(&self.waiting).await;
-                    Err(self.state().connect_error)
-                }
-            }
-        })
+        self.state().timeouts.push(timeout);
+        self.perform(Action::Connect)
     }
 
     fn disconnect(&self, timeout: Option<Duration>) -> ClientFuture<'_, (), FakeError> {
-        Box::pin(async move {
-            let side = self.side.name();
-            self.log.record(format!("{side}:disconnect"));
-            let step = {
-                let mut state = self.state();
-                state.timeouts.push(timeout);
-                state.disconnect
-            };
-            match step {
-                Step::Succeed => {
-                    self.state().connected = false;
-                    Ok(())
-                }
-                Step::Fail => Err(self.state().disconnect_error),
-                Step::Blocked => {
-                    block(&self.waiting).await;
-                    Err(self.state().disconnect_error)
-                }
-            }
-        })
+        self.state().timeouts.push(timeout);
+        self.perform(Action::Disconnect)
     }
 
     fn recreate<'database>(
@@ -330,35 +353,11 @@ impl DatabaseLifecycle for FakeClient {
     }
 
     fn start_refresh(&self) -> ClientFuture<'_, (), FakeError> {
-        Box::pin(async move {
-            let side = self.side.name();
-            self.log.record(format!("{side}:start_refresh"));
-            let step = self.state().start_refresh;
-            match step {
-                Step::Succeed => Ok(()),
-                Step::Fail => Err(FakeError::Refresh),
-                Step::Blocked => {
-                    block(&self.waiting).await;
-                    Ok(())
-                }
-            }
-        })
+        self.perform(Action::StartRefresh)
     }
 
     fn stop_refresh(&self) -> ClientFuture<'_, (), FakeError> {
-        Box::pin(async move {
-            let side = self.side.name();
-            self.log.record(format!("{side}:stop_refresh"));
-            let step = self.state().stop_refresh;
-            match step {
-                Step::Succeed => Ok(()),
-                Step::Fail => Err(FakeError::Refresh),
-                Step::Blocked => {
-                    block(&self.waiting).await;
-                    Ok(())
-                }
-            }
-        })
+        self.perform(Action::StopRefresh)
     }
 }
 

@@ -74,14 +74,8 @@ where
 
     fn disconnect(&self, timeout: Option<Duration>) -> ClientFuture<'_, (), Client::Error> {
         Box::pin(async move {
-            let writer_error = self.writer.disconnect(timeout).await.err();
-            if let Some(error) = &writer_error {
-                warn!("Error disconnecting Prisma client: {error}");
-            }
-            let reader_error = self.reader.disconnect(timeout).await.err();
-            if let Some(error) = &reader_error {
-                warn!("Error disconnecting Prisma client: {error}");
-            }
+            let writer_error = attempt_disconnect(&self.writer, timeout).await;
+            let reader_error = attempt_disconnect(&self.reader, timeout).await;
             writer_error.or(reader_error).map_or_else(|| Ok(()), Err)
         })
     }
@@ -127,6 +121,20 @@ where
             self.reader.stop_refresh().await
         })
     }
+}
+
+async fn attempt_disconnect<Client>(
+    client: &Client,
+    timeout: Option<Duration>,
+) -> Option<Client::Error>
+where
+    Client: DatabaseClient,
+{
+    let failed = client.disconnect(timeout).await.err();
+    if let Some(error) = &failed {
+        warn!("Error disconnecting Prisma client: {error}");
+    }
+    failed
 }
 
 async fn attempt_connect<Client>(
