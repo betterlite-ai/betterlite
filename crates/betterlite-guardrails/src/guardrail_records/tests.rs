@@ -44,12 +44,38 @@ fn text(source: &str) -> String {
         .replace("@M", &format!("Bear{}ijkl", "*".repeat(14)))
 }
 
+// serde_json hands a parsed float to the untagged enum as this one-key object
+fn plain(value: GuardrailValue) -> GuardrailValue {
+    use GuardrailValue::{
+        Array, Boolean, Decimal, Null, Object, SignedInteger, Text, UnsignedInteger,
+    };
+    match value {
+        Object(fields) => {
+            if let Some(Text(digits)) = fields.get("$serde_json::private::Number") {
+                return Decimal(digits.parse().unwrap());
+            }
+            Object(
+                fields
+                    .into_iter()
+                    .map(|(key, field)| (key, plain(field)))
+                    .collect(),
+            )
+        }
+        Array(items) => Array(items.into_iter().map(plain).collect()),
+        scalar @ (Null | Boolean(_) | SignedInteger(_) | UnsignedInteger(_) | Decimal(_)
+        | Text(_)) => scalar,
+    }
+}
+
 fn gv(source: &str) -> GuardrailValue {
-    serde_json::from_str(&text(source)).unwrap()
+    plain(serde_json::from_str(&text(source)).unwrap())
 }
 
 fn body(source: &str) -> Body {
-    serde_json::from_str(&text(source)).unwrap()
+    let GuardrailValue::Object(fields) = gv(source) else {
+        panic!("not an object: {source}");
+    };
+    fields
 }
 
 fn field(value: &GuardrailValue, key: &str) -> GuardrailValue {
@@ -103,7 +129,7 @@ fn stored(data: &Body, bucket_key: &str) -> Vec<GuardrailValue> {
         panic!("no {bucket_key} object in {data:?}");
     };
     match fields.get(RECORDS) {
-        Some(GuardrailValue::Array(entries)) => entries.clone(),
+        Some(GuardrailValue::Array(entries)) => entries.iter().cloned().map(plain).collect(),
         other => panic!("expected a record list, got {other:?}"),
     }
 }
@@ -246,7 +272,7 @@ fn record_writes_nine_base_keys_null_when_unset() {
     let mut run = plain_run("{}");
     run.add(success("{}"));
     assert_eq!(
-        GuardrailValue::Object(run.data),
+        plain(GuardrailValue::Object(run.data)),
         only("metadata", bucket("{}", vec![expected_entry("{}")]))
     );
 }
@@ -268,7 +294,7 @@ fn record_keeps_the_values_it_is_given() {
         "guardrail_status":"guardrail_flagged","start_time":1.5,"end_time":2.5,
         "duration":1.0,"masked_entity_count":{"EMAIL":2}}"#;
     assert_eq!(
-        GuardrailValue::Object(run.data),
+        plain(GuardrailValue::Object(run.data)),
         only("metadata", bucket("{}", vec![expected_entry(overrides)]))
     );
 }
@@ -282,19 +308,9 @@ fn record_status_uses_wire_names() {
         GuardrailStatus::GuardrailFlagged,
         GuardrailStatus::Success,
     ];
-    let wire_names: Vec<String> = statuses
-        .iter()
-        .map(|status| serde_json::to_string(status).unwrap())
-        .collect();
     assert_eq!(
-        wire_names,
-        [
-            r#""not_run""#,
-            r#""guardrail_failed_to_respond""#,
-            r#""guardrail_intervened""#,
-            r#""guardrail_flagged""#,
-            r#""success""#
-        ]
+        serde_json::to_string(&statuses).unwrap(),
+        r#"["not_run","guardrail_failed_to_respond","guardrail_intervened","guardrail_flagged","success"]"#
     );
 }
 
@@ -677,7 +693,10 @@ fn sanitize_masks_credentials_in_objects_and_lists_and_keeps_other_fields() {
 #[test]
 fn sanitize_keeps_floats_as_numbers() {
     let given = gv(r#"{"score":0.75,"scores":[0.5,1.25]}"#);
-    assert_eq!(sanitize_guardrail_response(given.clone()).unwrap(), given);
+    assert_eq!(
+        plain(sanitize_guardrail_response(given.clone()).unwrap()),
+        given
+    );
 }
 
 const PRE_BASELINE: &str = r#"{"messages":[{"role":"user","content":"hi"}],"tools":[]}"#;

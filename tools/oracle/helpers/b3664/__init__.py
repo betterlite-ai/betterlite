@@ -1,21 +1,19 @@
 import asyncio
-from typing import Literal, Protocol, TypeAlias, TypedDict, cast
+from typing import Literal, Protocol, TypeAlias, TypedDict
 
-from litellm.integrations.custom_guardrail import (
-    CustomGuardrail,
-    log_guardrail_information,  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1580
-)
+from litellm.integrations import custom_guardrail
+from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.types.guardrails import GuardrailEventHooks
 from litellm.types.utils import GuardrailStatus
-
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
 
 
 class RecordInput(TypedDict):
     function: Literal["record"]
     guardrail_name: str | None
-    event_hook: str | list[str] | None
-    event_type: str | None
+    event_hook: GuardrailEventHooks | list[GuardrailEventHooks] | None
+    event_type: GuardrailEventHooks | None
     guardrail_response: Json
     guardrail_status: GuardrailStatus
     start_time: float | None
@@ -39,6 +37,17 @@ class SummarizeInput(TypedDict):
 Input: TypeAlias = RecordInput | SummarizeInput
 
 
+class Hook(Protocol):
+    async def __call__(
+        self,
+        guardrail: CustomGuardrail,
+        *,
+        request_data: dict[str, Json],
+        inputs: dict[str, Json],
+        response: Json,
+    ) -> Json: ...
+
+
 class LoggingStub:
     def __init__(
         self,
@@ -49,112 +58,86 @@ class LoggingStub:
         self.model_call_details: dict[str, Json] = {"litellm_params": model_call_params}
 
 
-class DataHook(Protocol):
-    async def __call__(
-        self, guardrail: CustomGuardrail, *, data: dict[str, Json], response: Json
-    ) -> Json: ...
-
-
-class ApplyHook(Protocol):
-    async def __call__(
-        self,
-        guardrail: CustomGuardrail,
-        *,
-        inputs: dict[str, Json],
-        request_data: dict[str, Json],
-        response: Json,
-    ) -> Json: ...
-
-
-def configured_hook(
-    event_hook: str | list[str] | None,
-) -> GuardrailEventHooks | list[GuardrailEventHooks] | None:
-    match event_hook:
-        case None:
-            return None
-        case str():
-            return GuardrailEventHooks(event_hook)
-        case list():
-            return [GuardrailEventHooks(name) for name in event_hook]
-
-
 def record(input_value: RecordInput) -> Json:
+    args = TypeAdapter(RecordInput).validate_python(input_value)
     guardrail = CustomGuardrail(
-        guardrail_name=input_value["guardrail_name"],
-        event_hook=configured_hook(input_value["event_hook"]),
+        guardrail_name=args["guardrail_name"], event_hook=args["event_hook"]
     )
-    event_type = input_value["event_type"]
-    logging_obj = LoggingStub(input_value["litellm_params"], input_value["model_call_params"])
-    request_data = input_value["request_data"]
-    request_data["litellm_logging_obj"] = (
-        cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1298
-            Json, logging_obj
-        )
-    )
-    guardrail.add_standard_logging_guardrail_information_to_request_data(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1212
-        guardrail_json_response=input_value["guardrail_response"],
+    request_data: dict[str, Json | LoggingStub] = {
+        **args["request_data"],
+        "litellm_logging_obj": LoggingStub(args["litellm_params"], args["model_call_params"]),
+    }
+    guardrail.add_standard_logging_guardrail_information_to_request_data(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1209
+        guardrail_json_response=args["guardrail_response"],
         request_data=request_data,
-        guardrail_status=input_value["guardrail_status"],
-        start_time=input_value["start_time"],
-        end_time=input_value["end_time"],
-        duration=input_value["duration"],
-        masked_entity_count=input_value["masked_entity_count"],
-        guardrail_provider=input_value["guardrail_provider"],
-        event_type=None if event_type is None else GuardrailEventHooks(event_type),
+        guardrail_status=args["guardrail_status"],
+        start_time=args["start_time"],
+        end_time=args["end_time"],
+        duration=args["duration"],
+        masked_entity_count=args["masked_entity_count"],
+        guardrail_provider=args["guardrail_provider"],
+        event_type=args["event_type"],
     )
     del request_data["litellm_logging_obj"]
     return {
-        "request_data": request_data,
-        "litellm_params": input_value["litellm_params"],
-        "model_call_params": input_value["model_call_params"],
+        "request_data": TypeAdapter(dict[str, Json]).validate_python(request_data),
+        "litellm_params": args["litellm_params"],
+        "model_call_params": args["model_call_params"],
     }
 
 
 async def async_pre_call_hook(
-    guardrail: CustomGuardrail, *, data: dict[str, Json], response: Json
+    guardrail: CustomGuardrail,
+    *,
+    request_data: dict[str, Json],
+    inputs: dict[str, Json],
+    response: Json,
 ) -> Json:
-    del guardrail, data
+    del guardrail, request_data, inputs
     return response
 
 
 async def async_post_call_success_hook(
-    guardrail: CustomGuardrail, *, data: dict[str, Json], response: Json
+    guardrail: CustomGuardrail,
+    *,
+    request_data: dict[str, Json],
+    inputs: dict[str, Json],
+    response: Json,
 ) -> Json:
-    del guardrail, data
+    del guardrail, request_data, inputs
     return response
 
 
 async def apply_guardrail(
     guardrail: CustomGuardrail,
     *,
-    inputs: dict[str, Json],
     request_data: dict[str, Json],
+    inputs: dict[str, Json],
     response: Json,
 ) -> Json:
-    del guardrail, inputs, request_data
+    del guardrail, request_data, inputs
     return response
+
+
+HOOKS: dict[str, Hook] = {
+    "pre_call": async_pre_call_hook,
+    "post_call": async_post_call_success_hook,
+    "apply_guardrail": apply_guardrail,
+}
 
 
 def summarize(input_value: SummarizeInput) -> Json:
     guardrail = CustomGuardrail(guardrail_name="probe")
     request_data = input_value["request_data"]
-    response = input_value["response"]
-    if input_value["hook"] == "apply_guardrail":
-        apply_wrapped = cast(ApplyHook, log_guardrail_information(apply_guardrail))  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1580  # pyright: ignore[reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1580
-        asyncio.run(
-            apply_wrapped(
-                guardrail,
-                inputs=input_value["inputs"],
-                request_data=request_data,
-                response=response,
-            )
+    wrapped: Hook = custom_guardrail.log_guardrail_information(HOOKS[input_value["hook"]])  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1580  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1580
+    asyncio.run(
+        wrapped(
+            guardrail,
+            request_data=request_data,
+            inputs=input_value["inputs"],
+            response=input_value["response"],
         )
-        return {"request_data": request_data}
-    hook = async_pre_call_hook
-    if input_value["hook"] == "post_call":
-        hook = async_post_call_success_hook
-    data_wrapped = cast(DataHook, log_guardrail_information(hook))  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1580  # pyright: ignore[reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1580
-    asyncio.run(data_wrapped(guardrail, data=request_data, response=response))
+    )
     return {"request_data": request_data}
 
 
