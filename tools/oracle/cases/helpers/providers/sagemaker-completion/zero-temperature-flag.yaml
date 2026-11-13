@@ -1,0 +1,10 @@
+kind: helper
+name: sagemaker-completion-zero-temperature-flag
+call:
+  b5960:
+    steps:
+      - {kind: params, non_default: {temperature: 0, aws_sagemaker_allow_zero_temp: true}}
+      - {kind: params, non_default: {temperature: 0, aws_sagemaker_allow_zero_temp: false}}
+      - {kind: params, non_default: {aws_sagemaker_allow_zero_temp: true, max_tokens: 5}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: sagemaker-chat-request-model-override
+call:
+  b5960:
+    steps:
+      - {kind: chat_headers, headers: {Content-Type: application/json}, optional: {model_id: component}}
+      - {kind: chat_headers, headers: {Content-Type: application/json}, optional: {model_id: 3}}
+      - {kind: chat_request, model: endpoint, messages: [{role: user, content: hi}], optional: {temperature: 0.7}}
+      - {kind: chat_request, model: endpoint, messages: [{role: user, content: hi}], hf_model_name: hf-model, optional: {temperature: 0.7}}
+      - {kind: chat_policy, model: endpoint}
+env: {}
+compare: {ignore: []}

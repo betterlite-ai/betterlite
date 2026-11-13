@@ -1,0 +1,11 @@
+kind: helper
+name: sagemaker-completion-response-echoed-prompt
+call:
+  b5960:
+    steps:
+      - {kind: completion_response, model: endpoint, prompt: "<s>[INST] hi [/INST]", reply: {generation: "<s>[INST] hi [/INST] there"}, created: 1700000000}
+      - {kind: completion_response, model: endpoint, prompt: hello, reply: {generation: hello there}}
+      - {kind: completion_response, model: endpoint, prompt: "", reply: [{generated_text: one two three}]}
+      - {kind: completion_response, model: endpoint, prompt: "a b", reply: {generation: used, generated_text: ignored}}
+env: {}
+compare: {ignore: []}

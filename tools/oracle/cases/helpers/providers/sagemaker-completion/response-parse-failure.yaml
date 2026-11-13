@@ -1,0 +1,8 @@
+kind: helper
+name: sagemaker-completion-response-parse-failure
+call:
+  b5960:
+    steps:
+      - {kind: completion_response, model: endpoint, prompt: hi, reply: []}
+env: {}
+compare: {ignore: []}
