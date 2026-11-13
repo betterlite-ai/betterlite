@@ -209,7 +209,7 @@ fn seeded_counters(
             .map_err(|error| failure(error.to_string()))?;
     }
     drop(held);
-    Ok(Arc::clone(&counters))
+    Ok(counters)
 }
 
 fn read_memory(
@@ -237,7 +237,7 @@ impl Helper for Op {
             .enable_all()
             .build()
             .map_err(|error| failure(error.to_string()))?;
-        let events: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
+        let events = Arc::new(Mutex::new(Vec::new()));
         let scripts = input
             .redis
             .clone()

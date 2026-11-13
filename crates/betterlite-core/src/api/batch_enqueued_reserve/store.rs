@@ -1,5 +1,6 @@
 use std::error::Error;
 use std::future::Future;
+use std::num::TryFromIntError;
 use std::time::Duration;
 
 use betterlite_context::local_ttl_cache::{CacheError, CacheValue, LocalTtlCache};
@@ -37,7 +38,10 @@ pub enum BatchEnqueuedReserveError {
     #[error("the stored enqueued-token counter is not an integer")]
     StoredCounter,
     #[error("the enqueued-token counter ttl is out of range")]
-    TtlOutOfRange,
+    TtlOutOfRange {
+        #[source]
+        source: TryFromIntError,
+    },
 }
 
 pub trait EnqueuedTokenCounters: Send + Sync {
@@ -72,7 +76,7 @@ impl EnqueuedTokenCounters for LocalTokenCounters {
         ttl_seconds: i64,
     ) -> Result<(), BatchEnqueuedReserveError> {
         let seconds = u64::try_from(ttl_seconds)
-            .map_err(|_source| BatchEnqueuedReserveError::TtlOutOfRange)?;
+            .map_err(|source| BatchEnqueuedReserveError::TtlOutOfRange { source })?;
         let ttl = Duration::from_secs(seconds).as_secs_f64();
         self.cache
             .set(counter_key, CacheValue::Integer(value), Some(ttl))?;

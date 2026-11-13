@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
+use std::error::Error as _;
 use std::future::{Future, ready};
 use std::slice::from_ref;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -757,5 +758,9 @@ fn a_negative_ttl_is_out_of_range() {
     let error = EnqueuedTokenCounters::set(&mut *held, KEY_COUNTER, 5, -1)
         .expect_err("a negative ttl cannot reach a duration");
     drop(held);
-    assert!(matches!(error, BatchEnqueuedReserveError::TtlOutOfRange));
+    assert!(matches!(
+        error,
+        BatchEnqueuedReserveError::TtlOutOfRange { .. }
+    ));
+    assert!(error.source().is_some());
 }
