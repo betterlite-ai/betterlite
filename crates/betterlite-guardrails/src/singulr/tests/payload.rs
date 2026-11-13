@@ -93,6 +93,25 @@ fn images_alone_still_build_a_chat_request() {
 }
 
 #[test]
+fn tools_alone_still_build_a_chat_request() {
+    let payload = sent(
+        r#"{"texts": [], "tools": [{"type": "function", "function": {"name": "f"}}]}"#,
+        "{}",
+        GuardrailInputType::Request,
+        false,
+    );
+    assert_eq!(
+        support::encoded(&payload),
+        support::json_value(
+            r#"{"correlation_id": null, "model_name": null, "model_provider_name": null,
+                "guardrail_scope": "request", "messages": [], "images": null,
+                "tools": [{"type": "function", "function": {"name": "f"}}],
+                "response": null, "metadata": null}"#
+        )
+    );
+}
+
+#[test]
 fn a_chat_response_joins_the_texts_and_converts_the_tool_calls() {
     let payload = sent(
         r#"{"texts": ["first", "second"], "model": "gpt-4o",

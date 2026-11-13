@@ -294,6 +294,68 @@ async fn an_empty_request_sends_no_call() {
     assert!(server.calls().is_empty());
 }
 
+#[tokio::test]
+async fn an_answer_larger_than_a_few_kilobytes_is_still_read() {
+    let padding = "x".repeat(4096);
+    let reply = format!(r#"{{"should_block": false, "padding": "{padding}"}}"#);
+    let server = support::mock(StatusCode::OK, &reply).await;
+    let guardrail = support::guardrail(&server.base);
+    let returned = guardrail
+        .apply_guardrail(
+            support::inputs(r#"{"texts": ["hello"]}"#),
+            &support::data("{}"),
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(returned, support::inputs(r#"{"texts": ["hello"]}"#));
+}
+
+#[derive(Clone, Default)]
+struct Captured(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for Captured {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_failed_call_logs_at_error_level() {
+    use tracing::subscriber::with_default;
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::ERROR)
+        .with_writer(move || writer.clone())
+        .finish();
+    let outcome = with_default(subscriber, || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let server = runtime.block_on(support::mock(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            r#"{"detail": "boom"}"#,
+        ));
+        runtime.block_on(support::open_guardrail(&server.base).apply_guardrail(
+            support::inputs(r#"{"texts": ["hello"]}"#),
+            &support::data("{}"),
+            GuardrailInputType::Request,
+            None,
+        ))
+    });
+    assert!(outcome.is_ok());
+    let output = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    assert!(output.contains("Singulr API returned an HTTP error status"));
+}
+
 #[test]
 fn the_supported_event_hooks_are_the_singulr_list() {
     assert_eq!(
