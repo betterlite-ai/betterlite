@@ -1,0 +1,17 @@
+kind: helper
+name: messages-options-gates
+call:
+  messages_options:
+    fixture:
+      model_cost:
+        claude-opus-4-8: {litellm_provider: anthropic, supports_speed: true}
+        claude-opus-4-7: {litellm_provider: anthropic, supports_sampling_params: false}
+      packaged: {}
+    steps:
+      - {function: get_requested_anthropic_messages_optional_param, params: {speed: fast, temperature: 0.5, max_tokens: 5}, model: claude-opus-4-7, custom_llm_provider: anthropic, drop_params: true, global_drop_params: false}
+      - {function: get_requested_anthropic_messages_optional_param, params: {speed: fast, max_tokens: 5}, model: claude-opus-4-8, custom_llm_provider: anthropic, drop_params: false, global_drop_params: false}
+      - {function: get_safeguard_refusal_stop_details, response: {stop_reason: refusal, stop_details: {}}}
+      - {function: anthropic_system_to_openai_message, system: be brief}
+      - {function: mock_response, model: m, mock_response: litellm.RateLimitError}
+env: {}
+compare: {ignore: []}

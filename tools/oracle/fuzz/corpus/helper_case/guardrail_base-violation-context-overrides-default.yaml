@@ -1,0 +1,6 @@
+kind: helper
+name: violation-context-overrides-default
+call:
+  b5471: {"function": "violation", "template": "{default_message}", "default": "fallback", "context": {"default_message": "mine"}}
+env: {}
+compare: {ignore: []}

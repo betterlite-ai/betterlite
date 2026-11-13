@@ -1,0 +1,6 @@
+kind: helper
+name: blocked-usage-response-prompt-completion-fallback
+call:
+  b3663: {"function": "blocked_usage", "shape": "response", "original": {"kind": "response", "response": {"usage": {"prompt_tokens": 5, "completion_tokens": 6}}}}
+env: {}
+compare: {ignore: []}

@@ -1,9 +1,103 @@
+use std::collections::BTreeMap;
+
+use betterlite_models::decisions::Json;
+use betterlite_vertex::gemini_response::complete::{
+    CompleteRequest, CompleteResponse, RawResponse, transform_response,
+};
+use betterlite_vertex::gemini_response_parts::projection::CallMode;
+use betterlite_vertex::model_policy::error::VertexAiError;
+use http::header::{HeaderMap, HeaderName, HeaderValue};
+use serde::Deserialize;
+use serde_json::{Value, json};
+use uuid::Uuid;
+
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+
+mod tests;
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Input {
+    model: String,
+    legacy_function: bool,
+    now: i64,
+    generated_id: String,
+    headers: BTreeMap<String, String>,
+    body: Json,
+}
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("gemini_response")
+impl Helper for Op {
+    type Input = Input;
+
+    fn run(input: &Self::Input) -> HelperResult {
+        let uuid = Uuid::parse_str(&input.generated_id).or_value_error()?;
+        let body = serde_json::to_vec(&input.body).or_value_error()?;
+        let headers = header_map(&input.headers)?;
+        let raw = RawResponse {
+            headers: &headers,
+            body: &body,
+        };
+        let request = CompleteRequest {
+            model: &input.model,
+            now: input.now,
+            call_mode: if input.legacy_function {
+                CallMode::LegacyFunction
+            } else {
+                CallMode::Tools
+            },
+        };
+        let mut ids = || uuid;
+        let response = transform_response(&raw, &request, &mut ids).map_err(vertex_error)?;
+        Ok(state(response))
     }
+}
+
+fn header_map(headers: &BTreeMap<String, String>) -> Result<HeaderMap, Box<HelperError>> {
+    let mut map = HeaderMap::new();
+    for (name, value) in headers {
+        map.append(
+            HeaderName::from_bytes(name.as_bytes()).or_value_error()?,
+            HeaderValue::from_str(value).or_value_error()?,
+        );
+    }
+    Ok(map)
+}
+
+fn vertex_error(error: VertexAiError) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: "VertexAIError".to_owned(),
+        status: Some(error.status_code),
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.message,
+    })
+}
+
+fn state(response: CompleteResponse) -> Value {
+    let metadata = response.metadata.map(|found| {
+        json!({
+            "grounding_metadata": found.grounding_metadata,
+            "url_context_metadata": found.url_context_metadata,
+            "safety_results": found.safety_results,
+            "citation_metadata": found.citation_metadata,
+        })
+    });
+    json!({
+        "id": response.id,
+        "model": response.model,
+        "choices": response.choices,
+        "usage": {
+            "prompt_tokens": response.usage.prompt_tokens,
+            "completion_tokens": response.usage.completion_tokens,
+            "total_tokens": response.usage.total_tokens,
+            "prompt_tokens_details": response.usage.prompt_tokens_details.is_some(),
+            "completion_tokens_details": response.usage.completion_tokens_details.is_some(),
+        },
+        "metadata": metadata,
+        "traffic_type": response.provider_specific_fields.map(|fields| fields.traffic_type),
+        "service_tier": response.service_tier,
+    })
 }

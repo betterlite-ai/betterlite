@@ -1,0 +1,99 @@
+kind: helper
+name: one-shot-subagent-billing
+call:
+  anthropic_feature_flags:
+    fixture: {model_cost: {}}
+    calls:
+      - function: one_shot
+        user_agent: claude-cli/1.2.3
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        tools: null
+      - function: one_shot
+        user_agent: claude-code/0.1
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        tools: []
+      - function: one_shot
+        user_agent: Claude-CLI/1.2.3
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        tools: null
+      - function: one_shot
+        user_agent: null
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        tools: null
+      - function: one_shot
+        user_agent: curl/8
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        tools: null
+      - function: one_shot
+        user_agent: claude-cli/1
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        tools: [{type: function, function: {name: run}}]
+      - function: one_shot
+        user_agent: claude-cli/1
+        messages: [{role: user, content: hello}]
+        system: not a billing header
+        tools: null
+      - function: one_shot
+        user_agent: claude-cli/1
+        messages: [{role: user, content: a}, {role: user, content: b}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        tools: null
+      - function: one_shot
+        user_agent: claude-cli/1
+        messages: [{role: assistant, content: a}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true"
+        tools: null
+      - function: one_shot
+        user_agent: claude-cli/1
+        messages: [{role: user, content: hello}]
+        system: [{type: text, text: "x-anthropic-billing-header: cc_is_subagent=true"}]
+        tools: null
+      - function: one_shot
+        user_agent: claude-cli/1
+        messages: [{role: user, content: hello}]
+        system:
+          - {type: text, text: "   "}
+          - {type: text, text: "x-anthropic-billing-header: cc_is_subagent=true"}
+        tools: null
+      - function: one_shot
+        user_agent: claude-cli/1
+        messages: [{role: user, content: hello}]
+        system:
+          - {type: text, text: "x-anthropic-billing-header: cc_is_subagent=true"}
+          - {type: text, text: "x-anthropic-billing-header: cc_is_subagent=true"}
+        tools: null
+      - function: one_shot
+        user_agent: claude-cli/1
+        messages: [{role: user, content: hello}]
+        system: [{type: text, text: "x-anthropic-billing-header: cc_is_subagent=false"}]
+        tools: null
+      - function: one_shot
+        user_agent: claude-cli/1
+        messages: [{role: user, content: hello}]
+        system: [{type: image, source: {}}]
+        tools: null
+      - function: one_shot
+        user_agent: claude-cli/1
+        messages: [{role: user, content: hello}]
+        system: "  x-anthropic-billing-header: cc_is_subagent=true  "
+        tools: null
+      - function: one_shot
+        user_agent: claude-cli/1
+        messages: [{role: user, content: hello}]
+        system: "x-anthropic-billing-header: cc_is_subagent=true;cc_is_subagent=true"
+        tools: null
+      - function: one_shot
+        user_agent: claude-cli/1
+        messages: [{role: user, content: hello}]
+        system:
+          - {type: text, text: "x-anthropic-billing-header: cc_is_subagent=true"}
+          - {type: text, text: "You are Claude Code"}
+        tools: null
+env: {}
+compare: {ignore: []}

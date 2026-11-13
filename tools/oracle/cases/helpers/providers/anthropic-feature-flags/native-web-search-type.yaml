@@ -1,0 +1,18 @@
+kind: helper
+name: native-web-search-type
+call:
+  anthropic_feature_flags:
+    fixture: {model_cost: {}}
+    calls:
+      - {function: tools, tools: [{type: web_search_20250305, name: web_search}]}
+      - {function: tools, tools: [{type: web_search_}]}
+      - {function: tools, tools: [{type: web_search}]}
+      - {function: tools, tools: [{name: web_search, type: WebSearch}]}
+      - {function: tools, tools: [{name: litellm_web_search}]}
+      - {function: tools, tools: [{type: function, function: {name: litellm_web_search}}]}
+      - {function: tools, tools: [{type: 5}]}
+      - {function: tools, tools: [{type: null}]}
+      - {function: tools, tools: [{}]}
+      - {function: tools, tools: [{type: web_search_unknown_suffix}]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,22 @@
+kind: helper
+name: anthropic-stream-state-thinking-signature
+call:
+  anthropic_stream_state:
+    json_mode: false
+    speed: null
+    sync_stream: true
+    tool_name_reverse_map: {}
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - {function: setup, fields: {content_blocks: []}}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: thinking_delta, thinking: alpha}}}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: thinking_delta, thinking: ""}}}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: signature_delta, signature: sig}}}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: thinking_delta, thinking: beta, signature: sig2}}}
+      - {function: setup, fields: {content_blocks: [{type: content_block_delta, index: 0, delta: {type: thinking_delta, thinking: gamma}}]}}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: signature_delta, signature: sig3}}}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: thinking_delta, thinking: 5}}}
+      - {function: delta, chunk: {type: content_block_delta, index: 0, delta: {type: signature_delta, signature: 7}}}
+      - {function: state}
+env: {}
+compare: {ignore: []}

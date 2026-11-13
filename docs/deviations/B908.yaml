@@ -1,0 +1,5 @@
+task: B908
+deviations:
+  - what: A Responses tools list longer than the configured item limit is rejected with a 400 before any tool is converted.
+    why: The B1087 boundary caps every request's item count, and converting an unbounded tools list would keep several copies of it in memory for one body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2042-L2058

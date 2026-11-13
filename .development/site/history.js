@@ -1,4 +1,4 @@
-import { GITHUB, DAY, number, oneDecimal, compact, shortDate, yearDate, longDate, dayTime, hourOnly, esc, idNumber, figure, dayKey, cssColor, duration, quantile, plural } from "./shared.js";
+import { GITHUB, DAY, number, oneDecimal, compact, shortDate, yearDate, longDate, dayTime, hourOnly, esc, idNumber, figure, dayKey, cssColor, duration, quantile, plural, swatch } from "./shared.js";
 
 const CUTOVER_PR = 722;
 const MEDIAN_WINDOW = 20;
@@ -326,12 +326,26 @@ function renderStageFigures(facts, stats) {
     ["ciPerPr", oneDecimal.format, "CI runs per merged PR"],
     ["ssd", gigabytes, "SSD written a day"],
   ];
-  document.getElementById("stage-figures").innerHTML = items.map(([key, format, label]) => {
-    if (two !== null && two[key] !== null) {
-      return figure(esc(format(two[key])), `stage 1: ${one[key] === null ? "none" : esc(format(one[key]))}`, label);
+  const stages = two === null ? [1] : [1, 2];
+  const legend = `<div class="keys">${stages.map((stage) => `<span>${swatch(STAGE_COLORS[stage])}Stage ${stage}</span>`).join("")}</div>`;
+  document.getElementById("stage-figures").innerHTML = legend + items.map(([key, format, label]) => {
+    const before = stageValue(1, one[key] === null ? "none" : esc(format(one[key])));
+    if (two === null) {
+      return figure(before, "", label);
     }
-    return figure(one[key] === null ? "none" : esc(format(one[key])), two === null ? "stage 1" : "stage 2: none yet", label);
+    return figure(stageValue(2, two[key] === null ? `<span class="muted">no data yet</span>` : esc(format(two[key]))), before, label);
   }).join("");
+}
+
+function stageValue(stage, html) {
+  return `${swatch(STAGE_COLORS[stage])}<span class="sr-only">stage ${stage}: </span>${html}`;
+}
+
+function stageLabel(period) {
+  if (period.key === 1 || period.key === 2) {
+    return `${swatch(STAGE_COLORS[period.key])}${esc(period.label)}`;
+  }
+  return esc(period.label);
 }
 
 function renderCompare(facts, stats) {
@@ -360,7 +374,7 @@ function renderCompare(facts, stats) {
     ["Build folder per task checkout, median", "target", gigabytes],
     ["SSD written a day", "ssd", gigabytes],
   ];
-  const head = `<thead><tr><th>Measure</th>${facts.columns.map((period) => `<th class="num">${esc(period.label)}</th>`).join("")}</tr></thead>`;
+  const head = `<thead><tr><th>Measure</th>${facts.columns.map((period) => `<th class="num">${stageLabel(period)}</th>`).join("")}</tr></thead>`;
   const body = rows.map(([label, key, format]) => `<tr><td>${esc(label)}</td>${facts.columns.map((period) => `<td class="num">${cell(stats.get(period.key)[key], format, "none yet")}</td>`).join("")}</tr>`).join("");
   const since = facts.boot ? ` Stage 1 SSD writes start from the laptop's own counter since ${esc(yearDate.format(facts.boot.from * 1000))} and add the 5-minute samples from ${esc(yearDate.format(facts.boot.to * 1000))} on.` : "";
   document.getElementById("stage-compare").innerHTML = `<table>${head}<tbody>${body}</tbody></table><p class="table-note">CI runs count every gate run on the pull request and in the merge queue, cancelled ones included. Claude worker time and model speed come from Claude Code transcripts only.${since}</p>`;
@@ -369,11 +383,11 @@ function renderCompare(facts, stats) {
 function renderPace(facts, stats) {
   const open = facts.entries.filter((entry) => entry.status !== "done").length;
   const week = facts.tasks.filter((merge) => merge.time >= facts.now * 1000 - 7 * DAY).length;
-  const paces = [...facts.live.map((period) => [period.label, stats.get(period.key).length, stats.get(period.key).tasks]), ["Last 7 days", 7, week]];
+  const paces = [...facts.live.map((period) => [stageLabel(period), stats.get(period.key).length, stats.get(period.key).tasks]), ["Last 7 days", 7, week]];
   const rows = paces.map(([label, length, count]) => {
     const rate = length > 0 ? count / length : 0;
     const done = rate > 0 ? yearDate.format(facts.now * 1000 + (open / rate) * DAY) : "never at this pace";
-    return `<tr><td>${esc(label)}</td><td class="num">${oneDecimal.format(length)}</td><td class="num">${number.format(count)}</td><td class="num">${oneDecimal.format(rate)}</td><td class="num">${esc(done)}</td></tr>`;
+    return `<tr><td>${label}</td><td class="num">${oneDecimal.format(length)}</td><td class="num">${number.format(count)}</td><td class="num">${oneDecimal.format(rate)}</td><td class="num">${esc(done)}</td></tr>`;
   }).join("");
   document.getElementById("pace").innerHTML = `<table><thead><tr><th>Pace</th><th class="num">Days</th><th class="num">Tasks merged</th><th class="num">A day</th><th class="num">${number.format(open)} open tasks done by</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
@@ -384,17 +398,17 @@ function renderDailyTable(facts) {
   const rows = facts.live.map((period) => {
     const slots = facts.days.map((day, i) => i).filter((i) => facts.days[i] / 1000 >= period.from && facts.days[i] / 1000 + 86400 <= period.to);
     if (slots.length === 0) {
-      return `<tr><td>${esc(period.label)}</td><td class="num">0</td><td class="num muted" colspan="5">no whole day yet</td></tr>`;
+      return `<tr><td>${stageLabel(period)}</td><td class="num">0</td><td class="num muted" colspan="5">no whole day yet</td></tr>`;
     }
     const counts = slots.map((i) => taskCounts[i]);
     const busiest = slots.reduce((best, i) => (taskCounts[i] > taskCounts[best] ? i : best), slots[0]);
-    return `<tr><td>${esc(period.label)}</td><td class="num">${number.format(slots.length)}</td><td class="num">${oneDecimal.format(sum(counts) / slots.length)}</td><td class="num">${number.format(quantile(counts, 0.5))}</td><td class="num">${number.format(taskCounts[busiest])} on ${esc(shortDate.format(facts.days[busiest]))}</td><td class="num">${number.format(counts.filter((count) => count === 0).length)}</td><td class="num">${oneDecimal.format(sum(slots.map((i) => prCounts[i])) / slots.length)}</td></tr>`;
+    return `<tr><td>${stageLabel(period)}</td><td class="num">${number.format(slots.length)}</td><td class="num">${oneDecimal.format(sum(counts) / slots.length)}</td><td class="num">${number.format(quantile(counts, 0.5))}</td><td class="num">${number.format(taskCounts[busiest])} on ${esc(shortDate.format(facts.days[busiest]))}</td><td class="num">${number.format(counts.filter((count) => count === 0).length)}</td><td class="num">${oneDecimal.format(sum(slots.map((i) => prCounts[i])) / slots.length)}</td></tr>`;
   }).join("");
   document.getElementById("daily-table").innerHTML = `<table><thead><tr><th>Stage</th><th class="num">Whole days</th><th class="num">Tasks a day</th><th class="num">Median day</th><th class="num">Busiest day</th><th class="num">Days with none</th><th class="num">All PRs a day</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function groupHead(first, periods, names) {
-  const top = periods.map((period) => `<th class="num" colspan="${names.length}">${esc(period.label)}</th>`).join("");
+  const top = periods.map((period) => `<th class="num" colspan="${names.length}">${stageLabel(period)}</th>`).join("");
   const bottom = periods.map(() => names.map((name) => `<th class="num">${esc(name)}</th>`).join("")).join("");
   return `<thead><tr><th rowspan="2">${esc(first)}</th>${top}</tr><tr>${bottom}</tr></thead>`;
 }
@@ -429,11 +443,11 @@ function renderWait(facts) {
     const seconds = WAIT_KINDS.map((kind) => totals(workers, kind.keys));
     const total = sum(seconds);
     if (total === 0) {
-      return `<h4>${esc(period.label)}</h4><p class="empty">No Claude worker transcript yet.</p>`;
+      return `<h4>${stageLabel(period)}</h4><p class="empty">No Claude worker transcript yet.</p>`;
     }
     const bar = WAIT_KINDS.map((kind, i) => (seconds[i] === 0 ? "" : `<span style="flex-grow:${seconds[i]};background:var(${kind.color})" title="${esc(kind.label)}: ${share(seconds[i] / total)}"></span>`)).join("");
-    const keys = WAIT_KINDS.map((kind, i) => `<span><i style="background:var(${kind.color})"></i>${esc(kind.label)} <b>${share(seconds[i] / total)}</b> ${number.format(Math.round(seconds[i] / 3600))} h</span>`).join("");
-    return `<h4>${esc(period.label)}, ${plural(workers.length, "worker run")}, ${number.format(Math.round(total / 3600))} hours</h4><div class="split" aria-hidden="true">${bar}</div><div class="keys">${keys}</div>`;
+    const keys = WAIT_KINDS.map((kind, i) => `<span>${swatch(kind.color)}${esc(kind.label)} <b>${share(seconds[i] / total)}</b> ${number.format(Math.round(seconds[i] / 3600))} h</span>`).join("");
+    return `<h4>${stageLabel(period)}, ${plural(workers.length, "worker run")}, ${number.format(Math.round(total / 3600))} hours</h4><div class="split" aria-hidden="true">${bar}</div><div class="keys">${keys}</div>`;
   });
   document.getElementById("wait").innerHTML = parts.join("");
 
@@ -488,14 +502,14 @@ function renderMachine(facts) {
   const full = hours.filter((hour) => hour.minutes >= 45);
   const last = full.at(-1) ?? hours.at(-1) ?? null;
   const columns = [
-    { label: "Since start", value: (row) => (facts.boot && row.boot ? row.boot(facts.boot) : null) },
+    { head: "Since start", value: (row) => (facts.boot && row.boot ? row.boot(facts.boot) : null) },
     ...facts.live.map((period) => {
       const inside = hours.filter((hour) => hour.stage === period.key);
-      return { label: `${period.label} samples`, value: (row) => (row.key === null || inside.length === 0 ? null : weighted(inside, row.key)) };
+      return { head: `${stageLabel(period)} samples`, value: (row) => (row.key === null || inside.length === 0 ? null : weighted(inside, row.key)) };
     }),
-    { label: "Last full hour", value: (row) => (row.key === null || last === null ? null : last[row.key]) },
+    { head: "Last full hour", value: (row) => (row.key === null || last === null ? null : last[row.key]) },
   ];
-  const head = `<thead><tr><th>Measure</th><th>Unit</th>${columns.map((column) => `<th class="num">${esc(column.label)}</th>`).join("")}</tr></thead>`;
+  const head = `<thead><tr><th>Measure</th><th>Unit</th>${columns.map((column) => `<th class="num">${column.head}</th>`).join("")}</tr></thead>`;
   const body = MACHINE_ROWS.map((row) => `<tr><td>${esc(row.label)}</td><td class="muted">${esc(row.unit === "%" ? "" : row.unit)}</td>${columns.map((column) => `<td class="num">${machineValue(column.value(row), row.unit)}</td>`).join("")}</tr>`).join("");
   document.getElementById("machine-table").innerHTML = `<table>${head}<tbody>${body}</tbody></table>`;
   const note = [];
@@ -523,7 +537,7 @@ function renderMilestonePace(facts) {
     }).join("");
     return `<tr><td><a href="#milestone-${esc(group.code)}">${esc(group.name)}</a></td><td class="num">${number.format(open)}</td>${rates}<td class="num">${number.format(recent)}</td><td class="num">${esc(left)}</td></tr>`;
   }).join("");
-  const rateHeads = live.map((period) => `<th class="num">${esc(period.label)} a day</th>`).join("");
+  const rateHeads = live.map((period) => `<th class="num">${stageLabel(period)} a day</th>`).join("");
   document.getElementById("milestone-pace").innerHTML = `<table><thead><tr><th>Milestone</th><th class="num">Open</th>${rateHeads}<th class="num">Last 7 days</th><th class="num">Days left</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -726,7 +740,7 @@ function renderStageTable(rows, facts) {
     }).join("");
     return `<tr><td>${esc(step.label)}</td><td class="muted">${esc(step.about)}</td>${values}</tr>`;
   });
-  const top = facts.columns.map((period) => `<th class="num" colspan="2">${esc(period.label)}</th>`).join("");
+  const top = facts.columns.map((period) => `<th class="num" colspan="2">${stageLabel(period)}</th>`).join("");
   const bottom = facts.columns.map(() => `<th class="num">Median</th><th class="num">90th</th>`).join("");
   document.getElementById("stage-table").innerHTML = `<table><thead><tr><th rowspan="2">Step</th><th rowspan="2">From and to</th>${top}</tr><tr>${bottom}</tr></thead><tbody>${cells.slice(0, -1).join("")}</tbody><tfoot>${cells.at(-1)}</tfoot></table>`;
   const counted = `${number.format(rows.length)} merged since ${shortDate.format(rows[0].merged * 1000)}`;
@@ -782,7 +796,7 @@ function drawHours(container, facts, mode) {
     });
   });
   const table = [...Array(slots).keys()].map((slot) => `<tr><td>${esc(slotName(mode, slot))}</td>${values.map((series) => `<td class="num">${series[slot].toFixed(2)}</td>`).join("")}</tr>`).join("");
-  document.getElementById("hours-table").innerHTML = `<table><thead><tr><th>${mode === "hour" ? "Hour" : "Weekday"}</th>${facts.live.map((period) => `<th class="num">${esc(period.label)}, merges a day</th>`).join("")}</tr></thead><tbody>${table}</tbody></table>`;
+  document.getElementById("hours-table").innerHTML = `<table><thead><tr><th>${mode === "hour" ? "Hour" : "Weekday"}</th>${facts.live.map((period) => `<th class="num">${stageLabel(period)}, merges a day</th>`).join("")}</tr></thead><tbody>${table}</tbody></table>`;
   return new uPlot(options, [[...Array(slots).keys()], ...values], container);
 }
 

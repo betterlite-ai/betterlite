@@ -1,0 +1,6 @@
+kind: helper
+name: metadata-team-without-lock
+call:
+  b3663: {"function": "can_modify", "team": null}
+env: {}
+compare: {ignore: []}

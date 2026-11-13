@@ -1,0 +1,6 @@
+kind: helper
+name: merge-tools-preserve-request-duplicates
+call:
+  b3663: {"function": "merge_tools", "extractor": "openai", "request": [{"name": "a"}, {"name": "a", "extra": 1}], "returned": [{"function": {"name": "a"}}, {"function": {"name": "b"}}, {"name": "b"}, {"x": 1}]}
+env: {}
+compare: {ignore: []}

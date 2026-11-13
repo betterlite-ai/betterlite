@@ -1,0 +1,6 @@
+kind: helper
+name: event-hook-mode-empty-default-is-skipped
+call:
+  b5471: {"function": "validate_hook", "supported": ["pre_call"], "event_hook": null, "event_hooks": null, "mode_tags": {"a": "pre_call"}, "mode_default": ""}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: blocked-usage-chat-stream-no-final-usage
+call:
+  b3663: {"function": "blocked_usage", "shape": "chat_stream", "original": {"kind": "stream", "items": [{"kind": "json", "value": {"id": "c1", "choices": [{"delta": {"content": "a"}}]}}, {"kind": "json", "value": {"id": "c2", "choices": [{"delta": {"content": "b"}}], "usage": null}}]}}
+env: {}
+compare: {ignore: []}

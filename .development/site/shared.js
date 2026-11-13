@@ -29,6 +29,10 @@ export function figure(value, small, label) {
   return `<div class="figure"><div class="value">${value} <small>${small}</small></div><div class="label">${label}</div></div>`;
 }
 
+export function swatch(color) {
+  return `<i class="swatch" style="background:var(${color})" aria-hidden="true"></i>`;
+}
+
 export function dayKey(time) {
   const date = new Date(time);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;

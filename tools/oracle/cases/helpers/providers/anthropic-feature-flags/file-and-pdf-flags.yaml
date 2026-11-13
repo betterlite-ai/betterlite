@@ -1,0 +1,42 @@
+kind: helper
+name: file-and-pdf-flags
+call:
+  anthropic_feature_flags:
+    fixture: {model_cost: {}}
+    calls:
+      - function: file_ids
+        messages: [{role: user, content: [{type: file, file: {file_id: file-1}}]}]
+      - function: file_ids
+        messages: [{role: user, content: [{type: text, text: hi}]}]
+      - function: file_ids
+        messages: [{role: assistant, content: [{type: file, file: {file_id: file-2}}]}]
+      - function: file_ids
+        messages: [{role: user, content: [{type: file, file: {file_id: ""}}]}]
+      - function: file_ids
+        messages: [{role: user, content: file-1}]
+      - function: file_ids
+        messages: [{role: user, content: [{type: file}]}]
+      - function: file_ids
+        messages: [{role: user, content: [{text: hi}]}]
+      - function: file_ids
+        messages: [{role: user, content: [{type: image, source: {}}, {type: file, file: {file_id: file-3}}]}]
+      - function: pdf
+        messages: [{role: user, content: [{type: file, file: {file_id: file-1}}]}]
+      - function: pdf
+        messages: [{role: user, content: [{type: text, text: hi}]}]
+      - function: pdf
+        messages: [{role: user, content: [{type: image, source: {}}]}]
+      - function: pdf
+        messages: [{role: user, content: [{type: tool_use, id: t, name: n, input: {}}]}]
+      - function: pdf
+        messages: [{role: user, content: [{type: null}]}]
+      - function: pdf
+        messages: [{role: user, content: [{text: hi}]}]
+      - function: pdf
+        messages: [{role: user, content: plain text}]
+      - function: pdf
+        messages: [{role: user, content: null}]
+      - function: pdf
+        messages: [{role: assistant, content: [{type: image, source: {}}]}]
+env: {}
+compare: {ignore: []}

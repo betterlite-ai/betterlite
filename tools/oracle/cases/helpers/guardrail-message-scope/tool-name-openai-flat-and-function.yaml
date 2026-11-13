@@ -1,0 +1,6 @@
+kind: helper
+name: tool-name-openai-flat-and-function
+call:
+  b3663: {"function": "tool_names", "tool": {"name": "flat", "function": {"name": "nested"}}}
+env: {}
+compare: {ignore: []}
