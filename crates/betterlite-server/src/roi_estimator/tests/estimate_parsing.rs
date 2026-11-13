@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_roi::estimator::extraction::MAX_REPLY_BYTES;
 use betterlite_roi::records::{ROIEstimate, ROIEstimateStatus};
 use rstest::rstest;
 use serde_json::{Value, json};
@@ -48,6 +49,13 @@ async fn estimate_uses_the_first_complete_object_in_the_reply() {
 #[case::no_choices(json!({"choices": []}))]
 #[case::no_content_key(json!({"choices": [{"finish_reason": "stop", "message": {}}]}))]
 #[case::wrong_schema(json!({"choices": "nope"}))]
+#[case::nan_object_before_a_valid_one(ok_response(
+    r#"{"hours": NaN, "reasoning": "x"} {"hours": 1, "reasoning": "y"}"#
+))]
+#[case::reply_over_the_byte_limit(ok_response(&format!(
+    r#"{{"hours": 1, "reasoning": "x"}}{}"#,
+    " ".repeat(MAX_REPLY_BYTES)
+)))]
 #[tokio::test]
 async fn estimate_rejects_replies_that_do_not_carry_a_valid_estimate(#[case] response: Value) {
     assert!(run_estimate(response).await.is_err());

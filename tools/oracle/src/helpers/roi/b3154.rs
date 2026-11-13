@@ -219,7 +219,9 @@ fn validate(input: &Input) -> HelperResult {
         .raw
         .as_ref()
         .ok_or_else(|| helper_error("ValueError", "validate_result needs raw JSON".to_owned()))?;
-    let result: ROIEstimatorResult = serde_json::from_str(first_json_object(raw))
+    let object =
+        first_json_object(raw).map_err(|error| helper_error("ValueError", error.to_string()))?;
+    let result: ROIEstimatorResult = serde_json::from_str(object)
         .map_err(|error| helper_error("ValueError", error.to_string()))?;
     Ok(json!({"hours": result.hours, "reasoning": result.reasoning}))
 }

@@ -3,9 +3,9 @@ use betterlite_roi::estimator::evidence::metadata_evidence;
 use betterlite_roi::estimator::extraction::first_json_object;
 use betterlite_roi::estimator::json::json_dumps_text;
 use betterlite_roi::estimator::models::{
-    MAX_EVIDENCE_CHARS, REASONING_MAX_CHARS, RESPONSE_CONTRACT, ROICompletionMessage,
-    ROICompletionMetadata, ROICompletionRequest, ROICompletionResponse, ROICompletionRole,
-    ROIResponseFormat, ROIResponseFormatType, ReasoningEffort,
+    MAX_EVIDENCE_CHARS, REASONING_MAX_CHARS, RESPONSE_CONTRACT, ROICompletionChoice,
+    ROICompletionMessage, ROICompletionMetadata, ROICompletionRequest, ROICompletionResponse,
+    ROICompletionRole, ROIResponseFormat, ROIResponseFormatType, ReasoningEffort,
 };
 use betterlite_roi::estimator::options::estimator_options;
 use betterlite_roi::estimator::result::ROIEstimatorResult;
@@ -33,22 +33,18 @@ impl Estimator {
             json_dumps_text(&metadata_evidence(pull)).map_err(|source| EstimatorError {
                 source: CompletionFailure::Evidence { source },
             })?;
-        if pull.incomplete_metadata {
+        let refusal = if pull.incomplete_metadata {
+            Some(INCOMPLETE_METADATA_REASON)
+        } else if evidence.chars().count() > MAX_EVIDENCE_CHARS {
+            Some(OVERSIZED_EVIDENCE_REASON)
+        } else {
+            None
+        };
+        if let Some(reason) = refusal {
             return Ok(ROIEstimate {
                 status: ROIEstimateStatus::NeedsReview,
                 hours: None,
-                reasoning: INCOMPLETE_METADATA_REASON.to_owned(),
-                model: None,
-                evidence_source: None,
-                effort_basis: None,
-                cached: None,
-            });
-        }
-        if evidence.chars().count() > MAX_EVIDENCE_CHARS {
-            return Ok(ROIEstimate {
-                status: ROIEstimateStatus::NeedsReview,
-                hours: None,
-                reasoning: OVERSIZED_EVIDENCE_REASON.to_owned(),
+                reasoning: reason.to_owned(),
                 model: None,
                 evidence_source: None,
                 effort_basis: None,
@@ -96,19 +92,28 @@ impl Estimator {
     }
 }
 
-fn estimate_from_completion(value: Value, model: &str) -> Result<ROIEstimate, EstimatorError> {
+fn finished_choice(value: Value) -> Result<ROICompletionChoice, EstimatorError> {
     let response: ROICompletionResponse =
         serde_json::from_value(value).map_err(|source| EstimatorError {
             source: CompletionFailure::Response { source },
         })?;
-    let choice = response.choices.first().ok_or_else(|| EstimatorError {
-        source: CompletionFailure::NoChoices,
-    })?;
+    let choice = response
+        .choices
+        .into_iter()
+        .next()
+        .ok_or_else(|| EstimatorError {
+            source: CompletionFailure::NoChoices,
+        })?;
     if !matches!(choice.finish_reason.as_deref(), None | Some("stop")) {
         return Err(EstimatorError {
             source: CompletionFailure::Incomplete,
         });
     }
+    Ok(choice)
+}
+
+fn estimate_from_completion(value: Value, model: &str) -> Result<ROIEstimate, EstimatorError> {
+    let choice = finished_choice(value)?;
     let content = choice
         .message
         .content
@@ -116,8 +121,11 @@ fn estimate_from_completion(value: Value, model: &str) -> Result<ROIEstimate, Es
         .ok_or_else(|| EstimatorError {
             source: CompletionFailure::Incomplete,
         })?;
+    let object = first_json_object(content).map_err(|source| EstimatorError {
+        source: CompletionFailure::Extraction { source },
+    })?;
     let result: ROIEstimatorResult =
-        serde_json::from_str(first_json_object(content)).map_err(|source| EstimatorError {
+        serde_json::from_str(object).map_err(|source| EstimatorError {
             source: CompletionFailure::Estimate { source },
         })?;
     Ok(ROIEstimate {

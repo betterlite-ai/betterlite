@@ -3,7 +3,7 @@
 use rstest::rstest;
 use serde_json::json;
 
-use crate::estimator::extraction::first_json_object;
+use crate::estimator::extraction::{ExtractionError, MAX_REPLY_BYTES, first_json_object};
 use crate::estimator::result::{
     ROIEstimatorResult, ResultError, validate_hours, validate_reasoning,
 };
@@ -72,18 +72,88 @@ fn parse_is_strict(#[case] value: serde_json::Value) {
 
 #[test]
 fn parse_extracts_the_first_complete_object() {
-    let result: ROIEstimatorResult = serde_json::from_str(first_json_object(
+    let object = first_json_object(
         "Sure:\n```json\n{\"hours\": 1, \"reasoning\": \"first\"}\n```\n{\"hours\": 2, \"reasoning\": \"second\"}",
-    ))
+    )
     .unwrap();
+    let result: ROIEstimatorResult = serde_json::from_str(object).unwrap();
     assert_eq!(result.hours, 1.0);
     assert_eq!(result.reasoning, "first");
 }
 
 #[test]
 fn parse_strips_prose_without_an_object() {
-    let content = first_json_object("  no json here  ");
+    let content = first_json_object("  no json here  ").unwrap();
+    assert_eq!(content, "no json here");
     assert!(serde_json::from_str::<ROIEstimatorResult>(content).is_err());
+}
+
+#[rstest]
+#[case::nan(r#"{"hours": NaN, "reasoning": "x"}"#)]
+#[case::infinity(r#"{"hours": Infinity, "reasoning": "x"}"#)]
+#[case::negative_infinity(r#"{"hours": -Infinity, "reasoning": "x"}"#)]
+#[case::nested_in_array(r#"{"hours": [NaN, 1], "reasoning": "x"}"#)]
+fn extraction_picks_an_object_holding_a_python_constant_over_a_later_valid_one(
+    #[case] first: &str,
+) {
+    let content = format!(r#"{first} {{"hours": 1, "reasoning": "y"}}"#);
+    let object = first_json_object(&content).unwrap();
+    assert_eq!(object, first);
+    assert!(serde_json::from_str::<ROIEstimatorResult>(object).is_err());
+}
+
+#[rstest]
+#[case::digit_before(r#"{"hours": 1NaN, "reasoning": "x"}"#)]
+#[case::letter_after(r#"{"hours": NaNa, "reasoning": "x"}"#)]
+#[case::digit_after(r#"{"hours": NaN5, "reasoning": "x"}"#)]
+#[case::sign_before_nan(r#"{"hours": -NaN, "reasoning": "x"}"#)]
+fn extraction_skips_an_object_whose_constant_is_not_a_json_token(#[case] broken: &str) {
+    let valid = r#"{"hours": 1, "reasoning": "y"}"#;
+    let content = format!("{broken} {valid}");
+    assert_eq!(first_json_object(&content).unwrap(), valid);
+}
+
+#[test]
+fn extraction_accepts_a_reply_of_exactly_the_byte_limit() {
+    let object = r#"{"hours": 1, "reasoning": "y"}"#;
+    let content = format!("{object}{}", " ".repeat(MAX_REPLY_BYTES - object.len()));
+    assert_eq!(content.len(), MAX_REPLY_BYTES);
+    assert_eq!(first_json_object(&content).unwrap(), object);
+}
+
+#[test]
+fn extraction_refuses_a_reply_one_byte_over_the_limit() {
+    let content = " ".repeat(MAX_REPLY_BYTES + 1);
+    assert_eq!(
+        first_json_object(&content),
+        Err(ExtractionError::TooLarge {
+            bytes: MAX_REPLY_BYTES + 1,
+            limit: MAX_REPLY_BYTES,
+        })
+    );
+}
+
+#[test]
+fn extraction_gives_up_when_failed_starts_use_the_scan_budget() {
+    let content = "{".repeat(MAX_REPLY_BYTES);
+    assert_eq!(
+        first_json_object(&content),
+        Err(ExtractionError::ScanBudget)
+    );
+}
+
+#[test]
+fn extraction_charges_quick_failures_only_the_bytes_they_read() {
+    let object = r#"{"hours": 1, "reasoning": "y"}"#;
+    let content = format!("{}{object}", "{x".repeat(200_000));
+    assert_eq!(first_json_object(&content).unwrap(), object);
+}
+
+#[test]
+fn extraction_finds_an_object_after_multibyte_text() {
+    let object = r#"{"hours": 1, "reasoning": "é"}"#;
+    let content = format!("héllo wörld {object}");
+    assert_eq!(first_json_object(&content).unwrap(), object);
 }
 
 #[test]

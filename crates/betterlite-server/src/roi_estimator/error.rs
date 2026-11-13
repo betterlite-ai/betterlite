@@ -1,3 +1,4 @@
+use betterlite_roi::estimator::extraction::ExtractionError;
 use betterlite_roi::estimator::json::JsonError;
 use thiserror::Error;
 
@@ -33,6 +34,11 @@ pub enum CompletionFailure {
     NoChoices,
     #[error("the completion response is incomplete")]
     Incomplete,
+    #[error("the completion content could not be searched for a JSON object")]
+    Extraction {
+        #[source]
+        source: ExtractionError,
+    },
     #[error("the completion content does not match the estimate schema")]
     Estimate {
         #[source]
