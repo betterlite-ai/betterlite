@@ -525,7 +525,7 @@ fn each_unknown_tool_logs_an_invalid_tool_warning() {
         .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
     with_default(subscriber, || {
-        mapped(&tools(r#"[{"whatever": {}}, {"type": "mystery", "x": 1}]"#));
+        mapped(&tools(r#"[{"whatever": {}}, {"type": "mystery"}]"#))
     });
     let logged = fs::read_to_string(log.path()).unwrap();
     assert_eq!(logged.matches("WARN").count(), 2);
