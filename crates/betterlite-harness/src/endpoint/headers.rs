@@ -4,6 +4,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use crate::context::GatewayTarget;
+use crate::payloads::python_json::python_json_text;
 use crate::types::{Harness, JsonObject};
 
 const HOP_BY_HOP_HEADERS: [&str; 11] = [
@@ -73,11 +74,12 @@ pub fn gateway_headers(
         }
     }
     let authorization = format!("Bearer {}", gateway.api_key.expose_secret());
-    let authorization =
+    let mut authorization =
         HeaderValue::from_str(&authorization).map_err(|source| HeaderError::Value {
             name: "authorization",
             source,
         })?;
+    authorization.set_sensitive(true);
     headers.insert(AUTHORIZATION, authorization);
     let tags = format!("harness,{}", harness_tag(harness));
     let tags = HeaderValue::from_str(&tags).map_err(|source| HeaderError::Value {
@@ -87,7 +89,7 @@ pub fn gateway_headers(
     headers.insert("x-litellm-tags", tags);
     if !metadata.is_empty() {
         let encoded =
-            serde_json::to_string(metadata).map_err(|source| HeaderError::Metadata { source })?;
+            python_json_text(metadata).map_err(|source| HeaderError::Metadata { source })?;
         let value = HeaderValue::from_str(&encoded).map_err(|source| HeaderError::Value {
             name: "x-litellm-spend-logs-metadata",
             source,

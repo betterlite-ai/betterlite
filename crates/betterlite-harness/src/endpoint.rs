@@ -1,8 +1,10 @@
 pub mod catalog_prices;
+pub mod clock;
 pub mod cost;
 pub mod encode;
 pub mod errors;
 pub mod headers;
+pub mod random;
 pub mod redact;
 pub mod route;
 pub mod sse;
@@ -25,6 +27,7 @@ use crate::types::{Harness, JsonObject, Usage};
 use cost::{CostPerToken, compute_cost};
 use errors::{ErrorBody, ErrorDetail, ErrorReply, Failure};
 use headers::extract_token;
+use random::RandomBytes;
 use usage::UsageTracker;
 
 pub const HARNESS_SESSION_TOKEN_BYTES: usize = 32;
@@ -61,9 +64,15 @@ pub struct ModelEndpoint {
 }
 
 impl ModelEndpoint {
-    pub fn new(setup: EndpointSetup, prices: Arc<dyn CostPerToken>) -> Result<Self, EndpointError> {
+    pub fn new(
+        setup: EndpointSetup,
+        prices: Arc<dyn CostPerToken>,
+        random: Arc<dyn RandomBytes>,
+    ) -> Result<Self, EndpointError> {
         let mut bytes = [0_u8; HARNESS_SESSION_TOKEN_BYTES];
-        getrandom::fill(&mut bytes).map_err(|source| EndpointError::Token { source })?;
+        random
+            .fill(&mut bytes)
+            .map_err(|source| EndpointError::Token { source })?;
         Ok(Self {
             harness: setup.harness,
             model: setup.model,
@@ -89,21 +98,10 @@ impl ModelEndpoint {
         })
     }
 
-    #[must_use]
-    pub fn secrets(&self) -> [Option<&str>; 3] {
-        let gateway_key = self
-            .gateway
-            .as_ref()
-            .map(|gateway| gateway.api_key.expose_secret().as_str());
-        let api_key = self
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str());
-        [
-            gateway_key,
-            api_key,
-            Some(self.token.expose_secret().as_str()),
-        ]
+    fn secrets(&self) -> [Option<&SecretString>; 3] {
+        let gateway_key = self.gateway.as_ref().map(|gateway| &gateway.api_key);
+        let api_key = self.api_key.as_ref();
+        [gateway_key, api_key, Some(&self.token)]
     }
 
     #[must_use]

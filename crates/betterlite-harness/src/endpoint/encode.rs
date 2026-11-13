@@ -3,7 +3,7 @@ use thiserror::Error;
 
 use crate::types::JsonObject;
 
-use super::route::{ROUTE_CHAT, ROUTE_MESSAGES, ROUTE_RESPONSES};
+use super::route::Route;
 
 pub enum Chunk<'chunk> {
     Bytes(&'chunk [u8]),
@@ -13,8 +13,6 @@ pub enum Chunk<'chunk> {
 
 #[derive(Debug, Error)]
 pub enum EncodeError {
-    #[error("the {route} stream has no chunk encoder")]
-    UnknownRoute { route: String },
     #[error("a bytes chunk cannot be framed as a JSON event on the {route} route")]
     BytesNotJson { route: &'static str },
     #[error("the chunk could not be encoded")]
@@ -25,26 +23,19 @@ pub enum EncodeError {
 }
 
 #[must_use]
-pub fn stream_trailer(route: &str) -> Option<&'static [u8]> {
-    if route == ROUTE_CHAT {
-        return Some(b"data: [DONE]\n\n");
+pub fn stream_trailer(route: Route) -> Option<&'static [u8]> {
+    match route {
+        Route::Chat => Some(b"data: [DONE]\n\n"),
+        Route::Messages | Route::Responses => None,
     }
-    None
 }
 
-pub fn encode_chunk(route: &str, chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
-    if route == ROUTE_MESSAGES {
-        return encode_anthropic(chunk);
+pub fn encode_chunk(route: Route, chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
+    match route {
+        Route::Messages => encode_anthropic(chunk),
+        Route::Chat => encode_chat(chunk),
+        Route::Responses => encode_responses(chunk),
     }
-    if route == ROUTE_CHAT {
-        return encode_chat(chunk);
-    }
-    if route == ROUTE_RESPONSES {
-        return encode_responses(chunk);
-    }
-    Err(EncodeError::UnknownRoute {
-        route: route.to_owned(),
-    })
 }
 
 fn encode_anthropic(chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
@@ -57,7 +48,9 @@ fn encode_anthropic(chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
 
 fn encode_chat(chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
     match chunk {
-        Chunk::Bytes(_) => Err(EncodeError::BytesNotJson { route: ROUTE_CHAT }),
+        Chunk::Bytes(_) => Err(EncodeError::BytesNotJson {
+            route: Route::Chat.path(),
+        }),
         Chunk::Text(text) => Ok(frame_event(None, &json(text)?)),
         Chunk::Json(object) => Ok(frame_event(None, &json(object)?)),
     }
@@ -66,7 +59,7 @@ fn encode_chat(chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
 fn encode_responses(chunk: Chunk<'_>) -> Result<Vec<u8>, EncodeError> {
     match chunk {
         Chunk::Bytes(_) => Err(EncodeError::BytesNotJson {
-            route: ROUTE_RESPONSES,
+            route: Route::Responses.path(),
         }),
         Chunk::Text(text) => Ok(frame_event(Some("message"), &json(text)?)),
         Chunk::Json(event) => event_frame(event),

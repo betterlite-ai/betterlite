@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use betterlite_core::cost::call_price::error::CallPriceError;
 use betterlite_models::price_lookup::PriceLookup as _;
+use chrono::{DateTime, Utc};
 use http::HeaderMap;
 use http::header::{AUTHORIZATION, HeaderValue};
 use rstest::rstest;
@@ -13,15 +14,17 @@ use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::catalog_prices::CatalogPrices;
+use super::clock::{Clock, SystemClock};
 use super::cost::{CostError, CostPerToken, compute_cost, header_cost, hidden_cost};
 use super::encode::{Chunk, EncodeError, encode_chunk, stream_trailer};
 use super::errors::Failure;
 use super::headers::{extract_token, gateway_headers, response_headers};
+use super::random::{RandomBytes, SystemRandom};
 use super::redact::sanitize;
-use super::route::{ROUTE_CHAT, ROUTE_MESSAGES, ROUTE_RESPONSES, route_of};
+use super::route::{POST_ROUTES, ROUTE_PREFIXES, Route, route_of};
 use super::sse::SSEUsageParser;
 use super::usage::{UsageTracker, usage_from_body, usage_from_mapping};
-use super::{EndpointSetup, HARNESS_SESSION_TOKEN_BYTES, ModelEndpoint};
+use super::{EndpointError, EndpointSetup, HARNESS_SESSION_TOKEN_BYTES, ModelEndpoint};
 use crate::context::GatewayTarget;
 use crate::types::{Harness, JsonObject, Usage};
 
@@ -58,6 +61,35 @@ struct FakePrices {
 }
 
 struct FixedPrices(Decimal);
+
+struct FixedRandom(u8);
+
+impl RandomBytes for FixedRandom {
+    fn fill(&self, buffer: &mut [u8]) -> Result<(), getrandom::Error> {
+        buffer.fill(self.0);
+        Ok(())
+    }
+}
+
+struct FailingRandom;
+
+impl RandomBytes for FailingRandom {
+    fn fill(&self, _buffer: &mut [u8]) -> Result<(), getrandom::Error> {
+        Err(getrandom::Error::UNSUPPORTED)
+    }
+}
+
+struct FixedClock(DateTime<Utc>);
+
+impl Clock for FixedClock {
+    fn now(&self) -> DateTime<Utc> {
+        self.0
+    }
+}
+
+fn fixed_clock() -> Arc<dyn Clock> {
+    Arc::new(FixedClock(DateTime::from_timestamp(0, 0).unwrap()))
+}
 
 impl CostPerToken for FixedPrices {
     fn cost_per_token(
@@ -103,8 +135,16 @@ fn default_setup() -> EndpointSetup {
     }
 }
 
+fn model_endpoint_with(setup: EndpointSetup, prices: Arc<dyn CostPerToken>) -> ModelEndpoint {
+    ModelEndpoint::new(setup, prices, Arc::new(FixedRandom(0xFB))).unwrap()
+}
+
 fn model_endpoint(prices: Arc<dyn CostPerToken>) -> ModelEndpoint {
-    ModelEndpoint::new(default_setup(), prices).unwrap()
+    model_endpoint_with(default_setup(), prices)
+}
+
+fn secret(text: &str) -> SecretString {
+    SecretString::from(text.to_owned())
 }
 
 fn priced_endpoint() -> ModelEndpoint {
@@ -380,7 +420,7 @@ fn compute_cost_is_zero_when_the_price_lookup_fails() {
 
 #[test]
 fn bundled_catalog_prices_a_known_model() {
-    let prices = CatalogPrices::bundled();
+    let prices = CatalogPrices::bundled(fixed_clock());
     assert_eq!(
         compute_cost(&prices, Some("gpt-4o"), 1_000, 500),
         dec("0.0075")
@@ -389,7 +429,7 @@ fn bundled_catalog_prices_a_known_model() {
 
 #[test]
 fn bundled_catalog_answers_the_price_lookups() {
-    let prices = CatalogPrices::bundled();
+    let prices = CatalogPrices::bundled(fixed_clock());
     let effective = prices
         .effective_model_info("gpt-4o", Some("openai"))
         .unwrap();
@@ -419,7 +459,7 @@ fn bundled_catalog_answers_the_price_lookups() {
 
 #[test]
 fn bundled_catalog_prices_an_unknown_model_at_zero() {
-    let prices = CatalogPrices::bundled();
+    let prices = CatalogPrices::bundled(fixed_clock());
     assert_eq!(
         compute_cost(&prices, Some("not-a-model-in-the-catalog"), 10, 10),
         Decimal::ZERO
@@ -506,6 +546,7 @@ fn gateway_headers_drop_credentials_hop_by_hop_and_litellm_headers() {
     assert_eq!(header_text(&outgoing, "content-type"), "application/json");
     assert_eq!(header_text(&outgoing, "user-agent"), "claude-cli");
     assert_eq!(header_text(&outgoing, "authorization"), "Bearer sk-gateway");
+    assert!(outgoing.get("authorization").unwrap().is_sensitive());
     assert_eq!(
         header_text(&outgoing, "x-litellm-tags"),
         "harness,claude_code"
@@ -542,7 +583,18 @@ fn gateway_headers_carry_the_session_metadata() {
             .unwrap()
             .to_str()
             .unwrap(),
-        r#"{"run":7,"team":"core"}"#
+        r#"{"run": 7, "team": "core"}"#
+    );
+}
+
+#[test]
+fn gateway_headers_escape_non_ascii_metadata_so_the_header_stays_valid() {
+    let metadata = object(r#"{"team":"café ✓"}"#);
+    let outgoing =
+        gateway_headers(&HeaderMap::new(), &gateway(), Harness::Codex, &metadata).unwrap();
+    assert_eq!(
+        header_text(&outgoing, "x-litellm-spend-logs-metadata"),
+        r#"{"team": "caf\u00e9 \u2713"}"#
     );
 }
 
@@ -577,10 +629,15 @@ fn response_headers_keep_repeated_headers() {
 
 #[test]
 fn sanitize_replaces_every_secret() {
+    let (gateway_key, api_key, session) = (
+        secret("sk-gateway"),
+        secret("sk-api"),
+        secret("secret-token"),
+    );
     assert_eq!(
         sanitize(
             "gateway sk-gateway api sk-api token secret-token",
-            &[Some("sk-gateway"), Some("sk-api"), Some("secret-token")],
+            &[Some(&gateway_key), Some(&api_key), Some(&session)],
         ),
         "gateway *** api *** token ***"
     );
@@ -589,7 +646,7 @@ fn sanitize_replaces_every_secret() {
 #[test]
 fn sanitize_skips_absent_and_empty_secrets() {
     assert_eq!(
-        sanitize("nothing to hide", &[None, Some("")]),
+        sanitize("nothing to hide", &[None, Some(&secret(""))]),
         "nothing to hide"
     );
 }
@@ -597,14 +654,12 @@ fn sanitize_skips_absent_and_empty_secrets() {
 #[test]
 fn sanitize_replaces_in_the_order_the_secrets_are_listed() {
     // replacing the shorter secret first leaves a suffix the longer one no longer matches
+    let (short, long) = (secret("sk-abc"), secret("sk-abc-def"));
     assert_eq!(
-        sanitize("sk-abc-def", &[Some("sk-abc"), Some("sk-abc-def")]),
+        sanitize("sk-abc-def", &[Some(&short), Some(&long)]),
         "***-def"
     );
-    assert_eq!(
-        sanitize("sk-abc-def", &[Some("sk-abc-def"), Some("sk-abc")]),
-        "***"
-    );
+    assert_eq!(sanitize("sk-abc-def", &[Some(&long), Some(&short)]), "***");
 }
 
 #[test]
@@ -644,14 +699,13 @@ fn error_reply_keeps_the_error_type_and_redacts_secrets() {
     let mut setup = default_setup();
     setup.gateway = Some(gateway());
     setup.api_key = Some(SecretString::from("sk-api".to_owned()));
-    let endpoint = ModelEndpoint::new(
+    let endpoint = model_endpoint_with(
         setup,
         Arc::new(FakePrices {
             per_token: dec("1"),
             fail: false,
         }),
-    )
-    .unwrap();
+    );
     let token = endpoint.token.expose_secret().to_owned();
     let failure = Failure {
         error_type: "AuthenticationError".to_owned(),
@@ -668,13 +722,36 @@ fn error_reply_keeps_the_error_type_and_redacts_secrets() {
 fn endpoint_generates_a_url_safe_session_token() {
     let endpoint = priced_endpoint();
     let token = endpoint.token.expose_secret();
-    assert_eq!(token.len(), 43);
-    assert!(
-        token
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
-    );
+    assert_eq!(token, "-_v7".repeat(10) + "-_s");
     assert_eq!(HARNESS_SESSION_TOKEN_BYTES, 32);
+}
+
+#[test]
+fn endpoint_fails_when_the_random_source_fails() {
+    let result = ModelEndpoint::new(
+        default_setup(),
+        Arc::new(FixedPrices(Decimal::ZERO)),
+        Arc::new(FailingRandom),
+    );
+    assert!(matches!(result, Err(EndpointError::Token { .. })));
+}
+
+#[test]
+fn system_random_fills_the_whole_buffer_differently_each_time() {
+    let mut first = [0_u8; HARNESS_SESSION_TOKEN_BYTES];
+    let mut second = [0_u8; HARNESS_SESSION_TOKEN_BYTES];
+    SystemRandom.fill(&mut first).unwrap();
+    SystemRandom.fill(&mut second).unwrap();
+    assert_ne!(first, [0_u8; HARNESS_SESSION_TOKEN_BYTES]);
+    assert_ne!(first, second);
+}
+
+#[test]
+fn system_clock_reads_the_current_time() {
+    let before = Utc::now();
+    let reading = SystemClock.now();
+    assert!(reading >= before);
+    assert!(reading <= Utc::now());
 }
 
 #[test]
@@ -716,19 +793,18 @@ fn endpoint_secrets_list_gateway_api_and_session_credentials() {
     let mut setup = default_setup();
     setup.gateway = Some(gateway());
     setup.api_key = Some(SecretString::from("sk-api".to_owned()));
-    let endpoint = ModelEndpoint::new(
+    let endpoint = model_endpoint_with(
         setup,
         Arc::new(FakePrices {
             per_token: dec("1"),
             fail: false,
         }),
-    )
-    .unwrap();
-    let token = endpoint.token.expose_secret().to_owned();
-    assert_eq!(
-        endpoint.secrets(),
-        [Some("sk-gateway"), Some("sk-api"), Some(token.as_str())]
     );
+    let token = endpoint.token.expose_secret().to_owned();
+    let [gateway_key, api_key, session] = endpoint.secrets();
+    assert_eq!(gateway_key.unwrap().expose_secret(), "sk-gateway");
+    assert_eq!(api_key.unwrap().expose_secret(), "sk-api");
+    assert_eq!(session.unwrap().expose_secret(), token);
 }
 
 #[test]
@@ -765,27 +841,27 @@ fn endpoint_record_without_a_model_costs_zero() {
 
 #[rstest]
 #[case::anthropic_json(
-    ROUTE_MESSAGES,
+    Route::Messages,
     r#"{"type":"message_start"}"#,
     b"event: message_start\ndata: {\"type\":\"message_start\"}\n\n".as_slice()
 )]
 #[case::anthropic_default_type(
-    ROUTE_MESSAGES,
+    Route::Messages,
     r#"{"other":1}"#,
     b"event: message\ndata: {\"other\":1}\n\n".as_slice()
 )]
 #[case::chat_json(
-    ROUTE_CHAT,
+    Route::Chat,
     r#"{"choices":[]}"#,
     b"data: {\"choices\":[]}\n\n".as_slice()
 )]
 #[case::responses_json(
-    ROUTE_RESPONSES,
+    Route::Responses,
     r#"{"type":"response.output_text.delta"}"#,
     b"event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\"}\n\n".as_slice()
 )]
 fn encode_chunk_frames_json_events(
-    #[case] route: &'static str,
+    #[case] route: Route,
     #[case] json: &'static str,
     #[case] expected: &'static [u8],
 ) {
@@ -796,11 +872,11 @@ fn encode_chunk_frames_json_events(
 #[test]
 fn encode_anthropic_chunk_passes_raw_chunks_through() {
     assert_eq!(
-        encode_chunk(ROUTE_MESSAGES, Chunk::Bytes(b"raw")).unwrap(),
+        encode_chunk(Route::Messages, Chunk::Bytes(b"raw")).unwrap(),
         b"raw"
     );
     assert_eq!(
-        encode_chunk(ROUTE_MESSAGES, Chunk::Text("raw")).unwrap(),
+        encode_chunk(Route::Messages, Chunk::Text("raw")).unwrap(),
         b"raw"
     );
 }
@@ -808,7 +884,7 @@ fn encode_anthropic_chunk_passes_raw_chunks_through() {
 #[test]
 fn encode_chat_chunk_wraps_text_as_a_json_string() {
     assert_eq!(
-        encode_chunk(ROUTE_CHAT, Chunk::Text("hello")).unwrap(),
+        encode_chunk(Route::Chat, Chunk::Text("hello")).unwrap(),
         b"data: \"hello\"\n\n"
     );
 }
@@ -816,7 +892,7 @@ fn encode_chat_chunk_wraps_text_as_a_json_string() {
 #[test]
 fn encode_responses_chunk_wraps_text_as_a_message_event() {
     assert_eq!(
-        encode_chunk(ROUTE_RESPONSES, Chunk::Text("hello")).unwrap(),
+        encode_chunk(Route::Responses, Chunk::Text("hello")).unwrap(),
         b"event: message\ndata: \"hello\"\n\n"
     );
 }
@@ -824,22 +900,14 @@ fn encode_responses_chunk_wraps_text_as_a_message_event() {
 #[test]
 fn encode_chunk_rejects_bytes_on_routes_without_a_raw_form() {
     assert!(matches!(
-        encode_chunk(ROUTE_CHAT, Chunk::Bytes(b"raw")),
-        Err(EncodeError::BytesNotJson { route: ROUTE_CHAT })
-    ));
-    assert!(matches!(
-        encode_chunk(ROUTE_RESPONSES, Chunk::Bytes(b"raw")),
+        encode_chunk(Route::Chat, Chunk::Bytes(b"raw")),
         Err(EncodeError::BytesNotJson {
-            route: ROUTE_RESPONSES
+            route: "chat/completions"
         })
     ));
-}
-
-#[test]
-fn encode_chunk_rejects_an_unknown_route() {
     assert!(matches!(
-        encode_chunk("embeddings", Chunk::Json(&JsonObject::new())),
-        Err(EncodeError::UnknownRoute { route }) if route == "embeddings"
+        encode_chunk(Route::Responses, Chunk::Bytes(b"raw")),
+        Err(EncodeError::BytesNotJson { route: "responses" })
     ));
 }
 
@@ -856,7 +924,7 @@ fn encode_chunk_never_puts_a_foreign_event_name_on_the_event_line(
 ) {
     let event = object(json);
     assert_eq!(
-        encode_chunk(ROUTE_MESSAGES, Chunk::Json(&event)).unwrap(),
+        encode_chunk(Route::Messages, Chunk::Json(&event)).unwrap(),
         expected
     );
 }
@@ -864,25 +932,40 @@ fn encode_chunk_never_puts_a_foreign_event_name_on_the_event_line(
 #[test]
 fn stream_trailer_is_the_chat_done_marker_only() {
     assert_eq!(
-        stream_trailer(ROUTE_CHAT),
+        stream_trailer(Route::Chat),
         Some(b"data: [DONE]\n\n".as_slice())
     );
-    assert_eq!(stream_trailer(ROUTE_MESSAGES), None);
-    assert_eq!(stream_trailer(ROUTE_RESPONSES), None);
-    assert_eq!(stream_trailer("embeddings"), None);
+    assert_eq!(stream_trailer(Route::Messages), None);
+    assert_eq!(stream_trailer(Route::Responses), None);
 }
 
 #[rstest]
-#[case::v1_messages("/v1/messages", ROUTE_MESSAGES)]
-#[case::messages("/messages", ROUTE_MESSAGES)]
-#[case::bare_v1_messages("v1/messages", ROUTE_MESSAGES)]
-#[case::v1_chat("/v1/chat/completions", ROUTE_CHAT)]
-#[case::chat("/chat/completions", ROUTE_CHAT)]
-#[case::v1_responses("/v1/responses", ROUTE_RESPONSES)]
-#[case::responses("/responses", ROUTE_RESPONSES)]
-#[case::extra_slashes("//v1/messages//", ROUTE_MESSAGES)]
-#[case::not_v1("/v2/messages", "v2/messages")]
-#[case::bare_v1("/v1", "v1")]
-fn route_of_strips_the_prefixes(#[case] path: &str, #[case] expected: &str) {
+#[case::v1_messages("/v1/messages", Some(Route::Messages))]
+#[case::messages("/messages", Some(Route::Messages))]
+#[case::bare_v1_messages("v1/messages", Some(Route::Messages))]
+#[case::v1_chat("/v1/chat/completions", Some(Route::Chat))]
+#[case::chat("/chat/completions", Some(Route::Chat))]
+#[case::v1_responses("/v1/responses", Some(Route::Responses))]
+#[case::responses("/responses", Some(Route::Responses))]
+#[case::extra_slashes("//v1/messages//", Some(Route::Messages))]
+#[case::not_v1("/v2/messages", None)]
+#[case::bare_v1("/v1", None)]
+#[case::doubled_prefix("/v1/v1/messages", None)]
+#[case::other_route("/v1/embeddings", None)]
+#[case::empty("", None)]
+fn route_of_strips_the_prefixes(#[case] path: &str, #[case] expected: Option<Route>) {
     assert_eq!(route_of(path), expected);
+}
+
+#[test]
+fn post_routes_are_the_three_streaming_routes() {
+    assert_eq!(
+        POST_ROUTES,
+        [Route::Messages, Route::Chat, Route::Responses]
+    );
+    assert_eq!(
+        POST_ROUTES.map(Route::path),
+        ["messages", "chat/completions", "responses"]
+    );
+    assert_eq!(ROUTE_PREFIXES, ["", "/v1"]);
 }

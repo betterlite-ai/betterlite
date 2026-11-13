@@ -64,8 +64,9 @@ pub fn header_cost(headers: &HeaderMap) -> Option<Decimal> {
 
 #[must_use]
 pub fn hidden_cost(hidden_params: &JsonObject) -> Option<Decimal> {
-    match hidden_params.get("response_cost")?.as_f64() {
-        Some(number) => Decimal::from_f64(number),
-        None => None,
-    }
+    let number = hidden_params.get("response_cost")?.as_number()?;
+    let text = number.as_str();
+    text.parse()
+        .or_else(|_error| Decimal::from_scientific(text))
+        .ok()
 }

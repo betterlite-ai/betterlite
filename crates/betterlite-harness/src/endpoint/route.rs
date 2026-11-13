@@ -1,14 +1,38 @@
-pub const ROUTE_MESSAGES: &str = "messages";
-pub const ROUTE_CHAT: &str = "chat/completions";
-pub const ROUTE_RESPONSES: &str = "responses";
-pub const POST_ROUTES: [&str; 3] = [ROUTE_MESSAGES, ROUTE_CHAT, ROUTE_RESPONSES];
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Route {
+    Messages,
+    Chat,
+    Responses,
+}
+
+impl Route {
+    #[must_use]
+    pub const fn path(self) -> &'static str {
+        match self {
+            Self::Messages => "messages",
+            Self::Chat => "chat/completions",
+            Self::Responses => "responses",
+        }
+    }
+}
+
+pub const POST_ROUTES: [Route; 3] = [Route::Messages, Route::Chat, Route::Responses];
 pub const ROUTE_PREFIXES: [&str; 2] = ["", "/v1"];
 
 #[must_use]
-pub fn route_of(path: &str) -> &str {
+pub fn route_of(path: &str) -> Option<Route> {
     let stripped = path.trim_matches('/');
     match stripped.strip_prefix("v1/") {
-        Some(route) => route,
-        None => stripped,
+        Some(route) => known_route(route),
+        None => known_route(stripped),
+    }
+}
+
+fn known_route(route: &str) -> Option<Route> {
+    match route {
+        "messages" => Some(Route::Messages),
+        "chat/completions" => Some(Route::Chat),
+        "responses" => Some(Route::Responses),
+        _ => None,
     }
 }
