@@ -1,7 +1,7 @@
 id: B531
 milestone: M3 providers
 title: Azure v1 and deployment endpoint construction
-status: todo
+status: done
 depends_on: [B529, B530, B173, B171, B002, B2200, B673, B675, B004]
 file: tasks/B531-azure-endpoints.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/azure/azure.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1626
