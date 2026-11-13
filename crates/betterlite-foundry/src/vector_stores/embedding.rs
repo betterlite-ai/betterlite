@@ -51,9 +51,7 @@ pub fn query_embedding_configuration(litellm_params: &Params) -> Params {
 }
 
 // only the first record's vector is validated, and it keeps its own element order
-pub fn first_embedding_vector(
-    records: &[EmbeddingRecord],
-) -> Result<Vec<f64>, AzureSearchError> {
+pub fn first_embedding_vector(records: &[EmbeddingRecord]) -> Result<Vec<f64>, AzureSearchError> {
     let first = records.first().ok_or(AzureSearchError::NoFirstRecord)?;
     let EmbeddingVector::Floats(numbers) = &first.embedding else {
         return Err(AzureSearchError::NotAVector);

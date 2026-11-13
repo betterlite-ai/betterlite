@@ -38,7 +38,10 @@ impl FixtureExecutor {
     }
 
     pub(crate) fn calls(&self) -> Vec<CallRecord> {
-        self.calls.lock().unwrap_or_else(PoisonError::into_inner).clone()
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     fn respond(

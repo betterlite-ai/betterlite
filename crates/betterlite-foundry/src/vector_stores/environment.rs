@@ -59,7 +59,10 @@ pub fn auth_credentials(litellm_params: &Params) -> Result<AuthCredentials, Azur
             });
         }
     };
-    let headers = Headers::from([(API_KEY_HEADER.to_owned(), SecretString::from(api_key.clone()))]);
+    let headers = Headers::from([(
+        API_KEY_HEADER.to_owned(),
+        SecretString::from(api_key.clone()),
+    )]);
     Ok(AuthCredentials { headers })
 }
 
@@ -72,9 +75,7 @@ pub struct EnvironmentRequest<'request> {
     pub sources: &'request dyn CredentialSources,
 }
 
-pub fn validate_environment(
-    request: EnvironmentRequest<'_>,
-) -> Result<Headers, AzureSearchError> {
+pub fn validate_environment(request: EnvironmentRequest<'_>) -> Result<Headers, AzureSearchError> {
     let exposed = request
         .headers
         .into_iter()
@@ -108,9 +109,7 @@ pub fn complete_url(
         return Ok(base.trim_end_matches('/').to_owned());
     }
     match litellm_params.get("azure_search_service_name") {
-        Some(Json::Text(name)) if !name.is_empty() => {
-            Ok(format!("https://{name}{SERVICE_DOMAIN}"))
-        }
+        Some(Json::Text(name)) if !name.is_empty() => Ok(format!("https://{name}{SERVICE_DOMAIN}")),
         None | Some(Json::Null | Json::Text(_)) => Err(AzureSearchError::MissingServiceName),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(AzureSearchError::InvalidField {

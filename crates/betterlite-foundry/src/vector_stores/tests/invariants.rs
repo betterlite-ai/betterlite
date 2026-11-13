@@ -55,10 +55,7 @@ fn foundry_vector_store_credential_identity_isolation() {
 fn foundry_vector_store_secret_safe_failure() {
     let fixture_secret = "fixture-secret-value";
     let credentials = AuthCredentials {
-        headers: Headers::from([(
-            "api-key".to_owned(),
-            SecretString::from(fixture_secret),
-        )]),
+        headers: Headers::from([("api-key".to_owned(), SecretString::from(fixture_secret))]),
     };
     let debug = format!("{credentials:?}");
     assert!(!debug.contains(fixture_secret));

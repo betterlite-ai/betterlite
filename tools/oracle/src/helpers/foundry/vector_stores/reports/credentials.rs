@@ -8,16 +8,8 @@ use super::super::fixtures::{NoSources, empty_credentials};
 use super::super::scenarios::{AuthCredentialsInput, HeaderScenario};
 
 pub(super) fn credentials_report(input: &AuthCredentialsInput) -> Value {
-    let credentials: Vec<Value> = input
-        .credentials
-        .iter()
-        .map(credential_outcome)
-        .collect();
-    let environments: Vec<Value> = input
-        .environments
-        .iter()
-        .map(header_report)
-        .collect();
+    let credentials: Vec<Value> = input.credentials.iter().map(credential_outcome).collect();
+    let environments: Vec<Value> = input.environments.iter().map(header_report).collect();
     json!({"credentials": credentials, "environments": environments})
 }
 

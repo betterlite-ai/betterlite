@@ -10,6 +10,9 @@ pub enum CreateStep {
 
 // LiteLLM's create request and response transforms both raise a bare NotImplementedError
 pub fn create_vector_store(step: CreateStep) -> Result<Infallible, AzureSearchError> {
-    tracing::debug!(?step, "Azure AI Search vector store creation is not supported");
+    tracing::debug!(
+        ?step,
+        "Azure AI Search vector store creation is not supported"
+    );
     Err(AzureSearchError::CreateNotImplemented)
 }

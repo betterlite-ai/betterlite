@@ -43,7 +43,11 @@ fn foundry_vector_store_config_cases(#[case] case: u8) {
 
 fn loads_azure_search_service_name() {
     assert_eq!(deployment(&load("", "", &[])).service_name, None);
-    let explicit = load("      azure_search_service_name: deployment-service\n", "", &[]);
+    let explicit = load(
+        "      azure_search_service_name: deployment-service\n",
+        "",
+        &[],
+    );
     assert_eq!(
         deployment(&explicit).service_name.as_deref(),
         Some("deployment-service")

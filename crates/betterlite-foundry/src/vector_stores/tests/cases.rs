@@ -55,7 +55,9 @@ fn number(value: i64) -> Json {
 }
 
 fn embedding_params() -> Params {
-    params(&format!(r#"{{"litellm_embedding_model":"{EMBEDDING_MODEL}"}}"#))
+    params(&format!(
+        r#"{{"litellm_embedding_model":"{EMBEDDING_MODEL}"}}"#
+    ))
 }
 
 fn secret(headers: &Headers, name: &str) -> String {
@@ -144,7 +146,11 @@ fn store_type_endpoints_classifies_reads() {
         Some(Permission::Read)
     );
     assert_eq!(
-        classify(&endpoints, "POST", "/indexes/analyze-index/docs/autocomplete"),
+        classify(
+            &endpoints,
+            "POST",
+            "/indexes/analyze-index/docs/autocomplete"
+        ),
         Some(Permission::Read)
     );
     assert_eq!(
@@ -200,10 +206,7 @@ fn validate_environment_case() {
     let sources = NoSources;
     let key = SecretString::from("fixture-key");
     let existing = validate_environment(EnvironmentRequest {
-        headers: Headers::from([(
-            "api-key".to_owned(),
-            SecretString::from("fixture-existing"),
-        )]),
+        headers: Headers::from([("api-key".to_owned(), SecretString::from("fixture-existing"))]),
         api_key: Some(&key),
         credentials: &credentials,
         refresh_enabled: false,
@@ -240,10 +243,7 @@ fn validate_environment_overwrites_content_type() {
     let credentials = empty_credentials();
     let sources = NoSources;
     let key = SecretString::from("fixture-key");
-    let headers = Headers::from([(
-        "Content-Type".to_owned(),
-        SecretString::from("text/plain"),
-    )]);
+    let headers = Headers::from([("Content-Type".to_owned(), SecretString::from("text/plain"))]);
     let validated = validate_environment(EnvironmentRequest {
         headers,
         api_key: Some(&key),
@@ -342,10 +342,7 @@ fn search_query_fields_options() {
     assert_eq!(call.body.top, 3);
     assert_eq!(call.body.vector_queries[0].top_k, 3);
     assert_eq!(call.body.vector_queries[0].fields, "customVector");
-    assert!(
-        call.url
-            .contains("/indexes/store/with?literal/docs/search")
-    );
+    assert!(call.url.contains("/indexes/store/with?literal/docs/search"));
     assert_eq!(executor.calls()[0].query, "first  third");
     assert_eq!(
         executor.calls()[0].configuration.get("dimensions"),
@@ -377,17 +374,11 @@ fn search_query_fields_rejects_bad_types() {
     let (call, _logging) = search_call(&query, &optional, &litellm_params, &executor);
     assert!(matches!(
         call,
-        Err(AzureSearchError::InvalidField {
-            field: "top_k",
-            ..
-        })
+        Err(AzureSearchError::InvalidField { field: "top_k", .. })
     ));
     assert_eq!(executor.calls().len(), 1);
     let (call, _logging) = search_call(&query, &Params::new(), &params("{}"), &executor);
-    assert!(matches!(
-        call,
-        Err(AzureSearchError::MissingEmbeddingModel)
-    ));
+    assert!(matches!(call, Err(AzureSearchError::MissingEmbeddingModel)));
     assert_eq!(executor.calls().len(), 1);
 }
 
@@ -447,10 +438,7 @@ fn vector_query_with_embedding_async() {
             embedding_executor: &executor,
         }))
         .expect("async search");
-    assert_eq!(
-        call.body.vector_queries[0].vector,
-        vec![0.125_f64, 0.5_f64]
-    );
+    assert_eq!(call.body.vector_queries[0].vector, vec![0.125_f64, 0.5_f64]);
     assert_eq!(executor.calls()[0].query, "async query");
 }
 
@@ -504,7 +492,10 @@ fn document_score_citation_attributes() {
     let page = decode(body).expect("page");
     let data = page.data.expect("data");
     let attributes = data[0].attributes.as_ref().expect("attributes");
-    assert_eq!(attributes.get("title").and_then(|value| value.as_str()), Some("a"));
+    assert_eq!(
+        attributes.get("title").and_then(|value| value.as_str()),
+        Some("a")
+    );
     assert_eq!(
         attributes
             .get("custom_vector")
@@ -513,7 +504,9 @@ fn document_score_citation_attributes() {
         Some(1)
     );
     assert_eq!(
-        attributes.get("document_id").and_then(|value| value.as_str()),
+        attributes
+            .get("document_id")
+            .and_then(|value| value.as_str()),
         Some("doc-1")
     );
     assert!(attributes.get("id").is_none());
@@ -532,8 +525,8 @@ fn document_score_citation_defaults() {
         data[0].score.as_ref().map(|score| score.0),
         Some(Decimal::ZERO)
     );
-    let page = decode(r#"{"value":[{"id":null,"content":null,"@search.score":null}]}"#)
-        .expect("page");
+    let page =
+        decode(r#"{"value":[{"id":null,"content":null,"@search.score":null}]}"#).expect("page");
     assert_eq!(page.data.expect("data")[0].file_id.as_deref(), Some(""));
 }
 

@@ -31,13 +31,12 @@ pub struct AzureSearchStoreReply<'reply> {
 pub fn decode_azure_search_reply(
     reply: &AzureSearchStoreReply<'_>,
 ) -> Result<VectorStoreSearchResponse, AzureSearchError> {
-    let parsed: Json = serde_json::from_slice(reply.body).map_err(|source| {
-        AzureSearchError::ReplyJson {
+    let parsed: Json =
+        serde_json::from_slice(reply.body).map_err(|source| AzureSearchError::ReplyJson {
             status_code: reply.status_code,
             headers: reply.headers.to_vec(),
             source,
-        }
-    })?;
+        })?;
     let Json::Object(response) = parsed else {
         return Err(shape_error(reply, "the reply is not an object"));
     };

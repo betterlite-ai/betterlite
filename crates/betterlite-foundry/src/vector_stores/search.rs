@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
-use super::embedding::{aembed_query, embed_query, query_text, QueryEmbeddingExecutor};
+use super::embedding::{QueryEmbeddingExecutor, aembed_query, embed_query, query_text};
 use super::environment::Params;
 use super::error::AzureSearchError;
 
@@ -95,10 +95,9 @@ fn build_search_call(
     logging
         .model_call_details
         .insert("embedding_model".to_owned(), embedding_model);
-    logging.model_call_details.insert(
-        "top_k".to_owned(),
-        Json::Number(Number::from(top_k)),
-    );
+    logging
+        .model_call_details
+        .insert("top_k".to_owned(), Json::Number(Number::from(top_k)));
     Ok(SearchCall {
         url: format!(
             "{}/indexes/{}/docs/search?api-version={SEARCH_API_VERSION}",
@@ -134,12 +133,10 @@ fn vector_field(litellm_params: &Params) -> Result<String, AzureSearchError> {
 fn top_k(optional_params: &Params) -> Result<i64, AzureSearchError> {
     match optional_params.get("top_k") {
         None | Some(Json::Null) => Ok(DEFAULT_TOP_K),
-        Some(Json::Number(number)) => number
-            .as_i64()
-            .ok_or(AzureSearchError::InvalidField {
-                field: "top_k",
-                expected: "an integer",
-            }),
+        Some(Json::Number(number)) => number.as_i64().ok_or(AzureSearchError::InvalidField {
+            field: "top_k",
+            expected: "an integer",
+        }),
         Some(Json::Text(_) | Json::Bool(_) | Json::List(_) | Json::Object(_)) => {
             Err(AzureSearchError::InvalidField {
                 field: "top_k",

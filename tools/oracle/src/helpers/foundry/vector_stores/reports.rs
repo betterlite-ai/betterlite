@@ -2,9 +2,7 @@ mod citation;
 mod create;
 mod credentials;
 
-use betterlite_foundry::vector_stores::environment::{
-    complete_url, endpoints_by_type,
-};
+use betterlite_foundry::vector_stores::environment::{complete_url, endpoints_by_type};
 use betterlite_foundry::vector_stores::search::{
     AzureSearchStoreRequest, SearchLogging, asearch_request, search_request,
 };
@@ -64,12 +62,9 @@ fn search_outcome(scenario: &SearchScenario) -> Value {
     });
     let calls = calls_report(&executor.calls());
     let logging = logging_report(&logging);
-    let extra_body = scenario
-        .extra_body
-        .as_ref()
-        .map_or(Value::Null, |body| {
-            serde_json::to_value(body).unwrap_or(Value::Null)
-        });
+    let extra_body = scenario.extra_body.as_ref().map_or(Value::Null, |body| {
+        serde_json::to_value(body).unwrap_or(Value::Null)
+    });
     match call {
         Ok(call) => json!({
             "ok": true,
@@ -182,11 +177,7 @@ fn runtime_error(message: String) -> Box<HelperError> {
 }
 
 fn endpoint_report(input: &AzureSearchEndpointInput) -> Value {
-    let scenarios: Vec<Value> = input
-        .scenarios
-        .iter()
-        .map(endpoint_outcome)
-        .collect();
+    let scenarios: Vec<Value> = input.scenarios.iter().map(endpoint_outcome).collect();
     json!({"scenarios": scenarios})
 }
 
