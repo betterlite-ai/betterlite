@@ -587,6 +587,15 @@ async fn execute_search_without_a_search_tool_uses_perplexity() {
 }
 
 #[tokio::test]
+async fn execute_search_falls_back_to_perplexity_for_an_empty_provider() {
+    let mut search = execution(runner(search_response()), empty_capabilities());
+    search.search_tools = Some(vec![search_tool("main", "", "")]);
+    search.execute_search("rust", None, None).await.unwrap();
+    let calls = take(&mut *search.runner.calls.lock().unwrap());
+    assert_eq!(calls[0].search_provider, DEFAULT_SEARCH_PROVIDER);
+}
+
+#[tokio::test]
 async fn execute_search_selects_the_configured_search_tool() {
     let mut search = execution(runner(search_response()), empty_capabilities());
     search.search_tool_name = Some("second".to_owned());

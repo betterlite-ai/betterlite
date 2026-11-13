@@ -117,8 +117,10 @@ where
             }
             None => (SearchToolParams::new(), None),
         };
-        let provider =
-            selected_provider.unwrap_or_else(|| search::DEFAULT_SEARCH_PROVIDER.to_owned());
+        // LiteLLM tests the configured provider for truthiness, so "" falls back like a missing one
+        let provider = selected_provider
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| search::DEFAULT_SEARCH_PROVIDER.to_owned());
         let caller = caller_from_kwargs(kwargs);
         let correlation = parent_correlation(kwargs, caller);
         let metadata = caller.map(|search_caller| {
