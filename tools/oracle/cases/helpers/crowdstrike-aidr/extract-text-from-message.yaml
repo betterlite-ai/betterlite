@@ -1,0 +1,38 @@
+kind: helper
+name: extract-text-from-message
+call:
+  b3766:
+    function: apply
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+    inputs:
+      texts:
+      - one
+      - two
+    request_data: {}
+    input_type: request
+    answer:
+      status: 200
+      headers: {}
+      body:
+        result:
+          transformed: true
+          guard_output:
+            messages:
+            - role: user
+              content:
+              - type: text
+                text: A
+              - type: image_url
+                image_url:
+                  url: https://img.test/x.png
+            - role: user
+              content: B
+env: {}
+compare:
+  ignore: []

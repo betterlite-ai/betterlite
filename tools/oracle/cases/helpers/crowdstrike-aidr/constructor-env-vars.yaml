@@ -1,0 +1,15 @@
+kind: helper
+name: constructor-env-vars
+call:
+  b3766:
+    function: construct
+    settings:
+      guardrail_name: cs-aidr
+    environment:
+      CS_AIDR_TOKEN: env-key
+      CS_AIDR_BASE_URL: https://env.test
+env:
+  CS_AIDR_TOKEN: env-key
+  CS_AIDR_BASE_URL: https://env.test
+compare:
+  ignore: []

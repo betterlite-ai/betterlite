@@ -1,0 +1,30 @@
+kind: helper
+name: apply-response-guard-input
+call:
+  b3766:
+    function: apply
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+    inputs:
+      texts:
+      - original answer
+    request_data: {}
+    input_type: response
+    answer:
+      status: 200
+      headers: {}
+      body:
+        result:
+          transformed: true
+          guard_output:
+            messages:
+            - role: assistant
+              content: masked answer
+env: {}
+compare:
+  ignore: []

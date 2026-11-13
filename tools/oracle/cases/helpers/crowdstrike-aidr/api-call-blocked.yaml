@@ -1,0 +1,26 @@
+kind: helper
+name: api-call-blocked
+call:
+  b3766:
+    function: apply
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+    inputs:
+      texts:
+      - hi
+    request_data: {}
+    input_type: request
+    answer:
+      status: 200
+      headers: {}
+      body:
+        result:
+          blocked: true
+env: {}
+compare:
+  ignore: []

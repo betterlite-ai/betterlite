@@ -1,0 +1,37 @@
+kind: helper
+name: extract-text-from-content-list
+call:
+  b3766:
+    function: apply
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+    inputs:
+      structured_messages:
+      - role: user
+        content:
+        - type: text
+          text: hello
+        - type: text
+          text: world
+    request_data: {}
+    input_type: request
+    answer:
+      status: 200
+      headers: {}
+      body:
+        result:
+          transformed: true
+          guard_output:
+            messages:
+            - role: user
+              content:
+              - type: text
+                text: redacted
+env: {}
+compare:
+  ignore: []
