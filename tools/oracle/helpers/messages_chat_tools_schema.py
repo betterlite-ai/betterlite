@@ -1,14 +1,14 @@
 from typing import Final, Literal, TypedDict
 
 from litellm.llms.anthropic.pass_through.adapters.transformation import (
-    LiteLLMAnthropicMessagesAdapter,
+    LiteLLMAnthropicMessagesAdapter as MessagesAdapter,
 )
 from litellm.types.llms.anthropic import AnthropicMessagesToolChoice
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
 
 
-class Adapter(LiteLLMAnthropicMessagesAdapter):
+class Adapter(MessagesAdapter):
     # the base __init__ has no annotations, so a typed subclass avoids an untyped-call suppression
     def __init__(self) -> None:
         ...
