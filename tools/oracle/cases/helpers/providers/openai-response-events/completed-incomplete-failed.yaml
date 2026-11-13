@@ -1,0 +1,11 @@
+kind: helper
+name: openai-response-events-completed-incomplete-failed
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_events:
+    completed_incomplete_failed:
+      probes:
+        - chunks: ['data: {"type":"response.completed","response":{"id":"resp-completed","created_at":7,"output":[]}}']
+        - chunks: ['data: {"type":"response.incomplete","response":{"id":"resp-incomplete","created_at":8,"output":[]}}']
+        - chunks: ['data: {"type":"response.failed","response":{"id":"resp-failed","created_at":9,"output":[]}}']

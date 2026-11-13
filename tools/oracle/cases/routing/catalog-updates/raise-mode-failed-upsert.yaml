@@ -1,0 +1,34 @@
+kind: probe
+name: catalog-updates-raise-mode-failed-upsert
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      catalog_updates:
+        ignore_invalid_deployments: false
+        steps:
+          - action: set
+            models:
+              - {model_name: g, model: "openai/m1", id: a}
+              - {model_name: g, model: "openai/m2", id: b}
+              - {model_name: h, model: "openai/m3", id: c}
+          - action: upsert
+            model: {model_name: g, model: "bogus/x", id: a}
+compare:
+  expected_difference:
+    - pointer: /output/catalog_updates/steps/1/names
+      reference: [g, h]
+      rust: [g, g, h]
+      why: LiteLLM pops the previous deployment before it builds the new one and never puts it back in raise mode, so the failed upsert deletes it. betterlite publishes nothing on a failed upsert, so the earlier catalog keeps serving
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9953-L9993
+    - pointer: /output/catalog_updates/steps/1/ids
+      reference: [b, c]
+      rust: [a, b, c]
+      why: the id of the deployment LiteLLM popped is gone from its id index, while betterlite still indexes it
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9957-L9960
+    - pointer: /output/catalog_updates/steps/1/by_name
+      reference: {g: [b], h: [c]}
+      rust: {g: [a, b], h: [c]}
+      why: the model name index of LiteLLM lost the popped deployment, while betterlite still lists it under its model name
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L9957-L9960
+  ignore: []

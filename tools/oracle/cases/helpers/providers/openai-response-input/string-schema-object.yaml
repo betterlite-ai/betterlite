@@ -1,0 +1,21 @@
+kind: helper
+name: openai-response-input-string-schema-object
+call:
+  openai_response_input:
+    probes:
+    - model: gpt-4o
+      input: hi
+      params:
+        tools:
+        - {type: function, name: f, parameters: '{"type":"object"}'}
+        - {type: function, name: g, parameters: {type: object, title: kept}}
+        - {type: function, name: h, parameters: null}
+        - {type: function, name: i}
+        - raw-tool
+    - model: gpt-4o
+      input: hi
+      params:
+        tools:
+        - {parameters: ' { "type" : "object" , "n" : 1 } '}
+env: {}
+compare: {ignore: []}

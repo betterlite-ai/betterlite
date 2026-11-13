@@ -1,0 +1,23 @@
+kind: helper
+name: legacy-hook-tool-rewrite
+call:
+  b3246:
+    guardrail:
+      kind: legacy
+      name: legacy-tools
+      texts_out: null
+      tool_calls_out: null
+      hook:
+        mode: mutate
+        response:
+          texts: ["[masked]"]
+          tool_calls:
+            - {id: call_2, type: function, function: {name: lookup, arguments: '{"id": "42"}'}}
+    translation:
+      delivers: true
+      tool_calls:
+        - {id: call_1, type: function, function: {name: lookup, arguments: '{"id": "42"}'}}
+      rescans: true
+    chunks: ["alice"]
+env: {}
+compare: {ignore: []}

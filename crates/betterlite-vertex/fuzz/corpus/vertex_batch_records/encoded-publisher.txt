@@ -1,0 +1,1 @@
+gs://bucket/prefix%2Fpublishers%2Fgoogle%2Fmodels%2Fgemini-1.5-flash-001%2Ffile.jsonl

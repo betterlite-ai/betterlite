@@ -1,0 +1,11 @@
+kind: helper
+name: registry-project-headers-phoenix-only
+call:
+  b3851:
+    function: project_routing_headers
+    callback_name: arize_phoenix
+    auth_metadata:
+      phoenix_project_name: project-1
+env: {}
+compare:
+  ignore: []

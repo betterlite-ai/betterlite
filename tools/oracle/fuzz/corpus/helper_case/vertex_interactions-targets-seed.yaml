@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-interactions-targets-seed
+call:
+  vertex_interactions:
+    mint: {token: minted-token}
+    calls:
+      - {function: url, api_base: "", stream: false, interaction_id: "", headers: {}, params: {vertex_project: project-1}}
+      - {function: url, api_base: "", stream: true, interaction_id: "", headers: {}, params: {vertex_project: project-1, vertex_location: us-central1}}
+      - {function: url, api_base: "https://proxy.example/v1", stream: false, interaction_id: "", headers: {}, params: {vertex_ai_project: alias-project, vertex_ai_location: eu}}
+      - {function: lifecycle, action: get, api_base: "", stream: false, interaction_id: "a/b c?d#e%", headers: {}, params: {vertex_project: project-1}}
+      - {function: lifecycle, action: delete, api_base: "", stream: false, interaction_id: "a-b.c_d~e", headers: {}, params: {vertex_project: project-1}}
+      - {function: lifecycle, action: cancel, api_base: "", stream: false, interaction_id: "é", headers: {}, params: {vertex_project: project-1}}
+env: {}
+compare: {ignore: []}
