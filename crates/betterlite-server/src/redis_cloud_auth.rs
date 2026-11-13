@@ -118,22 +118,26 @@ impl RedisCredentialSource for CloudRedisAuth {
                 let clock = betterlite_config::sections::redis_credentials::gcp::SystemClock;
                 let token = cache
                     .get_or_fetch(service_account.expose_secret(), *ttl, &clock, fetcher)
-                    .map_err(|error| credential_error(&error))?;
+                    .map_err(|error| {
+                        RedisCredentialError::Fetch(io::Error::other(error.to_string()))
+                    })?;
                 Ok(RedisCredentials {
                     username: None,
                     password: token,
                 })
             }
             CloudCredentials::Azure(provider) => {
-                let (username, password) = provider
-                    .get_credentials()
-                    .map_err(|error| credential_error(&error))?;
+                let (username, password) = provider.get_credentials().map_err(|error| {
+                    RedisCredentialError::Fetch(io::Error::other(error.to_string()))
+                })?;
                 Ok(RedisCredentials { username, password })
             }
             CloudCredentials::Aws { provider, resolver } => {
                 let (username, password) = provider
                     .get_credentials(resolver, SystemTime::now())
-                    .map_err(|error| credential_error(&error))?;
+                    .map_err(|error| {
+                        RedisCredentialError::Fetch(io::Error::other(error.to_string()))
+                    })?;
                 Ok(RedisCredentials {
                     username: Some(username),
                     password,
@@ -145,8 +149,4 @@ impl RedisCredentialSource for CloudRedisAuth {
     fn refresh_after(&self) -> Duration {
         self.refresh_after
     }
-}
-
-fn credential_error(error: &dyn std::error::Error) -> RedisCredentialError {
-    RedisCredentialError::Fetch(io::Error::other(error.to_string()))
 }

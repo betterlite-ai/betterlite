@@ -256,7 +256,11 @@ pub fn gcp_settings() -> Settings {
             token_ttl_seconds: 3300,
             token_cache: Arc::new(GcpTokenCache::default()),
         })),
-        ..Settings::default()
+        url: None,
+        username: None,
+        password: None,
+        warnings: Vec::new(),
+        environment_snapshot: BTreeMap::new(),
     }
 }
 
@@ -273,7 +277,11 @@ pub fn azure_settings(credential: AzureCredential) -> AzureSettings {
 pub fn azure_sourced_settings(credential: AzureCredential) -> Settings {
     Settings {
         provider: Some(Provider::Azure(azure_settings(credential))),
-        ..Settings::default()
+        url: None,
+        username: None,
+        password: None,
+        warnings: Vec::new(),
+        environment_snapshot: BTreeMap::new(),
     }
 }
 
@@ -290,7 +298,11 @@ pub fn aws_settings() -> AwsSettings {
 pub fn aws_sourced_settings() -> Settings {
     Settings {
         provider: Some(Provider::Aws(aws_settings())),
-        ..Settings::default()
+        url: None,
+        username: None,
+        password: None,
+        warnings: Vec::new(),
+        environment_snapshot: BTreeMap::new(),
     }
 }
 

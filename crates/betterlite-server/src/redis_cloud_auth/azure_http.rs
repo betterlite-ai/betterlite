@@ -66,7 +66,8 @@ impl AzureHttp {
         body: RequestBody,
         deadline: Duration,
     ) -> io::Result<betterlite_http::proxy::UpstreamResponse> {
-        let url = Url::parse(url).map_err(|source| invalid_input(source))?;
+        let url = Url::parse(url)
+            .map_err(|source| io::Error::new(io::ErrorKind::InvalidInput, source))?;
         let request = OutboundRequest {
             method,
             url,
@@ -81,15 +82,13 @@ impl AzureHttp {
     }
 }
 
-fn invalid_input(source: impl std::error::Error + Send + Sync + 'static) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, source)
-}
-
 fn header_map(headers: Vec<(String, String)>) -> io::Result<HeaderMap> {
     let mut map = HeaderMap::new();
     for (name, value) in headers {
-        let name = HeaderName::from_bytes(name.as_bytes()).map_err(invalid_input)?;
-        let value = HeaderValue::from_str(&value).map_err(invalid_input)?;
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|source| io::Error::new(io::ErrorKind::InvalidInput, source))?;
+        let value = HeaderValue::from_str(&value)
+            .map_err(|source| io::Error::new(io::ErrorKind::InvalidInput, source))?;
         map.insert(name, value);
     }
     Ok(map)

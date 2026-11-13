@@ -46,12 +46,6 @@ pub struct ProductionHost {
     pub environment: BTreeMap<String, String>,
 }
 
-impl ProductionHost {
-    fn variable(&self, name: &str) -> String {
-        self.environment.get(name).cloned().unwrap_or_default()
-    }
-}
-
 impl ArcHost for ProductionHost {
     fn platform(&self) -> ArcPlatform {
         if cfg!(target_os = "linux") {
@@ -68,11 +62,17 @@ impl ArcHost for ProductionHost {
     }
 
     fn program_data(&self) -> String {
-        self.variable("ProgramData")
+        self.environment
+            .get("ProgramData")
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn program_files(&self) -> String {
-        self.variable("ProgramFiles")
+        self.environment
+            .get("ProgramFiles")
+            .cloned()
+            .unwrap_or_default()
     }
 
     fn file_size(&self, path: &str) -> io::Result<u64> {
