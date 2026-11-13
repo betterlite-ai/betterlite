@@ -1,0 +1,15 @@
+kind: helper
+name: collect-guardrails-passthrough-only
+call:
+  b3601:
+    calls:
+      - function: collect_guardrails
+        key_metadata: {}
+        team_metadata: {}
+        config: [g1, g2]
+      - function: collect_guardrails
+        key_metadata: {}
+        team_metadata: {}
+        config: {g1: {request_fields: [query]}}
+env: {}
+compare: {ignore: []}

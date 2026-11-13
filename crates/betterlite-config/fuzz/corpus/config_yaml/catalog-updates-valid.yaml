@@ -1,0 +1,17 @@
+router_settings:
+  ignore_invalid_deployments: true
+
+model_list:
+  - model_name: catalog-model
+    litellm_params:
+      model: openai/gpt-4o-mini
+    model_info:
+      id: catalog-first
+  - model_name: catalog-model
+    litellm_params:
+      model: openai/gpt-4o
+    model_info:
+      id: catalog-second
+  - model_name: catalog-unresolved
+    litellm_params:
+      model: unknown-provider/model
