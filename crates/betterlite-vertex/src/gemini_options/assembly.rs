@@ -103,7 +103,9 @@ fn map_group(
         let audio: AudioParam = decode(value, param)?;
         let speech = map_audio_params(&audio)?;
         optional.insert("speechConfig".to_owned(), Json::Object(speech));
-    } else if param == "include_server_side_tool_invocations" && decode::<bool>(value, param)? {
+        return Ok(());
+    }
+    if param == "include_server_side_tool_invocations" && decode::<bool>(value, param)? {
         optional.insert(param.to_owned(), Json::Bool(true));
     }
     Ok(())

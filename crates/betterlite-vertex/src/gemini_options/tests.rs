@@ -556,10 +556,34 @@ fn auth_aliases_map_the_request_values() {
 
 #[test]
 fn the_region_lists_are_the_source_data() {
-    assert_eq!(EU_REGIONS.len(), 10);
-    assert_eq!(US_REGIONS.len(), 8);
-    assert_eq!(EU_REGIONS[0], "europe-central2");
-    assert_eq!(US_REGIONS[7], "us-west5");
+    assert_eq!(
+        EU_REGIONS,
+        [
+            "europe-central2",
+            "europe-north1",
+            "europe-southwest1",
+            "europe-west1",
+            "europe-west2",
+            "europe-west3",
+            "europe-west4",
+            "europe-west6",
+            "europe-west8",
+            "europe-west9",
+        ]
+    );
+    assert_eq!(
+        US_REGIONS,
+        [
+            "us-central1",
+            "us-east1",
+            "us-east4",
+            "us-east5",
+            "us-south1",
+            "us-west1",
+            "us-west4",
+            "us-west5",
+        ]
+    );
 }
 
 #[test]
@@ -601,6 +625,43 @@ impl ReasoningSupport for Catalog {
     }
 }
 
+// LiteLLM's get_supported_openai_params lists these names in this order before the model-dependent groups
+const BASE_PARAMS: [&str; 22] = [
+    "temperature",
+    "top_p",
+    "top_k",
+    "max_tokens",
+    "max_completion_tokens",
+    "stream",
+    "tools",
+    "functions",
+    "tool_choice",
+    "response_format",
+    "n",
+    "stop",
+    "extra_headers",
+    "seed",
+    "logprobs",
+    "top_logprobs",
+    "modalities",
+    "audio",
+    "parallel_tool_calls",
+    "web_search_options",
+    "include_server_side_tool_invocations",
+    "service_tier",
+];
+
+fn expected_params(penalties: bool, thinking: bool) -> Vec<&'static str> {
+    let mut expected = BASE_PARAMS.to_vec();
+    if penalties {
+        expected.extend(["frequency_penalty", "presence_penalty"]);
+    }
+    if thinking {
+        expected.extend(["reasoning_effort", "thinking"]);
+    }
+    expected
+}
+
 #[rstest]
 #[case::older_model("gemini-2.5-pro", false, true, false)]
 #[case::reasoning_model("gemini-2.5-pro", true, true, true)]
@@ -614,11 +675,7 @@ fn supported_parameters_follow_the_model(
 ) {
     let supported = supported_openai_params(model, &Catalog(reasoning));
 
-    assert_eq!(supported.contains(&"frequency_penalty"), penalties);
-    assert_eq!(supported.contains(&"presence_penalty"), penalties);
-    assert_eq!(supported.contains(&"reasoning_effort"), thinking);
-    assert_eq!(supported.contains(&"thinking"), thinking);
-    assert!(supported.starts_with(&["temperature", "top_p", "top_k", "max_tokens"]));
+    assert_eq!(supported, expected_params(penalties, thinking));
 }
 
 #[test]
