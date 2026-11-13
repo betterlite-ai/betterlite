@@ -9,14 +9,19 @@ use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 
 use super::client::TranscriptionClient;
-use super::config::{TranscriptionFamily, map_openai_params};
+use super::config::TranscriptionFamily;
 use super::error::TranscriptionError;
 use crate::api::audio_file_input::ProcessedAudioFile;
 
 // the order the OpenAI SDK writes its multipart body in, with the file part last
-const SDK_FIELDS: [&str; 7] = [
+const SDK_FIELDS: [&str; 12] = [
+    "chunking_strategy",
     "include",
+    "keywords",
+    "known_speaker_names",
+    "known_speaker_references",
     "language",
+    "languages",
     "prompt",
     "response_format",
     "stream",
@@ -36,10 +41,7 @@ pub fn prepare_data(
     model: &str,
     optional_params: &IndexMap<String, Json>,
 ) -> Result<TranscriptionData, TranscriptionError> {
-    let mut options = family.map_or_else(
-        || optional_params.clone(),
-        |known| map_openai_params(known, optional_params),
-    );
+    let mut options = optional_params.clone();
     if options.contains_key("file") {
         return Err(TranscriptionError::Field {
             field: String::from("file"),
@@ -98,32 +100,26 @@ fn text_part(name: &str, text: &str) -> MultipartPart {
     }
 }
 
-fn field_parts(name: &str, value: &Json) -> Result<Vec<MultipartPart>, TranscriptionError> {
-    let listed = matches!(name, "include" | "timestamp_granularities");
-    let refuse = |problem| TranscriptionError::Field {
-        field: name.to_owned(),
-        problem,
-    };
+// The SDK's multipart encoding: a list repeats name[], a mapping nests name[key], and an empty text sends nothing.
+fn field_parts(name: &str, value: &Json, parts: &mut Vec<MultipartPart>) {
     match value {
-        Json::Null => Ok(Vec::new()),
-        Json::List(items) if listed => items
-            .iter()
-            .map(|item| match item {
-                Json::Text(text) => Ok(text_part(&format!("{name}[]"), text)),
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-                    Err(refuse("is not a list of strings"))
-                }
-            })
-            .collect(),
-        Json::Text(text) if !listed => Ok(vec![text_part(name, text)]),
-        Json::Number(number) if !listed => Ok(vec![text_part(name, &number.to_string())]),
-        Json::Bool(flag) if !listed => Ok(vec![text_part(name, &flag.to_string())]),
-        Json::Text(_) | Json::Number(_) | Json::Bool(_) | Json::List(_) | Json::Object(_) => {
-            Err(refuse(if listed {
-                "is not a list of strings"
-            } else {
-                "is not a scalar"
-            }))
+        Json::Null => {}
+        Json::Text(text) => {
+            if !text.is_empty() {
+                parts.push(text_part(name, text));
+            }
+        }
+        Json::Number(number) => parts.push(text_part(name, &number.to_string())),
+        Json::Bool(flag) => parts.push(text_part(name, &flag.to_string())),
+        Json::List(items) => {
+            for item in items {
+                field_parts(&format!("{name}[]"), item, parts);
+            }
+        }
+        Json::Object(fields) => {
+            for (key, item) in fields {
+                field_parts(&format!("{name}[{key}]"), item, parts);
+            }
         }
     }
 }
@@ -147,7 +143,7 @@ fn multipart_parts(
         .filter_map(|name| data.options.get(*name).map(|value| (*name, value)));
     let mut parts = Vec::new();
     for (name, value) in data.model.iter().map(|model| ("model", model)).chain(named) {
-        parts.extend(field_parts(name, value)?);
+        field_parts(name, value, &mut parts);
     }
     parts.push(MultipartPart {
         name: String::from("file"),

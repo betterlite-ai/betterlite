@@ -13,15 +13,18 @@ use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use indexmap::IndexMap;
+use rstest::rstest;
 use uuid::Uuid;
 
 use super::fixture::{AudioFixture, ConnectionOptions, Fixture, Reply, connection};
 use crate::api::audio_file_input::{ProcessedAudioFile, get_audio_file_name};
 use crate::transcription::call::{
-    TranscriptionCall, TranscriptionRequest, audio_transcriptions, finish_transcription,
+    TranscriptionCall, TranscriptionRequest, async_audio_transcriptions, audio_transcriptions,
+    finish_transcription,
 };
 use crate::transcription::config::TranscriptionFamily;
 use crate::transcription::logging::PrePostLogger;
+use crate::transcription::request::prepare_data;
 use crate::transcription::transport::TranscriptionTransport as _;
 
 #[derive(Default)]
@@ -98,32 +101,45 @@ fn call<'file>(audio: &AudioFixture, file: &'file ProcessedAudioFile) -> Transcr
     }
 }
 
-#[tokio::test]
-async fn records_the_transcription_pre_call() {
+fn pre_call_additional_args(is_async: bool) -> Json {
     let audio = AudioFixture::new("a.wav", b"abc", "audio/wav");
     let processed = audio.processed();
     let (redactor, mut state) = state();
     let sink = Sink::default();
     let env = env(&redactor, &sink);
-    let fixture = Fixture::new(Reply::json(r#"{"text":"hi"}"#));
     let mut logger = PrePostLogger {
         state: &mut state,
         env: &env,
     };
-    let (outbound, pending) =
+    let started = if is_async {
+        let data = prepare_data(
+            Some(TranscriptionFamily::Whisper),
+            "whisper-1",
+            &IndexMap::new(),
+        )
+        .expect("the data builds");
+        async_audio_transcriptions(&call(&audio, &processed), &data, &mut logger)
+    } else {
         audio_transcriptions(&call(&audio, &processed), &request(), &mut logger)
-            .expect("the call begins");
-    finish_transcription(pending, fixture.send(outbound).await, &mut logger)
-        .expect("the call succeeds");
-    let additional = state.model_call_details.get("additional_args");
-    assert!(matches!(
-        additional,
-        Some(Json::Object(fields)) if fields.contains_key("atranscription")
-    ));
-    assert!(matches!(
-        additional,
-        Some(Json::Object(fields)) if fields.contains_key("complete_input_dict")
-    ));
+    };
+    started.expect("the call begins");
+    state
+        .model_call_details
+        .get("additional_args")
+        .expect("the pre call recorded additional_args")
+        .clone()
+}
+
+// handler.py logs atranscription=True from both the sync and the async call site
+#[rstest]
+#[case::sync_call(false)]
+#[case::async_call(true)]
+fn records_the_transcription_pre_call(#[case] is_async: bool) {
+    let Json::Object(fields) = pre_call_additional_args(is_async) else {
+        panic!("additional_args is an object");
+    };
+    assert_eq!(fields.get("atranscription"), Some(&Json::Bool(true)));
+    assert!(fields.contains_key("complete_input_dict"));
 }
 
 #[tokio::test]

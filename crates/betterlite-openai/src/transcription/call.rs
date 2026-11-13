@@ -143,7 +143,7 @@ fn reply(
     logger.response_headers(&headers);
     let duration = stored_duration(
         pending.kind,
-        pending.format,
+        decoded.textual,
         decoded.response.text.as_deref(),
     );
     let mut original_response = decoded.original_response;
@@ -169,13 +169,10 @@ fn reply(
     })
 }
 
-// only the async path reads a duration, and only off a textual reply
-fn stored_duration(kind: ClientKind, format: ReplyFormat, text: Option<&str>) -> StoredDuration {
-    match (kind, format) {
-        (ClientKind::Async, ReplyFormat::Text) => {
-            StoredDuration::Known(text.and_then(srt_vtt_duration))
-        }
-        (ClientKind::Sync, ReplyFormat::Json | ReplyFormat::Text)
-        | (ClientKind::Async, ReplyFormat::Json) => StoredDuration::Absent,
+// only the async path reads a duration, and only off a reply the SDK parsed as plain text
+fn stored_duration(kind: ClientKind, textual: bool, text: Option<&str>) -> StoredDuration {
+    match (kind, textual) {
+        (ClientKind::Async, true) => StoredDuration::Known(text.and_then(srt_vtt_duration)),
+        (ClientKind::Sync, true | false) | (ClientKind::Async, false) => StoredDuration::Absent,
     }
 }

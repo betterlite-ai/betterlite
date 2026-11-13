@@ -18,6 +18,8 @@ pub enum ReplyFormat {
 pub struct DecodedReply {
     pub response: TranscriptionResponse,
     pub original_response: Json,
+    // the SDK parsed the body as plain text, not as a JSON object
+    pub textual: bool,
 }
 
 pub fn reply_format(options: &IndexMap<String, Json>) -> Result<ReplyFormat, TranscriptionError> {
@@ -39,6 +41,7 @@ pub fn decode_transcription_reply(
                 return Ok(DecodedReply {
                     response: response_from_object(&fields)?,
                     original_response: Json::Object(fields),
+                    textual: false,
                 });
             }
             Ok(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
@@ -63,6 +66,7 @@ pub fn decode_transcription_reply(
             (String::from("text"), Json::Text(text.to_owned())),
             (String::from("usage"), Json::Null),
         ])),
+        textual: true,
     })
 }
 

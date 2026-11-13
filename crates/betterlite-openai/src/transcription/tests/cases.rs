@@ -629,7 +629,26 @@ async fn text_duration() {
     assert_async_text_duration(&audio, srt_body(), srt_options(), Some("4.0")).await;
     let options = IndexMap::from([(String::from("response_format"), text("text"))]);
     assert_async_text_duration(&audio, "just words", options, None).await;
+    // the reply decides, not the request: a verbose_json request answered with plain text is a textual reply
+    assert_async_text_duration(&audio, srt_body(), IndexMap::new(), Some("4.0")).await;
     assert_sync_reply_has_no_duration(&audio).await;
+    assert_async_json_reply_has_no_duration(&audio).await;
+}
+
+async fn assert_async_json_reply_has_no_duration(audio: &AudioFixture) {
+    let fixture = Fixture::new(Reply::json(r#"{"text":"hi"}"#));
+    let run = run(
+        &fixture,
+        audio,
+        SyncCall::explicit(whisper_data(&IndexMap::new()), default_connection()),
+    )
+    .await;
+    let reply = run.outcome.expect("the 200 reply is json");
+    assert_eq!(reply.duration, StoredDuration::Absent);
+    let Json::Object(fields) = &reply.original_response else {
+        panic!("the reply is an object");
+    };
+    assert!(!fields.contains_key("_audio_transcription_duration"));
 }
 
 async fn assert_async_text_duration(

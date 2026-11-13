@@ -33,5 +33,25 @@ call:
           status: 200
           headers: {content-type: text/plain}
           body: "1\n00:00:02,500 --> 00:00:04,000\nhi\n"
+      - model: whisper-1
+        provider: whisper
+        atranscription: true
+        optional_params: {response_format: verbose_json}
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+        reply:
+          status: 200
+          headers: {content-type: text/plain}
+          body: "1\n00:00:02,500 --> 00:00:04,000\nhi\n"
+      - model: whisper-1
+        provider: whisper
+        atranscription: true
+        optional_params: {language: en}
+        api_key: sk-fixture
+        api_base: 'https://transcription.test/v1'
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"text":"hi"}'
 env: {}
 compare: {ignore: []}
