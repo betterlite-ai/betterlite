@@ -23,7 +23,10 @@ fn production_io(token_body: &'static str, rounds: usize) -> Arc<FakeIo> {
     Arc::new(FakeIo::new(replies))
 }
 
-fn production_grants(io: &Arc<FakeIo>) -> SdkAzureGrants<FakeIo> {
+fn production_grants(
+    io: &Arc<FakeIo>,
+    chain_environment: ChainEnvironment,
+) -> SdkAzureGrants<FakeIo> {
     let clock = Arc::new(ProductionClock);
     let oidc_transport: Arc<dyn betterlite_azure::oidc_exchange::transport::Transport> =
         Arc::clone(io);
@@ -49,13 +52,11 @@ fn production_grants(io: &Arc<FakeIo>) -> SdkAzureGrants<FakeIo> {
         },
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
         environment: ManagedIdentityEnvironment::default(),
-        chain_environment: ChainEnvironment::default(),
+        chain_environment,
         exchange,
         authority_host: None,
         client_secret_settings: ClientSecretSettings::default(),
-        client_secret_token: Mutex::new(None),
-        managed_identity_token: Mutex::new(None),
-        default_token: Mutex::new(None),
+        client_secrets: Mutex::new(None),
     }
 }
 
@@ -187,7 +188,7 @@ fn azure_ad_provider_returns_the_username_and_token() {
 }
 
 async fn two_client_secret_calls(io: &Arc<FakeIo>) -> (SecretString, SecretString) {
-    let grants = production_grants(io);
+    let grants = production_grants(io, ChainEnvironment::default());
     tokio::task::spawn_blocking(move || {
         let client_secret = SecretString::from("secret".to_owned());
         let first = grants
@@ -203,7 +204,7 @@ async fn two_client_secret_calls(io: &Arc<FakeIo>) -> (SecretString, SecretStrin
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn azure_the_client_secret_credential_is_built_once() {
+async fn azure_the_client_secret_provider_is_kept_between_fetches() {
     let io = production_io(LIVE_TOKEN, 1);
     let (first, second) = two_client_secret_calls(&io).await;
     assert_eq!(first.expose_secret(), "fixture-token");
@@ -217,12 +218,12 @@ async fn azure_an_expired_token_is_fetched_again() {
     let (first, second) = two_client_secret_calls(&io).await;
     assert_eq!(first.expose_secret(), "fixture-token");
     assert_eq!(second.expose_secret(), "fixture-token");
-    assert_eq!(io.requests().len(), 4);
+    assert_eq!(io.requests().len(), 3);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn azure_the_managed_identity_grant_reports_an_unconfigured_environment() {
-    let grants = production_grants(&production_io(LIVE_TOKEN, 1));
+    let grants = production_grants(&production_io(LIVE_TOKEN, 1), ChainEnvironment::default());
     let error = tokio::task::spawn_blocking(move || {
         grants
             .managed_identity("client", AZURE_REDIS_SCOPE)
@@ -241,11 +242,46 @@ async fn azure_the_managed_identity_grant_reports_an_unconfigured_environment() 
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn azure_the_default_credential_reports_an_exhausted_chain() {
-    let grants = production_grants(&production_io(LIVE_TOKEN, 1));
+    let grants = production_grants(&production_io(LIVE_TOKEN, 1), ChainEnvironment::default());
     let error = tokio::task::spawn_blocking(move || {
         grants.default_credential(AZURE_REDIS_SCOPE).unwrap_err()
     })
     .await
     .unwrap();
     assert!(matches!(error, AzureGrantError::DefaultCredential { .. }));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn azure_two_default_fetches_send_one_token_request() {
+    let io = production_io(LIVE_TOKEN, 1);
+    let grants = production_grants(
+        &io,
+        ChainEnvironment {
+            client_id: Some("client".to_owned()),
+            tenant_id: Some("tenant".to_owned()),
+            client_secret: Some(SecretString::from("secret".to_owned())),
+            token_credentials: "environmentcredential".to_owned(),
+            scope: None,
+            credential: None,
+            username: None,
+            password: None,
+            federated_token_file: None,
+            certificate_path: None,
+            certificate_password: None,
+            client_certificate_path: None,
+            client_certificate_password: None,
+            client_send_certificate_chain: false,
+            authority_host: None,
+        },
+    );
+    let (first, second) = tokio::task::spawn_blocking(move || {
+        let first = grants.default_credential(AZURE_REDIS_SCOPE).unwrap();
+        let second = grants.default_credential(AZURE_REDIS_SCOPE).unwrap();
+        (first, second)
+    })
+    .await
+    .unwrap();
+    assert_eq!(first.expose_secret(), "fixture-token");
+    assert_eq!(second.expose_secret(), "fixture-token");
+    assert_eq!(io.requests().len(), 2);
 }

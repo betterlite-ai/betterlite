@@ -4,7 +4,6 @@ use betterlite_azure::azure_arc_identity::ArcTransport;
 use betterlite_azure::azure_certificate::assertion::RandomIds;
 use betterlite_azure::azure_certificate::credential::StdFiles;
 use betterlite_azure::azure_client_secret::provider::ProviderCache;
-use betterlite_azure::azure_client_secret::transport::Clock as TokenClock;
 use betterlite_azure::azure_default_chain::environment::ChainEnvironment;
 use betterlite_azure::azure_default_chain::grant::{
     ChainPlacement, ChainToken, ClientSecretRecord, Grant, GrantError, Grants as _, LinkError,
@@ -29,17 +28,6 @@ use super::azure::{AzureGrantError, AzureGrants};
 use super::azure_http::AzureIo;
 use super::azure_runtime::{ProductionClock, ProductionHost, ThreadScheduler};
 
-pub struct CachedToken {
-    pub token: SecretString,
-    pub expires_at: i64,
-}
-
-enum GrantRequest<'a> {
-    ClientSecret(ClientSecretRecord),
-    ManagedIdentity(ManagedIdentityRecord),
-    Default { scope: &'a str },
-}
-
 pub struct SdkAzureGrants<H: AzureIo> {
     pub http: Arc<H>,
     pub clock: Arc<ProductionClock>,
@@ -54,25 +42,38 @@ pub struct SdkAzureGrants<H: AzureIo> {
     pub exchange: AzureOidcExchange,
     pub authority_host: Option<String>,
     pub client_secret_settings: ClientSecretSettings,
-    pub client_secret_token: Mutex<Option<CachedToken>>,
-    pub managed_identity_token: Mutex<Option<CachedToken>>,
-    pub default_token: Mutex<Option<CachedToken>>,
+    pub client_secrets: Mutex<Option<ProviderCache>>,
 }
 
 impl<H: AzureIo> SdkAzureGrants<H> {
-    fn native_grants(&self) -> NativeGrants<'_, ProductionHost> {
+    // NativeGrants owns its provider cache, so the kept one is moved in for the fetch and back out after it
+    fn token_through<F>(&self, fetch: F) -> Result<SecretString, AzureGrantError>
+    where
+        F: FnOnce(&NativeGrants<'_, ProductionHost>) -> Result<ChainToken, AzureGrantError>,
+    {
+        let kept = self
+            .client_secrets
+            .lock()
+            .map_err(|_error| AzureGrantError::Grant {
+                kind: "client secret provider cache",
+                message: "the provider cache is poisoned".to_owned(),
+            })?
+            .take();
+        let cache = kept.unwrap_or_else(|| {
+            ProviderCache::new(
+                Arc::clone(&self.http),
+                Arc::clone(&self.clock),
+                self.client_secret_settings.clone(),
+            )
+        });
         let hosted: &dyn HostedTransport = &*self.http;
         let imds: &dyn ImdsTransport = &*self.http;
         let arc: &dyn ArcTransport = &*self.http;
         let password: &dyn PasswordTransport = &*self.http;
-        NativeGrants {
+        let native = NativeGrants {
             transport: Arc::clone(&self.http),
             clock: Arc::clone(&self.clock),
-            client_secrets: Mutex::new(ProviderCache::new(
-                Arc::clone(&self.http),
-                Arc::clone(&self.clock),
-                self.client_secret_settings.clone(),
-            )),
+            client_secrets: Mutex::new(cache),
             files: &self.files,
             ids: Arc::clone(&self.ids),
             token_files: &self.token_files,
@@ -93,79 +94,25 @@ impl<H: AzureIo> SdkAzureGrants<H> {
             },
             password_transport: password,
             authority_host: self.authority_host.clone(),
-        }
+        };
+        let result = fetch(&native);
+        let cache =
+            native
+                .client_secrets
+                .into_inner()
+                .map_err(|_error| AzureGrantError::Grant {
+                    kind: "client secret provider cache",
+                    message: "the provider cache is poisoned".to_owned(),
+                })?;
+        *self
+            .client_secrets
+            .lock()
+            .map_err(|_error| AzureGrantError::Grant {
+                kind: "client secret provider cache",
+                message: "the provider cache is poisoned".to_owned(),
+            })? = Some(cache);
+        result.map(|token| token.token)
     }
-
-    fn grant(&self, request: GrantRequest<'_>) -> Result<SecretString, AzureGrantError> {
-        match request {
-            GrantRequest::ClientSecret(record) => self
-                .token_through(&self.client_secret_token, |native| {
-                    grant_token(native.client_secret(&record), "client secret")
-                }),
-            GrantRequest::ManagedIdentity(record) => self
-                .token_through(&self.managed_identity_token, |native| {
-                    grant_token(native.managed_identity(&record), "managed identity")
-                }),
-            GrantRequest::Default { scope } => self.token_through(&self.default_token, |native| {
-                let provider = get_azure_ad_token_provider(&ProviderRequest {
-                    scope: Some(scope),
-                    credential: Some(AzureCredentialType::DefaultAzureCredential),
-                    environment: &self.chain_environment,
-                    grants: native,
-                })
-                .map_err(|source| AzureGrantError::DefaultCredential { source })?;
-                provider
-                    .token()
-                    .map_err(|source| AzureGrantError::DefaultCredential { source })
-            }),
-        }
-    }
-
-    fn token_through<F>(
-        &self,
-        cell: &Mutex<Option<CachedToken>>,
-        fetch: F,
-    ) -> Result<SecretString, AzureGrantError>
-    where
-        F: FnOnce(&NativeGrants<'_, ProductionHost>) -> Result<ChainToken, AzureGrantError>,
-    {
-        let now = TokenClock::now_unix_seconds(&*self.clock);
-        if let Some(token) = cached(cell, now)? {
-            return Ok(token);
-        }
-        let token = fetch(&self.native_grants())?;
-        remember(cell, &token)?;
-        Ok(token.token)
-    }
-}
-
-fn cached(
-    cell: &Mutex<Option<CachedToken>>,
-    now: i64,
-) -> Result<Option<SecretString>, AzureGrantError> {
-    let guard = cell.lock().map_err(|_error| AzureGrantError::Grant {
-        kind: "token cache",
-        message: "the token cache is poisoned".to_owned(),
-    })?;
-    Ok(guard
-        .as_ref()
-        .filter(|cached| now < cached.expires_at)
-        .map(|cached| cached.token.clone()))
-}
-
-fn remember(cell: &Mutex<Option<CachedToken>>, token: &ChainToken) -> Result<(), AzureGrantError> {
-    let Some(expires_at) = token.refresh_on.or(token.expires_on) else {
-        return Ok(());
-    };
-    let mut guard = cell.lock().map_err(|_error| AzureGrantError::Grant {
-        kind: "token cache",
-        message: "the token cache is poisoned".to_owned(),
-    })?;
-    *guard = Some(CachedToken {
-        token: token.token.clone(),
-        expires_at,
-    });
-    Ok(())
 }
 
 fn grant_token<G: Grant>(
@@ -190,12 +137,13 @@ impl<H: AzureIo> AzureGrants for SdkAzureGrants<H> {
         client_secret: &SecretString,
         scope: &str,
     ) -> Result<SecretString, AzureGrantError> {
-        self.grant(GrantRequest::ClientSecret(ClientSecretRecord {
+        let record = ClientSecretRecord {
             tenant_id: tenant_id.to_owned(),
             client_id: client_id.to_owned(),
             client_secret: client_secret.clone(),
             scope: scope.to_owned(),
-        }))
+        };
+        self.token_through(|native| grant_token(native.client_secret(&record), "client secret"))
     }
 
     fn managed_identity(
@@ -203,16 +151,30 @@ impl<H: AzureIo> AzureGrants for SdkAzureGrants<H> {
         client_id: &str,
         scope: &str,
     ) -> Result<SecretString, AzureGrantError> {
-        self.grant(GrantRequest::ManagedIdentity(ManagedIdentityRecord {
+        let record = ManagedIdentityRecord {
             client_id: Some(client_id.to_owned()),
             exclude_workload_identity: false,
             imds_probe: None,
             placement: ChainPlacement::Standalone,
             scope: scope.to_owned(),
-        }))
+        };
+        self.token_through(|native| {
+            grant_token(native.managed_identity(&record), "managed identity")
+        })
     }
 
     fn default_credential(&self, scope: &str) -> Result<SecretString, AzureGrantError> {
-        self.grant(GrantRequest::Default { scope })
+        self.token_through(|native| {
+            let provider = get_azure_ad_token_provider(&ProviderRequest {
+                scope: Some(scope),
+                credential: Some(AzureCredentialType::DefaultAzureCredential),
+                environment: &self.chain_environment,
+                grants: native,
+            })
+            .map_err(|source| AzureGrantError::DefaultCredential { source })?;
+            provider
+                .token()
+                .map_err(|source| AzureGrantError::DefaultCredential { source })
+        })
     }
 }

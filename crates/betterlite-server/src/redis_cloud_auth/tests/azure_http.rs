@@ -29,9 +29,7 @@ async fn record_http(
 ) -> Response {
     let mut recorded = Vec::with_capacity(headers.len());
     for (name, value) in &headers {
-        if let Ok(text) = value.to_str() {
-            recorded.push((name.as_str().to_owned(), text.to_owned()));
-        }
+        recorded.push((name.as_str().to_owned(), value.to_str().unwrap().to_owned()));
     }
     state.seen.lock().unwrap().push(SeenHttp {
         method: method.as_str().to_owned(),
@@ -336,4 +334,109 @@ async fn azure_http_the_oidc_transport_posts_the_form() {
     assert_eq!(reply.body.expose_secret(), r#"{"access_token":"oidc"}"#);
     let seen = server.seen.lock().unwrap().clone();
     assert!(seen[0].body.contains("client_assertion=assertion"));
+}
+
+async fn latin_one_header(State(name): State<HeaderName>) -> Response {
+    let mut response = StatusCode::OK.into_response();
+    response
+        .headers_mut()
+        .insert(name, HeaderValue::from_bytes(b"\xe9").unwrap());
+    response
+}
+
+async fn latin_one_server(header: &'static str) -> (String, JoinSet<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let application = Router::new()
+        .route("/{*path}", any(latin_one_header))
+        .with_state(HeaderName::from_static(header));
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        axum::serve(listener, application).await.unwrap();
+    });
+    (base, tasks)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn azure_http_a_repeated_request_header_keeps_every_value() {
+    let server = http_server(200, "{}", None).await;
+    let transport = azure_http();
+    let url = format!("{}/metadata/identity/oauth2/token", server.base);
+    tokio::task::spawn_blocking(move || {
+        ImdsTransport::get(
+            &transport,
+            &ImdsRequest {
+                url,
+                query: Vec::new(),
+                headers: vec![
+                    ("x-forwarded".to_owned(), "first".to_owned()),
+                    ("x-forwarded".to_owned(), "second".to_owned()),
+                ],
+                timeout_seconds: 2,
+            },
+        )
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    let seen = server.seen.lock().unwrap().clone();
+    assert!(
+        seen[0]
+            .headers
+            .contains(&("x-forwarded".to_owned(), "first".to_owned()))
+    );
+    assert!(
+        seen[0]
+            .headers
+            .contains(&("x-forwarded".to_owned(), "second".to_owned()))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn azure_http_a_response_header_outside_ascii_is_read_as_latin_1() {
+    let (base, _tasks) = latin_one_server("x-note").await;
+    let transport = azure_http();
+    let url = format!("{base}/metadata/identity/oauth2/token");
+    let reply = tokio::task::spawn_blocking(move || {
+        ImdsTransport::get(
+            &transport,
+            &ImdsRequest {
+                url,
+                query: Vec::new(),
+                headers: Vec::new(),
+                timeout_seconds: 2,
+            },
+        )
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(
+        reply
+            .headers
+            .contains(&("x-note".to_owned(), "\u{e9}".to_owned()))
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn azure_http_a_content_type_outside_ascii_is_read_as_latin_1() {
+    let (base, _tasks) = latin_one_server("content-type").await;
+    let transport = azure_http();
+    let url = format!("{base}/msi/token");
+    let reply = tokio::task::spawn_blocking(move || {
+        HostedTransport::send(
+            &transport,
+            &HostedRequest {
+                method: HttpMethod::Get,
+                url,
+                query: Vec::new(),
+                headers: Vec::new(),
+                form: Vec::new(),
+            },
+        )
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(reply.content_type.as_deref(), Some("\u{e9}"));
 }

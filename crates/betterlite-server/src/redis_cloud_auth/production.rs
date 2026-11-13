@@ -106,9 +106,7 @@ fn azure_grants(
         exchange,
         authority_host: environment.get("AZURE_AUTHORITY_HOST").cloned(),
         client_secret_settings: config.sections.azure_client_secret.clone(),
-        client_secret_token: Mutex::new(None),
-        managed_identity_token: Mutex::new(None),
-        default_token: Mutex::new(None),
+        client_secrets: Mutex::new(None),
     }))
 }
 

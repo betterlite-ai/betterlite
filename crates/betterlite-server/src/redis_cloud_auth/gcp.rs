@@ -49,6 +49,11 @@ pub enum IamTokenError {
         #[source]
         source: InvalidHeaderValue,
     },
+    #[error("the IAM generateAccessToken request body could not be encoded: {source}")]
+    Body {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("the IAM generateAccessToken request failed: {source}")]
     Request {
         #[source]
@@ -89,14 +94,16 @@ impl GcpTokenFetcher for IamTokenFetcher {
         let bearer = HeaderValue::from_str(&format!("Bearer {}", adc.expose_secret()))
             .map_err(|source| IamTokenError::Bearer { source })?;
         headers.insert(AUTHORIZATION, bearer);
+        let body = serde_json::to_vec(&GenerateAccessTokenRequest {
+            scope: [CLOUD_PLATFORM_SCOPE],
+        })
+        .map_err(|source| IamTokenError::Body { source })?;
         let request = OutboundRequest {
             method: http::Method::POST,
             url,
             query: Vec::new(),
             headers,
-            body: RequestBody::Json(
-                br#"{"scope":["https://www.googleapis.com/auth/cloud-platform"]}"#.to_vec(),
-            ),
+            body: RequestBody::Json(body),
             deadline: IAM_TIMEOUT,
         };
         let response = self
@@ -110,6 +117,11 @@ impl GcpTokenFetcher for IamTokenFetcher {
         }
         decode_iam_token(&response.body)
     }
+}
+
+#[derive(serde::Serialize)]
+struct GenerateAccessTokenRequest<'scope> {
+    scope: [&'scope str; 1],
 }
 
 #[derive(serde::Deserialize)]

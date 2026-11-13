@@ -85,26 +85,31 @@ impl AzureHttp {
             .map_err(io::Error::other)
     }
 
+    fn form_request(&self, request: &HttpRequest) -> io::Result<HttpReply> {
+        // authority discovery is a GET and carries no form, so it sends no body at all
+        let body = match request.method {
+            HttpMethod::Get => RequestBody::Empty,
+            HttpMethod::Post => form_body(&request.form),
+        };
+        let headers = header_map(request.headers.clone())?;
+        let method = request_method(request.method);
+        let query = request.query.clone();
+        let url = &request.url;
+        self.form_exchange(Exchange {
+            method,
+            url,
+            query,
+            headers,
+            body,
+            deadline: TOKEN_TIMEOUT,
+        })
+    }
+
     fn form_exchange(&self, request: Exchange<'_>) -> io::Result<HttpReply> {
         let response = self.exchange(request)?;
         let (status, body) = text_reply(response.status, response.body)?;
         Ok(HttpReply { status, body })
     }
-}
-
-fn password_exchange(request: &PasswordRequest) -> io::Result<Exchange<'_>> {
-    let method = request_method(request.method);
-    let query = request.query.clone();
-    let headers = header_map(request.headers.clone())?;
-    let body = form_body(&request.form);
-    Ok(Exchange {
-        method,
-        url: &request.url,
-        query,
-        headers,
-        body,
-        deadline: TOKEN_TIMEOUT,
-    })
 }
 
 fn header_map(headers: Vec<(String, String)>) -> io::Result<HeaderMap> {
@@ -114,7 +119,7 @@ fn header_map(headers: Vec<(String, String)>) -> io::Result<HeaderMap> {
             .map_err(|source| io::Error::new(io::ErrorKind::InvalidInput, source))?;
         let value = HeaderValue::from_str(&value)
             .map_err(|source| io::Error::new(io::ErrorKind::InvalidInput, source))?;
-        map.insert(name, value);
+        map.append(name, value);
     }
     Ok(map)
 }
@@ -138,11 +143,13 @@ fn text_reply(status: u16, body: Vec<u8>) -> io::Result<(u16, SecretString)> {
     Ok((status, SecretString::from(text)))
 }
 
+// HTTP header bytes outside ASCII are ISO-8859-1, as http.client reads them
 fn header_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
-    let mut pairs = Vec::with_capacity(headers.len());
-    for (name, value) in headers {
-        if let Ok(text) = value.to_str() {
-            pairs.push((name.as_str().to_owned(), text.to_owned()));
+    let mut pairs = Vec::new();
+    for name in headers.keys() {
+        for value in headers.get_all(name) {
+            let text = value.as_bytes().iter().map(|&byte| char::from(byte));
+            pairs.push((name.to_string(), text.collect()));
         }
     }
     pairs
@@ -164,27 +171,20 @@ fn secret_headers(headers: Vec<(&'static str, SecretString)>) -> Vec<(String, St
 
 impl ClientSecretTransport for AzureHttp {
     fn send(&self, request: &HttpRequest) -> io::Result<HttpReply> {
-        let headers = header_map(request.headers.clone())?;
-        // authority discovery is a GET and carries no form, so it sends no body at all
-        let body = match request.method {
-            HttpMethod::Get => RequestBody::Empty,
-            HttpMethod::Post => form_body(&request.form),
-        };
-        self.form_exchange(Exchange {
-            method: request_method(request.method),
-            url: &request.url,
-            query: request.query.clone(),
-            headers,
-            body,
-            deadline: TOKEN_TIMEOUT,
-        })
+        self.form_request(request)
     }
 }
 
 impl PasswordTransport for AzureHttp {
     fn send(&self, request: &PasswordRequest) -> io::Result<HttpReply> {
-        let exchange = password_exchange(request)?;
-        self.form_exchange(exchange)
+        let secret_request = HttpRequest {
+            method: request.method,
+            url: request.url.clone(),
+            query: request.query.clone(),
+            headers: request.headers.clone(),
+            form: request.form.clone(),
+        };
+        ClientSecretTransport::send(self, &secret_request)
     }
 }
 
@@ -273,8 +273,7 @@ impl HostedTransport for AzureHttp {
         let content_type = response
             .headers
             .get(CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_owned);
+            .map(|value| value.as_bytes().iter().copied().map(char::from).collect());
         let (_status, body) = text_reply(status, response.body)?;
         Ok(HostedResponse { content_type, body })
     }
