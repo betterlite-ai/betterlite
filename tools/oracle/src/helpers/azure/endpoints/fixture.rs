@@ -116,6 +116,24 @@ fn scripted(script: Script) -> Result<Arc<dyn CallableTokenProvider + 'static>, 
     }
 }
 
+fn secret_call(record: &ClientSecretRecord) -> Value {
+    json!({
+        "source": "client_secret",
+        "tenant_id": record.tenant_id,
+        "client_id": record.client_id,
+        "client_secret": record.client_secret.expose_secret(),
+        "scope": record.scope,
+    })
+}
+
+fn password_call(record: &UsernamePasswordRecord) -> Value {
+    let mut value = json!({"source": "username_password", "client_id": record.client_id});
+    value["azure_username"] = json!(record.username);
+    value["azure_password"] = json!(record.password.expose_secret());
+    value["scope"] = json!(record.scope);
+    value
+}
+
 impl CredentialSources for Sources {
     fn client_secret(
         &self,
@@ -124,7 +142,7 @@ impl CredentialSources for Sources {
         self.provider(
             self.scripts.client_secret.as_ref(),
             "client-secret-token",
-            json!({"source": "client_secret", "tenant_id": record.tenant_id, "client_id": record.client_id, "client_secret": record.client_secret.expose_secret(), "scope": record.scope}),
+            secret_call(record),
         )
     }
 
@@ -135,7 +153,7 @@ impl CredentialSources for Sources {
         self.provider(
             self.scripts.username_password.as_ref(),
             "username-token",
-            json!({"source": "username_password", "client_id": record.client_id, "azure_username": record.username, "azure_password": record.password.expose_secret(), "scope": record.scope}),
+            password_call(record),
         )
     }
 

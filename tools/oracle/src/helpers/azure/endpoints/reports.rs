@@ -33,35 +33,32 @@ pub(super) fn client_report(
     cache_owned: Option<bool>,
     calls: &[Value],
 ) -> Value {
-    json!({
-        "source": source_name(outcome.source),
-        "kind": kind_name(outcome.kind),
-        "custom_query": &outcome.custom_query,
-        "cache_owned": cache_owned,
-        "identity": identity_json(&outcome.identity),
-        "inputs": inputs_json(outcome.inputs.as_ref()),
-        "calls": calls,
-    })
+    let mut map = serde_json::Map::new();
+    map.insert("source".to_owned(), json!(source_name(outcome.source)));
+    map.insert("kind".to_owned(), json!(kind_name(outcome.kind)));
+    map.insert("custom_query".to_owned(), json!(&outcome.custom_query));
+    map.insert("cache_owned".to_owned(), json!(cache_owned));
+    map.insert("identity".to_owned(), identity_json(&outcome.identity));
+    map.insert("inputs".to_owned(), inputs_json(outcome.inputs.as_ref()));
+    map.insert("calls".to_owned(), json!(calls));
+    Value::Object(map)
 }
 
 pub(super) fn cloudflare_report(outcome: &CloudflareOutcome<'_>, calls: &[Value]) -> Value {
+    let mut value =
+        json!({"kind": "", "supplied": Value::Null, "client": Value::Null, "calls": calls});
     match outcome {
-        CloudflareOutcome::Supplied(client) => json!({
-            "kind": "supplied",
-            "supplied": {
-                "kind": kind_name(client.kind),
-                "custom_query": &client.custom_query,
-            },
-            "client": Value::Null,
-            "calls": calls,
-        }),
-        CloudflareOutcome::Constructed(client) => json!({
-            "kind": "constructed",
-            "supplied": Value::Null,
-            "client": constructed_json(client),
-            "calls": calls,
-        }),
+        CloudflareOutcome::Supplied(client) => {
+            value["kind"] = json!("supplied");
+            value["supplied"] =
+                json!({"kind": kind_name(client.kind), "custom_query": &client.custom_query});
+        }
+        CloudflareOutcome::Constructed(client) => {
+            value["kind"] = json!("constructed");
+            value["client"] = constructed_json(client);
+        }
     }
+    value
 }
 
 fn constructed_json(client: &CloudflareClient<'_>) -> Value {
@@ -100,13 +97,12 @@ fn azure_json(inputs: &AzureClientInputs<'_>) -> Value {
 }
 
 fn v1_json(inputs: &OpenAiV1ClientInputs<'_>) -> Value {
-    json!({
-        "key": key_json(inputs.key.as_ref()),
-        "base_url": &inputs.base_url,
-        "timeout": inputs.timeout,
-        "max_retries": inputs.max_retries,
-        "http_client": json!({"is_async": inputs.http_client.is_async, "shared": inputs.http_client.shared}),
-    })
+    let mut value = json!({"key": key_json(inputs.key.as_ref()), "base_url": &inputs.base_url});
+    value["timeout"] = json!(inputs.timeout);
+    value["max_retries"] = json!(inputs.max_retries);
+    value["http_client"] =
+        json!({"is_async": inputs.http_client.is_async, "shared": inputs.http_client.shared});
+    value
 }
 
 fn key_json(key: Option<&V1Key<'_>>) -> Value {
