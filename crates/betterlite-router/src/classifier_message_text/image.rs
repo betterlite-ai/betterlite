@@ -26,7 +26,7 @@ fn image_url(part: &ContentPart) -> Result<Option<String>, ClassifierTextError> 
             .fields
             .get("image_url")
             .and_then(|value| value.as_str())
-            .and_then(non_empty)),
+            .and_then(|url| (!url.is_empty()).then(|| url.to_owned()))),
         "image" => Ok(anthropic_image_url(part)),
         _ => Ok(None),
     }
@@ -37,7 +37,7 @@ fn url_part(part: &ContentPart) -> Result<Option<String>, ClassifierTextError> {
         return Ok(None);
     };
     if let Some(url) = value.as_str() {
-        return Ok(non_empty(url));
+        return Ok((!url.is_empty()).then(|| url.to_owned()));
     }
     let Some(object) = value.as_object() else {
         return Ok(None);
@@ -49,7 +49,7 @@ fn url_part(part: &ContentPart) -> Result<Option<String>, ClassifierTextError> {
         return Ok(None);
     }
     match url.as_str() {
-        Some(url) => Ok(non_empty(url)),
+        Some(url) => Ok((!url.is_empty()).then(|| url.to_owned())),
         None => Err(ClassifierTextError::ImageUrlNotString),
     }
 }
@@ -83,8 +83,4 @@ fn anthropic_image_url(part: &ContentPart) -> Option<String> {
         ),
         _ => None,
     }
-}
-
-fn non_empty(text: &str) -> Option<String> {
-    (!text.is_empty()).then(|| text.to_owned())
 }
