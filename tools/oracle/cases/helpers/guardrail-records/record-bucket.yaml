@@ -1,0 +1,6 @@
+kind: helper
+name: record-bucket
+call:
+  b3664: {"function": "record", "guardrail_name": null, "event_hook": ["pre_call", "post_call"], "event_type": "pre_call", "guardrail_response": "blocked by policy", "guardrail_status": "guardrail_intervened", "start_time": 1.5, "end_time": 2.0, "duration": 0.5, "masked_entity_count": null, "guardrail_provider": null, "request_data": {"model": "m", "metadata": {"user": "u"}, "litellm_metadata": "text"}, "litellm_params": null, "model_call_params": {}}
+env: {}
+compare: {ignore: []}

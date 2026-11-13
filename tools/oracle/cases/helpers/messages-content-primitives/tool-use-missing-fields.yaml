@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-tool-use-missing-fields
+call: {"messages_content_primitives": {"operation": "tool_use_signature", "content": {}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+kind: helper
+name: openai-response-input-base-model-gate
+call:
+  openai_response_input:
+    probes:
+    - {model: my-deployment, input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}, model_info: {base_model: gpt-4o}}
+    - {model: my-deployment, input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}, model_info: {base_model: gpt-5}}
+    - {model: my-deployment, input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}, model_info: {base_model: openai/gpt-4o}}
+    - {model: my-deployment, input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}, model_info: {base_model: ''}}
+    - {model: gpt-4o, input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}, model_info: {base_model: ''}}
+    - {model: my-deployment, input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}, model_info: {base_model: 5}}
+    - {model: my-deployment, input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}, model_info: {base_model: null}}
+    - {model: my-deployment, input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}, model_info: {other: 1}}
+    - {model: my-deployment, input: hi, params: {tools: [{type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}]}, model_info: null}
+env: {}
+compare: {ignore: []}

@@ -2,10 +2,11 @@ id: B7840
 title: Python Responses types, the mock response and the response-format class helper
 description: >-
   The Python Responses functions (B7841 and B7842) return objects, and `text_format` takes a pydantic class. This task writes
-  those pieces in plain Python so the functions only move JSON. It is Python only: no Rust file changes. The wheel depends
-  only on python-dotenv, so nothing here imports pydantic or openai. Use B5657's `ResponseObject` base (read it in
-  `python/betterlite/types/utils/`) for every class below. It gives item access, `get`, `model_dump`, `__eq__` and extra
-  fields kept as attributes.
+  those pieces in Python so the functions only move JSON. It is Python only: no Rust file changes. The wheel doesn't depend
+  on openai, so nothing here imports it. Every class below is a pydantic model on `ResponseObject` (read it in
+  `python/betterlite/types/utils/`), which B9951 rebuilt on `pydantic.BaseModel`. It gives item access, `get`, `model_dump`,
+  `model_validate`, `model_json_schema` and extra fields kept as attributes. A field gets LiteLLM's type, or `JsonValue`
+  where LiteLLM's is Any or an openai class.
 
 
   Types, in `python/betterlite/types/responses/`. `main.py` follows litellm/types/responses/main.py L1-L173 and
@@ -48,9 +49,9 @@ description: >-
   ref_template=None)` returns None for None, uses the dict helper for a dict, and for a class calls `model_json_schema` on it.
   The source calls openai's `to_strict_json_schema` when `ref_template` is None and `model_json_schema(ref_template=...)`
   otherwise. The result is `{"type": "json_schema", "json_schema": {"schema": schema, "name": cls.__name__, "strict": True}}`.
-  A value that is not a class with a callable `model_json_schema` raises `TypeError(f"Unsupported response_format type -
-  {response_format}")`. The class check reads the attribute through a `typing.Protocol`, since pydantic is no dependency of the
-  wheel. openai is not one either, and no maintained crates.io or PyPI package outside openai has the function, so port
+  Any other value, a class that is not a pydantic `BaseModel` subclass included, raises `TypeError(f"Unsupported response_format type -
+  {response_format}")`. The class check is LiteLLM's: a `BaseModel` subclass passes.
+  openai is no dependency of the wheel, and no maintained crates.io or PyPI package outside openai has the function, so port
   `_ensure_strict_json_schema` and `resolve_ref` from openai/lib/_pydantic.py L35-L135 (about 70 lines, listed under
   deviations). The port covers `$defs`, `definitions`, `additionalProperties: false` on objects, `required` set to every
   property, `items`, `anyOf`, a single-entry `allOf` that is merged in, a `None` default that is dropped, and a `$ref` next to
@@ -111,19 +112,15 @@ checks:
     run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
 oracle_cases: []
 deviations:
-- what: The classes are not pydantic models, so `model_validate`, `model_fields` and `model_json_schema` are missing on them.
-  why: The wheel depends only on python-dotenv. They keep attributes, item access, `model_dump` and the defaults.
 - what: "`build_web_search_call` returns a `ResponseObject`, where LiteLLM returns openai's `ResponseFunctionWebSearch`."
   why: The wheel does not depend on the openai package. The dumped dict is the same.
 - what: The strict schema function is ported into `base_utils.py` and does not import openai.
   why: openai is not a wheel dependency, no other package carries this function, and it is about 70 lines.
-- what: "`type_to_response_format_param` accepts any class with a callable `model_json_schema`, where LiteLLM requires a pydantic `BaseModel` subclass."
-  why: The wheel cannot import pydantic. A pydantic model passes either check.
 out_of_scope:
 - litellm/types/responses/streaming_websocket.py has Protocol classes and `ResponsesWebSocketRequestDefaults` for the proxy websocket relay. No Python user code calls them at the pin, and B943 owns the websocket relay in Rust.
 - The Responses event classes and the other types in litellm/types/llms/openai.py are B167. This task builds only the four result classes above, and B167 should import them from `betterlite.types.responses`.
 - The None branch and dict branch of the Rust `type_to_response_format_param` are B2202. This file is their Python twin for callers in the wheel.
-- '`BaseLiteLLMOpenAIResponseObject` (types/llms/base.py) is B167. `ResponseObject` from B5657 stands in for it.'
+- '`BaseLiteLLMOpenAIResponseObject` (types/llms/base.py) is B167. `ResponseObject` from B5657, on pydantic since B9951, stands in for it.'
 pitfalls:
 - '`_hidden_params` must be a fresh dict per object, as `PrivateAttr(default_factory=dict)` makes it, and `DeleteResponseResult` has one too.'
 - 'The reasoning filter removes a key only when its value is None and its name is `status`, `content` or `encrypted_content`, and only for output items whose `type` is `reasoning`. Other None values stay.'

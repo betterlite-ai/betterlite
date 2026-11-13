@@ -1,0 +1,128 @@
+id: B9951
+title: Wheel response objects on pydantic BaseModel
+description: >-
+  The response classes in `crates/betterlite-python/python/betterlite/types/utils/` (B5657 and B5658) run on a hand-made
+  field holder. `values.py` checks values against annotations with `get_origin`, `get_args` and eight casts, and `base.py`
+  gives `ResponseObject` pydantic's surface by hand, with `RootModel`, validators, `Base64Str` and `AwareDatetime` rebuilt
+  next to it. The reason was a planning note that pydantic is too heavy for the wheel. Max decided on 2026-11-13 that the
+  wheel depends on pydantic and that these classes are pydantic models, as LiteLLM's are. Rebuild them on
+  `pydantic.BaseModel`.
+
+
+  Add `pydantic==2.14.1` to the dependencies in `crates/betterlite-python/pyproject.toml`. That is the version
+  tools/oracle/litellm/uv.lock pins, so the test environment, which installs the wheel next to LiteLLM, keeps one pydantic.
+
+
+  `ResponseObject` becomes a `BaseModel` with `extra="allow"`, so a provider's extra fields stay attributes and reach
+  `model_dump`, as on LiteLLM's `OpenAIObject`. Give it the item access, `get`, `__contains__`, `json` and `dict` that
+  LiteLLM's classes define, and `SafeAttributeModel.__delattr__` (types/utils.py L126-L146), where deleting a missing
+  attribute does nothing. Each class keeps its fields, defaults and the `__init__` logic B5657 and B5658 ported, now
+  written the way LiteLLM writes it: build the parameters, call `super().__init__(**params)`, then set private attributes
+  and delete the fields LiteLLM deletes. Hidden params, response headers and `_response_ms` become `PrivateAttr`s. Response
+  classes still default `model_dump` to `exclude_unset=True` (L2096-L2100).
+
+
+  Delete `values.py`. `betterlite.types.utils` keeps exporting `JsonValue`, `ValidationError`, `field_validator`,
+  `model_validator`, `RootModel`, `Base64Str` and `AwareDatetime`, now pydantic's own, because B7920 to B7954 and other
+  open tasks import them from there. `StoredValue` and `ModelObject` go; a field gets the type LiteLLM gives it, or
+  `JsonValue` where LiteLLM's type is `Any` or an openai class the wheel doesn't have.
+
+
+  Read every entry in docs/deviations/B5657.yaml and docs/deviations/B5658.yaml. Delete each one the pydantic base makes
+  untrue (no BaseModel, no `model_validate`, `model_fields` or `model_json_schema`, the partial value check, the error
+  wording, the flat include and exclude selectors) and keep the rest. The kept fixes of LiteLLM bugs, such as
+  `ModelResponse` keeping the hidden params it was built with, stay fixed. List a new difference in
+  docs/deviations/B9951.yaml.
+
+
+  Take every `crates/betterlite-python/` path off the `ignores` lists of
+  .ast-grep/python/rules/no-match-wildcard.yml and .ast-grep/python/rules/no-own-json-alias.yml, and fix what the two rules
+  then find: the bare-name catch-alls in the class modules and the test files, and the `Json` alias in
+  tests/test_package.py.
+
+
+  The existing tests compare each class with LiteLLM's through `model_dump()` and keep passing. A test that pinned a
+  deviation this task deletes now checks LiteLLM's behavior instead. Add tests named `pydantic_isinstance`,
+  `pydantic_model_validate`, `pydantic_model_fields` and `pydantic_json_schema`: a `ModelResponse`, a `Message` and an
+  `EmbeddingResponse` are `pydantic.BaseModel` instances, `model_validate` of a dump gives an equal object, `model_fields`
+  holds the same names as on LiteLLM's class, and `model_json_schema()` returns a schema whose properties are those names.
+scope:
+  paths:
+  - crates/betterlite-python/pyproject.toml
+  - crates/betterlite-python/python/betterlite/types/__init__.py
+  - crates/betterlite-python/python/betterlite/types/completion.py
+  - crates/betterlite-python/python/betterlite/types/utils/**
+  - crates/betterlite-python/tests/test_chat_response_objects.py
+  - crates/betterlite-python/tests/test_other_response_objects.py
+  - crates/betterlite-python/tests/test_package.py
+  - docs/deviations/B5657.yaml
+  - docs/deviations/B5658.yaml
+  - .ast-grep/python/rules/no-match-wildcard.yml
+  - .ast-grep/python/rules/no-own-json-alias.yml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L126-L146
+  why: SafeAttributeModel, the delete that ignores a missing attribute.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1084-L1730
+  why: Tool call, message, delta and choice classes as pydantic models.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1732-L2280
+  why: Usage and the response classes, with the exclude_unset default and the private attributes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2280-L2830
+  why: The embedding, text, image, transcription and smaller classes B5658 ported.
+dod:
+- text: The wheel depends on pydantic 2.14.1, and values.py is gone.
+  proof: [dependency]
+- text: The chat classes give the same attribute and item access, dumps, tool calls, choices and usage as LiteLLM.
+  proof: [chat-objects]
+- text: The embedding, text, image, transcription and smaller classes give the same values as LiteLLM.
+  proof: [other-objects]
+- text: The package imports and its version, cost map and model helpers still work.
+  proof: [package]
+- text: Response objects are pydantic models with LiteLLM's `model_validate`, `model_fields` and `model_json_schema`.
+  proof: [pydantic-models]
+- text: No wheel file is on either ast-grep ignore list, and the wheel's types package has no cast, type ignore or pyright ignore.
+  proof: [ignore-lists, no-suppressions, hooks]
+- text: The wheel passes ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: dependency
+    why: The wheel still carries its own validator or pins another pydantic than the test environment.
+    run: test ! -e crates/betterlite-python/python/betterlite/types/utils/values.py && grep -q -F '"pydantic==2.14.1"' crates/betterlite-python/pyproject.toml
+  - id: chat-objects
+    why: A chat response differs from LiteLLM's after the move.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_chat_response_objects.py
+  - id: other-objects
+    why: An embedding, text, image, transcription or small response differs from LiteLLM's after the move.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_other_response_objects.py
+  - id: package
+    why: The package no longer imports or its module helpers broke.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_package.py
+  - id: pydantic-models
+    why: A caller's isinstance check, model_validate or schema call fails on betterlite's objects.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_chat_response_objects.py crates/betterlite-python/tests/test_other_response_objects.py -k pydantic_
+  - id: ignore-lists
+    why: A wheel file still skips the catch-all or alias rule.
+    run: '! grep -q -F crates/betterlite-python/ .ast-grep/python/rules/no-match-wildcard.yml .ast-grep/python/rules/no-own-json-alias.yml'
+  - id: no-suppressions
+    why: The types package still works around its own types with casts or ignores.
+    run: '! grep -r -n -E "(^|[^[:alnum:]_])cast\(|#[[:space:]]*(type:[[:space:]]*ignore|pyright:[[:space:]]*ignore)" crates/betterlite-python/python/betterlite/types'
+  - id: python-lint
+    why: A loose type in the base spreads to every response.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The Responses API types are B7840, and the typed parts of litellm/types/** are B7920 to B7954; they wait for this task and build on its base.
+- The Rust side of the wheel in crates/betterlite-python/src does not change.
+- The other open Python tasks that say the wheel has no pydantic get their text fixed by the architect, not here.
+pitfalls:
+- A pydantic model rejects a plain attribute set before `super().__init__()`. LiteLLM builds a params dict, calls `super().__init__(**params)` and sets private attributes after it; follow that order.
+- mypy reads pydantic models through pydantic's plugin with `init_typed` and `init_forbid_extra` (tools/oracle/litellm/mypy.toml). A class with LiteLLM's custom `__init__` keeps that signature, so type its parameters instead of taking untyped keyword arguments.
+- 'pydantic stores extra fields in `__pydantic_extra__`, and `model_fields_set` decides what `exclude_unset` keeps. A field LiteLLM deletes when None (`Message.audio`, `Choices.logprobs`) has to leave both, as `delattr` on a LiteLLM object does.'
+- The wheel's pin must equal uv.lock's pydantic. A different pin makes uv install a second pydantic in the `--with` layer, and the LiteLLM objects the tests compare with then come from another version.
+review_level: standard
+budget:
+  max_changed_lines: 3000
+  max_new_expects: 0

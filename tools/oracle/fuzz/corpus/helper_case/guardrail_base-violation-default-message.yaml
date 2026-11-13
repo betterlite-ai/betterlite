@@ -1,0 +1,6 @@
+kind: helper
+name: violation-default-message
+call:
+  b5471: {"function": "violation", "template": "Blocked: {default_message}", "default": "fallback", "context": {}}
+env: {}
+compare: {ignore: []}
