@@ -1,0 +1,9 @@
+kind: helper
+name: remote-no-instance-dot
+call:
+  b8042:
+    op: load
+    value: s3://bucket/loggers/custom_callbacks
+    config_file_path: config.yaml
+env: {}
+compare: {ignore: []}

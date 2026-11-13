@@ -10,7 +10,7 @@ description: >-
   `custom_logger.py` holds the class, `custom_batch_logger.py` holds the batch class, and `custom_logger_types.py` holds the
   small types from litellm/types/integrations/custom_logger.py (`StandardCustomLoggerInitParams`,
   `AgenticLoopRequestPatch`, `AgenticLoopSafetyError` and the module constants it defines). Those two types are pydantic
-  models in LiteLLM. The wheel depends only on python-dotenv, so write them as plain classes or dataclasses with the same
+  models in LiteLLM, and they are pydantic models here too, with the same
   field names and defaults. Then add re-export modules at LiteLLM's paths: `python/betterlite/integrations/custom_logger.py`,
   `python/betterlite/integrations/custom_batch_logger.py` and `python/betterlite/types/integrations/custom_logger.py`. A
   re-export module only imports names from `_integrations` and lists them in `__all__`. Do not create
@@ -98,8 +98,6 @@ checks:
       uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
 oracle_cases: []
 deviations:
-- what: The init params and loop patch types are plain classes, not pydantic models.
-  why: The wheel depends only on python-dotenv. Field names and defaults stay the same.
 - what: This task has no helper oracle cases.
   why: The test imports both packages and compares them, and that covers more than a helper call would.
 out_of_scope:

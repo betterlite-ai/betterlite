@@ -1,14 +1,14 @@
 id: B3667
 milestone: M6 guardrails
 title: Chat guardrail extraction and block framing
-status: todo
+status: done
 depends_on: [B3661, B3663]
 file: tasks/B3667-chat-guardrail-projections.yaml
 covers:
   - "litellm/llms/openai/chat/guardrail_translation/handler.py"
 parent: B104
 split_from: B104
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1484

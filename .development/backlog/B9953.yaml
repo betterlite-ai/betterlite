@@ -1,0 +1,13 @@
+id: B9953
+milestone: R1 cleanup and refactoring
+title: Oracle probe protocol and registry off the legacy list
+status: todo
+depends_on: []
+file: tasks/B9953-oracle-probe-protocol-strict.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
