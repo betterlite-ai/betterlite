@@ -7,7 +7,7 @@ from typing_extensions import override
 
 from probes.protocol import Operation, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 
 PLAN_MODE_FLOOR: Final = "COMPLEX"
 
