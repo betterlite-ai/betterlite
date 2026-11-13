@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-resources-seed-list
+call:
+  openai_response_resources:
+    list_default_limit_order:
+      probes:
+        - {endpoint: list, response_id: resp_1, api_base: 'https://api.openai.com/v1', limit: 5, order: asc}
+env: {}
+compare: {ignore: []}
