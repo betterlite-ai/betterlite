@@ -1,0 +1,22 @@
+kind: helper
+name: batch_required_fields_fail
+call:
+  auxiliary_repository:
+    json_strings:
+      - name: json_string_not_json
+        json: 'not json'
+      - name: json_string_null
+        json: 'null'
+      - name: json_string_missing_status
+        json: '{"id":"batch_1","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"file_1","object":"batch"}'
+    objects:
+      - name: object_empty
+        object: {}
+      - name: object_missing_id
+        object: {"completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"file_1","object":"batch","status":"validating"}
+      - name: object_unknown_status
+        object: {"id":"batch_4","completion_window":"24h","created_at":1,"endpoint":"/v1/chat/completions","input_file_id":"file_1","object":"batch","status":"done"}
+      - name: object_wrong_created_at_type
+        object: {"id":"batch_5","completion_window":"24h","created_at":"one","endpoint":"/v1/chat/completions","input_file_id":"file_1","object":"batch","status":"validating"}
+env: {}
+compare: {ignore: []}
