@@ -1,0 +1,17 @@
+kind: helper
+name: openai-transcription-whisper-endpoint-auth
+call:
+  openai_transcription:
+    function: auth
+    probes:
+      - model: whisper-1
+        api_key: sk-explicit
+        environment_api_key: sk-environment
+        headers: {Authorization: 'Bearer caller'}
+      - model: whisper-1
+        environment_api_key: sk-environment
+      - model: whisper-1
+        environment_api_key: sk-environment
+        headers: {Authorization: 'Bearer caller', X-Trace: trace-1}
+env: {OPENAI_API_KEY: sk-environment}
+compare: {ignore: []}

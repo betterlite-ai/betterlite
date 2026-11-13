@@ -1,0 +1,10 @@
+kind: helper
+name: openai-transcription-seed-params
+call:
+  openai_transcription:
+    function: params
+    probes:
+      - model: gpt-4o-transcribe
+        non_default_params: {include: [logprobs], language: en}
+env: {}
+compare: {ignore: []}

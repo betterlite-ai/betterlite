@@ -1,0 +1,12 @@
+kind: helper
+name: openai-transcription-seed-auth
+call:
+  openai_transcription:
+    function: auth
+    probes:
+      - model: whisper-1
+        api_key: sk-seed
+        environment_api_key: sk-seed-env
+        headers: {Authorization: 'Bearer caller'}
+env: {OPENAI_API_KEY: sk-seed-env}
+compare: {ignore: []}
