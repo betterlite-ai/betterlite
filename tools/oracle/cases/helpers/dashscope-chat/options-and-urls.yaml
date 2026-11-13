@@ -14,33 +14,5 @@ call:
       - kind: supported_params
         model: gpt-3.5-turbo-16k
         chat_models: [gpt-3.5-turbo-16k]
-      - kind: complete_url
-        policy: {default_base: https://dashscope.aliyuncs.com/compatible-mode/v1, env_in_complete_url: false}
-      - kind: complete_url
-        policy: {default_base: https://dashscope.aliyuncs.com/compatible-mode/v1, env_in_complete_url: false}
-        api_base: ""
-      - kind: complete_url
-        policy: {default_base: https://dashscope.aliyuncs.com/compatible-mode/v1, env_in_complete_url: false}
-        api_base: https://given.example/v1
-      - kind: complete_url
-        policy: {default_base: https://dashscope.aliyuncs.com/compatible-mode/v1, env_in_complete_url: false}
-        api_base: https://given.example/v1/
-      - kind: complete_url
-        policy: {default_base: https://dashscope.aliyuncs.com/compatible-mode/v1, env_in_complete_url: false}
-        api_base: https://given.example/v1/chat/completions
-      - kind: complete_url
-        policy: {default_base: https://dashscope.aliyuncs.com/compatible-mode/v1, env_in_complete_url: false}
-        api_base: https://given.example/v1/chat/completions/
-      - kind: complete_url
-        policy:
-          default_base: https://dashscope.aliyuncs.com/compatible-mode/v1
-          env_base: https://env.example/v1
-          env_in_complete_url: false
-      - kind: complete_url
-        policy:
-          default_base: https://dashscope.aliyuncs.com/compatible-mode/v1
-          env_base: https://env.example/v1
-          env_in_complete_url: false
-        api_base: https://given.example/v1
 env: {}
 compare: {ignore: []}

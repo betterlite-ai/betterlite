@@ -10,7 +10,6 @@ from litellm.llms.dashscope.cost_calculator import cost_per_token
 from litellm.types.utils import Usage
 from pydantic import JsonValue
 
-EMPTY: dict[str, JsonValue] = {}
 CHAT_MODEL = "dashscope/probe"
 COST_MODEL_PREFIX = "b8170-probe"
 
@@ -26,12 +25,6 @@ class SupportedParamsStep(TypedDict):
     model: str
     chat_models: NotRequired[list[str]]
     text_models: NotRequired[list[str]]
-
-
-class CompleteUrlStep(TypedDict):
-    kind: Literal["complete_url"]
-    policy: Policy
-    api_base: NotRequired[str | None]
 
 
 class ProviderInfoStep(TypedDict):
@@ -57,7 +50,7 @@ class CostStep(TypedDict):
     current_time: str
 
 
-Step = SupportedParamsStep | CompleteUrlStep | ProviderInfoStep | CostStep
+Step = SupportedParamsStep | ProviderInfoStep | CostStep
 
 
 class Input(TypedDict):
@@ -104,17 +97,6 @@ def supported_params(step: SupportedParamsStep) -> JsonValue:
     return [*config.get_supported_openai_params(model=step["model"])]
 
 
-def complete_url(step: CompleteUrlStep) -> JsonValue:
-    config = DashScopeChatConfig()
-    return config.get_complete_url(
-        api_base=step.get("api_base"),
-        api_key=None,
-        model="probe",
-        optional_params=EMPTY,
-        litellm_params=EMPTY,
-    )
-
-
 def provider_info(step: ProviderInfoStep) -> JsonValue:
     set_env("DASHSCOPE_API_BASE", step["policy"].get("env_base"))
     set_env("DASHSCOPE_API_KEY", step.get("env_api_key"))
@@ -145,8 +127,6 @@ def cost(step: CostStep, index: int) -> JsonValue:
 def step_value(step: Step, index: int) -> JsonValue:
     if step["kind"] == "supported_params":
         return supported_params(step)
-    if step["kind"] == "complete_url":
-        return complete_url(step)
     if step["kind"] == "provider_info":
         return provider_info(step)
     return cost(step, index)

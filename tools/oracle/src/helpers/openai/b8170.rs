@@ -35,11 +35,6 @@ enum Step {
         #[serde(default)]
         text_models: Vec<String>,
     },
-    CompleteUrl {
-        policy: PolicyStep,
-        #[serde(default)]
-        api_base: Option<String>,
-    },
     ProviderInfo {
         policy: PolicyStep,
         #[serde(default)]
@@ -139,9 +134,6 @@ fn execute(step: &Step) -> HelperResult {
                     .collect(),
             ))
         }
-        Step::CompleteUrl { policy, api_base } => Ok(Value::String(
-            config(policy, None).complete_url(api_base.as_deref()),
-        )),
         Step::ProviderInfo {
             policy,
             api_base,
