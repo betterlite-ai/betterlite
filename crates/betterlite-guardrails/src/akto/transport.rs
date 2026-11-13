@@ -69,10 +69,7 @@ impl AktoMirroring {
         Ok(AktoAnswer { status, body })
     }
 
-    pub fn handle_guardrail_response(
-        &self,
-        answer: &AktoAnswer,
-    ) -> Result<GuardrailVerdict, AktoError> {
+    pub fn handle_guardrail_response(answer: &AktoAnswer) -> Result<GuardrailVerdict, AktoError> {
         if answer.status != StatusCode::OK {
             tracing::error!(
                 status = answer.status.as_u16(),

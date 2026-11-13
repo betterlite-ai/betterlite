@@ -178,8 +178,7 @@ fn parse_response(input: &Input) -> crate::helpers::HelperResult {
     let status = StatusCode::from_u16(input.answer.status.unwrap_or(200))
         .map_err(|error| failure("AktoError", None, error.to_string()))?;
     let body = answer_body(input)?.into_bytes();
-    let verdict = guardrail
-        .handle_guardrail_response(&AktoAnswer { status, body })
+    let verdict = AktoMirroring::handle_guardrail_response(&AktoAnswer { status, body })
         .map_err(|error| failure("AktoError", None, error.to_string()))?;
     Ok(json!({"allowed": verdict.allowed, "reason": verdict.reason}))
 }

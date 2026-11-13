@@ -505,9 +505,7 @@ fn akto_guardrail_response_parses_the_verdict(
         status: StatusCode::OK,
         body: body.as_bytes().to_vec(),
     };
-    let verdict = guardrail()
-        .handle_guardrail_response(&answer)
-        .expect("verdict");
+    let verdict = AktoMirroring::handle_guardrail_response(&answer).expect("verdict");
     assert_eq!(verdict.allowed, allowed);
     assert_eq!(verdict.reason, reason);
 }
@@ -522,9 +520,7 @@ fn akto_guardrail_response_permits_non_object_json(#[case] body: &str) {
         status: StatusCode::OK,
         body: body.as_bytes().to_vec(),
     };
-    let verdict = guardrail()
-        .handle_guardrail_response(&answer)
-        .expect("verdict");
+    let verdict = AktoMirroring::handle_guardrail_response(&answer).expect("verdict");
     assert!(verdict.allowed);
     assert!(verdict.reason.is_empty());
 }
@@ -538,9 +534,7 @@ fn akto_guardrail_response_rejects_a_non_200_status(#[case] status: StatusCode) 
         status,
         body: Vec::new(),
     };
-    let error = guardrail()
-        .handle_guardrail_response(&answer)
-        .expect_err("http status");
+    let error = AktoMirroring::handle_guardrail_response(&answer).expect_err("http status");
     assert!(matches!(error, AktoError::HttpStatus { status: reported } if reported == status));
 }
 
@@ -550,9 +544,7 @@ fn akto_guardrail_response_rejects_malformed_json() {
         status: StatusCode::OK,
         body: b"not json".to_vec(),
     };
-    let error = guardrail()
-        .handle_guardrail_response(&answer)
-        .expect_err("response json");
+    let error = AktoMirroring::handle_guardrail_response(&answer).expect_err("response json");
     assert!(matches!(&error, AktoError::ResponseJson { .. }));
 }
 
@@ -562,9 +554,7 @@ fn akto_guardrail_response_rejects_a_non_boolean_allowed() {
         status: StatusCode::OK,
         body: br#"{"data":{"guardrailsResult":{"Allowed":"false"}}}"#.to_vec(),
     };
-    let error = guardrail()
-        .handle_guardrail_response(&answer)
-        .expect_err("response field");
+    let error = AktoMirroring::handle_guardrail_response(&answer).expect_err("response field");
     assert!(
         matches!(error, AktoError::ResponseField { field } if field == "data.guardrailsResult.Allowed")
     );
@@ -576,9 +566,7 @@ fn akto_guardrail_response_rejects_a_non_text_reason() {
         status: StatusCode::OK,
         body: br#"{"data":{"guardrailsResult":{"Allowed":false,"Reason":7}}}"#.to_vec(),
     };
-    let error = guardrail()
-        .handle_guardrail_response(&answer)
-        .expect_err("response field");
+    let error = AktoMirroring::handle_guardrail_response(&answer).expect_err("response field");
     assert!(
         matches!(error, AktoError::ResponseField { field } if field == "data.guardrailsResult.Reason")
     );
@@ -771,9 +759,7 @@ async fn akto_guardrail_send_request_parses_the_verdict_after_sending() {
         .send_request(false, true, &payload)
         .await
         .expect("answer");
-    let verdict = guardrail
-        .handle_guardrail_response(&answer)
-        .expect("verdict");
+    let verdict = AktoMirroring::handle_guardrail_response(&answer).expect("verdict");
     assert!(verdict.allowed);
     assert!(verdict.reason.is_empty());
     let recorded = captures.lock().expect("captures").pop().expect("request");

@@ -104,7 +104,7 @@ pub(super) fn send(input: &Input, fire_and_forget: bool) -> crate::helpers::Help
     let calls = mock
         .finish()
         .map_err(|error| failure("MockError", None, error.to_string()))?;
-    report(&guardrail, &calls, answer)
+    report(&calls, answer)
 }
 
 fn deliver(
@@ -136,7 +136,6 @@ fn deliver(
 }
 
 fn report(
-    guardrail: &AktoMirroring,
     calls: &[ProviderCall],
     answer: Option<Result<AktoAnswer, AktoError>>,
 ) -> crate::helpers::HelperResult {
@@ -147,8 +146,7 @@ fn report(
     match answer {
         None => Ok(json!({"request": request, "succeeded": true})),
         Some(Ok(answer)) => {
-            let verdict = guardrail
-                .handle_guardrail_response(&answer)
+            let verdict = AktoMirroring::handle_guardrail_response(&answer)
                 .map_err(|error| failure("AktoError", None, error.to_string()))?;
             Ok(json!({"request": request, "allowed": verdict.allowed, "reason": verdict.reason}))
         }
