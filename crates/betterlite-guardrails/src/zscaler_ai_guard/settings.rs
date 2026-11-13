@@ -35,67 +35,56 @@ impl Settings {
     where
         L: EnvironmentLookup,
     {
+        let url = args
+            .api_base
+            .clone()
+            .or_else(|| {
+                environment
+                    .lookup(URL_ENV)
+                    .filter(|value| !value.is_empty())
+            })
+            .unwrap_or_else(|| DEFAULT_URL.to_owned());
+        let api_key = args.api_key.clone().or_else(|| {
+            environment
+                .lookup(API_KEY_ENV)
+                .filter(|value| !value.is_empty())
+                .map(SecretString::from)
+        });
+        let policy_id = if let Some(id) = args.policy_id {
+            id
+        } else {
+            let text = environment.lookup(POLICY_ID_ENV).unwrap_or_default();
+            betterlite_env::number::<i64>(POLICY_ID_ENV, &text)
+                .map_err(|source| ZscalerAiGuardError::PolicyId { source })?
+                .unwrap_or(DEFAULT_POLICY_ID)
+        };
         Ok(Self {
-            url: resolve_url(args, environment),
-            api_key: resolve_api_key(args, environment),
-            policy_id: resolve_policy_id(args, environment)?,
-            send: SendFlags {
-                alias: resolve_flag(args.send_user_api_key_alias, environment, SEND_ALIAS_ENV)?,
-                user_id: resolve_flag(
-                    args.send_user_api_key_user_id,
-                    environment,
-                    SEND_USER_ID_ENV,
-                )?,
-                team_id: resolve_flag(
-                    args.send_user_api_key_team_id,
-                    environment,
-                    SEND_TEAM_ID_ENV,
-                )?,
-            },
+            url,
+            api_key,
+            policy_id,
+            send: resolve_send(args, environment)?,
             timeout: resolve_timeout(args.timeout)?,
         })
     }
 }
 
-fn resolve_url<L>(args: &ZscalerArgs, environment: &L) -> String
+fn resolve_send<L>(args: &ZscalerArgs, environment: &L) -> Result<SendFlags, ZscalerAiGuardError>
 where
     L: EnvironmentLookup,
 {
-    args.api_base
-        .clone()
-        .or_else(|| {
-            environment
-                .lookup(URL_ENV)
-                .filter(|value| !value.is_empty())
-        })
-        .unwrap_or_else(|| DEFAULT_URL.to_owned())
-}
-
-fn resolve_api_key<L>(args: &ZscalerArgs, environment: &L) -> Option<SecretString>
-where
-    L: EnvironmentLookup,
-{
-    args.api_key.clone().or_else(|| {
-        environment
-            .lookup(API_KEY_ENV)
-            .filter(|value| !value.is_empty())
-            .map(SecretString::from)
+    Ok(SendFlags {
+        alias: resolve_flag(args.send_user_api_key_alias, environment, SEND_ALIAS_ENV)?,
+        user_id: resolve_flag(
+            args.send_user_api_key_user_id,
+            environment,
+            SEND_USER_ID_ENV,
+        )?,
+        team_id: resolve_flag(
+            args.send_user_api_key_team_id,
+            environment,
+            SEND_TEAM_ID_ENV,
+        )?,
     })
-}
-
-fn resolve_policy_id<L>(args: &ZscalerArgs, environment: &L) -> Result<i64, ZscalerAiGuardError>
-where
-    L: EnvironmentLookup,
-{
-    match args.policy_id {
-        Some(id) => Ok(id),
-        None => match environment.lookup(POLICY_ID_ENV) {
-            Some(text) => Ok(betterlite_env::number::<i64>(POLICY_ID_ENV, &text)
-                .map_err(|source| ZscalerAiGuardError::PolicyId { source })?
-                .unwrap_or(DEFAULT_POLICY_ID)),
-            None => Ok(DEFAULT_POLICY_ID),
-        },
-    }
 }
 
 fn resolve_flag<L>(
@@ -106,15 +95,15 @@ fn resolve_flag<L>(
 where
     L: EnvironmentLookup,
 {
-    match explicit {
-        Some(value) => Ok(value),
-        None => match environment.lookup(name) {
-            Some(text) => Ok(betterlite_env::flag(name, &text)
-                .map_err(|source| ZscalerAiGuardError::SendFlag { source })?
-                .unwrap_or(false)),
-            None => Ok(false),
-        },
+    if let Some(value) = explicit {
+        return Ok(value);
     }
+    let Some(text) = environment.lookup(name) else {
+        return Ok(false);
+    };
+    let parsed = betterlite_env::flag(name, &text)
+        .map_err(|source| ZscalerAiGuardError::SendFlag { source })?;
+    Ok(parsed.unwrap_or(false))
 }
 
 pub(crate) fn resolve_timeout(seconds: Option<f64>) -> Result<Duration, ZscalerAiGuardError> {
