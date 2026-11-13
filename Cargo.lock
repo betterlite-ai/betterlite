@@ -1130,7 +1130,9 @@ dependencies = [
  "betterlite-db",
  "betterlite-error",
  "betterlite-models",
+ "betterlite-paths",
  "betterlite-redis",
+ "betterlite-secrets",
  "chrono",
  "hex",
  "lru",
@@ -1159,7 +1161,9 @@ name = "betterlite-auth-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-auth",
+ "betterlite-secrets",
  "libfuzzer-sys",
+ "secrecy",
 ]
 
 [[package]]
@@ -1501,11 +1505,13 @@ dependencies = [
  "betterlite-context",
  "betterlite-env",
  "betterlite-error",
+ "betterlite-foundry",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-paths",
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-tokenizer",
@@ -2279,6 +2285,7 @@ dependencies = [
  "betterlite-ocr",
  "betterlite-openai",
  "betterlite-openapi",
+ "betterlite-oracle-core-ops",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-redact",
  "betterlite-oracle-server",
@@ -2288,6 +2295,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-proxy",
+ "betterlite-pyhost",
  "betterlite-rag",
  "betterlite-rate-limit",
  "betterlite-redact",
@@ -2320,6 +2328,7 @@ dependencies = [
  "opentelemetry-http",
  "opentelemetry_sdk",
  "percent-encoding",
+ "pyo3",
  "quick-xml",
  "rand 0.10.3",
  "redis",
@@ -2345,6 +2354,48 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ulid",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "betterlite-oracle-core-ops"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.23.1",
+ "betterlite-anthropic",
+ "betterlite-auth",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-core",
+ "betterlite-error",
+ "betterlite-http",
+ "betterlite-logging",
+ "betterlite-mcp",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-oracle",
+ "betterlite-oracle-helper-api",
+ "betterlite-provider",
+ "betterlite-redact",
+ "betterlite-tokenizer",
+ "betterlite-transcribe",
+ "chrono",
+ "hex",
+ "indexmap 2.14.2",
+ "jiff",
+ "rand 0.10.3",
+ "reqwest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
 ]
@@ -2582,6 +2633,7 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-env",
  "betterlite-error",
  "betterlite-http",
@@ -2664,6 +2716,14 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "betterlite-pyhost-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-pyhost",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -2871,11 +2931,14 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-core",
  "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
+ "betterlite-openai",
+ "betterlite-prompts",
  "betterlite-redact",
  "chrono",
  "hex",

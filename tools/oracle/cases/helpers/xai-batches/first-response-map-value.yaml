@@ -1,0 +1,12 @@
+kind: helper
+name: first-response-map-value
+call:
+  xai_batches:
+    operation: jsonl
+    calls:
+      - results:
+          - {batch_request_id: r1, batch_result: {response: {chat_get_completion: {id: "chatcmpl-1", object: "chat.completion"}, other_endpoint: {id: "ignored"}}}}
+          - {batch_request_id: r2, batch_result: {response: {responses: {id: "resp-1"}}}}
+          - {batch_request_id: r3, batch_result: {response: {}, error: {code: 5, message: "empty map"}}}
+env: {}
+compare: {ignore: []}

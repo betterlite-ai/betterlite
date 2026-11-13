@@ -1,0 +1,15 @@
+kind: helper
+name: jwt-claims-seed
+call:
+  jwt_claims:
+    scenarios:
+      - settings: {team_id_jwt_field: team.id, team_ids_jwt_field: teams, user_id_jwt_field: sub}
+        trusted_issuers: [https://idp.example]
+        claims: {_litellm_jwt_issuer: https://idp.example, _litellm_team_id: trusted-team, teams: [team-a, team-b], sub: user-1}
+        default_value: fallback
+        valid_user_email: null
+        leeway: 0
+    tokens:
+      - "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1c2VyLTEifQ."
+env: {}
+compare: {ignore: []}

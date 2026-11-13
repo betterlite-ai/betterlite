@@ -2,7 +2,7 @@ id: B7936
 milestone: M12 python
 title: Python types for guardrail hooks tool_permission to zscaler_ai_guard and guardrail_base_init
 status: todo
-depends_on: [B5657, B7930, B7932]
+depends_on: [B5657, B7930, B7932, B9951]
 file: tasks/B7936-types-guardrail-hooks-e.yaml
 covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py"

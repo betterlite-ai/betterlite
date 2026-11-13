@@ -2,7 +2,7 @@ id: B7941
 milestone: M12 python
 title: Python types for Google Interactions (types/interactions/generated.py, 102 classes)
 status: todo
-depends_on: [B5657, B7929]
+depends_on: [B5657, B7929, B9951]
 file: tasks/B7941-types-interactions-generated.yaml
 covers:
   - "litellm/types/interactions/**"

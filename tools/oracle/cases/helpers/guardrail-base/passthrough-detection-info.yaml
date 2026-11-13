@@ -1,0 +1,6 @@
+kind: helper
+name: passthrough-detection-info
+call:
+  b5471: {"function": "passthrough", "guardrail_name": "g", "message": "nope", "request_data": {"model": "m"}, "detection_info": {"score": 1}}
+env: {}
+compare: {ignore: []}

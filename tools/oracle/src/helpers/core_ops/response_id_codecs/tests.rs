@@ -1,14 +1,20 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
+use betterlite_oracle::case::helper::{HelperCase, validate_helper};
+use serde_json::Value;
+
+#[derive(serde::Deserialize)]
+struct Call {
+    call: BTreeMap<String, Value>,
+}
 
 #[test]
 fn replays_the_response_id_codecs_helper_cases() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../fuzz/corpus/helper_case");
     let seeds: Vec<_> = fs::read_dir(corpus)
         .expect("helper corpus should exist")
         .filter_map(Result::ok)
@@ -22,13 +28,13 @@ fn replays_the_response_id_codecs_helper_cases() {
         .collect();
     assert!(!seeds.is_empty());
     assert!(seeds.iter().all(|source| {
-        let case = serde_saphyr::from_str::<HelperCase>(source).expect("seed should parse");
-        serde_saphyr::from_str(source)
+        let call: Call = serde_saphyr::from_str(source).expect("seed should parse");
+        serde_saphyr::from_str::<HelperCase>(source)
             .map_err(|error| error.to_string())
             .and_then(|parsed| {
                 validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
             })
             .is_ok()
-            && case.call.operation == "response_id_codecs"
+            && call.call.contains_key("response_id_codecs")
     }));
 }

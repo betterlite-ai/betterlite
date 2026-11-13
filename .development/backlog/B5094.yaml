@@ -1,5 +1,5 @@
 id: B5094
-milestone: M0 foundation
+milestone: R1 cleanup and refactoring
 title: Clear the legacy lists of the one-line, impl Trait and into rules
 status: done
 depends_on: []

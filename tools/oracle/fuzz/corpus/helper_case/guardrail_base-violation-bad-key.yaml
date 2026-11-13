@@ -1,0 +1,6 @@
+kind: helper
+name: violation-bad-key
+call:
+  b5471: {"function": "violation", "template": "{missing} blocked", "default": "fallback", "context": {}}
+env: {}
+compare: {ignore: []}
