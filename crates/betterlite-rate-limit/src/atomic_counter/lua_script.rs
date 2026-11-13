@@ -1,7 +1,7 @@
 mod tests;
 
 // ast-grep-ignore: no-long-names
-pub const CHECK_AND_INCREMENT_BY_N_SCRIPT: &str = r#"
+pub const CHECK_AND_INCREMENT_BY_N_SCRIPT: &str = "
 -- Atomic check-and-increment-by-N across one or more descriptors.
 -- All-or-nothing: if any descriptor would exceed its limit, no counter is
 -- modified.
@@ -100,4 +100,4 @@ for i = 1, descriptor_count do
 end
 
 return results
-"#;
+";

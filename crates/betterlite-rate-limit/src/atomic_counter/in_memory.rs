@@ -63,7 +63,7 @@ pub async fn atomic_check_and_increment_in_memory(
     Ok(apply_increments(cache, per_counter_meta, &states, now).await)
 }
 
-fn over_limit(meta: &AtomicCounterMeta, current: i64) -> bool {
+const fn over_limit(meta: &AtomicCounterMeta, current: i64) -> bool {
     if meta.increment > 0 {
         current.saturating_add(meta.increment) > meta.current_limit
     } else {
@@ -107,11 +107,6 @@ async fn apply_increments(
     let mut windows = BTreeSet::new();
     for (meta, state) in per_counter_meta.iter().zip(states) {
         let new_counter = if state.window_expired {
-            meta.increment
-        } else {
-            state.current.saturating_add(meta.increment)
-        };
-        if state.window_expired {
             cache
                 .set(
                     &meta.window_key,
@@ -120,7 +115,10 @@ async fn apply_increments(
                     true,
                 )
                 .await;
-        }
+            meta.increment
+        } else {
+            state.current.saturating_add(meta.increment)
+        };
         cache
             .set(
                 &meta.counter_key,

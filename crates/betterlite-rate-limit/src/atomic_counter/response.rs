@@ -79,8 +79,8 @@ fn success_counters(
     let mut statuses = Vec::with_capacity(per_counter_meta.len());
     let mut windows = BTreeSet::new();
     for (index, meta) in per_counter_meta.iter().enumerate() {
-        let counter_position = 1 + index * 2;
-        let window_position = 2 + index * 2;
+        let counter_position = index.saturating_mul(2).saturating_add(1);
+        let window_position = index.saturating_mul(2).saturating_add(2);
         let new_counter = counter_integer(
             &format!("reply[{counter_position}]"),
             element(raw, counter_position)?,

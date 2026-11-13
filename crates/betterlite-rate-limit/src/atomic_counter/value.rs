@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use crate::limiter_records::CacheCounterValue;
 
 mod tests;
@@ -21,7 +23,7 @@ pub fn counter_integer(
         CacheCounterValue::Text(text) => text
             .parse::<i64>()
             .map_err(|_source| not_an_integer(position, value)),
-        CacheCounterValue::Bytes(bytes) => std::str::from_utf8(bytes)
+        CacheCounterValue::Bytes(bytes) => from_utf8(bytes)
             .ok()
             .and_then(|text| text.parse::<i64>().ok())
             .ok_or_else(|| not_an_integer(position, value)),
