@@ -10,7 +10,7 @@ use pyo3::types::{PyAnyMethods as _, PyDict, PyDictMethods as _};
 use pyo3::{Py, PyAny};
 
 use super::{InstanceLoader, LoadError, LoadedObject};
-use crate::blocking_work::WorkTracker;
+use crate::blocking_work::{WorkError, WorkTracker};
 use crate::host::{DEFAULT_SHUTDOWN_GRACE, HostConfig, PythonHost};
 use crate::json_values::{JsonObject, JsonValue};
 use crate::remote_module::{FetchError, ModuleFetcher, ModuleRequest};
@@ -266,6 +266,27 @@ async fn handle_returns_a_callable_for_a_loaded_function() {
         .await
         .unwrap();
     assert_eq!(value, JsonValue::from(7_i64));
+}
+
+#[tokio::test]
+async fn a_load_past_its_deadline_returns_a_timeout() {
+    let folder = tempfile::tempdir().unwrap();
+    fs::write(
+        folder.path().join("b8042_slow.py"),
+        "import time\ntime.sleep(1)\ninstance = 1\n",
+    )
+    .unwrap();
+    let (_, loader) = host_and_loader(vec![]);
+    let config = folder.path().join("config.yaml");
+    let error = loader
+        .load_within(
+            "b8042_slow.instance",
+            Some(&config),
+            Duration::from_millis(50),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, LoadError::Work(WorkError::TimedOut { .. })));
 }
 
 #[cfg(unix)]

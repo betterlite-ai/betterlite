@@ -105,6 +105,17 @@ impl InstanceLoader {
         value: &str,
         config_file_path: Option<&Path>,
     ) -> Result<LoadedObject, LoadError> {
+        // the config load waits as long as an import can take
+        self.load_within(value, config_file_path, LOAD_DEADLINE)
+            .await
+    }
+
+    pub async fn load_within(
+        &self,
+        value: &str,
+        config_file_path: Option<&Path>,
+        deadline: Duration,
+    ) -> Result<LoadedObject, LoadError> {
         let remote = value.starts_with("s3://") || value.starts_with("gcs://");
         if remote && config_file_path.is_none() {
             return Err(LoadError::RemoteNeedsConfigPath);
@@ -116,10 +127,10 @@ impl InstanceLoader {
                 module_name,
                 instance_name,
             } => {
-                self.load_local_value(module_name, instance_name, config)
+                self.load_local_value(module_name, instance_name, config, deadline)
                     .await?
             }
-            InstanceRef::Remote(module) => self.load_remote_value(value, &module).await?,
+            InstanceRef::Remote(module) => self.load_remote_value(value, &module, deadline).await?,
         };
         Ok(LoadedObject {
             object,
@@ -132,8 +143,9 @@ impl InstanceLoader {
         module_name: String,
         instance_name: String,
         config: Option<PathBuf>,
+        deadline: Duration,
     ) -> Result<Py<PyAny>, LoadError> {
-        let job = self.tracker.run(&self.host, LOAD_DEADLINE, move |py| {
+        let job = self.tracker.run(&self.host, deadline, move |py| {
             load_local(py, &module_name, &instance_name, config.as_deref())
         });
         job.await.map_err(LoadError::Work)?
@@ -143,11 +155,12 @@ impl InstanceLoader {
         &self,
         url: &str,
         module: &RemoteModule,
+        deadline: Duration,
     ) -> Result<Py<PyAny>, LoadError> {
         let job_url = url.to_owned();
         let job_module = module.clone();
         let fetcher = Arc::clone(&self.fetcher);
-        let job = self.tracker.run(&self.host, LOAD_DEADLINE, move |py| {
+        let job = self.tracker.run(&self.host, deadline, move |py| {
             load_remote(py, fetcher.as_ref(), &job_url, &job_module)
         });
         match job.await {
