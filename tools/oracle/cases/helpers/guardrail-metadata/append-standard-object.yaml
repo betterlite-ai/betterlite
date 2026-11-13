@@ -1,0 +1,6 @@
+kind: helper
+name: append-standard-object
+call:
+  b8994: {"function": "append_standard_object", "model_call_details": {"standard_logging_object": {"guardrail_information": null, "model": "gpt-4"}, "keep": 1}, "record": {"guardrail_name": "model-armor", "guardrail_provider": "model_armor", "guardrail_mode": "post_call", "guardrail_response": {"verdict": "allow"}, "guardrail_status": "success", "start_time": 1.5, "end_time": null, "duration": null, "masked_entity_count": null}}
+env: {}
+compare: {ignore: []}

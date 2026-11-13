@@ -1,0 +1,6 @@
+kind: helper
+name: guardrail-metadata-record-seed
+call:
+  b8994: {"function": "record_scan_id", "request_data": {"litellm_metadata": {}}, "scan_id": "scan-1", "guardrail_name": "pii", "provider": "panw_prisma_airs", "stage": "pre_call"}
+env: {}
+compare: {ignore: []}
