@@ -142,7 +142,7 @@ fn reply_value(transformed: &ResponsesReply, state: &LoggingState, now: i64) -> 
                 .unwrap_or_default(),
         ),
     };
-    let created_at = if created_at == now {
+    let reported_created_at = if created_at == now {
         Value::String(String::from("now"))
     } else {
         Value::from(created_at)
@@ -155,7 +155,7 @@ fn reply_value(transformed: &ResponsesReply, state: &LoggingState, now: i64) -> 
     };
     json!({
         "id": id,
-        "created_at": created_at,
+        "created_at": reported_created_at,
         "headers": transformed.headers,
         "additional_headers": transformed.additional_headers,
         "post_call": {
