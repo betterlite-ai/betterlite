@@ -16,10 +16,6 @@ pub enum TogetherCompletionError {
 }
 
 // LiteLLM runs its shared prompt projection first and then refuses the two shapes Together cannot take
-pub fn transform_prompt(messages: &[Value]) -> Result<Value, TogetherCompletionError> {
-    project_prompt(prompt::transform_prompt(messages)?)
-}
-
 pub fn project_prompt(initial: Value) -> Result<Value, TogetherCompletionError> {
     if prompt::is_tokens_or_list_of_tokens(&initial) {
         return Err(TogetherCompletionError::Integers);
@@ -33,12 +29,12 @@ pub fn project_prompt(initial: Value) -> Result<Value, TogetherCompletionError> 
     Ok(initial)
 }
 
-pub fn transform_text_completion_request(
+pub fn transform_completion_request(
     model: &str,
     messages: &[Value],
     optional_params: Map<String, Value>,
 ) -> Result<Map<String, Value>, TogetherCompletionError> {
-    let prompt = transform_prompt(messages)?;
+    let prompt = project_prompt(prompt::transform_prompt(messages)?)?;
     let mut request = Map::new();
     request.insert(String::from("model"), Value::String(model.to_owned()));
     request.insert(String::from("prompt"), prompt);

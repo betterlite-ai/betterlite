@@ -3,7 +3,7 @@ use serde_json::Value;
 use super::{TogetherCapabilities, TogetherFlag};
 use crate::openai_base_config::Object;
 
-const ADJUSTABLE_EFFORT_REASONING_MODELS: [&str; 2] = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"];
+const ADJUSTABLE_REASONING_MODELS: [&str; 2] = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"];
 const HYBRID_REASONING_MODELS: [&str; 7] = [
     "MiniMaxAI/MiniMax-M3",
     "Qwen/Qwen3.5-9B",
@@ -29,7 +29,7 @@ const LOW_EFFORT: &str = "low";
 
 #[must_use]
 pub fn supports_together_reasoning(model: &str, capabilities: &dyn TogetherCapabilities) -> bool {
-    if ADJUSTABLE_EFFORT_REASONING_MODELS.contains(&model)
+    if ADJUSTABLE_REASONING_MODELS.contains(&model)
         || HYBRID_REASONING_MODELS.contains(&model)
         || model.starts_with(HIGH_MAX_EFFORT_MODEL_PREFIX)
     {
@@ -68,7 +68,7 @@ fn reasoning_payload(effort: &str, model: &str, capabilities: &dyn TogetherCapab
     if effort == DEFAULT_EFFORT {
         return Object::new();
     }
-    if ADJUSTABLE_EFFORT_REASONING_MODELS.contains(&model) {
+    if ADJUSTABLE_REASONING_MODELS.contains(&model) {
         let adjusted = if effort == NO_EFFORT {
             tracing::debug!(
                 model,

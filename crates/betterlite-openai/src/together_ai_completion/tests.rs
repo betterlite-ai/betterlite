@@ -3,9 +3,7 @@
 use rstest::rstest;
 use serde_json::{Map, Value, json};
 
-use super::{
-    TogetherCompletionError, project_prompt, transform_prompt, transform_text_completion_request,
-};
+use super::{TogetherCompletionError, project_prompt, transform_completion_request};
 
 fn message(content: Value) -> Value {
     json!({"role": "user", "content": content})
@@ -13,15 +11,17 @@ fn message(content: Value) -> Value {
 
 #[test]
 fn a_single_text_message_becomes_its_string() {
-    let prompt = transform_prompt(&[message(json!("hello"))]).unwrap();
-    assert_eq!(prompt, json!("hello"));
+    let request =
+        transform_completion_request("together/llama", &[message(json!("hello"))], Map::new())
+            .unwrap();
+    assert_eq!(request.get("prompt"), Some(&json!("hello")));
 }
 
 #[rstest]
 #[case::two_messages(vec![message(json!("a")), message(json!("b"))])]
 #[case::three_messages(vec![message(json!("a")), message(json!("b")), message(json!("c"))])]
 fn several_messages_are_refused(#[case] messages: Vec<Value>) {
-    let error = transform_prompt(&messages).unwrap_err();
+    let error = transform_completion_request("together/llama", &messages, Map::new()).unwrap_err();
     assert!(matches!(error, TogetherCompletionError::MultiplePrompts));
     assert_eq!(
         error.to_string(),
@@ -34,7 +34,8 @@ fn several_messages_are_refused(#[case] messages: Vec<Value>) {
 #[case::list_of_tokens(json!([[1, 2], [3]]))]
 #[case::one_token(json!([1]))]
 fn token_content_is_refused(#[case] content: Value) {
-    let error = transform_prompt(&[message(content)]).unwrap_err();
+    let error = transform_completion_request("together/llama", &[message(content)], Map::new())
+        .unwrap_err();
     assert!(matches!(error, TogetherCompletionError::Integers));
     assert_eq!(
         error.to_string(),
@@ -44,7 +45,7 @@ fn token_content_is_refused(#[case] content: Value) {
 
 #[test]
 fn an_empty_message_list_hits_the_token_rule() {
-    let error = transform_prompt(&[]).unwrap_err();
+    let error = transform_completion_request("together/llama", &[], Map::new()).unwrap_err();
     assert!(matches!(error, TogetherCompletionError::Integers));
 }
 
@@ -76,7 +77,7 @@ fn the_request_overlays_optional_params_over_model_and_prompt() {
     optional_params.insert(String::from("temperature"), json!(0.5));
     optional_params.insert(String::from("model"), json!("together/other"));
     optional_params.insert(String::from("prompt"), json!("other prompt"));
-    let request = transform_text_completion_request(
+    let request = transform_completion_request(
         "together/llama",
         &[message(json!("hello"))],
         optional_params,
@@ -91,7 +92,7 @@ fn the_request_overlays_optional_params_over_model_and_prompt() {
 #[test]
 fn the_request_keeps_the_prompt_rule() {
     let error =
-        transform_text_completion_request("together/llama", &[message(json!([1, 2]))], Map::new())
+        transform_completion_request("together/llama", &[message(json!([1, 2]))], Map::new())
             .unwrap_err();
     assert!(matches!(error, TogetherCompletionError::Integers));
 }

@@ -1,5 +1,3 @@
-use std::fmt;
-
 use betterlite_error::error::{ErrorClass, ErrorContext};
 use serde_json::Value;
 use thiserror::Error;
@@ -34,12 +32,6 @@ impl TogetherFlag {
             Self::SupportsResponseSchema => "supports_response_schema",
             Self::SupportsReasoning => "supports_reasoning",
         }
-    }
-}
-
-impl fmt::Display for TogetherFlag {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.name())
     }
 }
 

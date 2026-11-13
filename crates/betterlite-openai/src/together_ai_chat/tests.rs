@@ -540,10 +540,6 @@ fn the_flag_names_match_litellm() {
         "supports_response_schema"
     );
     assert_eq!(TogetherFlag::SupportsReasoning.name(), "supports_reasoning");
-    assert_eq!(
-        TogetherFlag::SupportsReasoning.to_string(),
-        "supports_reasoning"
-    );
 }
 
 #[test]

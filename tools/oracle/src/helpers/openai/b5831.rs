@@ -10,7 +10,7 @@ use betterlite_openai::together_ai_chat::{
     LookupFailed, OptionMapping, TogetherAiChatConfig, TogetherCapabilities, TogetherFlag,
 };
 use betterlite_openai::together_ai_completion::{
-    TogetherCompletionError, transform_text_completion_request,
+    TogetherCompletionError, transform_completion_request,
 };
 use betterlite_openai::together_ai_cost::{
     CostMap, PricingCallType, TogetherPricingTiers, model_has_registry_pricing, pricing_category,
@@ -167,15 +167,6 @@ fn empty_catalog() -> CatalogCapabilities {
     }
 }
 
-fn supported_step(
-    config: &TogetherAiChatConfig,
-    step: &ChatSupportedStep,
-    capabilities: &ModelCost<'_>,
-) -> Value {
-    let params = config.supported_params(&step.model, &empty_catalog(), capabilities);
-    json!(params)
-}
-
 fn map_step(
     config: &TogetherAiChatConfig,
     step: &ChatMapStep,
@@ -216,11 +207,8 @@ fn completion_kind(error: &TogetherCompletionError) -> &'static str {
 }
 
 fn completion_step(step: &CompletionStep) -> Value {
-    let result = transform_text_completion_request(
-        &step.model,
-        &step.messages,
-        step.optional_params.clone(),
-    );
+    let result =
+        transform_completion_request(&step.model, &step.messages, step.optional_params.clone());
     match result {
         Ok(request) => json!({"ok": true, "value": request}),
         Err(error) => json!({"ok": false, "error": {"kind": completion_kind(&error)}}),
@@ -294,10 +282,6 @@ fn category_step(step: &CategoryStep) -> Value {
     ))
 }
 
-fn registry_step(step: &RegistryStep, priced: &Priced) -> Value {
-    json!(model_has_registry_pricing(&step.model, priced))
-}
-
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
@@ -320,14 +304,14 @@ impl crate::helpers::Helper for Op {
                 .collect(),
         );
         Ok(json!({
-            "chat_supported": input.chat_supported.iter().map(|step| supported_step(&config, step, &capabilities)).collect::<Vec<_>>(),
+            "chat_supported": input.chat_supported.iter().map(|step| json!(config.supported_params(&step.model, &empty_catalog(), &capabilities))).collect::<Vec<_>>(),
             "chat_map": input.chat_map.iter().map(|step| map_step(&config, step, &capabilities)).collect::<Vec<_>>(),
             "chat_messages": input.chat_messages.iter().map(messages_step).collect::<Vec<_>>(),
             "completion": input.completion.iter().map(completion_step).collect::<Vec<_>>(),
             "rerank_requests": input.rerank_requests.iter().map(rerank_request_step).collect::<Vec<_>>(),
             "rerank_responses": input.rerank_responses.iter().map(rerank_response_step).collect::<Vec<_>>(),
             "cost_categories": input.cost_categories.iter().map(category_step).collect::<Vec<_>>(),
-            "cost_registry": input.cost_registry.iter().map(|step| registry_step(step, &priced)).collect::<Vec<_>>(),
+            "cost_registry": input.cost_registry.iter().map(|step| json!(model_has_registry_pricing(&step.model, &priced))).collect::<Vec<_>>(),
         }))
     }
 }
