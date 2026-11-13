@@ -204,6 +204,7 @@ fn lookup(rows: &[Row], model: &str, team: Option<&str>, flags: &str) -> String 
             "team" => request.authority.team_id = Some(value),
             "specific" => request.specific_deployment = true,
             "for_request" => for_request = true,
+            "no_team_index" => catalog.team_index.clear(),
             "ghost" => catalog
                 .index_patterns(&spec("ghost-*", "ghost", "openai/*", "", ""))
                 .unwrap(),
@@ -318,6 +319,28 @@ fn lookup(rows: &[Row], model: &str, team: Option<&str>, flags: &str) -> String 
 #[case::request_team_lists_its_deployments(TEAM, "team-gpt", Some("t1"), "for_request", "t1d")]
 #[case::request_admin_reaches_every_team(TEAM, "team-gpt", None, "for_request admin", "t1d")]
 #[case::request_without_authority_sees_nothing(TEAM, "team-gpt", None, "for_request", "")]
+#[case::request_admin_keeps_the_name_match(BASE, "gpt-4o", None, "for_request admin", "a,b")]
+#[case::team_deployment_by_its_internal_name(
+    TEAM,
+    "internal",
+    None,
+    "",
+    "internal|pool|t1d@openai/m|"
+)]
+#[case::team_deployment_by_its_internal_name_for_its_team(
+    TEAM,
+    "internal",
+    Some("t1"),
+    "",
+    "internal|pool|t1d@openai/m|"
+)]
+#[case::team_scan_finds_what_the_index_missed(
+    TEAM,
+    "team-gpt",
+    Some("t1"),
+    "no_team_index",
+    "team-gpt|pool|t1d@openai/m|"
+)]
 fn deployment_catalog_behaviors(
     #[case] rows: &[Row],
     #[case] model: &str,
@@ -416,6 +439,25 @@ fn deployment_catalog_behaviors(
     "nope",
     "fallback=claude map=claude>c3",
     "c3|pool|c@anthropic/claude|ModelAliasMap:claude>c3"
+)]
+#[case::request_team_caller_is_never_widened(TEAM, "team-gpt", "for_request admin team=t2", "")]
+#[case::team_caller_unknown_name_finds_nothing(
+    BASE,
+    "nope",
+    "team=t1",
+    r#"NoHealthyDeployments { model: "nope" }"#
+)]
+#[case::team_deployment_is_hidden_from_other_teams(
+    TEAM,
+    "internal",
+    "team=t2",
+    r#"NoHealthyDeployments { model: "internal" }"#
+)]
+#[case::unnamed_deployment_is_not_found_by_name(
+    &[("", "u", "openai/u", "", "")],
+    "",
+    "",
+    r#"NoHealthyDeployments { model: "" }"#
 )]
 #[case::wildcard_needs_a_provider_for_the_prefixed_lookup(&[("openai/*", "w", "openai/*", "", "")], "gpt-5", "", r#"NoHealthyDeployments { model: "gpt-5" }"#)]
 #[case::team_wildcard_needs_its_team(&[("internal", "t1d", "openai/m", "t1", "tm-*")], "tm-5", "", r#"NoHealthyDeployments { model: "tm-5" }"#)]
