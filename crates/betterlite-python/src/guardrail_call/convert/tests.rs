@@ -18,7 +18,7 @@ use rstest::rstest;
 use super::settings::SettingsJson;
 use super::{
     event_type_from_name, exact_data, exact_value, hook_from_name, read, settings_from_text,
-    suppressed_from_text, text_context_from_text, write,
+    suppressed_from_text, text_context_from_text,
 };
 use crate::guardrail_call::context::{RecordStep, record_call, record_parts};
 use crate::guardrail_call::convert::record_input::record_input_from_text;
@@ -258,10 +258,10 @@ fn value_keeps_floats_outside_the_serde_number_marker() {
 fn value_round_trips_through_text() {
     let text = r#"{"text":"a","flag":true,"none":null,"list":["x",2]}"#;
     let parsed = value(text).unwrap();
-    let again = value(&write("guardrail response", &parsed).unwrap()).unwrap();
+    let again = value(&serde_json::to_string(&parsed).unwrap()).unwrap();
     assert_eq!(again, parsed);
     assert_eq!(
-        write("guardrail response", &GuardrailValue::Text("hi".to_owned())).unwrap(),
+        serde_json::to_string(&GuardrailValue::Text("hi".to_owned())).unwrap(),
         "\"hi\""
     );
 }
@@ -280,10 +280,10 @@ fn data_reads_null_and_a_list_wrongly() {
         read::<Option<BTreeMap<String, GuardrailValue>>>("request data", "[]").unwrap_err();
     assert_eq!(error.kind(), "InvalidJson");
     assert_eq!(
-        write(
-            "request data",
-            &BTreeMap::from([("score".to_owned(), GuardrailValue::Decimal(0.5))])
-        )
+        serde_json::to_string(&BTreeMap::from([(
+            "score".to_owned(),
+            GuardrailValue::Decimal(0.5)
+        )]))
         .unwrap(),
         r#"{"score":0.5}"#
     );
@@ -378,6 +378,14 @@ fn data_rejects_an_integer_past_u64() {
         error.to_string().contains("123456789012345678901234567890"),
         "{error}"
     );
+}
+
+#[test]
+fn encode_errors_keep_the_json_kind() {
+    let source = serde_json::from_str::<GuardrailValue>("not json").unwrap_err();
+    let error = CallError::Encode { source };
+    assert_eq!(error.kind(), "InvalidJson");
+    assert!(error.to_string().contains("written as JSON"), "{error}");
 }
 
 #[test]
@@ -491,8 +499,8 @@ fn record_input_reads_the_tracing_detail() {
         Some(GuardrailValue::Text("REDACTED".to_owned()))
     );
     assert_eq!(
-        detail.guardrail_cost.map(|cost| cost.to_string()),
-        Some("1.50".to_owned())
+        detail.guardrail_cost,
+        Some(rust_decimal::Decimal::new(150, 2))
     );
     assert_eq!(
         detail.guardrail_cost_by_unit,

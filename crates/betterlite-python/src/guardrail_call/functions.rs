@@ -46,12 +46,7 @@ fn tool_cache() -> Result<DualLocalCache, CallError> {
 pub(crate) fn sanitize_guardrail_response(response: &str) -> PyResult<String> {
     let raw: GuardrailValue = convert::read("guardrail response", response)?;
     let cleaned = sanitize_response(convert::exact_value(raw)?).map_err(CallError::from)?;
-    Ok(
-        serde_json::to_string(&cleaned).map_err(|source| CallError::Json {
-            field: "guardrail response",
-            source,
-        })?,
-    )
+    Ok(serde_json::to_string(&cleaned).map_err(|source| CallError::Encode { source })?)
 }
 
 #[pyfunction]
@@ -91,12 +86,7 @@ pub(crate) fn summarize_guardrail_response(
     let original = plain.map(convert::exact_data).transpose()?;
     let hook = event_type.map(convert::event_type_from_name).transpose()?;
     let summary = summarize_response(kept.as_ref(), original.as_ref(), hook);
-    Ok(
-        serde_json::to_string(&summary).map_err(|source| CallError::Json {
-            field: "guardrail response",
-            source,
-        })?,
-    )
+    Ok(serde_json::to_string(&summary).map_err(|source| CallError::Encode { source })?)
 }
 
 #[pyfunction]
@@ -112,10 +102,7 @@ pub(crate) fn messages_for_call_type(
     let Some(messages) = selected else {
         return Ok(None);
     };
-    Ok(Some(serde_json::to_string(&messages).map_err(
-        |source| CallError::Json {
-            field: "guardrail messages",
-            source,
-        },
-    )?))
+    Ok(Some(
+        serde_json::to_string(&messages).map_err(|source| CallError::Encode { source })?,
+    ))
 }

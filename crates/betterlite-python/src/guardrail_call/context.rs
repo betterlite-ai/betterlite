@@ -86,10 +86,7 @@ impl RecordParts {
         data: &BTreeMap<String, GuardrailValue>,
     ) -> Result<RecordUpdate, CallError> {
         Ok((
-            serde_json::to_string(data).map_err(|source| CallError::Json {
-                field: "request data",
-                source,
-            })?,
+            serde_json::to_string(data).map_err(|source| CallError::Encode { source })?,
             self.log_target_text()?,
         ))
     }
@@ -147,8 +144,6 @@ pub(crate) fn log_target_from_text(text: &str) -> Result<GuardrailLogTarget, Cal
 }
 
 pub(crate) fn log_target_to_text(target: &GuardrailLogTarget) -> Result<String, CallError> {
-    serde_json::to_string(&LogTargetJson::from_target(target)).map_err(|source| CallError::Json {
-        field: "guardrail logging target",
-        source,
-    })
+    serde_json::to_string(&LogTargetJson::from_target(target))
+        .map_err(|source| CallError::Encode { source })
 }

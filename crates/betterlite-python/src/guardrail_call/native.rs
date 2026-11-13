@@ -30,10 +30,8 @@ impl NativeGuardrail {
 
     fn mode(&self) -> PyResult<String> {
         Ok(
-            serde_json::to_string(&self.base.mode).map_err(|source| CallError::Json {
-                field: "guardrail mode",
-                source,
-            })?,
+            serde_json::to_string(&self.base.mode)
+                .map_err(|source| CallError::Encode { source })?,
         )
     }
 
@@ -45,12 +43,8 @@ impl NativeGuardrail {
 
     fn settings(&self) -> PyResult<String> {
         Ok(
-            serde_json::to_string(&SettingsJson::from(&self.base.settings)).map_err(|source| {
-                CallError::Json {
-                    field: "guardrail settings",
-                    source,
-                }
-            })?,
+            serde_json::to_string(&SettingsJson::from(&self.base.settings))
+                .map_err(|source| CallError::Encode { source })?,
         )
     }
 
@@ -68,10 +62,7 @@ impl NativeGuardrail {
         let raw: BTreeMap<String, GuardrailValue> = convert::read("request data", data)?;
         let mut body = convert::exact_data(raw)?;
         let written = inject_advisory_message(&mut body, message);
-        let text = serde_json::to_string(&body).map_err(|source| CallError::Json {
-            field: "request data",
-            source,
-        })?;
+        let text = serde_json::to_string(&body).map_err(|source| CallError::Encode { source })?;
         Ok((written, text))
     }
 
@@ -105,11 +96,6 @@ impl NativeGuardrail {
             .base
             .dynamic_request_body_params(&body)
             .map_err(|source| CallError::Selection { source })?;
-        Ok(
-            serde_json::to_string(&params).map_err(|source| CallError::Json {
-                field: "request data",
-                source,
-            })?,
-        )
+        Ok(serde_json::to_string(&params).map_err(|source| CallError::Encode { source })?)
     }
 }

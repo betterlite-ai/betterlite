@@ -18,6 +18,11 @@ pub(crate) enum CallError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("a value could not be written as JSON: {source}")]
+    Encode {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("the violation message context value for {name} is not text")]
     ContextValue { name: String },
     #[error("{name} is not a guardrail event type")]
@@ -58,7 +63,7 @@ struct NativeErrorPayload<'name> {
 impl CallError {
     pub(crate) const fn kind(&self) -> &'static str {
         match self {
-            Self::Json { .. } | Self::Number { .. } => "InvalidJson",
+            Self::Json { .. } | Self::Encode { .. } | Self::Number { .. } => "InvalidJson",
             Self::ContextValue { .. } => "ContextValueNotText",
             Self::EventType { .. } => "InvalidEventType",
             Self::Base { source } => match source {
@@ -85,11 +90,12 @@ impl CallError {
             Self::Selection { source } => match source {
                 GuardrailSelectionError::TagMode { guardrail_name } => guardrail_name.as_deref(),
                 GuardrailSelectionError::DynamicParamsNotObject { guardrail_name } => {
-                    Some(guardrail_name)
+                    Some(guardrail_name.as_str())
                 }
                 GuardrailSelectionError::RequestedNotList => None,
             },
             Self::Json { .. }
+            | Self::Encode { .. }
             | Self::ContextValue { .. }
             | Self::EventType { .. }
             | Self::Number { .. }
