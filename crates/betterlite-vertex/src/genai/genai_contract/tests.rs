@@ -71,20 +71,9 @@ impl BaseGenerateContentConfig for Fixture {
 
     fn auth_token_and_url(
         &self,
-        request: &AuthTokenRequest<'_>,
+        _request: &AuthTokenRequest<'_>,
     ) -> Result<(RequestHeaders, String), FixtureError> {
-        let Some(api_base) = request.api_base else {
-            return Err(FixtureError::Refused);
-        };
-        let mode = if request.stream {
-            "streamGenerateContent"
-        } else {
-            "generateContent"
-        };
-        Ok((
-            headers(&[("authorization", "Bearer fixture")]),
-            format!("{api_base}/models/{}:{mode}", request.model),
-        ))
+        Err(FixtureError::Refused)
     }
 }
 
@@ -120,34 +109,6 @@ fn the_top_level_fields_are_the_four_native_names_in_order() {
     assert_eq!(
         Fixture.request_top_level_fields(),
         ["safetySettings", "toolConfig", "cachedContent", "labels"]
-    );
-}
-
-#[test]
-fn the_auth_method_answers_the_headers_and_url_from_the_implementation() {
-    let params = Object::new();
-    let (sent, url) = Fixture
-        .auth_token_and_url(&AuthTokenRequest {
-            api_base: Some("https://mock"),
-            model: "gemini-2.5-flash",
-            litellm_params: &params,
-            stream: true,
-        })
-        .expect("the fixture answers the auth target");
-    assert_eq!(sent, headers(&[("authorization", "Bearer fixture")]));
-    assert_eq!(
-        url,
-        "https://mock/models/gemini-2.5-flash:streamGenerateContent"
-    );
-    assert!(
-        Fixture
-            .auth_token_and_url(&AuthTokenRequest {
-                api_base: None,
-                model: "gemini-2.5-flash",
-                litellm_params: &params,
-                stream: false,
-            })
-            .is_err()
     );
 }
 

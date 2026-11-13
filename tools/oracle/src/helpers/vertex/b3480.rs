@@ -77,7 +77,10 @@ fn construct(record: Record, fields: &Value) -> Result<Value, Box<HelperError>> 
     match record {
         Record::Response => {
             let response: GenerateContentResponse = serde_json::from_value(fields.clone())?;
-            Ok(json!({ "value": serde_json::to_value(&response)? }))
+            Ok(json!({
+                "value": serde_json::to_value(&response)?,
+                "hidden_params": response.hidden_params,
+            }))
         }
         Record::Request => {
             let request: GenerateContentRequestDict = serde_json::from_value(fields.clone())?;

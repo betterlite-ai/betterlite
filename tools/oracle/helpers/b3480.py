@@ -36,6 +36,7 @@ class ErrorRecord(BaseModel):
 
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+OBJECT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 INPUT: TypeAdapter[Input] = TypeAdapter(Input)
 PROVIDERS: dict[str, LlmProviders] = {
     "studio": LlmProviders.GEMINI,
@@ -47,8 +48,11 @@ def construct(call: ConstructCall) -> JsonValue:
     fields = call["fields"]
     if call["record"] == "response":
         response = GenerateContentResponse(**fields)
-        dumped = response.model_dump_json()
-        return {"value": JSON.validate_json(dumped)}
+        wire = OBJECT.validate_json(response.model_dump_json())
+        # betterlite keeps _hidden_params off the wire, where LiteLLM serializes the extra (docs/deviations/B3480.yaml)
+        wire.pop("_hidden_params", None)
+        hidden = OBJECT.validate_python(response.get("_hidden_params"))
+        return {"value": wire, "hidden_params": hidden}
     request = GenerateContentRequestDict(**fields)
     return {"value": dict(request)}
 
