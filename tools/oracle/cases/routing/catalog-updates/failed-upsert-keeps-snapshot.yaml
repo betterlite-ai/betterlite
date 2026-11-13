@@ -1,0 +1,28 @@
+kind: probe
+name: failed-upsert-keeps-snapshot
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      catalog_updates:
+        ignore_invalid_deployments: true
+        steps:
+          - action: set
+            models:
+              - {model_name: g, model: "openai/m1", id: a}
+              - {model_name: g, model: "openai/m2", id: b}
+              - {model_name: h, model: "openai/m3", id: c}
+          - action: upsert
+            model: {model_name: g, model: "bogus/x", id: a}
+          - action: upsert
+            model: {model_name: g, model: "bogus/x", id: b}
+          - action: upsert
+            model: {model_name: h, model: "openai/m3", id: c}
+          - action: upsert
+            model: {model_name: h, model: "openai/m6", id: c}
+          - action: upsert
+            model: {model_name: k, model: "bogus/x", id: new}
+          - action: upsert
+            model: {model_name: k, model: "openai/m7", id: new}
+compare:
+  ignore: []

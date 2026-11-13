@@ -1,0 +1,1 @@
+{"candidates":[{"citationMetadata":{"citationSources":[{"uri":"https://a.example","license":"MIT"}],"citations":[{"uri":"stale"}]},"content":{"parts":[{"text":"hello"}]},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5},"modelVersion":"gemini-2.5-flash","responseId":"r1"}

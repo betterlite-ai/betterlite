@@ -1,0 +1,6 @@
+router_settings:
+  ignore_invalid_deployments: [yes, no]
+
+model_list:
+  - model_name: catalog-model
+    litellm_params: openai/gpt-4o-mini
