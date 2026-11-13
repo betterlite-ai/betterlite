@@ -61,8 +61,7 @@ impl DashscopeChatConfig {
         let base = api_base
             .filter(|value| !value.is_empty())
             .or(environment_base)
-            .unwrap_or(&self.policy.default_base)
-            .to_owned();
+            .map_or_else(|| self.policy.default_base.clone(), str::to_owned);
         let environment_key = self
             .env_api_key
             .as_ref()
@@ -91,9 +90,9 @@ impl DashscopeChatConfig {
         let base = api_base
             .filter(|value| !value.is_empty())
             .or(environment_base)
-            .unwrap_or(&self.policy.default_base);
+            .map_or_else(|| self.policy.default_base.clone(), str::to_owned);
         if base.ends_with(CHAT_COMPLETIONS) {
-            return base.to_owned();
+            return base;
         }
         format!("{base}{CHAT_COMPLETIONS}")
     }

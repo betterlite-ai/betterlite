@@ -2,16 +2,17 @@ import os
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal, NotRequired, TypedDict
-from unittest.mock import patch
 
-from litellm.llms.dashscope import cost_calculator
-from litellm.llms.dashscope.chat.transformation import DashScopeChatConfig
+import litellm
 from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
+from litellm.llms.dashscope.chat.transformation import DashScopeChatConfig
+from litellm.llms.dashscope.cost_calculator import cost_per_token
 from litellm.types.utils import Usage
 from pydantic import JsonValue
 
 EMPTY: dict[str, JsonValue] = {}
-MODEL = "dashscope/probe"
+CHAT_MODEL = "dashscope/probe"
+COST_MODEL_PREFIX = "b8170-probe"
 
 
 class Policy(TypedDict):
@@ -65,13 +66,10 @@ class Input(TypedDict):
 
 def set_env(name: str, value: str | None) -> None:
     if value is None:
-        os.environ.pop(name, None)
+        if name in os.environ:
+            del os.environ[name]
     else:
         os.environ[name] = value
-
-
-def decimal_str(value: float) -> str:
-    return format(Decimal(str(value)).normalize(), "f")
 
 
 def build_usage(step: UsageStep) -> Usage:
@@ -82,15 +80,22 @@ def build_usage(step: UsageStep) -> Usage:
     creation = step.get("cache_creation_tokens")
     if creation is not None:
         details["cache_creation_tokens"] = creation
-    completion_details: dict[str, int] = {}
+    reasoning_details: dict[str, int] = {}
     reasoning = step.get("reasoning_tokens")
     if reasoning is not None:
-        completion_details["reasoning_tokens"] = reasoning
+        reasoning_details["reasoning_tokens"] = reasoning
+    prompt_details: dict[str, int] | None = None
+    if len(details) > 0:
+        prompt_details = details
+    completion_details: dict[str, int] | None = None
+    if len(reasoning_details) > 0:
+        completion_details = reasoning_details
+    completion = step.get("completion_tokens")
     return Usage(
         prompt_tokens=step["prompt_tokens"],
-        completion_tokens=step.get("completion_tokens", 0),
-        prompt_tokens_details=details or None,
-        completion_tokens_details=completion_details or None,
+        completion_tokens=0 if completion is None else completion,
+        prompt_tokens_details=prompt_details,
+        completion_tokens_details=completion_details,
     )
 
 
@@ -114,37 +119,41 @@ def provider_info(step: ProviderInfoStep) -> JsonValue:
     set_env("DASHSCOPE_API_BASE", step["policy"].get("env_base"))
     set_env("DASHSCOPE_API_KEY", step.get("env_api_key"))
     _model, _provider, api_key, api_base = get_llm_provider(
-        model=MODEL,
+        model=CHAT_MODEL,
         api_base=step.get("api_base"),
         api_key=step.get("api_key"),
     )
     return {"api_base": api_base, "api_key": api_key}
 
 
-def cost(step: CostStep) -> JsonValue:
+def cost(step: CostStep, index: int) -> JsonValue:
+    model = f"{COST_MODEL_PREFIX}-{index}"
+    litellm.register_model({f"dashscope/{model}": step["model_info"]})
     moment = datetime.fromisoformat(step["current_time"])
-    with patch.object(cost_calculator, "get_model_info", return_value=step["model_info"]):
-        prompt_cost, completion_cost = cost_calculator.cost_per_token(
-            model="probe",
-            usage=build_usage(step["usage"]),
-            custom_llm_provider="dashscope",
-            current_time=moment,
-        )
+    prompt_cost, completion_cost = cost_per_token(
+        model=model,
+        usage=build_usage(step["usage"]),
+        custom_llm_provider="dashscope",
+        current_time=moment,
+    )
     return {
-        "prompt_cost": decimal_str(prompt_cost),
-        "completion_cost": decimal_str(completion_cost),
+        "prompt_cost": format(Decimal(str(prompt_cost)).normalize(), "f"),
+        "completion_cost": format(Decimal(str(completion_cost)).normalize(), "f"),
     }
 
 
-def step_value(step: Step) -> JsonValue:
+def step_value(step: Step, index: int) -> JsonValue:
     if step["kind"] == "supported_params":
         return supported_params(step)
     if step["kind"] == "complete_url":
         return complete_url(step)
     if step["kind"] == "provider_info":
         return provider_info(step)
-    return cost(step)
+    return cost(step, index)
 
 
 def run(input_value: Input) -> JsonValue:
-    return [step_value(step) for step in input_value["steps"]]
+    values: list[JsonValue] = []
+    for index, step in enumerate(input_value["steps"]):
+        values.append(step_value(step, index))
+    return values

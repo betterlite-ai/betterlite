@@ -41,8 +41,15 @@ fn usage(source: &str) -> CostUsage {
 
 fn extras(cache_creation_tokens: Option<i64>) -> PromptExtras {
     PromptExtras {
+        cache_write_tokens: None,
         cache_creation_tokens,
-        ..PromptExtras::default()
+        cache_creation_token_details: None,
+        cached_tokens_details: None,
+        character_count: None,
+        image_count: None,
+        video_length_seconds: None,
+        audio_length_seconds: None,
+        query_count: None,
     }
 }
 

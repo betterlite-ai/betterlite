@@ -1,7 +1,7 @@
 use betterlite_models::cost_usage::{CompletionDetails, CostUsage, PromptDetails};
 use betterlite_models::off_peak::schema::OffPeakBlockEntry;
 use betterlite_models::price_lookup::PricedModel;
-use betterlite_models::tiered_pricing::Tier;
+use betterlite_models::tiered_pricing::{Scalar, Tier};
 use betterlite_models::token_cost::prompt_overlap::PromptExtras;
 use betterlite_models::token_rates::ModelInfo;
 use betterlite_openai::dashscope_chat::{ChatBasePolicy, DashscopeChatConfig};
@@ -67,13 +67,22 @@ struct PolicyStep {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ModelInfoStep {
+    #[serde(default)]
+    input_cost_per_token: Option<Scalar>,
+    #[serde(default)]
+    output_cost_per_token: Option<Scalar>,
+    #[serde(default)]
+    cache_read_input_token_cost: Option<Scalar>,
+    #[serde(default, rename = "cache_creation_input_token_cost")]
+    cache_creation: Option<Scalar>,
+    #[serde(default, rename = "output_cost_per_reasoning_token")]
+    reasoning: Option<Scalar>,
     #[serde(default)]
     tiered_pricing: Option<TieredPricingField>,
     #[serde(default)]
     off_peak_pricing: Option<OffPeakBlockEntry>,
-    #[serde(flatten)]
-    record: ModelInfo,
 }
 
 // a tiered_pricing value that is not a list is ignored, so it decodes to the Other arm instead of failing
@@ -178,8 +187,23 @@ fn priced(step: &ModelInfoStep) -> PricedModel {
         Some(TieredPricingField::List(tiers)) => tiers.clone(),
         Some(TieredPricingField::Other(_)) | None => Vec::new(),
     };
+    let mut record = ModelInfo::new();
+    for (name, value) in [
+        ("input_cost_per_token", &step.input_cost_per_token),
+        ("output_cost_per_token", &step.output_cost_per_token),
+        (
+            "cache_read_input_token_cost",
+            &step.cache_read_input_token_cost,
+        ),
+        ("cache_creation_input_token_cost", &step.cache_creation),
+        ("output_cost_per_reasoning_token", &step.reasoning),
+    ] {
+        if let Some(scalar) = value {
+            record.insert(name.to_owned(), scalar.clone());
+        }
+    }
     PricedModel {
-        record: step.record.clone(),
+        record,
         tiered_pricing,
         off_peak_pricing: step
             .off_peak_pricing
@@ -233,11 +257,11 @@ fn cost_value(model_info: &ModelInfoStep, usage: &UsageStep, current_time: &str)
         .map_err(|error| helper_error("InvalidInstant", error.to_string()))?
         .with_timezone(&Utc);
     let model = priced(model_info);
-    let cost_usage = cost_usage(usage);
+    let usage_record = cost_usage(usage);
     let extras = prompt_extras(usage);
     let request = CostRequest {
         model_info: &model,
-        usage: &cost_usage,
+        usage: &usage_record,
         prompt_extras: &extras,
         current_time: moment,
     };

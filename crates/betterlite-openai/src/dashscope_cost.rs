@@ -77,9 +77,10 @@ pub fn cost_per_token(
         standard,
         database,
     )?;
+    let (prompt_cost, completion_cost) = bill(&breakdown, rates)?;
     Ok(GenericCostResult {
-        prompt_cost: prompt_cost(&breakdown, rates)?,
-        completion_cost: completion_cost(&breakdown, rates)?,
+        prompt_cost,
+        completion_cost,
     })
 }
 
@@ -103,24 +104,23 @@ fn breakdown(request: &CostRequest<'_>) -> Result<Breakdown, DashscopeCostError>
     })
 }
 
-fn prompt_cost(breakdown: &Breakdown, rates: TokenRates) -> Result<Decimal, DashscopeCostError> {
+fn bill(
+    breakdown: &Breakdown,
+    rates: TokenRates,
+) -> Result<(Decimal, Decimal), DashscopeCostError> {
     let text = product(breakdown.text, rates.input_rate)?;
     let cached = product(breakdown.cached, rates.cache_read_rate)?;
     let creation = product(breakdown.cache_creation, rates.cache_creation_rate)?;
-    text.checked_add(cached)
+    let prompt = text
+        .checked_add(cached)
         .and_then(|total| total.checked_add(creation))
-        .ok_or(DashscopeCostError::Overflow)
-}
-
-fn completion_cost(
-    breakdown: &Breakdown,
-    rates: TokenRates,
-) -> Result<Decimal, DashscopeCostError> {
+        .ok_or(DashscopeCostError::Overflow)?;
     let output = product(breakdown.completion, rates.output_rate)?;
     let reasoning = product(breakdown.reasoning, rates.billed_reasoning_rate())?;
-    output
+    let completion = output
         .checked_add(reasoning)
-        .ok_or(DashscopeCostError::Overflow)
+        .ok_or(DashscopeCostError::Overflow)?;
+    Ok((prompt, completion))
 }
 
 fn product(count: i64, rate: Decimal) -> Result<Decimal, DashscopeCostError> {
