@@ -21,39 +21,42 @@ fn transform_content_item(
     item: &JsonValue,
     role: &str,
 ) -> Result<JsonValue, ResponsesTransformError> {
-    let content_type = if role == "assistant" {
-        "output_text"
-    } else {
-        "input_text"
-    };
+    let content_type = text_type(role);
     match item {
         JsonValue::Text(text) => Ok(JsonValue::Object(text_content(content_type, text))),
-        JsonValue::Object(fields) => transform_object_content(fields, content_type),
+        JsonValue::Object(fields) => {
+            if !matches!(fields.get("type"), Some(JsonValue::Text(kind)) if kind.as_str() == "text")
+            {
+                return Ok(JsonValue::Object(fields.clone()));
+            }
+            let text = match fields.get("text") {
+                None | Some(JsonValue::Null) => String::new(),
+                Some(JsonValue::Text(text)) => text.clone(),
+                Some(
+                    JsonValue::Bool(_)
+                    | JsonValue::Number(_)
+                    | JsonValue::Array(_)
+                    | JsonValue::Object(_),
+                ) => {
+                    return Err(ResponsesTransformError::NotText {
+                        field: "content text",
+                    });
+                }
+            };
+            Ok(JsonValue::Object(text_content(content_type, &text)))
+        }
         JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) => {
             Err(ResponsesTransformError::NotContentItem)
         }
     }
 }
 
-fn transform_object_content(
-    fields: &IndexMap<String, JsonValue>,
-    content_type: &str,
-) -> Result<JsonValue, ResponsesTransformError> {
-    if !matches!(fields.get("type"), Some(JsonValue::Text(kind)) if kind.as_str() == "text") {
-        return Ok(JsonValue::Object(fields.clone()));
+fn text_type(role: &str) -> &'static str {
+    if role == "assistant" {
+        "output_text"
+    } else {
+        "input_text"
     }
-    let text = match fields.get("text") {
-        None | Some(JsonValue::Null) => String::new(),
-        Some(JsonValue::Text(text)) => text.clone(),
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_),
-        ) => {
-            return Err(ResponsesTransformError::NotText {
-                field: "content text",
-            });
-        }
-    };
-    Ok(JsonValue::Object(text_content(content_type, &text)))
 }
 
 fn text_content(content_type: &str, text: &str) -> IndexMap<String, JsonValue> {

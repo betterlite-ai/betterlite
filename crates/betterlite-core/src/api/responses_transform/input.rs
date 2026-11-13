@@ -1,5 +1,4 @@
 use betterlite_models::controls::json_value::JsonValue;
-use indexmap::IndexMap;
 
 use super::content::transform_message;
 use super::error::ResponsesTransformError;
@@ -9,7 +8,18 @@ pub(super) fn transform_input(input: &JsonValue) -> Result<JsonValue, ResponsesT
     match input {
         JsonValue::Text(text) => Ok(JsonValue::Text(text.clone())),
         JsonValue::Array(items) => transform_list(items),
-        JsonValue::Object(fields) => transform_object(input, fields),
+        JsonValue::Object(fields) => {
+            let content: Vec<&JsonValue> = match fields.get("content") {
+                Some(JsonValue::Array(items)) => items.iter().collect(),
+                None
+                | Some(JsonValue::Null)
+                | Some(JsonValue::Bool(_))
+                | Some(JsonValue::Number(_))
+                | Some(JsonValue::Text(_))
+                | Some(JsonValue::Object(_)) => vec![input],
+            };
+            Ok(JsonValue::Array(vec![transform_message(&content, "user")?]))
+        }
         JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) => {
             Err(ResponsesTransformError::NotInput { field: "input" })
         }
@@ -30,24 +40,6 @@ fn transform_list(items: &[JsonValue]) -> Result<JsonValue, ResponsesTransformEr
         return Ok(JsonValue::Array(messages));
     }
     let content: Vec<&JsonValue> = items.iter().collect();
-    Ok(JsonValue::Array(vec![transform_message(&content, "user")?]))
-}
-
-fn transform_object(
-    input: &JsonValue,
-    fields: &IndexMap<String, JsonValue>,
-) -> Result<JsonValue, ResponsesTransformError> {
-    let content: Vec<&JsonValue> = match fields.get("content") {
-        Some(JsonValue::Array(items)) => items.iter().collect(),
-        None
-        | Some(JsonValue::Null)
-        | Some(JsonValue::Bool(_))
-        | Some(JsonValue::Number(_))
-        | Some(JsonValue::Text(_))
-        | Some(JsonValue::Object(_)) => {
-            vec![input]
-        }
-    };
     Ok(JsonValue::Array(vec![transform_message(&content, "user")?]))
 }
 

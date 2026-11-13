@@ -1,6 +1,8 @@
 use betterlite_context::non_default_params::Params;
 use betterlite_models::controls::json_value::JsonValue;
-use serde_json::Number;
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use serde_json::{Deserializer, Number};
 
 use super::error::ResponsesTransformError;
 use super::input::transform_input;
@@ -20,6 +22,55 @@ pub struct ResponsesRequest {
     // LiteLLM splats its **kwargs into the Responses call unchanged, so a key this bridge doesn't model stays as given
     pub passthrough: Params,
 }
+
+// the optional params LiteLLM reads from the Interactions request, typed as the Interactions spec declares them
+#[derive(Deserialize)]
+struct InteractionFields {
+    system_instruction: Option<String>,
+    tools: Option<Vec<JsonValue>>,
+    generation_config: Option<GenerationConfig>,
+    stream: Option<bool>,
+    store: Option<bool>,
+    metadata: Option<JsonValue>,
+    user: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GenerationConfig {
+    temperature: Option<Number>,
+    top_p: Option<Number>,
+    max_output_tokens: Option<i64>,
+}
+
+// the extra kwargs are the Responses request's own keys, so an absent one differs from an explicit null
+#[derive(Deserialize)]
+struct ExtraFields {
+    model: Option<Option<String>>,
+    input: Option<Option<JsonValue>>,
+    instructions: Option<Option<String>>,
+    tools: Option<Option<Vec<JsonValue>>>,
+    temperature: Option<Option<Number>>,
+    top_p: Option<Option<Number>>,
+    max_output_tokens: Option<Option<i64>>,
+    stream: Option<Option<bool>>,
+    store: Option<Option<bool>>,
+    metadata: Option<Option<JsonValue>>,
+    user: Option<Option<String>>,
+}
+
+const EXTRA_FIELDS: [&str; 11] = [
+    "model",
+    "input",
+    "instructions",
+    "tools",
+    "temperature",
+    "top_p",
+    "max_output_tokens",
+    "stream",
+    "store",
+    "metadata",
+    "user",
+];
 
 pub fn to_responses_request(
     model: &str,
@@ -41,10 +92,7 @@ pub fn to_responses_request(
         user: None,
         passthrough: Params::new(),
     };
-    apply_instructions(&mut request, optional_params)?;
-    apply_tools(&mut request, optional_params)?;
-    apply_generation_config(&mut request, optional_params)?;
-    apply_passthrough(&mut request, optional_params)?;
+    apply_optional_params(&mut request, optional_params)?;
     apply_extras(&mut request, extras)?;
     Ok(request)
 }
@@ -58,76 +106,34 @@ fn requested_input(
     }
 }
 
-fn apply_instructions(
+fn request_fields<T: DeserializeOwned>(params: &Params) -> Result<T, ResponsesTransformError> {
+    let encoded =
+        serde_json::to_vec(params).map_err(|source| ResponsesTransformError::Encode { source })?;
+    let mut decoder = Deserializer::from_slice(&encoded);
+    serde_path_to_error::deserialize(&mut decoder)
+        .map_err(|source| ResponsesTransformError::Fields { source })
+}
+
+fn apply_optional_params(
     request: &mut ResponsesRequest,
     optional_params: &Params,
 ) -> Result<(), ResponsesTransformError> {
-    let Some(text) = optional_text(
-        "system_instruction",
-        optional_params.get("system_instruction"),
-    )?
-    else {
-        return Ok(());
-    };
+    let sent: InteractionFields = request_fields(optional_params)?;
     // LiteLLM only sets instructions for a non-empty system_instruction
-    if !text.is_empty() {
-        request.instructions = Some(text);
+    request.instructions = sent.instructions.filter(|text| !text.is_empty());
+    let tools = sent.tools.unwrap_or_default();
+    // LiteLLM only forwards a non-empty tools list
+    request.tools = (!tools.is_empty()).then_some(JsonValue::Array(tools));
+    if let Some(config) = sent.generation_config {
+        request.temperature = config.temperature;
+        request.top_p = config.top_p;
+        // Responses has no top_k, so LiteLLM drops it along with every other generation key
+        request.max_output_tokens = config.max_output_tokens;
     }
-    Ok(())
-}
-
-fn apply_tools(
-    request: &mut ResponsesRequest,
-    optional_params: &Params,
-) -> Result<(), ResponsesTransformError> {
-    match optional_params.get("tools") {
-        None | Some(JsonValue::Null) => Ok(()),
-        Some(JsonValue::Array(items)) => {
-            // LiteLLM only forwards a non-empty tools list
-            if !items.is_empty() {
-                request.tools = Some(JsonValue::Array(items.clone()));
-            }
-            Ok(())
-        }
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Object(_),
-        ) => Err(ResponsesTransformError::NotList { field: "tools" }),
-    }
-}
-
-fn apply_generation_config(
-    request: &mut ResponsesRequest,
-    optional_params: &Params,
-) -> Result<(), ResponsesTransformError> {
-    match optional_params.get("generation_config") {
-        None | Some(JsonValue::Null) => Ok(()),
-        Some(JsonValue::Object(fields)) => {
-            request.temperature =
-                optional_number("generation_config.temperature", fields.get("temperature"))?;
-            request.top_p = optional_number("generation_config.top_p", fields.get("top_p"))?;
-            // Responses has no top_k, so LiteLLM drops it along with every other generation key
-            request.max_output_tokens = optional_integer(
-                "generation_config.max_output_tokens",
-                fields.get("max_output_tokens"),
-            )?;
-            Ok(())
-        }
-        Some(
-            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_),
-        ) => Err(ResponsesTransformError::NotObject {
-            field: "generation_config",
-        }),
-    }
-}
-
-fn apply_passthrough(
-    request: &mut ResponsesRequest,
-    optional_params: &Params,
-) -> Result<(), ResponsesTransformError> {
-    request.stream = optional_bool("stream", optional_params.get("stream"))?;
-    request.store = optional_bool("store", optional_params.get("store"))?;
-    request.metadata = optional_value(optional_params.get("metadata"));
-    request.user = optional_text("user", optional_params.get("user"))?;
+    request.stream = sent.stream;
+    request.store = sent.store;
+    request.metadata = sent.metadata;
+    request.user = sent.user;
     Ok(())
 }
 
@@ -135,111 +141,52 @@ fn apply_extras(
     request: &mut ResponsesRequest,
     extras: &Params,
 ) -> Result<(), ResponsesTransformError> {
+    let sent: ExtraFields = request_fields(extras)?;
+    apply_extra_fields(request, sent)?;
     for (name, value) in extras {
-        match name.as_str() {
-            "model" => request.model = required_text("model", value)?,
-            "input" => request.input = optional_value(Some(value)),
-            "instructions" => request.instructions = optional_text("instructions", Some(value))?,
-            "tools" => request.tools = optional_list("tools", value)?,
-            "temperature" => request.temperature = optional_number("temperature", Some(value))?,
-            "top_p" => request.top_p = optional_number("top_p", Some(value))?,
-            "max_output_tokens" => {
-                request.max_output_tokens = optional_integer("max_output_tokens", Some(value))?;
-            }
-            "stream" => request.stream = optional_bool("stream", Some(value))?,
-            "store" => request.store = optional_bool("store", Some(value))?,
-            "metadata" => request.metadata = optional_value(Some(value)),
-            "user" => request.user = optional_text("user", Some(value))?,
-            _ => {
-                request.passthrough.insert(name.clone(), value.clone());
-            }
+        if !EXTRA_FIELDS.contains(&name.as_str()) {
+            request.passthrough.insert(name.clone(), value.clone());
         }
     }
     Ok(())
 }
 
-fn required_text(
-    field: &'static str,
-    value: &JsonValue,
-) -> Result<String, ResponsesTransformError> {
-    match value {
-        JsonValue::Text(text) => Ok(text.clone()),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => Err(ResponsesTransformError::NotText { field }),
+fn apply_extra_fields(
+    request: &mut ResponsesRequest,
+    sent: ExtraFields,
+) -> Result<(), ResponsesTransformError> {
+    if let Some(model) = sent.model {
+        request.model = model.ok_or(ResponsesTransformError::NotText { field: "model" })?;
     }
-}
-
-fn optional_text(
-    field: &'static str,
-    value: Option<&JsonValue>,
-) -> Result<Option<String>, ResponsesTransformError> {
-    match value {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(value) => Ok(Some(required_text(field, value)?)),
+    if let Some(input) = sent.input {
+        request.input = input;
     }
-}
-
-fn optional_bool(
-    field: &'static str,
-    value: Option<&JsonValue>,
-) -> Result<Option<bool>, ResponsesTransformError> {
-    match value {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Bool(flag)) => Ok(Some(*flag)),
-        Some(
-            JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Array(_) | JsonValue::Object(_),
-        ) => Err(ResponsesTransformError::NotBool { field }),
+    if let Some(instructions) = sent.instructions {
+        request.instructions = instructions;
     }
-}
-
-fn optional_integer(
-    field: &'static str,
-    value: Option<&JsonValue>,
-) -> Result<Option<i64>, ResponsesTransformError> {
-    match value {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Number(number)) => number
-            .as_i64()
-            .map(Some)
-            .ok_or(ResponsesTransformError::NotInteger { field }),
-        Some(
-            JsonValue::Bool(_) | JsonValue::Text(_) | JsonValue::Array(_) | JsonValue::Object(_),
-        ) => Err(ResponsesTransformError::NotInteger { field }),
+    if let Some(tools) = sent.tools {
+        request.tools = Some(JsonValue::Array(tools));
     }
-}
-
-fn optional_number(
-    field: &'static str,
-    value: Option<&JsonValue>,
-) -> Result<Option<Number>, ResponsesTransformError> {
-    match value {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Number(number)) => Ok(Some(number.clone())),
-        Some(
-            JsonValue::Bool(_) | JsonValue::Text(_) | JsonValue::Array(_) | JsonValue::Object(_),
-        ) => Err(ResponsesTransformError::NotNumber { field }),
+    if let Some(temperature) = sent.temperature {
+        request.temperature = temperature;
     }
-}
-
-fn optional_list(
-    field: &'static str,
-    value: &JsonValue,
-) -> Result<Option<JsonValue>, ResponsesTransformError> {
-    match value {
-        JsonValue::Null => Ok(None),
-        JsonValue::Array(items) => Ok(Some(JsonValue::Array(items.clone()))),
-        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Text(_) | JsonValue::Object(_) => {
-            Err(ResponsesTransformError::NotList { field })
-        }
+    if let Some(top_p) = sent.top_p {
+        request.top_p = top_p;
     }
-}
-
-fn optional_value(value: Option<&JsonValue>) -> Option<JsonValue> {
-    match value {
-        None | Some(JsonValue::Null) => None,
-        Some(value) => Some(value.clone()),
+    if let Some(max_output_tokens) = sent.max_output_tokens {
+        request.max_output_tokens = max_output_tokens;
     }
+    if let Some(stream) = sent.stream {
+        request.stream = stream;
+    }
+    if let Some(store) = sent.store {
+        request.store = store;
+    }
+    if let Some(metadata) = sent.metadata {
+        request.metadata = metadata;
+    }
+    if let Some(user) = sent.user {
+        request.user = user;
+    }
+    Ok(())
 }

@@ -149,52 +149,55 @@ fn an_absent_input_stays_unset() {
 }
 
 #[rstest]
-#[case::instruction(r#"{"system_instruction": 5}"#, "system_instruction must be a string")]
-#[case::tools(r#"{"tools": "x"}"#, "tools must be a list")]
-#[case::stream(r#"{"stream": "true"}"#, "stream must be a boolean")]
-#[case::store(r#"{"store": 1}"#, "store must be a boolean")]
-#[case::user(r#"{"user": 5}"#, "user must be a string")]
-#[case::generation_config(r#"{"generation_config": []}"#, "generation_config must be an object")]
+#[case::instruction(r#"{"system_instruction": 5}"#, "system_instruction: ")]
+#[case::tools(r#"{"tools": "x"}"#, "tools: ")]
+#[case::stream(r#"{"stream": "true"}"#, "stream: ")]
+#[case::store(r#"{"store": 1}"#, "store: ")]
+#[case::user(r#"{"user": 5}"#, "user: ")]
+#[case::generation_config(r#"{"generation_config": []}"#, "generation_config: ")]
 #[case::temperature(
     r#"{"generation_config": {"temperature": "hot"}}"#,
-    "generation_config.temperature must be a number"
+    "generation_config.temperature: "
 )]
 #[case::top_p(
     r#"{"generation_config": {"top_p": true}}"#,
-    "generation_config.top_p must be a number"
+    "generation_config.top_p: "
 )]
 #[case::max_output_tokens(
     r#"{"generation_config": {"max_output_tokens": "many"}}"#,
-    "generation_config.max_output_tokens must be an integer"
+    "generation_config.max_output_tokens: "
 )]
 #[case::fractional_max_output_tokens(
     r#"{"generation_config": {"max_output_tokens": 1.5}}"#,
-    "generation_config.max_output_tokens must be an integer"
+    "generation_config.max_output_tokens: "
 )]
-fn wrong_typed_optional_params_error(#[case] optional_params: &str, #[case] message: &str) {
+fn wrong_typed_optional_params_error(#[case] optional_params: &str, #[case] field: &str) {
     let error = to_responses_request("m", None, &params(optional_params), &params("{}"))
         .expect_err("a wrong type must fail");
-    assert_eq!(error.to_string(), message);
+    assert!(
+        error.to_string().starts_with(field),
+        "{error} does not name {field}"
+    );
 }
 
 #[rstest]
 #[case::model(r#"{"model": null}"#, "model must be a string")]
-#[case::model_type(r#"{"model": 5}"#, "model must be a string")]
-#[case::instructions(r#"{"instructions": 5}"#, "instructions must be a string")]
-#[case::tools(r#"{"tools": 4}"#, "tools must be a list")]
-#[case::temperature(r#"{"temperature": "hot"}"#, "temperature must be a number")]
-#[case::top_p(r#"{"top_p": []}"#, "top_p must be a number")]
-#[case::max_output_tokens(
-    r#"{"max_output_tokens": "many"}"#,
-    "max_output_tokens must be an integer"
-)]
-#[case::stream(r#"{"stream": "yes"}"#, "stream must be a boolean")]
-#[case::store(r#"{"store": 0}"#, "store must be a boolean")]
-#[case::user(r#"{"user": {}}"#, "user must be a string")]
-fn wrong_typed_extras_error(#[case] extras: &str, #[case] message: &str) {
+#[case::model_type(r#"{"model": 5}"#, "model: ")]
+#[case::instructions(r#"{"instructions": 5}"#, "instructions: ")]
+#[case::tools(r#"{"tools": 4}"#, "tools: ")]
+#[case::temperature(r#"{"temperature": "hot"}"#, "temperature: ")]
+#[case::top_p(r#"{"top_p": []}"#, "top_p: ")]
+#[case::max_output_tokens(r#"{"max_output_tokens": "many"}"#, "max_output_tokens: ")]
+#[case::stream(r#"{"stream": "yes"}"#, "stream: ")]
+#[case::store(r#"{"store": 0}"#, "store: ")]
+#[case::user(r#"{"user": {}}"#, "user: ")]
+fn wrong_typed_extras_error(#[case] extras: &str, #[case] field: &str) {
     let error = to_responses_request("m", None, &params("{}"), &params(extras))
         .expect_err("a wrong type must fail");
-    assert_eq!(error.to_string(), message);
+    assert!(
+        error.to_string().starts_with(field),
+        "{error} does not name {field}"
+    );
 }
 
 #[test]
