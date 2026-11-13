@@ -1,4 +1,3 @@
-// LiteLLM's _custom_logger_compatible_callbacks_literal, in its declared order; a prefix of a deployment model that is in this list marks a prompt management model.
 pub const KNOWN_CALLBACKS: [&str; 55] = [
     "lago",
     "openmeter",

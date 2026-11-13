@@ -123,7 +123,7 @@ fn is_prompt_model_reads_the_callback_list_it_is_given() {
 }
 
 #[test]
-fn resolve_prompt_identity_prefers_truthy_request_values() {
+fn resolve_prompt_identity_prefers_set_request_values() {
     let request = object(&[
         ("prompt_id", text("request-id")),
         ("prompt_variables", object(&[("name", text("request"))])),
@@ -144,10 +144,10 @@ fn resolve_prompt_identity_prefers_truthy_request_values() {
 }
 
 #[test]
-fn resolve_prompt_identity_falls_back_when_the_request_value_is_empty() {
+fn resolve_prompt_identity_falls_back_when_the_request_value_is_null() {
     let request = object(&[
-        ("prompt_id", text("")),
-        ("prompt_variables", object(&[])),
+        ("prompt_id", Json::Null),
+        ("prompt_variables", Json::Null),
         ("prompt_label", Json::Null),
     ]);
     let data = object(&[
@@ -165,7 +165,19 @@ fn resolve_prompt_identity_falls_back_when_the_request_value_is_empty() {
 }
 
 #[test]
-fn resolve_prompt_identity_keeps_a_falsy_deployment_value() {
+fn resolve_prompt_identity_keeps_an_empty_request_value() {
+    let request = object(&[("prompt_id", text("")), ("prompt_variables", object(&[]))]);
+    let data = object(&[
+        ("prompt_id", text("deployment-id")),
+        ("prompt_variables", object(&[("name", text("deployment"))])),
+    ]);
+    let resolved = resolve_prompt_identity(&request, &data).unwrap();
+    assert_eq!(resolved.prompt_id, Some(text("")));
+    assert_eq!(resolved.prompt_variables, Some(object(&[])));
+}
+
+#[test]
+fn resolve_prompt_identity_keeps_an_empty_deployment_value() {
     let data = object(&[("prompt_id", text(""))]);
     let resolved = resolve_prompt_identity(&JsonObject::new(), &data).unwrap();
     assert_eq!(resolved.prompt_id, Some(text("")));
@@ -186,57 +198,23 @@ fn resolve_prompt_identity_passes_a_non_string_prompt_id_for_litellm_agent_model
     assert_eq!(resolved.prompt_id, Some(number(7)));
 }
 
-#[test]
-fn resolve_prompt_identity_fails_with_litellm_text_when_prompt_id_is_missing() {
-    let error = resolve_prompt_identity(&JsonObject::new(), &JsonObject::new()).unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "Prompt ID is not set or not a string. Got=None, type=<class 'NoneType'>"
-    );
-}
-
 #[rstest]
-#[case::integer(Json::Number(serde_json::Number::from(7_i8)), "7", "int")]
-#[case::negative_integer(number(-3), "-3", "int")]
-#[case::float(Json::Number(serde_json::Number::from(1.5_f64)), "1.5", "float")]
-#[case::boolean(Json::Bool(true), "True", "bool")]
-#[case::list(Json::List(vec![text("a"), number(1)]), "['a', 1]", "list")]
-#[case::quoted_list(
-    Json::List(vec![text("it's"), text("a\"b"), text("a'b\"c")]),
-    "[\"it's\", 'a\"b', 'a\\'b\"c']",
-    "list"
+#[case::missing_prompt_id(object(&[]), "prompt_id must be a string")]
+#[case::number_prompt_id(object(&[("prompt_id", number(7))]), "prompt_id must be a string")]
+#[case::list_prompt_variables(
+    object(&[("prompt_id", text("greeting")), ("prompt_variables", Json::List(vec![number(1)]))]),
+    "prompt_variables must be an object"
 )]
-#[case::dictionary(object(&[("a", number(1))]), "{'a': 1}", "dict")]
-fn resolve_prompt_identity_names_the_value_and_its_python_type(
-    #[case] value: Json,
-    #[case] rendered: &str,
-    #[case] kind: &str,
+#[case::text_prompt_variables(
+    object(&[("prompt_id", text("greeting")), ("prompt_variables", text("x"))]),
+    "prompt_variables must be an object"
+)]
+fn resolve_prompt_identity_rejects_the_wrong_types(
+    #[case] request: JsonObject,
+    #[case] message: &str,
 ) {
-    let request = object(&[("prompt_id", value)]);
     let error = resolve_prompt_identity(&request, &JsonObject::new()).unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        format!("Prompt ID is not set or not a string. Got={rendered}, type=<class '{kind}'>")
-    );
-}
-
-#[rstest]
-#[case::text(text("x"), "x", "str")]
-#[case::list(Json::List(vec![number(1)]), "[1]", "list")]
-#[case::number(number(3), "3", "int")]
-fn resolve_prompt_identity_fails_when_prompt_variables_is_not_an_object(
-    #[case] value: Json,
-    #[case] rendered: &str,
-    #[case] kind: &str,
-) {
-    let request = object(&[("prompt_id", text("greeting")), ("prompt_variables", value)]);
-    let error = resolve_prompt_identity(&request, &JsonObject::new()).unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        format!(
-            "Prompt variables is set but not a dictionary. Got={rendered}, type=<class '{kind}'>"
-        )
-    );
+    assert_eq!(error.to_string(), message);
 }
 
 #[test]

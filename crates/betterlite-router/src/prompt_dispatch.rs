@@ -4,5 +4,4 @@ pub mod known_callbacks;
 pub mod merge;
 pub mod ports;
 pub mod predicate;
-mod python_text;
 mod tests;

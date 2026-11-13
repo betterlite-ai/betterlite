@@ -1,8 +1,7 @@
 use std::error::Error;
 
-use betterlite_context::non_default_params::Params;
-use betterlite_context::non_default_params::filters::{Endpoint, non_default_kwargs};
-use betterlite_models::controls::json_value::JsonValue;
+use betterlite_context::non_default_params::names::OPENAI_CHAT_COMPLETION_PARAMS;
+use betterlite_context::owned_parameter_names::is_litellm_owned_kwarg;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use thiserror::Error;
@@ -77,44 +76,14 @@ where
 
 // litellm.utils.get_non_default_completion_params: every key of the request that is neither an OpenAI chat param nor litellm's own.
 fn completion_non_default_params(request: &JsonObject) -> JsonObject {
-    let params: Params = request
+    request
         .iter()
-        .map(|(key, value)| (key.clone(), param_from(value)))
-        .collect();
-    non_default_kwargs(&params, Endpoint::Completion)
-        .into_iter()
-        .map(|(key, value)| (key, json_from_param(&value)))
+        .filter(|(key, _)| {
+            !OPENAI_CHAT_COMPLETION_PARAMS
+                .split_whitespace()
+                .any(|name| name == key.as_str())
+                && !is_litellm_owned_kwarg(key.as_str())
+        })
+        .map(|(key, value)| (key.clone(), value.clone()))
         .collect()
-}
-
-fn param_from(value: &Json) -> JsonValue {
-    match value {
-        Json::Null => JsonValue::Null,
-        Json::Bool(flag) => JsonValue::Bool(*flag),
-        Json::Number(number) => JsonValue::Number(number.clone()),
-        Json::Text(text) => JsonValue::Text(text.clone()),
-        Json::List(items) => JsonValue::Array(items.iter().map(param_from).collect()),
-        Json::Object(entries) => JsonValue::Object(
-            entries
-                .iter()
-                .map(|(key, item)| (key.clone(), param_from(item)))
-                .collect(),
-        ),
-    }
-}
-
-fn json_from_param(value: &JsonValue) -> Json {
-    match value {
-        JsonValue::Null => Json::Null,
-        JsonValue::Bool(flag) => Json::Bool(*flag),
-        JsonValue::Number(number) => Json::Number(number.clone()),
-        JsonValue::Text(text) => Json::Text(text.clone()),
-        JsonValue::Array(items) => Json::List(items.iter().map(json_from_param).collect()),
-        JsonValue::Object(entries) => Json::Object(
-            entries
-                .iter()
-                .map(|(key, item)| (key.clone(), json_from_param(item)))
-                .collect(),
-        ),
-    }
 }

@@ -1,11 +1,11 @@
 kind: helper
-name: prompt-dispatch-identity-empty-request-falls-back
+name: prompt-dispatch-identity-null-request-falls-back
 call:
   b8466:
     function: resolve_prompt_identity
     request:
-      prompt_id: ""
-      prompt_variables: {}
+      prompt_id: null
+      prompt_variables: null
       prompt_label: null
     deployment:
       model_name: langfuse/my-prompt

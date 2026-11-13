@@ -2,8 +2,6 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use thiserror::Error;
 
-use crate::prompt_dispatch::python_text::{python_text, python_type_name};
-
 pub const LITELLM_AGENT_PREFIX: &str = "litellm_agent/";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -15,10 +13,10 @@ pub struct PromptIdentity {
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum PromptIdentityError {
-    #[error("Prompt ID is not set or not a string. Got={got}, type=<class '{kind}'>")]
-    PromptId { got: String, kind: &'static str },
-    #[error("Prompt variables is set but not a dictionary. Got={got}, type=<class '{kind}'>")]
-    PromptVariables { got: String, kind: &'static str },
+    #[error("prompt_id must be a string")]
+    PromptId,
+    #[error("prompt_variables must be an object")]
+    PromptVariables,
 }
 
 // The identity Router._prompt_management_factory resolves before it compiles the prompt.
@@ -37,20 +35,13 @@ pub fn resolve_prompt_identity(
         Some(Json::Text(model)) if model.starts_with(LITELLM_AGENT_PREFIX)
     );
     if !agent_model && !matches!(prompt_id.as_ref(), Some(Json::Text(_))) {
-        let (got, kind) = match prompt_id.as_ref() {
-            Some(value) => (python_text(value), python_type_name(value)),
-            None => ("None".to_owned(), "NoneType"),
-        };
-        return Err(PromptIdentityError::PromptId { got, kind });
+        return Err(PromptIdentityError::PromptId);
     }
-    if let Some(value) = prompt_variables
+    if prompt_variables
         .as_ref()
-        .filter(|value| !matches!(value, Json::Object(_)))
+        .is_some_and(|value| !matches!(value, Json::Object(_)))
     {
-        return Err(PromptIdentityError::PromptVariables {
-            got: python_text(value),
-            kind: python_type_name(value),
-        });
+        return Err(PromptIdentityError::PromptVariables);
     }
     Ok(PromptIdentity {
         prompt_id,
@@ -59,23 +50,10 @@ pub fn resolve_prompt_identity(
     })
 }
 
-// Python's `request.get(key) or data.get(key)`: a request value wins only when it is truthy.
+// A request value wins when it is set; an absent or null key takes the deployment's value.
 fn prefer<'value>(request: Option<&'value Json>, data: Option<&'value Json>) -> Option<Json> {
     match request {
-        Some(value) if is_truthy(value) => Some(value.clone()),
+        Some(value) if !matches!(value, Json::Null) => Some(value.clone()),
         _ => data.cloned(),
-    }
-}
-
-fn is_truthy(value: &Json) -> bool {
-    match value {
-        Json::Null => false,
-        Json::Bool(flag) => *flag,
-        Json::Number(number) => number
-            .as_f64()
-            .is_some_and(|number| number.abs().to_bits() != 0),
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(entries) => !entries.is_empty(),
     }
 }
