@@ -137,11 +137,13 @@ pub(crate) fn record_call(
 }
 
 pub(crate) fn log_target_from_text(text: &str) -> Result<GuardrailLogTarget, CallError> {
-    let json: LogTargetJson = convert::read("guardrail log target", text)?;
-    Ok(json.into_target())
+    let json: LogTargetJson = convert::read("guardrail logging target", text)?;
+    let target = json.into_target();
+    Ok(target)
 }
 
 pub(crate) fn log_target_to_text(target: &GuardrailLogTarget) -> Result<String, CallError> {
     let json = LogTargetJson::from_target(target);
-    convert::write("guardrail log target", &json)
+    let text = convert::write("guardrail logging target", &json)?;
+    Ok(text)
 }

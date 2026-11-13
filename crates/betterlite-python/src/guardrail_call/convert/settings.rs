@@ -111,7 +111,7 @@ impl SettingsJson {
         Ok(GuardrailSettings {
             guardrail_name: self.guardrail_name,
             supported_event_hooks: self.supported_event_hooks,
-            event_hook: mode_from_value(self.event_hook)?,
+            event_hook: self.event_hook.map(mode_from_present).transpose()?,
             default_on: self.default_on,
             mask_request_content: self.mask_request_content,
             mask_response_content: self.mask_response_content,
@@ -169,10 +169,6 @@ fn names_to_value(names: Vec<String>) -> GuardrailValue {
         items.push(GuardrailValue::Text(name));
     }
     GuardrailValue::Array(items)
-}
-
-fn mode_from_value(value: Option<GuardrailValue>) -> Result<Option<LitellmParamsMode>, CallError> {
-    value.map(mode_from_present).transpose()
 }
 
 fn mode_from_present(value: GuardrailValue) -> Result<LitellmParamsMode, CallError> {
