@@ -356,8 +356,8 @@ fn conduct_guardrail_apply_raises_the_blocked_failure(#[case] verdict: &str) {
     ));
     assert!(recorded.is_empty(), "a blocked decision is not recorded");
     assert_eq!(
-        calls.lock().expect("the call log").as_slice(),
-        ["request:2".to_owned()]
+        *calls.lock().expect("the call log"),
+        vec!["request:2".to_owned()]
     );
 }
 
