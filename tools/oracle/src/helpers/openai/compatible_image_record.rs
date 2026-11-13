@@ -12,7 +12,6 @@ use betterlite_openai::compatible_image_hosts::options::{
 };
 use betterlite_openai::compatible_image_hosts::pricing::{ImageBilling, compatible_image_cost};
 use betterlite_openai::compatible_image_hosts::reply::decode_compatible_image_reply;
-use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -89,14 +88,6 @@ impl Helper for Op {
     }
 }
 
-fn failed(status: Option<u16>) -> Value {
-    json!({"ok": false, "status": status, "value": null})
-}
-
-fn succeeded(value: Value) -> Value {
-    json!({"ok": true, "status": null, "value": value})
-}
-
 fn options_value(call: &OptionsCall) -> Value {
     let supported = supported_params(call.host, &call.model);
     let mut optional = call.optional_params.clone();
@@ -107,8 +98,12 @@ fn options_value(call: &OptionsCall) -> Value {
         &call.model,
         call.drop_params,
     ) {
-        Ok(()) => succeeded(json!({"supported": supported, "mapped": optional})),
-        Err(_) => failed(None),
+        Ok(()) => json!({
+            "ok": true,
+            "status": null,
+            "value": {"supported": supported, "mapped": optional},
+        }),
+        Err(_) => json!({"ok": false, "status": null, "value": null}),
     }
 }
 
@@ -125,18 +120,18 @@ fn settings(env: &BTreeMap<String, String>) -> Option<Settings> {
 
 fn request_value(call: &RequestCall) -> Value {
     let Some(settings) = settings(&call.env) else {
-        return failed(None);
+        return json!({"ok": false, "status": null, "value": null});
     };
     let url = complete_url(call.host, &settings, call.api_base.as_deref());
     let key = call.api_key.as_deref().map(SecretString::from);
     let headers =
         match validate_environment(call.host, &settings, key.as_ref(), &ImageHeaders::new()) {
             Ok(headers) => headers,
-            Err(_) => return failed(None),
+            Err(_) => return json!({"ok": false, "status": null, "value": null}),
         };
     let body = match request_body(call.host, &call.model, &call.prompt, &call.optional_params) {
         Ok(body) => body,
-        Err(_) => return failed(None),
+        Err(_) => return json!({"ok": false, "status": null, "value": null}),
     };
     let reply = ImageHttpResponse {
         status_code: call.reply.status,
@@ -144,19 +139,26 @@ fn request_value(call: &RequestCall) -> Value {
         body: call.reply.body.clone().into_bytes(),
     };
     if !(200..300).contains(&reply.status_code) {
-        return failed(Some(reply.status_code));
+        return json!({"ok": false, "status": reply.status_code, "value": null});
     }
     match decode_compatible_image_reply(call.host, &reply, ImageResponse::default()) {
-        Ok(response) => succeeded(json!({
-            "url": url,
-            "headers": {
-                "authorization": header(&headers, "authorization"),
-                "content-type": header(&headers, "content-type"),
-            },
-            "body": body,
-            "reply": reply_view(&response),
-        })),
-        Err(error) => failed(error.status()),
+        Ok(response) => {
+            let data: Vec<Value> = response.data.iter().flatten().map(image_view).collect();
+            json!({
+                "ok": true,
+                "status": null,
+                "value": {
+                    "url": url,
+                    "headers": {
+                        "authorization": header(&headers, "authorization"),
+                        "content-type": header(&headers, "content-type"),
+                    },
+                    "body": body,
+                    "reply": {"data": data},
+                },
+            })
+        }
+        Err(error) => json!({"ok": false, "status": error.status(), "value": null}),
     }
 }
 
@@ -165,11 +167,6 @@ fn header(headers: &ImageHeaders, name: &str) -> Value {
         .iter()
         .find(|(key, _value)| key.eq_ignore_ascii_case(name))
         .map_or(Value::Null, |(_key, value)| Value::from(value.clone()))
-}
-
-fn reply_view(response: &ImageResponse) -> Value {
-    let data: Vec<Value> = response.data.iter().flatten().map(image_view).collect();
-    json!({"data": data})
 }
 
 fn image_view(image: &ImageData) -> Value {
@@ -192,8 +189,12 @@ fn price_value(call: &PriceCall) -> Value {
         None,
         &lookup,
     ) {
-        Ok(cost) => succeeded(json!({"cost": format_cost(cost)})),
-        Err(_) => failed(None),
+        Ok(cost) => json!({
+            "ok": true,
+            "status": null,
+            "value": {"cost": cost.normalize().to_string()},
+        }),
+        Err(_) => json!({"ok": false, "status": null, "value": null}),
     }
 }
 
@@ -208,10 +209,6 @@ fn billed(count: usize) -> ImageResponse {
         data: Some(vec![image; count]),
         usage: None,
     }
-}
-
-fn format_cost(cost: Decimal) -> String {
-    cost.normalize().to_string()
 }
 
 struct FixtureLookup<'prices> {

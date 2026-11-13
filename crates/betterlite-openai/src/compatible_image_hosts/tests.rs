@@ -811,6 +811,21 @@ fn a_rate_of_the_wrong_type_names_the_field() {
     assert!(matches!(error, ImageCostError::WrongFieldType { .. }));
 }
 
+fn check_seed(name: &str, bytes: &[u8], host: Host) -> Result<(), IoError> {
+    let response = ImageHttpResponse {
+        status_code: 200,
+        headers: ImageHeaders::new(),
+        body: bytes.to_vec(),
+    };
+    let decoded = decode_compatible_image_reply(host, &response, ImageResponse::default());
+    let must_decode = match host {
+        Host::Aiml => name.starts_with("valid-aiml"),
+        Host::CometApi => name.starts_with("valid-cometapi"),
+    };
+    assert!(!must_decode || decoded.is_ok(), "{name}: {decoded:?}");
+    Ok(())
+}
+
 #[test]
 fn replays_compatible_image_corpus() {
     let corpus =
@@ -821,21 +836,14 @@ fn replays_compatible_image_corpus() {
         .collect::<Vec<_>>();
     paths.sort();
     assert!(!paths.is_empty(), "no compatible image reply corpus seeds");
-    for path in paths {
-        let bytes = fs::read(&path).unwrap();
-        let name = path.file_name().unwrap().to_str().unwrap().to_owned();
-        for host in [Host::Aiml, Host::CometApi] {
-            let response = ImageHttpResponse {
-                status_code: 200,
-                headers: ImageHeaders::new(),
-                body: bytes.clone(),
-            };
-            let decoded = decode_compatible_image_reply(host, &response, ImageResponse::default());
-            let must_decode = match host {
-                Host::Aiml => name.starts_with("valid-aiml"),
-                Host::CometApi => name.starts_with("valid-cometapi"),
-            };
-            assert!(!must_decode || decoded.is_ok(), "{name}: {decoded:?}");
-        }
-    }
+    paths
+        .into_iter()
+        .try_for_each(|path| {
+            let bytes = fs::read(&path)?;
+            let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+            [Host::Aiml, Host::CometApi]
+                .iter()
+                .try_for_each(|host| check_seed(&name, &bytes, *host))
+        })
+        .unwrap();
 }

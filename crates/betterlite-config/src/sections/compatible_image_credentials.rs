@@ -61,12 +61,13 @@ impl Settings {
     }
 }
 
-fn non_empty(value: Option<String>) -> Option<String> {
-    value.filter(|text| !text.is_empty())
-}
-
 fn first_alias(values: [Option<String>; 2]) -> Option<String> {
-    values.into_iter().find_map(non_empty)
+    for value in values {
+        if let Some(text) = value.filter(|text| !text.is_empty()) {
+            return Some(text);
+        }
+    }
+    None
 }
 
 impl Section for Raw {

@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Final, Literal, NotRequired, Protocol, TypedDict, TypeVar
 
 import httpx
@@ -15,7 +15,6 @@ from litellm.llms.base_llm.image_generation.transformation import BaseImageGener
 from litellm.llms.cometapi.image_generation.transformation import CometAPIImageGenerationConfig
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
-from litellm.types.llms.openai import OpenAIImageGenerationOptionalParams
 from litellm.types.utils import ImageObject, ImageResponse
 from openai.types.image import Image as OpenAIImage
 from pydantic import JsonValue, TypeAdapter
@@ -72,9 +71,7 @@ class Input(TypedDict):
 
 class OptionMapper(Protocol):
     @property
-    def get_supported_openai_params(
-        self,
-    ) -> Callable[[str], list[OpenAIImageGenerationOptionalParams]]: ...
+    def get_supported_openai_params(self) -> Callable[[str], Sequence[str]]: ...
 
     @property
     def map_openai_params(self) -> Callable[[Object, Object, str, bool], Object]: ...
@@ -94,11 +91,11 @@ class ImageHandler(Protocol):
             Object,
             Logging,
             float,
-            dict[str, object] | None,
-            dict[str, object] | None,
+            None,
+            None,
             AsyncHTTPHandler,
             bool,
-            dict[str, object] | None,
+            None,
             str | None,
         ],
         Awaitable[ImageResponse],
@@ -165,14 +162,6 @@ def apply_env(env: dict[str, str]) -> None:
         os.environ[name] = value
 
 
-def failed(status: int | None) -> JsonValue:
-    return {"ok": False, "status": status, "value": None}
-
-
-def succeeded(value: JsonValue) -> JsonValue:
-    return {"ok": True, "status": None, "value": value}
-
-
 def image_spec(image: OpenAIImage) -> JsonValue:
     return JSON.validate_python(
         {"url": image.url, "b64_json": image.b64_json, "revised_prompt": image.revised_prompt}
@@ -195,13 +184,12 @@ def options_value(call: OptionsCall) -> JsonValue:
             call["drop_params"],
         )
     except ValueError:
-        return failed(None)
-    return succeeded(
-        {
-            "supported": JSON.validate_python(supported),
-            "mapped": JSON.validate_python(mapped),
-        }
-    )
+        return {"ok": False, "status": None, "value": None}
+    value: JsonValue = {
+        "supported": JSON.validate_python(supported),
+        "mapped": JSON.validate_python(mapped),
+    }
+    return {"ok": True, "status": None, "value": value}
 
 
 async def request_call(call: RequestCall) -> JsonValue:
@@ -227,20 +215,19 @@ async def request_call(call: RequestCall) -> JsonValue:
             call["api_key"],
         )
     except BaseLLMException as error:
-        return failed(error.status_code)
+        return {"ok": False, "status": error.status_code, "value": None}
     except (ValueError, TypeError, AttributeError):
-        return failed(None)
-    return succeeded(
-        {
-            "url": transport.url,
-            "headers": {
-                "authorization": transport.authorization,
-                "content-type": transport.content_type,
-            },
-            "body": transport.body,
-            "reply": data_view(response),
-        }
-    )
+        return {"ok": False, "status": None, "value": None}
+    value: JsonValue = {
+        "url": transport.url,
+        "headers": {
+            "authorization": transport.authorization,
+            "content-type": transport.content_type,
+        },
+        "body": transport.body,
+        "reply": data_view(response),
+    }
+    return {"ok": True, "status": None, "value": value}
 
 
 def price_value(call: PriceCall) -> JsonValue:
@@ -248,8 +235,9 @@ def price_value(call: PriceCall) -> JsonValue:
     try:
         cost = PRICE(call["model"], ImageResponse(data=images))
     except (ModelNotMappedError, ValueError, TypeError):
-        return failed(None)
-    return succeeded({"cost": str(cost)})
+        return {"ok": False, "status": None, "value": None}
+    value: JsonValue = {"cost": str(cost)}
+    return {"ok": True, "status": None, "value": value}
 
 
 def run(input_value: Input) -> JsonValue:
