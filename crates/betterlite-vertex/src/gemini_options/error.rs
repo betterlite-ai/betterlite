@@ -56,11 +56,8 @@ pub fn encode<T>(value: T) -> Result<Json, GeminiOptionsError>
 where
     T: Serialize,
 {
-    let encoded = serde_json::to_value(value).map_err(GeminiOptionsError::Encode)?;
-    match serde_json::from_value(encoded) {
-        Ok(encoded) => Ok(encoded),
-        Err(source) => Err(GeminiOptionsError::Encode(source)),
-    }
+    serde_json::from_value(serde_json::to_value(value).map_err(GeminiOptionsError::Encode)?)
+        .map_err(GeminiOptionsError::Encode)
 }
 
 pub fn decode<T>(value: &Json, param: &str) -> Result<T, GeminiOptionsError>

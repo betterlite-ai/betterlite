@@ -8,8 +8,7 @@ use crate::gemini_thinking::param::{
 use crate::model_urls::model_name::is_gemini_3_or_newer;
 
 use super::assembly::OptionsContext;
-use super::convert;
-use super::error::GeminiOptionsError;
+use super::error::{GeminiOptionsError, decode, encode};
 
 // OpenAI Agents SDK clients send the object form, and only its effort member is read
 #[derive(Deserialize)]
@@ -36,12 +35,10 @@ pub fn map_reasoning_effort(
 ) -> Result<(), GeminiOptionsError> {
     let effort = match value {
         Json::Text(text) => text.clone(),
-        Json::Object(_) => {
-            match convert::decode::<EffortRequest>(value, "reasoning_effort")?.effort {
-                Some(effort) => effort,
-                None => return Ok(()),
-            }
-        }
+        Json::Object(_) => match decode::<EffortRequest>(value, "reasoning_effort")?.effort {
+            Some(effort) => effort,
+            None => return Ok(()),
+        },
         Json::Null => return Ok(()),
         Json::Bool(_) | Json::Number(_) | Json::List(_) => {
             return Err(GeminiOptionsError::FieldType {
@@ -56,7 +53,7 @@ pub fn map_reasoning_effort(
     } else {
         map_effort_to_budget(&effort, Some(context.model), &context.thinking.budgets)?
     };
-    optional.insert("thinkingConfig".to_owned(), convert::encode(config)?);
+    optional.insert("thinkingConfig".to_owned(), encode(config)?);
     Ok(())
 }
 
@@ -65,7 +62,7 @@ pub fn map_thinking(
     optional: &mut Object,
     context: &OptionsContext<'_>,
 ) -> Result<(), GeminiOptionsError> {
-    let param: ThinkingParam = convert::decode(value, "thinking")?;
+    let param: ThinkingParam = decode(value, "thinking")?;
     validate_thinking_conflicts(optional, "thinking")?;
     let config = map_thinking_param(
         &param,
@@ -73,6 +70,6 @@ pub fn map_thinking(
         context.thinking,
         context.support,
     );
-    optional.insert("thinkingConfig".to_owned(), convert::encode(config)?);
+    optional.insert("thinkingConfig".to_owned(), encode(config)?);
     Ok(())
 }

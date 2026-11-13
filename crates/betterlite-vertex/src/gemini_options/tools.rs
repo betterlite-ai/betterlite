@@ -5,8 +5,7 @@ use crate::gemini_tools::assembly::map_tools;
 use crate::gemini_tools::options::{map_tool_choice, map_web_search_options};
 use crate::gemini_tools::records::ToolConfig;
 
-use super::convert;
-use super::error::GeminiOptionsError;
+use super::error::{GeminiOptionsError, decode, encode};
 
 // LiteLLM recognizes both wire spellings when it looks for a search tool
 const SEARCH_TOOL_KEYS: [&str; 8] = [
@@ -26,7 +25,7 @@ pub fn append(
     optional: &mut Object,
     schema: &SchemaSettings,
 ) -> Result<usize, GeminiOptionsError> {
-    let tools: Vec<Object> = convert::decode(value, "tools")?;
+    let tools: Vec<Object> = decode(value, "tools")?;
     if tools.is_empty() {
         return Ok(0);
     }
@@ -38,11 +37,11 @@ pub fn append(
     let encoded = mapped
         .tools
         .into_iter()
-        .map(convert::encode)
+        .map(encode)
         .collect::<Result<Vec<Json>, GeminiOptionsError>>()?;
     append_tools(optional, encoded)?;
     if let Some(config) = mapped.tool_config {
-        optional.insert("toolConfig".to_owned(), convert::encode(config)?);
+        optional.insert("toolConfig".to_owned(), encode(config)?);
     }
     Ok(mapped.warnings)
 }
@@ -65,7 +64,7 @@ fn append_tools(optional: &mut Object, mapped: Vec<Json>) -> Result<(), GeminiOp
 fn tool_config(optional: &Object) -> Result<Option<ToolConfig>, GeminiOptionsError> {
     match optional.get("toolConfig") {
         None | Some(Json::Null) => Ok(None),
-        Some(value) => Ok(Some(convert::decode(value, "toolConfig")?)),
+        Some(value) => Ok(Some(decode(value, "toolConfig")?)),
     }
 }
 
@@ -84,7 +83,7 @@ pub fn map(
 
 pub fn map_choice(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
     let config = map_tool_choice(value)?;
-    optional.insert("tool_choice".to_owned(), convert::encode(config)?);
+    optional.insert("tool_choice".to_owned(), encode(config)?);
     Ok(())
 }
 
@@ -94,7 +93,7 @@ pub fn map_parallel(
     non_default: &Object,
     optional: &mut Object,
 ) -> Result<(), GeminiOptionsError> {
-    let enabled: bool = convert::decode(value, "parallel_tool_calls")?;
+    let enabled: bool = decode(value, "parallel_tool_calls")?;
     let count = match non_default
         .get("tools")
         .or_else(|| non_default.get("functions"))
@@ -109,9 +108,9 @@ pub fn map_parallel(
 }
 
 pub fn map_web_search(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
-    let options: Object = convert::decode(value, "web_search_options")?;
+    let options: Object = decode(value, "web_search_options")?;
     let tool = map_web_search_options(&options);
-    append_tools(optional, vec![convert::encode(tool)?])?;
+    append_tools(optional, vec![encode(tool)?])?;
     Ok(())
 }
 

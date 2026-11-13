@@ -76,8 +76,7 @@ fn map_param(
         return tools::append(value, optional, context.schema);
     }
     map_group(param, value, optional, context)?;
-    map_scalar(param, value, optional, context.model, warned)?;
-    Ok(0)
+    map_scalar(param, value, optional, context.model, warned)
 }
 
 fn map_group(
@@ -136,18 +135,18 @@ fn map_scalar(
     optional: &mut Object,
     model: &str,
     warned: &mut bool,
-) -> Result<(), GeminiOptionsError> {
+) -> Result<usize, GeminiOptionsError> {
     if matches!(param, "temperature" | "top_p" | "top_k") {
-        check_sampling(model, param, value, warned)?;
+        let deprecation = check_sampling(model, param, value, warned)?;
         optional.insert(param.to_owned(), value.clone());
-        return Ok(());
+        return Ok(usize::from(deprecation));
     }
     if matches!(param, "frequency_penalty" | "presence_penalty") {
         decode::<f64>(value, param)?;
         if supports_penalty_parameters(model) {
             optional.insert(param.to_owned(), value.clone());
         }
-        return Ok(());
+        return Ok(0);
     }
     for (name, target, kind) in SCALARS {
         if name != param {
@@ -158,15 +157,16 @@ fn map_scalar(
             ScalarKind::Boolean => decode::<bool>(value, param)?,
         }
         optional.insert(target.to_owned(), value.clone());
-        return Ok(());
+        return Ok(0);
     }
     match param {
-        "stop" => map_stop(value, optional),
-        "modalities" => map_modalities(value, optional),
-        "service_tier" => map_tier(value, optional),
-        "stream" => map_stream(value, optional),
-        _ => Ok(()),
+        "stop" => map_stop(value, optional)?,
+        "modalities" => map_modalities(value, optional)?,
+        "service_tier" => map_tier(value, optional)?,
+        "stream" => map_stream(value, optional)?,
+        _ => {}
     }
+    Ok(0)
 }
 
 fn map_stop(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
@@ -205,7 +205,7 @@ fn check_sampling(
     param: &str,
     value: &Json,
     warned: &mut bool,
-) -> Result<(), GeminiOptionsError> {
+) -> Result<bool, GeminiOptionsError> {
     let Json::Number(number) = value else {
         return Err(GeminiOptionsError::FieldType {
             param: param.to_owned(),
@@ -218,7 +218,7 @@ fn check_sampling(
         });
     };
     if !is_gemini_3_or_newer(model) {
-        return Ok(());
+        return Ok(false);
     }
     if param == "temperature" && parsed < 1.0_f64 {
         tracing::info!(
@@ -226,14 +226,15 @@ fn check_sampling(
             "temperature below 1.0 for Gemini 3 can cause loops and weaker reasoning; 1.0 is recommended"
         );
     }
-    if !*warned {
-        tracing::warn!(
-            model,
-            "temperature, top_p and top_k still work for Gemini 3 but are planned for removal; put sampling guidance in the system instructions instead"
-        );
-        *warned = true;
+    if *warned {
+        return Ok(false);
     }
-    Ok(())
+    tracing::warn!(
+        model,
+        "temperature, top_p and top_k still work for Gemini 3 but are planned for removal; put sampling guidance in the system instructions instead"
+    );
+    *warned = true;
+    Ok(true)
 }
 
 // LiteLLM adds AUDIO to responseModalities whenever a speechConfig is present

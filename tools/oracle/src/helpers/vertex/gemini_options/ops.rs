@@ -19,11 +19,18 @@ pub(crate) struct Input {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Step {
-    op: String,
+    op: Operation,
     #[serde(default)]
     model: String,
     non_default_params: Object,
     optional_params: Object,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Operation {
+    Options,
+    Auth,
 }
 
 struct NoMinimalEffort;
@@ -61,12 +68,17 @@ pub(super) fn run(input: &Input) -> Value {
 }
 
 fn answer(step: &Step, settings: &OptionSettings, thinking: &ThinkingSettings) -> Value {
-    if step.op == "auth" {
-        return match map_special_auth_params(&step.non_default_params, step.optional_params.clone())
-        {
-            Ok(options) => json!({ "options": Json::Object(options), "warnings": 0 }),
-            Err(error) => json!({ "error": { "status": error.status() } }),
-        };
+    match step.op {
+        Operation::Auth => {
+            return match map_special_auth_params(
+                &step.non_default_params,
+                step.optional_params.clone(),
+            ) {
+                Ok(options) => json!({ "options": Json::Object(options), "warnings": 0 }),
+                Err(error) => json!({ "error": { "status": error.status() } }),
+            };
+        }
+        Operation::Options => {}
     }
     let schema = SchemaSettings::default();
     let mut optional = step.optional_params.clone();
