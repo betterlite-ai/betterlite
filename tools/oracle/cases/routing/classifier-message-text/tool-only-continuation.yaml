@@ -1,0 +1,14 @@
+kind: probe
+name: tool-only-continuation
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_message_text:
+        messages:
+          - {role: user, content: "Fix the retry loop"}
+          - {role: assistant, content: "I will call the tool"}
+          - role: user
+            content:
+              - {type: tool_result, tool_use_id: t1, content: "done"}
+compare: {ignore: []}
