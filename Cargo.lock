@@ -1356,6 +1356,7 @@ dependencies = [
  "betterlite-logging",
  "betterlite-models",
  "betterlite-secrets",
+ "chrono",
  "clap",
  "comfy-table",
  "console",
