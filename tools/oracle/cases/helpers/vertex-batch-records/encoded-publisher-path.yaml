@@ -18,4 +18,3 @@ env: {}
 compare:
   ignore:
     - {pointer: /value/calls/0/job/displayName, why: "the display name carries a fresh uuid"}
-    - {pointer: /value/calls/1/job/displayName, why: "the display name carries a fresh uuid"}
