@@ -77,25 +77,21 @@ function optionValue(argv, index, name) {
   return value;
 }
 
+const VALUE_OPTIONS = {
+  "--source-repo": "sourceRepo",
+  "--cache": "cacheDir",
+  "--out": "outDir",
+  "--patches": "patchesDir",
+  "--pin": "pinPath",
+};
+
 function parseArguments(argv) {
   const command = argv[0];
   const options = { repeat: false };
   for (let index = 1; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--source-repo") {
-      options.sourceRepo = optionValue(argv, index, argument);
-      index += 1;
-    } else if (argument === "--cache") {
-      options.cacheDir = optionValue(argv, index, argument);
-      index += 1;
-    } else if (argument === "--out") {
-      options.outDir = optionValue(argv, index, argument);
-      index += 1;
-    } else if (argument === "--patches") {
-      options.patchesDir = optionValue(argv, index, argument);
-      index += 1;
-    } else if (argument === "--pin") {
-      options.pinPath = optionValue(argv, index, argument);
+    if (Object.hasOwn(VALUE_OPTIONS, argument)) {
+      options[VALUE_OPTIONS[argument]] = optionValue(argv, index, argument);
       index += 1;
     } else if (argument === "--timeout-ms") {
       const value = Number(optionValue(argv, index, argument));

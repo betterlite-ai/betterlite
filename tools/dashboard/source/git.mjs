@@ -45,47 +45,43 @@ function killGroup(child) {
   }
 }
 
+function settleChild(child, timer, callback) {
+  clearTimeout(timer);
+  CHILDREN.delete(child);
+  callback();
+}
+
+function captureChunk(child, args, chunk, state, fail) {
+  state.captured += chunk.length;
+  if (state.captured > state.limit) {
+    killGroup(child);
+    fail(new SourceError("output-limit", `git ${args[0]} wrote more than ${state.limit} bytes`));
+    return;
+  }
+  state.chunks.push(chunk);
+}
+
 function collectGit(child, args, options) {
+  const state = { chunks: [], captured: 0, stderr: "", limit: options.maxStdoutBytes ?? MAX_SMALL_OUTPUT, timedOut: false, timer: null };
   return new Promise((resolve, reject) => {
-    const chunks = [];
-    const limit = options.maxStdoutBytes ?? MAX_SMALL_OUTPUT;
-    let captured = 0;
-    let stderr = "";
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
+    const fail = (error) => settleChild(child, state.timer, () => reject(error));
+    state.timer = setTimeout(() => {
+      state.timedOut = true;
       killGroup(child);
     }, options.timeoutMs);
-    const settle = (callback) => {
-      clearTimeout(timer);
-      CHILDREN.delete(child);
-      callback();
-    };
-    child.stdout.on("data", (chunk) => {
-      captured += chunk.length;
-      if (captured > limit) {
-        killGroup(child);
-        settle(() => reject(new SourceError("output-limit", `git ${args[0]} wrote more than ${limit} bytes`)));
-        return;
-      }
-      chunks.push(chunk);
-    });
+    child.stdout.on("data", (chunk) => captureChunk(child, args, chunk, state, fail));
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (chunk) => {
-      if (stderr.length < 8192) stderr += chunk;
+      if (state.stderr.length < 8192) state.stderr += chunk;
     });
-    child.on("error", (error) => {
-      settle(() => reject(new SourceError("git-spawn", `could not run git: ${error.message}`)));
-    });
-    child.on("close", (status) => {
-      settle(() => {
-        if (timedOut) {
-          reject(new SourceError("timeout", `git ${args[0]} did not finish within ${options.timeoutMs} ms`));
-          return;
-        }
-        resolve({ status, stdout: Buffer.concat(chunks), stderr: stderr.trim() });
-      });
-    });
+    child.on("error", (error) => fail(new SourceError("git-spawn", `could not run git: ${error.message}`)));
+    child.on("close", (status) => settleChild(child, state.timer, () => {
+      if (state.timedOut) {
+        reject(new SourceError("timeout", `git ${args[0]} did not finish within ${options.timeoutMs} ms`));
+        return;
+      }
+      resolve({ status, stdout: Buffer.concat(state.chunks), stderr: state.stderr.trim() });
+    }));
   });
 }
 
