@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-resources-seed-encoded
+call:
+  openai_response_resources:
+    encoded_response_id:
+      probes:
+        - {endpoint: delete, response_id: resp_1, api_base: 'https://api.openai.com/v1'}
+env: {}
+compare: {ignore: []}
