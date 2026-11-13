@@ -336,6 +336,18 @@ fn rejects_a_reply_larger_than_the_limit() {
 }
 
 #[test]
+fn reads_a_reply_of_exactly_sixteen_mebibytes() {
+    assert_eq!(REPLY_LIMIT, 16_777_216);
+    let at_limit = vec![b'a'; REPLY_LIMIT];
+    let error = decode_voxtral_reply(&speech_request(&[]), &response(200, &[], &at_limit))
+        .expect_err("the body is not JSON");
+    assert!(matches!(
+        error,
+        MistralAudioError::ReplyNotJson { status: 200 }
+    ));
+}
+
+#[test]
 fn the_decoder_keeps_a_null_payload_shape_typed() {
     let raw = response(200, &[], br#"{"audio_data":"aGVsbG8=","extra":{"n":null}}"#);
     let content = decode_voxtral_reply(&speech_request(&[]), &raw).expect("the reply decodes");
