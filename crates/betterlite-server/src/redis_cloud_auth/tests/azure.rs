@@ -195,3 +195,36 @@ fn azure_the_client_secret_credential_is_built_once() {
     assert_eq!(second.expose_secret(), "fixture-token");
     assert_eq!(io.requests().len(), 2);
 }
+
+#[test]
+fn azure_the_managed_identity_grant_reports_an_unconfigured_environment() {
+    let grants = production_grants(&production_io());
+    let error = grants
+        .managed_identity("client", AZURE_REDIS_SCOPE)
+        .unwrap_err();
+    assert!(matches!(error, AzureGrantError::ManagedIdentity { .. }));
+}
+
+#[test]
+fn azure_the_default_credential_reports_an_exhausted_chain() {
+    let grants = production_grants(&production_io());
+    let error = grants.default_credential(AZURE_REDIS_SCOPE).unwrap_err();
+    assert!(matches!(error, AzureGrantError::Default { .. }));
+}
+
+#[test]
+fn azure_a_blank_tenant_uses_the_organizations_tenant() {
+    let grants = production_grants(&production_io());
+    let record = UsernamePasswordRecord {
+        client_id: "client".to_owned(),
+        username: "user".to_owned(),
+        password: SecretString::from("pw".to_owned()),
+        tenant_id: Some(String::new()),
+        scope: AZURE_REDIS_SCOPE.to_owned(),
+    };
+    let grant = Grants::username_password(&grants, &record).unwrap();
+    match grant {
+        NativeGrant::UsernamePassword(password) => assert_eq!(password.tenant, "organizations"),
+        _ => panic!("expected a username and password grant"),
+    }
+}

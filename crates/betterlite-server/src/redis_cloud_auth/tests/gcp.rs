@@ -144,3 +144,29 @@ fn replays_the_gcp_iam_token_corpus(#[files("fuzz/corpus/gcp_iam_token/*")] path
         assert!(decoded.is_err(), "{name}");
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn gcp_production_maps_an_adc_failure_to_the_source_error() {
+    let source = VertexAdcTokenSource {
+        runtime: Handle::current(),
+        environment: AdcEnvironment {
+            application_credentials: Some(PathBuf::from("/nonexistent/betterlite-adc.json")),
+            project: None,
+            gcloud_project: None,
+            gcloud_credentials: None,
+            gcloud_configuration: None,
+            metadata_host: Some("127.0.0.1:9".to_owned()),
+        },
+        files: VertexStdFiles,
+        http: GoogleAuth {
+            client: proxied_client(),
+            policy: HttpPolicy::default(),
+        },
+    };
+    let token = tokio::task::spawn_blocking(move || {
+        AdcTokenSource::access_token(&source, "https://www.googleapis.com/auth/cloud-platform")
+    })
+    .await
+    .unwrap();
+    assert!(token.is_err());
+}
