@@ -1,0 +1,20 @@
+kind: helper
+name: vertex-agent-records-full-resource-host
+call:
+  vertex_agent_records:
+    operation: url
+    calls:
+      - model: agent_engine/projects/q/locations/europe-west4/reasoningEngines/9
+        project: p
+        location: us-west1
+      - model: agent_engine/7
+        project: p
+        location: europe-west4
+      - model: agent_engine/7
+        project: p
+        location: null
+      - model: agent_engine/projects/q/locations/global/reasoningEngines/9
+        project: null
+        location: null
+env: {}
+compare: {ignore: []}
