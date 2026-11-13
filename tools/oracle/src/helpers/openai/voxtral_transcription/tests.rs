@@ -5,6 +5,7 @@ use std::path::Path;
 
 use crate::case::HelperCase;
 use crate::case::helper::validate_helper;
+use crate::helpers::openai::voxtral_speech::Input;
 
 #[test]
 fn helper_seeds_select_voxtral_transcription() {
@@ -24,7 +25,7 @@ fn helper_seeds_select_voxtral_transcription() {
         .iter()
         .filter(|source| {
             let case: HelperCase = serde_saphyr::from_str(source).expect("a helper case");
-            let decodes = serde_json::from_value::<super::Input>(case.call.input.clone()).is_ok();
+            let decodes = serde_json::from_value::<Input>(case.call.input.clone()).is_ok();
             case.call.operation != "voxtral_transcription"
                 || !decodes
                 || validate_helper(Path::new("<helper>"), &case).is_err()

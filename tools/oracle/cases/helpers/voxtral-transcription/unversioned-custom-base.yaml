@@ -3,14 +3,29 @@ name: voxtral-transcription-unversioned-custom-base
 call:
   voxtral_transcription:
     probes:
-      - {model: voxtral-small-latest, filename: clip.wav, content: abc, optional_params: {},
-         non_default_params: {}, headers: {}, api_key: null, environment_api_key: environment-key,
-         api_base: https://custom.example, reply: null}
-      - {model: voxtral-small-latest, filename: clip.wav, content: abc, optional_params: {},
-         non_default_params: {}, headers: {}, api_key: null, environment_api_key: environment-key,
-         api_base: https://custom.example/v1/, reply: null}
-      - {model: voxtral-small-latest, filename: clip.wav, content: abc, optional_params: {},
-         non_default_params: {}, headers: {}, api_key: null, environment_api_key: environment-key,
-         api_base: https://custom.example/v1/v1, reply: null}
+      - model: voxtral-small-latest
+        filename: clip.wav
+        content: abc
+        optional_params: {}
+        non_default_params: {}
+        headers: {x-base: custom}
+        api_key: explicit-key
+        environment_api_key: environment-key
+      - model: voxtral-small-latest
+        filename: clip.mp3
+        content: abc
+        optional_params: {language: en}
+        non_default_params: {response_format: verbose_json}
+        headers: {}
+        api_key: null
+        environment_api_key: environment-key
+      - model: voxtral-small-latest
+        filename: clip.ogg
+        content: abc
+        optional_params: {diarize: true}
+        non_default_params: {timestamp_granularities: [word, segment]}
+        headers: {accept: text/plain}
+        api_key: explicit-key
+        environment_api_key: null
 env: {}
 compare: {ignore: []}

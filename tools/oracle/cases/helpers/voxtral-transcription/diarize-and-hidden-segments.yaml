@@ -11,7 +11,6 @@ call:
         headers: {}
         api_key: null
         environment_api_key: environment-key
-        api_base: null
         reply:
           status: 200
           headers: {content-type: application/json}
@@ -24,7 +23,6 @@ call:
         headers: {}
         api_key: null
         environment_api_key: environment-key
-        api_base: null
         reply:
           status: 200
           headers: {content-type: application/json}
@@ -37,7 +35,6 @@ call:
         headers: {}
         api_key: null
         environment_api_key: environment-key
-        api_base: null
         reply:
           status: 200
           headers: {content-type: application/json}
@@ -50,7 +47,6 @@ call:
         headers: {}
         api_key: null
         environment_api_key: environment-key
-        api_base: null
         reply:
           status: 429
           headers: {content-type: application/json}

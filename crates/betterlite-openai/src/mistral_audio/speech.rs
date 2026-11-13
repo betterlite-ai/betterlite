@@ -16,27 +16,25 @@ use serde_json::Value;
 
 pub const DEFAULT_BASE: &str = "https://api.mistral.ai/v1";
 pub const OPENAI_PARAMS: [&str; 2] = ["voice", "response_format"];
-const ALIASES: [(&str, &str); 6] = [
-    ("alloy", "en_paul_neutral"),
-    ("echo", "gb_oliver_neutral"),
-    ("fable", "en_paul_cheerful"),
-    ("onyx", "en_paul_confident"),
-    ("nova", "gb_jane_sarcasm"),
-    ("shimmer", "gb_jane_sarcasm"),
-];
-const MIME_TYPES: [(&str, &str); 5] = [
-    ("mp3", "audio/mpeg"),
-    ("wav", "audio/wav"),
-    ("pcm", "audio/pcm"),
-    ("flac", "audio/flac"),
-    ("opus", "audio/ogg"),
-];
-const DROPPED_HEADERS: [&str; 4] = [
-    "content-encoding",
-    "transfer-encoding",
-    "content-length",
-    "content-type",
-];
+fn alias(voice: &str) -> Option<&'static str> {
+    match voice {
+        "alloy" => Some("en_paul_neutral"),
+        "echo" => Some("gb_oliver_neutral"),
+        "fable" => Some("en_paul_cheerful"),
+        "onyx" => Some("en_paul_confident"),
+        "nova" | "shimmer" => Some("gb_jane_sarcasm"),
+        _ => None,
+    }
+}
+fn mime(format: Option<&str>) -> &'static str {
+    match format {
+        Some("wav") => "audio/wav",
+        Some("pcm") => "audio/pcm",
+        Some("flac") => "audio/flac",
+        Some("opus") => "audio/ogg",
+        _ => "audio/mpeg",
+    }
+}
 // Python's b64decode(validate=True) rejects stray characters and bad padding but keeps nonzero trailing bits
 const AUDIO_BASE64: GeneralPurpose = GeneralPurpose::new(
     &alphabet::STANDARD,
@@ -64,31 +62,19 @@ pub fn map_openai_params(
 fn resolve_voice(voice: Option<&SpeechVoice>) -> Option<String> {
     let text = match voice? {
         SpeechVoice::Name(name) => name.trim(),
-        SpeechVoice::Options(options) => {
-            let mut found = None;
-            for name in ["voice_id", "id", "name"] {
-                let Some(candidate) = options.get(name).and_then(Value::as_str).map(str::trim)
-                else {
-                    continue;
-                };
-                if !candidate.is_empty() {
-                    found = Some(candidate);
-                    break;
-                }
-            }
-            found?
-        }
+        SpeechVoice::Options(options) => ["voice_id", "id", "name"].iter().find_map(|name| {
+            options
+                .get(*name)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|text| !text.is_empty())
+        })?,
     };
     if text.is_empty() {
         return None;
     }
     let lowered = text.to_lowercase();
-    Some(
-        ALIASES
-            .iter()
-            .find(|(alias, _)| *alias == lowered)
-            .map_or_else(|| text.to_owned(), |(_, mapped)| (*mapped).to_owned()),
-    )
+    Some(alias(&lowered).map_or_else(|| text.to_owned(), str::to_owned))
 }
 pub fn validate_environment(
     headers: &IndexMap<String, String>,
@@ -173,17 +159,17 @@ fn audio_headers(
 ) -> IndexMap<String, String> {
     let mut rebuilt: IndexMap<String, String> = flatten_headers(headers)
         .into_iter()
-        .filter(|(name, _)| !DROPPED_HEADERS.contains(&name.as_str()))
-        .collect();
-    let content_type = requested_format
-        .and_then(|format| {
-            MIME_TYPES
-                .iter()
-                .find(|(name, _)| *name == format)
-                .map(|(_, mime)| *mime)
+        .filter(|(name, _)| {
+            !matches!(
+                name.as_str(),
+                "content-encoding" | "transfer-encoding" | "content-length" | "content-type"
+            )
         })
-        .unwrap_or("audio/mpeg");
+        .collect();
     rebuilt.insert(String::from("content-length"), length.to_string());
-    rebuilt.insert(String::from("content-type"), String::from(content_type));
+    rebuilt.insert(
+        String::from("content-type"),
+        String::from(mime(requested_format)),
+    );
     rebuilt
 }

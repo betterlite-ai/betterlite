@@ -2,14 +2,20 @@ use std::collections::{BTreeMap, HashMap};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
+use betterlite_config::sections::mistral_resources::Settings;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::api::speech_provider_contract::SpeechVoice;
 use betterlite_openai::mistral_audio::error::MistralAudioError;
 use betterlite_openai::mistral_audio::speech::{
     decode_voxtral_reply, map_openai_params, request_body,
 };
+use betterlite_openai::mistral_audio::transcription::{
+    map_openai_params as map_transcription_params, validate_environment,
+};
 use betterlite_openai::openai_base_config::Object;
 use http::HeaderMap;
+use indexmap::IndexMap;
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -17,44 +23,43 @@ use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 mod tests;
 
-// Both Voxtral operations share one probe shape; each module reads the fields its transformation takes
+// Both Voxtral operations share one probe shape; each operation reads the fields its transformation takes
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     #[serde(default)]
-    pub(crate) probes: Vec<Probe>,
+    probes: Vec<Probe>,
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Probe {
     #[serde(default)]
-    pub(crate) model: String,
+    model: String,
     #[serde(default)]
-    pub(crate) filename: String,
+    filename: String,
     #[serde(default)]
-    pub(crate) content: String,
+    content: String,
     #[serde(default)]
-    pub(crate) voice: Option<SpeechVoice>,
+    voice: Option<SpeechVoice>,
     #[serde(default)]
-    pub(crate) optional_params: Object,
+    optional_params: Object,
     #[serde(default)]
-    pub(crate) non_default_params: Object,
+    non_default_params: Object,
     #[serde(default)]
-    pub(crate) kwargs: Object,
+    kwargs: Object,
     #[serde(default)]
-    pub(crate) headers: BTreeMap<String, String>,
+    headers: BTreeMap<String, String>,
     #[serde(default)]
-    pub(crate) api_key: Option<String>,
+    api_key: Option<String>,
     #[serde(default)]
-    pub(crate) environment_api_key: Option<String>,
+    environment_api_key: Option<String>,
     #[serde(default)]
-    pub(crate) api_base: Option<String>,
-    #[serde(default)]
-    pub(crate) reply: Option<Reply>,
+    reply: Option<Reply>,
 }
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Reply {
+struct Reply {
     status: u16,
     headers: HashMap<String, String>,
     body: String,
@@ -66,22 +71,31 @@ impl Helper for Op {
         input
             .probes
             .iter()
-            .map(probe_view)
+            .map(speech_view)
             .collect::<Result<Vec<Value>, _>>()
             .map(Value::Array)
     }
 }
-fn probe_view(probe: &Probe) -> Result<Value, Box<HelperError>> {
-    probe_value(
+pub(crate) struct TranscriptionOp;
+impl Helper for TranscriptionOp {
+    type Input = Input;
+    fn run(input: &Self::Input) -> HelperResult {
+        input
+            .probes
+            .iter()
+            .map(transcription_view)
+            .collect::<Result<Vec<Value>, _>>()
+            .map(Value::Array)
+    }
+}
+fn speech_view(probe: &Probe) -> Result<Value, Box<HelperError>> {
+    speech_value(
         probe,
         probe.reply.as_ref().map(upstream).transpose()?.as_ref(),
     )
     .map_err(|error| failure(&error))
 }
-fn probe_value(
-    probe: &Probe,
-    reply: Option<&UpstreamResponse>,
-) -> Result<Value, MistralAudioError> {
+fn speech_value(probe: &Probe, reply: Option<&UpstreamResponse>) -> Result<Value, MistralAudioError> {
     let (voice, params) =
         map_openai_params(&probe.optional_params, probe.voice.as_ref(), &probe.kwargs);
     let response = match reply {
@@ -101,7 +115,26 @@ fn probe_value(
         "response": response,
     }))
 }
-pub(crate) fn upstream(reply: &Reply) -> Result<UpstreamResponse, Box<HelperError>> {
+fn transcription_view(probe: &Probe) -> Result<Value, Box<HelperError>> {
+    transcription_value(probe).map_err(|error| failure(&error))
+}
+fn transcription_value(probe: &Probe) -> Result<Value, MistralAudioError> {
+    let settings = Settings {
+        api_base: None,
+        api_key: probe.environment_api_key.clone().map(SecretString::from),
+    };
+    let key = probe.api_key.clone().map(SecretString::from);
+    let caller: IndexMap<String, String> = probe
+        .headers
+        .iter()
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
+    let headers = validate_environment(&caller, key.as_ref(), &settings);
+    let mut mapped = probe.optional_params.clone();
+    map_transcription_params(&probe.non_default_params, &mut mapped);
+    Ok(json!({ "headers": headers, "mapped": mapped }))
+}
+fn upstream(reply: &Reply) -> Result<UpstreamResponse, Box<HelperError>> {
     let headers = HeaderMap::try_from(&reply.headers).or_config_error()?;
     Ok(UpstreamResponse {
         status: reply.status,
@@ -109,7 +142,7 @@ pub(crate) fn upstream(reply: &Reply) -> Result<UpstreamResponse, Box<HelperErro
         body: reply.body.clone().into_bytes(),
     })
 }
-pub(crate) fn failure(error: &MistralAudioError) -> Box<HelperError> {
+fn failure(error: &MistralAudioError) -> Box<HelperError> {
     Box::new(HelperError {
         class: String::from("MistralAudioError"),
         status: Some(error.status()),

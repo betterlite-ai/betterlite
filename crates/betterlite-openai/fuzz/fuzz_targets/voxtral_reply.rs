@@ -10,7 +10,7 @@ use libfuzzer_sys::fuzz_target;
 use serde_json::json;
 
 fuzz_target!(|bytes: &[u8]| {
-    let response = UpstreamResponse {
+    let reply = UpstreamResponse {
         status: 502,
         headers: HeaderMap::new(),
         body: bytes.to_vec(),
@@ -22,6 +22,6 @@ fuzz_target!(|bytes: &[u8]| {
         ssml_body: None,
         headers: None,
     };
-    drop(decode_voxtral_reply(&request, &response));
-    drop(decode_voxtral_transcript(&response));
+    drop(decode_voxtral_reply(&request, &reply));
+    drop(decode_voxtral_transcript(&reply));
 });
