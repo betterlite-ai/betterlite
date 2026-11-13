@@ -52,6 +52,8 @@ pub fn resolve_prompt_identity(
 
 // A request value wins when it is set; an absent or null key takes the deployment's value.
 fn prefer<'value>(request: Option<&'value Json>, data: Option<&'value Json>) -> Option<Json> {
-    let set = request.filter(|value| !matches!(value, Json::Null));
-    set.cloned().or_else(|| data.cloned())
+    request
+        .filter(|value| !matches!(value, Json::Null))
+        .cloned()
+        .or_else(|| data.cloned())
 }
