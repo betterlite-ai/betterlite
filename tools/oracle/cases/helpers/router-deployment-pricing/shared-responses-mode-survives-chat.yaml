@@ -1,0 +1,8 @@
+kind: helper
+name: router-deployment-pricing-shared-responses-mode-survives-chat
+call:
+  b9710:
+    deployment: {"model_name": "alias", "litellm_params": {"model": "gpt-4.1"}, "model_info": {"id": "dep-18", "mode": "chat"}}
+    shared_before: {"mode": "responses", "litellm_provider": "openai"}
+compare: {ignore: []}
+env: {}

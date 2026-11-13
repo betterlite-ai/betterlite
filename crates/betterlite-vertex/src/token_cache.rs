@@ -25,7 +25,7 @@ use state::needs_refresh;
 // VertexBase's credential state: the cached records, their refresh bookkeeping and the injected clock and executor
 pub struct CredentialCache {
     // B1303's asynchronous algorithm extends this state inside the crate
-    pub(crate) records: Mutex<BTreeMap<CredentialKey, CacheRecord>>,
+    pub(crate) records: Arc<Mutex<BTreeMap<CredentialKey, CacheRecord>>>,
     pub(crate) leases: Arc<LeaseMap>,
     pub(crate) clock: Arc<dyn CredentialClock>,
     pub(crate) executor: Arc<dyn CredentialExecutor>,
@@ -40,7 +40,7 @@ impl CredentialCache {
     #[must_use]
     pub fn new(clock: Arc<dyn CredentialClock>, executor: Arc<dyn CredentialExecutor>) -> Self {
         Self {
-            records: Mutex::new(BTreeMap::new()),
+            records: Arc::new(Mutex::new(BTreeMap::new())),
             leases: Arc::new(LeaseMap::default()),
             clock,
             executor,

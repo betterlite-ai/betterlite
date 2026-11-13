@@ -1,0 +1,19 @@
+kind: helper
+name: session-token-codec-ui-token-roundtrip
+call:
+  session_token_codec:
+    salt_key: salt-one
+    master_key: null
+    max_ui_session_budget: 1.0
+    env: {}
+    nonce_hex: "000102030405060708090a0b0c0d0e0f"
+    now: "2026-11-12T17:50:00.123456+00:00"
+    steps:
+      - op: ui_token
+        user: {user_id: user-1, user_role: internal_user, models: [gpt-4o], teams: []}
+      - op: decode
+        token: "litellm_login_AAECAwQFBgcICQoLqBrKfXxXtAZXVXHvHMfrJCMNmsdLMMeZwx9hah1WJVmr24tYOfdeoyLYs42Yvn-FW7RpTB25AOnQ1iznIFkI4deKy-5BdWc_YVNxet28ZeGZUeL1QYCB3MRtk4GO_40OthB1BVbRKlc8r9JcOwwg2DXQqSS9BpUOCAIhFAI10RZQG_S5JNYAqSvTq4hBztaVyx93SGMYD1zUlU4yD-KOgQTlAkmZ7HD3g-X3paNrlGTkqJq-M1rjrNY7f20PL55MvrTqNS28lPlEkoHQcwUp8taieLVT72Ma_rBYYbVI60OGO_kkQBGyrY6VmCaEUIaaWST-ohtRDenXLZlOBpT0VdGkrXix7brdXEsJWZ1LYI8v3MjmojOkKo7h5Dq2_OocipCCpO6dfE-Fvw99QYf_mW66MDjjdG-xrxzyBitYaxLAqGfs7OdWRAwS55FGbQZe2uytOYvZhMjGYXstjZdDgIuQyGsS_y989Q4M40yuVbKHfDfQtBP98W6zIMb-AypP70E5_9mCWA0fen5q4l41YiZb1q50nCV0j2YkAQ7wMBdkpYo1rUvVoFq2x6b6CZ8yD2t4GmDUd9vO4rsx6uoNojIQgTyhDYFYDxj-11siFPSD31Fae9Yp9p8NGs8mgHR_NAQMRPRseCswqy04A-O2Y_EIkHwPfxpmfUiXQk5-BHuYN0OkT24-oPnhH3U_eRo-TijaEIdnd_VQEqg6lXHgMDmc-YFbZ8cXdWg_U6BGK9BpUo-XntzcofB8CFaeRhBkjz8u"
+      - op: decode
+        token: "litellm_login_AAECAwQFBgcICQoLqBrKfXxXtAZXVWfqWJ73KjUQ0YQHduOh2TJBcCkyXRy9--V9OdB_jDC71ZHf6wKPUqRXUV7uR76D2TvkIhEVpojb0fFKNnZuPhFye9OyM-WISdHLXpmFwYJ1i9LMpoxfvgJ-M1vKY0UqvoJLOwA81mTFtDqwVspNBAgvBEZok1oNdar4c-xVsyvTtYJd3J3ciUUuHSAABU7EiV5pTbfawEb0bCOMsTWzlOGoqc91hS648cH9ZgvttMApNyoAM9IQjI7kLTet0bpChJeAFhcw_M7jYqhQ9CkJ5ucHOfJc9XmdALJ6QEf5rJichmaYFsvLRSPwrjZcS-fPYohfBp24QJKqtW6ptfnLTVI3F85ddNcvh5W6_WjjL73u6i67_eochJ2es96SYAPLlj09EMSprlzhdz3Qam-zvh3eVn52QluR-jjF3KIHRwAP5IsXJBRMmL3ibJTBxLXYfnomheoKi5PSjiRH4Dc8iA4C_3agf7uBYRyQ-wznuDjzb9nkSnxy_EQy9s-8XQcANCZw_BlkM3NG3900mi51nk0ZFwX4OQdUsYt4-0nbu0fx0eLpCpg2VyBlG0vWbMfP-MZotbNBt2Ve3k_xA4BNFCKugkkiDOLEyRVPcsQhhdAWG8snrDsqCzxMFaIzQhtD6zUyAeWMZb9dlXYGaF1wOVyIVFkNVGGHNxPBH2g8sb6pU309Ugo_RTuUY9B9YdgBW_kgj0H9Cj6A-4tbGokMbHg0DGfqxqmaB7_VOxxQCit2OuQ"
+env: {}
+compare: {ignore: []}
