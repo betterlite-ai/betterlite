@@ -10,9 +10,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
-use super::budget::{
-    BudgetDeployment, BudgetPeriod, DeploymentBudget, DeploymentLimits, ProviderBudget, TagBudget,
-};
+use super::budget::{BudgetDeployment, BudgetPeriod, DeploymentLimits, ProviderBudget, TagBudget};
 use super::keys::{deployment_keys, period_label, provider_keys, tag_keys};
 use super::service::{BudgetWindows, should_init_budget_limiter};
 use super::window::{get_or_set_budget_start_time, has_spend, init_provider_budget_in_cache};
@@ -120,36 +118,7 @@ fn provider_config() -> IndexMap<String, ProviderBudget> {
     configs
 }
 
-#[derive(Clone, Copy, Debug)]
-enum Behavior {
-    ConfiguredMaps,
-    KeyTable,
-    StartWindow,
-    ResetWindow,
-    ProviderInit,
-    Registration,
-}
-
-#[rstest]
-#[case::configured_maps(Behavior::ConfiguredMaps)]
-#[case::key_table(Behavior::KeyTable)]
-#[case::start_window(Behavior::StartWindow)]
-#[case::reset_window(Behavior::ResetWindow)]
-#[case::provider_init(Behavior::ProviderInit)]
-#[case::registration(Behavior::Registration)]
-#[tokio::test]
-async fn budget_windows_behaviors(#[case] behavior: Behavior) {
-    match behavior {
-        Behavior::ConfiguredMaps => configured_maps(),
-        Behavior::KeyTable => key_table(),
-        Behavior::StartWindow => start_window().await,
-        Behavior::ResetWindow => reset_window().await,
-        Behavior::ProviderInit => provider_init().await,
-        Behavior::Registration => registration(),
-    }
-}
-
-fn configured_maps() {
+fn team_tags() -> IndexMap<String, TagBudget> {
     let mut tags = IndexMap::new();
     tags.insert(
         "team".to_owned(),
@@ -158,12 +127,59 @@ fn configured_maps() {
             period: Some(day()),
         },
     );
-    let windows = BudgetWindows::new(Some(provider_config()), Some(tags), &[deployment("d1", 10)]);
-    assert!(should_init_budget_limiter(
-        windows.provider.as_ref(),
-        windows.tag.as_ref(),
-        None
-    ));
+    tags
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Behavior {
+    ConfiguredMaps,
+    InitFlags,
+    KeyTable,
+    TagKeyTable,
+    KeyNames,
+    StartWindow,
+    ResetWindow,
+    ProviderInit,
+    ProviderInitRedis,
+    Registration,
+    Unregistration,
+}
+
+#[rstest]
+#[case::configured_maps(Behavior::ConfiguredMaps)]
+#[case::init_flags(Behavior::InitFlags)]
+#[case::key_table(Behavior::KeyTable)]
+#[case::tag_key_table(Behavior::TagKeyTable)]
+#[case::key_names(Behavior::KeyNames)]
+#[case::start_window(Behavior::StartWindow)]
+#[case::reset_window(Behavior::ResetWindow)]
+#[case::provider_init(Behavior::ProviderInit)]
+#[case::provider_init_redis(Behavior::ProviderInitRedis)]
+#[case::registration(Behavior::Registration)]
+#[case::unregistration(Behavior::Unregistration)]
+#[tokio::test]
+async fn budget_windows_behaviors(#[case] behavior: Behavior) {
+    match behavior {
+        Behavior::ConfiguredMaps => configured_maps(),
+        Behavior::InitFlags => init_flags(),
+        Behavior::KeyTable => key_table(),
+        Behavior::TagKeyTable => tag_key_table(),
+        Behavior::KeyNames => key_names(),
+        Behavior::StartWindow => start_window().await,
+        Behavior::ResetWindow => reset_window().await,
+        Behavior::ProviderInit => provider_init().await,
+        Behavior::ProviderInitRedis => provider_init_redis().await,
+        Behavior::Registration => registration(),
+        Behavior::Unregistration => unregistration(),
+    }
+}
+
+fn configured_maps() {
+    let windows = BudgetWindows::new(
+        Some(provider_config()),
+        Some(team_tags()),
+        &[deployment("d1", 10)],
+    );
     assert_eq!(windows.deployment.as_ref().map(IndexMap::len), Some(1));
     assert_eq!(windows.tag.as_ref().map(IndexMap::len), Some(1));
     assert_eq!(
@@ -186,6 +202,20 @@ fn configured_maps() {
             .map(|budget| budget.max_budget),
         Some(Decimal::from(10))
     );
+}
+
+fn init_flags() {
+    assert!(should_init_budget_limiter(
+        Some(&provider_config()),
+        None,
+        None
+    ));
+    assert!(should_init_budget_limiter(
+        Some(&IndexMap::new()),
+        None,
+        None
+    ));
+    assert!(should_init_budget_limiter(None, Some(&team_tags()), None));
     let zero = DeploymentLimits {
         model_id: Some("zero".to_owned()),
         max_budget: Some(Decimal::ZERO),
@@ -196,16 +226,20 @@ fn configured_maps() {
         None,
         Some(std::slice::from_ref(&zero))
     ));
+    let timed = DeploymentLimits {
+        model_id: None,
+        max_budget: None,
+        period: Some(day()),
+    };
     assert!(should_init_budget_limiter(
-        Some(&IndexMap::new()),
         None,
-        None
+        None,
+        Some(std::slice::from_ref(&timed))
     ));
-    assert!(!should_init_budget_limiter(None, None, None));
-    assert!(!should_init_budget_limiter(None, None, Some(&[])));
 }
 
-fn key_table() {
+// LiteLLM tests the tag config object itself, so a tag without limit or duration still gets a key
+fn tag_key_table() {
     let mut tags = IndexMap::new();
     tags.insert(
         "team".to_owned(),
@@ -214,7 +248,14 @@ fn key_table() {
             period: None,
         },
     );
-    let mut providers = IndexMap::new();
+    let windows = BudgetWindows::new(None, Some(tags), &[]);
+    let output = windows.cache_keys(&[], &["team".to_owned(), "other".to_owned()]);
+    assert_eq!(output.keys, vec!["tag_spend:team:None".to_owned()]);
+    assert!(output.deployment_providers.is_empty());
+}
+
+fn key_table() {
+    let mut providers = provider_config();
     providers.insert(
         "azure".to_owned(),
         ProviderBudget {
@@ -222,7 +263,7 @@ fn key_table() {
             period: None,
         },
     );
-    let windows = BudgetWindows::new(Some(providers), Some(tags), &[deployment("d1", 10)]);
+    let windows = BudgetWindows::new(Some(providers), None, &[deployment("d1", 10)]);
     let deployments = [
         BudgetDeployment {
             model_id: Some("d1"),
@@ -232,26 +273,25 @@ fn key_table() {
             model_id: Some("d1"),
             provider: Some("azure"),
         },
-        BudgetDeployment {
-            model_id: None,
-            provider: None,
-        },
     ];
-    let output = windows.cache_keys(&deployments, &["team".to_owned(), "other".to_owned()]);
+    let output = windows.cache_keys(&deployments, &["team".to_owned()]);
     assert_eq!(
         output.keys,
         vec![
+            "provider_spend:openai:1d".to_owned(),
             "deployment_spend:d1:1d".to_owned(),
             "deployment_spend:d1:1d".to_owned(),
-            "tag_spend:team:None".to_owned(),
         ]
     );
     assert_eq!(
         output.deployment_providers,
-        vec![Some("openai".to_owned()), Some("azure".to_owned()), None]
+        vec![Some("openai".to_owned()), Some("azure".to_owned())]
     );
     assert_eq!(output.provider_configs.len(), 1);
     assert_eq!(output.deployment_configs.len(), 1);
+}
+
+fn key_names() {
     assert_eq!(period_label(&Some(day())), "1d");
     assert_eq!(period_label(&None), "None");
     assert_eq!(
@@ -263,9 +303,14 @@ fn key_table() {
         "provider_budget_start_time:openai"
     );
     assert_eq!(
+        deployment_keys("d1", &day()).spend,
+        "deployment_spend:d1:1d"
+    );
+    assert_eq!(
         deployment_keys("d1", &day()).start_time,
         "deployment_budget_start_time:d1"
     );
+    assert_eq!(tag_keys("team", &Some(day())).spend, "tag_spend:team:1d");
     assert_eq!(
         tag_keys("team", &None).start_time,
         "tag_budget_start_time:team"
@@ -334,16 +379,20 @@ async fn reset_window() {
 
 async fn provider_init() {
     let cache = window_cache(0.0, None);
-    let budget = ProviderBudget {
-        budget_limit: Some(Decimal::from(3)),
-        period: Some(day()),
-    };
+    let budget = provider_config()["openai"].clone();
     init_provider_budget_in_cache(&cache, "openai", &budget, 100.0).await;
     let names = provider_keys("openai", &Some(day()));
     assert_eq!(stored(&cache, &names.spend), Some(spend_value("0")));
     assert_eq!(
         stored(&cache, &names.start_time),
         Some(CacheValue::Float(100.0))
+    );
+    assert_eq!(
+        cache.memory.lock().unwrap().ttl_entries(),
+        vec![
+            (names.start_time.clone(), 86_400.0_f64),
+            (names.spend.clone(), 86_400.0_f64),
+        ]
     );
     cache
         .reset_spend(&names.spend, Decimal::from(7), day().seconds)
@@ -355,6 +404,11 @@ async fn provider_init() {
         Some(CacheValue::Float(100.0))
     );
     assert_eq!(stored(&cache, &names.spend), Some(spend_value("7")));
+}
+
+async fn provider_init_redis() {
+    let budget = provider_config()["openai"].clone();
+    let names = provider_keys("openai", &Some(day()));
     let cold = window_cache(0.0, Some(redis_with(&names.spend, 7.0)));
     init_provider_budget_in_cache(&cold, "openai", &budget, 100.0).await;
     assert_eq!(stored(&cold, &names.spend), None);
@@ -385,21 +439,11 @@ async fn provider_init() {
         period: None,
     };
     init_provider_budget_in_cache(&untimed, "azure", &timeless, 7.0).await;
-    let azure = provider_keys("azure", &None);
-    assert_eq!(stored(&untimed, &azure.spend), None);
-    assert_eq!(stored(&untimed, &azure.start_time), None);
+    assert!(untimed.memory.lock().unwrap().ttl_entries().is_empty());
 }
 
 fn registration() {
-    let mut tags = IndexMap::new();
-    tags.insert(
-        "team".to_owned(),
-        TagBudget {
-            max_budget: Some(Decimal::from(5)),
-            period: Some(day()),
-        },
-    );
-    let mut windows = BudgetWindows::new(Some(provider_config()), Some(tags), &[]);
+    let mut windows = BudgetWindows::new(Some(provider_config()), Some(team_tags()), &[]);
     assert!(windows.deployment.as_ref().is_none());
     let incomplete = DeploymentLimits {
         model_id: Some("d1".to_owned()),
@@ -417,14 +461,6 @@ fn registration() {
             .map(|budget| budget.budget_limit),
         Some(Some(Decimal::from(100)))
     );
-    assert_eq!(
-        windows
-            .tag
-            .as_ref()
-            .and_then(|configs| configs.get("team"))
-            .map(|budget| budget.max_budget),
-        Some(Some(Decimal::from(5)))
-    );
     windows.sync_deployment_budget(&deployment("d1", 9));
     assert_eq!(
         windows
@@ -434,8 +470,14 @@ fn registration() {
     );
     windows.sync_deployment_budget(&incomplete);
     assert!(windows.deployment.as_ref().is_none());
+}
+
+fn unregistration() {
+    let mut windows = BudgetWindows::new(None, None, &[deployment("d1", 1), deployment("d2", 2)]);
     windows.unregister_deployment_budget("gone");
-    windows.register_deployment_budget(&deployment("d2", 1));
+    windows.unregister_deployment_budget("d1");
+    assert!(windows.deployment_budget("d1").is_none());
+    assert_eq!(windows.deployment.as_ref().map(IndexMap::len), Some(1));
     windows.unregister_deployment_budget("d2");
     assert!(windows.deployment.as_ref().is_none());
     let mut untouched = BudgetWindows::default();
@@ -455,18 +497,21 @@ enum Boundary {
     ExactKeys,
     ZeroBudgets,
     EmptyAndMissing,
+    SpendReads,
 }
 
 #[rstest]
 #[case::exact_keys(Boundary::ExactKeys)]
 #[case::zero_budgets(Boundary::ZeroBudgets)]
 #[case::empty_and_missing(Boundary::EmptyAndMissing)]
+#[case::spend_reads(Boundary::SpendReads)]
 #[tokio::test]
 async fn budget_windows_boundaries(#[case] boundary: Boundary) {
     match boundary {
         Boundary::ExactKeys => exact_keys(),
         Boundary::ZeroBudgets => zero_budgets().await,
-        Boundary::EmptyAndMissing => empty_and_missing().await,
+        Boundary::EmptyAndMissing => empty_and_missing(),
+        Boundary::SpendReads => spend_reads().await,
     }
 }
 
@@ -493,10 +538,6 @@ fn exact_keys() {
     assert_eq!(output.keys, vec!["provider_spend:openai:24h".to_owned()]);
     assert_eq!(output.deployment_providers, vec![Some("openai".to_owned())]);
     assert!(output.deployment_configs.is_empty());
-    assert_eq!(
-        provider_keys("openai", &Some(day())).spend,
-        "provider_spend:openai:1d"
-    );
 }
 
 async fn zero_budgets() {
@@ -527,7 +568,7 @@ async fn zero_budgets() {
     );
 }
 
-async fn empty_and_missing() {
+fn empty_and_missing() {
     let windows = BudgetWindows::new(None, Some(IndexMap::new()), &[]);
     assert!(windows.provider.as_ref().is_none());
     assert!(
@@ -539,35 +580,34 @@ async fn empty_and_missing() {
     assert!(windows.deployment.as_ref().is_none());
     assert!(windows.deployment_budget("missing").is_none());
     assert!(windows.provider_budget("missing").is_none());
-    let output = windows.cache_keys(&[], &["missing".to_owned()]);
+    let output = windows.cache_keys(
+        &[BudgetDeployment {
+            model_id: Some("d1"),
+            provider: Some("openai"),
+        }],
+        &["missing".to_owned()],
+    );
     assert!(output.keys.is_empty());
     assert!(output.deployment_providers.is_empty());
-    let empty = BudgetWindows::new(None, None, &[]);
+    let plain = DeploymentLimits::default();
     assert!(!should_init_budget_limiter(
-        empty.provider.as_ref(),
-        empty.tag.as_ref(),
-        Some(&[])
+        None,
+        None,
+        Some(std::slice::from_ref(&plain))
     ));
-    let budget = DeploymentBudget {
-        max_budget: Decimal::ONE,
-        period: day(),
-    };
-    assert_eq!(budget.period.spec, "1d");
-    assert!(
-        !has_spend(&window_cache(0.0, Some(FakeRedis::default())), "spend")
-            .await
-            .unwrap()
-    );
-    assert!(
-        has_spend(&window_cache(0.0, Some(redis_with("spend", 0.0))), "spend")
-            .await
-            .unwrap()
-    );
-    assert!(
-        has_spend(&window_cache(0.0, Some(failing_redis())), "spend")
-            .await
-            .is_err()
-    );
+    assert!(!should_init_budget_limiter(None, None, None));
+    assert!(!should_init_budget_limiter(None, None, Some(&[])));
+}
+
+async fn spend_reads() {
+    let empty = window_cache(0.0, Some(FakeRedis::default()));
+    assert!(!has_spend(&empty, "spend").await.unwrap());
+    let memory_only = window_cache(0.0, None);
+    assert!(!has_spend(&memory_only, "spend").await.unwrap());
+    let pushed = window_cache(0.0, Some(redis_with("spend", 0.0)));
+    assert!(has_spend(&pushed, "spend").await.unwrap());
+    let failing = window_cache(0.0, Some(failing_redis()));
+    assert!(has_spend(&failing, "spend").await.is_err());
     let broken = window_cache(f64::NAN, None);
     assert!(has_spend(&broken, "spend").await.is_err());
     let start = get_or_set_budget_start_time(&broken, "start", 3.0, Duration::from_secs(1)).await;

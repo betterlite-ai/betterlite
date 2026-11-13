@@ -72,11 +72,31 @@ fn converts_configured_budgets_into_typed_periods() {
         .as_ref()
         .and_then(|configs| configs.get("team"))
         .unwrap();
+    assert_eq!(tag.max_budget, Some(Decimal::from(5)));
     assert_eq!(
         tag.period.as_ref().map(|period| period.seconds),
         Some(Duration::from_secs(86_400))
     );
+}
+
+#[test]
+fn keeps_one_limit_entry_per_catalog_deployment() {
+    let now = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap();
+    let database = TimeZoneDatabase::default();
+    let parser = PeriodParser {
+        now,
+        timezone: None,
+        database: &database,
+    };
+    let resolved = budget_windows(&section(), &[Some("d1"), Some("d2")], parser).unwrap();
     assert_eq!(resolved.deployments.len(), 2);
+    assert_eq!(
+        resolved
+            .deployments
+            .first()
+            .and_then(|limits| limits.max_budget),
+        Some(Decimal::from(10))
+    );
     assert_eq!(
         resolved
             .deployments

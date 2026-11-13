@@ -147,21 +147,26 @@ async fn run_steps(input: &Input) -> Result<Output, String> {
         resolved.tag_budget_config,
         &resolved.deployments,
     );
+    let cache = started_cache(&windows).await?;
+    let mut outputs = Vec::with_capacity(input.steps.len());
+    for step in &input.steps {
+        outputs.push(steps::run_step(step, &windows, &cache, initialized).await?);
+    }
+    Ok(Output { steps: outputs })
+}
+
+// _init_provider_budgets starts every provider window when the limiter is built
+async fn started_cache(windows: &BudgetWindows) -> Result<Arc<ProbeCache>, String> {
     let memory = LocalTtlCache::with_clock(None, None, None, 1024, Arc::new(|| 0.0_f64))
         .map_err(|error| error.to_string())?;
     let cache = Arc::new(DualWindowCache {
         memory: Arc::new(Mutex::new(memory)),
         redis: None,
     });
-    // _init_provider_budgets starts every provider window when the limiter is built
     for (provider, budget) in windows.provider.iter().flatten() {
         init_provider_budget_in_cache(cache.as_ref(), provider, budget, 0.0).await;
     }
-    let mut outputs = Vec::with_capacity(input.steps.len());
-    for step in &input.steps {
-        outputs.push(steps::run_step(step, &windows, &cache, initialized).await?);
-    }
-    Ok(Output { steps: outputs })
+    Ok(cache)
 }
 
 fn section(input: &Input) -> Result<config::Settings, String> {

@@ -116,18 +116,25 @@ fn observe(step: &Step, cache: &ProbeCache) -> Result<(bool, Option<String>), St
         .start_time_key
         .as_deref()
         .ok_or("the step needs a start_time_key")?;
-    let mut memory = cache.memory.lock().unwrap_or_else(PoisonError::into_inner);
-    let started = memory
+    let started = cache
+        .memory
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
         .get(start_time_key)
         .map_err(|error| error.to_string())?
         .is_some();
     let Some(spend_key) = step.spend_key.as_deref() else {
         return Ok((started, None));
     };
-    let Some(value) = memory.get(spend_key).map_err(|error| error.to_string())? else {
+    let stored = cache
+        .memory
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(spend_key)
+        .map_err(|error| error.to_string())?;
+    let Some(value) = stored else {
         return Ok((started, None));
     };
-    drop(memory);
     let CacheValue::Object(fields) = value else {
         return Err(format!("{spend_key} does not hold a spend object"));
     };
