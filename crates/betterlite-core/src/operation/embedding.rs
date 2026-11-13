@@ -150,3 +150,5 @@ impl EmbeddingFailure {
         }
     }
 }
+
+mod tests;
