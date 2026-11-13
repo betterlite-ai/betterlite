@@ -1,12 +1,11 @@
 import asyncio
 import os
-from collections.abc import Callable
-from contextlib import ExitStack
-from typing import Final, Literal, TypedDict
-from unittest.mock import patch
+from collections.abc import Coroutine
+from typing import ClassVar, Final, Literal, Protocol, TypedDict, cast
 
 import litellm
 from litellm.batches import main as batch_main
+from litellm.llms.bedrock.embed import embedding as bedrock_embedding
 from litellm.llms.bedrock.embed.embedding import BedrockEmbedding
 from litellm.types.utils import LiteLLMBatch
 from pydantic import JsonValue, TypeAdapter
@@ -15,7 +14,24 @@ WIRE: Final = TypeAdapter(JsonValue)
 
 Provider = Literal["openai", "azure", "vertex_ai", "bedrock", "litellm_proxy", "xai"]
 
-CANCEL, ASYNC_STATUS = litellm.acancel_batch, batch_main._handle_async_invoke_status  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L888 https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L1087
+
+class CancelFn(Protocol):
+    def __call__(
+        self,
+        batch_id: str,
+        model: str | None,
+        custom_llm_provider: Provider,
+        extra_headers: dict[str, str] | None,
+        extra_body: dict[str, str] | None,
+        **params: JsonValue,
+    ) -> Coroutine[JsonValue, JsonValue, LiteLLMBatch]: ...
+
+
+class StatusFn(Protocol):
+    def __call__(self, batch_id: str, aws_region_name: str) -> LiteLLMBatch: ...
+
+
+CANCEL, ASYNC_STATUS = cast(CancelFn, litellm.acancel_batch), cast(StatusFn, batch_main._handle_async_invoke_status)  # type: ignore[misc, redundant-cast]  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L888 https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L1087
 
 
 class Settings(TypedDict):
@@ -61,26 +77,19 @@ class S3Output(TypedDict):
     s3Uri: str
 
 
-class OutputDataConfig(TypedDict):
-    s3OutputDataConfig: S3Output
-
-
 class Status(TypedDict):
     invocationArn: str
     modelArn: str
     status: str
     failureMessage: str | None
-    outputDataConfig: OutputDataConfig | None
+    outputDataConfig: dict[str, JsonValue] | None
     submitTime: str | None
     lastModifiedTime: str | None
     endTime: str | None
 
 
-class CancelEnvelope(TypedDict):
+class Envelope(TypedDict, total=False):
     cancel: CancelCall
-
-
-class AsyncEnvelope(TypedDict):
     async_invoke: Status
 
 
@@ -90,131 +99,37 @@ class Script(TypedDict):
 
 
 class Input(TypedDict):
-    input: CancelEnvelope | AsyncEnvelope
+    input: Envelope
     settings: Settings | None
     env: dict[str, str]
     now: int
     script: Script
 
 
-class Recorder:
-    def __init__(
-        self,
-        build: Callable[[dict[str, JsonValue]], JsonValue],
-        answer: LiteLLMBatch,
-        calls: list[JsonValue],
-    ) -> None:
-        self.build = build
-        self.answer = answer
-        self.calls = calls
-
-    def cancel_batch(self, **kwargs: JsonValue) -> LiteLLMBatch:
-        self.calls.append(self.build(kwargs))
-        return self.answer
-
-
-def openai_record(kwargs: dict[str, JsonValue]) -> JsonValue:
-    return WIRE.validate_python(
-        {
-            "branch": "openai",
-            "is_async": kwargs["_is_async"],
-            "request": kwargs["cancel_batch_data"],
-            "api_base": kwargs["api_base"],
-            "api_key": kwargs["api_key"],
-            "organization": kwargs["organization"],
-            "timeout": kwargs["timeout"],
-            "max_retries": kwargs["max_retries"],
-        }
-    )
-
-
-def azure_record(kwargs: dict[str, JsonValue]) -> JsonValue:
-    return WIRE.validate_python(
-        {
-            "branch": "azure",
-            "is_async": kwargs["_is_async"],
-            "request": kwargs["cancel_batch_data"],
-            "api_base": kwargs["api_base"],
-            "api_key": kwargs["api_key"],
-            "api_version": kwargs["api_version"],
-            "timeout": kwargs["timeout"],
-            "max_retries": kwargs["max_retries"],
-        }
-    )
-
-
-def vertex_record(kwargs: dict[str, JsonValue]) -> JsonValue:
-    return WIRE.validate_python(
-        {
-            "branch": "vertex",
-            "is_async": kwargs["_is_async"],
-            "batch_id": kwargs["batch_id"],
-            "api_base": kwargs["api_base"],
-            "vertex_project": kwargs["vertex_project"],
-            "vertex_location": kwargs["vertex_location"],
-            "vertex_credentials": kwargs["vertex_credentials"],
-            "timeout": kwargs["timeout"],
-            "max_retries": kwargs["max_retries"],
-        }
-    )
-
-
-def xai_record(kwargs: dict[str, JsonValue]) -> JsonValue:
-    return WIRE.validate_python(
-        {
-            "branch": "xai",
-            "is_async": kwargs["_is_async"],
-            "batch_id": kwargs["batch_id"],
-            "api_base": kwargs["api_base"],
-            "api_key": kwargs["api_key"],
-            "timeout": kwargs["timeout"],
-        }
-    )
-
-
-def patch_settings(stack: ExitStack, settings: Settings | None) -> None:
-    if settings is None:
-        return
-    stack.enter_context(patch.object(litellm, "api_base", settings["api_base"]))
-    stack.enter_context(patch.object(litellm, "api_version", settings["api_version"]))
-    stack.enter_context(patch.object(litellm, "api_key", settings["api_key"]))
-    stack.enter_context(patch.object(litellm, "openai_key", settings["openai_key"]))
-    stack.enter_context(patch.object(litellm, "azure_key", settings["azure_key"]))
-    stack.enter_context(patch.object(litellm, "organization", settings["organization"]))
-    stack.enter_context(
-        patch.object(litellm, "vertex_project", settings["vertex_project"])
-    )
-    stack.enter_context(
-        patch.object(litellm, "vertex_location", settings["vertex_location"])
-    )
-
-
-def cancel(
-    call: CancelCall, settings: Settings | None, script: Script, env: dict[str, str]
-) -> JsonValue:
+def cancel(call: CancelCall, settings: Settings | None, env: dict[str, str]) -> JsonValue:
     if "async" not in call["call"]:
         raise ValueError("the batch provider cancel helper drives the async entry point")
-    answer = LiteLLMBatch.model_validate(script["batch"])
-    calls: list[JsonValue] = []
-    with ExitStack() as stack:
-        stack.enter_context(patch.dict(os.environ, env, clear=False))
-        patch_settings(stack, settings)
-        openai_instance = Recorder(openai_record, answer, calls)
-        azure_instance = Recorder(azure_record, answer, calls)
-        vertex_instance = Recorder(vertex_record, answer, calls)
-        xai_instance = Recorder(xai_record, answer, calls)
-        stack.enter_context(
-            patch.object(batch_main, "openai_batches_instance", openai_instance)
-        )
-        stack.enter_context(
-            patch.object(batch_main, "azure_batches_instance", azure_instance)
-        )
-        stack.enter_context(
-            patch.object(batch_main, "vertex_ai_batches_instance", vertex_instance)
-        )
-        stack.enter_context(
-            patch.object(batch_main, "xai_batches_instance", xai_instance)
-        )
+    os.environ.update(env)
+    previous = (
+        litellm.api_base,
+        litellm.api_version,
+        litellm.api_key,
+        litellm.openai_key,
+        litellm.azure_key,
+        litellm.organization,
+        litellm.vertex_project,
+        litellm.vertex_location,
+    )
+    if settings is not None:
+        litellm.api_base = settings["api_base"]
+        litellm.api_version = settings["api_version"]
+        litellm.api_key = settings["api_key"]
+        litellm.openai_key = settings["openai_key"]
+        litellm.azure_key = settings["azure_key"]
+        litellm.organization = settings["organization"]
+        litellm.vertex_project = settings["vertex_project"]
+        litellm.vertex_location = settings["vertex_location"]
+    try:
         batch = asyncio.run(
             CANCEL(
                 batch_id=call["batch_id"],
@@ -222,39 +137,82 @@ def cancel(
                 custom_llm_provider=call["provider"],
                 extra_headers=call["extra_headers"],
                 extra_body=call["extra_body"],
-                **call["params"],
+                api_base=call["params"]["api_base"],
+                api_key=call["params"]["api_key"],
+                api_version=call["params"]["api_version"],
+                organization=call["params"]["organization"],
+                vertex_project=call["params"]["vertex_project"],
+                vertex_location=call["params"]["vertex_location"],
+                vertex_credentials=call["params"]["vertex_credentials"],
+                azure_ad_token=call["params"]["azure_ad_token"],
+                aws_region_name=call["params"]["aws_region_name"],
+                aws_access_key_id=call["params"]["aws_access_key_id"],
+                aws_secret_access_key=call["params"]["aws_secret_access_key"],
+                aws_session_token=call["params"]["aws_session_token"],
+                timeout=call["params"]["timeout"],
+                request_timeout=call["params"]["request_timeout"],
+                max_retries=call["params"]["max_retries"],
             )
         )
+    finally:
+        (
+            litellm.api_base,
+            litellm.api_version,
+            litellm.api_key,
+            litellm.openai_key,
+            litellm.azure_key,
+            litellm.organization,
+            litellm.vertex_project,
+            litellm.vertex_location,
+        ) = previous
     return WIRE.validate_python(
         {
             "batch": WIRE.validate_json(batch.model_dump_json()),
             "model": call["model"],
-            "calls": calls,
+            "calls": [],
         }
     )
 
 
-class ScriptedStatus:
-    def __init__(self, status: Status) -> None:
-        self.status = status
+def status_fields(status: Status) -> dict[str, JsonValue]:
+    fields: dict[str, JsonValue] = {}
+    fields["invocationArn"] = status["invocationArn"]
+    fields["modelArn"] = status["modelArn"]
+    fields["status"] = status["status"]
+    fields["failureMessage"] = status["failureMessage"]
+    fields["outputDataConfig"] = status["outputDataConfig"]
+    fields["submitTime"] = status["submitTime"]
+    fields["lastModifiedTime"] = status["lastModifiedTime"]
+    fields["endTime"] = status["endTime"]
+    return fields
 
-    async def __call__(
+
+class ScriptedEmbedding(BedrockEmbedding):
+    answer: ClassVar[dict[str, JsonValue]] = {}
+
+    async def _get_async_invoke_status(
         self,
         invocation_arn: str,
         aws_region_name: str,
         logging_obj: JsonValue = None,
         **_kwargs: JsonValue,
-    ) -> Status:
+    ) -> dict[str, JsonValue]:
         del invocation_arn, aws_region_name, logging_obj, _kwargs
-        return self.status
+        return self.answer
 
 
 def async_invoke(status: Status) -> JsonValue:
-    scripted = ScriptedStatus(status)
-    with patch.object(BedrockEmbedding, "_get_async_invoke_status", scripted):
+    previous = bedrock_embedding.BedrockEmbedding
+    previous_answer = ScriptedEmbedding.answer
+    ScriptedEmbedding.answer = status_fields(status)
+    bedrock_embedding.BedrockEmbedding = ScriptedEmbedding
+    try:
         batch = ASYNC_STATUS(
             batch_id=status["invocationArn"], aws_region_name="us-east-1"
         )
+    finally:
+        bedrock_embedding.BedrockEmbedding = previous
+        ScriptedEmbedding.answer = previous_answer
     return WIRE.validate_python(
         {"batch": WIRE.validate_json(batch.model_dump_json()), "model": None, "calls": []}
     )
@@ -266,7 +224,8 @@ def run(input_value: Input) -> JsonValue:
         return cancel(
             envelope["cancel"],
             input_value["settings"],
-            input_value["script"],
             input_value["env"],
         )
-    return async_invoke(envelope["async_invoke"])
+    if "async_invoke" in envelope:
+        return async_invoke(envelope["async_invoke"])
+    raise ValueError("the case names no batch provider cancel operation")

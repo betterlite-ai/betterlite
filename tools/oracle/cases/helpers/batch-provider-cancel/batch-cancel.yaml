@@ -1,14 +1,14 @@
 kind: helper
-name: batch-provider-cancel-openai
+name: batch-provider-cancel-unsupported-provider
 call:
   batch_provider_cancel:
     input:
       cancel:
         batch_id: batch_1
         model: null
-        provider: openai
-        extra_headers: {x-test: one}
-        extra_body: {trace: two}
+        provider: mistral
+        extra_headers: null
+        extra_body: null
         params:
           api_base: null
           api_key: null
@@ -24,43 +24,11 @@ call:
           aws_session_token: null
           timeout: null
           request_timeout: null
-          max_retries: 2
+          max_retries: null
         call: {async: {model_in_kwargs: null}}
-    settings:
-      api_base: null
-      api_version: null
-      api_key: sk-configured
-      openai_key: null
-      azure_key: null
-      organization: org-configured
-      vertex_project: null
-      vertex_location: null
-    env: {OPENAI_BASE_URL: https://env.example/v1}
+    settings: null
+    env: {}
     now: 0
-    script:
-      batch:
-        id: batch_1
-        completion_window: 24h
-        created_at: 1704067200
-        endpoint: /v1/chat/completions
-        input_file_id: file_1
-        object: batch
-        status: cancelling
-        cancelled_at: null
-        cancelling_at: 1704067201
-        completed_at: null
-        error_file_id: null
-        errors: null
-        expired_at: null
-        expires_at: null
-        failed_at: null
-        finalizing_at: null
-        in_progress_at: 1704067200
-        metadata: {trace: two}
-        model: null
-        output_file_id: null
-        request_counts: {completed: 2, failed: 0, total: 5}
-        usage: null
-      error: null
+    script: {batch: null, error: null}
 env: {}
 compare: {ignore: []}
