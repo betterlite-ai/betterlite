@@ -38,6 +38,11 @@ const MARKED_WITH_TAIL: &str = r#"[{"role":"user","content":"hi","cache_control"
 
 const TAIL_ONLY: &str = r#"[{"role":"user","content":"after"}]"#;
 
+const NO_MARKERS: &str =
+    r#"[{"role":"user","content":"hi"},{"role":"assistant","content":"there"}]"#;
+
+const MODEL_TURN: &str = r#"[{"role":"user","content":"hi","cache_control":{"type":"ephemeral"}},{"role":"assistant","content":"there","cache_control":{"type":"ephemeral"}}]"#;
+
 const IMAGE_MARKED: &str = r#"[{"role":"user","content":[{"type":"text","text":"hi","cache_control":{"type":"ephemeral"}},{"type":"image_url","image_url":{"url":"https://example.com/a.png"}}]}]"#;
 
 const MAPPED_TOOLS: &str = r#"[{"functionDeclarations":[{"name":"lookup","description":"Find a record","parameters":{"type":"object","properties":{"id":{"type":"string"}}}}]}]"#;
@@ -96,6 +101,36 @@ async fn explicit_name_bypass() {
 #[tokio::test]
 async fn too_short_unchanged() {
     let harness = Harness::new("gemini-2.5-flash", SHORT_MARKED);
+    let mut options = with_tools();
+    let transport = ScriptedTransport::new(vec![empty_list_page(), created_cache("never")]);
+    let outcome = harness
+        .run(&transport, &mut options)
+        .await
+        .expect("the skip");
+    assert_eq!(outcome.messages, harness.messages);
+    assert_eq!(outcome.cached_content, None);
+    assert_eq!(options, with_tools());
+    assert!(transport.requests().is_empty());
+}
+
+#[tokio::test]
+async fn unmarked_messages_unchanged() {
+    let harness = eligible("gemini-2.5-pro", NO_MARKERS);
+    let mut options = with_tools();
+    let transport = ScriptedTransport::new(vec![empty_list_page(), created_cache("never")]);
+    let outcome = harness
+        .run(&transport, &mut options)
+        .await
+        .expect("the skip");
+    assert_eq!(outcome.messages, harness.messages);
+    assert_eq!(outcome.cached_content, None);
+    assert_eq!(options, with_tools());
+    assert!(transport.requests().is_empty());
+}
+
+#[tokio::test]
+async fn terminal_turn_unchanged() {
+    let harness = eligible("gemini-2.5-pro", MODEL_TURN);
     let mut options = with_tools();
     let transport = ScriptedTransport::new(vec![empty_list_page(), created_cache("never")]);
     let outcome = harness
@@ -295,7 +330,7 @@ async fn transport_cancellation() {
     let mut options = CacheCreateOptions::default();
     let transport = HangingTransport::default();
     let hung = timeout(
-        Duration::from_millis(50),
+        Duration::from_millis(200),
         harness.run(&transport, &mut options),
     );
     assert!(hung.await.is_err(), "the hung lookup ends with its caller");
@@ -312,7 +347,7 @@ async fn timeout_408() {
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("a proxy policy"),
     );
     let limits = TransportLimits {
-        read_timeout: Duration::from_millis(200),
+        read_timeout: Duration::from_millis(500),
         ..TransportLimits::DEFAULT
     };
     let client = ProxiedClient::build(base_builder(), &policy, limits).expect("a fixture client");

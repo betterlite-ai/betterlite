@@ -2,12 +2,6 @@ use std::collections::BTreeMap;
 use std::str;
 use std::time::Duration;
 
-use betterlite_cache::cache_key::derive::get_cache_key;
-use betterlite_cache::cache_key::request::{CacheKeyRequest, KeyParam};
-use betterlite_cache::cache_key::settings::CacheKeySettings;
-use betterlite_cache::cache_key::value::KeyValue;
-use betterlite_cache::types::cache_type::{CacheMode, LiteLlmCacheType};
-use betterlite_cache::types::semantic::SemanticCacheScope;
 use betterlite_core::message_utilities::prompt_cache_checks::{
     PromptCacheRequest, PromptCacheSettings, is_prompt_caching_valid_prompt,
 };
@@ -20,7 +14,6 @@ use betterlite_prompts::message_content::Message;
 use betterlite_tokenizer::count::Counter;
 use jiff::Timestamp;
 use secrecy::SecretString;
-use serde::Serialize;
 
 use crate::cache_lookup::lookup::check_cache;
 use crate::cache_lookup::target::{CacheProvider, CacheTargetInput, cache_target};
@@ -33,17 +26,9 @@ use crate::endpoint_target::target::EndpointTarget;
 use crate::model_policy::capabilities::{ModelCapabilityLookup, VertexCapabilityProvider};
 
 use super::error::CacheCreateError;
+use super::key::context_cache_key;
 use super::records::{CREATED_CACHE_LIMIT, CreatedCache, decode_created_cache};
 use super::request::{CreateCacheBody, cache_create_request};
-
-// LiteLLM's context-caching cache exists only to derive a key, with no namespace and provider params off
-const LOCAL_KEY_SETTINGS: CacheKeySettings = CacheKeySettings {
-    cache_type: LiteLlmCacheType::Local,
-    mode: CacheMode::DefaultOn,
-    namespace: None,
-    semantic_cache_scope: SemanticCacheScope::Key,
-    include_provider_params: false,
-};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CacheCreateOptions {
@@ -78,6 +63,15 @@ pub struct CacheCreateOutcome {
     pub cached_content: Option<String>,
 }
 
+// the endpoint, key and cached block an eligible request sends, with the options already stripped
+struct CachePlan<'plan> {
+    target: EndpointTarget,
+    cache_key: String,
+    cached: &'plan [Message],
+    tools: Option<Vec<Json>>,
+    tool_choice: Option<Json>,
+}
+
 pub async fn check_and_create_cache<T, F, L, C>(
     transport: &T,
     request: &CacheCreateRequest<'_, F>,
@@ -107,10 +101,26 @@ where
             cached_content: None,
         });
     }
-    let cached_content = create_or_find(transport, request, options, &cached, hooks).await?;
+    let plan = plan_cache(request, options, &cached, hooks)?;
+    let found = check_cache(
+        transport,
+        &plan.target,
+        &plan.cache_key,
+        request.extra_headers,
+        request.deadline,
+    )
+    .await
+    .map_err(|source| CacheCreateError::Endpoint { source })?;
+    if let Some(name) = found {
+        return Ok(CacheCreateOutcome {
+            messages: non_cached,
+            cached_content: Some(name),
+        });
+    }
+    let created = post_create(transport, request, &plan).await?;
     Ok(CacheCreateOutcome {
         messages: non_cached,
-        cached_content,
+        cached_content: created.name,
     })
 }
 
@@ -145,22 +155,29 @@ where
     .await
 }
 
-async fn create_or_find<T, F, L, C>(
-    transport: &T,
+fn plan_cache<'plan, F, L, C>(
     request: &CacheCreateRequest<'_, F>,
     options: &mut CacheCreateOptions,
-    cached: &[Message],
+    cached: &'plan [Message],
     hooks: &VerboseHooks<L, C>,
-) -> Result<Option<String>, CacheCreateError>
+) -> Result<CachePlan<'plan>, CacheCreateError>
 where
-    T: CacheTransport,
     F: RemoteMediaFetcher + Sync,
     L: LoggerSink + Sync,
     C: ConsoleSink + Sync,
 {
     let tools = options.tools.take();
     let tool_choice = options.tool_choice.take();
-    let target = context_target(request)?;
+    let target = cache_target(&CacheTargetInput {
+        provider: request.provider,
+        api_base: request.api_base,
+        project: request.project,
+        location: request.location,
+        auth_token: request.auth_token,
+        gemini_api_key: request.gemini_api_key,
+        model: Some(request.model),
+    })
+    .map_err(|source| CacheCreateError::Endpoint { source })?;
     let cache_key = context_cache_key(
         cached,
         tools.as_deref(),
@@ -168,37 +185,47 @@ where
         request.model,
         hooks,
     )?;
-    if let Some(name) = check_cache(
-        transport,
-        &target,
-        &cache_key,
-        request.extra_headers,
-        request.deadline,
-    )
-    .await
-    .map_err(|source| CacheCreateError::Endpoint { source })?
-    {
-        return Ok(Some(name));
-    }
+    Ok(CachePlan {
+        target,
+        cache_key,
+        cached,
+        tools,
+        tool_choice,
+    })
+}
+
+async fn post_create<T, F>(
+    transport: &T,
+    request: &CacheCreateRequest<'_, F>,
+    plan: &CachePlan<'_>,
+) -> Result<CreatedCache, CacheCreateError>
+where
+    T: CacheTransport,
+    F: RemoteMediaFetcher + Sync,
+{
     let body = CreateCacheBody {
-        cached: transform(request, cached, &cache_key).await?,
-        tools: tools.as_deref(),
-        tool_choice: tool_choice.as_ref(),
+        cached: transform(request, plan).await?,
+        tools: plan.tools.as_deref(),
+        tool_choice: plan.tool_choice.as_ref(),
     };
     let encoded =
         serde_json::to_vec(&body).map_err(|source| CacheCreateError::Encode { source })?;
-    let post = cache_create_request(&target, request.extra_headers, encoded, request.deadline)?;
+    let post = cache_create_request(
+        &plan.target,
+        request.extra_headers,
+        encoded,
+        request.deadline,
+    )?;
     let reply = transport
         .send(post)
         .await
         .map_err(CacheCreateError::from_transport)?;
-    created_cache(&reply).map(|created| created.name)
+    created_cache(&reply)
 }
 
 async fn transform<F>(
     request: &CacheCreateRequest<'_, F>,
-    cached: &[Message],
-    cache_key: &str,
+    plan: &CachePlan<'_>,
 ) -> Result<CachedContentRequestBody, CacheCreateError>
 where
     F: RemoteMediaFetcher + Sync,
@@ -206,9 +233,9 @@ where
     cached_content_request(
         &CachedContentRequest {
             model: request.model,
-            messages: cached,
+            messages: plan.cached,
             provider: capability_provider(request.provider),
-            cache_key,
+            cache_key: &plan.cache_key,
             // the target builder already refused a Vertex request without both; Studio leaves them unused
             project: request.project.unwrap_or_default(),
             location: request.location.unwrap_or_default(),
@@ -220,72 +247,6 @@ where
     )
     .await
     .map_err(|source| CacheCreateError::History { source })
-}
-
-fn context_target<F>(
-    request: &CacheCreateRequest<'_, F>,
-) -> Result<EndpointTarget, CacheCreateError>
-where
-    F: RemoteMediaFetcher + Sync,
-{
-    cache_target(&CacheTargetInput {
-        provider: request.provider,
-        api_base: request.api_base,
-        project: request.project,
-        location: request.location,
-        auth_token: request.auth_token,
-        gemini_api_key: request.gemini_api_key,
-        model: Some(request.model),
-    })
-    .map_err(|source| CacheCreateError::Endpoint { source })
-}
-
-fn context_cache_key<L, C>(
-    messages: &[Message],
-    tools: Option<&[Json]>,
-    tool_choice: Option<&Json>,
-    model: &str,
-    hooks: &VerboseHooks<L, C>,
-) -> Result<String, CacheCreateError>
-where
-    L: LoggerSink + Sync,
-    C: ConsoleSink + Sync,
-{
-    let mut request = CacheKeyRequest {
-        params: vec![
-            KeyParam {
-                name: "messages".to_owned(),
-                value: key_value(messages)?,
-            },
-            KeyParam {
-                name: "tools".to_owned(),
-                value: key_value(&tools)?,
-            },
-            KeyParam {
-                name: "tool_choice".to_owned(),
-                value: key_value(&tool_choice)?,
-            },
-            KeyParam {
-                name: "model".to_owned(),
-                value: KeyValue::String(model.to_owned()),
-            },
-        ],
-        metadata: None,
-        litellm_metadata: None,
-        litellm_params: None,
-        cache_control: None,
-    };
-    get_cache_key(&mut request, &LOCAL_KEY_SETTINGS, hooks)
-        .map_err(|source| CacheCreateError::Key { source })
-}
-
-fn key_value<T>(value: &T) -> Result<KeyValue, CacheCreateError>
-where
-    T: Serialize + ?Sized,
-{
-    let encoded =
-        serde_json::to_vec(value).map_err(|source| CacheCreateError::Encode { source })?;
-    serde_json::from_slice(&encoded).map_err(|source| CacheCreateError::Encode { source })
 }
 
 fn created_cache(reply: &UpstreamResponse) -> Result<CreatedCache, CacheCreateError> {
