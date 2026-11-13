@@ -188,8 +188,18 @@ fn echo_error_items(
     failure: &GuardrailFailure,
 ) -> Vec<GuardrailValue> {
     let count = carried.map(<[GuardrailValue]>::len).unwrap_or_default();
+    let status = match failure {
+        GuardrailFailure::Http { status, .. } | GuardrailFailure::HttpObject { status, .. } => {
+            *status
+        }
+        GuardrailFailure::ModifyResponse(_)
+        | GuardrailFailure::GuardrailRaised { .. }
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::Other(_) => 0,
+    };
     let mut echoed = items.to_vec();
-    echoed.push(text(&format!("items={count};{failure}")));
+    echoed.push(text(&format!("status={status};items={count};{failure}")));
     echoed
 }
 
@@ -199,8 +209,6 @@ fn probe() -> ProbeTranslation {
         error_items: None,
     }
 }
-
-// registry resolution
 
 #[test]
 fn dispatch_registry_returns_each_entry() {
@@ -456,8 +464,6 @@ fn dispatch_a2a_call_types_hold_asend_and_send() {
     );
 }
 
-// emit
-
 #[test]
 fn emit_stream_error_display_prints_the_detail() {
     let text_error = StreamHttpError {
@@ -558,7 +564,7 @@ fn emit_http_error_uses_the_yielded_items_not_the_so_far_items() {
     };
     let items = emit_streaming_http_error(error, &emission).unwrap();
     assert_eq!(items.len(), 2);
-    assert_eq!(items.get(1), Some(&text("items=1;blocked")));
+    assert_eq!(items.get(1), Some(&text("status=422;items=1;blocked")));
 }
 
 #[test]
@@ -643,7 +649,7 @@ fn emit_http_error_hands_a_text_detail_to_the_translation() {
         responses_yielded: None,
     };
     let items = emit_streaming_http_error(error, &emission).unwrap();
-    assert_eq!(items, vec![text("items=0;denied")]);
+    assert_eq!(items, vec![text("status=403;items=0;denied")]);
 }
 
 #[test]
@@ -667,10 +673,11 @@ fn emit_http_error_hands_an_object_detail_to_the_translation() {
         responses_yielded: None,
     };
     let items = emit_streaming_http_error(error, &emission).unwrap();
-    assert_eq!(items, vec![text(r#"items=0;{"message":"denied"}"#)]);
+    assert_eq!(
+        items,
+        vec![text(r#"status=403;items=0;{"message":"denied"}"#)]
+    );
 }
-
-// a2a
 
 #[test]
 fn a2a_request_id_reads_an_object_item() {
@@ -771,6 +778,24 @@ fn a2a_error_chunk_falls_back_to_the_message_key() {
         chunk,
         parsed(
             r#"{"jsonrpc": "2.0", "id": "req", "error": {"code": -32603, "message": "denied", "data": {}}}"#
+        )
+    );
+}
+
+#[test]
+fn a2a_error_chunk_keeps_a_present_null_error_as_the_message() {
+    let error = StreamHttpError {
+        status_code: 400,
+        detail: HttpErrorDetail::Object(BTreeMap::from([
+            ("error".to_owned(), GuardrailValue::Null),
+            ("message".to_owned(), text("ignored")),
+        ])),
+    };
+    let chunk = a2a_jsonrpc_error_chunk(&error, GuardrailValue::Null);
+    assert_eq!(
+        chunk,
+        parsed(
+            r#"{"jsonrpc": "2.0", "id": null, "error": {"code": -32603, "message": null, "data": {}}}"#
         )
     );
 }

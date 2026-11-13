@@ -95,16 +95,16 @@ pub fn a2a_jsonrpc_error_chunk(
     let (message, data) = match &error.detail {
         HttpErrorDetail::Text(text) => (GuardrailValue::Text(text.clone()), BTreeMap::new()),
         HttpErrorDetail::Object(detail) => {
-            let message = detail
-                .get("error")
-                .or_else(|| detail.get("message"))
-                .cloned()
-                .unwrap_or_else(|| {
+            // LiteLLM reads detail.get("error", ...), so a present null error is the message
+            let message = match (detail.get("error"), detail.get("message")) {
+                (Some(value), _) | (None, Some(value)) => value.clone(),
+                (None, None) => {
                     let written = serde_json::to_string(detail).unwrap_or_else(|source| {
                         format!("detail could not be written as JSON: {source}")
                     });
                     GuardrailValue::Text(written)
-                });
+                }
+            };
             let mut data = BTreeMap::new();
             for (key, value) in detail {
                 if key == "error" || key == "message" {
