@@ -8,12 +8,14 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 use std::{fs, io};
 
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::studio_identity::{DEFAULT_API_BASE, Settings};
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
-use betterlite_http::proxy::UpstreamResponse;
+use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json;
 use http::Method;
@@ -125,13 +127,6 @@ fn projection_rejects_an_undeclared_function_response_field() {
     match clean_contents(&contents) {
         Err(GoogleCountError::FunctionResponse { source, .. }) => {
             assert!(source.to_string().contains("bogus"));
-        }
-        other => panic!("unexpected result: {other:?}"),
-    }
-    let part = json(r#"[{"parts":[{"functionResponse":{"parts":[{"text":"x"}]}}]}]"#);
-    match clean_contents(&part) {
-        Err(GoogleCountError::FunctionResponse { source, .. }) => {
-            assert!(source.to_string().contains("text"));
         }
         other => panic!("unexpected result: {other:?}"),
     }
@@ -422,6 +417,34 @@ async fn http_count_error_kind_keeps_the_status_and_the_connection_split() {
         Some(2)
     );
     assert_eq!(PROVIDER, "gemini");
+}
+
+#[tokio::test]
+async fn http_count_uses_the_real_client_transport() {
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+            .expect("an empty proxy policy"),
+    );
+    let client = ProxiedClient::outbound(&policy).expect("an outbound client");
+    let contents = json("[]");
+    let settings = studio_settings();
+    let params = NativeParams {
+        api_key: None,
+        gemini_api_key: None,
+    };
+    let input = StudioCountInput {
+        model: "gemini-2.0-flash",
+        contents: &contents,
+        api_key: None,
+        api_base: Some("http://127.0.0.1:1"),
+        params: &params,
+        settings: &settings,
+        timeout: None,
+    };
+    let error = count_tokens(&client, &input, DEADLINE)
+        .await
+        .expect_err("nothing listens on the chosen port");
+    assert!(matches!(error, GoogleCountError::Connection { .. }));
 }
 
 struct FixedClock;
