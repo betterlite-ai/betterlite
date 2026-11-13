@@ -91,13 +91,12 @@ where
                 .query(email::EMAIL_PAGE_SQL, &[&page])
                 .await
                 .map_err(backend)?;
-            for row in &rows {
-                let user = tables::decode_user_row(row)
-                    .map_err(|source| DbError::InvalidRecord { source })?;
-                if let Some(user) = user {
-                    users.push(user);
-                }
-            }
+            let decoded = rows
+                .iter()
+                .map(tables::decode_user_row)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|source| DbError::InvalidRecord { source })?;
+            users.extend(decoded.into_iter().flatten());
         }
         Ok(users)
     }
