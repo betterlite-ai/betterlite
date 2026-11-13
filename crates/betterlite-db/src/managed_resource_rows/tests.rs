@@ -5,10 +5,6 @@ use std::fs;
 use std::path::PathBuf;
 use std::str::from_utf8;
 
-use betterlite_openai::api::responses_objects::ResponsesApiResponse;
-use betterlite_openai::batches::records::BatchObject;
-use betterlite_openai::files::records::FileObject;
-use betterlite_openai::fine_tuning::job::FineTuneJob;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -16,7 +12,6 @@ use uuid::Uuid;
 
 use crate::budget_permission_rows::JsonData;
 
-use super::*;
 use support::*;
 
 #[path = "tests/support.rs"]
@@ -48,21 +43,12 @@ fn managed_file_fields(
     #[case] expected: &str,
     #[case] null_ok: bool,
 ) {
-    let mut row = managed_file_base();
-    assert_eq!(
-        field_of(&dumped("managed_file", &row), field),
-        data(default)
-    );
-    set_field(&mut row, field, data(supplied));
-    assert_eq!(
-        field_of(&dumped("managed_file", &row), field),
-        data(expected)
-    );
-    set_field(&mut row, field, JsonData::Null);
-    assert_eq!(
-        decode_envelope("managed_file", &row).is_ok(),
+    assert_field_cases(
+        "managed_file",
+        managed_file_base(),
+        field,
+        (default, supplied, expected),
         null_ok,
-        "null {field}"
     );
 }
 
@@ -71,11 +57,7 @@ fn managed_file_fields(
 #[case::model_mappings("model_mappings")]
 #[case::flat_model_file_ids("flat_model_file_ids")]
 fn managed_file_required_fields(#[case] field: &str) {
-    let mut row = managed_file_base();
-    remove_field(&mut row, field);
-    assert!(!accepts("managed_file", &row), "missing {field}");
-    set_field(&mut row, field, JsonData::Null);
-    assert!(!accepts("managed_file", &row), "null {field}");
+    assert_required_field("managed_file", managed_file_base(), field);
 }
 
 #[rstest]
@@ -103,11 +85,7 @@ fn managed_object_fields(#[case] field: &str) {
 #[case::file_purpose("file_purpose")]
 #[case::file_object("file_object")]
 fn managed_object_required_fields(#[case] field: &str) {
-    let mut row = managed_object_base();
-    remove_field(&mut row, field);
-    assert!(!accepts("managed_object", &row), "missing {field}");
-    set_field(&mut row, field, JsonData::Null);
-    assert!(!accepts("managed_object", &row), "null {field}");
+    assert_required_field("managed_object", managed_object_base(), field);
 }
 
 #[rstest]
@@ -162,21 +140,12 @@ fn singular_vector_store_fields(
     #[case] expected: &str,
     #[case] null_ok: bool,
 ) {
-    let mut row = singular_base();
-    assert_eq!(
-        field_of(&dumped("managed_vector_store", &row), field),
-        data(default)
-    );
-    set_field(&mut row, field, data(supplied));
-    assert_eq!(
-        field_of(&dumped("managed_vector_store", &row), field),
-        data(expected)
-    );
-    set_field(&mut row, field, JsonData::Null);
-    assert_eq!(
-        decode_envelope("managed_vector_store", &row).is_ok(),
+    assert_field_cases(
+        "managed_vector_store",
+        singular_base(),
+        field,
+        (default, supplied, expected),
         null_ok,
-        "null {field}"
     );
 }
 
@@ -185,11 +154,7 @@ fn singular_vector_store_fields(
 #[case::model_mappings("model_mappings")]
 #[case::flat_model_resource_ids("flat_model_resource_ids")]
 fn singular_vector_store_required_fields(#[case] field: &str) {
-    let mut row = singular_base();
-    remove_field(&mut row, field);
-    assert!(!accepts("managed_vector_store", &row));
-    set_field(&mut row, field, JsonData::Null);
-    assert!(!accepts("managed_vector_store", &row));
+    assert_required_field("managed_vector_store", singular_base(), field);
 }
 
 #[rstest]
@@ -222,21 +187,12 @@ fn plural_vector_store_fields(
     #[case] expected: &str,
     #[case] null_ok: bool,
 ) {
-    let mut row = plural_base();
-    assert_eq!(
-        field_of(&dumped("managed_vector_stores", &row), field),
-        data(default)
-    );
-    set_field(&mut row, field, data(supplied));
-    assert_eq!(
-        field_of(&dumped("managed_vector_stores", &row), field),
-        data(expected)
-    );
-    set_field(&mut row, field, JsonData::Null);
-    assert_eq!(
-        decode_envelope("managed_vector_stores", &row).is_ok(),
+    assert_field_cases(
+        "managed_vector_stores",
+        plural_base(),
+        field,
+        (default, supplied, expected),
         null_ok,
-        "null {field}"
     );
 }
 
@@ -244,11 +200,7 @@ fn plural_vector_store_fields(
 #[case::vector_store_id("vector_store_id")]
 #[case::custom_llm_provider("custom_llm_provider")]
 fn plural_vector_store_required_fields(#[case] field: &str) {
-    let mut row = plural_base();
-    remove_field(&mut row, field);
-    assert!(!accepts("managed_vector_stores", &row));
-    set_field(&mut row, field, JsonData::Null);
-    assert!(!accepts("managed_vector_stores", &row));
+    assert_required_field("managed_vector_stores", plural_base(), field);
 }
 
 #[rstest]
@@ -262,18 +214,12 @@ fn mcp_env_var_fields(
     #[case] expected: &str,
     #[case] null_ok: bool,
 ) {
-    let mut row = data(r#"{"name":"A"}"#);
-    assert_eq!(field_of(&dumped("mcp_env_var", &row), field), data(default));
-    set_field(&mut row, field, data(supplied));
-    assert_eq!(
-        field_of(&dumped("mcp_env_var", &row), field),
-        data(expected)
-    );
-    set_field(&mut row, field, JsonData::Null);
-    assert_eq!(
-        decode_envelope("mcp_env_var", &row).is_ok(),
+    assert_field_cases(
+        "mcp_env_var",
+        data(r#"{"name":"A"}"#),
+        field,
+        (default, supplied, expected),
         null_ok,
-        "null {field}"
     );
 }
 
@@ -474,15 +420,12 @@ fn mcp_server_fields(
     #[case] expected: &str,
     #[case] null_ok: bool,
 ) {
-    let mut row = mcp_server_base();
-    assert_eq!(field_of(&dumped("mcp_server", &row), field), data(default));
-    set_field(&mut row, field, data(supplied));
-    assert_eq!(field_of(&dumped("mcp_server", &row), field), data(expected));
-    set_field(&mut row, field, JsonData::Null);
-    assert_eq!(
-        decode_envelope("mcp_server", &row).is_ok(),
+    assert_field_cases(
+        "mcp_server",
+        mcp_server_base(),
+        field,
+        (default, supplied, expected),
         null_ok,
-        "null {field}"
     );
 }
 
@@ -490,11 +433,7 @@ fn mcp_server_fields(
 #[case::server_id("server_id")]
 #[case::transport("transport")]
 fn mcp_server_required_fields(#[case] field: &str) {
-    let mut row = mcp_server_base();
-    remove_field(&mut row, field);
-    assert!(!accepts("mcp_server", &row));
-    set_field(&mut row, field, JsonData::Null);
-    assert!(!accepts("mcp_server", &row));
+    assert_required_field("mcp_server", mcp_server_base(), field);
 }
 
 #[rstest]
@@ -530,15 +469,12 @@ fn skill_fields(
     #[case] expected: &str,
     #[case] null_ok: bool,
 ) {
-    let mut row = data(r#"{"skill_id":"s"}"#);
-    assert_eq!(field_of(&dumped("skill", &row), field), data(default));
-    set_field(&mut row, field, data(supplied));
-    assert_eq!(field_of(&dumped("skill", &row), field), data(expected));
-    set_field(&mut row, field, JsonData::Null);
-    assert_eq!(
-        decode_envelope("skill", &row).is_ok(),
+    assert_field_cases(
+        "skill",
+        data(r#"{"skill_id":"s"}"#),
+        field,
+        (default, supplied, expected),
         null_ok,
-        "null {field}"
     );
 }
 
@@ -564,18 +500,13 @@ fn autorouter_fields(
     #[case] supplied: &str,
     #[case] expected: &str,
 ) {
-    let mut row = autorouter_base();
-    assert_eq!(
-        field_of(&dumped("autorouter_session", &row), field),
-        data(default)
+    assert_field_cases(
+        "autorouter_session",
+        autorouter_base(),
+        field,
+        (default, supplied, expected),
+        false,
     );
-    set_field(&mut row, field, data(supplied));
-    assert_eq!(
-        field_of(&dumped("autorouter_session", &row), field),
-        data(expected)
-    );
-    set_field(&mut row, field, JsonData::Null);
-    assert!(!accepts("autorouter_session", &row), "null {field}");
 }
 
 #[rstest]
@@ -593,11 +524,7 @@ fn autorouter_fields(
 #[case::tier_turns("tier_turns")]
 #[case::baseline_models("baseline_models")]
 fn autorouter_required_fields(#[case] field: &str) {
-    let mut row = autorouter_base();
-    remove_field(&mut row, field);
-    assert!(!accepts("autorouter_session", &row));
-    set_field(&mut row, field, JsonData::Null);
-    assert!(!accepts("autorouter_session", &row));
+    assert_required_field("autorouter_session", autorouter_base(), field);
 }
 
 #[rstest]
@@ -661,15 +588,12 @@ fn spend_log_fields(
     #[case] expected: &str,
     #[case] null_ok: bool,
 ) {
-    let mut row = spend_log_base();
-    assert_eq!(field_of(&dumped("spend_log", &row), field), data(default));
-    set_field(&mut row, field, data(supplied));
-    assert_eq!(field_of(&dumped("spend_log", &row), field), data(expected));
-    set_field(&mut row, field, JsonData::Null);
-    assert_eq!(
-        decode_envelope("spend_log", &row).is_ok(),
+    assert_field_cases(
+        "spend_log",
+        spend_log_base(),
+        field,
+        (default, supplied, expected),
         null_ok,
-        "null {field}"
     );
 }
 
@@ -678,11 +602,7 @@ fn spend_log_fields(
 #[case::api_key("api_key")]
 #[case::call_type("call_type")]
 fn spend_log_required_fields(#[case] field: &str) {
-    let mut row = spend_log_base();
-    remove_field(&mut row, field);
-    assert!(!accepts("spend_log", &row));
-    set_field(&mut row, field, JsonData::Null);
-    assert!(!accepts("spend_log", &row));
+    assert_required_field("spend_log", spend_log_base(), field);
 }
 
 #[rstest]
@@ -708,15 +628,12 @@ fn error_log_fields(
     #[case] expected: &str,
     #[case] null_ok: bool,
 ) {
-    let mut row = error_log_base();
-    assert_eq!(field_of(&dumped("error_log", &row), field), data(default));
-    set_field(&mut row, field, data(supplied));
-    assert_eq!(field_of(&dumped("error_log", &row), field), data(expected));
-    set_field(&mut row, field, JsonData::Null);
-    assert_eq!(
-        decode_envelope("error_log", &row).is_ok(),
+    assert_field_cases(
+        "error_log",
+        error_log_base(),
+        field,
+        (default, supplied, expected),
         null_ok,
-        "null {field}"
     );
 }
 
@@ -749,15 +666,12 @@ fn tag_fields(
     #[case] expected: &str,
     #[case] null_ok: bool,
 ) {
-    let mut row = data(r#"{"tag_name":"t"}"#);
-    assert_eq!(field_of(&dumped("tag", &row), field), data(default));
-    set_field(&mut row, field, data(supplied));
-    assert_eq!(field_of(&dumped("tag", &row), field), data(expected));
-    set_field(&mut row, field, JsonData::Null);
-    assert_eq!(
-        decode_envelope("tag", &row).is_ok(),
+    assert_field_cases(
+        "tag",
+        data(r#"{"tag_name":"t"}"#),
+        field,
+        (default, supplied, expected),
         null_ok,
-        "null {field}"
     );
 }
 
@@ -893,23 +807,7 @@ fn null_env_vs_headers() {
 
 #[test]
 fn bad_secret_map_redacted() {
-    let wrong = cipher_with("other-key");
-    let row = data(&format!(
-        r#"{{"server_id":"s","transport":"sse","static_headers":"{CIPHERTEXT}"}}"#
-    ));
-    let error = decode_with(&envelope("mcp_server", &row), &wrong).unwrap_err();
-    let text = format!("{error} {error:?}");
-    assert!(!text.contains(PLAINTEXT));
-    assert!(!text.contains(CIPHERTEXT));
-    let right = cipher_with("managed-row-key");
-    let stored = envelope(
-        "mcp_server",
-        &data(
-            r#"{"server_id":"s","transport":"sse","static_headers":{"Authorization":"Bearer row-secret"}}"#,
-        ),
-    );
-    let decoded = decode_with(&stored, &right).unwrap();
-    assert!(!format!("{decoded:?}").contains(PLAINTEXT));
+    assert_secret_map_redacted();
 }
 
 #[test]
@@ -1003,14 +901,12 @@ fn spend_messages_payloads(#[case] payload: &str, #[case] accepted: bool) {
 #[case::error_start_time("error_log", "startTime")]
 #[case::error_end_time("error_log", "endTime")]
 fn required_nullable_fields(#[case] kind: &str, #[case] field: &str) {
-    let mut row = match kind {
-        "spend_log" => spend_log_base(),
-        _ => error_log_base(),
+    let base = if kind == "spend_log" {
+        spend_log_base()
+    } else {
+        error_log_base()
     };
-    remove_field(&mut row, field);
-    assert!(!accepts(kind, &row), "missing {field}");
-    set_field(&mut row, field, JsonData::Null);
-    assert!(accepts(kind, &row), "null {field}");
+    assert_required_nullable(kind, base, field);
 }
 
 #[test]
@@ -1036,40 +932,7 @@ fn explicit_error_request_id() {
 
 #[test]
 fn managed_row_input_limits() {
-    let cipher = cipher_with("managed-row-key");
-    let dependencies = ManagedRowDependencies {
-        cipher: &cipher,
-        error_request_id: Uuid::from_u128(INJECTED_REQUEST_ID),
-    };
-    let oversized = " ".repeat(0x0010_0000_usize + 1);
-    assert!(matches!(
-        decode_with(&oversized, &cipher),
-        Err(ManagedRowsDecodeError::TooLarge { .. })
-    ));
-    let deep = format!("{}{}", "[".repeat(65), "]".repeat(65));
-    assert!(matches!(
-        decode_with(&deep, &cipher),
-        Err(ManagedRowsDecodeError::TooDeep)
-    ));
-    assert!(matches!(
-        decode_managed_resource_rows::<FileObject, BatchObject, FineTuneJob, ResponsesApiResponse>(
-            &[0xff],
-            &dependencies
-        ),
-        Err(ManagedRowsDecodeError::InvalidUtf8(_))
-    ));
-    assert!(matches!(
-        decode_with(r#"{"kind":"not_a_row","row":{}}"#, &cipher),
-        Err(ManagedRowsDecodeError::UnknownKind { .. })
-    ));
-    let wrapped = format!(
-        "{{\"kind\":\"mcp_server\",\"row\":[{} {{\"server_id\":\"s\",\"transport\":\"sse\",\"static_headers\":\"{CIPHERTEXT}\"}} {}]}}",
-        "[".repeat(32),
-        "]".repeat(32)
-    );
-    let error = decode_with(&wrapped, &cipher).unwrap_err();
-    assert!(matches!(&error, ManagedRowsDecodeError::TooDeep));
-    assert!(!format!("{error} {error:?}").contains(PLAINTEXT));
+    assert_input_limits();
 }
 
 #[rstest]

@@ -111,6 +111,95 @@ pub(crate) fn dumped(kind: &str, row: &JsonData) -> JsonData {
     dumped_row(&decode_envelope(kind, row).unwrap())
 }
 
+pub(crate) fn assert_field_cases(
+    kind: &str,
+    base: JsonData,
+    field: &str,
+    values: (&str, &str, &str),
+    null_ok: bool,
+) {
+    let (default, supplied, expected) = values;
+    let mut row = base;
+    assert_eq!(field_of(&dumped(kind, &row), field), data(default));
+    set_field(&mut row, field, data(supplied));
+    assert_eq!(field_of(&dumped(kind, &row), field), data(expected));
+    set_field(&mut row, field, JsonData::Null);
+    assert_eq!(accepts(kind, &row), null_ok, "null {field}");
+}
+
+pub(crate) fn assert_required_field(kind: &str, base: JsonData, field: &str) {
+    let mut row = base;
+    remove_field(&mut row, field);
+    assert!(!accepts(kind, &row), "missing {field}");
+    set_field(&mut row, field, JsonData::Null);
+    assert!(!accepts(kind, &row), "null {field}");
+}
+
+pub(crate) fn assert_required_nullable(kind: &str, base: JsonData, field: &str) {
+    let mut row = base;
+    remove_field(&mut row, field);
+    assert!(!accepts(kind, &row), "missing {field}");
+    set_field(&mut row, field, JsonData::Null);
+    assert!(accepts(kind, &row), "null {field}");
+}
+
+pub(crate) fn assert_secret_map_redacted() {
+    let wrong = cipher_with("other-key");
+    let row = data(&format!(
+        r#"{{"server_id":"s","transport":"sse","static_headers":"{CIPHERTEXT}"}}"#
+    ));
+    let error = decode_with(&envelope("mcp_server", &row), &wrong).unwrap_err();
+    let text = format!("{error} {error:?}");
+    assert!(!text.contains(PLAINTEXT));
+    assert!(!text.contains(CIPHERTEXT));
+    let right = cipher_with("managed-row-key");
+    let stored = envelope(
+        "mcp_server",
+        &data(
+            r#"{"server_id":"s","transport":"sse","static_headers":{"Authorization":"Bearer row-secret"}}"#,
+        ),
+    );
+    let decoded = decode_with(&stored, &right).unwrap();
+    assert!(!format!("{decoded:?}").contains(PLAINTEXT));
+}
+
+pub(crate) fn assert_input_limits() {
+    let cipher = cipher_with("managed-row-key");
+    let dependencies = ManagedRowDependencies {
+        cipher: &cipher,
+        error_request_id: Uuid::from_u128(INJECTED_REQUEST_ID),
+    };
+    let oversized = " ".repeat(0x0010_0000_usize + 1);
+    assert!(matches!(
+        decode_with(&oversized, &cipher),
+        Err(ManagedRowsDecodeError::TooLarge { .. })
+    ));
+    let deep = format!("{}{}", "[".repeat(65), "]".repeat(65));
+    assert!(matches!(
+        decode_with(&deep, &cipher),
+        Err(ManagedRowsDecodeError::TooDeep)
+    ));
+    assert!(matches!(
+        decode_managed_resource_rows::<FileObject, BatchObject, FineTuneJob, ResponsesApiResponse>(
+            &[0xff],
+            &dependencies
+        ),
+        Err(ManagedRowsDecodeError::InvalidUtf8(_))
+    ));
+    assert!(matches!(
+        decode_with(r#"{"kind":"not_a_row","row":{}}"#, &cipher),
+        Err(ManagedRowsDecodeError::UnknownKind { .. })
+    ));
+    let wrapped = format!(
+        "{{\"kind\":\"mcp_server\",\"row\":[{} {{\"server_id\":\"s\",\"transport\":\"sse\",\"static_headers\":\"{CIPHERTEXT}\"}} {}]}}",
+        "[".repeat(32),
+        "]".repeat(32)
+    );
+    let error = decode_with(&wrapped, &cipher).unwrap_err();
+    assert!(matches!(&error, ManagedRowsDecodeError::TooDeep));
+    assert!(!format!("{error} {error:?}").contains(PLAINTEXT));
+}
+
 pub(crate) fn mcp_server(row: &JsonData) -> McpServerTable {
     let FullRow::McpServer(server) = decode_envelope("mcp_server", row).unwrap() else {
         panic!("expected an mcp server row");
