@@ -17,6 +17,7 @@ use crate::logging_failure::{
     FAILED_REQUEST_REASON, FailureCall, FailureDeps, FailureReport, PASS_THROUGH_CALL_TYPE,
     SyncAdmission,
 };
+use crate::logging_metadata::params::metadata_from_litellm_params;
 use crate::logging_state::LoggingState;
 use crate::logging_state::callbacks::{CallbackKind, should_run_callback};
 use crate::logging_state::correlation::restore_correlation_context;
@@ -151,6 +152,7 @@ fn deliverable<'call>(
     Some(FailureDelivery {
         payload,
         dynamic_params: Arc::new(Json::Object(call.state.callback_dynamic_params.clone())),
+        litellm_metadata: Arc::new(metadata_from_litellm_params(&call.state.litellm_params)),
         stream: call.state.stream == Some(true),
         excluded_fields: deps.excluded_fields,
         stamp: deps.stamp.clone(),
@@ -240,6 +242,7 @@ pub fn run_sync_failure(job: SyncFailureJob) {
     let delivery = FailureDelivery {
         payload: &payload,
         dynamic_params: job.dynamic_params,
+        litellm_metadata: Arc::new(metadata_from_litellm_params(&job.litellm_params)),
         stream: job.stream,
         excluded_fields: &job.excluded_fields,
         stamp: job.stamp,
