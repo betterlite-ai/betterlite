@@ -122,7 +122,7 @@ fn stamp_configured(
         .cloned()
         .collect();
     let external = {
-        let wire = request_view(&*seeding.params);
+        let wire = request_view(seeding.params);
         count_external_breakpoints(
             Some(&kept_tools),
             seeding.params.get("cache_control"),
@@ -160,7 +160,7 @@ fn seed_defaults(
         tools: seeding.tools,
         enable_prompt_caching: seeding.enable_prompt_caching,
         cache_control: seeding.params.get("cache_control"),
-        request_kwargs: &*seeding.params,
+        request_kwargs: seeding.params,
         on_messages_route: false,
         policy: seeding.policy,
     };
