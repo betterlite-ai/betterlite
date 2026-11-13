@@ -48,10 +48,7 @@ pub fn messages_with_defaults(
             cache_control,
             request_kwargs: projection.request_kwargs,
             on_messages_route: false,
-            policy: CachePolicy {
-                global_enabled: projection.policy.global_enabled,
-                ttl: projection.policy.ttl,
-            },
+            policy: projection.policy,
         };
         let points = get_default_injection_points(&request, facts);
         if !points.is_empty() {

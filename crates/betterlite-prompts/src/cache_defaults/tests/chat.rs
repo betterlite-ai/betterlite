@@ -214,6 +214,32 @@ fn a_per_request_flag_seeds_defaults_with_the_global_flag_off() {
 }
 
 #[test]
+fn a_top_level_cache_control_keeps_the_seeding_from_defaulting() {
+    let mut seeding = Seeding {
+        params: object(r#"{"cache_control": {"type": "ephemeral"}}"#),
+        ..Seeding::defaults()
+    };
+    let params = seeded_params(&mut seeding, &Facts::claude());
+    assert_eq!(
+        wire(&params),
+        json(r#"{"cache_control": {"type": "ephemeral"}}"#)
+    );
+}
+
+#[test]
+fn an_extra_body_cache_control_keeps_the_seeding_from_defaulting() {
+    let mut seeding = Seeding {
+        params: object(r#"{"extra_body": {"cache_control": {"type": "ephemeral"}}}"#),
+        ..Seeding::defaults()
+    };
+    let params = seeded_params(&mut seeding, &Facts::claude());
+    assert_eq!(
+        wire(&params),
+        json(r#"{"extra_body": {"cache_control": {"type": "ephemeral"}}}"#)
+    );
+}
+
+#[test]
 fn no_defaults_are_seeded_when_the_capability_is_missing() {
     let mut seeding = Seeding::defaults();
     assert_eq!(
@@ -246,6 +272,20 @@ fn configured_points_are_stamped_with_the_external_breakpoint_count() {
     };
     let seeded = seeded_params(&mut seeding, &Facts::none());
     let expected = r#"{"cache_control_injection_points": [{"location": "message", "role": "user", "index": null, "control": {"type": "ephemeral"}, "_litellm_external_breakpoints": 1}]}"#;
+    assert_eq!(wire(&seeded), json(expected));
+}
+
+#[test]
+fn configured_points_count_the_top_level_cache_control_as_external() {
+    let params = format!(
+        r#"{{"cache_control_injection_points": {CONFIGURED}, "cache_control": {{"type": "ephemeral"}}}}"#
+    );
+    let mut seeding = Seeding {
+        params: object(&params),
+        ..Seeding::defaults()
+    };
+    let seeded = seeded_params(&mut seeding, &Facts::none());
+    let expected = r#"{"cache_control": {"type": "ephemeral"}, "cache_control_injection_points": [{"location": "message", "role": "user", "index": null, "control": {"type": "ephemeral"}, "_litellm_external_breakpoints": 1}]}"#;
     assert_eq!(wire(&seeded), json(expected));
 }
 

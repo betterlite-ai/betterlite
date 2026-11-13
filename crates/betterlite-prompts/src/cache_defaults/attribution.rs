@@ -40,13 +40,13 @@ fn attribution_view(params: &Object, deployment: Option<&Json>) -> RequestRecord
         };
         let mut view = BTreeMap::new();
         if let Some(marker) = bucket.get(GATEWAY_CACHE_METADATA_KEY) {
-            view.insert(GATEWAY_CACHE_METADATA_KEY.to_owned(), record_value(marker));
+            view.insert(GATEWAY_CACHE_METADATA_KEY.to_owned(), record_of(marker));
         }
         fields.insert(name.to_owned(), RequestRecord::Object(view));
     }
     let mut info = BTreeMap::new();
     if let Some(id) = deployment {
-        info.insert("id".to_owned(), record_value(id));
+        info.insert("id".to_owned(), record_of(id));
     }
     fields.insert("model_info".to_owned(), RequestRecord::Object(info));
     RequestRecord::Object(fields)
@@ -80,28 +80,10 @@ fn write_back(params: &mut Object, record: &RequestRecord, deployment: Option<&J
     }
 }
 
-fn record_value(value: &Json) -> RequestRecord {
-    match value {
-        Json::Null => RequestRecord::Null,
-        Json::Bool(flag) => RequestRecord::Bool(*flag),
-        Json::Text(text) => RequestRecord::String(text.clone()),
-        Json::Number(number) => number_record(number),
-        Json::List(items) => RequestRecord::Array(items.iter().map(record_value).collect()),
-        Json::Object(fields) => RequestRecord::Object(
-            fields
-                .iter()
-                .map(|(key, item)| (key.clone(), record_value(item)))
-                .collect(),
-        ),
-    }
-}
-
-fn number_record(number: &serde_json::Number) -> RequestRecord {
-    if let Some(value) = number.as_i64() {
-        return RequestRecord::Signed(value);
-    }
-    if let Some(value) = number.as_u64() {
-        return RequestRecord::Unsigned(value);
-    }
-    serde_json::from_str::<RequestRecord>(&number.to_string()).unwrap_or(RequestRecord::Null)
+// Any non-sentinel value reads the same to the marker rule, whose written id comes from the original JSON.
+fn record_of(value: &Json) -> RequestRecord {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|encoded| serde_json::from_value(encoded).ok())
+        .unwrap_or(RequestRecord::Null)
 }
