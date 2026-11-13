@@ -561,6 +561,8 @@ fn stream_chunk_error_defaults_metadata_and_user() {
     json!({"id": "c", "created": 1, "model": "m", "choices": [{"index": 0}]}),
     "delta"
 )]
+#[case::choices_before_id(json!({}), "choices")]
+#[case::delta_before_id(json!({"choices": [{"index": 0}]}), "delta")]
 fn stream_chunk_missing_keys_give_the_key_error(#[case] chunk: Value, #[case] key: &str) {
     let error = chunk_parser(&chunk).unwrap_err();
     assert_eq!(error.status_code, 400);

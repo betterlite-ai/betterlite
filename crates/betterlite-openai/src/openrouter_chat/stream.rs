@@ -14,6 +14,14 @@ pub fn chunk_parser(chunk: &Value) -> Result<StreamReply, OpenRouterError> {
     if let Some(error) = fields.get("error") {
         return Err(stream_error(error, chunk));
     }
+    let raw_choices = fields
+        .get("choices")
+        .and_then(Value::as_array)
+        .ok_or_else(|| key_error("choices", chunk))?;
+    let mut choices = Vec::with_capacity(raw_choices.len());
+    for raw in raw_choices {
+        choices.push(choice(raw, chunk)?);
+    }
     let id = fields
         .get("id")
         .and_then(Value::as_str)
@@ -26,14 +34,6 @@ pub fn chunk_parser(chunk: &Value) -> Result<StreamReply, OpenRouterError> {
         .get("model")
         .and_then(Value::as_str)
         .ok_or_else(|| key_error("model", chunk))?;
-    let raw_choices = fields
-        .get("choices")
-        .and_then(Value::as_array)
-        .ok_or_else(|| key_error("choices", chunk))?;
-    let mut choices = Vec::with_capacity(raw_choices.len());
-    for raw in raw_choices {
-        choices.push(choice(raw, chunk)?);
-    }
     Ok(StreamReply {
         id: id.to_owned(),
         object: CHUNK_OBJECT,
