@@ -38,13 +38,13 @@ impl SizePattern {
     }
 }
 
-// The call types whose response is an ImageResponse; the passthrough one has no CallType variant.
+// The call types whose response is an ImageResponse; the passthrough one is spelled with hyphens.
 #[must_use]
 pub fn call_type_has_image_response(call_type: &str) -> bool {
     const IMAGE_CALLS: [&str; 5] = [
         "image_generation",
         "aimage_generation",
-        "passthrough_image_generation",
+        "passthrough-image-generation",
         "image_edit",
         "aimage_edit",
     ];

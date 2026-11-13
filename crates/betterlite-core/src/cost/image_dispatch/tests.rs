@@ -271,13 +271,14 @@ fn a_missing_key_or_missing_options_is_absent() {
 #[rstest]
 #[case::generation("image_generation", true)]
 #[case::async_generation("aimage_generation", true)]
-#[case::passthrough("passthrough_image_generation", true)]
+#[case::passthrough("passthrough-image-generation", true)]
 #[case::edit("image_edit", true)]
 #[case::async_edit("aimage_edit", true)]
 #[case::completion("completion", false)]
 #[case::variation("image_variation", false)]
 #[case::async_variation("aimage_variation", false)]
 #[case::prefixed("pass_through_image_generation", false)]
+#[case::underscored("passthrough_image_generation", false)]
 #[case::upper("IMAGE_GENERATION", false)]
 #[case::empty("", false)]
 fn only_the_five_image_call_names_have_an_image_response(
@@ -391,7 +392,7 @@ fn each_provider_selects_its_own_calculator(#[case] provider: Option<&str>, #[ca
 #[case::edit(Some("image_edit"), "gemini_edit")]
 #[case::async_edit(Some("aimage_edit"), "gemini_edit")]
 #[case::async_generation(Some("aimage_generation"), "gemini")]
-#[case::passthrough(Some("passthrough_image_generation"), "gemini")]
+#[case::passthrough(Some("passthrough-image-generation"), "gemini")]
 #[case::unset(None, "gemini")]
 fn gemini_edits_use_the_edit_calculator_only_for_the_two_edit_names(
     #[case] call_type: Option<&str>,
@@ -524,7 +525,7 @@ fn deployment_prices_are_exact_numbers() {
     let Some(Scalar::Number(number)) = run(&priced).1[0].image_price.clone() else {
         panic!("the price is not a number");
     };
-    assert_eq!(number.to_string(), "0.04");
+    assert_eq!(number.to_string(), "0.0400");
 }
 
 #[test]
