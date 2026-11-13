@@ -47,6 +47,22 @@ jobs:
           git log -1 --format='%H %ct' HEAD > _site/commit.txt
           ls -l _site
 
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+
+      - name: Restore the gate's cargo cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: pages
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: .development/gate -> target
+
+      # the gate reads the task files, the budget commits and deny.toml, so the list is as fresh as the deploy
+      - name: List the exceptions to check later
+        run: |
+          cargo gate exceptions > _site/exceptions.csv
+          wc -l _site/exceptions.csv
+
       # the stage times go only into the page artifact, never into the repository
       - name: Fetch when each merged pull request was started, opened, queued and merged, and its size
         env:

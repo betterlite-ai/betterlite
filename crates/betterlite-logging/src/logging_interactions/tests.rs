@@ -474,7 +474,7 @@ fn dedupe_reset_tolerates_missing_or_non_map_levels(#[case] details: &str) {
 }
 
 #[test]
-fn budget_reservation_prefers_litellm_metadata_and_reads_only_maps() {
+fn budget_reservation_takes_the_callers_copy_when_both_maps_carry_one_and_reads_only_maps() {
     let caller_only = params(r#"{"metadata": {"user_api_key_budget_reservation": {"spend": 2}}}"#);
     assert_eq!(
         reservation_from_params(&caller_only),
@@ -490,9 +490,10 @@ fn budget_reservation_prefers_litellm_metadata_and_reads_only_maps() {
         r#"{"metadata": {"user_api_key_budget_reservation": {"caller": 1}},
             "litellm_metadata": {"user_api_key_budget_reservation": {"internal": 2}}}"#,
     );
+    // LiteLLM copies every user_api_key key of metadata over litellm_metadata: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L282-L293
     assert_eq!(
         reservation_from_params(&both),
-        Some(params(r#"{"internal": 2}"#))
+        Some(params(r#"{"caller": 1}"#))
     );
     let internal_without_reservation = params(
         r#"{"metadata": {"user_api_key_budget_reservation": {"caller": 1}},
