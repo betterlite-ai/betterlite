@@ -1,27 +1,27 @@
 use betterlite_prompts::arguments::json::Json;
 
-use super::fixture::{
-    RECORDS, World, body_of, capture, failure, field, json, transform, transform_stripping,
-};
+use super::fixture::{RECORDS, World, body_of, capture, failure, field, json, transform};
 
 const USER: &str = r#"[{"role":"user","content":"hello"}]"#;
 
 #[test]
 fn reasoning_alias_precedence() {
-    let world = World::load(RECORDS);
-    alias_medium_maps(&world);
-    alias_budget_ladder(&world);
-    alias_existing_thinking_wins(&world);
-    alias_nonstring_and_none(&world);
-    alias_invalid_effort(&world);
+    alias_medium_maps();
+    alias_budget_ladder();
+    alias_existing_thinking_wins();
+    alias_nonstring_and_none();
+    alias_invalid_effort();
 }
 
-fn alias_medium_maps(world: &World) {
+#[test]
+fn alias_medium_maps() {
+    let world = World::load(RECORDS);
     let sent = body_of(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":4096,"reasoning_effort":"medium"}"#,
+        false,
     ));
     assert_eq!(
         field(&sent, "thinking"),
@@ -34,11 +34,13 @@ fn alias_medium_maps(world: &World) {
 
 fn budget_for(world: &World, effort: &str) -> Json {
     let params = format!(r#"{{"max_tokens":32768,"reasoning_effort":"{effort}"}}"#);
-    let sent = body_of(transform(world, "claude-sonnet-4-5", USER, &params));
+    let sent = body_of(transform(world, "claude-sonnet-4-5", USER, &params, false));
     field(&sent, "thinking").cloned().expect("a mapped budget")
 }
 
-fn alias_budget_ladder(world: &World) {
+#[test]
+fn alias_budget_ladder() {
+    let world = World::load(RECORDS);
     assert_eq!(
         budget_for(world, "minimal"),
         json(r#"{"type":"enabled","budget_tokens":1024}"#)
@@ -61,12 +63,15 @@ fn alias_budget_ladder(world: &World) {
     );
 }
 
-fn alias_existing_thinking_wins(world: &World) {
+#[test]
+fn alias_existing_thinking_wins() {
+    let world = World::load(RECORDS);
     let sent = body_of(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":32768,"reasoning_effort":"medium","thinking":{"type":"enabled","budget_tokens":1500}}"#,
+        false,
     ));
     assert_eq!(
         field(&sent, "thinking"),
@@ -74,12 +79,15 @@ fn alias_existing_thinking_wins(world: &World) {
     );
 }
 
-fn alias_nonstring_and_none(world: &World) {
+#[test]
+fn alias_nonstring_and_none() {
+    let world = World::load(RECORDS);
     let unmapped = body_of(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":4096,"reasoning_effort":3}"#,
+        false,
     ));
     assert_eq!(field(&unmapped, "thinking"), None);
     assert_eq!(field(&unmapped, "reasoning_effort"), None);
@@ -89,17 +97,21 @@ fn alias_nonstring_and_none(world: &World) {
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":4096,"reasoning_effort":"none","thinking":{"type":"enabled","budget_tokens":2000},"output_config":{"format":{"type":"json_schema"}}}"#,
+        false,
     ));
     assert_eq!(field(&cleared, "thinking"), None);
     assert_eq!(field(&cleared, "output_config"), None);
 }
 
-fn alias_invalid_effort(world: &World) {
+#[test]
+fn alias_invalid_effort() {
+    let world = World::load(RECORDS);
     let legacy = failure(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":4096,"reasoning_effort":"extreme"}"#,
+        false,
     ));
     assert_eq!(legacy.status_code(), 400);
     assert!(legacy.to_string().contains("Unmapped reasoning effort"));
@@ -109,6 +121,7 @@ fn alias_invalid_effort(world: &World) {
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":4096,"reasoning_effort":"extreme"}"#,
+        false,
     ));
     assert_eq!(adaptive.status_code(), 400);
     assert!(adaptive.to_string().contains("Invalid reasoning_effort"));
@@ -116,19 +129,21 @@ fn alias_invalid_effort(world: &World) {
 
 #[test]
 fn adaptive_output_effort() {
-    let world = World::load(RECORDS);
-    adaptive_effort_levels(&world);
-    adaptive_effort_top_levels(&world);
-    adaptive_effort_existing_config(&world);
-    adaptive_effort_gate(&world);
+    adaptive_effort_levels();
+    adaptive_effort_top_levels();
+    adaptive_effort_existing_config();
+    adaptive_effort_gate();
 }
 
-fn adaptive_effort_levels(world: &World) {
+#[test]
+fn adaptive_effort_levels() {
+    let world = World::load(RECORDS);
     let minimal = body_of(transform(
         world,
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":32768,"reasoning_effort":"minimal"}"#,
+        false,
     ));
     assert_eq!(
         field(&minimal, "thinking"),
@@ -143,6 +158,7 @@ fn adaptive_effort_levels(world: &World) {
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":32768,"reasoning_effort":"low"}"#,
+        false,
     ));
     assert_eq!(
         field(&low, "output_config"),
@@ -153,6 +169,7 @@ fn adaptive_effort_levels(world: &World) {
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":32768,"reasoning_effort":"medium"}"#,
+        false,
     ));
     assert_eq!(
         field(&medium, "output_config"),
@@ -160,12 +177,15 @@ fn adaptive_effort_levels(world: &World) {
     );
 }
 
-fn adaptive_effort_top_levels(world: &World) {
+#[test]
+fn adaptive_effort_top_levels() {
+    let world = World::load(RECORDS);
     let high = body_of(transform(
         world,
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":32768,"reasoning_effort":"high"}"#,
+        false,
     ));
     assert_eq!(
         field(&high, "output_config"),
@@ -176,6 +196,7 @@ fn adaptive_effort_top_levels(world: &World) {
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":32768,"reasoning_effort":"max"}"#,
+        false,
     ));
     assert_eq!(
         field(&max, "output_config"),
@@ -183,12 +204,15 @@ fn adaptive_effort_top_levels(world: &World) {
     );
 }
 
-fn adaptive_effort_existing_config(world: &World) {
+#[test]
+fn adaptive_effort_existing_config() {
+    let world = World::load(RECORDS);
     let existing = body_of(transform(
         world,
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":32768,"reasoning_effort":"high","output_config":{"effort":"low","format":{"type":"json_schema"}}}"#,
+        false,
     ));
     assert_eq!(
         field(&existing, "output_config"),
@@ -200,6 +224,7 @@ fn adaptive_effort_existing_config(world: &World) {
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":32768,"reasoning_effort":"medium","output_config":{"format":{"type":"json_schema"}}}"#,
+        false,
     ));
     assert_eq!(
         field(&format_only, "output_config"),
@@ -213,6 +238,7 @@ fn adaptive_effort_existing_config(world: &World) {
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":32768,"reasoning_effort":"medium","output_config":"plain"}"#,
+        false,
     ));
     assert_eq!(
         field(&plain, "output_config"),
@@ -220,12 +246,15 @@ fn adaptive_effort_existing_config(world: &World) {
     );
 }
 
-fn adaptive_effort_gate(world: &World) {
+#[test]
+fn adaptive_effort_gate() {
+    let world = World::load(RECORDS);
     let xhigh = failure(transform(
         world,
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":32768,"reasoning_effort":"xhigh"}"#,
+        false,
     ));
     assert_eq!(xhigh.status_code(), 400);
     assert_eq!(
@@ -238,24 +267,27 @@ fn adaptive_effort_gate(world: &World) {
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":32768,"reasoning_effort":"xhigh","thinking":{"type":"enabled","budget_tokens":1500}}"#,
+        false,
     ));
     assert_eq!(thinking_present.status_code(), 400);
 }
 
 #[test]
 fn legacy_budget_fit() {
-    let world = World::load(RECORDS);
-    budget_cap(&world);
-    budget_drop_keeps_existing(&world);
-    budget_missing(&world);
+    budget_cap();
+    budget_drop_keeps_existing();
+    budget_missing();
 }
 
-fn budget_cap(world: &World) {
+#[test]
+fn budget_cap() {
+    let world = World::load(RECORDS);
     let capped = body_of(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":1500,"reasoning_effort":"medium"}"#,
+        false,
     ));
     assert_eq!(
         field(&capped, "thinking"),
@@ -267,6 +299,7 @@ fn budget_cap(world: &World) {
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":1025,"reasoning_effort":"medium"}"#,
+        false,
     ));
     assert_eq!(
         field(&boundary, "thinking"),
@@ -274,13 +307,16 @@ fn budget_cap(world: &World) {
     );
 }
 
-fn budget_drop_keeps_existing(world: &World) {
+#[test]
+fn budget_drop_keeps_existing() {
+    let world = World::load(RECORDS);
     let (_guard, logs) = capture();
     let unfitting = body_of(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":1024,"reasoning_effort":"medium","thinking":{"type":"enabled","budget_tokens":1500},"output_config":{"format":{"type":"json_schema"}}}"#,
+        false,
     ));
     assert_eq!(
         field(&unfitting, "thinking"),
@@ -307,16 +343,20 @@ fn budget_drop_keeps_existing(world: &World) {
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":0,"reasoning_effort":"medium"}"#,
+        false,
     ));
     assert_eq!(field(&zero, "thinking"), None);
 }
 
-fn budget_missing(world: &World) {
+#[test]
+fn budget_missing() {
+    let world = World::load(RECORDS);
     let missing = failure(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"reasoning_effort":"medium"}"#,
+        false,
     ));
     assert_eq!(
         missing.to_string(),
@@ -329,6 +369,7 @@ fn budget_missing(world: &World) {
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":null,"reasoning_effort":"medium"}"#,
+        false,
     ));
     assert_eq!(null.to_string(), missing.to_string());
 
@@ -337,25 +378,28 @@ fn budget_missing(world: &World) {
         "claude-sonnet-4-5",
         USER,
         r#"{"reasoning_effort":"extreme"}"#,
+        false,
     ));
     assert_eq!(early.to_string(), missing.to_string());
 }
 
 #[test]
 fn nonadaptive_effort_translation() {
-    let world = World::load(RECORDS);
-    legacy_thinking_for_nonadaptive(&world);
-    native_effort_kept(&world);
-    legacy_effort_fallbacks(&world);
-    invalid_legacy_effort(&world);
+    legacy_thinking_for_nonadaptive();
+    native_effort_kept();
+    legacy_effort_fallbacks();
+    invalid_legacy_effort();
 }
 
-fn legacy_thinking_for_nonadaptive(world: &World) {
+#[test]
+fn legacy_thinking_for_nonadaptive() {
+    let world = World::load(RECORDS);
     let translated = body_of(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":32768,"thinking":{"type":"adaptive"},"output_config":{"effort":"medium","format":{"type":"json_schema"}}}"#,
+        false,
     ));
     assert_eq!(
         field(&translated, "thinking"),
@@ -371,6 +415,7 @@ fn legacy_thinking_for_nonadaptive(world: &World) {
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":32768,"thinking":{"type":"adaptive"}}"#,
+        false,
     ));
     assert_eq!(
         field(&fallback, "thinking"),
@@ -378,12 +423,15 @@ fn legacy_thinking_for_nonadaptive(world: &World) {
     );
 }
 
-fn native_effort_kept(world: &World) {
+#[test]
+fn native_effort_kept() {
+    let world = World::load(RECORDS);
     let native = body_of(transform(
         world,
         "claude-opus-4-5",
         USER,
         r#"{"max_tokens":32768,"thinking":{"type":"adaptive"},"output_config":{"effort":"high"}}"#,
+        false,
     ));
     assert_eq!(field(&native, "thinking"), None);
     assert_eq!(
@@ -396,6 +444,7 @@ fn native_effort_kept(world: &World) {
         "claude-opus-4-5",
         USER,
         r#"{"max_tokens":32768,"output_config":{"effort":"xhigh"}}"#,
+        false,
     ));
     assert_eq!(field(&effort_only, "thinking"), None);
     assert_eq!(
@@ -404,12 +453,15 @@ fn native_effort_kept(world: &World) {
     );
 }
 
-fn legacy_effort_fallbacks(world: &World) {
+#[test]
+fn legacy_effort_fallbacks() {
+    let world = World::load(RECORDS);
     let capped = body_of(transform(
         world,
         "claude-opus-4-5",
         USER,
         r#"{"max_tokens":32768,"thinking":{"type":"adaptive"},"output_config":{"effort":"xhigh"}}"#,
+        false,
     ));
     assert_eq!(
         field(&capped, "thinking"),
@@ -422,6 +474,7 @@ fn legacy_effort_fallbacks(world: &World) {
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":32768,"thinking":{"type":"adaptive"},"output_config":{"effort":"medium"}}"#,
+        false,
     ));
     assert_eq!(field(&consumed, "output_config"), None);
 
@@ -431,6 +484,7 @@ fn legacy_effort_fallbacks(world: &World) {
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":1024,"thinking":{"type":"adaptive"},"output_config":{"effort":"medium","format":{"type":"json_schema"}}}"#,
+        false,
     ));
     assert_eq!(field(&unsupported, "thinking"), None);
     assert_eq!(
@@ -445,12 +499,15 @@ fn legacy_effort_fallbacks(world: &World) {
     );
 }
 
-fn invalid_legacy_effort(world: &World) {
+#[test]
+fn invalid_legacy_effort() {
+    let world = World::load(RECORDS);
     let invalid = failure(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":32768,"output_config":{"effort":"extreme"}}"#,
+        false,
     ));
     assert_eq!(invalid.status_code(), 400);
     assert!(invalid.to_string().contains("Unmapped reasoning effort"));
@@ -458,18 +515,20 @@ fn invalid_legacy_effort(world: &World) {
 
 #[test]
 fn thinking_temperature_rules() {
-    let world = World::load(RECORDS);
-    temperature_dropped(&world);
-    temperature_kept(&world);
-    temperature_after_translation(&world);
+    temperature_dropped();
+    temperature_kept();
+    temperature_after_translation();
 }
 
-fn temperature_dropped(world: &World) {
+#[test]
+fn temperature_dropped() {
+    let world = World::load(RECORDS);
     let enabled = body_of(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":32768,"temperature":0,"thinking":{"type":"enabled","budget_tokens":2000}}"#,
+        false,
     ));
     assert_eq!(field(&enabled, "temperature"), None);
 
@@ -478,16 +537,20 @@ fn temperature_dropped(world: &World) {
         "claude-opus-4-5",
         USER,
         r#"{"max_tokens":32768,"temperature":0,"output_config":{"effort":"high"}}"#,
+        false,
     ));
     assert_eq!(field(&effort, "temperature"), None);
 }
 
-fn temperature_kept(world: &World) {
+#[test]
+fn temperature_kept() {
+    let world = World::load(RECORDS);
     let one = body_of(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":32768,"temperature":1,"thinking":{"type":"enabled","budget_tokens":2000}}"#,
+        false,
     ));
     assert_eq!(field(&one, "temperature"), Some(&json("1")));
 
@@ -496,6 +559,7 @@ fn temperature_kept(world: &World) {
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":32768,"temperature":null,"thinking":{"type":"enabled","budget_tokens":2000}}"#,
+        false,
     ));
     assert_eq!(field(&null, "temperature"), Some(&json("null")));
 
@@ -504,6 +568,7 @@ fn temperature_kept(world: &World) {
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":32768,"temperature":0,"thinking":{"type":"disabled"}}"#,
+        false,
     ));
     assert_eq!(field(&disabled, "temperature"), Some(&json("0")));
 
@@ -512,16 +577,20 @@ fn temperature_kept(world: &World) {
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":32768,"temperature":0,"reasoning_effort":"medium"}"#,
+        false,
     ));
     assert_eq!(field(&adaptive, "temperature"), Some(&json("0")));
 }
 
-fn temperature_after_translation(world: &World) {
+#[test]
+fn temperature_after_translation() {
+    let world = World::load(RECORDS);
     let translated = body_of(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":32768,"temperature":0,"thinking":{"type":"adaptive"},"output_config":{"effort":"medium"}}"#,
+        false,
     ));
     assert_eq!(
         field(&translated, "thinking"),
@@ -534,6 +603,7 @@ fn temperature_after_translation(world: &World) {
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":1024,"temperature":0,"thinking":{"type":"adaptive"},"output_config":{"effort":"medium"}}"#,
+        false,
     ));
     assert_eq!(field(&dropped, "thinking"), None);
     assert_eq!(field(&dropped, "temperature"), Some(&json("0")));
@@ -541,22 +611,24 @@ fn temperature_after_translation(world: &World) {
 
 #[test]
 fn native_request_history() {
-    let world = World::load(RECORDS);
-    history_retained(&world);
-    billing_history(&world);
-    context_history(&world);
-    advisor_history(&world);
-    encrypted_history(&world);
-    system_role_history(&world);
-    transformation_is_logged(&world);
+    history_retained();
+    billing_history();
+    context_history();
+    advisor_history();
+    encrypted_history();
+    system_role_history();
+    transformation_is_logged();
 }
 
-fn history_retained(world: &World) {
+#[test]
+fn history_retained() {
+    let world = World::load(RECORDS);
     let sent = body_of(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":2048,"temperature":1}"#,
+        false,
     ));
     assert_eq!(field(&sent, "model"), Some(&json(r#""claude-sonnet-4-5""#)));
     assert_eq!(field(&sent, "max_tokens"), Some(&json("2048")));
@@ -568,33 +640,33 @@ fn history_retained(world: &World) {
     assert_eq!(field(&sent, "system"), None);
 }
 
-fn billing_history(world: &World) {
+#[test]
+fn billing_history() {
+    let world = World::load(RECORDS);
     let system = r#"{"max_tokens":2048,"system":[{"type":"text","text":"x-anthropic-billing-header: cc"},{"type":"text","text":"keep"}]}"#;
-    let kept = body_of(transform(world, "claude-sonnet-4-5", USER, system));
+    let kept = body_of(transform(world, "claude-sonnet-4-5", USER, system, false));
     assert_eq!(
         field(&kept, "system"),
         Some(&json(
             r#"[{"type":"text","text":"x-anthropic-billing-header: cc"},{"type":"text","text":"keep"}]"#
         ))
     );
-    let stripped = body_of(transform_stripping(
-        world,
-        "claude-sonnet-4-5",
-        USER,
-        system,
-    ));
+    let stripped = body_of(transform(world, "claude-sonnet-4-5", USER, system, true));
     assert_eq!(
         field(&stripped, "system"),
         Some(&json(r#"[{"type":"text","text":"keep"}]"#))
     );
 }
 
-fn context_history(world: &World) {
+#[test]
+fn context_history() {
+    let world = World::load(RECORDS);
     let context = body_of(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":2048,"context_management":[{"type":"compaction","compact_threshold":200000}]}"#,
+        false,
     ));
     assert_eq!(
         field(&context, "context_management"),
@@ -607,6 +679,7 @@ fn context_history(world: &World) {
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":2048,"context_management":[{"type":"unknown","value":1}]}"#,
+        false,
     ));
     assert_eq!(
         field(&unknown, "context_management"),
@@ -614,13 +687,16 @@ fn context_history(world: &World) {
     );
 }
 
-fn advisor_history(world: &World) {
+#[test]
+fn advisor_history() {
+    let world = World::load(RECORDS);
     let advisor = r#"[{"role":"assistant","content":[{"type":"server_tool_use","id":"a","name":"advisor","input":{}},{"type":"advisor_tool_result","tool_use_id":"a","content":"advice"},{"type":"text","text":"after"}]}]"#;
     let without_tool = body_of(transform(
         world,
         "claude-sonnet-4-5",
         advisor,
         r#"{"max_tokens":2048}"#,
+        false,
     ));
     assert_eq!(
         field(&without_tool, "messages"),
@@ -633,6 +709,7 @@ fn advisor_history(world: &World) {
         "claude-sonnet-4-5",
         advisor,
         r#"{"max_tokens":2048,"tools":[{"type":"advisor_20260301","name":"advisor"}]}"#,
+        false,
     ));
     assert_eq!(
         field(&with_tool, "messages"),
@@ -642,13 +719,16 @@ fn advisor_history(world: &World) {
     );
 }
 
-fn encrypted_history(world: &World) {
+#[test]
+fn encrypted_history() {
+    let world = World::load(RECORDS);
     let encrypted = r#"[{"role":"assistant","content":[{"type":"thinking","thinking":"hidden","signature":"litellm_encrypted_reasoning:abc"},{"type":"text","text":"kept"}]},{"role":"assistant","content":[{"type":"redacted_thinking","data":"litellm_encrypted_reasoning:def"}]}]"#;
     let sent = body_of(transform(
         world,
         "claude-sonnet-4-5",
         encrypted,
         r#"{"max_tokens":2048}"#,
+        false,
     ));
     assert_eq!(
         field(&sent, "messages"),
@@ -658,13 +738,16 @@ fn encrypted_history(world: &World) {
     );
 }
 
-fn system_role_history(world: &World) {
+#[test]
+fn system_role_history() {
+    let world = World::load(RECORDS);
     let messages = r#"[{"role":"system","content":"first"},{"role":"user","content":"hello"}]"#;
     let sent = body_of(transform(
         world,
         "claude-sonnet-4-5",
         messages,
         r#"{"max_tokens":2048}"#,
+        false,
     ));
     assert_eq!(
         field(&sent, "messages"),
@@ -674,13 +757,16 @@ fn system_role_history(world: &World) {
     );
 }
 
-fn transformation_is_logged(world: &World) {
+#[test]
+fn transformation_is_logged() {
+    let world = World::load(RECORDS);
     let (_guard, logs) = capture();
     let _unused = body_of(transform(
         world,
         "claude-sonnet-4-5",
         USER,
         r#"{"max_tokens":2048}"#,
+        false,
     ));
     assert!(logs.logged_transformation());
 }
@@ -696,6 +782,7 @@ fn disabled_thinking_is_dropped_for_always_on_models() {
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":2048,"thinking":{"type":"disabled"}}"#,
+        false,
     ));
     assert_eq!(field(&sent, "thinking"), None);
     assert_eq!(logs.warnings().len(), 1);
@@ -711,6 +798,7 @@ fn legacy_thinking_is_translated_for_adaptive_models() {
         "claude-opus-4-6",
         USER,
         r#"{"max_tokens":32768,"thinking":{"type":"enabled","budget_tokens":5000,"display":"omitted"}}"#,
+        false,
     ));
     assert_eq!(
         field(&sent, "thinking"),

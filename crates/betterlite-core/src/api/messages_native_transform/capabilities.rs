@@ -26,6 +26,22 @@ pub const MAX_EFFORT: &str = "supports_max_reasoning_effort";
 
 pub type Thinking = IndexMap<String, Json>;
 
+pub struct LegacyShapes<'request> {
+    pub model: &'request str,
+    pub custom_llm_provider: &'request str,
+    pub params: &'request mut OptionalParams,
+}
+
+fn thinking_fields(value: Option<Json>) -> Option<Thinking> {
+    match value {
+        Some(Json::Object(fields)) => Some(fields),
+        None
+        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            None
+        }
+    }
+}
+
 // The capability questions the request transform asks; production answers them through B569.
 pub trait ThinkingCapabilities {
     fn supports(
@@ -64,9 +80,7 @@ pub trait ThinkingCapabilities {
 
     fn translate_legacy_thinking<'seam>(
         &'seam mut self,
-        model: &'seam str,
-        params: &'seam mut OptionalParams,
-        provider: &'seam str,
+        request: &'seam mut LegacyShapes<'seam>,
     ) -> impl Future<Output = Result<(), ThinkingError>> + Send + 'seam;
 }
 
@@ -107,12 +121,7 @@ where
         };
         async move {
             let mapped = map_reasoning_effort(&request, self.environment, self.catalogs).await?;
-            Ok(mapped.and_then(|value| match value {
-                Json::Object(fields) => Some(fields),
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-                    None
-                }
-            }))
+            Ok(thinking_fields(mapped))
         }
     }
 
@@ -144,19 +153,21 @@ where
 
     fn translate_legacy_thinking<'seam>(
         &'seam mut self,
-        model: &'seam str,
-        params: &'seam mut OptionalParams,
-        provider: &'seam str,
+        request: &'seam mut LegacyShapes<'seam>,
     ) -> impl Future<Output = Result<(), ThinkingError>> + Send + 'seam {
-        let request = ThinkingRequest {
-            model,
-            custom_llm_provider: provider,
-            thresholds: EffortThresholds {
-                medium: self.budgets.medium,
-                high: self.budgets.high,
-                xhigh: self.budgets.xhigh,
-            },
+        let thresholds = EffortThresholds {
+            medium: self.budgets.medium,
+            high: self.budgets.high,
+            xhigh: self.budgets.xhigh,
         };
-        async move { translate_legacy_thinking(&request, params, self.environment, self.catalogs).await }
+        async move {
+            let thinking = ThinkingRequest {
+                model: request.model,
+                custom_llm_provider: request.custom_llm_provider,
+                thresholds,
+            };
+            translate_legacy_thinking(&thinking, request.params, self.environment, self.catalogs)
+                .await
+        }
     }
 }

@@ -166,16 +166,11 @@ impl World {
         }
     }
 
-    fn catalogs(&self) -> CatalogSources<'_> {
-        CatalogSources {
-            patterns: &self.patterns,
-            runtime: &self.runtime,
-            packaged: &self.packaged,
-        }
-    }
-
-    fn resolution(&self) -> ResolutionContext<'_> {
-        ResolutionContext {
+    pub(crate) fn transform(
+        &self,
+        request: TransformRequest<'_>,
+    ) -> Result<Object, TransformError> {
+        let resolution = ResolutionContext {
             catalog: &self.typed,
             known_model_names: &self.known,
             custom_providers: &self.custom,
@@ -183,14 +178,7 @@ impl World {
             registry: JSONProviderRegistry::load(),
             policies: ProviderPolicies::default(),
             globals: GlobalCredentials::default(),
-        }
-    }
-
-    pub(crate) fn transform(
-        &self,
-        request: TransformRequest<'_>,
-    ) -> Result<Object, TransformError> {
-        let resolution = self.resolution();
+        };
         let mut keys = ModelCostKeys::default();
         let dynamic = NoDynamicMetadata;
         let mut environment = CapabilityEnvironment {
@@ -207,7 +195,11 @@ impl World {
             provider_catalog: &self.provider_catalog,
             provider_generation: 0,
         };
-        let catalogs = self.catalogs();
+        let catalogs = CatalogSources {
+            patterns: &self.patterns,
+            runtime: &self.runtime,
+            packaged: &self.packaged,
+        };
         let mut capabilities = AnthropicCapabilities {
             environment: &mut environment,
             catalogs: &catalogs,
@@ -219,32 +211,18 @@ impl World {
 }
 
 pub(crate) fn transform(
-    world: &World,
-    model: &str,
-    messages: &str,
-    params: &str,
+    fixture: &World,
+    name: &str,
+    history: &str,
+    options: &str,
+    strips_billing_metadata: bool,
 ) -> Result<Object, TransformError> {
-    world.transform(TransformRequest {
-        model,
-        messages: parsed_messages(messages),
-        optional_params: object(params),
+    fixture.transform(TransformRequest {
+        model: name,
+        messages: parsed_messages(history),
+        optional_params: object(options),
         custom_llm_provider: "anthropic",
-        strips_billing_metadata: false,
-    })
-}
-
-pub(crate) fn transform_stripping(
-    world: &World,
-    model: &str,
-    messages: &str,
-    params: &str,
-) -> Result<Object, TransformError> {
-    world.transform(TransformRequest {
-        model,
-        messages: parsed_messages(messages),
-        optional_params: object(params),
-        custom_llm_provider: "anthropic",
-        strips_billing_metadata: true,
+        strips_billing_metadata,
     })
 }
 

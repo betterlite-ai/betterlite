@@ -49,7 +49,7 @@ where
     request
         .optional_params
         .entry("thinking".to_owned())
-        .or_insert_with(|| from_contract(fitted));
+        .or_insert_with(|| from_contract(fitted))?;
     apply_output_effort(capabilities, &effort, &mut request).await
 }
 

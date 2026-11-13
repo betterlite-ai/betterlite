@@ -16,6 +16,8 @@ pub enum TransformError {
     Thinking(#[from] ThinkingError),
     #[error(transparent)]
     ContextManagement(#[from] ContextManagementError),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
 }
 
 impl TransformError {
@@ -23,7 +25,7 @@ impl TransformError {
     pub const fn status_code(&self) -> u16 {
         match self {
             Self::MissingMaxTokens | Self::IntegerField { .. } | Self::Anthropic { .. } => 400,
-            Self::Thinking(_) | Self::ContextManagement(_) => 500,
+            Self::Thinking(_) | Self::ContextManagement(_) | Self::Json(_) => 500,
         }
     }
 }

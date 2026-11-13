@@ -1,6 +1,8 @@
 use betterlite_models::decisions::Json as ContractJson;
 use betterlite_prompts::arguments::json::Json;
 
+use super::error::TransformError;
+
 // B569 and B2201 read and write the decisions JSON, while the Messages request body uses the prompts JSON.
 pub(crate) fn to_contract(value: &Json) -> ContractJson {
     match value {
@@ -18,18 +20,10 @@ pub(crate) fn to_contract(value: &Json) -> ContractJson {
     }
 }
 
-pub(crate) fn from_contract(value: ContractJson) -> Json {
-    match value {
-        ContractJson::Null => Json::Null,
-        ContractJson::Bool(flag) => Json::Bool(flag),
-        ContractJson::Number(number) => Json::Number(number),
-        ContractJson::Text(text) => Json::Text(text),
-        ContractJson::List(items) => Json::List(items.into_iter().map(from_contract).collect()),
-        ContractJson::Object(fields) => Json::Object(
-            fields
-                .into_iter()
-                .map(|(key, nested)| (key, from_contract(nested)))
-                .collect(),
-        ),
+// serde already knows both shapes, so the reverse direction is its own round trip.
+pub(crate) fn from_contract(value: ContractJson) -> Result<Json, TransformError> {
+    match serde_json::to_string(&value) {
+        Ok(encoded) => serde_json::from_str(&encoded).map_err(TransformError::from),
+        Err(source) => Err(TransformError::from(source)),
     }
 }

@@ -1,0 +1,57 @@
+kind: helper
+name: messages-native-transform-native-request-history
+call:
+  messages_native_transform:
+    model_cost:
+      claude-sonnet-4-5: {litellm_provider: anthropic, supports_reasoning: true, supports_adaptive_thinking: false, supports_output_config: false, supports_legacy_thinking: false, supports_xhigh_reasoning_effort: false, supports_max_reasoning_effort: false, thinking_always_on: false}
+    packaged: {}
+    calls:
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 2048, temperature: 1}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 2048, system: [{type: text, text: "x-anthropic-billing-header: cc"}, {type: text, text: keep}]}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 2048, system: [{type: text, text: "x-anthropic-billing-header: cc"}, {type: text, text: keep}]}
+        strips_billing_metadata: true
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 2048, context_management: [{type: compaction, compact_threshold: 200000}]}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 2048, context_management: [{type: unknown, value: 1}]}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: assistant, content: [{type: server_tool_use, id: a, name: advisor, input: {}}, {type: advisor_tool_result, tool_use_id: a, content: advice}, {type: text, text: after}]}]
+        optional_params: {max_tokens: 2048}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: assistant, content: [{type: server_tool_use, id: a, name: advisor, input: {}}, {type: advisor_tool_result, tool_use_id: a, content: advice}, {type: text, text: after}]}]
+        optional_params: {max_tokens: 2048, tools: [{type: advisor_20260301, name: advisor}]}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages:
+          - {role: assistant, content: [{type: thinking, thinking: hidden, signature: "litellm_encrypted_reasoning:abc"}, {type: text, text: kept}]}
+          - {role: assistant, content: [{type: redacted_thinking, data: "litellm_encrypted_reasoning:def"}]}
+        optional_params: {max_tokens: 2048}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: system, content: first}, {role: user, content: hello}]
+        optional_params: {max_tokens: 2048}
+        strips_billing_metadata: false
+env: {}
+compare: {ignore: []}

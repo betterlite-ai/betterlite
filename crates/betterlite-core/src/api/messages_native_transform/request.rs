@@ -7,7 +7,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::Number;
 
 use super::adaptive::{AdaptiveEffort, translate_adaptive_effort};
-use super::capabilities::ThinkingCapabilities;
+use super::capabilities::{LegacyShapes, ThinkingCapabilities};
 use super::error::TransformError;
 use super::json::{from_contract, to_contract};
 use super::reasoning::{ReasoningAlias, translate_reasoning_effort};
@@ -39,6 +39,16 @@ where
         strips_billing_metadata,
     } = request;
     let max_tokens = take_max_tokens(&mut optional_params)?;
+    translate_reasoning_effort(
+        capabilities,
+        ReasoningAlias {
+            model,
+            custom_llm_provider,
+            max_tokens,
+            optional_params: &mut optional_params,
+        },
+    )
+    .await?;
     apply_thinking_rules(
         capabilities,
         model,
@@ -64,17 +74,14 @@ async fn apply_thinking_rules<Capabilities>(
 where
     Capabilities: ThinkingCapabilities + Send,
 {
-    translate_reasoning_effort(
-        capabilities,
-        ReasoningAlias {
-            model,
-            custom_llm_provider,
-            max_tokens,
-            optional_params,
-        },
-    )
-    .await?;
-    normalize_thinking(capabilities, model, custom_llm_provider, optional_params).await?;
+    let mut contract = OptionalParams {
+        reasoning_effort: None,
+        thinking: optional_params.get("thinking").map(to_contract),
+        output_config: optional_params.get("output_config").map(to_contract),
+    };
+    normalize_legacy_shapes(capabilities, model, custom_llm_provider, &mut contract).await?;
+    write_contract(optional_params, "thinking", contract.thinking)?;
+    write_contract(optional_params, "output_config", contract.output_config)?;
     translate_adaptive_effort(
         capabilities,
         AdaptiveEffort {
@@ -94,6 +101,26 @@ where
         },
     )
     .await
+}
+
+async fn normalize_legacy_shapes<Capabilities>(
+    capabilities: &mut Capabilities,
+    model: &str,
+    custom_llm_provider: &str,
+    contract: &mut OptionalParams,
+) -> Result<(), TransformError>
+where
+    Capabilities: ThinkingCapabilities + Send,
+{
+    capabilities
+        .drop_disabled_thinking(model, contract, custom_llm_provider)
+        .await;
+    let mut shapes = LegacyShapes {
+        model,
+        custom_llm_provider,
+        params: contract,
+    };
+    capabilities.translate_legacy_thinking(&mut shapes).await
 }
 
 fn finish_request(
@@ -135,40 +162,20 @@ fn take_max_tokens(params: &mut Object) -> Result<i64, TransformError> {
     }
 }
 
-async fn normalize_thinking<Capabilities>(
-    capabilities: &mut Capabilities,
-    model: &str,
-    custom_llm_provider: &str,
-    optional_params: &mut Object,
-) -> Result<(), TransformError>
-where
-    Capabilities: ThinkingCapabilities + Send,
-{
-    let mut params = OptionalParams {
-        reasoning_effort: None,
-        thinking: optional_params.get("thinking").map(to_contract),
-        output_config: optional_params.get("output_config").map(to_contract),
-    };
-    capabilities
-        .drop_disabled_thinking(model, &mut params, custom_llm_provider)
-        .await;
-    capabilities
-        .translate_legacy_thinking(model, &mut params, custom_llm_provider)
-        .await?;
-    write_contract(optional_params, "thinking", params.thinking);
-    write_contract(optional_params, "output_config", params.output_config);
-    Ok(())
-}
-
-fn write_contract(params: &mut Object, key: &str, value: Option<ContractJson>) {
+fn write_contract(
+    params: &mut Object,
+    key: &str,
+    value: Option<ContractJson>,
+) -> Result<(), TransformError> {
     match value {
         Some(updated) => {
-            params.insert(key.to_owned(), from_contract(updated));
+            params.insert(key.to_owned(), from_contract(updated)?);
         }
         None => {
             params.shift_remove(key);
         }
     }
+    Ok(())
 }
 
 // LiteLLM reads a null system value as absent and leaves it in the request untouched.
@@ -212,7 +219,7 @@ fn convert_context_management(params: &mut Object) -> Result<(), TransformError>
     };
     params.insert(
         "context_management".to_owned(),
-        from_contract(ContractJson::Object(converted)),
+        from_contract(ContractJson::Object(converted))?,
     );
     Ok(())
 }
