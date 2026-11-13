@@ -18,9 +18,16 @@ const VOICE_MAPPINGS: [(&str, &str); 10] = [
     ("verse", "CYw3kZ02Hs0563khs1Fj"),
 ];
 const VOICE_KEYS: [&str; 3] = ["voice_id", "id", "name"];
+// str.strip() in Python also removes U+001C to U+001F, which char::is_whitespace keeps
+pub(super) const STRIP_SPACE: [char; 29] = [
+    '\u{9}', '\u{a}', '\u{b}', '\u{c}', '\u{d}', '\u{1c}', '\u{1d}', '\u{1e}', '\u{1f}', ' ',
+    '\u{85}', '\u{a0}', '\u{1680}', '\u{2000}', '\u{2001}', '\u{2002}', '\u{2003}', '\u{2004}',
+    '\u{2005}', '\u{2006}', '\u{2007}', '\u{2008}', '\u{2009}', '\u{200a}', '\u{2028}', '\u{2029}',
+    '\u{202f}', '\u{205f}', '\u{3000}',
+];
 
 fn extract_voice_id(voice: &str) -> String {
-    let normalized = voice.trim();
+    let normalized = voice.trim_matches(STRIP_SPACE);
     let lowered = normalized.to_lowercase();
     let mapped = VOICE_MAPPINGS.iter().find(|(name, _)| *name == lowered);
     mapped
@@ -41,7 +48,7 @@ pub fn resolve_voice_id(
                 options
                     .get(*key)?
                     .as_str()
-                    .filter(|text| !text.trim().is_empty())
+                    .filter(|text| !text.trim_matches(STRIP_SPACE).is_empty())
             })
             .map(extract_voice_id),
         None => None,

@@ -6,6 +6,7 @@ call:
     - {function: map_params, voice: alloy, optional_params: {speed: 1.5}, kwargs: {}}
     - {function: map_params, voice: alloy, optional_params: {speed: 2}, kwargs: {}}
     - {function: map_params, voice: alloy, optional_params: {speed: " 0.75 "}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {speed: "\u001f0.75\u001c"}, kwargs: {}}
     - {function: map_params, voice: alloy, optional_params: {speed: true}, kwargs: {}}
     - {function: map_params, voice: alloy, optional_params: {speed: fast}, kwargs: {}}
     - {function: map_params, voice: alloy, optional_params: {speed: [1]}, kwargs: {}}

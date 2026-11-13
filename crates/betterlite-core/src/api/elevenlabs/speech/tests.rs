@@ -62,6 +62,8 @@ fn secret(value: &str) -> SecretString {
 #[case::upper_case("ALLOY", "21m00Tcm4TlvDq8ikWAM")]
 #[case::trimmed("  Sage  ", "CwhRBWXzGAHq8TQ4Fs17")]
 #[case::unknown_keeps_its_case("  Custom-Voice ", "Custom-Voice")]
+#[case::separators_are_stripped("\u{1f}alloy\u{1c}", ALLOY_ID)]
+#[case::unicode_spaces_are_stripped("\u{a0}ash\u{3000}", ASH_ID)]
 fn named_voices_resolve_through_the_case_insensitive_mappings(
     #[case] name: &str,
     #[case] expected: &str,
@@ -80,6 +82,7 @@ fn named_voices_resolve_through_the_case_insensitive_mappings(
 )]
 #[case::id_before_name(r#"{"id": "blue", "name": "coral"}"#, "2EiwWnXFnvU5JabPnv8n")]
 #[case::blank_voice_id_falls_to_id(r#"{"voice_id": "  ", "id": "ash"}"#, ASH_ID)]
+#[case::separator_voice_id_falls_to_id(r#"{"voice_id": "\u001c", "id": "ash"}"#, ASH_ID)]
 #[case::non_string_keys_fall_to_name(
     r#"{"voice_id": 5, "id": null, "name": "Onyx"}"#,
     "29vD33N1CtxCmqQRPOHJ"
@@ -96,6 +99,7 @@ fn mapping_voices_use_the_first_nonblank_string_key(#[case] voice: &str, #[case]
 #[rstest]
 #[case::empty("")]
 #[case::spaces("   ")]
+#[case::separators("\u{1c}\u{1f}")]
 fn a_blank_voice_string_resolves_to_an_empty_id_without_consuming_voice_id(#[case] name: &str) {
     let mut params = object(r#"{"voice_id": "lily"}"#);
     let resolved = resolve_voice_id(Some(&SpeechVoice::Name(name.to_owned())), &mut params)
@@ -129,6 +133,7 @@ fn a_resolved_voice_leaves_the_optional_voice_id_for_the_body() {
 #[rstest]
 #[case::missing("{}")]
 #[case::blank(r#"{"voice_id": "  "}"#)]
+#[case::separator(r#"{"voice_id": "\u001c"}"#)]
 #[case::not_a_string(r#"{"voice_id": 7}"#)]
 fn a_missing_voice_is_an_error(#[case] options: &str) {
     let mut params = object(options);
@@ -212,6 +217,7 @@ fn a_new_query_replaces_a_stale_query_key_in_kwargs() {
 #[case::float("1.5", r#"{"voice_settings": {"speed": 1.5}}"#)]
 #[case::integer("2", r#"{"voice_settings": {"speed": 2.0}}"#)]
 #[case::numeric_string(r#"" 0.75 ""#, r#"{"voice_settings": {"speed": 0.75}}"#)]
+#[case::separator_padded_string(r#""\u001f0.75\u001c""#, "{}")]
 #[case::boolean("true", r#"{"voice_settings": {"speed": 1.0}}"#)]
 #[case::text(r#""fast""#, "{}")]
 #[case::list("[1]", "{}")]
@@ -510,6 +516,7 @@ fn a_voice_id_that_is_a_dot_segment_cannot_build_a_url(#[case] voice_id: &str) {
 #[rstest]
 #[case::empty(r#""""#)]
 #[case::spaces(r#""   ""#)]
+#[case::separator(r#""\u001c""#)]
 #[case::not_a_string("4")]
 #[case::null("null")]
 fn a_blank_or_missing_voice_id_cannot_build_a_url(#[case] voice_id: &str) {
@@ -525,9 +532,11 @@ fn a_missing_voice_id_key_cannot_build_a_url() {
     assert!(matches!(result, Err(SpeechError::VoiceRequired)));
 }
 
-#[test]
-fn a_whitespace_voice_maps_to_an_empty_id_that_fails_url_building() {
-    let mapped = map(r#""  ""#, r#"{"voice_id": "lily"}"#, "{}");
+#[rstest]
+#[case::spaces(r#""  ""#)]
+#[case::separator(r#""\u001c""#)]
+fn a_whitespace_voice_maps_to_an_empty_id_that_fails_url_building(#[case] voice: &str) {
+    let mapped = map(voice, r#"{"voice_id": "lily"}"#, "{}");
     let result = complete_url(None, ENVIRONMENT_BASE, &mapped.kwargs);
 
     assert_eq!(mapped.mapping.voice_id, "");

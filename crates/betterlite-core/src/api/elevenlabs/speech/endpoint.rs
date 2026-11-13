@@ -4,6 +4,7 @@ use url::form_urlencoded;
 
 use super::error::SpeechError;
 use super::mapping::{QUERY_PARAMS_KEY, VOICE_ID_KEY};
+use super::voice::STRIP_SPACE;
 
 const TTS_ENDPOINT_PATH: &str = "/v1/text-to-speech";
 
@@ -34,7 +35,7 @@ pub fn complete_url(
         .get(VOICE_ID_KEY)
         .ok_or(SpeechError::VoiceRequired)?
         .as_str()
-        .filter(|text| !text.trim().is_empty())
+        .filter(|text| !text.trim_matches(STRIP_SPACE).is_empty())
         .ok_or(SpeechError::VoiceRequired)?;
     let encoded = encode_segment(voice_id, "voice_id")
         .map_err(|source| SpeechError::VoiceSegment { source })?;

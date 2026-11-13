@@ -41,6 +41,10 @@ fn elevenlabs_speech_settings_read_the_environment() {
 #[rstest]
 #[case::empty_base_is_unset("ELEVENLABS_API_BASE", "", None, DEFAULT_API_BASE)]
 #[case::empty_key_is_kept("ELEVENLABS_API_KEY", "", Some(""), DEFAULT_API_BASE)]
+#[case::true_key_is_unset("ELEVENLABS_API_KEY", "true", None, DEFAULT_API_BASE)]
+#[case::false_base_is_unset("ELEVENLABS_API_BASE", " False ", None, DEFAULT_API_BASE)]
+#[case::other_text_key_is_kept("ELEVENLABS_API_KEY", "yes", Some("yes"), DEFAULT_API_BASE)]
+#[case::other_text_base_is_kept("ELEVENLABS_API_BASE", "no", None, "no")]
 fn elevenlabs_speech_settings_treat_empty_values(
     #[case] name: &str,
     #[case] value: &str,
