@@ -9,3 +9,6 @@ deviations:
   - what: A response resource body is refused past 1 MiB, 16384 JSON values or 128 nesting levels, where httpx.Response.json() has no bound.
     why: Rule bounded-inputs gives every parser of provider bytes a finite limit, and a body this large is not one a working setup reads through these endpoints.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L95-L102
+  - what: A compact request refuses an api_base that is not an absolute URL with a URL error, where httpx.URL builds a relative URL and the failure only comes when the request is sent.
+    why: Compact parses the API base with url::Url, which requires a scheme, and an api_base without one reaches no provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L934-L937
