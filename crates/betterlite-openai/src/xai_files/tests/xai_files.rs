@@ -384,6 +384,17 @@ fn an_answer_over_the_byte_limit_is_rejected_before_parsing() {
 }
 
 #[test]
+fn a_reply_exactly_at_the_byte_limit_is_decoded() {
+    let limits = WireDecodeLimits {
+        max_json_bytes: 2,
+        max_event_bytes: 1,
+        max_items: 1,
+    };
+    let page: XaiFileList = decode_xai_upload_reply(b"{}", &limits).unwrap();
+    assert!(page.data.is_empty());
+}
+
+#[test]
 fn only_purpose_is_advertised() {
     assert_eq!(SUPPORTED_OPENAI_PARAMS, ["purpose"]);
 }

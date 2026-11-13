@@ -261,8 +261,20 @@ fn excluded_names_never_reach_the_form() {
     FormValue::List(vec![FormScalar::Bool(true), FormScalar::Bool(false), FormScalar::Integer(1)]),
     FormText::Repeated(vec!["True".to_owned(), "False".to_owned(), "1".to_owned()])
 )]
+#[case::list_null(
+    FormValue::List(vec![FormScalar::Null]),
+    FormText::Repeated(vec!["None".to_owned()])
+)]
 fn a_form_value_uses_pythons_string_spelling(#[case] value: FormValue, #[case] expected: FormText) {
     assert_eq!(value.form_text(), expected);
+}
+
+#[test]
+fn a_key_with_a_control_character_cannot_become_a_header() {
+    let error = authorization_headers(HeaderMap::new(), Some(&secret("bad\nkey")), &settings())
+        .unwrap_err();
+    assert_eq!(error.status_code(), None);
+    assert!(matches!(error, XaiSttError::Authorization { .. }));
 }
 
 #[test]
@@ -394,6 +406,13 @@ fn a_non_2xx_reply_keeps_the_status_and_headers() {
 }
 
 #[test]
+fn a_non_utf8_error_body_still_raises_a_status_error() {
+    let error = decode_xai_stt_reply(&response(500, &[0xff, 0xfe]), &limits()).unwrap_err();
+    assert_eq!(error.status_code(), Some(500));
+    assert!(matches!(error, XaiSttError::Status { .. }));
+}
+
+#[test]
 fn a_malformed_success_keeps_the_headers_too() {
     let mut reply_headers = HeaderMap::new();
     reply_headers.insert(
@@ -432,6 +451,18 @@ fn an_answer_over_the_byte_limit_keeps_the_status() {
     let error = decode_xai_stt_reply(&response(200, br#"{"text":"hello"}"#), &limits).unwrap_err();
     assert_eq!(error.status_code(), Some(200));
     assert!(matches!(error, XaiSttError::TooLarge { limit: 4, .. }));
+}
+
+#[test]
+fn a_reply_exactly_at_the_byte_limit_is_decoded() {
+    let limits = WireDecodeLimits {
+        max_json_bytes: 2,
+        max_event_bytes: 1,
+        max_items: 1,
+    };
+    let result = decode_xai_stt_reply(&response(200, b"{}"), &limits).unwrap();
+    assert_eq!(result.text, "");
+    assert_eq!(result.language, "unknown");
 }
 
 #[test]
