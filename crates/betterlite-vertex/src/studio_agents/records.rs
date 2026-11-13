@@ -30,16 +30,8 @@ pub struct AgentDeleteResult {
     pub deleted: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AgentWarning {
     MalformedCreateReply,
-}
-
-impl AgentWarning {
-    #[must_use]
-    pub const fn subject(self) -> &'static str {
-        match self {
-            Self::MalformedCreateReply => "malformed_create_reply",
-        }
-    }
 }

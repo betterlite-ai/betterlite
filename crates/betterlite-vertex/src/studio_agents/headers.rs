@@ -16,15 +16,16 @@ pub fn validate_environment(
     params: &AgentParams,
     settings: &Settings,
 ) -> Result<AgentHeaders, StudioAgentError> {
-    let explicit = params
-        .api_key
-        .as_ref()
-        .filter(|key| !key.expose_secret().is_empty());
     let custom_base = params
         .api_base
         .as_deref()
         .is_some_and(|base| !base.is_empty());
-    if custom_base && explicit.is_none() {
+    if custom_base
+        && params
+            .api_key
+            .as_ref()
+            .is_none_or(|key| key.expose_secret().is_empty())
+    {
         return Err(StudioAgentError::CustomBaseWithoutKey);
     }
     let key =

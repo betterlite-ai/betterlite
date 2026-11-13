@@ -15,7 +15,6 @@ pub struct AgentParams {
     pub page_token: Option<String>,
 }
 
-// InteractionEnvironment: an environment ID or the full environment object.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum BaseEnvironment {

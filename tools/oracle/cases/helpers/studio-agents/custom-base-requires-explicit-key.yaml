@@ -4,6 +4,7 @@ call:
   studio_agents:
     calls:
       - function: validate
+        name: unused
         headers: {X-Caller: kept}
         api_base: https://custom.example
         environment: {GOOGLE_API_KEY: env-google, GEMINI_API_KEY: env-gemini}

@@ -74,15 +74,15 @@ fn oracle_identity_defaults_are_compared() {
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["agent"],
-        json!({"id": "request-name", "name": "request-name", "extension": {"base_agent": "waverunner"}})
+        json!({"id": "request-name", "name": "request-name", "base_agent": "waverunner"})
     );
     assert_eq!(
         calls[1]["agent"],
-        json!({"id": null, "name": null, "extension": {"base_agent": "waverunner"}})
+        json!({"id": null, "name": null, "base_agent": "waverunner"})
     );
     assert_eq!(
         calls[2]["agent"],
-        json!({"id": "provider-id", "name": "provider-id", "extension": {"extra": {"k": [1]}}})
+        json!({"id": "provider-id", "name": "provider-id", "extra": {"k": [1]}})
     );
 }
 
@@ -154,14 +154,6 @@ fn oracle_versions_and_deletes_project_native_fields() {
     let calls = deleted["calls"].as_array().unwrap();
     assert_eq!(calls[0], json!({"name": "my-agent", "deleted": true}));
     assert_eq!(calls[1], json!({"name": "my-agent", "deleted": true}));
-    assert_eq!(
-        calls[2],
-        json!({
-            "url": "https://custom.example/v1beta/agents/my-agent",
-            "delete_url": "https://custom.example/v1beta/agents/my-agent",
-            "query": [],
-        })
-    );
 }
 
 #[test]

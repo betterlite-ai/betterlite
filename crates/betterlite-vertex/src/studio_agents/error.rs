@@ -15,10 +15,6 @@ pub enum StudioAgentError {
         body: String,
         headers: IndexMap<String, String>,
     },
-    #[error("the agent reply root is not a JSON object")]
-    NotAnObject,
-    #[error("the agent reply field {field} is not text")]
-    NotText { field: &'static str },
-    #[error("the agent reply field {field} is not a list of JSON objects")]
-    NotAnObjectList { field: &'static str },
+    #[error("the agent reply field {field} does not have the shape the source expects")]
+    Shape { field: &'static str },
 }

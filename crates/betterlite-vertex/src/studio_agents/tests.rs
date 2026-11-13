@@ -361,7 +361,10 @@ fn a_malformed_create_reply_warns_and_falls_back() {
     assert_eq!(agent.id.as_deref(), Some("req"));
     assert_eq!(agent.name.as_deref(), Some("req"));
     assert_eq!(warnings, vec![AgentWarning::MalformedCreateReply]);
-    assert_eq!(warnings[0].subject(), "malformed_create_reply");
+    assert_eq!(
+        serde_json::to_value(&warnings).expect("warnings serialize"),
+        serde_json::json!(["malformed_create_reply"])
+    );
 }
 
 #[test]
@@ -380,7 +383,7 @@ fn valid_json_of_the_wrong_shape_still_fails(#[case] body: &str) {
     let failure =
         decode_studio_agent_payload(&reply(200, &headers, body), AgentOperation::Create, "req")
             .expect_err("a non-object reply fails");
-    assert!(matches!(failure, StudioAgentError::NotAnObject));
+    assert!(matches!(failure, StudioAgentError::Shape { field: "root" }));
 }
 
 #[rstest]
@@ -391,7 +394,7 @@ fn a_non_text_identity_names_the_field(#[case] body: &str, #[case] field: &str) 
     let failure =
         decode_studio_agent_payload(&reply(200, &headers, body), AgentOperation::Get, "req")
             .expect_err("a non-text identity fails");
-    assert!(matches!(failure, StudioAgentError::NotText { field: found } if found == field));
+    assert!(matches!(failure, StudioAgentError::Shape { field: found } if found == field));
 }
 
 #[test]
@@ -467,25 +470,18 @@ fn malformed_list_replies_are_empty_pages(#[case] body: &str) {
 }
 
 #[rstest]
-#[case::array("[]", true)]
-#[case::null("null", true)]
-#[case::agents_null(r#"{"agents":null}"#, false)]
-#[case::agents_text(r#"{"agents":"x"}"#, false)]
-#[case::item_text(r#"{"agents":[1]}"#, false)]
-#[case::token_number(r#"{"agents":[],"nextPageToken":5}"#, false)]
-fn a_wrong_shaped_list_reply_fails(#[case] body: &str, #[case] not_an_object: bool) {
+#[case::array("[]", "root")]
+#[case::null("null", "root")]
+#[case::agents_null(r#"{"agents":null}"#, "agents")]
+#[case::agents_text(r#"{"agents":"x"}"#, "agents")]
+#[case::item_text(r#"{"agents":[1]}"#, "agents")]
+#[case::token_number(r#"{"agents":[],"nextPageToken":5}"#, "nextPageToken")]
+fn a_wrong_shaped_list_reply_fails(#[case] body: &str, #[case] field: &str) {
     let headers = IndexMap::new();
     let failure =
         decode_studio_agent_payload(&reply(200, &headers, body), AgentOperation::List, "req")
             .expect_err("a wrong-shaped page fails");
-    if not_an_object {
-        assert!(matches!(failure, StudioAgentError::NotAnObject));
-    } else {
-        assert!(matches!(
-            failure,
-            StudioAgentError::NotAnObjectList { .. } | StudioAgentError::NotText { .. }
-        ));
-    }
+    assert!(matches!(failure, StudioAgentError::Shape { field: found } if found == field));
 }
 
 #[test]
@@ -560,8 +556,9 @@ fn an_oversized_reply_is_refused() {
         StudioAgentError::ResponseTooLarge { size, limit }
             if size == RESPONSE_BODY_LIMIT.saturating_add(1) && limit == RESPONSE_BODY_LIMIT
     ));
+    let exact = "x".repeat(RESPONSE_BODY_LIMIT);
     let decoded =
-        decode_studio_agent_payload(&reply(200, &headers, "{}"), AgentOperation::Get, "req");
+        decode_studio_agent_payload(&reply(200, &headers, &exact), AgentOperation::Get, "req");
     assert!(decoded.is_ok());
 }
 

@@ -4,6 +4,7 @@ call:
   studio_agents:
     calls:
       - function: list_request
+        name: unused
         environment: {GEMINI_API_BASE: "https://studio.example/"}
         page_size: 0
         page_token: ""
@@ -12,6 +13,7 @@ call:
         page_size: 0
         page_token: ""
       - function: list_request
+        name: unused
         page_size: 7
         page_token: "next token"
 env: {}

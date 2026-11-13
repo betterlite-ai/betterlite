@@ -10,7 +10,6 @@ pub struct AgentTarget {
     pub query: Vec<(String, String)>,
 }
 
-// get_complete_url and transform_list_request build the same collection URL; create sends no query.
 pub fn collection_target(params: &AgentParams, settings: &Settings) -> AgentTarget {
     let base = resolve_base(params.api_base.as_deref(), settings);
     AgentTarget {
@@ -28,24 +27,22 @@ pub fn item_target(name: &str, params: &AgentParams, settings: &Settings) -> Age
 }
 
 pub fn versions_target(name: &str, params: &AgentParams, settings: &Settings) -> AgentTarget {
-    let base = resolve_base(params.api_base.as_deref(), settings);
+    let item = item_target(name, params, settings);
     AgentTarget {
-        url: format!("{base}/{API_VERSION}/agents/{name}/versions"),
+        url: format!("{}/versions", item.url),
         query: pagination(params),
     }
 }
 
 fn pagination(params: &AgentParams) -> Vec<(String, String)> {
-    let mut query = Vec::new();
-    if let Some(size) = params.page_size.filter(|size| *size != 0) {
-        query.push(("pageSize".to_owned(), size.to_string()));
-    }
-    if let Some(token) = params
+    let size = params
+        .page_size
+        .filter(|size| *size != 0)
+        .map(|size| ("pageSize".to_owned(), size.to_string()));
+    let token = params
         .page_token
-        .as_deref()
+        .clone()
         .filter(|token| !token.is_empty())
-    {
-        query.push(("pageToken".to_owned(), token.to_owned()));
-    }
-    query
+        .map(|token| ("pageToken".to_owned(), token));
+    size.into_iter().chain(token).collect()
 }
