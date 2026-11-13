@@ -2,8 +2,11 @@ use std::collections::BTreeMap;
 
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::cache_accounting::dialect::ModelFacts;
-use betterlite_prompts::cache_defaults::CacheFacts;
+use betterlite_prompts::cache_defaults::chat::{
+    ChatSeeding, RouterProjection, messages_with_defaults, seed_default_injection_points,
+};
 use betterlite_prompts::cache_defaults::messages::{MessagesInjection, maybe_inject_cache_control};
+use betterlite_prompts::cache_defaults::{CacheFacts, CachePolicy};
 use betterlite_prompts::cache_placement::system::SystemPrompt;
 use betterlite_prompts::message_content::Message;
 use serde::Deserialize;
@@ -20,6 +23,8 @@ const PROVIDERS: [&str; 5] = ["anthropic", "azure_ai", "bedrock", "openai", "ver
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     MessagesInjection { probes: Vec<Probe> },
+    ChatSeeding { probes: Vec<SeedingProbe> },
+    RouterProjection { probes: Vec<ProjectionProbe> },
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +51,54 @@ pub(crate) struct Probe {
     model_cost: BTreeMap<String, Json>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SeedingProbe {
+    model: String,
+    #[serde(default)]
+    messages: Vec<Message>,
+    #[serde(default)]
+    params: Object,
+    #[serde(default)]
+    tools: Option<Vec<Json>>,
+    #[serde(default)]
+    enable_prompt_caching: Option<bool>,
+    #[serde(default)]
+    global_api_base: Option<String>,
+    #[serde(default)]
+    environment: BTreeMap<String, String>,
+    #[serde(default)]
+    global_enable: bool,
+    #[serde(default)]
+    ttl: Option<String>,
+    #[serde(default)]
+    alias_map: BTreeMap<String, String>,
+    #[serde(default)]
+    model_cost: BTreeMap<String, Json>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ProjectionProbe {
+    models: Vec<String>,
+    #[serde(default)]
+    messages: Vec<Message>,
+    #[serde(default)]
+    tools: Option<Vec<Json>>,
+    #[serde(default)]
+    enable_prompt_caching: Option<bool>,
+    #[serde(default)]
+    request_kwargs: Option<Object>,
+    #[serde(default)]
+    global_enable: bool,
+    #[serde(default)]
+    ttl: Option<String>,
+    #[serde(default)]
+    alias_map: BTreeMap<String, String>,
+    #[serde(default)]
+    model_cost: BTreeMap<String, Json>,
+}
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
@@ -58,6 +111,17 @@ impl crate::helpers::Helper for Op {
                 for probe in probes {
                     results.push(result(probe)?);
                 }
+                Ok(json!({ "probes": results }))
+            }
+            Input::ChatSeeding { probes } => {
+                let mut results = Vec::with_capacity(probes.len());
+                for probe in probes {
+                    results.push(seeded(probe)?);
+                }
+                Ok(json!({ "probes": results }))
+            }
+            Input::RouterProjection { probes } => {
+                let results: Vec<Value> = probes.iter().map(projected).collect();
                 Ok(json!({ "probes": results }))
             }
         }
@@ -123,7 +187,7 @@ fn result(probe: &Probe) -> Result<Value, Box<HelperError>> {
             api_base: None,
             global_api_base: probe.global_api_base.as_deref(),
             environment: &probe.environment,
-            policy: betterlite_prompts::cache_defaults::CachePolicy {
+            policy: CachePolicy {
                 global_enabled: probe.global_enable,
                 ttl: probe.ttl.as_deref(),
             },
@@ -136,4 +200,55 @@ fn result(probe: &Probe) -> Result<Value, Box<HelperError>> {
         "system": placed.system,
         "params": params,
     }))
+}
+
+fn seeded(probe: &SeedingProbe) -> Result<Value, Box<HelperError>> {
+    let facts = Facts {
+        model_cost: &probe.model_cost,
+    };
+    let mut params = probe.params.clone();
+    seed_default_injection_points(
+        ChatSeeding {
+            model: &probe.model,
+            custom_llm_provider: None,
+            messages: &probe.messages,
+            params: &mut params,
+            tools: probe.tools.as_deref(),
+            enable_prompt_caching: probe.enable_prompt_caching,
+            api_base: None,
+            global_api_base: probe.global_api_base.as_deref(),
+            environment: &probe.environment,
+            alias_map: &probe.alias_map,
+            policy: CachePolicy {
+                global_enabled: probe.global_enable,
+                ttl: probe.ttl.as_deref(),
+            },
+        },
+        &facts,
+    )
+    .or_value_error()?;
+    Ok(json!({ "params": params }))
+}
+
+fn projected(probe: &ProjectionProbe) -> Value {
+    let facts = Facts {
+        model_cost: &probe.model_cost,
+    };
+    let no_kwargs = Object::new();
+    let messages = messages_with_defaults(
+        &RouterProjection {
+            messages: &probe.messages,
+            models: &probe.models,
+            tools: probe.tools.as_deref(),
+            enable_prompt_caching: probe.enable_prompt_caching,
+            request_kwargs: probe.request_kwargs.as_ref().unwrap_or(&no_kwargs),
+            alias_map: &probe.alias_map,
+            policy: CachePolicy {
+                global_enabled: probe.global_enable,
+                ttl: probe.ttl.as_deref(),
+            },
+        },
+        &facts,
+    );
+    json!({ "messages": messages })
 }
