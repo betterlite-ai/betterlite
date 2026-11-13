@@ -4,18 +4,20 @@ import logging
 from typing import Protocol
 
 import litellm.types.utils as litellm_utils  # pyright: ignore[reportMissingTypeStubs]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1
+import pydantic
 import pytest
 from openai.types.image import Image as OpenAIImage
 from typing_extensions import override
 
 import betterlite.types.utils as betterlite_utils
+from betterlite.types.utils import JsonValue
 from betterlite.types.utils.adapter_stream import (
     AdapterCompletionStreamWrapper,
     AdapterStreamError,
     CustomStreamingDecoder,
 )
+from betterlite.types.utils.base import InitValue
 from betterlite.types.utils.media import Selection
-from betterlite.types.utils.values import JsonValue, StoredValue
 
 INDEX = 3
 CHOICE_INDEX = 2
@@ -43,9 +45,9 @@ class Dumpable(Protocol):
 
 
 class HiddenAccess(Dumpable, Protocol):
-    def get(self, key: str, default: StoredValue = None) -> StoredValue: ...
+    def get(self, key: str, default: InitValue = None) -> InitValue: ...
 
-    def __getitem__(self, key: str) -> StoredValue: ...
+    def __getitem__(self, key: str) -> InitValue: ...
 
 
 class RecordingHandler(logging.Handler):
@@ -61,30 +63,30 @@ class RecordingHandler(logging.Handler):
 
 
 class ChunkStream:
-    chunks: list[StoredValue]
+    chunks: list[JsonValue]
 
-    def __init__(self, chunks: list[StoredValue]) -> None:
+    def __init__(self, chunks: list[JsonValue]) -> None:
         self.chunks = chunks
 
     def __iter__(self) -> "ChunkStream":
         return self
 
-    def __next__(self) -> StoredValue:
+    def __next__(self) -> JsonValue:
         if not self.chunks:
             raise StopIteration
         return self.chunks.pop(0)
 
 
 class AsyncChunkStream:
-    chunks: list[StoredValue]
+    chunks: list[JsonValue]
 
-    def __init__(self, chunks: list[StoredValue]) -> None:
+    def __init__(self, chunks: list[JsonValue]) -> None:
         self.chunks = chunks
 
     def __aiter__(self) -> "AsyncChunkStream":
         return self
 
-    async def __anext__(self) -> StoredValue:
+    async def __anext__(self) -> JsonValue:
         if not self.chunks:
             raise StopAsyncIteration
         return self.chunks.pop(0)
@@ -197,8 +199,9 @@ def test_text_completion_logprobs() -> None:
     )
     assert ours.tokens == ["a"]
     assert_same("logprobs", reference, ours)
+    missing: dict[str, JsonValue] = {}
     with pytest.raises(ValueError, match="validation error"):
-        _ = betterlite_utils.Logprobs()
+        _ = betterlite_utils.Logprobs.model_validate(missing)
 
 
 def test_text_completion_choices() -> None:
@@ -409,7 +412,7 @@ def image_object_pair() -> tuple[
 def test_image_response() -> None:
     reference_images, ours_images = image_object_pair()
     reference_usage, ours_usage = image_usage_pair()
-    hidden_params: dict[str, StoredValue] = {"a": 1}
+    hidden_params: dict[str, JsonValue] = {"a": 1}
     reference = litellm_utils.ImageResponse(
         created=CREATED, data=reference_images, usage=reference_usage,
         hidden_params=hidden_params, size="1024x1024",
@@ -461,23 +464,20 @@ def test_image_selection() -> None:
         {"data"},
         {"data": {0}},
         {"data": {1}},
-        {"data": [0]},
         {"data": {-1}},
         {"data": {0: {"url"}}},
         {"data": {"__all__": {"url"}}},
         {"data": {"__all__": {"url": False}}},
         {"data": {}},
-        {"data": []},
         {"created"},
         {"created": False},
     ]
     for selector in includes:
-        expected = parse_object(reference.model_dump_json(include=selector))  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2625-L2660
+        expected = parse_object(reference.model_dump_json(include=selector))
         assert parse_object(ours.model_dump_json(include=selector)) == expected, selector
     excludes: list[Selection] = [
         {"data"},
         {"data": {1}},
-        {"data": [1]},
         {"data": {"__all__": {"url"}}},
         {"data": {"__all__": {"url": True}}},
         {"data": {"__all__": {"url": False}}},
@@ -486,7 +486,7 @@ def test_image_selection() -> None:
         {"created": False},
     ]
     for selector in excludes:
-        expected = parse_object(reference.model_dump_json(exclude=selector))  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2625-L2660
+        expected = parse_object(reference.model_dump_json(exclude=selector))
         assert parse_object(ours.model_dump_json(exclude=selector)) == expected, selector
 
 
@@ -603,7 +603,7 @@ def test_small_types_budget() -> None:
     ours = betterlite_utils.BudgetConfig()
     assert ours.max_budget is None
     assert_same("budget empty", reference, ours)
-    values: dict[str, StoredValue] = {
+    values: dict[str, JsonValue] = {
         "max_budget": BUDGET_MAX,
         "budget_duration": "1d",
         "tpm_limit": BUDGET_TPM,
@@ -614,13 +614,13 @@ def test_small_types_budget() -> None:
     assert values_ours.max_budget == BUDGET_MAX
     assert values_ours.tpm_limit == BUDGET_TPM
     assert_same("budget values", values_reference, values_ours)
-    aliases: dict[str, StoredValue] = {"time_period": "2h", "budget_limit": BUDGET_LIMIT}
+    aliases: dict[str, JsonValue] = {"time_period": "2h", "budget_limit": BUDGET_LIMIT}
     alias_reference = litellm_utils.BudgetConfig(**aliases)
     alias_ours = betterlite_utils.BudgetConfig(**aliases)
     assert alias_ours.budget_duration == "2h"
     assert alias_ours.max_budget == BUDGET_LIMIT
     assert_same("budget aliases", alias_reference, alias_ours)
-    both: dict[str, StoredValue] = {
+    both: dict[str, JsonValue] = {
         "time_period": "2h",
         "budget_duration": "1d",
         "budget_limit": BUDGET_LIMIT,
@@ -870,3 +870,54 @@ def test_small_types_exports() -> None:
     ]
     for name in names:
         assert name in betterlite_utils.__all__
+
+
+def pydantic_pairs() -> tuple[tuple[pydantic.BaseModel, pydantic.BaseModel], ...]:
+    return (
+        (
+            betterlite_utils.ModelResponse(id="i", created=5),
+            litellm_utils.ModelResponse(id="i", created=5),
+        ),
+        (betterlite_utils.Message(content="x"), litellm_utils.Message(content="x")),
+        (betterlite_utils.EmbeddingResponse(), litellm_utils.EmbeddingResponse()),
+    )
+
+
+def schema_properties(item: pydantic.BaseModel) -> dict[str, JsonValue]:
+    schema: dict[str, JsonValue] = type(item).model_json_schema()
+    properties = schema["properties"]
+    if properties is None:
+        raise AssertionError("the schema has no properties")
+    match properties:
+        case dict():
+            return properties
+        case list() | bool() | int() | float() | str():
+            raise AssertionError("the schema has no properties")
+
+
+def test_pydantic_isinstance() -> None:
+    for item, _reference in pydantic_pairs():
+        item_type = type(item)
+        base = [found for found in item_type.__mro__ if found.__name__ == "BaseModel"]
+        assert [found.__module__ for found in base] == ["pydantic.main"]
+
+
+def test_pydantic_model_validate() -> None:
+    response = betterlite_utils.ModelResponse(id="i", created=5, model="m")
+    assert betterlite_utils.ModelResponse.model_validate(response.model_dump()) == response
+    message = betterlite_utils.Message(content="x")
+    assert betterlite_utils.Message.model_validate(message.model_dump()) == message
+    embedding = betterlite_utils.EmbeddingResponse(model="m")
+    assert betterlite_utils.EmbeddingResponse.model_validate(
+        embedding.model_dump(),
+    ) == embedding
+
+
+def test_pydantic_model_fields() -> None:
+    for ours, reference in pydantic_pairs():
+        assert sorted(type(ours).model_fields) == sorted(type(reference).model_fields)
+
+
+def test_pydantic_json_schema() -> None:
+    for ours, reference in pydantic_pairs():
+        assert sorted(schema_properties(ours)) == sorted(type(reference).model_fields)

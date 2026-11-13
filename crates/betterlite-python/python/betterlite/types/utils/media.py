@@ -1,41 +1,41 @@
+import json
 import time
-from collections.abc import Collection, Mapping
-from typing import ClassVar, Literal, TypeAlias, TypeGuard
+from collections.abc import Mapping, Sequence
+from typing import Literal, TypeAlias, Unpack
 
+from pydantic import JsonValue, PrivateAttr
+from pydantic.main import IncEx
 from typing_extensions import override
 
-from betterlite.types.utils.base import ResponseObject
-from betterlite.types.utils.values import JsonValue, ModelObject, StoredValue
+from betterlite.types.utils.base import (
+    DumpOptions,
+    InitValue,
+    JsonDumpOptions,
+    ModelValue,
+    ResponseObject,
+    dump_value,
+    validated_value,
+)
 
-SelectorItems: TypeAlias = (
-    list[int] | list[str] | set[int] | set[str] | frozenset[int] | frozenset[str]
-    | tuple[int, ...] | tuple[str, ...]
-)
-NestedSelector: TypeAlias = bool | SelectorItems | Mapping[str, bool] | Mapping[int, bool]
-FieldSelector: TypeAlias = (
-    NestedSelector | Mapping[int, NestedSelector] | Mapping[str, NestedSelector]
-)
-Selection: TypeAlias = Collection[str] | Mapping[str, FieldSelector]
+Selection: TypeAlias = IncEx
 
 
 class ImageObject(ResponseObject):
-    b64_json: str | None
-    url: str | None
-    revised_prompt: str | None
-    provider_specific_fields: dict[str, JsonValue] | None
+    b64_json: str | None = None
+    url: str | None = None
+    revised_prompt: str | None = None
+    provider_specific_fields: dict[str, JsonValue] | None = None
 
     @override
     def __init__(
-        self, b64_json: StoredValue = None, url: StoredValue = None,
-        revised_prompt: StoredValue = None, provider_specific_fields: StoredValue = None,
-        **_params: StoredValue,
+        self, b64_json: JsonValue = None, url: JsonValue = None,
+        revised_prompt: JsonValue = None,
+        provider_specific_fields: Mapping[str, JsonValue] | None = None,
+        **_params: InitValue,
     ) -> None:
-        fields: dict[str, StoredValue] = {
-            "b64_json": b64_json, "url": url, "revised_prompt": revised_prompt,
-        }
-        if provider_specific_fields is not None:
-            fields["provider_specific_fields"] = provider_specific_fields
-        super().__init__(**fields)
+        super().__init__(b64_json=b64_json, url=url, revised_prompt=revised_prompt)
+        if provider_specific_fields:
+            self.provider_specific_fields = dict(provider_specific_fields)
 
 
 class ImageUsageInputTokensDetails(ResponseObject):
@@ -52,229 +52,161 @@ class ImageUsage(ResponseObject):
 
 class ImageResponse(ResponseObject):
     created: int
-    background: Literal["transparent", "opaque"] | None
+    background: Literal["transparent", "opaque"] | None = None
     data: list[ImageObject]
-    output_format: Literal["png", "webp", "jpeg"] | None
-    quality: Literal["low", "medium", "high"] | None
-    size: Literal["1024x1024", "1024x1536", "1536x1024"] | None
-    usage: ImageUsage | None
-    _hidden_params: dict[str, StoredValue]
-    defaults: ClassVar[dict[str, StoredValue]] = {"_hidden_params": {}}
+    output_format: Literal["png", "webp", "jpeg"] | None = None
+    quality: Literal["low", "medium", "high"] | None = None
+    size: Literal["1024x1024", "1024x1536", "1536x1024"] | None = None
+    usage: ImageUsage | None = None
+    _hidden_params: dict[str, JsonValue] = PrivateAttr(default_factory=dict)
 
     @override
     def __init__(
-        self, created: StoredValue = None, data: StoredValue = None,
-        response_ms: float | None = None, usage: StoredValue = None,
-        hidden_params: Mapping[str, StoredValue] | None = None,
-        background: StoredValue = None, quality: StoredValue = None,
-        output_format: StoredValue = None, size: StoredValue = None,
-        **_params: StoredValue,
+        self, created: JsonValue = None, data: Sequence[ModelValue] | None = None,
+        response_ms: float | None = None, usage: ModelValue = None,
+        hidden_params: Mapping[str, JsonValue] | None = None,
+        background: JsonValue = None, quality: JsonValue = None,
+        output_format: JsonValue = None, size: JsonValue = None,
+        **_params: InitValue,
     ) -> None:
-        images: list[StoredValue] = []
-        match data:
-            case list():
-                images = [image_object(image) for image in data]
-            case _other:
-                images = []
-        super().__init__(
-            created=int(time.time()) if created is None else created,
-            background=background,
-            data=images,
-            output_format=output_format,
-            quality=quality,
-            size=size,
-            usage=ImageUsage(
+        images: list[ImageObject] = (
+            [] if data is None
+            else [validated_value(image, ImageObject) for image in data]
+        )
+        if usage is None:
+            selected_usage: InitValue = ImageUsage(
                 input_tokens=0,
                 input_tokens_details=ImageUsageInputTokensDetails(image_tokens=0, text_tokens=0),
                 output_tokens=0,
                 total_tokens=0,
-            ) if usage is None else usage,
+            )
+        else:
+            selected_usage = dump_value(usage)
+        super().__init__(
+            created=int(time.time()) if created is None else created,
+            background=background, data=images, output_format=output_format,
+            quality=quality, size=size, usage=selected_usage,
         )
         if hidden_params is not None:
             self._hidden_params = dict(hidden_params)
 
     @override
-    def model_dump(
-        self, *, mode: Literal["python", "json"] = "python",
-        include: Selection | None = None, exclude: Selection | None = None,
-        exclude_unset: bool = False, exclude_none: bool = False,
-    ) -> JsonValue:
-        dumped = super().model_dump(
-            mode=mode, include=top_fields(include, is_include=True),
+    def model_dump(self, **kwargs: Unpack[DumpOptions]) -> dict[str, JsonValue]:
+        include = kwargs.get("include")
+        exclude = kwargs.get("exclude")
+        exclude_unset = kwargs.get("exclude_unset")
+        exclude_none = kwargs.get("exclude_none")
+        mode = kwargs.get("mode")
+        dumped: dict[str, JsonValue] = super().model_dump(
+            mode="python" if mode is None else mode,
+            include=top_fields(include, is_include=True),
             exclude=top_fields(exclude, is_include=False),
-            exclude_unset=exclude_unset, exclude_none=exclude_none,
+            exclude_unset=exclude_unset is True, exclude_none=exclude_none is True,
         )
-        match dumped:
-            case dict() if "data" in dumped:
-                dumped["data"] = self._serialize_image_data(
-                    mode=mode, include=data_selector(include),
-                    exclude=data_selector(exclude), exclude_unset=exclude_unset,
-                    exclude_none=exclude_none,
+        if "data" in dumped:
+            images: list[JsonValue] = []
+            count = len(self.data)
+            selected_include = data_selector(include)
+            selected_exclude = data_selector(exclude)
+            for index, image in enumerate(self.data):
+                include_keep, include_selector = nested_selector(
+                    selector=selected_include, index=index, count=count, is_include=True,
                 )
-            case _other:
-                pass
+                exclude_keep, exclude_selector = nested_selector(
+                    selector=selected_exclude, index=index, count=count, is_include=False,
+                )
+                if not include_keep or not exclude_keep:
+                    continue
+                images.append(image.model_dump(
+                    mode="python" if mode is None else mode, include=include_selector,
+                    exclude=exclude_selector, exclude_unset=exclude_unset is True,
+                    exclude_none=exclude_none is True,
+                ))
+            dumped["data"] = images
         return dumped
 
-    def _serialize_image_data(
-        self, *, mode: Literal["python", "json"], include: FieldSelector | None,
-        exclude: FieldSelector | None, exclude_unset: bool, exclude_none: bool,
-    ) -> list[JsonValue]:
-        images = self.data
-        count = len(images)
-        serialized: list[JsonValue] = []
-        for index, image in enumerate(images):
-            include_keep, include_item = _nested_selector(include, index, count, is_include=True)
-            exclude_keep, exclude_item = _nested_selector(exclude, index, count, is_include=False)
-            if not include_keep or not exclude_keep:
-                continue
-            serialized.append(image.model_dump(
-                mode=mode,
-                include=image_fields(include_item, is_include=True),
-                exclude=image_fields(exclude_item, is_include=False),
-                exclude_unset=exclude_unset, exclude_none=exclude_none,
-            ))
-        return serialized
+    @override
+    def model_dump_json(self, **kwargs: Unpack[JsonDumpOptions]) -> str:
+        dumped = self.model_dump(
+            include=kwargs.get("include"), exclude=kwargs.get("exclude"),
+            exclude_unset=kwargs.get("exclude_unset") is True,
+            exclude_none=kwargs.get("exclude_none") is True,
+        )
+        indent = kwargs.get("indent")
+        ensure_ascii = kwargs.get("ensure_ascii")
+        return json.dumps(
+            dumped, indent=indent, ensure_ascii=ensure_ascii is True,
+        )
 
 
-def image_object(image: StoredValue) -> StoredValue:
-    match image:
-        case ImageObject():
-            return image
-        case Mapping():
-            return ImageObject(**image)
-        case ModelObject():
-            dumped = image.model_dump()
-            match dumped:
-                case Mapping():
-                    return ImageObject(**dumped)
-                case _other:
-                    return dumped
-        case _other:
-            return image
-
-
-def is_field_mapping(
-    selector: FieldSelector,
-) -> TypeGuard[Mapping[int, NestedSelector] | Mapping[str, NestedSelector]]:
-    match selector:
-        case Mapping():
-            return True
-        case _other:
-            return False
-
-
-def is_item_selector(selector: FieldSelector) -> TypeGuard[SelectorItems]:
-    match selector:
-        case list() | set() | frozenset() | tuple():
-            return True
-        case _other:
-            return False
-
-
-def is_selection_mapping(selector: Selection) -> TypeGuard[Mapping[str, FieldSelector]]:
-    match selector:
-        case Mapping():
-            return True
-        case _other:
-            return False
-
-
-def _nested_selector(
-    selector: FieldSelector | None, index: int, count: int, *, is_include: bool,
-) -> tuple[bool, FieldSelector | None]:
+def top_fields(selector: IncEx | None, *, is_include: bool) -> set[str] | None:
     if selector is None:
+        return None
+    match selector:
+        case Mapping():
+            return {str(key) for key, value in selector.items() if is_include or value is True}
+        case set():
+            return {str(item) for item in selector}
+
+
+def data_selector(selector: IncEx | None) -> IncEx | bool | None:
+    if selector is None:
+        return None
+    match selector:
+        case Mapping():
+            found, value = mapping_value(selector, "data")
+            if not found:
+                return None
+            return value
+        case set():
+            return None
+
+
+def nested_selector(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L94-L111
+    *, selector: IncEx | bool | None, index: int, count: int, is_include: bool,
+) -> tuple[bool, IncEx | None]:
+    if selector is None or selector is True:
         return True, None
-    if is_field_mapping(selector):
-        return mapping_selector(selector, index, count, is_include=is_include)
-    if is_item_selector(selector):
-        return collection_selector(selector, index, count, is_include=is_include)
-    return True, selector
+    if selector is False:
+        return False, None
+    match selector:
+        case Mapping():
+            found, value = mapping_value(selector, index)
+            if not found:
+                found, value = mapping_value(selector, index - count)
+            if not found:
+                found, value = mapping_value(selector, "__all__")
+            keep = value is not None if is_include else value is not True
+            per_item = None if value is True or value is None or value is False else value
+            return keep, per_item
+        case set():
+            indexes = int_indexes(selector)
+            if indexes is None:
+                return True, selector
+            addressed = index in indexes or index - count in indexes
+            return (addressed if is_include else not addressed), None
 
 
-def mapping_selector(
-    selector: Mapping[int, NestedSelector] | Mapping[str, NestedSelector],
-    index: int, count: int, *, is_include: bool,
-) -> tuple[bool, FieldSelector | None]:
-    found, value = mapping_value(selector, index)
-    if not found:
-        found, value = mapping_value(selector, index - count)
-    if not found:
-        found, value = mapping_value(selector, "__all__")
-    keep = value is not None if is_include else value is not True
-    if value is True or value is None:
-        return keep, None
-    return keep, value
+def mapping_value(
+    selector: Mapping[int, IncEx | bool] | Mapping[str, IncEx | bool], key: int | str,
+) -> tuple[bool, IncEx | bool | None]:
+    for existing, value in selector.items():
+        match existing:
+            case int():
+                if existing == key:
+                    return True, value
+            case str():
+                if existing == key:
+                    return True, value
+    return False, None
 
 
-def collection_selector(
-    selector: SelectorItems, index: int, count: int, *, is_include: bool,
-) -> tuple[bool, FieldSelector | None]:
+def int_indexes(selector: set[int] | set[str]) -> list[int] | None:
     indexes: list[int] = []
     for item in selector:
         match item:
             case int():
                 indexes.append(item)
-            case _other:
-                return True, selector
-    addressed = index in indexes or index - count in indexes
-    if is_include:
-        return addressed, None
-    return not addressed, None
-
-
-def mapping_value(
-    selector: Mapping[int, NestedSelector] | Mapping[str, NestedSelector], key: int | str,
-) -> tuple[bool, NestedSelector | None]:
-    for existing, value in selector.items():
-        match existing:
-            case int() if existing == key:
-                return True, value
-            case str() if existing == key:
-                return True, value
-            case _other:
-                continue
-    return False, None
-
-
-def image_fields(
-    selector: FieldSelector | None, *, is_include: bool,
-) -> Collection[str] | None:
-    if selector is None:
-        return None
-    if is_field_mapping(selector):
-        names: set[str] = set()
-        for key, value in selector.items():
-            match key:
-                case str() if is_include or value is True:
-                    names.add(key)
-                case _other:
-                    continue
-        return names
-    if is_item_selector(selector):
-        names = set()
-        for item in selector:
-            match item:
-                case str():
-                    names.add(item)
-                case _other:
-                    continue
-        return names
-    return None
-
-
-def data_selector(selector: Selection | None) -> FieldSelector | None:
-    if selector is None:
-        return None
-    if is_selection_mapping(selector):
-        if "data" in selector:
-            return selector["data"]
-        return None
-    return True if "data" in selector else None
-
-
-def top_fields(selector: Selection | None, *, is_include: bool) -> set[str] | None:
-    if selector is None:
-        return None
-    if is_selection_mapping(selector):
-        return {key for key, value in selector.items() if is_include or value is True}
-    return set(selector)
+            case str():
+                return None
+    return indexes
