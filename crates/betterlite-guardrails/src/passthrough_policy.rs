@@ -8,14 +8,16 @@ use serde::{Deserialize, Serialize};
 const WILDCARD: &str = "[*]";
 const WILDCARD_AFTER_DOT: &str = ".[*]";
 
+// pydantic's default config ignores an extra key, so this record does too
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 pub struct PassthroughGuardrailSettings {
     pub request_fields: Option<Vec<String>>,
     pub response_fields: Option<Vec<String>>,
 }
 
-pub type PassthroughGuardrailsConfig = IndexMap<String, Option<PassthroughGuardrailSettings>>;
+// LiteLLM's normalize_config keeps each settings object as sent; only get_settings builds the model
+pub type PassthroughGuardrailsConfig = IndexMap<String, Option<Json>>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JsonPathValue {
@@ -124,7 +126,7 @@ pub fn normalize_config(config: Option<&Json>) -> Option<PassthroughGuardrailsCo
     match config? {
         Json::Null => None,
         Json::List(names) => normalized_names(names),
-        Json::Object(entries) => normalized_settings(entries),
+        Json::Object(entries) => Some(normalized_settings(entries)),
         Json::Bool(_) | Json::Number(_) | Json::Text(_) => {
             tracing::debug!("passthrough guardrails config is not a list or an object");
             None
@@ -144,36 +146,26 @@ fn normalized_names(names: &[Json]) -> Option<PassthroughGuardrailsConfig> {
     Some(config)
 }
 
-fn normalized_settings(entries: &IndexMap<String, Json>) -> Option<PassthroughGuardrailsConfig> {
+fn normalized_settings(entries: &IndexMap<String, Json>) -> PassthroughGuardrailsConfig {
     let mut config = PassthroughGuardrailsConfig::new();
     for (name, value) in entries {
         let settings = if matches!(value, Json::Null) {
             None
         } else {
-            let Some(parsed) = settings_from_json(value) else {
-                tracing::debug!(
-                    "passthrough guardrail settings for {name} are not the declared type"
-                );
-                return None;
-            };
-            Some(parsed)
+            Some(value.clone())
         };
         config.insert(name.clone(), settings);
     }
-    Some(config)
-}
-
-fn settings_from_json(value: &Json) -> Option<PassthroughGuardrailSettings> {
-    let serialized = serde_json::to_value(value).ok()?;
-    let parsed = serde_json::from_value::<PassthroughGuardrailSettings>(serialized).ok()?;
-    Some(parsed)
+    config
 }
 
 #[must_use]
 pub fn get_settings(config: Option<&Json>, name: &str) -> Option<PassthroughGuardrailSettings> {
     let normalized = normalize_config(config)?;
     let settings = normalized.get(name)?;
-    settings.clone()
+    let value = settings.as_ref()?;
+    let serialized = serde_json::to_value(value).ok()?;
+    serde_json::from_value::<PassthroughGuardrailSettings>(serialized).ok()
 }
 
 #[must_use]

@@ -1,21 +1,13 @@
 task: B3601
 deviations:
   - what: >-
-      A guardrail settings object with a key other than request_fields or response_fields makes
-      normalize_config return None with a debug line, while LiteLLM carries the object through and
-      the pydantic model ignores the extra key.
+      A settings object whose request_fields or response_fields holds the wrong type makes
+      get_settings return None, so the caller falls back to the whole payload. LiteLLM's get_settings
+      raises a pydantic ValidationError and the guardrail call fails.
     why: >-
-      The declared type of a settings value holds those two fields only, and rule no-silent-drops
-      rejects a config key betterlite does not read instead of dropping it.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2484-L2498
-  - what: >-
-      A settings value of the wrong type, such as request_fields given as a string, makes
-      normalize_config return None with a debug line. LiteLLM returns the dict unchanged and fails
-      only when get_settings builds the pydantic model.
-    why: >-
-      The settings record is typed where the config enters, so the wrong value is rejected there
-      rather than at the later get_settings call.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_guardrails.py#L58-L59
+      get_settings returns Option by this task's signature, and the passthrough endpoint config
+      loader that could reject the value when the config loads does not exist yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_guardrails.py#L110-L111
   - what: >-
       Inherited key and team guardrails keep first-seen order, key before team, instead of the
       iteration order of Python's set.

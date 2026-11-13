@@ -11,5 +11,9 @@ call:
         key_metadata: {}
         team_metadata: {guardrails: [team-a]}
         config: {passthrough-a: {request_fields: [query]}}
+      - function: collect_guardrails
+        key_metadata: {guardrails: [key-a]}
+        team_metadata: {guardrails: [team-a]}
+        config: {g1: {request_fields: [query], extra: 1}}
 env: {}
 compare: {ignore: []}

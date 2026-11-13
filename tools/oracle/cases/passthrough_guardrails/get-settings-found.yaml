@@ -9,5 +9,8 @@ call:
       - function: get_settings
         config: {g1: {request_fields: ["documents[*].text"]}}
         name: g1
+      - function: get_settings
+        config: {g1: {request_fields: [query], extra: 1}}
+        name: g1
 env: {}
 compare: {ignore: []}

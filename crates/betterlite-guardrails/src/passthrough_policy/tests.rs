@@ -235,7 +235,10 @@ fn normalize_config_turns_name_list_into_settings_map() {
 fn normalize_config_keeps_dict_settings() {
     let config = json(r#"{"g1": {"request_fields": ["query"]}, "g2": null}"#);
     let expected = IndexMap::from([
-        ("g1".to_owned(), Some(settings(Some(&["query"]), None))),
+        (
+            "g1".to_owned(),
+            Some(json(r#"{"request_fields": ["query"]}"#)),
+        ),
         ("g2".to_owned(), None),
     ]);
     assert_eq!(normalize_config(Some(&config)), Some(expected));
@@ -268,15 +271,23 @@ fn normalize_config_returns_none_for_a_non_string_name() {
 }
 
 #[test]
-fn normalize_config_returns_none_for_an_unknown_settings_key() {
+fn normalize_config_keeps_an_unknown_settings_key() {
     let config = json(r#"{"g1": {"request_fields": ["query"], "extra": 1}}"#);
-    assert_eq!(normalize_config(Some(&config)), None);
+    let expected = IndexMap::from([(
+        "g1".to_owned(),
+        Some(json(r#"{"request_fields": ["query"], "extra": 1}"#)),
+    )]);
+    assert_eq!(normalize_config(Some(&config)), Some(expected));
 }
 
 #[test]
-fn normalize_config_returns_none_for_a_wrong_settings_value() {
+fn normalize_config_keeps_a_wrong_typed_settings_value() {
     let config = json(r#"{"g1": {"request_fields": "query"}}"#);
-    assert_eq!(normalize_config(Some(&config)), None);
+    let expected = IndexMap::from([(
+        "g1".to_owned(),
+        Some(json(r#"{"request_fields": "query"}"#)),
+    )]);
+    assert_eq!(normalize_config(Some(&config)), Some(expected));
 }
 
 #[test]
@@ -293,6 +304,21 @@ fn get_settings_reads_one_guardrails_settings() {
     let config = json(r#"{"g1": {"request_fields": ["query"], "response_fields": ["output"]}}"#);
     let expected = settings(Some(&["query"]), Some(&["output"]));
     assert_eq!(get_settings(Some(&config), "g1"), Some(expected));
+}
+
+#[test]
+fn get_settings_ignores_an_unknown_settings_key() {
+    let config = json(r#"{"g1": {"request_fields": ["query"], "extra": 1}}"#);
+    assert_eq!(
+        get_settings(Some(&config), "g1"),
+        Some(settings(Some(&["query"]), None))
+    );
+}
+
+#[test]
+fn get_settings_returns_none_for_a_wrong_typed_settings_value() {
+    let config = json(r#"{"g1": {"request_fields": "query"}}"#);
+    assert_eq!(get_settings(Some(&config), "g1"), None);
 }
 
 #[rstest]
@@ -319,6 +345,26 @@ fn collect_guardrails_reads_a_settings_dict() {
     let expected = HashMap::from([("g1".to_owned(), true)]);
     assert_eq!(
         collect_guardrails(&metadata(&[]), &metadata(&[]), Some(&config)),
+        Some(expected)
+    );
+}
+
+#[test]
+fn collect_guardrails_keeps_a_name_with_a_malformed_settings_object() {
+    let config = json(r#"{"g1": {"request_fields": ["query"], "extra": 1}}"#);
+    let expected = HashMap::from([("g1".to_owned(), true), ("key-a".to_owned(), true)]);
+    assert_eq!(
+        collect_guardrails(&metadata(&["key-a"]), &metadata(&[]), Some(&config)),
+        Some(expected)
+    );
+}
+
+#[test]
+fn collect_guardrails_keeps_a_name_with_a_wrong_typed_settings_object() {
+    let config = json(r#"{"g1": {"request_fields": "query"}}"#);
+    let expected = HashMap::from([("g1".to_owned(), true), ("team-a".to_owned(), true)]);
+    assert_eq!(
+        collect_guardrails(&metadata(&[]), &metadata(&["team-a"]), Some(&config)),
         Some(expected)
     );
 }

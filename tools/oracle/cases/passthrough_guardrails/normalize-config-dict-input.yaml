@@ -7,5 +7,7 @@ call:
         config: {g1: {request_fields: [query]}, g2: null}
       - function: normalize_config
         config: {g1: {request_fields: [query], response_fields: [output]}}
+      - function: normalize_config
+        config: {g1: {request_fields: [query], extra: 1}}
 env: {}
 compare: {ignore: []}

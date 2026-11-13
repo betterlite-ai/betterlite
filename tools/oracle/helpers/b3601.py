@@ -10,7 +10,6 @@ from litellm.proxy.pass_through_endpoints.passthrough_guardrails import (
 from pydantic import JsonValue, TypeAdapter
 
 JSON: Final = TypeAdapter(JsonValue)
-NORMALIZED: Final = TypeAdapter(dict[str, PassThroughGuardrailSettings | None])
 Config = list[str] | dict[str, PassThroughGuardrailSettings | None] | None
 
 
@@ -84,10 +83,7 @@ def extract_fields_answer(call: ExtractFieldsCall) -> JsonValue:
 
 def normalize_answer(call: NormalizeConfigCall) -> JsonValue:
     normalized = PassthroughGuardrailHandler.normalize_config(call["config"])
-    if normalized is None:
-        return None
-    validated = NORMALIZED.validate_python(normalized)
-    return JSON.validate_json(NORMALIZED.dump_json(validated))
+    return JSON.validate_python(normalized)
 
 
 def settings_answer(call: GetSettingsCall) -> JsonValue:
