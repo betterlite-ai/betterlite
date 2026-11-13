@@ -12,11 +12,11 @@ description: >-
   `compact_responses`, `acompact_responses`, `mock_responses_api_response`, `betterlite.messages.anthropic_messages`,
   `betterlite.messages.anthropic_messages_handler`, `betterlite.anthropic_interface.messages.create`, `acreate`, the four
   functions of `betterlite.google_genai` and the eight of `betterlite.interactions`. For parameter defaults, the test compares
-  names, kinds and defaults and skips the annotations, since the wheel has no pydantic.
+  names, kinds and defaults and skips the annotations, since they name betterlite's own classes.
 
 
   It also checks that `from betterlite.responses.main import responses` works, that `betterlite.responses` as an attribute of
-  `betterlite` still points to the function, and that importing `betterlite` does not import `pydantic`, `openai` or `httpx`
+  `betterlite` still points to the function, and that importing `betterlite` does not import `openai` or `httpx`
   (read `sys.modules` in a fresh subprocess run through `uv run`). If a name fails, fix it in the part that owns it and say
   which part in the task notes. Do not patch around it in this task.
 scope:
@@ -29,7 +29,7 @@ references:
 dod:
 - text: Every public name of the four families exists in `betterlite` and has LiteLLM's signature.
   proof: [surface-signatures]
-- text: The package imports without pydantic, openai or httpx.
+- text: The package imports without openai or httpx.
   proof: [surface-imports]
 - text: The new Python file passes ruff and strict basedpyright.
   proof: [python-lint]
@@ -50,7 +50,7 @@ deviations: []
 out_of_scope:
 - Every function, class and native session is in B7840 to B7845.
 pitfalls:
-- 'The pydantic check must run in a fresh process. The LiteLLM side of the test environment imports pydantic in the test process.'
+- 'The import check must run in a fresh process. The LiteLLM side of the test environment imports openai and httpx in the test process.'
 review_level: standard
 budget:
   max_changed_lines: 1500
