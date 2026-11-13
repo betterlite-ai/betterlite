@@ -531,8 +531,13 @@ fn marker_exact_true_skips() {
         catalog: Some(&catalog),
         decoders: &decoders,
     };
-    for marker in [Some(false), None] {
-        let kept = RequestSnapshot {
+    let kept = RequestedModels::One("body-model".to_owned());
+    for (marker, expected) in [
+        (Some(false), kept.clone()),
+        (None, kept),
+        (Some(true), RequestedModels::None),
+    ] {
+        let request = RequestSnapshot {
             route: "/openai/deployments/path-model/chat/completions",
             body: &body,
             headers: None,
@@ -544,25 +549,10 @@ fn marker_exact_true_skips() {
             team_id: None,
         };
         assert_eq!(
-            get_model_from_request(&kept, &collaborators),
-            Ok(RequestedModels::One("body-model".to_owned()))
+            get_model_from_request(&request, &collaborators),
+            Ok(expected)
         );
     }
-    let skipped = RequestSnapshot {
-        route: "/openai/deployments/path-model/chat/completions",
-        body: &body,
-        headers: None,
-        query: None,
-        dispatch: DispatchContext {
-            endpoint_marker: Some(true),
-            path_params: &path_params,
-        },
-        team_id: None,
-    };
-    assert_eq!(
-        get_model_from_request(&skipped, &collaborators),
-        Ok(RequestedModels::None)
-    );
 }
 
 #[test]
