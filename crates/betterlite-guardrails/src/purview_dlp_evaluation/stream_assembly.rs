@@ -23,9 +23,37 @@ pub fn assemble_responses_stream(
                     looks_like_responses_api = true;
                     final_response = Some(inner.response.clone());
                 }
+                KnownResponseEvent::ResponsePartAdded(_)
+                | KnownResponseEvent::ReasoningSummaryTextDelta(_)
+                | KnownResponseEvent::ReasoningSummaryTextDone(_)
+                | KnownResponseEvent::ReasoningSummaryPartDone(_)
+                | KnownResponseEvent::OutputItemAdded(_)
+                | KnownResponseEvent::OutputItemDone(_)
+                | KnownResponseEvent::ContentPartAdded(_)
+                | KnownResponseEvent::ContentPartDone(_)
+                | KnownResponseEvent::OutputTextDelta(_)
+                | KnownResponseEvent::OutputTextAnnotationAdded(_)
+                | KnownResponseEvent::OutputTextDone(_)
+                | KnownResponseEvent::RefusalDelta(_)
+                | KnownResponseEvent::RefusalDone(_)
+                | KnownResponseEvent::FunctionCallArgumentsDelta(_)
+                | KnownResponseEvent::FunctionCallArgumentsDone(_)
+                | KnownResponseEvent::FileSearchCallInProgress(_)
+                | KnownResponseEvent::FileSearchCallSearching(_)
+                | KnownResponseEvent::FileSearchCallCompleted(_)
+                | KnownResponseEvent::WebSearchCallInProgress(_)
+                | KnownResponseEvent::WebSearchCallSearching(_)
+                | KnownResponseEvent::WebSearchCallCompleted(_)
+                | KnownResponseEvent::McpListToolsInProgress(_)
+                | KnownResponseEvent::McpListToolsCompleted(_)
+                | KnownResponseEvent::McpListToolsFailed(_)
+                | KnownResponseEvent::McpCallInProgress(_)
+                | KnownResponseEvent::McpCallArgumentsDelta(_)
+                | KnownResponseEvent::McpCallArgumentsDone(_)
+                | KnownResponseEvent::McpCallCompleted(_)
+                | KnownResponseEvent::McpCallFailed(_) => looks_like_responses_api = true,
                 KnownResponseEvent::Error(_)
                 | KnownResponseEvent::ImageGenerationPartialImage(_) => {}
-                _ => looks_like_responses_api = true,
             },
         }
     }

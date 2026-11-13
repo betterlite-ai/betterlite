@@ -107,16 +107,25 @@ fn upstream_failure_detail_names_the_error_the_activity_and_the_upstream_status(
     );
 }
 
-#[test]
-fn a_token_endpoint_status_uses_the_same_status_mapping() {
+// Deviation: B3738's TokenStatus carries no Retry-After, so a token endpoint 429 reaches the caller without it.
+#[rstest]
+#[case::unauthorized(StatusCode::UNAUTHORIZED, 502)]
+#[case::rate_limited(StatusCode::TOO_MANY_REQUESTS, 429)]
+#[case::unavailable(StatusCode::SERVICE_UNAVAILABLE, 503)]
+fn a_token_endpoint_status_maps_like_graph_without_retry_after(
+    #[case] status: StatusCode,
+    #[case] client_status: u16,
+) {
     let error = evaluation_http_error(
-        &PurviewGraphError::TokenStatus {
-            status: StatusCode::UNAUTHORIZED,
-        },
+        &PurviewGraphError::TokenStatus { status },
         Activity::UploadText,
     );
-    assert_eq!(error.status, 502);
+    assert_eq!(error.status, client_status);
     assert_eq!(error.retry_after, None);
+    assert_eq!(
+        error.detail.get("upstream_status"),
+        Some(&GuardrailValue::UnsignedInteger(u64::from(status.as_u16())))
+    );
 }
 
 #[test]

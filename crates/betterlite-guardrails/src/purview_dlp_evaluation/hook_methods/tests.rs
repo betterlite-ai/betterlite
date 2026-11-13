@@ -6,7 +6,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::purview_dlp_evaluation::{
-    DEFAULT_TIMEOUT, GUARDRAIL_PROVIDER, MicrosoftPurviewDLPGuardrail, PurviewDlpGuardrailParams,
+    GUARDRAIL_PROVIDER, MicrosoftPurviewDLPGuardrail, PurviewDlpGuardrailParams,
 };
 
 fn params(
@@ -96,7 +96,7 @@ fn constructor_keeps_an_explicit_app_name_and_user_field() {
 
 #[test]
 fn constructor_defaults_the_timeout_to_the_httpx_default() {
-    assert_eq!(build(None, None).base.timeout, DEFAULT_TIMEOUT);
+    assert_eq!(build(None, None).base.timeout, Duration::from_secs(600));
 }
 
 #[test]

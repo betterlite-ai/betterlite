@@ -1,6 +1,7 @@
 #![cfg(test)]
 
-use betterlite_openai::api::responses_objects::ResponsesApiResponse;
+use betterlite_openai::api::responses_objects::{ResponseOutputItem, ResponsesApiResponse};
+use betterlite_openai::api::responses_shapes::OutputFunctionToolCall;
 
 use crate::purview_dlp_evaluation::responses_extraction::responses_function_call_args;
 
@@ -76,4 +77,33 @@ fn keeps_function_calls_in_output_order() {
         responses_function_call_args(&response),
         vec!["one".to_owned(), "two".to_owned()]
     );
+}
+
+fn with_typed_call(kind: &str, arguments: &str) -> ResponsesApiResponse {
+    let call: OutputFunctionToolCall = serde_json::from_str(&format!(
+        r#"{{"arguments":"{arguments}","call_id":"c","name":"f","type":"{kind}","id":null,"status":"completed"}}"#
+    ))
+    .unwrap();
+    let mut built = response("[]");
+    built.output.push(ResponseOutputItem::FunctionCall(call));
+    built
+}
+
+#[test]
+fn extracts_the_arguments_of_a_constructed_function_call_item() {
+    assert_eq!(
+        responses_function_call_args(&with_typed_call("function_call", "built")),
+        vec!["built".to_owned()]
+    );
+}
+
+#[test]
+fn skips_a_constructed_call_of_another_type() {
+    assert!(responses_function_call_args(&with_typed_call("custom_tool_call", "built")).is_empty());
+}
+
+#[test]
+fn skips_an_untyped_item_of_another_type() {
+    let response = response(r#"[{"type":"custom_call","arguments":"secret"}]"#);
+    assert!(responses_function_call_args(&response).is_empty());
 }
