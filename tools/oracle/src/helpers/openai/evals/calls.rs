@@ -11,8 +11,8 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use super::requests::{
-    create_run_value, create_update_value, eval_id_value, list_evals_value, list_runs_value,
-    run_id_value,
+    Subject, create_run_value, create_update_value, lifecycle_value, list_evals_value,
+    list_runs_value,
 };
 use super::{Call, LitellmParams, Probe, ReplyOperation, invalid_input};
 use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
@@ -23,10 +23,14 @@ pub(super) fn run(call: &Call) -> HelperResult {
     match call {
         Call::EvalCreateUpdate(probes) => probe_values(&probes.probes, create_update_value),
         Call::EvalListPagination(probes) => probe_values(&probes.probes, list_evals_value),
-        Call::EvalGetDeleteCancel(probes) => probe_values(&probes.probes, eval_id_value),
+        Call::EvalGetDeleteCancel(probes) => probe_values(&probes.probes, |probe| {
+            lifecycle_value(probe, Subject::Eval)
+        }),
         Call::RunCreateDataSource(probes) => probe_values(&probes.probes, create_run_value),
         Call::RunListPagination(probes) => probe_values(&probes.probes, list_runs_value),
-        Call::RunGetCancelDelete(probes) => probe_values(&probes.probes, run_id_value),
+        Call::RunGetCancelDelete(probes) => {
+            probe_values(&probes.probes, |probe| lifecycle_value(probe, Subject::Run))
+        }
         Call::MalformedJsonError(probes) => probe_values(&probes.probes, reply_value),
         Call::EvalAuthRequired(probes) => probe_values(&probes.probes, auth_value),
         Call::EvalUrlLiteralAppend(probes) => probe_values(&probes.probes, url_value),

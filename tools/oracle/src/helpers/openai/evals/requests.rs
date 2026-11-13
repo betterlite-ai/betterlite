@@ -82,18 +82,26 @@ pub(super) fn list_evals_value(probe: &Probe) -> Result<Value, Box<HelperError>>
     Ok(outcome(sent.map(|(url, query)| json!({"url": url, "query": Value::Object(query)}))))
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(super) enum Subject {
+    Eval,
+    Run,
+}
+
 struct Lifecycle<'probe> {
     operation: Operation,
     eval_id: &'probe str,
+    run_id: Option<&'probe str>,
     api_base: &'probe str,
     params: Object,
     headers: HeaderMap,
 }
 
-fn lifecycle<'probe>(
-    probe: &'probe Probe,
-    owner: &str,
-) -> Result<Lifecycle<'probe>, Box<HelperError>> {
+fn lifecycle(probe: &Probe, subject: Subject) -> Result<Lifecycle<'_>, Box<HelperError>> {
+    let owner = match subject {
+        Subject::Eval => "an eval probe",
+        Subject::Run => "a run probe",
+    };
     let operation = probe
         .operation
         .ok_or_else(|| invalid_input(format!("{owner} needs operation")))?;
@@ -105,9 +113,19 @@ fn lifecycle<'probe>(
         .api_base
         .as_deref()
         .ok_or_else(|| invalid_input(format!("{owner} needs api_base")))?;
+    let run_id = match subject {
+        Subject::Eval => None,
+        Subject::Run => Some(
+            probe
+                .run_id
+                .as_deref()
+                .ok_or_else(|| invalid_input(format!("{owner} needs run_id")))?,
+        ),
+    };
     Ok(Lifecycle {
         operation,
         eval_id,
+        run_id,
         api_base,
         params: params_object(probe.litellm_params.as_ref())?,
         headers: probe.headers.clone().unwrap_or_default(),
@@ -116,26 +134,22 @@ fn lifecycle<'probe>(
 
 type Sent = (String, HeaderMap, Option<Object>);
 
-fn sent_value(result: Result<Sent, EvalsError>) -> Value {
-    match result {
+pub(super) fn lifecycle_value(probe: &Probe, subject: Subject) -> Result<Value, Box<HelperError>> {
+    let call = lifecycle(probe, subject)?;
+    Ok(match lifecycle_sent(&call) {
         Ok((url, headers, None)) => json!({"url": url, "headers": headers}),
         Ok((url, headers, Some(body))) => {
             json!({"url": url, "headers": headers, "body": Value::Object(body)})
         }
         Err(_error) => json!({"error": {"status": null}}),
-    }
+    })
 }
 
-pub(super) fn eval_id_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
-    let call = lifecycle(probe, "an eval probe")?;
-    Ok(sent_value(lifecycle_sent(&call, None)))
-}
-
-fn lifecycle_sent(call: &Lifecycle<'_>, run_id: Option<&str>) -> Result<Sent, EvalsError> {
+fn lifecycle_sent(call: &Lifecycle<'_>) -> Result<Sent, EvalsError> {
     let context = context_of(&call.params, &call.headers);
     let config = OpenAiEvalsConfig::default();
     let (eval_id, api_base) = (call.eval_id, call.api_base);
-    match (call.operation, run_id) {
+    match (call.operation, call.run_id) {
         (Operation::Get, None) => config
             .transform_get_eval_request(eval_id, api_base, &context)
             .map(|(url, sent)| (url, sent, None)),
@@ -173,13 +187,4 @@ pub(super) fn list_runs_value(probe: &Probe) -> Result<Value, Box<HelperError>> 
     let headers = probe.headers.clone().unwrap_or_default();
     let sent = OpenAiEvalsConfig::default().transform_list_runs_request(probe.eval_id.as_deref().unwrap_or_default(), params, &context_of(&litellm, &headers));
     Ok(outcome(sent.map(|(url, query)| json!({"url": url, "query": Value::Object(query)}))))
-}
-
-pub(super) fn run_id_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
-    let call = lifecycle(probe, "a run probe")?;
-    let run_id = probe
-        .run_id
-        .as_deref()
-        .ok_or_else(|| invalid_input(String::from("a run probe needs run_id")))?;
-    Ok(sent_value(lifecycle_sent(&call, Some(run_id))))
 }
