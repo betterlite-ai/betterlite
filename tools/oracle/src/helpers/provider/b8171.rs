@@ -1,6 +1,5 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::RerankDocument;
-use betterlite_openai::dashscope_embedding::error::DashscopeError;
 use betterlite_openai::dashscope_embedding::identity::FamilyIdentity;
 use betterlite_openai::dashscope_embedding::reply::decode_dashscope_embedding;
 use betterlite_openai::dashscope_embedding::{
@@ -19,6 +18,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError};
+
+const DASHSCOPE_EXCEPTION: &str = "DashScopeException";
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
@@ -117,7 +118,9 @@ fn embedding_params_and_url(input: &EmbeddingParamsAndUrlInput) -> HelperResult 
 fn embedding_reply(input: &EmbeddingReplyInput) -> HelperResult {
     let reply =
         decode_dashscope_embedding(input.body.as_bytes(), input.status, &input.request_model)
-            .map_err(|error| dashscope_failure(&error))?;
+            .map_err(|error| {
+                failure(DASHSCOPE_EXCEPTION, Some(error.status_code), error.message)
+            })?;
     Ok(json!({
         "response": serde_json::to_value(reply.response)?,
         "id": reply.id,
@@ -189,7 +192,7 @@ fn rerank_request(input: &RerankRequestInput) -> HelperResult {
 
 fn rerank_reply(input: &RerankReplyInput) -> HelperResult {
     let response = decode_dashscope_rerank_reply(input.body.as_bytes(), input.status)
-        .map_err(|error| dashscope_failure(&error))?;
+        .map_err(|error| failure(DASHSCOPE_EXCEPTION, Some(error.status_code), error.message))?;
     Ok(serde_json::to_value(response)?)
 }
 
@@ -218,27 +221,24 @@ fn rerank_config(
     }
 }
 
-fn dashscope_failure(error: &DashscopeError) -> Box<HelperError> {
+fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
     Box::new(HelperError {
-        class: "DashScopeException".to_owned(),
-        status: Some(error.status_code),
+        class: class.to_owned(),
+        status,
         error_type: None,
         param: None,
         code: None,
-        message: error.message.clone(),
+        message,
     })
 }
 
 fn rerank_failure(error: DashscopeRerankError) -> Box<HelperError> {
     match error {
-        DashscopeRerankError::Provider(provider) => dashscope_failure(&provider),
-        other => Box::new(HelperError {
-            class: "ValueError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: other.to_string(),
-        }),
+        DashscopeRerankError::Provider(provider) => failure(
+            DASHSCOPE_EXCEPTION,
+            Some(provider.status_code),
+            provider.message,
+        ),
+        other => failure("ValueError", None, other.to_string()),
     }
 }
