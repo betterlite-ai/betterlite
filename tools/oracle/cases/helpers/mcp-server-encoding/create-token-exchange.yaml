@@ -1,0 +1,18 @@
+kind: helper
+name: mcp-server-encoding-create-token-exchange
+call:
+  b4710:
+    function: prepare_create
+    salt_key: encoding-salt
+    request:
+      server_name: srv
+      audience: top-audience
+      credentials:
+        client_id: client-id
+        token_exchange_endpoint: https://idp.example/token
+        audience: legacy-audience
+        subject_token_type: urn:ietf:params:oauth:token-type:access_token
+        token_exchange_profile: profile-1
+env:
+  LITELLM_SALT_KEY: encoding-salt
+compare: {ignore: []}

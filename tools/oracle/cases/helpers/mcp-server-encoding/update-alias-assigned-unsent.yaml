@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-server-encoding-update-alias-assigned-unsent
+call:
+  b4710:
+    function: prepare_update
+    salt_key: encoding-salt
+    request:
+      server_id: s1
+      description: changed
+      alias: null
+    model_fields: [server_id, description, alias]
+    original_fields: [server_id, description]
+env:
+  LITELLM_SALT_KEY: encoding-salt
+compare: {ignore: []}

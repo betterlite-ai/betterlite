@@ -1,0 +1,21 @@
+kind: helper
+name: mcp-server-encoding-update-env-var-presence
+call:
+  b4710:
+    function: prepare_update
+    salt_key: encoding-salt
+    request:
+      server_id: s1
+      env_vars:
+        - name: GLOBAL
+          value: global-secret
+        - name: USER
+          value: placeholder
+          scope: user
+        - name: EMPTY
+          value: ''
+    model_fields: [server_id, env_vars]
+    original_fields: [server_id, env_vars]
+env:
+  LITELLM_SALT_KEY: encoding-salt
+compare: {ignore: []}

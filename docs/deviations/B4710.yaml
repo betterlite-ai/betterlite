@@ -1,0 +1,11 @@
+task: B4710
+deviations:
+  - what: A non-string issuer or audience is refused by the typed request boundary instead of being read as absent.
+    why: LiteLLM's _blank_to_none returns None for any non-string because Python duck-types the argument; betterlite takes Option<&str>, and docs/compatibility.md makes a wrong-typed request field an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L107-L110
+  - what: A returned row whose env_vars column is a JSON boolean or number is a typed McpEncodingError instead of an unhandled Python TypeError.
+    why: Prisma rows written by current code never carry those shapes; LiteLLM's decrypt loop raises TypeError on them and answers 500, and a working setup cannot rely on that. betterlite reports the corrupt column by name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L243-L269
+  - what: JSON columns are serialized with serde_json, which keeps NUL bytes that LiteLLM's safe_dumps strips.
+    why: safe_dumps belongs to B192; a credential or header value holding a NUL byte is a pathological value no working setup stores, and PostgreSQL rejects it loudly (22P05) rather than silently changing the secret.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L11-L13

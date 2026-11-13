@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-server-encoding-update-alias-clear
+call:
+  b4710:
+    function: prepare_update
+    salt_key: encoding-salt
+    request:
+      server_id: s1
+      alias: null
+    model_fields: [server_id, alias]
+    original_fields: [server_id, alias]
+env:
+  LITELLM_SALT_KEY: encoding-salt
+compare: {ignore: []}

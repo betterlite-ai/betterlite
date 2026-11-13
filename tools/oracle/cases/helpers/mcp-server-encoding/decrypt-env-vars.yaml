@@ -1,0 +1,23 @@
+kind: helper
+name: mcp-server-encoding-decrypt-env-vars
+call:
+  b4710:
+    function: decrypt_env_vars
+    salt_key: encoding-salt
+    env_vars:
+      - name: GLOBAL
+        value: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXL2TQ7IdXx2IAlIUt1zRJFlJnifrMPuPJ9VyLGUA=
+        scope: global
+      - name: USER
+        value: placeholder
+        scope: user
+      - name: MISSING
+        value: AAECAwQFBgcICQoLDA0ODxAREhMUFRYXL2TQ7IdXx2IAlIUt1zRJFlJnifrMPuPJ9VyLGUA=
+      - name: EMPTY
+        value: ''
+      - name: BROKEN
+        value: not-a-ciphertext
+        scope: global
+env:
+  LITELLM_SALT_KEY: encoding-salt
+compare: {ignore: []}
