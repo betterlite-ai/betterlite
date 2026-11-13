@@ -1,0 +1,43 @@
+task: B1324
+deviations:
+  - what: >-
+      betterlite exposes one async check_and_create_cache where LiteLLM has the identical sync check_and_create_cache and
+      async_check_and_create_cache bodies.
+    why: >-
+      the two Python methods differ only in whether the client call is awaited, and this gateway is native async, so a
+      second blocking entry point would duplicate the eligibility, key, lookup and create steps; the request sequence,
+      option mutation and every result stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L277-L591
+  - what: >-
+      A cached block that contains an image part is skipped as ineligible. LiteLLM counts every image part with its
+      default image token count and caches the block when the total reaches the minimum.
+    why: >-
+      eligibility is delegated to betterlite-core's is_prompt_caching_valid_prompt, whose B196 counter reports image
+      content as uncountable; it logs and returns false, which the pinned call site also does for a counting error.
+      Wiring LiteLLM's default image count into message counting belongs to the media counting owner (B197), not to the
+      Vertex cache orchestration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10149-L10159
+  - what: >-
+      A MINIMUM_PROMPT_CACHE_TOKEN_COUNT value outside the signed 64-bit range is unusable, so the per-model minimum
+      applies. Python's int holds it, and a value above any possible count makes every prompt ineligible there while a
+      huge negative one makes every prompt eligible.
+    why: >-
+      the pinned get_env_int_or_none returns None for a value it cannot read, and betterlite reads the variable with
+      its one shared integer parser; no working setup configures a cache threshold beyond 9.2 * 10^18 tokens.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/env_utils.py#L46-L59
+  - what: >-
+      A cache create response larger than 16 MiB is refused with a typed error before parsing, where LiteLLM parses
+      whatever size the provider sends.
+    why: >-
+      the response is untrusted provider JSON and the pooled transport already caps a reply at 16 MiB, so the cap
+      bounds memory without refusing a working reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L420-L426
+  - what: >-
+      A 2xx create reply whose name is missing, null or empty leaves the request uncached: betterlite returns the
+      original messages with no cachedContent and puts back the tools and tool_choice it removed for the lookup.
+      LiteLLM returns only the uncached messages with a null cache name.
+    why: >-
+      LiteLLM's result then carries neither the cached prefix nor its tools, so the generation request loses the system
+      instruction, the marked turns and the tool definitions. An unusable name cannot be a working cache reference, so
+      the request goes out uncached and complete instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L427-L435

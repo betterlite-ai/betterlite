@@ -1,0 +1,13 @@
+kind: helper
+name: openai-response-input-foreign-seed
+call:
+  openai_response_input:
+    probes:
+    - model: gpt-4o
+      input:
+      - {type: function_call, id: call_1, call_id: c1}
+      - {type: custom_tool_call, id: ctc_1}
+      - {type: custom_tool_call, id: foreign}
+      params: {}
+env: {}
+compare: {ignore: []}

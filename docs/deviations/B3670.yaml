@@ -1,0 +1,26 @@
+task: B3670
+deviations:
+  - what: >-
+      The Responses and Anthropic tool call shape readers are one function over
+      serde_json values. A call that is not an object, has no function object, or
+      carries a name or arguments that is not a string reads as ToolCallShape
+      { name: None, arguments: "" } instead of raising the way the Responses
+      reader's tool_call["function"].get(...) does on a chunk outside the
+      declared type.
+    why: >-
+      LiteLLM declares the Responses chunk as a TypedDict whose name and
+      arguments are strings, so a declared input reads the same on both sides,
+      and docs/compatibility.md leaves inputs outside the declared types to
+      Python; the Anthropic reader already reads a missing name and arguments as
+      None and empty through stream_item_field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L126-L130
+  - what: >-
+      A conversion failure from the Responses input converter or the
+      chat-to-Responses converter comes back as InputProvenanceError::Conversion
+      or InputProvenanceError::History with its source, not as a raw Python
+      exception.
+    why: >-
+      Each fallible module owns a thiserror enum (rule typed-errors); the HTTP
+      result of a request whose guardrail rewrite cannot be converted is decided
+      by the handler tasks that call these helpers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L486-L532

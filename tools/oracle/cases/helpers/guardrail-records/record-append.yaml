@@ -1,0 +1,6 @@
+kind: helper
+name: record-append
+call:
+  b3664: {"function": "record", "guardrail_name": "pii", "event_hook": "post_call", "event_type": null, "guardrail_response": {"verdict": "allow", "scores": [0.5, 1.25]}, "guardrail_status": "success", "start_time": 1.5, "end_time": 2.0, "duration": 0.5, "masked_entity_count": {"EMAIL": 2}, "guardrail_provider": "presidio", "request_data": {"model": "m", "metadata": {"user": "u", "standard_logging_guardrail_information": [{"guardrail_name": "earlier"}]}}, "litellm_params": {"metadata": {"keep": 1}}, "model_call_params": {"metadata": null}}
+env: {}
+compare: {ignore: []}
