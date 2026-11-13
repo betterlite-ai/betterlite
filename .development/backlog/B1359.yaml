@@ -1,7 +1,7 @@
 id: B1359
 milestone: M3 providers
 title: Chirp stream rotation, turn discard and backend shutdown
-status: todo
+status: done
 depends_on: [B1358, B171]
 file: tasks/B1359-chirp-stream-rotation.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/vertex_ai_speech_to_text.py"
 parent: B033
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1649
