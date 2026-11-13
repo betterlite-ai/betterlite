@@ -524,6 +524,14 @@ fn redacts_header_values_in_debug() {
 }
 
 #[test]
+fn treats_an_empty_location_as_the_default() {
+    let mapped = mapping(SpeechOptionalParams::default(), SpeechKwargs::default());
+    let mut speech_call = call("hi", &mapped);
+    speech_call.location = Some("");
+    assert!(request_for(&speech_call).is_ok());
+}
+
+#[test]
 fn rejects_an_invalid_vertex_location() {
     let mapped = mapping(SpeechOptionalParams::default(), SpeechKwargs::default());
     let mut speech_call = call("hi", &mapped);
