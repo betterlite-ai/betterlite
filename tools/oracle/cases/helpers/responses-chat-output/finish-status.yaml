@@ -1,0 +1,34 @@
+kind: helper
+name: responses-chat-output-finish-status
+call:
+  responses_chat_output:
+    request_input: hi
+    responses_api_request: {}
+    chat_completion_response:
+      id: chat_b
+      created: 2
+      model: m
+      incomplete_details: {reason: content_filter}
+      metadata: null
+      parallel_tool_calls: null
+      temperature: null
+      tools: null
+      top_p: 0.5
+      usage:
+        prompt_tokens: 3
+        completion_tokens: 2
+        total_tokens: 5
+        cost: 0.125
+        prompt_tokens_details: {cached_tokens: 1}
+      choices:
+        - finish_reason: length
+          message: {role: assistant, content: cut}
+        - finish_reason: stop
+          message: {role: assistant, content: done}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/output/0/id
+      why: The message id is a random UUID.
+    - pointer: /value/output/1/id
+      why: The message id is a random UUID.

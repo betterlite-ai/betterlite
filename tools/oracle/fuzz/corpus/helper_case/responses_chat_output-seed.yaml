@@ -1,0 +1,18 @@
+kind: helper
+name: responses-chat-output-seed
+call:
+  responses_chat_output:
+    request_input: hi
+    responses_api_request: {}
+    chat_completion_response:
+      id: chat_seed
+      created: 9
+      model: m
+      choices:
+        - finish_reason: stop
+          message: {role: assistant, content: hi}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/output/0/id
+      why: The message id is a random UUID.
