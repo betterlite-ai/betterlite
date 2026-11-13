@@ -1,5 +1,4 @@
 use std::sync::atomic::Ordering;
-use std::time::Duration;
 
 use secrecy::ExposeSecret as _;
 use tracing::{debug, error, info, warn};
@@ -34,13 +33,9 @@ where
             debug!("Performing Prisma DB reconnect (engine alive or unknown).");
             Box::pin(self.direct(request, expected_generation))
         };
-        let outcome = if limit == Duration::MAX {
-            cycle.await
-        } else {
-            match tokio::time::timeout(limit, cycle).await {
-                Ok(outcome) => outcome,
-                Err(_elapsed) => Err(ReconnectError::Timeout),
-            }
+        let outcome = match tokio::time::timeout(limit, cycle).await {
+            Ok(outcome) => outcome,
+            Err(_elapsed) => Err(ReconnectError::Timeout),
         };
         if dead && outcome.is_ok() {
             self.dead.store(false, Ordering::SeqCst);
