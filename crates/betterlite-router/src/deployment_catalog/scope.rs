@@ -23,8 +23,8 @@ pub fn litellm_model(spec: &DeploymentSpec) -> &str {
 // Router.should_include_deployment
 fn visible(name: &str, spec: &DeploymentSpec, team_id: Option<&str>) -> bool {
     let owner = info_text(spec, "team_id");
-    if team_id.is_some()
-        && owner == team_id
+    if let Some(team) = team_id
+        && owner == Some(team)
         && info_text(spec, "team_public_model_name") == Some(name)
     {
         return true;
