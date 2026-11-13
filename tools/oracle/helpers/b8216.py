@@ -1,5 +1,5 @@
 import asyncio
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, Never, Protocol, TypedDict
 
 import httpx
 import litellm
@@ -23,8 +23,14 @@ HEADER_NAMES = (
 JSON = TypeAdapter(JsonValue)
 
 
-class Inputs(TypedDict):
+class Inputs(TypedDict, total=False):
     texts: list[str]
+    images: list[str]
+    tools: list[Never]
+    tool_calls: list[Never]
+    structured_messages: list[Never]
+    model: str | None
+    stream_holdback_chars: list[int]
 
 
 class Guardrail(Protocol):
@@ -33,7 +39,15 @@ class Guardrail(Protocol):
         inputs: Inputs,
         request_data: dict[str, JsonValue],
         input_type: Literal["request", "response"],
-    ) -> dict[str, JsonValue]: ...
+    ) -> object: ...
+
+
+class ClientCache(Protocol):
+    def set_cache(self, key: str, value: object) -> None: ...
+
+
+def seed(cache: ClientCache, handler: AsyncHTTPHandler) -> None:
+    cache.set_cache(CLIENT_CACHE_KEY, handler)
 
 
 class Settings(TypedDict):
@@ -92,12 +106,10 @@ def build(settings: Settings) -> Guardrail:
     )
 
 
-async def check(
-    guardrail: Guardrail, handler: AsyncHTTPHandler, call: Call
-) -> dict[str, JsonValue]:
+async def check(guardrail: Guardrail, handler: AsyncHTTPHandler, call: Call) -> object:
     cache = LLMClientCache()
     litellm.in_memory_llm_clients_cache = cache
-    cache.set_cache(CLIENT_CACHE_KEY, handler)
+    seed(cache, handler)
     return await guardrail.apply_guardrail(
         inputs=call["inputs"],
         request_data=call["request_data"],
@@ -130,5 +142,5 @@ def run(input_value: Call) -> JsonValue:
         "path": captured.get("path"),
         "headers": captured.get("headers"),
         "body": captured.get("body"),
-        "inputs": result,
+        "inputs": JSON.validate_python(result),
     }
