@@ -79,7 +79,7 @@ impl ProviderImagePricing<'_> {
             ..
         } = route
         else {
-            return Err(ImagePolicyError::UnavailableAdapter(missing_adapter(route)));
+            return Err(ImagePolicyError::UnavailableAdapter(route.adapter()));
         };
         let request = DefaultImageCostRequest {
             model: image.model,
@@ -169,9 +169,7 @@ impl ImagePricePolicy for ProviderImagePricing<'_> {
             | ImageRoute::Gemini(_)
             | ImageRoute::GeminiEdit(_)
             | ImageRoute::FalAi { .. }
-            | ImageRoute::Runwayml(_) => {
-                Err(ImagePolicyError::UnavailableAdapter(missing_adapter(route)))
-            }
+            | ImageRoute::Runwayml(_) => Err(ImagePolicyError::UnavailableAdapter(route.adapter())),
         }
     }
 }

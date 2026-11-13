@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use betterlite_core::cost::image_dispatch::error::ImageDispatchError;
 use betterlite_core::cost::image_dispatch::options::{OptionalParams, SizePattern};
-use betterlite_core::cost::image_dispatch::policy::ImageResponseView;
+use betterlite_core::cost::image_dispatch::policy::{ImageResponseView, ImageRoute, PricedImage};
 use betterlite_core::cost::image_dispatch::route::{ImageCall, route_image_cost};
 use betterlite_models::decisions::Json;
 use betterlite_models::image_cost::ImageBilling;
@@ -295,5 +295,29 @@ fn a_gemini_edit_names_the_same_unavailable_adapter() {
         Err(ImageDispatchError::Policy(
             ImagePolicyError::UnavailableAdapter("gemini")
         ))
+    ));
+}
+
+#[test]
+fn the_default_calculator_refuses_a_route_that_is_not_the_default_one() {
+    let database = TimeZoneDatabase::from_env();
+    let lookup = empty();
+    let policy = ProviderImagePricing {
+        lookup: &lookup,
+        database: &database,
+        moment: DateTime::<Utc>::UNIX_EPOCH,
+    };
+    let response = billing(1);
+    let route = ImageRoute::GptImage {
+        image: PricedImage {
+            model: "gpt-image-1",
+            response: ImageResponseView::Image(&response),
+            prices: None,
+        },
+        provider: "openai",
+    };
+    assert!(matches!(
+        policy.default_price(&route),
+        Err(ImagePolicyError::UnavailableAdapter("gpt_image"))
     ));
 }

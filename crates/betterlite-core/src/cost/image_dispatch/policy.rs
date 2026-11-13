@@ -63,6 +63,26 @@ pub enum ImageRoute<'request> {
     },
 }
 
+impl ImageRoute<'_> {
+    // The name of the calculator this route selects; Gemini and its edit variant share one.
+    #[must_use]
+    pub const fn adapter(&self) -> &'static str {
+        match self {
+            Self::VertexAi(_) => "vertex_ai",
+            Self::Bedrock { .. } => "bedrock",
+            Self::Recraft(_) => "recraft",
+            Self::Aiml(_) => "aiml",
+            Self::Cometapi(_) => "cometapi",
+            Self::Gemini(_) | Self::GeminiEdit(_) => "gemini",
+            Self::Runwayml(_) => "runwayml",
+            Self::AzureAi { .. } => "azure_ai",
+            Self::FalAi { .. } => "fal_ai",
+            Self::GptImage { .. } => "gpt_image",
+            Self::Default { .. } => "default",
+        }
+    }
+}
+
 // The provider layer implements the arithmetic of every route; the dispatcher only chooses which one runs.
 pub trait ImagePricePolicy {
     type Error: Error + 'static;
