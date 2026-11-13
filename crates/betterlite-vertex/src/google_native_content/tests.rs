@@ -505,9 +505,14 @@ fn a_response_nested_past_the_depth_limit_is_refused() {
     assert!(matches!(error, NativeContentError::Json { .. }));
 }
 
-#[test]
-fn a_non_object_response_root_is_refused() {
-    let error = decode_google_native_content(b"[1,2]").unwrap_err();
+#[rstest]
+#[case::list("[1,2]")]
+#[case::text(r#""hi""#)]
+#[case::number("7")]
+#[case::boolean("true")]
+#[case::null("null")]
+fn a_non_object_response_root_is_refused(#[case] body: &str) {
+    let error = decode_google_native_content(body.as_bytes()).unwrap_err();
     assert!(matches!(error, NativeContentError::ResponseNotObject));
 }
 
