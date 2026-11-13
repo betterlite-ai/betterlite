@@ -61,6 +61,7 @@ pub struct RealtimeSession<'session> {
 // What completion_cost holds when it reaches the early-return stage, minus the usage B1688 already prepared.
 pub struct SpecialRequest<'request> {
     pub call_type: CallType,
+    pub passthrough_image: bool,
     pub prompt: &'request str,
     pub messages: &'request [Json],
     pub optional_params: Option<&'request IndexMap<String, Json>>,

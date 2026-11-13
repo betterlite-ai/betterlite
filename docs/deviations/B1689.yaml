@@ -6,3 +6,6 @@ deviations:
   - what: An A2A price or cost that is a boolean, an empty or malformed string, or a nonfinite number (nan, inf) fails as an invalid monetary value instead of passing through Python's float().
     why: float(True) is 1.0 and float("nan") is nan, so the pinned calculator turns a mistyped flag or a nonfinite string into a charge that cannot be stored as a monetary value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/cost_calculator.py#L55-L80
+  - what: A transcription response whose hidden audio_transcription_duration is an explicit null charges a zero duration instead of failing.
+    why: The pinned code passes None into the per-second price, which raises a TypeError for models priced per second (an unhandled 500). A zero duration keeps the call billable at no usage charge, and a missing key still falls back to the response duration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1657-L1661

@@ -94,6 +94,9 @@ where
     Ok(Some(charge))
 }
 
+// The passthrough image call has no CallType, so the caller flags it; its wire name is spelled with hyphens.
+const PASSTHROUGH_IMAGE_CALL: &str = "passthrough-image-generation";
+
 const IMAGE_CALLS: [(CallType, &str); 4] = [
     (CallType::ImageGeneration, "image_generation"),
     (CallType::AimageGeneration, "aimage_generation"),
@@ -113,7 +116,15 @@ where
     Target: CostBreakdownTarget,
 {
     let call_type = request.call_type;
-    if let Some((_, wire)) = IMAGE_CALLS.iter().find(|(image, _)| *image == call_type) {
+    let image_wire = if request.passthrough_image {
+        Some(PASSTHROUGH_IMAGE_CALL)
+    } else {
+        IMAGE_CALLS
+            .iter()
+            .find(|(image, _)| *image == call_type)
+            .map(|(_, wire)| *wire)
+    };
+    if let Some(wire) = image_wire {
         return image_charge(request, services, identity, wire);
     }
     if matches!(

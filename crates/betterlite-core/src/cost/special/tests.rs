@@ -299,6 +299,7 @@ fn billing(stage: &TokenStage) -> &AttemptBilling {
 fn request(call_type: CallType) -> SpecialRequest<'static> {
     SpecialRequest {
         call_type,
+        passthrough_image: false,
         prompt: "",
         messages: &[],
         optional_params: None,
@@ -414,17 +415,20 @@ fn the_provider_is_inferred_only_when_none_was_given(
 }
 
 #[rstest]
-#[case::generation(CallType::ImageGeneration, true)]
-#[case::async_generation(CallType::AimageGeneration, true)]
-#[case::edit(CallType::ImageEdit, true)]
-#[case::async_edit(CallType::AimageEdit, true)]
-#[case::other_call(CallType::Completion, false)]
+#[case::generation(CallType::ImageGeneration, false, true)]
+#[case::async_generation(CallType::AimageGeneration, false, true)]
+#[case::edit(CallType::ImageEdit, false, true)]
+#[case::async_edit(CallType::AimageEdit, false, true)]
+#[case::other_call(CallType::Completion, false, false)]
+#[case::passthrough(CallType::Completion, true, true)]
 fn only_an_image_call_with_a_typed_response_is_priced_here(
     #[case] call_type: CallType,
+    #[case] passthrough: bool,
     #[case] priced: bool,
 ) {
     let image = ImageBilling::default();
     let mut call = request(call_type);
+    call.passthrough_image = passthrough;
     call.response.image.response = ImageResponseView::Image(&image);
     let fixture = Fixture::new(&[]);
     let outcome = fixture.run(&call, attempt(Some("dall-e-3"), None)).unwrap();
