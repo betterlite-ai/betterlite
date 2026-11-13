@@ -91,10 +91,11 @@ pub fn routing_strategy_checks(
     deployment: &DeploymentSpec,
     checks: &[&dyn DeploymentPreCallCheck],
 ) -> Result<(), PreCallError> {
-    checks.iter().try_for_each(|check| {
+    let mut remaining = checks.iter();
+    while let Some(check) = remaining.next() {
         check.check(deployment)?;
-        Ok(())
-    })
+    }
+    Ok(())
 }
 
 fn rate_limit(failure: &PreCallError) -> Option<(&str, u16)> {
