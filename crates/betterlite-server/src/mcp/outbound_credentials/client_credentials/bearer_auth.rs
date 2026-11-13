@@ -1,5 +1,6 @@
 mod tests;
 
+use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
@@ -21,7 +22,7 @@ pub trait Refetch: Send + Sync {
 pub trait AuthorizedCall: Send + Sync {
     type Output: Send;
 
-    async fn send(&self, auth: &dyn Auth) -> Self::Output;
+    async fn send(&self, auth: &(dyn Auth + Sync)) -> Self::Output;
 
     fn is_unauthorized(&self, output: &Self::Output) -> bool;
 }
@@ -36,6 +37,14 @@ struct StoredToken {
     secret: SecretString,
     name: HeaderName,
     value: HeaderValue,
+}
+
+impl fmt::Debug for ClientCredentialsBearerAuth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClientCredentialsBearerAuth")
+            .field("carrier", &self.carrier)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ClientCredentialsBearerAuth {
@@ -98,17 +107,17 @@ impl Refetch for SourceRefetch {
 }
 
 fn header_for(carrier: &HeaderCarrier, token: &SecretString) -> CredResult<StoredToken> {
-    let (name, value) = carrier.header(token.expose_secret());
-    let name = HeaderName::try_from(name.as_str()).map_err(|_invalid| {
+    let (name, formatted) = carrier.header(token.expose_secret());
+    let header_name = HeaderName::try_from(name.as_str()).map_err(|_invalid| {
         CredError::Misconfigured(format!("invalid upstream header name: '{name}'"))
     })?;
-    let mut value = HeaderValue::try_from(value.as_str()).map_err(|_invalid| {
+    let mut value = HeaderValue::try_from(formatted.as_str()).map_err(|_invalid| {
         CredError::Misconfigured(format!("invalid upstream header value for '{name}'"))
     })?;
     value.set_sensitive(true);
     Ok(StoredToken {
         secret: token.clone(),
-        name,
+        name: header_name,
         value,
     })
 }

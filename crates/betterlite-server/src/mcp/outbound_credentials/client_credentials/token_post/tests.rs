@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::str;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -61,19 +62,27 @@ async fn read_request(stream: &mut TcpStream) -> Vec<u8> {
 }
 
 fn complete(request: &[u8]) -> bool {
-    let Ok(text) = std::str::from_utf8(request) else {
+    let Ok(text) = str::from_utf8(request) else {
         return false;
     };
     let Some(split) = text.find("\r\n\r\n") else {
         return false;
     };
-    let declared = text[..split].lines().find_map(|line| {
+    let Some(head) = text.get(..split) else {
+        return false;
+    };
+    let declared = head.lines().find_map(|line| {
         let (name, value) = line.split_once(':')?;
         name.eq_ignore_ascii_case("content-length")
             .then(|| value.trim().parse::<usize>().ok())
             .flatten()
     });
-    declared.is_none_or(|length| text.len() >= split + 4 + length)
+    declared.is_none_or(|length| {
+        split
+            .checked_add(4)
+            .and_then(|start| start.checked_add(length))
+            .is_some_and(|total| text.len() >= total)
+    })
 }
 
 async fn answer(listener: TcpListener, reply: String) -> Vec<u8> {

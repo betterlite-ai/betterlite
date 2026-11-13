@@ -37,6 +37,7 @@ pub struct TokenResponseBody {
 
 impl TokenResponseBody {
     // LiteLLM reads a non-string access_token as absent; the emptiness check belongs to the caller.
+    #[must_use]
     pub fn access_token_text(&self) -> Option<&str> {
         match &self.access_token {
             Some(StringField::Text(text)) => Some(text),
@@ -91,14 +92,11 @@ impl M2mTokenEndpointPost for HttpGrantPost {
             };
         };
         let origin = parsed.origin().ascii_serialization();
-        let request = match grant_request(&parsed, form, headers, self.deadline) {
-            Ok(request) => request,
-            Err(()) => {
-                tracing::warn!(upstream = %origin, "OAuth2 client_credentials POST failed: the request could not be built");
-                return TokenEndpointOutcome::Unreachable {
-                    detail: "Build".to_owned(),
-                };
-            }
+        let Ok(request) = grant_request(&parsed, form, headers, self.deadline) else {
+            tracing::warn!(upstream = %origin, "OAuth2 client_credentials POST failed: the request could not be built");
+            return TokenEndpointOutcome::Unreachable {
+                detail: "Build".to_owned(),
+            };
         };
         let sent = match self.client.send(request).await {
             Ok(sent) => sent,
@@ -112,11 +110,11 @@ impl M2mTokenEndpointPost for HttpGrantPost {
                 detail: format!("token endpoint returned HTTP {}", status.as_u16()),
             };
         }
-        let body = match sent.buffered(self.client.limits.body_bytes).await {
-            Ok(body) => body,
+        let buffered = match sent.buffered(self.client.limits.body_bytes).await {
+            Ok(response) => response,
             Err(error) => return unreachable(&origin, &error),
         };
-        let outcome = parse_token_response(&body, status.as_u16());
+        let outcome = parse_token_response(&buffered.body, status.as_u16());
         if let TokenEndpointOutcome::Success { body } = &outcome
             && body.access_token_text().is_none_or(str::is_empty)
         {
@@ -132,7 +130,7 @@ fn grant_request(
     headers: &[(String, SecretString)],
     deadline: Duration,
 ) -> Result<OutboundRequest, ()> {
-    let mut serializer = url::form_urlencoded::Serializer::new(String::new());
+    let mut serializer = form_urlencoded::Serializer::new(String::new());
     for (name, value) in form {
         serializer.append_pair(name, value.expose_secret());
     }
@@ -140,10 +138,11 @@ fn grant_request(
     let mut map = HeaderMap::new();
     map.insert(ACCEPT, HeaderValue::from_static(JSON_ACCEPT));
     for (name, value) in headers {
-        let name = HeaderName::try_from(name.as_str()).map_err(|_invalid| ())?;
-        let mut value = HeaderValue::try_from(value.expose_secret()).map_err(|_invalid| ())?;
-        value.set_sensitive(true);
-        map.insert(name, value);
+        let header_name = HeaderName::try_from(name.as_str()).map_err(|_invalid| ())?;
+        let mut header_value =
+            HeaderValue::try_from(value.expose_secret()).map_err(|_invalid| ())?;
+        header_value.set_sensitive(true);
+        map.insert(header_name, header_value);
     }
     Ok(OutboundRequest {
         method: Method::POST,
@@ -167,7 +166,7 @@ fn unreachable(origin: &str, error: &TransportError) -> TokenEndpointOutcome {
 }
 
 // The detail names the failure kind only: a URL, a form or a body never reaches a log or an error.
-fn transport_kind(error: &TransportError) -> &'static str {
+const fn transport_kind(error: &TransportError) -> &'static str {
     match error {
         TransportError::Rejected(_) => "Rejected",
         TransportError::Build(_) => "Build",
@@ -195,6 +194,7 @@ fn transport_kind(error: &TransportError) -> &'static str {
     }
 }
 
+#[must_use]
 pub fn parse_token_response(bytes: &[u8], status_code: u16) -> TokenEndpointOutcome {
     match serde_json::from_slice::<TokenResponseBody>(bytes) {
         Ok(body) => TokenEndpointOutcome::Success { body },

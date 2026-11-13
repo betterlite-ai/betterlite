@@ -12,6 +12,7 @@ use chrono::{DateTime, TimeZone as _, Utc};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use super::{ClientCredentialsTokenSource, Tunables};
 use crate::mcp::outbound_credentials::client_credentials::token_post::{
@@ -99,9 +100,11 @@ impl TokenCacheBackend for RecordingBackend {
     }
 }
 
+type RecordedCall = (String, Vec<(String, String)>);
+
 struct ScriptedPost {
     outcomes: Mutex<VecDeque<TokenEndpointOutcome>>,
-    calls: Mutex<Vec<(String, Vec<(String, String)>)>>,
+    calls: Mutex<Vec<RecordedCall>>,
     delay: Duration,
 }
 
@@ -139,15 +142,15 @@ impl M2mTokenEndpointPost for ScriptedPost {
         form: &[(String, SecretString)],
         _headers: &[(String, SecretString)],
     ) -> TokenEndpointOutcome {
-        tokio::time::sleep(self.delay).await;
-        let form: Vec<(String, String)> = form
+        sleep(self.delay).await;
+        let recorded: Vec<(String, String)> = form
             .iter()
             .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
             .collect();
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push((url.to_owned(), form));
+            .push((url.to_owned(), recorded));
         let mut outcomes = self.outcomes.lock().unwrap_or_else(PoisonError::into_inner);
         outcomes
             .pop_front()
@@ -197,7 +200,7 @@ fn token(raw: &str) -> SecretString {
 async fn get_serves_a_cached_token_without_another_grant() {
     let post = ScriptedPost::granting(1);
     let backend = Arc::new(RecordingBackend::default());
-    let source = source_with(post.clone(), backend);
+    let source = source_with(Arc::clone(&post), backend);
     let first = source.get("server", &config()).await.unwrap();
     let second = source.get("server", &config()).await.unwrap();
     assert_eq!(first.access_token, "tok-0");
@@ -208,11 +211,9 @@ async fn get_serves_a_cached_token_without_another_grant() {
 #[tokio::test]
 async fn the_default_backend_caches_with_the_sources_clock() {
     let post = ScriptedPost::granting(1);
-    let source =
-        ClientCredentialsTokenSource::new(post.clone(), None, clock(), Tunables::default());
-    assert!(source.get("server", &config()).await.is_ok());
-    assert!(source.get("server", &config()).await.is_ok());
-    assert_eq!(post.call_count(), 1);
+    let source = ClientCredentialsTokenSource::new(post, None, clock(), Tunables::default());
+    source.get("server", &config()).await.unwrap();
+    source.get("server", &config()).await.unwrap();
 }
 
 #[tokio::test]
@@ -223,21 +224,27 @@ async fn concurrent_misses_on_one_server_make_one_grant() {
         delay: Duration::from_millis(20),
     });
     let source = Arc::new(source_with(
-        delayed.clone(),
+        Arc::clone(&delayed),
         Arc::new(RecordingBackend::default()),
     ));
     let mut tasks = JoinSet::new();
-    let handles: Vec<_> = (0..10)
-        .map(|_| {
-            let source = Arc::clone(&source);
-            tasks.spawn(async move { source.get("server", &config()).await })
-        })
-        .collect();
+    let handles: Vec<_> = std::iter::repeat_with(|| {
+        let task_source = Arc::clone(&source);
+        tasks.spawn(async move { task_source.get("server", &config()).await })
+    })
+    .take(10)
+    .collect();
     assert_eq!(handles.len(), 10);
+    let mut joined = Vec::new();
     while let Some(result) = tasks.join_next().await {
-        let token = result.unwrap().unwrap();
-        assert_eq!(token.access_token, "tok-0");
+        joined.push(result);
     }
+    assert_eq!(joined.len(), 10);
+    assert!(
+        joined
+            .into_iter()
+            .all(|result| result.unwrap().unwrap().access_token == "tok-0")
+    );
     assert_eq!(delayed.call_count(), 1);
 }
 
@@ -256,14 +263,22 @@ async fn the_lock_table_drops_the_oldest_entry_at_max_locks() {
         clock(),
         tunables,
     );
-    assert!(source.get("s0", &config()).await.is_ok());
-    assert!(source.get("s1", &config()).await.is_ok());
-    assert!(source.get("s2", &config()).await.is_ok());
-    let locks = source.locks.lock().unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(locks.len(), 2);
-    assert!(!locks.contains_key("s0"));
-    assert!(locks.contains_key("s1"));
-    assert!(locks.contains_key("s2"));
+    source.get("s0", &config()).await.unwrap();
+    source.get("s1", &config()).await.unwrap();
+    source.get("s2", &config()).await.unwrap();
+    let (count, present) = {
+        let locks = source.locks.lock().unwrap_or_else(PoisonError::into_inner);
+        (
+            locks.len(),
+            [
+                locks.contains_key("s0"),
+                locks.contains_key("s1"),
+                locks.contains_key("s2"),
+            ],
+        )
+    };
+    assert_eq!(count, 2);
+    assert_eq!(present, [false, true, true]);
 }
 
 #[tokio::test]
@@ -273,7 +288,7 @@ async fn rotating_the_secret_mints_a_new_token() {
         grant("{\"access_token\":\"tok-1\"}"),
     ]);
     let backend = Arc::new(RecordingBackend::default());
-    let source = source_with(post.clone(), backend.clone());
+    let source = source_with(Arc::clone(&post), Arc::clone(&backend));
     assert_eq!(
         source.get("server", &config()).await.unwrap().access_token,
         "tok-0"
@@ -295,7 +310,7 @@ async fn changing_the_scopes_mints_a_new_token() {
         grant("{\"access_token\":\"tok-0\"}"),
         grant("{\"access_token\":\"tok-1\"}"),
     ]);
-    let source = source_with(post.clone(), Arc::new(RecordingBackend::default()));
+    let source = source_with(Arc::clone(&post), Arc::new(RecordingBackend::default()));
     assert_eq!(
         source.get("server", &config()).await.unwrap().access_token,
         "tok-0"
@@ -313,9 +328,9 @@ async fn changing_the_scopes_mints_a_new_token() {
 async fn two_servers_with_the_same_identity_each_get_a_grant() {
     let post = ScriptedPost::granting(2);
     let backend = Arc::new(RecordingBackend::default());
-    let source = source_with(post.clone(), backend.clone());
-    assert!(source.get("first", &config()).await.is_ok());
-    assert!(source.get("second", &config()).await.is_ok());
+    let source = source_with(Arc::clone(&post), Arc::clone(&backend));
+    source.get("first", &config()).await.unwrap();
+    source.get("second", &config()).await.unwrap();
     assert_eq!(post.call_count(), 2);
     assert_eq!(backend.keys()[0].user_id, backend.keys()[1].user_id);
     assert_ne!(backend.keys()[0].server_id, backend.keys()[1].server_id);
@@ -374,7 +389,7 @@ async fn a_client_error_is_misconfigured() {
 async fn a_body_without_a_usable_token_is_misconfigured(#[case] raw: &str) {
     let post = ScriptedPost::new(vec![grant(raw)]);
     let backend = Arc::new(RecordingBackend::default());
-    let source = source_with(post, backend.clone());
+    let source = source_with(post, Arc::clone(&backend));
     let failure = source.get("server", &config()).await.unwrap_err();
     assert_eq!(
         failure,
@@ -387,7 +402,7 @@ async fn a_body_without_a_usable_token_is_misconfigured(#[case] raw: &str) {
 #[case::no_expiry("{\"access_token\":\"tok\"}", Duration::from_secs(300))]
 #[case::skewed(
     "{\"access_token\":\"tok\",\"expires_in\":3600}",
-    Duration::from_secs(3540)
+    Duration::from_mins(59)
 )]
 #[case::below_the_floor("{\"access_token\":\"tok\",\"expires_in\":5}", Duration::from_secs(5))]
 #[case::at_the_floor(
@@ -409,8 +424,8 @@ async fn the_cache_ttl_follows_the_skew_and_the_floor(
 ) {
     let post = ScriptedPost::new(vec![grant(raw)]);
     let backend = Arc::new(RecordingBackend::default());
-    let source = source_with(post, backend.clone());
-    assert!(source.get("server", &config()).await.is_ok());
+    let source = source_with(post, Arc::clone(&backend));
+    source.get("server", &config()).await.unwrap();
     assert_eq!(backend.write_ttls(), vec![expected]);
 }
 
@@ -422,7 +437,7 @@ async fn the_cache_ttl_follows_the_skew_and_the_floor(
 async fn a_non_positive_ttl_stores_nothing_but_still_returns_the_token(#[case] raw: &str) {
     let post = ScriptedPost::new(vec![grant(raw)]);
     let backend = Arc::new(RecordingBackend::default());
-    let source = source_with(post, backend.clone());
+    let source = source_with(post, Arc::clone(&backend));
     let token = source.get("server", &config()).await.unwrap();
     assert_eq!(token.access_token, "tok");
     assert!(backend.write_ttls().is_empty());
@@ -450,7 +465,7 @@ async fn an_unparsable_expires_in_leaves_the_expiry_absent() {
         "{\"access_token\":\"tok\",\"expires_in\":true}",
     )]);
     let backend = Arc::new(RecordingBackend::default());
-    let source = source_with(post, backend.clone());
+    let source = source_with(post, Arc::clone(&backend));
     let token = source.get("server", &config()).await.unwrap();
     assert_eq!(token.expires_at, None);
     assert_eq!(backend.write_ttls(), vec![Duration::from_secs(300)]);
@@ -460,8 +475,8 @@ async fn an_unparsable_expires_in_leaves_the_expiry_absent() {
 async fn refetch_returns_a_token_another_caller_already_replaced() {
     let post = ScriptedPost::granting(1);
     let backend = Arc::new(RecordingBackend::default());
-    let source = source_with(post.clone(), backend);
-    assert!(source.get("server", &config()).await.is_ok());
+    let source = source_with(Arc::clone(&post), backend);
+    source.get("server", &config()).await.unwrap();
     let fresh = source
         .refetch("server", &config(), &token("tok-stale"))
         .await;
@@ -476,8 +491,8 @@ async fn refetch_returns_a_token_another_caller_already_replaced() {
 async fn refetch_replaces_the_failed_token_with_a_new_grant() {
     let post = ScriptedPost::granting(2);
     let backend = Arc::new(RecordingBackend::default());
-    let source = source_with(post.clone(), backend.clone());
-    assert!(source.get("server", &config()).await.is_ok());
+    let source = source_with(Arc::clone(&post), Arc::clone(&backend));
+    source.get("server", &config()).await.unwrap();
     let fresh = source.refetch("server", &config(), &token("tok-0")).await;
     assert_eq!(
         fresh.map(|value| value.expose_secret().to_owned()),
@@ -498,8 +513,8 @@ async fn a_failed_refetch_leaves_the_cache_empty_and_returns_none() {
         },
     ]);
     let backend = Arc::new(RecordingBackend::default());
-    let source = source_with(post.clone(), backend.clone());
-    assert!(source.get("server", &config()).await.is_ok());
+    let source = source_with(Arc::clone(&post), Arc::clone(&backend));
+    source.get("server", &config()).await.unwrap();
     let fresh = source.refetch("server", &config(), &token("tok-0")).await;
     assert!(fresh.is_none());
     assert_eq!(post.call_count(), 2);
@@ -509,7 +524,7 @@ async fn a_failed_refetch_leaves_the_cache_empty_and_returns_none() {
 #[tokio::test]
 async fn refetch_without_a_cached_token_grants_one() {
     let post = ScriptedPost::granting(1);
-    let source = source_with(post.clone(), Arc::new(RecordingBackend::default()));
+    let source = source_with(Arc::clone(&post), Arc::new(RecordingBackend::default()));
     let fresh = source.refetch("server", &config(), &token("tok-0")).await;
     assert_eq!(
         fresh.map(|value| value.expose_secret().to_owned()),
@@ -521,7 +536,7 @@ async fn refetch_without_a_cached_token_grants_one() {
 #[tokio::test]
 async fn refetch_with_an_incomplete_config_returns_none_without_a_grant() {
     let post = ScriptedPost::granting(0);
-    let source = source_with(post.clone(), Arc::new(RecordingBackend::default()));
+    let source = source_with(Arc::clone(&post), Arc::new(RecordingBackend::default()));
     let mut incomplete = config();
     incomplete.client_id = None;
     assert!(
@@ -536,7 +551,7 @@ async fn refetch_with_an_incomplete_config_returns_none_without_a_grant() {
 #[tokio::test]
 async fn get_with_an_incomplete_config_returns_the_missing_field_error() {
     let post = ScriptedPost::granting(0);
-    let source = source_with(post.clone(), Arc::new(RecordingBackend::default()));
+    let source = source_with(Arc::clone(&post), Arc::new(RecordingBackend::default()));
     let mut incomplete = config();
     incomplete.token_url = Some(String::new());
     let failure = source.get("server", &incomplete).await.unwrap_err();
@@ -550,8 +565,8 @@ async fn get_with_an_incomplete_config_returns_the_missing_field_error() {
 #[tokio::test]
 async fn the_grant_carries_the_prepared_form_and_headers() {
     let post = ScriptedPost::granting(1);
-    let source = source_with(post.clone(), Arc::new(RecordingBackend::default()));
-    assert!(source.get("server", &config()).await.is_ok());
+    let source = source_with(Arc::clone(&post), Arc::new(RecordingBackend::default()));
+    source.get("server", &config()).await.unwrap();
     assert_eq!(
         post.requested_form(0),
         vec![

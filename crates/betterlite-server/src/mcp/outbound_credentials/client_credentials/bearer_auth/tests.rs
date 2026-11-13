@@ -48,7 +48,7 @@ impl ScriptedCall {
 impl AuthorizedCall for ScriptedCall {
     type Output = u16;
 
-    async fn send(&self, auth: &dyn Auth) -> u16 {
+    async fn send(&self, auth: &(dyn Auth + Sync)) -> u16 {
         let mut headers = HeaderMap::new();
         auth.apply(&mut headers);
         let value = headers
@@ -192,8 +192,10 @@ async fn a_later_request_uses_the_replaced_token() {
     let mut headers = HeaderMap::new();
     bearer.apply(&mut headers);
     assert_eq!(
-        headers.get("authorization").map(|value| value.as_bytes()),
-        Some("Bearer fresh".as_bytes())
+        headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer fresh")
     );
 }
 
@@ -205,8 +207,10 @@ async fn the_carrier_names_the_header_and_formats_the_value() {
     let mut headers = HeaderMap::new();
     bearer.apply(&mut headers);
     assert_eq!(
-        headers.get("x-api-key").map(|value| value.as_bytes()),
-        Some("tok".as_bytes())
+        headers
+            .get("x-api-key")
+            .and_then(|value| value.to_str().ok()),
+        Some("tok")
     );
     assert!(headers.get("authorization").is_none());
 }

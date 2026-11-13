@@ -1,5 +1,7 @@
 mod tests;
 
+use std::collections::BTreeMap;
+
 use betterlite_mcp::credential_contracts::auth_config::oauth::ClientCredentialsConfig;
 use betterlite_mcp::credential_contracts::errors::{CredError, CredResult};
 use betterlite_mcp::credential_contracts::token_endpoint_auth::{
@@ -12,6 +14,7 @@ use super::token_post::{ExpiresIn, StringField};
 
 const MISSING_PREFIX: &str = "client_credentials config is missing: ";
 
+#[derive(Debug)]
 pub struct PreparedGrant {
     pub token_url: String,
     pub form: Vec<(String, SecretString)>,
@@ -19,7 +22,32 @@ pub struct PreparedGrant {
     pub identity_key: String,
 }
 
+struct RequiredFields<'config> {
+    token_url: &'config str,
+    client_id: &'config str,
+    client_secret: &'config SecretString,
+}
+
 pub fn prepare_grant(config: &ClientCredentialsConfig) -> CredResult<PreparedGrant> {
+    let fields = required_fields(config)?;
+    let TokenEndpointClientAuth {
+        headers: auth_headers,
+        body: auth_body,
+    } = build_token_client_auth(
+        config.token_endpoint_auth_method,
+        Some(fields.client_id),
+        Some(fields.client_secret),
+    )
+    .map_err(|error| CredError::Misconfigured(error.to_string()))?;
+    Ok(PreparedGrant {
+        token_url: fields.token_url.to_owned(),
+        form: grant_form(config, auth_body),
+        headers: auth_headers.into_iter().collect(),
+        identity_key: identity_key(config),
+    })
+}
+
+fn required_fields(config: &ClientCredentialsConfig) -> CredResult<RequiredFields<'_>> {
     let token_url = config
         .token_url
         .as_deref()
@@ -32,68 +60,61 @@ pub fn prepare_grant(config: &ClientCredentialsConfig) -> CredResult<PreparedGra
         .client_secret
         .as_ref()
         .filter(|value| !value.expose_secret().is_empty());
-    let present = [
-        ("client_id", client_id.is_some()),
-        ("client_secret", client_secret.is_some()),
-        ("token_url", token_url.is_some()),
-    ];
-    let (Some(token_url), Some(client_id), Some(client_secret)) =
-        (token_url, client_id, client_secret)
-    else {
-        let missing: Vec<&str> = present
-            .iter()
-            .filter(|(_, found)| !found)
-            .map(|(name, _)| *name)
-            .collect();
-        return Err(CredError::Misconfigured(format!(
-            "{MISSING_PREFIX}{}",
-            missing.join(", ")
-        )));
-    };
-    let TokenEndpointClientAuth {
-        headers: auth_headers,
-        body: auth_body,
-    } = build_token_client_auth(
-        config.token_endpoint_auth_method,
-        Some(client_id),
-        Some(client_secret),
-    )
-    .map_err(|error| CredError::Misconfigured(error.to_string()))?;
-    let mut form: Vec<(String, SecretString)> = Vec::new();
+    if let (Some(url), Some(id), Some(secret)) = (token_url, client_id, client_secret) {
+        return Ok(RequiredFields {
+            token_url: url,
+            client_id: id,
+            client_secret: secret,
+        });
+    }
+    let missing = [
+        ("client_id", client_id.is_none()),
+        ("client_secret", client_secret.is_none()),
+        ("token_url", token_url.is_none()),
+    ]
+    .into_iter()
+    .filter_map(|(name, absent)| absent.then_some(name))
+    .collect::<Vec<_>>();
+    Err(CredError::Misconfigured(format!(
+        "{MISSING_PREFIX}{}",
+        missing.join(", ")
+    )))
+}
+
+fn grant_form(
+    config: &ClientCredentialsConfig,
+    auth_body: BTreeMap<String, SecretString>,
+) -> Vec<(String, SecretString)> {
+    let capacity = auth_body.len().saturating_add(4);
+    let mut form: Vec<(String, SecretString)> = Vec::with_capacity(capacity);
     form.push((
         "grant_type".to_owned(),
         SecretString::from("client_credentials".to_owned()),
     ));
     form.extend(auth_body);
-    if !config.scopes.is_empty() {
-        form.push((
-            "scope".to_owned(),
-            SecretString::from(config.scopes.join(" ")),
-        ));
+    let optional = [
+        (
+            "scope",
+            (!config.scopes.is_empty()).then(|| config.scopes.join(" ")),
+        ),
+        (
+            "audience",
+            config.audience.clone().filter(|value| !value.is_empty()),
+        ),
+        (
+            "resource",
+            config
+                .upstream_resource
+                .clone()
+                .filter(|value| !value.is_empty()),
+        ),
+    ];
+    for (name, optional_value) in optional {
+        if let Some(value) = optional_value {
+            form.push((name.to_owned(), SecretString::from(value)));
+        }
     }
-    if let Some(audience) = config.audience.as_deref().filter(|value| !value.is_empty()) {
-        form.push((
-            "audience".to_owned(),
-            SecretString::from(audience.to_owned()),
-        ));
-    }
-    if let Some(resource) = config
-        .upstream_resource
-        .as_deref()
-        .filter(|value| !value.is_empty())
-    {
-        form.push((
-            "resource".to_owned(),
-            SecretString::from(resource.to_owned()),
-        ));
-    }
-    let headers: Vec<(String, SecretString)> = auth_headers.into_iter().collect();
-    Ok(PreparedGrant {
-        token_url: token_url.to_owned(),
-        form,
-        headers,
-        identity_key: identity_key(config),
-    })
+    form
 }
 
 // Any rotation of a value that names the client identity yields a new key, so an old token is never served for it.
@@ -119,12 +140,12 @@ fn identity_key(config: &ClientCredentialsConfig) -> String {
     hex::encode(Sha256::digest(material.as_bytes()))
 }
 
+#[must_use]
 pub fn parse_expires_in(raw: Option<&ExpiresIn>) -> Option<i64> {
     match raw? {
-        ExpiresIn::Flag(_) => None,
+        ExpiresIn::Flag(_) | ExpiresIn::Other(_) => None,
         ExpiresIn::Text(text) => parse_integer(text),
         ExpiresIn::Number(number) => number.as_i64(),
-        ExpiresIn::Other(_) => None,
     }
 }
 
@@ -153,11 +174,12 @@ fn parse_integer(text: &str) -> Option<i64> {
     format!("{sign}{plain}").parse::<i64>().ok()
 }
 
+#[must_use]
 pub fn parse_granted_scopes(raw: Option<&StringField>) -> Vec<String> {
     match raw {
         Some(StringField::Text(text)) if !text.is_empty() => {
             text.split_whitespace().map(str::to_owned).collect()
         }
-        Some(StringField::Text(_)) | Some(StringField::Other(_)) | None => Vec::new(),
+        Some(StringField::Text(_) | StringField::Other(_)) | None => Vec::new(),
     }
 }

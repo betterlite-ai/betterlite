@@ -10,6 +10,7 @@ use indexmap::IndexMap;
 use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
+use tokio::sync::Mutex as AsyncMutex;
 
 use super::grant::{PreparedGrant, parse_expires_in, parse_granted_scopes, prepare_grant};
 use super::token_post::{M2mTokenEndpointPost, TokenEndpointOutcome, TokenResponseBody};
@@ -41,7 +42,7 @@ pub struct ClientCredentialsTokenSource {
     pub backend: Arc<dyn TokenCacheBackend>,
     pub clock: Arc<dyn WallClock>,
     pub tunables: Tunables,
-    pub locks: Mutex<IndexMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    pub locks: Mutex<IndexMap<String, Arc<AsyncMutex<()>>>>,
 }
 
 impl ClientCredentialsTokenSource {
@@ -51,7 +52,7 @@ impl ClientCredentialsTokenSource {
         clock: Arc<dyn WallClock>,
         tunables: Tunables,
     ) -> Self {
-        let backend = backend.unwrap_or_else(|| {
+        let cache = backend.unwrap_or_else(|| {
             Arc::new(InMemoryTokenCacheBackend {
                 max_size: DEFAULT_MAX_SIZE,
                 clock: Arc::clone(&clock),
@@ -60,7 +61,7 @@ impl ClientCredentialsTokenSource {
         });
         Self {
             poster,
-            backend,
+            backend: cache,
             clock,
             tunables,
             locks: Mutex::new(IndexMap::new()),
@@ -118,7 +119,7 @@ impl ClientCredentialsTokenSource {
         }
     }
 
-    fn lock_for(&self, server_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+    fn lock_for(&self, server_id: &str) -> Arc<AsyncMutex<()>> {
         let mut locks = self.locks.lock().unwrap_or_else(PoisonError::into_inner);
         if !locks.contains_key(server_id) && locks.len() >= self.tunables.max_locks {
             // A dropped lock that a task still holds only lets one extra grant run, so eviction stays safe.
@@ -127,7 +128,7 @@ impl ClientCredentialsTokenSource {
         Arc::clone(
             locks
                 .entry(server_id.to_owned())
-                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(()))),
+                .or_insert_with(|| Arc::new(AsyncMutex::new(()))),
         )
     }
 
@@ -187,7 +188,7 @@ impl ClientCredentialsTokenSource {
             identity_binding_proof: None,
         };
         let ttl = self.cache_ttl(expires_in);
-        if ttl > 0.0
+        if ttl > 0.0_f64
             && let Ok(lifetime) = Duration::try_from_secs_f64(ttl)
         {
             self.backend.set(key, &token, lifetime).await;
