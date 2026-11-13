@@ -1,0 +1,31 @@
+kind: helper
+name: transcription-event-shapes
+call:
+  realtime_transcription_protocol:
+    function: event
+    event_ids:
+      - event_00000000000000000000000000000001
+      - event_00000000000000000000000000000002
+      - event_00000000000000000000000000000003
+      - event_00000000000000000000000000000004
+      - event_00000000000000000000000000000005
+      - event_00000000000000000000000000000006
+      - event_00000000000000000000000000000007
+    session_id: s
+    model: m
+    sample_rate: 16000
+    language: en
+    server_vad: true
+    item_id: i
+    delta: he
+    transcript: hello
+    duration_seconds: 1.25
+    token_usage:
+      input_tokens: 3
+      output_tokens: 4
+      total_tokens: 7
+      text_tokens: 2
+      audio_tokens: 1
+    error_message: denied
+env: {}
+compare: {ignore: []}

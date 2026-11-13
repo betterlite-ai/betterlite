@@ -1,0 +1,11 @@
+kind: helper
+name: realtime-transcription-protocol-seed
+call:
+  realtime_transcription_protocol:
+    function: parse
+    payloads:
+      - '{"type":"session.update","session":{"input_audio_format":"pcm16","input_audio_transcription":{"model":"m","language":"en"},"turn_detection":null}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":24000,"channels":1}}}}}'
+      - '[]'
+env: {}
+compare: {ignore: []}

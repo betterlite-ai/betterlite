@@ -1,0 +1,22 @@
+kind: helper
+name: transcription-session-layouts
+call:
+  realtime_transcription_protocol:
+    function: parse
+    payloads:
+      - '{"type":"session.update","session":{"type":"transcription","input_audio_format":"pcm16","input_audio_transcription":{"model":"m","language":"en"}}}'
+      - '{"type":"transcription_session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":24000,"channels":1}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":"custom"}}}}'
+      - '{"type":"session.update","session":{"type":"transcription"}}'
+      - '{"type":"session.update","session":{"input_audio_transcription":{"temperature":0.5,"prompt":"p"}}}'
+      - '{"type":"session.update","session":{"audio":{}}}'
+      - '{"type":"session.update","session":{"turn_detection":null}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"turn_detection":{"type":"server_vad"}}}}}'
+      - '{"type":"session.update","session":{"turn_detection":{"type":"server_vad"},"audio":{"input":{"turn_detection":null}}}}'
+      - '{"type":"session.update","session":{"turn_detection":null,"audio":{"input":{"turn_detection":{"type":"server_vad"}}}}}'
+      - '{"type":"session.update","session":{"type":null,"input_audio_format":null,"input_audio_transcription":{"model":null,"language":null},"turn_detection":null,"audio":{"input":{"format":null,"transcription":null}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":0,"channels":-1}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":1180591620717411303424}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"channels":1}}}}}'
+env: {}
+compare: {ignore: []}
