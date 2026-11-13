@@ -301,7 +301,7 @@ fn value_absent_reads_none() {
     assert_eq!(absent, None);
     let present: Option<GuardrailValue> = read("guardrail response", "\"deny\"").unwrap();
     assert_eq!(
-        present.map(exact_value),
+        present.map(exact_value).transpose().unwrap(),
         Some(GuardrailValue::Text("deny".to_owned()))
     );
 }
