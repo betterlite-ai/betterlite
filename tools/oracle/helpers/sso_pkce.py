@@ -1,7 +1,7 @@
 import asyncio
 import os
-from typing import TypedDict
-from unittest import mock
+from types import TracebackType
+from typing import Self, TypedDict
 from urllib.parse import parse_qs, urlparse
 
 from litellm.proxy.management_endpoints.ui_sso import SSOAuthenticationHandler
@@ -15,10 +15,15 @@ class Input(TypedDict):
 
 
 class GenericSso:
-    def __enter__(self) -> "GenericSso":
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *_args: object) -> None:
+    def __exit__(
+        self,
+        _exception_type: type[BaseException] | None,
+        _exception: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
         return None
 
     async def get_login_redirect(self, **state_params: str) -> RedirectResponse:
@@ -38,7 +43,10 @@ def redirect_query(response: RedirectResponse) -> dict[str, JsonValue]:
 
 
 def run(input_value: Input) -> JsonValue:
-    with mock.patch.dict(os.environ, input_value["environment"], clear=True):
+    saved = dict(os.environ)
+    os.environ.clear()
+    os.environ.update(input_value["environment"])
+    try:
         response = asyncio.run(
             SSOAuthenticationHandler.get_generic_sso_redirect_response(
                 GenericSso(),
@@ -46,6 +54,9 @@ def run(input_value: Input) -> JsonValue:
                 generic_authorization_endpoint=None,
             )
         )
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
     if response is None:
         raise ValueError("the generic SSO redirect helper returned no response")
     return redirect_query(response)
