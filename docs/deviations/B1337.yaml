@@ -1,0 +1,5 @@
+task: B1337
+deviations:
+  - what: An empty api_base counts as missing and answers the required-base 400.
+    why: LiteLLM checks api_base only against None, so an empty string passes, leaves the URL empty and fails later as an unhandled transport error with a Vertex 500. A deployment that never set a base cannot rely on that failure, and betterlite reads an empty value as unset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_gemma_models/main.py#L97-L102

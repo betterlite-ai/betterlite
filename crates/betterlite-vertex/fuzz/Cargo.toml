@@ -19,6 +19,7 @@ indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
+uuid.workspace = true
 
 [[bin]]
 name = "cache_created"
@@ -44,6 +45,13 @@ bench = false
 [[bin]]
 name = "embedding_data_url"
 path = "fuzz_targets/embedding_data_url.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gemma_reply"
+path = "fuzz_targets/gemma_reply.rs"
 test = false
 doc = false
 bench = false
