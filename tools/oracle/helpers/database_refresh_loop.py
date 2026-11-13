@@ -137,7 +137,7 @@ def authentication(kind: AuthKind) -> DatabaseTokenAuth | None:
     return None
 
 
-# Each helper's private call sits in a method body with real work, not a one-line forwarder
+# Subclassing PrismaWrapper reaches its private methods through self, which the member rules allow
 class Wrapper(PrismaWrapper):
     def __init__(self, kind: AuthKind) -> None:
         self._token_auth = authentication(kind)
