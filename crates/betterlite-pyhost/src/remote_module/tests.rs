@@ -2,10 +2,12 @@
 
 use std::error::Error as _;
 use std::fs;
+use std::io;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use pyo3::types::PyAnyMethods as _;
+use tracing::subscriber::set_global_default;
 
 use super::{FetchError, ModuleFetcher, ModuleRequest, RemoteError};
 use crate::host::{DEFAULT_SHUTDOWN_GRACE, HostConfig, PythonHost};
@@ -70,6 +72,42 @@ fn config_path() -> &'static Path {
     Path::new("config.yaml")
 }
 
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Captured {
+    fn text(&self) -> String {
+        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+    }
+}
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+fn capture_logs() -> Captured {
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || writer.clone())
+        .with_max_level(tracing::Level::DEBUG)
+        .with_ansi(false)
+        .finish();
+    // the load logs from the pool's blocking thread, so the subscriber has to be global
+    set_global_default(subscriber).unwrap();
+    captured
+}
+
 #[tokio::test]
 async fn fetches_the_object_and_executes_it_under_the_module_path() {
     let recorder = Recorder::new(Some("name = __name__\ninstance = name\n"), false);
@@ -88,6 +126,26 @@ async fn fetches_the_object_and_executes_it_under_the_module_path() {
     assert!(
         !request.local_path.exists(),
         "the downloaded file stays after the load"
+    );
+}
+
+#[tokio::test]
+async fn a_bucket_load_logs_its_start_and_its_success() {
+    let captured = capture_logs();
+    let recorder = Recorder::new(Some("instance = 1\n"), false);
+    let (_, loader) = loader(Arc::clone(&recorder));
+    loader
+        .load("s3://bucket/loggers/custom.instance", Some(config_path()))
+        .await
+        .unwrap();
+    let text = captured.text();
+    assert!(
+        text.contains("loading a custom logger module from a bucket"),
+        "got: {text}"
+    );
+    assert!(
+        text.contains("loaded a custom logger module from a bucket"),
+        "got: {text}"
     );
 }
 
