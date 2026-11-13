@@ -1,0 +1,17 @@
+task: B9652
+deviations:
+  - what: The SDK's modern-protocol POST cancellation (a 2026-07-28 notifications/cancelled aborting an in-flight POST) is not built.
+    why: LiteLLM negotiates only the legacy protocol versions with upstreams (B4744's LegacyVersion), so the SDK never takes that path from LiteLLM.
+    link: ""
+  - what: A GET stream that fails with an HTTP, framing or read error is reported to B4744's message handler as an HTTP-kind stream failure after the SDK's two reconnect attempts, and the transport's receive then ends, where mcp 2.3.0 logs the give-up and returns without failing the read stream.
+    why: The task fixes the contract that a stream-level failure belonging to no request reaches B4744's MessageHandler, and B4744 fails the session from that record; without the report a dead GET stream would leave the session open with no way to learn the stream is gone.
+    link: ""
+  - what: An SSE event above 1 MiB ends a legacy SSE stream with an HTTP-kind stream failure, where the SDK re-raises the SSEError out of its sse_reader and closes the read stream without a message.
+    why: B4744 carries a stream-level failure through its MessageHandler, and the task fixes that contract for every stream the SDK runtime reads; the 1 MiB limit itself is DEFAULT_MAX_SSE_EVENT_SIZE, which httpx2's EventSource enforces the same way.
+    link: ""
+  - what: A legacy SSE endpoint POST response body is read through the transport's 16 MiB body limit, where httpx2 reads it without one.
+    why: The body is discarded and never inspected, and the bounded-inputs rule caps every inbound body; a larger body fails the send instead of growing memory.
+    link: ""
+  - what: An MCP-Protocol-Version header is sent when the runtime sets it through StreamableHttp::set_protocol_version, where the SDK caches the value from per-message metadata stamped by the client session.
+    why: rmcp's Transport trait carries no per-message metadata, so the negotiated version reaches the transport through an explicit setter that B9653 calls after initialize; the header otherwise behaves as the SDK's.
+    link: ""
