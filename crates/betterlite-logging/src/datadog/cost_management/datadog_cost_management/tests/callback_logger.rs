@@ -12,6 +12,7 @@ fn event(payload: Arc<StandardLoggingPayload>) -> Arc<LoggerEvent> {
     Arc::new(LoggerEvent {
         payload,
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream: false,
         guardrail_snapshot: None,
     })
