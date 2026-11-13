@@ -3,7 +3,7 @@ use betterlite_mcp::credential_contracts::auth_config::oauth::{
 };
 use betterlite_mcp::credential_contracts::header_carrier::HeaderCarrier;
 use betterlite_mcp::credential_contracts::token_endpoint_auth::TokenEndpointAuthMethod;
-use betterlite_server::mcp::outbound_credentials::token_exchanger::ExchangeBody;
+use betterlite_server::mcp::outbound_credentials::token_exchanger::ExchangeTokenResponse;
 use secrecy::SecretString;
 use serde::Deserialize;
 
@@ -43,7 +43,7 @@ pub(super) enum ResponseKind {
 pub(super) struct ResponseSpec {
     pub(super) kind: ResponseKind,
     #[serde(default)]
-    pub(super) body: Option<ExchangeBody>,
+    pub(super) body: Option<ExchangeTokenResponse>,
     #[serde(default)]
     pub(super) detail: Option<String>,
     #[serde(default)]

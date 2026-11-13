@@ -10,6 +10,7 @@ use betterlite_mcp::credential_contracts::auth_config::oauth::{
 };
 use betterlite_mcp::credential_contracts::errors::{CredError, Unauthorized};
 use betterlite_mcp::credential_contracts::token_endpoint_auth::TokenEndpointAuthMethod;
+use chrono::{DateTime, Utc};
 use rstest::rstest;
 use secrecy::SecretString;
 
@@ -490,12 +491,12 @@ fn a_non_string_issued_token_type_is_ignored() {
 #[case::object("{}", None)]
 fn parse_expires_in_reads_the_declared_forms(#[case] raw: &str, #[case] expected: Option<i64>) {
     let value: CredentialValue = serde_json::from_str(raw).unwrap();
-    assert_eq!(parse_expires_in(Some(&value)), expected);
+    assert_eq!(parse_expires_in(&value), expected);
 }
 
 #[test]
-fn a_missing_expires_in_is_absent() {
-    assert_eq!(parse_expires_in(None), None);
+fn a_default_response_has_no_expiry() {
+    assert_eq!(parse_expires_in(&CredentialValue::Null), None);
 }
 
 #[tokio::test]
@@ -534,6 +535,29 @@ async fn a_negative_expires_in_expires_immediately() {
         .await
         .unwrap();
     assert_eq!(first.expires_at, Some(at(995)));
+    exchanger
+        .exchange("jwt", &server(), &config(), "")
+        .await
+        .unwrap();
+    assert_eq!(exchanger.post.calls().len(), 2);
+}
+
+#[tokio::test]
+async fn a_very_negative_expires_in_is_a_past_instant_and_is_not_cached() {
+    let post = RecordingPost::new(vec![
+        Scripted::Body(body(
+            r#"{"access_token":"first","expires_in":-10000000000000}"#,
+        )),
+        Scripted::Body(body(
+            r#"{"access_token":"second","expires_in":-10000000000000}"#,
+        )),
+    ]);
+    let exchanger = exchanger(post, clock(1000));
+    let first = exchanger
+        .exchange("jwt", &server(), &config(), "")
+        .await
+        .unwrap();
+    assert_eq!(first.expires_at, Some(DateTime::<Utc>::MIN_UTC));
     exchanger
         .exchange("jwt", &server(), &config(), "")
         .await

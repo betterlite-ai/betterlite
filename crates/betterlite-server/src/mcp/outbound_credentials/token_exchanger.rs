@@ -16,6 +16,7 @@ use betterlite_mcp::credential_contracts::server_spec::ServerSpec;
 use betterlite_mcp::credential_contracts::token_endpoint_auth::build_token_client_auth;
 use chrono::{DateTime, Utc};
 use secrecy::SecretString;
+use serde::Deserialize;
 use thiserror::Error;
 
 use super::v2_store::CredentialValue;
@@ -36,7 +37,18 @@ const NON_ACCESS_ISSUED_TOKEN_TYPES: [&str; 4] = [
     "urn:ietf:params:oauth:token-type:saml2",
 ];
 
-pub type ExchangeBody = BTreeMap<String, CredentialValue>;
+// The four fields the exchanger reads from the IdP's token response; every other key is irrelevant.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ExchangeTokenResponse {
+    #[serde(default)]
+    pub access_token: CredentialValue,
+    #[serde(default)]
+    pub token_type: CredentialValue,
+    #[serde(default)]
+    pub issued_token_type: CredentialValue,
+    #[serde(default)]
+    pub expires_in: CredentialValue,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ExchangeRejection {
@@ -57,7 +69,7 @@ pub trait ExchangeHttpPost: Send + Sync {
         url: &str,
         form: &BTreeMap<String, SecretString>,
         headers: &BTreeMap<String, SecretString>,
-    ) -> Result<Option<ExchangeBody>, ExchangeRejection>;
+    ) -> Result<Option<ExchangeTokenResponse>, ExchangeRejection>;
 }
 
 pub struct OboTokenExchanger<Post, Cache, Coordinator> {

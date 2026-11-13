@@ -1,10 +1,8 @@
-use std::collections::BTreeMap;
-
 use chrono::{DateTime, TimeDelta, Utc};
 
 use super::super::OAuthToken;
 use super::super::v2_store::CredentialValue;
-use super::NON_ACCESS_ISSUED_TOKEN_TYPES;
+use super::{ExchangeTokenResponse, NON_ACCESS_ISSUED_TOKEN_TYPES};
 
 // Python's int() truncates a float toward zero; a value outside i64 has no bounded equivalent.
 fn truncate(value: f64) -> Option<i64> {
@@ -14,8 +12,8 @@ fn truncate(value: f64) -> Option<i64> {
     value.trunc().to_string().parse::<i64>().ok()
 }
 
-pub(super) fn parse_expires_in(value: Option<&CredentialValue>) -> Option<i64> {
-    match value? {
+pub(super) fn parse_expires_in(value: &CredentialValue) -> Option<i64> {
+    match value {
         CredentialValue::Number(number) => number
             .as_i64()
             .or_else(|| number.as_f64().and_then(truncate)),
@@ -27,39 +25,44 @@ pub(super) fn parse_expires_in(value: Option<&CredentialValue>) -> Option<i64> {
     }
 }
 
+// A negative delta that leaves chrono's range is a past instant, never the maximum one.
 fn expires_at(now: DateTime<Utc>, seconds: i64) -> DateTime<Utc> {
+    let overflow = if seconds < 0 {
+        DateTime::<Utc>::MIN_UTC
+    } else {
+        DateTime::<Utc>::MAX_UTC
+    };
     TimeDelta::try_seconds(seconds)
         .and_then(|delta| now.checked_add_signed(delta))
-        .unwrap_or(DateTime::<Utc>::MAX_UTC)
+        .unwrap_or(overflow)
 }
 
 pub(super) fn token_from_body(
-    body: &BTreeMap<String, CredentialValue>,
+    body: &ExchangeTokenResponse,
     now: DateTime<Utc>,
 ) -> Option<OAuthToken> {
-    let Some(CredentialValue::Text(access_token)) = body.get("access_token") else {
+    let CredentialValue::Text(access_token) = &body.access_token else {
         return None;
     };
     if access_token.is_empty() {
         return None;
     }
     // token_type is forwarded as Bearer, so a present non-Bearer type fails closed rather than minting one.
-    if let Some(CredentialValue::Text(token_type)) = body.get("token_type")
+    if let CredentialValue::Text(token_type) = &body.token_type
         && !token_type.trim().eq_ignore_ascii_case("bearer")
     {
         tracing::warn!(%token_type, "MCP token exchange returned an unusable token_type");
         return None;
     }
     // A malformed STS could label a refresh, id or saml token as Bearer, so the issued type decides too.
-    if let Some(CredentialValue::Text(issued)) = body.get("issued_token_type")
+    if let CredentialValue::Text(issued) = &body.issued_token_type
         && NON_ACCESS_ISSUED_TOKEN_TYPES.contains(&issued.as_str())
     {
         return None;
     }
     Some(OAuthToken {
         access_token: access_token.clone(),
-        expires_at: parse_expires_in(body.get("expires_in"))
-            .map(|seconds| expires_at(now, seconds)),
+        expires_at: parse_expires_in(&body.expires_in).map(|seconds| expires_at(now, seconds)),
         refresh_token: None,
         scopes: Vec::new(),
         identity_binding_proof: None,

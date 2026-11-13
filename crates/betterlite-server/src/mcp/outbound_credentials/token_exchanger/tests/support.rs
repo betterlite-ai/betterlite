@@ -15,8 +15,8 @@ use tokio::task::yield_now;
 use super::super::super::refresh_store::InProcessRefreshCoordinator;
 use super::super::super::{InMemoryTokenCacheBackend, OAuthToken, TokenCacheEntries, WallClock};
 use super::super::{
-    DEFAULT_TTL, EXPIRY_BUFFER, ExchangeBody, ExchangeHttpPost, ExchangeRejection, MIN_TTL,
-    OboTokenExchanger,
+    DEFAULT_TTL, EXPIRY_BUFFER, ExchangeHttpPost, ExchangeRejection, ExchangeTokenResponse,
+    MIN_TTL, OboTokenExchanger,
 };
 
 pub(super) struct ManualClock(Mutex<DateTime<Utc>>);
@@ -47,7 +47,7 @@ pub(super) fn clock(seconds: i64) -> Arc<ManualClock> {
 
 #[derive(Clone)]
 pub(super) enum Scripted {
-    Body(ExchangeBody),
+    Body(ExchangeTokenResponse),
     Transport,
     SubjectRejected {
         detail: String,
@@ -90,7 +90,7 @@ impl ExchangeHttpPost for RecordingPost {
         url: &str,
         form: &BTreeMap<String, SecretString>,
         headers: &BTreeMap<String, SecretString>,
-    ) -> Result<Option<ExchangeBody>, ExchangeRejection> {
+    ) -> Result<Option<ExchangeTokenResponse>, ExchangeRejection> {
         let recorded = RecordedCall {
             url: url.to_owned(),
             form: form
@@ -140,7 +140,7 @@ pub(super) fn exchanger(post: RecordingPost, clock: Arc<ManualClock>) -> TestExc
     }
 }
 
-pub(super) fn body(raw: &str) -> ExchangeBody {
+pub(super) fn body(raw: &str) -> ExchangeTokenResponse {
     serde_json::from_str(raw).unwrap()
 }
 

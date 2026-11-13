@@ -10,12 +10,14 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use url::Url;
 
 use super::refresh_store::InProcessRefreshCoordinator;
 use super::token_exchanger::{
-    DEFAULT_TTL, EXPIRY_BUFFER, ExchangeBody, ExchangeHttpPost, ExchangeRejection, MIN_TTL,
-    OboTokenExchanger,
+    DEFAULT_TTL, EXPIRY_BUFFER, ExchangeHttpPost, ExchangeRejection, ExchangeTokenResponse,
+    MIN_TTL, OboTokenExchanger,
 };
 use super::v2_store::CredentialValue;
 use super::{InMemoryTokenCacheBackend, OAuthToken, SystemWallClock, TokenCacheEntries, WallClock};
@@ -31,6 +33,34 @@ const GATEWAY_FAULT_OAUTH_ERRORS: [&str; 5] = [
     "invalid_target",
     "invalid_scope",
 ];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TokenExchangeTunables {
+    pub cache_max_size: usize,
+    pub default_ttl: Duration,
+    pub min_ttl: Duration,
+    pub expiry_buffer: Duration,
+}
+
+impl Default for TokenExchangeTunables {
+    fn default() -> Self {
+        Self {
+            cache_max_size: CACHE_MAX_SIZE,
+            default_ttl: DEFAULT_TTL,
+            min_ttl: MIN_TTL,
+            expiry_buffer: EXPIRY_BUFFER,
+        }
+    }
+}
+
+// The two fields the edge reads from an RFC 6749 5.2 error body; error_description is never read.
+#[derive(Debug, Default, Deserialize)]
+pub struct OAuthErrorBody {
+    #[serde(default)]
+    pub error: CredentialValue,
+    #[serde(default)]
+    pub claims: CredentialValue,
+}
 
 #[async_trait]
 pub trait ExchangeTransport: Send + Sync {
@@ -60,22 +90,43 @@ fn encode_form(form: &BTreeMap<String, SecretString>) -> String {
     serializer.finish()
 }
 
+// serde's derived struct also accepts a JSON sequence positionally, so the body must start as an object.
+fn parse_object<T>(body: &[u8]) -> Option<T>
+where
+    T: DeserializeOwned,
+{
+    let start = body.iter().position(|byte| !byte.is_ascii_whitespace())?;
+    if body.get(start) != Some(&b'{') {
+        return None;
+    }
+    serde_json::from_slice(body.get(start..)?).ok()
+}
+
 fn body_fields(body: &[u8]) -> (Option<String>, Option<String>) {
-    let Ok(parsed) = serde_json::from_slice::<BTreeMap<String, CredentialValue>>(body) else {
+    let Some(parsed) = parse_object::<OAuthErrorBody>(body) else {
         return (None, None);
     };
-    let error = match parsed.get("error") {
-        Some(CredentialValue::Text(code)) => Some(code.clone()),
-        _ => None,
+    let error = match &parsed.error {
+        CredentialValue::Text(code) => Some(code.clone()),
+        CredentialValue::Null
+        | CredentialValue::Bool(_)
+        | CredentialValue::Number(_)
+        | CredentialValue::Array(_)
+        | CredentialValue::Object(_) => None,
     };
-    let claims = match parsed.get("claims") {
-        Some(CredentialValue::Text(claims)) if !claims.is_empty() => Some(claims.clone()),
-        _ => None,
+    let claims = match &parsed.claims {
+        CredentialValue::Text(claims) if !claims.is_empty() => Some(claims.clone()),
+        CredentialValue::Text(_)
+        | CredentialValue::Null
+        | CredentialValue::Bool(_)
+        | CredentialValue::Number(_)
+        | CredentialValue::Array(_)
+        | CredentialValue::Object(_) => None,
     };
     (error, claims)
 }
 
-fn classify(status: u16, body: &[u8]) -> Result<Option<ExchangeBody>, ExchangeRejection> {
+fn classify(status: u16, body: &[u8]) -> Result<Option<ExchangeTokenResponse>, ExchangeRejection> {
     if (400..500).contains(&status) {
         let (error, claims) = body_fields(body);
         if let Some(code) = error
@@ -97,13 +148,11 @@ fn classify(status: u16, body: &[u8]) -> Result<Option<ExchangeBody>, ExchangeRe
         tracing::warn!(status, "MCP token exchange request failed");
         return Ok(None);
     }
-    match serde_json::from_slice::<ExchangeBody>(body) {
-        Ok(parsed) => Ok(Some(parsed)),
-        Err(error) => {
-            tracing::warn!(%error, "MCP token exchange returned a non-object JSON body");
-            Ok(None)
-        }
-    }
+    let Some(parsed) = parse_object::<ExchangeTokenResponse>(body) else {
+        tracing::warn!("MCP token exchange returned a non-object JSON body");
+        return Ok(None);
+    };
+    Ok(Some(parsed))
 }
 
 #[async_trait]
@@ -113,7 +162,7 @@ impl<Transport: ExchangeTransport> ExchangeHttpPost for TokenEndpointPost<Transp
         url: &str,
         form: &BTreeMap<String, SecretString>,
         headers: &BTreeMap<String, SecretString>,
-    ) -> Result<Option<ExchangeBody>, ExchangeRejection> {
+    ) -> Result<Option<ExchangeTokenResponse>, ExchangeRejection> {
         let Ok(parsed_url) = Url::parse(url) else {
             tracing::warn!("MCP token exchange endpoint is not a URL");
             return Ok(None);
@@ -158,7 +207,10 @@ pub type BuiltTokenExchanger<Transport> = OboTokenExchanger<
     InProcessRefreshCoordinator<Option<OAuthToken>, ExchangeRejection>,
 >;
 
-pub fn build_token_exchanger<Transport>(transport: Transport) -> BuiltTokenExchanger<Transport>
+pub fn build_token_exchanger<Transport>(
+    transport: Transport,
+    tunables: TokenExchangeTunables,
+) -> BuiltTokenExchanger<Transport>
 where
     Transport: ExchangeTransport,
 {
@@ -169,14 +221,14 @@ where
             timeout: EXCHANGE_TIMEOUT,
         },
         cache: InMemoryTokenCacheBackend {
-            max_size: CACHE_MAX_SIZE,
+            max_size: tunables.cache_max_size,
             clock: Arc::clone(&clock),
             entries: TokenCacheEntries::default(),
         },
         coordinator: InProcessRefreshCoordinator::default(),
         clock,
-        default_ttl: DEFAULT_TTL,
-        min_ttl: MIN_TTL,
-        expiry_buffer: EXPIRY_BUFFER,
+        default_ttl: tunables.default_ttl,
+        min_ttl: tunables.min_ttl,
+        expiry_buffer: tunables.expiry_buffer,
     }
 }

@@ -24,6 +24,18 @@ deviations:
       expiry of an access token.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_exchanger.py#L149-L159
   - what: >-
+      build_token_exchanger takes the cache size and the three TTL values as TokenExchangeTunables resolved at config
+      load instead of reading MCP_TOKEN_EXCHANGE_CACHE_MAX_SIZE, MCP_OAUTH2_TOKEN_CACHE_DEFAULT_TTL,
+      MCP_OAUTH2_TOKEN_CACHE_MIN_TTL and MCP_OAUTH2_TOKEN_EXPIRY_BUFFER_SECONDS itself; TokenExchangeTunables::default
+      keeps LiteLLM's 500 entries, 3600s, 10s and 60s. B4657 names the same four constants for its token-endpoint
+      cache and B4663's mcp_sso_assertion_cache is the config-section shape, so the section that reads them belongs to
+      B4657 (or a follow-up config task); until it lands, a deployment that overrides one of the four environment
+      variables gets the default, which is this entry's difference from LiteLLM.
+    why: Environment variables are read only by betterlite-config (inject-dependencies and the std::env disallowed
+      methods), and this task's scope holds no config crate path; the composition root now accepts the resolved values
+      so the owner task only has to add the section and pass them in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L179-L221
+  - what: >-
       The exchange POST runs through the pooled betterlite-http client: it follows redirects with each hop checked,
       caps the response body and headers, and ends at a 30-second deadline; a body over the cap, a timeout or a
       refused connection is a miss (upstream_unavailable) rather than being read without bound.

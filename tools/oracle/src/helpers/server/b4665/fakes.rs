@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_server::mcp::outbound_credentials::token_exchanger::{
-    ExchangeBody, ExchangeHttpPost, ExchangeRejection,
+    ExchangeTokenResponse, ExchangeHttpPost, ExchangeRejection,
 };
 use betterlite_server::mcp::outbound_credentials::{
     InMemoryTokenCacheBackend, OAuthToken, TokenCacheBackend, TokenKey, WallClock,
@@ -105,7 +105,7 @@ impl ExchangeHttpPost for ScriptedPost {
         url: &str,
         form: &BTreeMap<String, SecretString>,
         headers: &BTreeMap<String, SecretString>,
-    ) -> Result<Option<ExchangeBody>, ExchangeRejection> {
+    ) -> Result<Option<ExchangeTokenResponse>, ExchangeRejection> {
         let recorded = json!({
             "url": url,
             "form": expose(form),

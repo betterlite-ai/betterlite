@@ -23,8 +23,10 @@ use super::super::token_exchanger::{
     DEFAULT_TTL, EXPIRY_BUFFER, ExchangeHttpPost as _, ExchangeRejection, MIN_TTL,
     TOKEN_EXCHANGE_GRANT,
 };
+use super::super::v2_store::CredentialValue;
 use super::{
-    CACHE_MAX_SIZE, EXCHANGE_TIMEOUT, ExchangeTransport, TokenEndpointPost, build_token_exchanger,
+    CACHE_MAX_SIZE, EXCHANGE_TIMEOUT, ExchangeTransport, TokenEndpointPost, TokenExchangeTunables,
+    build_token_exchanger,
 };
 
 #[derive(Clone)]
@@ -152,7 +154,7 @@ async fn the_post_sends_a_form_urlencoded_request_with_accept_and_client_auth() 
         .await
         .unwrap()
         .unwrap();
-    assert!(body.contains_key("access_token"));
+    assert_eq!(body.access_token, CredentialValue::Text("x".to_owned()));
     let requests = transport.requests();
     assert_eq!(requests[0].method, Method::POST);
     assert_eq!(requests[0].url.as_str(), "https://idp.example.com/token");
@@ -307,27 +309,28 @@ async fn a_non_2xx_non_4xx_status_is_a_miss(#[case] status: u16) {
         status,
         r#"{"error":"server_error"}"#,
     ));
-    assert_eq!(
+    assert!(
         post.post("https://idp/token", &form(), &BTreeMap::new())
             .await
-            .unwrap(),
-        None
+            .unwrap()
+            .is_none()
     );
 }
 
 #[tokio::test]
 async fn a_transport_failure_is_a_miss() {
     let post = post(FakeTransport::failing());
-    assert_eq!(
+    assert!(
         post.post("https://idp/token", &form(), &BTreeMap::new())
             .await
-            .unwrap(),
-        None
+            .unwrap()
+            .is_none()
     );
 }
 
 #[rstest]
-#[case::array("[]")]
+#[case::empty_array("[]")]
+#[case::array(r#"["exchanged"]"#)]
 #[case::text(r#""token""#)]
 #[case::number("7")]
 #[case::invalid("{")]
@@ -335,11 +338,11 @@ async fn a_transport_failure_is_a_miss() {
 #[tokio::test]
 async fn a_2xx_body_that_is_not_a_json_object_is_a_miss(#[case] raw: &str) {
     let post = post(FakeTransport::answering(200, raw));
-    assert_eq!(
+    assert!(
         post.post("https://idp/token", &form(), &BTreeMap::new())
             .await
-            .unwrap(),
-        None
+            .unwrap()
+            .is_none()
     );
 }
 
@@ -347,21 +350,21 @@ async fn a_2xx_body_that_is_not_a_json_object_is_a_miss(#[case] raw: &str) {
 async fn an_invalid_endpoint_url_is_a_miss() {
     let transport = FakeTransport::answering(200, r#"{"access_token":"x"}"#);
     let post = post(transport.clone());
-    assert_eq!(
+    assert!(
         post.post("not a url", &form(), &BTreeMap::new())
             .await
-            .unwrap(),
-        None
+            .unwrap()
+            .is_none()
     );
     assert!(transport.requests().is_empty());
 }
 
 #[tokio::test]
 async fn the_composition_root_sizes_the_cache_and_uses_the_constants() {
-    let exchanger = build_token_exchanger(FakeTransport::answering(
-        200,
-        r#"{"access_token":"x","expires_in":60}"#,
-    ));
+    let exchanger = build_token_exchanger(
+        FakeTransport::answering(200, r#"{"access_token":"x","expires_in":60}"#),
+        TokenExchangeTunables::default(),
+    );
     assert_eq!(CACHE_MAX_SIZE, 500);
     assert_eq!(exchanger.cache.max_size, CACHE_MAX_SIZE);
     assert_eq!(exchanger.default_ttl, DEFAULT_TTL);
@@ -371,15 +374,33 @@ async fn the_composition_root_sizes_the_cache_and_uses_the_constants() {
 }
 
 #[tokio::test]
+async fn the_composition_root_uses_the_injected_tunables() {
+    let tunables = TokenExchangeTunables {
+        cache_max_size: 7,
+        default_ttl: Duration::from_secs(120),
+        min_ttl: Duration::from_secs(4),
+        expiry_buffer: Duration::from_secs(20),
+    };
+    let exchanger = build_token_exchanger(
+        FakeTransport::answering(200, r#"{"access_token":"x"}"#),
+        tunables,
+    );
+    assert_eq!(exchanger.cache.max_size, 7);
+    assert_eq!(exchanger.default_ttl, Duration::from_secs(120));
+    assert_eq!(exchanger.min_ttl, Duration::from_secs(4));
+    assert_eq!(exchanger.expiry_buffer, Duration::from_secs(20));
+}
+
+#[tokio::test]
 async fn each_build_gets_its_own_empty_cache() {
     let transport = FakeTransport::answering(200, r#"{"access_token":"x","expires_in":60}"#);
-    let first = build_token_exchanger(transport.clone());
+    let first = build_token_exchanger(transport.clone(), TokenExchangeTunables::default());
     first
         .exchange("jwt", &server(), &config(), "")
         .await
         .unwrap();
     assert_eq!(transport.requests().len(), 1);
     assert_eq!(first.cache.entries.lock().unwrap().len(), 1);
-    let second = build_token_exchanger(transport.clone());
+    let second = build_token_exchanger(transport.clone(), TokenExchangeTunables::default());
     assert!(second.cache.entries.lock().unwrap().is_empty());
 }
