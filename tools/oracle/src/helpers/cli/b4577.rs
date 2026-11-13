@@ -4,7 +4,7 @@ use betterlite_cli::token_records::record::CliTokenRecord;
 use betterlite_cli::up::command::run_up;
 use betterlite_cli::up::login::ensure_fresh_login;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use self::fixtures::World;
 use crate::helpers::{Helper, HelperResult};
@@ -55,73 +55,60 @@ pub(crate) enum StopKind {
     Atexit,
 }
 
-fn failure<M>(error: &M, root: &str, class: &str) -> Value
+fn finish<M>(world: &World, stdout: &[u8], outcome: Result<(), M>, click: bool) -> HelperResult
 where
     M: std::fmt::Display,
 {
-    json!({"class": class, "message": error.to_string().replace(root, "<tmp>")})
+    let error = outcome.err().map(|failure| {
+        let class = if click { "ClickException" } else { "UpError" };
+        let root = world.home.path().display().to_string();
+        json!({"class": class, "message": failure.to_string().replace(&root, "<tmp>")})
+    });
+    Ok(world.answer(stdout, error))
 }
 
-fn fresh_login(input: &Input) -> HelperResult {
+fn drive(input: &Input) -> HelperResult {
     let mut world = World::new(input)?;
     let mut login = world.scripted_login(input);
     let stop = world.scripted_stop();
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
+    let fresh = matches!(input.operation, Operation::FreshLogin);
     let outcome = {
         let mut ports = world.bind(&mut login, &stop, &mut stderr, &mut stdout);
-        ensure_fresh_login(&mut ports)
+        if fresh {
+            ensure_fresh_login(&mut ports)
+        } else {
+            run_up(&mut ports)
+        }
     };
-    let error = outcome
-        .err()
-        .map(|error| failure(&error, &world.root_text(), "UpError"));
-    Ok(world.answer(&stdout, error))
+    finish(&world, &stdout, outcome, !fresh)
 }
 
-fn read_backup(input: &Input) -> HelperResult {
-    let world = World::new(input)?;
-    let outcome = read_backup_file(&world.backup_path());
-    let error = outcome
-        .err()
-        .map(|error| failure(&error, &world.root_text(), "UpError"));
-    Ok(world.answer(&[], error))
-}
-
-fn down(input: &Input) -> HelperResult {
+fn report(input: &Input) -> HelperResult {
     let world = World::new(input)?;
     let mut stdout = Vec::new();
-    let outcome = restore_and_report(world.home_path(), &world.private_files, &mut stdout);
-    let error = outcome
-        .err()
-        .map(|error| failure(&error, &world.root_text(), "ClickException"));
-    Ok(world.answer(&stdout, error))
-}
-
-fn up(input: &Input) -> HelperResult {
-    let mut world = World::new(input)?;
-    let mut login = world.scripted_login(input);
-    let stop = world.scripted_stop();
-    let mut stdout = Vec::new();
-    let mut stderr = Vec::new();
-    let outcome = {
-        let mut ports = world.bind(&mut login, &stop, &mut stderr, &mut stdout);
-        run_up(&mut ports)
+    let down = matches!(input.operation, Operation::Down);
+    let outcome = if down {
+        restore_and_report(world.home.path(), &world.private_files, &mut stdout)
+    } else {
+        let backup = world
+            .home
+            .path()
+            .join(".litellm")
+            .join("claude_settings_backup.json");
+        read_backup_file(&backup).map(|_record| ())
     };
-    let error = outcome
-        .err()
-        .map(|error| failure(&error, &world.root_text(), "ClickException"));
-    Ok(world.answer(&stdout, error))
+    finish(&world, &stdout, outcome, down)
 }
 
 impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        match input.operation {
-            Operation::FreshLogin => fresh_login(input),
-            Operation::ReadBackup => read_backup(input),
-            Operation::Down => down(input),
-            Operation::Up => up(input),
+        if matches!(input.operation, Operation::FreshLogin | Operation::Up) {
+            return drive(input);
         }
+        report(input)
     }
 }

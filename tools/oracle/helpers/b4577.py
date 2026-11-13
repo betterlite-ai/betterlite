@@ -29,11 +29,15 @@ from litellm.proxy.client.cli.commands.auth import CliContextObj
 from litellm.proxy.client.cli.commands.claude_settings import ClaudeSettingsError
 from litellm.proxy.client.cli.commands.up import UpError
 from pydantic import JsonValue, TypeAdapter, ValidationError
+from typing_extensions import override
 
 Handler = Callable[[int, FrameType | None], None] | int | None
 BASE_URL: Final = "http://gateway.test:4000"
-STATUS_COMMAND: Final = "/opt/betterlite statusline"
-STOP_NUMBERS: Final[dict[str, int]] = {"sigint": signal.SIGINT, "sigterm": signal.SIGTERM}
+STOP_NUMBERS: Final[dict[str | None, int]] = {
+    "sigint": signal.SIGINT,
+    "sigterm": signal.SIGTERM,
+    "atexit": signal.SIGTERM,
+}
 JSON: Final = TypeAdapter(JsonValue)
 
 
@@ -56,22 +60,25 @@ class Input(TypedDict):
     backup: NotRequired[str]
     verify_status: NotRequired[int]
     stop: NotRequired[Literal["sigint", "sigterm", "atexit"]]
-    atexit_first: NotRequired[bool]
 
 
 class Vault(SecretVault):
+    @override
     def read(self) -> SecretRead:
         return KeyringDisabled()
 
+    @override
     def write(self, blob: str) -> SecretWrite:
         del blob
         return KeyringDisabled()
 
+    @override
     def erase(self) -> SecretErase:
         return KeyringDisabled()
 
 
 class TerminalInput(StringIO):
+    @override
     def isatty(self) -> bool:
         return True
 
@@ -79,9 +86,6 @@ class TerminalInput(StringIO):
 def fire(handler: Handler, signalnum: int) -> None:
     if callable(handler):
         handler(signalnum, None)
-
-
-def ignore_write(_path: str, _data: bytes) -> None: ...
 
 
 def write_text(path: Path, text: str) -> None:
@@ -106,7 +110,7 @@ def token_value(script: "Script") -> JsonValue:
     return JSON.validate_json(json.dumps(found))
 
 
-def failure(exception: BaseException, name: str, root: str) -> dict[str, str]:
+def failure(exception: BaseException, name: str, root: str) -> dict[str, JsonValue]:
     message = str(exception).replace(root, "<tmp>")
     return {"class": name, "message": message}
 
@@ -135,7 +139,6 @@ class Script:
         self.backup = root / ".litellm" / "claude_settings_backup.json"
         self.vault = Vault()
         self.stop = input_value.get("stop")
-        self.atexit_first = input_value.get("atexit_first") is True
         status = input_value.get("verify_status")
         self.verify_status = 200 if status is None else status
         self.snapshot: dict[str, JsonValue] | None = None
@@ -157,13 +160,6 @@ class Script:
         verify_proxy_key(base_url, api_key, get=scripted)
         self.probe = scripted.probe
 
-    def statusline(
-        self, script_path: Path | None = None, *, package_version: str = "0",
-        write: Callable[[str, bytes], None] = ignore_write,
-    ) -> str:
-        del script_path, package_version, write
-        return STATUS_COMMAND
-
     def signal(self, signalnum: int, handler: Handler) -> Handler:
         self.handler = handler
         self.snapshot = {
@@ -173,13 +169,6 @@ class Script:
         if signalnum == STOP_NUMBERS.get(self.stop):
             fire(handler, signalnum)
         return handler
-
-    def register(self, func: Callable[[], None]) -> Callable[[], None]:
-        if not self.atexit_first:
-            return func
-        fire(self.handler, signal.SIGTERM)
-        func()
-        return func
 
 
 def write_initial_files(root: Path, input_value: Input) -> None:
@@ -200,34 +189,34 @@ def prepare(root: Path, input_value: Input) -> Script:
     _ = importlib.reload(up_module)
     write_initial_files(root, input_value)
     script = Script(root, input_value)
-    up_module.verify_proxy_key = script.verify  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L653
-    up_module.install_statusline_script = script.statusline
-    up_module.login = script.login_command
-    up_module.atexit = script  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L223
+    up_module.verify_proxy_key = script.verify  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L653
+    up_module.login = script.login_command  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L140
     signal.signal = script.signal
     return script
 
 
 def context_value(script: Script) -> CliContextObj:
     input_value = script.input_value
-    context: CliContextObj = {"base_url": BASE_URL, "secret_vault": script.vault}
-    api_key = input_value.get("api_key")
-    if api_key is not None:
-        context["api_key"] = api_key
-    context["api_key_from_token_file"] = input_value.get("api_key_from_token_file") is True
-    return context
+    return {
+        "base_url": BASE_URL,
+        "api_key": input_value.get("api_key"),
+        "api_key_from_token_file": input_value.get("api_key_from_token_file") is True,
+        "secret_vault": script.vault,
+    }
 
 
-def answer(script: Script, stdout: str, error: dict[str, str] | None) -> JsonValue:
+def answer(script: Script, stdout: str, error: JsonValue) -> JsonValue:
     root = str(script.root)
+    settings = script.root / ".claude" / "settings.json"
+    backup = script.root / ".litellm" / "claude_settings_backup.json"
     result: dict[str, JsonValue] = {
         "stdout": stdout.replace(root, "<tmp>"),
         "error": error,
         "login_calls": script.logins,
         "probe": script.probe,
         "stopped_by": script.stop,
-        "settings": json_file(script.settings),
-        "backup": json_file(script.backup),
+        "settings": json_file(settings),
+        "backup": json_file(backup),
         "token": token_value(script),
         "snapshot": script.snapshot,
     }
@@ -242,7 +231,7 @@ def run_fresh_login(input_value: Input) -> JsonValue:
             sys.stdin = TerminalInput()
         context = click.Context(up_module.up, obj=context_value(script))
         stdout = StringIO()
-        error: dict[str, str] | None = None
+        error: JsonValue = None
         try:
             with redirect_stdout(stdout):
                 up_module.ensure_fresh_login(context)
@@ -259,7 +248,7 @@ def run_read_backup(input_value: Input) -> JsonValue:
     with TemporaryDirectory() as temporary:
         root = Path(temporary)
         script = prepare(root, input_value)
-        error: dict[str, str] | None = None
+        error: JsonValue = None
         try:
             up_module.read_backup(backup_path=script.backup)
         except UpError as caught:
@@ -267,23 +256,15 @@ def run_read_backup(input_value: Input) -> JsonValue:
         return answer(script, "", error)
 
 
-def run_down(input_value: Input) -> JsonValue:
+def run_command(input_value: Input) -> JsonValue:
     with TemporaryDirectory() as temporary:
         root = Path(temporary)
         script = prepare(root, input_value)
-        result = CliRunner().invoke(up_module.down)
-        error = None
-        if result.exception is not None:
-            error = failure(result.exception, "ClickException", str(root))
-        return answer(script, result.stdout, error)
-
-
-def run_up(input_value: Input) -> JsonValue:
-    with TemporaryDirectory() as temporary:
-        root = Path(temporary)
-        script = prepare(root, input_value)
-        result = CliRunner().invoke(up_module.up, obj=context_value(script))
-        error = None
+        if input_value["operation"] == "down":
+            result = CliRunner().invoke(up_module.down)
+        else:
+            result = CliRunner().invoke(up_module.up, obj=context_value(script))
+        error: JsonValue = None
         if result.exception is not None:
             error = failure(result.exception, "ClickException", str(root))
         return answer(script, result.stdout, error)
@@ -295,6 +276,4 @@ def run(input_value: Input) -> JsonValue:
         return run_fresh_login(input_value)
     if operation == "read_backup":
         return run_read_backup(input_value)
-    if operation == "down":
-        return run_down(input_value)
-    return run_up(input_value)
+    return run_command(input_value)

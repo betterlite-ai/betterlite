@@ -105,25 +105,6 @@ impl World {
         })
     }
 
-    pub(crate) fn root_text(&self) -> String {
-        self.home.path().display().to_string()
-    }
-
-    pub(crate) fn home_path(&self) -> &Path {
-        self.home.path()
-    }
-
-    pub(crate) fn settings_path(&self) -> PathBuf {
-        self.home.path().join(".claude").join("settings.json")
-    }
-
-    pub(crate) fn backup_path(&self) -> PathBuf {
-        self.home
-            .path()
-            .join(".litellm")
-            .join("claude_settings_backup.json")
-    }
-
     pub(crate) fn scripted_login(&self, input: &Input) -> ScriptedLogin {
         ScriptedLogin {
             token: input.login_token.clone(),
@@ -134,8 +115,12 @@ impl World {
     pub(crate) fn scripted_stop(&self) -> ScriptedStop {
         ScriptedStop {
             state: Arc::clone(&self.state),
-            settings: self.settings_path(),
-            backup: self.backup_path(),
+            settings: self.home.path().join(".claude").join("settings.json"),
+            backup: self
+                .home
+                .path()
+                .join(".litellm")
+                .join("claude_settings_backup.json"),
         }
     }
 
@@ -175,15 +160,16 @@ impl World {
     }
 
     pub(crate) fn answer(&self, stdout: &[u8], error: Option<Value>) -> Value {
-        let text = String::from_utf8_lossy(stdout).replace(&self.root_text(), "<tmp>");
+        let root = self.home.path().display().to_string();
+        let text = String::from_utf8_lossy(stdout).replace(&root, "<tmp>");
         json!({
             "stdout": text,
             "error": error,
             "login_calls": *self.state.logins.lock().unwrap_or_else(PoisonError::into_inner),
             "probe": self.state.probe.lock().unwrap_or_else(PoisonError::into_inner).clone(),
             "stopped_by": self.stop_kind,
-            "settings": json_file(&self.settings_path()),
-            "backup": json_file(&self.backup_path()),
+            "settings": json_file(&self.home.path().join(".claude").join("settings.json")),
+            "backup": json_file(&self.home.path().join(".litellm").join("claude_settings_backup.json")),
             "token": self.state.record.lock().unwrap_or_else(PoisonError::into_inner).clone(),
             "snapshot": self.state.snapshot.lock().unwrap_or_else(PoisonError::into_inner).clone(),
         })

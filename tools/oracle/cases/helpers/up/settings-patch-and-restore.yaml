@@ -12,4 +12,4 @@ call:
     settings: "{\"model\": \"opus\"}"
     stop: sigint
 env: {}
-compare: {ignore: []}
+compare: {ignore: [{pointer: /snapshot/settings/statusLine, why: "the status line command embeds the runtime's own executable path"}]}

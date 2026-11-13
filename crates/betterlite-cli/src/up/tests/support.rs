@@ -442,18 +442,16 @@ impl World {
 }
 
 pub(crate) fn record(key: &str, timestamp: f64, expires_at: Option<f64>) -> CliTokenRecord {
-    CliTokenRecord {
-        base_url: SERVER.to_owned(),
-        key: Some(SecretString::from(key.to_owned())),
-        timestamp,
-        expires_at,
-        ..CliTokenRecord::default()
-    }
+    let mut record = CliTokenRecord::default();
+    record.base_url = SERVER.to_owned();
+    record.key = Some(SecretString::from(key.to_owned()));
+    record.timestamp = timestamp;
+    record.expires_at = expires_at;
+    record
 }
 
 pub(crate) fn pkce_record(key: &str, expires_at: f64) -> CliTokenRecord {
-    CliTokenRecord {
-        refresh_token: Some(SecretString::from("rt-old".to_owned())),
-        ..record(key, 1_000.0, Some(expires_at))
-    }
+    let mut record = record(key, 1_000.0, Some(expires_at));
+    record.refresh_token = Some(SecretString::from("rt-old".to_owned()));
+    record
 }
