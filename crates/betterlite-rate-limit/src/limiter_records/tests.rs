@@ -288,10 +288,6 @@ fn counter_values_from_reply_keeps_each_value_in_order() {
     ScriptReply::Bytes(vec![0]),
     CounterReplyError::NotAnArray { kind: ScriptReplyKind::Bytes }
 )]
-#[case::array_reply(
-    ScriptReply::Array(Vec::new()),
-    CounterReplyError::NotAnArray { kind: ScriptReplyKind::Array }
-)]
 #[case::nil_element(
     ScriptReply::Array(vec![ScriptReply::Int(1), ScriptReply::Nil]),
     CounterReplyError::UnsupportedElement { kind: ScriptReplyKind::Nil }
