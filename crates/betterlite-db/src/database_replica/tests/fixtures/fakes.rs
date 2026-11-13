@@ -261,15 +261,6 @@ impl FakeClient {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    fn step_for(&self, action: Action) -> Step {
-        match action {
-            Action::Connect => self.state().connect,
-            Action::Disconnect => self.state().disconnect,
-            Action::StartRefresh => self.state().start_refresh,
-            Action::StopRefresh => self.state().stop_refresh,
-        }
-    }
-
     fn failure_for(&self, action: Action) -> FakeError {
         match action {
             Action::Connect => self.state().connect_error,
@@ -282,7 +273,13 @@ impl FakeClient {
         Box::pin(async move {
             let side = self.side.name();
             self.log.record(format!("{side}:{}", action.event()));
-            match self.step_for(action) {
+            let step = match action {
+                Action::Connect => self.state().connect,
+                Action::Disconnect => self.state().disconnect,
+                Action::StartRefresh => self.state().start_refresh,
+                Action::StopRefresh => self.state().stop_refresh,
+            };
+            match step {
                 Step::Succeed => {
                     self.settle(action);
                     Ok(())
