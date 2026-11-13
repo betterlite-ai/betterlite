@@ -174,10 +174,7 @@ def answer_state(answer: AnswerView) -> JsonValue:
 
 
 def response_outcome(call: ResponseCall) -> JsonValue:
-    if call["counter"] == "fixed":
-        litellm.utils.token_counter = FixedCounter(call["prompt_tokens"], call["completion_tokens"])  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2550
-    else:
-        litellm.utils.token_counter = FailingCounter()  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2550
+    litellm.utils.token_counter = FixedCounter(call["prompt_tokens"], call["completion_tokens"]) if call["counter"] == "fixed" else FailingCounter()  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2550
     raw = httpx.Response(
         call["status"],
         text=call["body"],
