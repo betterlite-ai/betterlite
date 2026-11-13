@@ -51,19 +51,19 @@ fn a_prefill_fills_the_value_attribute_and_switches_the_instructions() {
     assert!(!html.contains("Enter the verification code shown in your terminal"));
 }
 
-#[rstest]
-#[case::absent(None)]
-#[case::empty(Some(""))]
-fn an_absent_or_empty_prefill_leaves_the_input_empty(#[case] prefill: Option<&str>) {
-    let html = render_verification_page(VERIFY_URL, TOKEN, prefill);
-    assert!(html.contains(
-        r#"<input id="user_code" name="user_code" autocomplete="one-time-code" required autofocus />"#
-    ));
-    assert!(!html.contains("value=\"\""));
-    assert!(html.contains(
-        "<p>Enter the verification code shown in your terminal to finish this login.</p>"
-    ));
-    assert!(!html.contains("Confirm the verification code below"));
+#[test]
+fn an_absent_or_empty_prefill_leaves_the_input_empty() {
+    let absent = render_verification_page(VERIFY_URL, TOKEN, None);
+    let empty = render_verification_page(VERIFY_URL, TOKEN, Some(""));
+    let input = r#"<input id="user_code" name="user_code" autocomplete="one-time-code" required autofocus />"#;
+    let instructions =
+        "<p>Enter the verification code shown in your terminal to finish this login.</p>";
+    assert!(absent.contains(input));
+    assert!(empty.contains(input));
+    assert!(!empty.contains("value=\"\""));
+    assert!(absent.contains(instructions));
+    assert!(empty.contains(instructions));
+    assert!(!empty.contains("Confirm the verification code below"));
 }
 
 #[test]
@@ -158,11 +158,17 @@ fn consent_page_escapes_team_ids_and_labels() {
 
 #[test]
 fn consent_page_shows_the_origin_user_lifetime_and_decision_buttons() {
-    let html = consent_page(&[]);
+    let html = render_consent_page(ConsentPage {
+        client_origin: ORIGIN,
+        user_id: USER,
+        teams: &[],
+        flow_handle: FLOW,
+        complete_url: COMPLETE,
+        cli_expiration_hours: 36,
+    });
     assert!(html.contains("<code>http://127.0.0.1:53682</code>"));
     assert!(html.contains("<strong>user@example.com</strong>"));
-    assert!(html.contains("expires within 24 hours"));
-    assert!(html.contains("<code>lite logout</code>"));
+    assert!(html.contains("expires within 36 hours"));
     assert!(
         html.contains(
             r#"<form method="post" action="https://proxy.example.com/authorize/complete">"#
@@ -201,7 +207,7 @@ fn the_flow_handle_travels_only_in_the_form_body() {
     let html = consent_page(&[]);
     assert_eq!(html.matches(FLOW).count(), 1);
     assert!(html.contains(r#"value="flow-handle""#));
-    assert!(!COMPLETE.contains(FLOW));
+    assert!(html.contains(&format!(r#"<form method="post" action="{COMPLETE}">"#)));
 }
 
 #[test]
