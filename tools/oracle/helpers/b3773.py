@@ -1,5 +1,6 @@
 from typing import Final, Literal, NotRequired, TypeAlias, TypedDict  # noqa: I001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L81-L321
 
+import httpx
 from fastapi.exceptions import HTTPException
 from litellm.proxy.guardrails.guardrail_hooks.headroom.headroom import HeadroomGuardrail, _build_compress_failure_detail, _flatten_messages_for_compression, _protected_indices, _raw_retrieve_call_ids, _read_ccr_hashes, _restore_content_shapes, _restore_protected_messages, _retrieval_result_indices  # noqa: E501  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L81-L321
 from pydantic import JsonValue, TypeAdapter
@@ -161,9 +162,10 @@ def ccr_hashes(input_value: CcrHashesInput) -> JsonValue:
 
 
 def timeout(input_value: TimeoutInput) -> JsonValue:
-    resolved = HeadroomGuardrail._resolve_timeout(input_value["timeout"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L547-L562
+    guardrail = HeadroomGuardrail(api_base=API_BASE, timeout=input_value["timeout"])
+    resolved = httpx.Timeout(guardrail.timeout).as_dict()
     return JSON.validate_python(
-        {"total_seconds": resolved.read, "connect_seconds": resolved.connect}
+        {"total_seconds": resolved["read"], "connect_seconds": resolved["connect"]}
     )
 
 
