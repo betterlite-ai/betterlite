@@ -1,0 +1,11 @@
+kind: helper
+name: normalize-config-dict-input
+call:
+  b3601:
+    calls:
+      - function: normalize_config
+        config: {g1: {request_fields: [query]}, g2: null}
+      - function: normalize_config
+        config: {g1: {request_fields: [query], response_fields: [output]}}
+env: {}
+compare: {ignore: []}

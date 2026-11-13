@@ -1,0 +1,15 @@
+kind: helper
+name: collect-guardrails-with-inheritance
+call:
+  b3601:
+    calls:
+      - function: collect_guardrails
+        key_metadata: {guardrails: [key-a, key-b]}
+        team_metadata: {guardrails: [team-a]}
+        config: [passthrough-a]
+      - function: collect_guardrails
+        key_metadata: {}
+        team_metadata: {guardrails: [team-a]}
+        config: {passthrough-a: {request_fields: [query]}}
+env: {}
+compare: {ignore: []}

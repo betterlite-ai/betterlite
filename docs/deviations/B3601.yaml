@@ -1,0 +1,33 @@
+task: B3601
+deviations:
+  - what: >-
+      A guardrail settings object with a key other than request_fields or response_fields makes
+      normalize_config return None with a debug line, while LiteLLM carries the object through and
+      the pydantic model ignores the extra key.
+    why: >-
+      The declared type of a settings value holds those two fields only, and rule no-silent-drops
+      rejects a config key betterlite does not read instead of dropping it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2484-L2498
+  - what: >-
+      A settings value of the wrong type, such as request_fields given as a string, makes
+      normalize_config return None with a debug line. LiteLLM returns the dict unchanged and fails
+      only when get_settings builds the pydantic model.
+    why: >-
+      The settings record is typed where the config enters, so the wrong value is rejected there
+      rather than at the later get_settings call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_guardrails.py#L58-L59
+  - what: >-
+      Inherited key and team guardrails keep first-seen order, key before team, instead of the
+      iteration order of Python's set.
+    why: >-
+      LiteLLM collects the names in a set, whose iteration order changes between Python processes,
+      so no working setup can depend on it; B1108's merge keeps key before team.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3004-L3026
+  - what: >-
+      collect_guardrails does not raise the premium refusal when key or team metadata carries
+      guardrails on a deployment without premium features; the merged names are returned.
+    why: >-
+      The premium gate belongs to B1108's _add_guardrails_from_key_or_team_metadata, whose helper
+      is private to betterlite-core, and this task's collect_guardrails has no premium input or
+      error return.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3007-L3016

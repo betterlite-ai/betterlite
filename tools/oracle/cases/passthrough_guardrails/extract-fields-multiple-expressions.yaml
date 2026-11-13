@@ -1,0 +1,13 @@
+kind: helper
+name: extract-fields-multiple-expressions
+call:
+  b3601:
+    calls:
+      - function: extract_fields
+        data: {query: "hello", documents: [{text: first}, {text: second}]}
+        expressions: [query, "documents[*].text", absent]
+      - function: extract_fields
+        data: {query: "hello", tags: []}
+        expressions: [tags, query]
+env: {}
+compare: {ignore: []}
