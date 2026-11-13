@@ -13,7 +13,7 @@ use reqwest::StatusCode;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
-use super::call_or_fail_open;
+use super::invocation::call_or_fail_open;
 use crate::crowdstrike_aidr::error::CrowdStrikeError;
 use crate::crowdstrike_aidr::handler::{ConstructorArgs, CrowdStrikeAidr, Dependencies};
 use crate::crowdstrike_aidr::models::{
