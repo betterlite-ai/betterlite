@@ -11,10 +11,11 @@ use tempfile::NamedTempFile;
 use tracing::subscriber::with_default;
 
 use super::assembly::{OptionsContext, map_options};
-use super::auth::{EU_REGIONS, US_REGIONS, map_special_auth_params};
 use super::defaults::{GenerationDefaults, OptionSettings};
 use super::error::GeminiOptionsError;
-use super::params::{ReasoningSupport, supported_openai_params};
+use super::params::{
+    EU_REGIONS, ReasoningSupport, US_REGIONS, map_special_auth_params, supported_openai_params,
+};
 use super::projection::{SchemaSource, project_schema_object};
 use crate::gemini_thinking::settings::{MinimalEffortSupport, ThinkingBudgets, ThinkingSettings};
 
