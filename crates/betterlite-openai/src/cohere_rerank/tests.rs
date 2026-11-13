@@ -9,11 +9,10 @@ use rstest::rstest;
 use secrecy::SecretString;
 
 use super::{
-    CohereRerankError, DEFAULT_V1_URL, DEFAULT_V2_URL, RerankOptions, RerankParams, RerankVersion,
-    complete_url, get_error_class, map_rerank_params, request_headers, transform_rerank_request,
+    CohereRerankError, DEFAULT_V1_URL, DEFAULT_V2_URL, RerankParams, RerankVersion, complete_url,
+    get_error_class, map_rerank_params, request_headers, transform_rerank_request,
     transform_rerank_response,
 };
-use crate::api::rerank_contracts::records::RerankDocument;
 use crate::api::responses_shapes::wire::WireDecodeLimits;
 
 fn limits() -> WireDecodeLimits {
@@ -69,22 +68,14 @@ fn headers(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn options(query: &str, documents: Vec<&str>) -> RerankOptions {
-    RerankOptions {
-        query: Some(query.to_owned()),
-        documents: Some(
-            documents
-                .into_iter()
-                .map(|text| RerankDocument::Text(text.to_owned()))
-                .collect(),
+fn options(query: &str, documents: Vec<&str>) -> RerankParams {
+    params(vec![
+        ("query", text(query)),
+        (
+            "documents",
+            Json::List(documents.into_iter().map(text).collect()),
         ),
-        top_n: None,
-        rank_fields: None,
-        return_documents: None,
-        max_chunks_per_doc: None,
-        max_tokens_per_doc: None,
-        instruction: None,
-    }
+    ])
 }
 
 #[rstest]
@@ -133,16 +124,16 @@ fn complete_url_trims_the_base_and_appends_the_version_suffix(
 
 #[test]
 fn mapping_v1_keeps_query_documents_and_the_chunk_limit() {
-    let options = RerankOptions {
-        query: Some("why".to_owned()),
-        documents: Some(vec![RerankDocument::Text("first".to_owned())]),
-        top_n: Some(2),
-        rank_fields: Some(vec!["body".to_owned()]),
-        return_documents: Some(false),
-        max_chunks_per_doc: Some(3),
-        max_tokens_per_doc: Some(9),
-        instruction: Some("rank these".to_owned()),
-    };
+    let options = params(vec![
+        ("query", text("why")),
+        ("documents", Json::List(vec![text("first")])),
+        ("top_n", number(2)),
+        ("rank_fields", Json::List(vec![text("body")])),
+        ("return_documents", Json::Bool(false)),
+        ("max_chunks_per_doc", number(3)),
+        ("max_tokens_per_doc", number(9)),
+        ("instruction", text("rank these")),
+    ]);
     let mapped = map_rerank_params(RerankVersion::V1, &options, &RerankParams::new());
     assert_eq!(
         mapped,
@@ -160,9 +151,9 @@ fn mapping_v1_keeps_query_documents_and_the_chunk_limit() {
 #[test]
 fn mapping_v2_keeps_the_token_limit_instead() {
     let mut options = options("why", vec!["first"]);
-    options.max_chunks_per_doc = Some(3);
-    options.max_tokens_per_doc = Some(9);
-    options.instruction = Some("rank these".to_owned());
+    options.insert("max_chunks_per_doc".to_owned(), number(3));
+    options.insert("max_tokens_per_doc".to_owned(), number(9));
+    options.insert("instruction".to_owned(), text("rank these"));
     let mapped = map_rerank_params(RerankVersion::V2, &options, &RerankParams::new());
     assert_eq!(mapped.get("max_tokens_per_doc"), Some(&number(9)));
     assert!(!mapped.contains_key("max_chunks_per_doc"));
@@ -172,11 +163,14 @@ fn mapping_v2_keeps_the_token_limit_instead() {
 
 #[rstest]
 #[case::absent(None, true)]
-#[case::explicit_true(Some(true), true)]
-#[case::explicit_false(Some(false), false)]
-fn mapping_defaults_return_documents_to_true(#[case] given: Option<bool>, #[case] expected: bool) {
+#[case::null(Some(Json::Null), true)]
+#[case::explicit_true(Some(Json::Bool(true)), true)]
+#[case::explicit_false(Some(Json::Bool(false)), false)]
+fn mapping_defaults_return_documents_to_true(#[case] given: Option<Json>, #[case] expected: bool) {
     let mut options = options("why", Vec::new());
-    options.return_documents = given;
+    if let Some(value) = given {
+        options.insert("return_documents".to_owned(), value);
+    }
     let mapped = map_rerank_params(RerankVersion::V1, &options, &RerankParams::new());
     assert_eq!(mapped.get("return_documents"), Some(&Json::Bool(expected)));
 }
@@ -205,19 +199,20 @@ fn mapping_retains_nullable_keys_and_the_projection_removes_them() {
 
 #[test]
 fn the_projection_keeps_every_declared_non_null_field() {
-    let options = RerankOptions {
-        query: Some("why".to_owned()),
-        documents: Some(vec![
-            RerankDocument::Text("first".to_owned()),
-            RerankDocument::Object(IndexMap::from([("title".to_owned(), text("t"))])),
-        ]),
-        top_n: Some(0),
-        rank_fields: Some(vec!["body".to_owned()]),
-        return_documents: Some(false),
-        max_chunks_per_doc: Some(0),
-        max_tokens_per_doc: None,
-        instruction: None,
-    };
+    let options = params(vec![
+        ("query", text("why")),
+        (
+            "documents",
+            Json::List(vec![
+                text("first"),
+                Json::Object(IndexMap::from([("title".to_owned(), text("t"))])),
+            ]),
+        ),
+        ("top_n", number(0)),
+        ("rank_fields", Json::List(vec![text("body")])),
+        ("return_documents", Json::Bool(false)),
+        ("max_chunks_per_doc", number(0)),
+    ]);
     let mapped = map_rerank_params(RerankVersion::V1, &options, &RerankParams::new());
     let body = transform_rerank_request(RerankVersion::V1, "rerank-v3", &mapped)
         .expect("the mapped params project");
@@ -458,8 +453,8 @@ fn the_error_class_drops_the_headers_and_keeps_status_and_message() {
 #[test]
 fn the_plan_composes_the_v1_url_headers_and_body() {
     let mut options = options("why", vec!["first"]);
-    options.max_tokens_per_doc = Some(7);
-    options.max_chunks_per_doc = Some(4);
+    options.insert("max_tokens_per_doc".to_owned(), number(7));
+    options.insert("max_chunks_per_doc".to_owned(), number(4));
     let caller = headers(&[("x-trace", "abc")]);
     let mapped = map_rerank_params(RerankVersion::V1, &options, &RerankParams::new());
     let resolved = request_headers(&caller, Some(&secret("k")), &settings(None, None, None))
@@ -479,7 +474,7 @@ fn the_plan_composes_the_v1_url_headers_and_body() {
 #[test]
 fn the_plan_composes_the_v2_url_from_a_configured_base() {
     let mut options = options("why", Vec::new());
-    options.max_chunks_per_doc = Some(4);
+    options.insert("max_chunks_per_doc".to_owned(), number(4));
     let mapped = map_rerank_params(RerankVersion::V2, &options, &RerankParams::new());
     let resolved = request_headers(
         &BTreeMap::new(),

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::cohere_rerank_settings::Settings;
 use betterlite_openai::api::responses_shapes::wire::WireDecodeLimits;
 use betterlite_openai::cohere_rerank::{
-    CohereRerankError, RerankOptions, RerankParams, RerankVersion, complete_url, map_rerank_params,
+    CohereRerankError, RerankParams, RerankVersion, complete_url, map_rerank_params,
     request_headers, transform_rerank_request, transform_rerank_response,
 };
 use secrecy::SecretString;
@@ -40,7 +40,7 @@ struct Call {
     headers: BTreeMap<String, String>,
     #[serde(default)]
     settings: Settings,
-    options: RerankOptions,
+    options: RerankParams,
     #[serde(default)]
     non_default: RerankParams,
     #[serde(default)]

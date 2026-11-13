@@ -6,10 +6,9 @@ use betterlite_models::decisions::Json;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use serde_json::Number;
 use thiserror::Error;
 
-use crate::api::rerank_contracts::records::{RerankDocument, RerankRequest, RerankResponse};
+use crate::api::rerank_contracts::records::{RerankRequest, RerankResponse};
 use crate::api::rerank_contracts::wire::{
     RerankContract, RerankContractError, RerankRecordKind, decode_rerank_contracts,
 };
@@ -30,19 +29,6 @@ pub const DEFAULT_V2_URL: &str = "https://api.cohere.ai/v2/rerank";
 pub enum RerankVersion {
     V1,
     V2,
-}
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RerankOptions {
-    pub query: Option<String>,
-    pub documents: Option<Vec<RerankDocument>>,
-    pub top_n: Option<i64>,
-    pub rank_fields: Option<Vec<String>>,
-    pub return_documents: Option<bool>,
-    pub max_chunks_per_doc: Option<i64>,
-    pub max_tokens_per_doc: Option<i64>,
-    pub instruction: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -110,46 +96,28 @@ pub fn request_headers(
 #[must_use]
 pub fn map_rerank_params(
     version: RerankVersion,
-    options: &RerankOptions,
+    options: &RerankParams,
     _non_default_params: &RerankParams,
 ) -> RerankParams {
-    let (limit_name, limit) = match version {
-        RerankVersion::V1 => ("max_chunks_per_doc", options.max_chunks_per_doc),
-        RerankVersion::V2 => ("max_tokens_per_doc", options.max_tokens_per_doc),
+    let limit = match version {
+        RerankVersion::V1 => "max_chunks_per_doc",
+        RerankVersion::V2 => "max_tokens_per_doc",
     };
-    let number =
-        |value: Option<i64>| value.map_or(Json::Null, |some| Json::Number(Number::from(some)));
-    RerankParams::from(
-        [
+    let mut mapped = RerankParams::from(["query", "documents", "top_n", "rank_fields", limit].map(
+        |name| {
             (
-                "query",
-                options.query.clone().map_or(Json::Null, Json::Text),
-            ),
-            (
-                "documents",
-                options
-                    .documents
-                    .as_deref()
-                    .map_or(Json::Null, |documents| {
-                        Json::List(documents.iter().map(RerankDocument::as_json).collect())
-                    }),
-            ),
-            ("top_n", number(options.top_n)),
-            (
-                "rank_fields",
-                options.rank_fields.as_deref().map_or(Json::Null, |fields| {
-                    Json::List(fields.iter().cloned().map(Json::Text).collect())
-                }),
-            ),
-            // an absent or null return_documents takes the mapper's default of true
-            (
-                "return_documents",
-                Json::Bool(options.return_documents.unwrap_or(true)),
-            ),
-            (limit_name, number(limit)),
-        ]
-        .map(|(name, value)| (name.to_owned(), value)),
-    )
+                name.to_owned(),
+                options.get(name).cloned().unwrap_or(Json::Null),
+            )
+        },
+    ));
+    // an absent or null return_documents takes the mapper's default of true
+    let returned = match options.get("return_documents") {
+        None | Some(Json::Null) => Json::Bool(true),
+        Some(given) => given.clone(),
+    };
+    mapped.insert("return_documents".to_owned(), returned);
+    mapped
 }
 
 pub fn transform_rerank_request(
