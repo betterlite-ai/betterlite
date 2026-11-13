@@ -145,10 +145,10 @@ pub fn should_init_budget_limiter(
     if provider_budget_config.is_some() || tag_budget_config.is_some() {
         return true;
     }
-    let Some(model_list) = model_list else {
+    let Some(deployments) = model_list else {
         return false;
     };
-    model_list
+    deployments
         .iter()
         .any(|limits| limits.max_budget.is_some() || limits.period.is_some())
 }

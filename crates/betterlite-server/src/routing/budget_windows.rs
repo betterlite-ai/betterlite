@@ -121,11 +121,11 @@ fn tier_budgets<Budget>(
     parser: PeriodParser<'_>,
     build: fn(Option<Decimal>, Option<BudgetPeriod>) -> Budget,
 ) -> Result<Option<IndexMap<String, Budget>>, BudgetWindowsError> {
-    let Some(section) = section else {
+    let Some(entries) = section else {
         return Ok(None);
     };
-    let mut resolved = IndexMap::with_capacity(section.len());
-    for (name, budget) in section {
+    let mut resolved = IndexMap::with_capacity(entries.len());
+    for (name, budget) in entries {
         let period = optional(
             budget.duration.as_deref(),
             &format!("{prefix}.{name}.budget_duration"),

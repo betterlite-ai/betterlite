@@ -21,12 +21,12 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawRouter {
-    provider_budget_config: Option<IndexMap<String, RawBudget>>,
+    provider_budget_config: Option<IndexMap<String, Option<RawBudget>>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct RawLiteLlm {
-    tag_budget_config: Option<IndexMap<String, RawBudget>>,
+    tag_budget_config: Option<IndexMap<String, Option<RawBudget>>>,
 }
 
 // every field LiteLLM's BudgetConfig declares, since the tag tier passes the dict through that model
@@ -108,7 +108,7 @@ impl Section for Raw {
 
 // the provider tier reads only budget_limit and time_period, while the tag tier also accepts BudgetConfig's aliases
 fn tier_config<L>(
-    raw: Option<IndexMap<String, RawBudget>>,
+    raw: Option<IndexMap<String, Option<RawBudget>>>,
     prefix: &str,
     tier: Tier,
     lookup: &L,
@@ -116,40 +116,49 @@ fn tier_config<L>(
 where
     L: EnvironmentLookup,
 {
-    let Some(raw) = raw else {
+    let Some(entries) = raw else {
         return Ok(None);
     };
-    let mut resolved = IndexMap::with_capacity(raw.len());
-    for (name, entry) in raw {
+    let mut resolved = IndexMap::with_capacity(entries.len());
+    for (name, entry) in entries {
         let path = format!("{prefix}.{name}");
-        let (limit, duration) = match tier {
-            Tier::Provider => (
-                resolve_number(
-                    entry.budget_limit,
-                    &format!("{path}.budget_limit"),
-                    lookup,
-                    parse_money,
-                )?,
-                period(entry.time_period, &format!("{path}.time_period"), lookup)?,
-            ),
-            // BudgetConfig.__init__ moves budget_limit onto max_budget and time_period onto budget_duration
-            Tier::Tag => (
-                resolve_number(
-                    entry.budget_limit.or(entry.max_budget),
-                    &format!("{path}.max_budget"),
-                    lookup,
-                    parse_money,
-                )?,
-                period(
-                    entry.time_period.or(entry.budget_duration),
-                    &format!("{path}.budget_duration"),
-                    lookup,
-                )?,
-            ),
+        // _init_provider_budgets raises for a provider whose config is null, and the tag tier cannot read one
+        let Some(budget) = entry else {
+            return Err(ConfigError::InvalidScalar { path, value: false });
         };
-        resolved.insert(name, BudgetValues { limit, duration });
+        resolved.insert(name, budget_values(budget, &path, tier, lookup)?);
     }
     Ok(Some(resolved))
+}
+
+fn budget_values<L>(
+    entry: RawBudget,
+    path: &str,
+    tier: Tier,
+    lookup: &L,
+) -> Result<BudgetValues, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let (limit, limit_path, duration, duration_path) = match tier {
+        Tier::Provider => (
+            entry.budget_limit,
+            "budget_limit",
+            entry.time_period,
+            "time_period",
+        ),
+        // BudgetConfig.__init__ moves budget_limit onto max_budget and time_period onto budget_duration
+        Tier::Tag => (
+            entry.budget_limit.or(entry.max_budget),
+            "max_budget",
+            entry.time_period.or(entry.budget_duration),
+            "budget_duration",
+        ),
+    };
+    Ok(BudgetValues {
+        limit: resolve_number(limit, &format!("{path}.{limit_path}"), lookup, parse_money)?,
+        duration: period(duration, &format!("{path}.{duration_path}"), lookup)?,
+    })
 }
 
 fn deployments<L>(

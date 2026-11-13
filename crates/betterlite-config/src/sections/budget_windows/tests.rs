@@ -93,6 +93,16 @@ fn tag_aliases_win_over_the_declared_fields() {
 }
 
 #[test]
+fn a_null_budget_entry_names_its_path() {
+    let provider = "router_settings:\n  provider_budget_config:\n    openai: null\n";
+    let provider_error = settings(provider, &[]).unwrap_err();
+    assert!(provider_error.contains("router_settings.provider_budget_config.openai"));
+    let tag = "litellm_settings:\n  tag_budget_config:\n    team: null\n";
+    let tag_error = settings(tag, &[]).unwrap_err();
+    assert!(tag_error.contains("litellm_settings.tag_budget_config.team"));
+}
+
+#[test]
 fn a_non_numeric_budget_names_its_path() {
     let source = "model_list:\n  - model_name: gpt\n    litellm_params:\n      model: openai/gpt-4o-mini\n      max_budget: ten\n";
     let message = settings(source, &[]).unwrap_err();
