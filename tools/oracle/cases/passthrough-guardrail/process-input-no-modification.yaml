@@ -1,0 +1,24 @@
+kind: helper
+name: passthrough-guardrail-process-input-no-modification
+call:
+  b3573:
+    scenarios:
+      - function: input
+        guardrail_name: g1
+        logging:
+          config:
+            g1:
+              request_fields: [query]
+        data:
+          query: hello
+          model: m1
+      - function: input
+        guardrail_name: g1
+        logging: null
+        data:
+          _hidden: 1
+          metadata:
+            m: 1
+          query: hello
+env: {}
+compare: {ignore: []}

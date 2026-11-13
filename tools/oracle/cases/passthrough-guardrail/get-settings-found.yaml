@@ -1,0 +1,34 @@
+kind: helper
+name: passthrough-guardrail-get-settings-found
+call:
+  b3573:
+    scenarios:
+      - function: settings
+        guardrail_name: g1
+        logging:
+          config:
+            g1:
+              request_fields: [query]
+              response_fields: [output]
+      - function: settings
+        guardrail_name: g1
+        logging:
+          config:
+            g1:
+              request_fields: ["documents[*].text"]
+      - function: settings
+        guardrail_name: g1
+        logging:
+          config:
+            g1:
+              request_fields: [query]
+              extra: 1
+      - function: settings
+        guardrail_name: g2
+        logging:
+          config:
+            g1: null
+            g2:
+              response_fields: [result]
+env: {}
+compare: {ignore: []}

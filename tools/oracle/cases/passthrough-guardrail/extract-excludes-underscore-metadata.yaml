@@ -1,0 +1,17 @@
+kind: helper
+name: passthrough-guardrail-extract-excludes-underscore-metadata
+call:
+  b3573:
+    scenarios:
+      - function: extract
+        data:
+          _hidden: 1
+          metadata:
+            m: 1
+          litellm_logging_obj: x
+          query: hello
+          outer:
+            metadata: 1
+        field_expressions: null
+env: {}
+compare: {ignore: []}

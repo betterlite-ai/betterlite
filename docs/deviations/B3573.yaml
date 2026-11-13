@@ -1,0 +1,10 @@
+task: B3573
+deviations:
+  - what: >-
+      A passthrough guardrail settings object whose request_fields or response_fields holds the
+      wrong type resolves to no settings, so the handler scans the full payload. LiteLLM's
+      get_settings raises a pydantic ValidationError and the guardrail call fails.
+    why: >-
+      The settings lookup is B3601's passthrough policy, which returns Option and documents this
+      fallback; this task cannot change that type without touching that crate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/passthrough_guardrails.py#L110-L111

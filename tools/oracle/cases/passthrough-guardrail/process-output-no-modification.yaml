@@ -1,0 +1,29 @@
+kind: helper
+name: passthrough-guardrail-process-output-no-modification
+call:
+  b3573:
+    scenarios:
+      - function: output
+        guardrail_name: g1
+        logging:
+          config:
+            g1:
+              response_fields: [output]
+        response:
+          output: answer
+          extra: kept
+        request_data: null
+        user_api_key: null
+      - function: output
+        guardrail_name: g1
+        logging:
+          config:
+            g1:
+              response_fields: [absent]
+        response:
+          output: answer
+        request_data:
+          extra: 1
+        user_api_key: null
+env: {}
+compare: {ignore: []}
