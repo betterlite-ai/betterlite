@@ -1,0 +1,6 @@
+kind: helper
+name: blocked-response-tool-call
+call:
+  b3814: {"initialized": true, "input_policies": {"dangerous": "blocked", "safe": "untrusted"}, "output_policies": {}, "blocked_by_permission": {}, "inputs": {"tool_calls": [{"id": "call-1", "type": "function", "function": {"name": "dangerous"}}]}, "input_type": "response", "request_data": {"messages": [{"role": "user", "content": "hi"}]}}
+env: {}
+compare: {ignore: []}
