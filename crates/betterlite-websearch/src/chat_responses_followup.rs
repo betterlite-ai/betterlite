@@ -29,8 +29,10 @@ impl ChatResponsesFollowup {
         format: &str,
         followup: &FollowupRequest<'_>,
     ) -> Result<AgenticLoopPlan, FollowupError> {
-        let patch = chat::build_chat_patch(self.search.as_ref(), calls, format, followup).await?;
-        websearch_plan(patch, format)
+        websearch_plan(
+            chat::build_chat_patch(self.search.as_ref(), calls, format, followup).await?,
+            format,
+        )
     }
 
     pub async fn build_responses_plan(
