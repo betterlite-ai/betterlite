@@ -160,34 +160,20 @@ fn decode_source(source: &Source) -> Result<Vec<u8>, Box<HelperError>> {
     Ok(bytes)
 }
 
-fn config_source(
-    max_file_size_mb: &Value,
-    max_batch_file_size_mb: &Value,
-    allowed_file_extensions: &Value,
-    blocked_file_extensions: &Value,
-) -> Value {
-    json!({
-        "general_settings": {
-            "max_file_size_mb": max_file_size_mb,
-            "max_batch_file_size_mb": max_batch_file_size_mb,
-            "allowed_file_extensions": allowed_file_extensions,
-            "blocked_file_extensions": blocked_file_extensions,
-        },
-    })
-}
-
 fn settings_answer(
     max_file_size_mb: &Value,
     max_batch_file_size_mb: &Value,
     allowed_file_extensions: &Value,
     blocked_file_extensions: &Value,
 ) -> Value {
-    let source = config_source(
-        max_file_size_mb,
-        max_batch_file_size_mb,
-        allowed_file_extensions,
-        blocked_file_extensions,
-    );
+    let source = json!({
+        "general_settings": {
+            "max_file_size_mb": max_file_size_mb,
+            "max_batch_file_size_mb": max_batch_file_size_mb,
+            "allowed_file_extensions": allowed_file_extensions,
+            "blocked_file_extensions": blocked_file_extensions,
+        },
+    });
     let Ok(raw) = serde_json::from_value::<Raw>(source) else {
         return json!({ "error": "invalid_setting" });
     };
