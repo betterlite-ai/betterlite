@@ -1,8 +1,7 @@
 #![cfg(test)]
 
 use crate::lens_repository::support::{
-    LENS_ID, database, insert_lens, insert_run, insert_run_with, job, job_json, lens,
-    lens_with_jobs, repository,
+    LENS_ID, database, insert_lens, insert_run, job, job_json, lens, lens_with_jobs, repository,
 };
 
 fn seeded_active_jobs() -> String {
@@ -42,11 +41,23 @@ async fn jobs_returns_fifty_rows_at_most() {
     let db = database().await;
     insert_lens(&db.pool, &lens(LENS_ID), 0).await;
     let client = db.pool.get().await.unwrap();
-    for index in 0..51 {
-        let id = format!("job-{index:02}");
-        let created = format!("2026-01-01T00:{index:02}:00Z");
-        insert_run_with(&client, LENS_ID, &job(&id, &created)).await;
-    }
+    client
+        .execute(
+            r#"INSERT INTO "LiteLLM_LensRun" (id, lens_id, created_at, data)
+            SELECT 'job-' || lpad(step::text, 2, '0'), $1,
+                   ('2026-01-01T00:' || lpad(step::text, 2, '0') || ':00Z')::timestamp,
+                   jsonb_build_object(
+                       'id', 'job-' || lpad(step::text, 2, '0'),
+                       'created_at', '2026-01-01T00:' || lpad(step::text, 2, '0') || ':00Z',
+                       'start', '2026-01-01T00:' || lpad(step::text, 2, '0') || ':00Z',
+                       'end', '2026-01-01T00:' || lpad(step::text, 2, '0') || ':00Z',
+                       'settings', (SELECT data->'settings' FROM "LiteLLM_Lens" WHERE id=$1),
+                       'revision', 1)
+            FROM generate_series(0, 50) AS series(step)"#,
+            &[&LENS_ID],
+        )
+        .await
+        .unwrap();
     drop(client);
     let found = repository(&db.pool).await.jobs(LENS_ID, 0).await.unwrap();
     assert_eq!(found.len(), 50);
