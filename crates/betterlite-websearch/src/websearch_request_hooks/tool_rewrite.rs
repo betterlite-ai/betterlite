@@ -117,18 +117,12 @@ pub fn is_web_search_tool_responses(tool: &Json, index: usize) -> Result<bool, R
     Ok(tool_type == WEB_SEARCH || tool_type.starts_with(WEB_SEARCH_PREFIX))
 }
 
-pub fn any_web_search_tool(tools: &[Json]) -> Result<bool, RewriteError> {
+pub fn any_tool(
+    tools: &[Json],
+    matches: fn(&Json, usize) -> Result<bool, RewriteError>,
+) -> Result<bool, RewriteError> {
     for (index, tool) in tools.iter().enumerate() {
-        if is_web_search_tool(tool, index)? {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-pub fn any_responses_web_search_tool(tools: &[Json]) -> Result<bool, RewriteError> {
-    for (index, tool) in tools.iter().enumerate() {
-        if is_web_search_tool_responses(tool, index)? {
+        if matches(tool, index)? {
             return Ok(true);
         }
     }

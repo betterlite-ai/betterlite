@@ -96,7 +96,7 @@ impl WebSearchInterceptionLogger {
         if matches!(call_type, Some(CallType::Responses | CallType::Aresponses)) {
             return responses_tools(kwargs, tools);
         }
-        if !tool_rewrite::any_web_search_tool(tools)? {
+        if !tool_rewrite::any_tool(tools, tool_rewrite::is_web_search_tool)? {
             return Ok(None);
         }
         let converted = tool_rewrite::rewrite_tools(tools, ToolFormat::OpenAi)?;
@@ -119,7 +119,7 @@ impl WebSearchInterceptionLogger {
         let Some(tools) = request_tools(kwargs)? else {
             return Ok(None);
         };
-        if !tool_rewrite::any_web_search_tool(tools)? {
+        if !tool_rewrite::any_tool(tools, tool_rewrite::is_web_search_tool)? {
             return Ok(None);
         }
         let converted = tool_rewrite::rewrite_tools(tools, ToolFormat::Anthropic)?;
@@ -155,7 +155,7 @@ impl WebSearchInterceptionLogger {
 }
 
 fn responses_tools(kwargs: &Object, tools: &[Json]) -> Result<Option<Object>, WebSearchError> {
-    if !tool_rewrite::any_responses_web_search_tool(tools)? {
+    if !tool_rewrite::any_tool(tools, tool_rewrite::is_web_search_tool_responses)? {
         return Ok(None);
     }
     let converted = tool_rewrite::rewrite_tools(tools, ToolFormat::Responses)?;
