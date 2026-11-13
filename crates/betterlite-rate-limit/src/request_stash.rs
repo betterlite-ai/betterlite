@@ -85,10 +85,10 @@ impl RequestStashSlot {
             .unwrap_or_else(PoisonError::into_inner)
             .owner_litellm_call_id
             .clone();
-        match (&owner, call_id) {
-            (None, _) | (_, None) => Some(stash),
-            (Some(owner_id), Some(given)) if owner_id.as_str() == given => Some(stash),
-            _ => None,
-        }
+        let reachable = match (owner.as_deref(), call_id) {
+            (None, _) | (_, None) => true,
+            (Some(owner_id), Some(given)) => owner_id == given,
+        };
+        reachable.then_some(stash)
     }
 }

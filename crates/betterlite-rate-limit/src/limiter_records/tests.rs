@@ -277,37 +277,37 @@ fn counter_values_from_reply_keeps_each_value_in_order() {
 }
 
 #[rstest]
-#[case::nil_reply(ScriptReply::Nil, ScriptReplyKind::Nil)]
-#[case::int_reply(ScriptReply::Int(1), ScriptReplyKind::Int)]
-#[case::float_reply(ScriptReply::Float(1.5), ScriptReplyKind::Float)]
-#[case::text_reply(ScriptReply::Text("x".to_owned()), ScriptReplyKind::Text)]
-#[case::bytes_reply(ScriptReply::Bytes(vec![0]), ScriptReplyKind::Bytes)]
-#[case::array_reply(ScriptReply::Array(Vec::new()), ScriptReplyKind::Array)]
-fn counter_values_from_reply_names_a_non_array_reply(
-    #[case] reply: ScriptReply,
-    #[case] kind: ScriptReplyKind,
-) {
-    assert_eq!(
-        counter_values_from_reply(&reply),
-        Err(CounterReplyError::NotAnArray { kind })
-    );
-}
-
-#[rstest]
-#[case::nil_element(ScriptReply::Nil, ScriptReplyKind::Nil)]
-#[case::nested_array(
-    ScriptReply::Array(vec![ScriptReply::Int(1)]),
-    ScriptReplyKind::Array
+#[case::nil_reply(ScriptReply::Nil, CounterReplyError::NotAnArray { kind: ScriptReplyKind::Nil })]
+#[case::int_reply(ScriptReply::Int(1), CounterReplyError::NotAnArray { kind: ScriptReplyKind::Int })]
+#[case::float_reply(ScriptReply::Float(1.5), CounterReplyError::NotAnArray { kind: ScriptReplyKind::Float })]
+#[case::text_reply(
+    ScriptReply::Text("x".to_owned()),
+    CounterReplyError::NotAnArray { kind: ScriptReplyKind::Text }
 )]
-fn counter_values_from_reply_names_an_unsupported_element(
-    #[case] element: ScriptReply,
-    #[case] kind: ScriptReplyKind,
+#[case::bytes_reply(
+    ScriptReply::Bytes(vec![0]),
+    CounterReplyError::NotAnArray { kind: ScriptReplyKind::Bytes }
+)]
+#[case::array_reply(
+    ScriptReply::Array(Vec::new()),
+    CounterReplyError::NotAnArray { kind: ScriptReplyKind::Array }
+)]
+#[case::nil_element(
+    ScriptReply::Array(vec![ScriptReply::Int(1), ScriptReply::Nil]),
+    CounterReplyError::UnsupportedElement { kind: ScriptReplyKind::Nil }
+)]
+#[case::nested_array(
+    ScriptReply::Array(vec![
+        ScriptReply::Int(1),
+        ScriptReply::Array(vec![ScriptReply::Int(2)]),
+    ]),
+    CounterReplyError::UnsupportedElement { kind: ScriptReplyKind::Array }
+)]
+fn counter_values_from_reply_rejects_unsupported_replies(
+    #[case] reply: ScriptReply,
+    #[case] expected: CounterReplyError,
 ) {
-    let reply = ScriptReply::Array(vec![ScriptReply::Int(1), element]);
-    assert_eq!(
-        counter_values_from_reply(&reply),
-        Err(CounterReplyError::UnsupportedElement { kind })
-    );
+    assert_eq!(counter_values_from_reply(&reply), Err(expected));
 }
 
 #[test]
