@@ -263,20 +263,21 @@ async fn output_without_text_makes_no_call_and_leaves_the_request_data(#[case] r
     );
 }
 
+// serde_json reads a float into an untagged Object under arbitrary_precision, so the float is built directly
 #[rstest]
-#[case::integer("7", "int")]
-#[case::boolean("true", "bool")]
-#[case::float("1.5", "float")]
-#[case::object(r#"{"value":"x"}"#, "dict")]
-#[case::array(r#"["x"]"#, "list")]
+#[case::integer(value("7"), "int")]
+#[case::boolean(value("true"), "bool")]
+#[case::float(GuardrailValue::Decimal(1.5), "float")]
+#[case::object(value(r#"{"value":"x"}"#), "dict")]
+#[case::array(value(r#"["x"]"#), "list")]
 #[tokio::test]
 async fn output_non_text_text_makes_no_call_and_logs_at_debug(
-    #[case] raw: &str,
+    #[case] text: GuardrailValue,
     #[case] kind: &str,
 ) {
     let (log, _guard) = capture_logs(tracing::Level::DEBUG);
     let guardrail = FakeGuardrail::replying(&["unused"]);
-    let mut response = GuardrailValue::Object(BTreeMap::from([("text".to_owned(), value(raw))]));
+    let mut response = GuardrailValue::Object(BTreeMap::from([("text".to_owned(), text)]));
     let untouched = response.clone();
     let mut request_data = BTreeMap::new();
     process_output_response(
