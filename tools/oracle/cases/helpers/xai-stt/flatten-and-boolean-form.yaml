@@ -2,14 +2,21 @@ kind: helper
 name: flatten-and-boolean-form
 call:
   xai_stt:
-    operation: request
     env: {}
     xai_key: null
-    calls:
-      - api_base: null
-        api_key: sk-key
+    steps:
+      - step: params
+        optional: {response_format: json, language: fr}
+        non_default: {language: en, prompt: direct}
+      - {step: url, api_base: null}
+      - {step: url, api_base: "https://proxy.example/v1/"}
+      - {step: url, api_base: "https://proxy.example/v2"}
+      - {step: auth, api_key: sk-key}
+      - {step: auth, api_key: null}
+      - step: form
         model: grok-stt
-        audio: {filename: clip.wav, content: audio}
+        filename: clip.wav
+        content: audio
         extra_body:
           language: fr
           diarize: true
@@ -23,17 +30,12 @@ call:
           prompt: hi
           response_format: null
           timestamp_granularities: [word, segment]
-      - api_base: "https://proxy.example/v1/"
-        api_key: sk-key
+      - step: form
         model: m
-        audio: {filename: null, content: raw}
+        filename: null
+        content: raw
         extra_body: {flag: false, n: 3, f: 1.5, items: [true, false, 1]}
         options: {}
-      - api_base: "https://proxy.example/v2"
-        api_key: null
-        model: m
-        audio: {filename: sound.flac, content: abc}
-        extra_body: {}
-        options: {}
+      - {step: form, model: m, filename: sound.flac, content: abc, extra_body: {}, options: {}}
 env: {}
 compare: {ignore: []}

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 // LiteLLM's _XAISttResponse and _XAISttWord keep xAI's extra keys, so every reply field not modelled here rides along
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct SttPayload {
     #[serde(default)]
     pub text: String,
@@ -52,12 +52,8 @@ pub struct TranscriptionWord {
 // the complete native answer LiteLLM keeps for logging, plus the duration it copies out of it
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SttMetadata {
-    pub text: String,
-    pub language: String,
-    pub duration: Option<f64>,
-    pub words: Option<Vec<SttWord>>,
     #[serde(flatten)]
-    pub native_fields: Map<String, Value>,
+    pub native: SttPayload,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_transcription_duration: Option<f64>,
 }

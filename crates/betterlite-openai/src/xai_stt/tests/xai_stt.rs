@@ -277,8 +277,8 @@ fn an_empty_payload_takes_the_defaults() {
     assert_eq!(result.language, "unknown");
     assert_eq!(result.duration, None);
     assert_eq!(result.words, None);
-    assert_eq!(result.metadata.duration, None);
-    assert_eq!(result.metadata.words, None);
+    assert_eq!(result.metadata.native.duration, None);
+    assert_eq!(result.metadata.native.words, None);
     assert_eq!(result.metadata.audio_transcription_duration, None);
 }
 
@@ -301,10 +301,10 @@ fn words_are_renamed_and_a_zero_speaker_is_kept() {
 fn the_native_payload_is_kept_with_the_duration_copied_out() {
     let body = br#"{"text":"hello","language":"en","duration":2.5,"words":[{"text":"he","start":0.0,"end":1.0,"speaker":0}],"speaker_count":2}"#;
     let result = decode_xai_stt_reply(&response(200, body), &limits()).unwrap();
-    assert_eq!(result.metadata.text, "hello");
-    assert_eq!(result.metadata.language, "en");
+    assert_eq!(result.metadata.native.text, "hello");
+    assert_eq!(result.metadata.native.language, "en");
     assert_eq!(
-        result.metadata.duration.map(f64::to_bits),
+        result.metadata.native.duration.map(f64::to_bits),
         Some(2.5_f64.to_bits())
     );
     assert_eq!(
@@ -314,11 +314,11 @@ fn the_native_payload_is_kept_with_the_duration_copied_out() {
             .map(f64::to_bits),
         Some(2.5_f64.to_bits())
     );
-    let words = result.metadata.words.unwrap();
+    let words = result.metadata.native.words.unwrap();
     assert_eq!(words[0].text, "he");
     assert_eq!(words[0].speaker, Some(0));
     assert_eq!(
-        result.metadata.native_fields.get("speaker_count"),
+        result.metadata.native.native_fields.get("speaker_count"),
         Some(&json!(2_i32))
     );
 }
@@ -327,7 +327,7 @@ fn the_native_payload_is_kept_with_the_duration_copied_out() {
 fn extra_word_fields_ride_along_in_the_native_payload() {
     let body = br#"{"words":[{"text":"x","confidence":0.9}]}"#;
     let result = decode_xai_stt_reply(&response(200, body), &limits()).unwrap();
-    let word: &SttWord = &result.metadata.words.unwrap()[0];
+    let word: &SttWord = &result.metadata.native.words.unwrap()[0];
     assert_eq!(word.native_fields.get("confidence"), Some(&json!(0.9_f64)));
     assert_eq!(result.words.unwrap()[0].word, "x");
 }
@@ -336,7 +336,7 @@ fn extra_word_fields_ride_along_in_the_native_payload() {
 fn an_empty_word_list_stays_an_empty_list() {
     let result = decode_xai_stt_reply(&response(200, br#"{"words":[]}"#), &limits()).unwrap();
     assert_eq!(result.words, Some(Vec::new()));
-    assert_eq!(result.metadata.words, Some(Vec::new()));
+    assert_eq!(result.metadata.native.words, Some(Vec::new()));
 }
 
 #[rstest]

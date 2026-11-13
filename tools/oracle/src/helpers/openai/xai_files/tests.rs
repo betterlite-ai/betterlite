@@ -3,17 +3,9 @@
 use std::fs;
 use std::path::Path;
 
+use rstest::rstest;
+
 use crate::case::{HelperCase, helper::validate_helper};
-
-fn run_case(file: &str) -> serde_json::Value {
-    use crate::helpers::Helper as _;
-
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("cases/helpers/xai-files")
-        .join(file);
-    let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-    super::Op::decode_and_run(&case.call.input).unwrap()
-}
 
 #[test]
 fn helper_seeds_select_xai_files() {
@@ -35,98 +27,20 @@ fn helper_seeds_select_xai_files() {
     }));
 }
 
-#[test]
-fn oracle_upload_normalizes_the_returned_file() {
-    let result = run_case("upload-defaults.yaml");
-    let calls = result["calls"].as_array().unwrap();
-    assert_eq!(calls[0]["supported"], serde_json::json!(["purpose"]));
-    assert_eq!(
-        calls[0]["mapped"],
-        serde_json::json!({"purpose": "batch", "expires_after": {"anchor": "created_at"}})
-    );
-    assert_eq!(calls[0]["url"], "https://api.x.ai/v1/files");
-    assert_eq!(calls[0]["authorization"], "Bearer sk-key");
-    assert_eq!(
-        calls[0]["file"],
-        serde_json::json!({
-            "id": "file-1",
-            "bytes": 0_i64,
-            "created_at": 1_700_000_000_i64,
-            "filename": "",
-            "object": "file",
-            "purpose": "batch",
-            "status": "uploaded",
-        })
-    );
-    assert_eq!(calls[1]["url"], "https://proxy.example/v1/files");
-    assert_eq!(calls[1]["file"]["purpose"], "batch");
-    assert_eq!(calls[1]["file"]["status"], "uploaded");
-    assert_eq!(calls[1]["file"]["created_at"], 12_i64);
-    assert_eq!(calls[1]["file"]["expires_at"], 5_i64);
-    assert_eq!(calls[2]["file"], serde_json::json!({"raised": "reply"}));
-}
+// the expected answers are LiteLLM's own, captured from the Python helper on the same case
+#[rstest]
+#[case::encoded_id_and_missing_content_id("encoded-id-and-missing-content-id.yaml", r#"["https://api.x.ai/v1/files/a%2Fb%20c","https://api.x.ai/v1/files/a%2Fb%20c/content",{"raised":null},{"raised":null},{"raised":null},{"raised":null},{"status":500,"headers":{"x-a":"b"},"body":[114,97,119]},{"status":206,"headers":{},"body":[]}]"#)]
+#[case::forced_purpose_and_clock("forced-purpose-and-clock.yaml", r#"["Bearer module-key","Bearer explicit-key","https://env.example/v1/files",{"id":"file-a","bytes":0,"created_at":11,"filename":"","object":"file","purpose":"batch","status":"uploaded"},{"id":"file-b","bytes":0,"created_at":1700000900,"filename":"","object":"file","purpose":"batch","status":"uploaded"}]"#)]
+#[case::list_stop_and_delete_default("list-stop-and-delete-default.yaml", r#"[["https://api.x.ai/v1/files",[["pagination_token","tok"]]],[{"id":"f1","bytes":0,"created_at":1700000000,"filename":"","object":"file","purpose":"batch","status":"uploaded"}],null,null,{"raised":null},["https://api.x.ai/v1/files",[["pagination_token","t"]]],{"raised":500},[],{"id":"file-1","deleted":true,"object":"file"},{"id":"file-2","deleted":false,"object":"file"},{"raised":null},{"raised":401}]"#)]
+#[case::upload_defaults("upload-defaults.yaml", r#"[{"supported":["purpose"],"mapped":{"purpose":"batch","expires_after":{"anchor":"created_at"}}},"Bearer sk-key","https://api.x.ai/v1/files","https://proxy.example/v1/files",{"id":"file-1","bytes":0,"created_at":1700000000,"filename":"","object":"file","purpose":"batch","status":"uploaded"},{"id":"file-2","bytes":5,"created_at":12,"filename":"f","object":"file","purpose":"batch","status":"uploaded","expires_at":5},{"raised":null},{"raised":404}]"#)]
+fn the_native_helper_answers_like_litellm(#[case] file: &str, #[case] litellm: &str) {
+    use crate::helpers::Helper as _;
 
-#[test]
-fn oracle_forced_purpose_and_the_fixed_clock() {
-    let result = run_case("forced-purpose-and-clock.yaml");
-    let calls = result["calls"].as_array().unwrap();
-    assert_eq!(calls[0]["url"], "https://env.example/v1/files");
-    assert_eq!(calls[0]["authorization"], "Bearer module-key");
-    assert_eq!(calls[0]["file"]["purpose"], "batch");
-    assert_eq!(calls[0]["file"]["created_at"], 11_i64);
-    assert_eq!(calls[1]["authorization"], "Bearer explicit-key");
-    assert_eq!(calls[1]["file"]["created_at"], 1_700_000_900_i64);
-}
-
-#[test]
-fn oracle_file_ids_are_encoded_and_a_missing_one_fails() {
-    let result = run_case("encoded-id-and-missing-content-id.yaml");
-    let calls = result["calls"].as_array().unwrap();
-    assert_eq!(
-        calls[0]["delete"]["url"],
-        "https://api.x.ai/v1/files/a%2Fb%20c"
-    );
-    assert_eq!(
-        calls[0]["content"]["url"],
-        "https://api.x.ai/v1/files/a%2Fb%20c/content"
-    );
-    assert_eq!(
-        calls[0]["deleted"],
-        serde_json::json!({"id": "file-1", "object": "file", "deleted": true})
-    );
-    assert_eq!(
-        calls[0]["content_reply"],
-        serde_json::json!({"status": 500_i64, "headers": {"x-a": "b"}, "body": [114_i64, 97_i64, 119_i64]})
-    );
-    assert_eq!(calls[1]["delete"], serde_json::json!({"raised": "path"}));
-    assert_eq!(calls[1]["content"], serde_json::json!({"raised": "path"}));
-    assert_eq!(calls[1]["deleted"]["deleted"], false);
-    assert_eq!(calls[1]["content_reply"]["status"], 206_i64);
-    assert_eq!(calls[2]["delete"], serde_json::json!({"raised": "path"}));
-    assert_eq!(calls[2]["content"], serde_json::json!({"raised": "path"}));
-    assert_eq!(calls[2]["deleted"], serde_json::json!({"raised": "reply"}));
-}
-
-#[test]
-fn oracle_list_stops_without_a_token_and_a_file() {
-    let result = run_case("list-stop-and-delete-default.yaml");
-    let calls = result["calls"].as_array().unwrap();
-    assert_eq!(calls[0]["url"], "https://api.x.ai/v1/files");
-    assert_eq!(
-        calls[0]["next"],
-        serde_json::json!({
-            "url": "https://api.x.ai/v1/files",
-            "query": [["pagination_token", "tok"]],
-        })
-    );
-    assert_eq!(calls[0]["files"][0]["id"], "f1");
-    assert_eq!(calls[0]["files"][0]["created_at"], 1_700_000_000_i64);
-    assert_eq!(calls[0]["files"][0]["purpose"], "batch");
-    assert_eq!(calls[1]["url"], "https://p.example/v1/files");
-    assert_eq!(calls[1]["next"], serde_json::Value::Null);
-    assert_eq!(calls[2]["next"], serde_json::Value::Null);
-    assert_eq!(calls[2]["files"][0]["created_at"], 1_700_000_200_i64);
-    assert_eq!(calls[3]["raised"], "page");
-    assert_eq!(calls[3]["raised_list"], "list");
-    assert_eq!(calls[3]["next"], serde_json::Value::Null);
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("cases/helpers/xai-files")
+        .join(file);
+    let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    let answer = super::Op::decode_and_run(&case.call.input).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(litellm).unwrap();
+    assert_eq!(answer, expected);
 }

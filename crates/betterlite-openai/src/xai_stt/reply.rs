@@ -5,7 +5,7 @@ use crate::files::stream::flatten_headers;
 
 use super::error::XaiSttError;
 use super::records::{
-    SttMetadata, SttPayload, SttWord, TranscriptionResponse, TranscriptionTask, TranscriptionWord,
+    SttMetadata, SttPayload, TranscriptionResponse, TranscriptionTask, TranscriptionWord,
 };
 
 // LiteLLM raises before parsing on a non-2xx reply, and a parse failure keeps the status it was handed
@@ -17,7 +17,10 @@ pub fn decode_xai_stt_reply(
     if reply.status >= 400 {
         return Err(XaiSttError::Status {
             status: reply.status,
-            message: body_text(&reply.body),
+            message: str::from_utf8(&reply.body).map_or_else(
+                |_invalid| format!("{} bytes that are not UTF-8", reply.body.len()),
+                str::to_owned,
+            ),
             headers,
         });
     }
@@ -37,41 +40,27 @@ pub fn decode_xai_stt_reply(
     Ok(project(payload))
 }
 
-fn body_text(body: &[u8]) -> String {
-    str::from_utf8(body).map_or_else(
-        |_invalid| format!("{} bytes that are not UTF-8", body.len()),
-        str::to_owned,
-    )
-}
-
 fn project(payload: SttPayload) -> TranscriptionResponse {
-    let duration = payload.duration;
-    let words = payload
-        .words
-        .as_ref()
-        .map(|words| words.iter().map(to_word).collect());
+    let words = payload.words.as_ref().map(|words| {
+        words
+            .iter()
+            .map(|word| TranscriptionWord {
+                word: word.text.clone(),
+                start: word.start,
+                end: word.end,
+                speaker: word.speaker,
+            })
+            .collect()
+    });
     TranscriptionResponse {
         text: payload.text.clone(),
         task: TranscriptionTask::Transcribe,
         language: payload.language.clone(),
-        duration,
+        duration: payload.duration,
         words,
         metadata: SttMetadata {
-            text: payload.text,
-            language: payload.language,
-            duration,
-            words: payload.words,
-            native_fields: payload.native_fields,
-            audio_transcription_duration: duration,
+            audio_transcription_duration: payload.duration,
+            native: payload,
         },
-    }
-}
-
-fn to_word(word: &SttWord) -> TranscriptionWord {
-    TranscriptionWord {
-        word: word.text.clone(),
-        start: word.start,
-        end: word.end,
-        speaker: word.speaker,
     }
 }

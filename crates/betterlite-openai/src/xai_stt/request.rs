@@ -3,7 +3,7 @@ use betterlite_http::proxy::multipart::MultipartPart;
 use http::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::api::audio_file_input::ProcessedAudioFile;
@@ -31,7 +31,8 @@ pub enum FormValue {
     Scalar(FormScalar),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
 pub enum FormText {
     Scalar(String),
     Repeated(Vec<String>),

@@ -1,294 +1,186 @@
 import os
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import partial
-from typing import Final, Literal, TypeAlias, TypedDict
+from typing import Final, Literal, TypeAlias, TypedDict, TypeVar
 
 import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.xai.files.transformation import XAIFilesConfig
 from pydantic import JsonValue, TypeAdapter
 
-CLEARED: Final = ("XAI_API_KEY", "XAI_API_BASE")
+StepT = TypeVar("StepT")
 CONFIG: Final = XAIFilesConfig.__new__(XAIFilesConfig)
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 LOG: Final = Logging(
-    model="", messages=None, stream=False, call_type="", start_time=datetime.now(UTC),
-    litellm_call_id="", function_id="",
+    model="",
+    messages=None,
+    stream=False,
+    call_type="",
+    start_time=datetime.now(UTC),
+    litellm_call_id="",
+    function_id="",
 )
 
 
+class Params(TypedDict):
+    step: Literal["params"]
+    optional: dict[str, JsonValue]
+    non_default: dict[str, JsonValue]
+
+
+class Auth(TypedDict):
+    step: Literal["auth"]
+    api_key: str | None
+
+
+class Url(TypedDict):
+    step: Literal["url"]
+    api_base: str | None
+    target: Literal["collection", "file", "content"]
+    file_id: str | None
+
+
 class Reply(TypedDict):
+    step: Literal["reply"]
+    parse: Literal["file", "deleted", "next", "list"]
+    api_base: str | None
+    now: int
     status: int
     body: str
 
 
-class Raised(TypedDict):
-    raised: str
-
-
-class FileAnswer(TypedDict, total=False):
-    id: str
-    bytes: int
-    created_at: int
-    filename: str
-    object: str
-    purpose: str
-    status: str
-    expires_at: int
-
-
-class DeletedAnswer(TypedDict):
-    id: str
-    object: str
-    deleted: bool
-
-
-class ContentAnswer(TypedDict):
-    status: int
-    headers: dict[str, str]
-    body: list[int]
-
-
-class ContentSpec(TypedDict):
+class Content(TypedDict):
+    step: Literal["content"]
     status: int
     headers: list[list[str]]
-    body: list[int]
+    body: str
 
 
-class Common(TypedDict):
+Step: TypeAlias = Params | Auth | Url | Reply | Content
+
+
+class Input(TypedDict):
     env: dict[str, str]
     xai_key: str | None
+    steps: list[Step]
 
 
-class UploadCall(TypedDict):
-    api_base: str | None
-    api_key: str | None
-    now: int
-    reply: Reply
-
-
-class UploadInput(Common):
-    operation: Literal["upload"]
-    calls: list[UploadCall]
-
-
-class FileCall(TypedDict):
-    params_api_base: str | None
-    file_id: str | None
-    delete_reply: Reply
-    content_reply: ContentSpec
-
-
-class FilesInput(Common):
-    operation: Literal["files"]
-    calls: list[FileCall]
-
-
-class ListCall(TypedDict):
-    params_api_base: str | None
-    purpose: str | None
-    now: int
-    reply: Reply
-
-
-class ListInput(Common):
-    operation: Literal["list"]
-    calls: list[ListCall]
-
-
-class UploadAnswer(TypedDict):
-    supported: list[str]
-    mapped: dict[str, JsonValue]
-    url: str
-    authorization: str | None
-    file: FileAnswer | Raised
-
-
-class FileEntry(TypedDict):
-    delete: JsonValue
-    content: JsonValue
-    deleted: DeletedAnswer | Raised
-    content_reply: ContentAnswer
-
-
-class ListEntry(TypedDict):
-    url: str
-    next: JsonValue
-    raised: str | None
-    files: list[FileAnswer]
-    raised_list: str | None
-
-
-class UploadOutput(TypedDict):
-    calls: list[UploadAnswer]
-
-
-class FilesOutput(TypedDict):
-    calls: list[FileEntry]
-
-
-class ListOutput(TypedDict):
-    calls: list[ListEntry]
-
-
-Input: TypeAlias = UploadInput | FilesInput | ListInput
-Output: TypeAlias = UploadOutput | FilesOutput | ListOutput
-MAPPED: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
-FILE_ANSWER: Final[TypeAdapter[FileAnswer]] = TypeAdapter(FileAnswer)
-DELETED_ANSWER: Final[TypeAdapter[DeletedAnswer]] = TypeAdapter(DeletedAnswer)
-
-
-def upload_call(call: UploadCall) -> UploadAnswer:
-    time.time = partial(float, call["now"])
-    supported: list[str] = [str(name) for name in CONFIG.get_supported_openai_params("")]
-    response = httpx.Response(call["reply"]["status"], content=call["reply"]["body"].encode())
-    file: FileAnswer | Raised
-    try:
-        created = CONFIG.transform_create_file_response(
-            model=None, raw_response=response, logging_obj=LOG, litellm_params={}
-        )
-    except ValueError:
-        file = {"raised": "reply"}
-    else:
-        file = FILE_ANSWER.validate_json(created.model_dump_json(exclude_none=True))
-    headers = CONFIG.validate_environment(
-        headers={},
-        model="",
-        messages=[],
-        optional_params={},
-        litellm_params={},
-        api_key=call["api_key"],
-        api_base=call["api_base"],
-    )
-    return {
-        "supported": supported,
-        "mapped": MAPPED.validate_python(
-            CONFIG.map_openai_params(
-                {"purpose": "assistants", "temperature": 2},
-                {"purpose": "batch", "expires_after": {"anchor": "created_at"}},
-                model="",
-                drop_params=False,
+def reply_step(step: Reply) -> JsonValue:
+    time.time = partial(float, step["now"])
+    response = httpx.Response(step["status"], content=step["body"].encode())
+    match step["parse"]:
+        case "file":
+            created = CONFIG.transform_create_file_response(
+                model=None, raw_response=response, logging_obj=LOG, litellm_params={}
             )
-        ),
-        "url": CONFIG.get_complete_url(
-            api_base=call["api_base"],
-            api_key=call["api_key"],
-            model="",
-            optional_params={},
-            litellm_params={},
-        ),
-        "authorization": headers.get("Authorization"),
-        "file": file,
-    }
-
-
-def file_target(
-    params_api_base: str | None, file_id: str | None, *, content: bool
-) -> JsonValue:
-    litellm_params: dict[str, str | None] = {"api_base": params_api_base}
-    try:
-        if content:
-            url, _query = CONFIG.transform_file_content_request(
-                file_content_request={} if file_id is None else {"file_id": file_id},
+            return JSON.validate_json(created.model_dump_json(exclude_none=True))
+        case "deleted":
+            deleted = CONFIG.transform_delete_file_response(
+                raw_response=response, logging_obj=LOG, litellm_params={}
+            )
+            return JSON.validate_json(deleted.model_dump_json(exclude_none=True))
+        case "next":
+            page = CONFIG.transform_list_files_next_request(
+                raw_response=response,
                 optional_params={},
-                litellm_params=litellm_params,
+                litellm_params={"api_base": step["api_base"]},
             )
-        else:
+            return (
+                None
+                if page is None
+                else [page[0], [[name, value] for name, value in page[1].items()]]
+            )
+        case "list":
+            files = CONFIG.transform_list_files_response(
+                raw_response=response, logging_obj=LOG, litellm_params={}
+            )
+            return [JSON.validate_json(item.model_dump_json(exclude_none=True)) for item in files]
+
+
+def url_step(step: Url) -> JsonValue:
+    litellm_params = {"api_base": step["api_base"]}
+    file_id = step["file_id"]
+    match step["target"]:
+        case "collection":
+            return CONFIG.get_complete_url(
+                api_base=step["api_base"],
+                api_key=None,
+                model="",
+                optional_params={},
+                litellm_params={},
+            )
+        case "file":
             url, _query = CONFIG.transform_retrieve_file_request(
                 file_id="" if file_id is None else file_id,
                 optional_params={},
                 litellm_params=litellm_params,
             )
-    except ValueError:
-        return {"raised": "path"}
-    return {"url": url}
+            return url
+        case "content":
+            url, _query = CONFIG.transform_file_content_request(
+                file_content_request={} if file_id is None else {"file_id": file_id},
+                optional_params={},
+                litellm_params=litellm_params,
+            )
+            return url
 
 
-def content_view(spec: ContentSpec) -> ContentAnswer:
-    headers = [(name, value) for name, value in spec["headers"]]
-    response = httpx.Response(spec["status"], content=bytes(spec["body"]), headers=headers)
-    content = CONFIG.transform_file_content_response(
-        raw_response=response, logging_obj=LOG, litellm_params={}
-    )
-    watched: dict[str, str] = {}
-    for name in [name.lower() for name, _ in spec["headers"]]:
-        watched[name] = content.response.headers[name]
-    return {
-        "status": content.response.status_code,
-        "headers": watched,
-        "body": list(content.response.content),
-    }
-
-
-def files_call(call: FileCall) -> FileEntry:
-    reply = call["delete_reply"]
-    response = httpx.Response(reply["status"], content=reply["body"].encode())
-    deleted: DeletedAnswer | Raised
-    try:
-        removed = CONFIG.transform_delete_file_response(
-            raw_response=response, logging_obj=LOG, litellm_params={}
-        )
-    except ValueError:
-        deleted = {"raised": "reply"}
-    else:
-        deleted = DELETED_ANSWER.validate_json(removed.model_dump_json(exclude_none=True))
-    return {
-        "delete": file_target(call["params_api_base"], call["file_id"], content=False),
-        "content": file_target(call["params_api_base"], call["file_id"], content=True),
-        "deleted": deleted,
-        "content_reply": content_view(call["content_reply"]),
-    }
-
-
-def list_call(call: ListCall) -> ListEntry:
-    time.time = partial(float, call["now"])
-    litellm_params: dict[str, str | None] = {"api_base": call["params_api_base"]}
-    url, _query = CONFIG.transform_list_files_request(
-        purpose=call["purpose"], optional_params={}, litellm_params=litellm_params
-    )
-    entry: ListEntry = {
-        "url": url,
-        "next": None,
-        "raised": None,
-        "files": [],
-        "raised_list": None,
-    }
-    response = httpx.Response(call["reply"]["status"], content=call["reply"]["body"].encode())
-    try:
-        next_request = CONFIG.transform_list_files_next_request(
-            raw_response=response, optional_params={}, litellm_params=litellm_params
-        )
-    except ValueError:
-        entry["raised"] = "page"
-    else:
-        if next_request is not None:
-            entry["next"] = {
-                "url": next_request[0],
-                "query": [[name, value] for name, value in next_request[1].items()],
+def outcome(step: Step) -> JsonValue:
+    match step["step"]:
+        case "params":
+            mapped = CONFIG.map_openai_params(
+                step["non_default"], dict(step["optional"]), model="", drop_params=False
+            )
+            supported: list[JsonValue] = [
+                str(name) for name in CONFIG.get_supported_openai_params("")
+            ]
+            return {"supported": supported, "mapped": JSON.validate_python(mapped)}
+        case "auth":
+            headers = CONFIG.validate_environment(
+                headers={},
+                model="",
+                messages=[],
+                optional_params={},
+                litellm_params={},
+                api_key=step["api_key"],
+            )
+            return headers.get("Authorization")
+        case "url":
+            return url_step(step)
+        case "reply":
+            return reply_step(step)
+        case "content":
+            given = [(name, value) for name, value in step["headers"]]
+            response = httpx.Response(step["status"], content=step["body"].encode(), headers=given)
+            content = CONFIG.transform_file_content_response(
+                raw_response=response, logging_obj=LOG, litellm_params={}
+            )
+            watched: dict[str, JsonValue] = {
+                name.lower(): content.response.headers[name] for name, _ in given
             }
+            return {
+                "status": content.response.status_code,
+                "headers": watched,
+                "body": list(content.response.content),
+            }
+
+
+def guarded(outcome: Callable[[StepT], JsonValue], step: StepT) -> JsonValue:
     try:
-        files = CONFIG.transform_list_files_response(
-            raw_response=response, logging_obj=LOG, litellm_params=litellm_params
-        )
+        return outcome(step)
+    except BaseLLMException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L42
+        return {"raised": error.status_code}
     except ValueError:
-        entry["raised_list"] = "list"
-    else:
-        entry["files"] = [
-            FILE_ANSWER.validate_json(item.model_dump_json(exclude_none=True)) for item in files
-        ]
-    return entry
+        return {"raised": None}
 
 
-def run(input_value: Input) -> Output:
-    for name in CLEARED:
+def run(input_value: Input) -> list[JsonValue]:
+    for name in ("XAI_API_KEY", "XAI_API_BASE"):
         os.environ.pop(name, None)
     os.environ.update(input_value["env"])
     litellm.xai_key = input_value["xai_key"]
-    match input_value["operation"]:
-        case "upload":
-            return {"calls": [upload_call(call) for call in input_value["calls"]]}
-        case "files":
-            return {"calls": [files_call(call) for call in input_value["calls"]]}
-        case "list":
-            return {"calls": [list_call(call) for call in input_value["calls"]]}
+    return [guarded(outcome, step) for step in input_value["steps"]]
