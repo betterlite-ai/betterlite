@@ -6,7 +6,7 @@ use std::sync::Arc;
 use betterlite_pyhost::blocking_work::WorkTracker;
 use betterlite_pyhost::callable_handle::CallableHandle;
 use betterlite_pyhost::host::{HostConfig, PythonHost};
-use betterlite_pyhost::instance_loader::{InstanceLoader, LoadError, LoadedObject, LocalError};
+use betterlite_pyhost::instance_loader::{InstanceLoader, LoadError, LocalError};
 use betterlite_pyhost::remote_module::{ModuleFetcher, ModuleRequest};
 use betterlite_pyhost::return_check::{ReturnCheckError, check_literal_true_return};
 use pyo3::Bound;
@@ -81,28 +81,9 @@ fn load(host: &PythonHost, value: &str, config_file_path: Option<&str>) -> Helpe
     let tracker = WorkTracker::default();
     let config = config_file_path.map(Path::new);
     match runtime.block_on(loader.load(&tracker, value, config)) {
-        Ok(instance) => describe(host, &instance),
+        Ok(_loaded) => Ok(json!({"ok": true})),
         Err(error) => Ok(describe_error(&error)),
     }
-}
-
-fn describe(host: &PythonHost, loaded: &LoadedObject) -> HelperResult {
-    host.attach(|py| {
-        let object = loaded.object.bind(py);
-        let module = object
-            .getattr("__module__")
-            .and_then(|value| value.extract::<String>())
-            .map_err(|error| helper_error("PythonError", error.to_string()))?;
-        let qualname = object
-            .getattr("__qualname__")
-            .and_then(|value| value.extract::<String>())
-            .map_err(|error| helper_error("PythonError", error.to_string()))?;
-        Ok(json!({
-            "ok": true,
-            "module": module,
-            "qualname": qualname,
-        }))
-    })
 }
 
 fn describe_error<E>(error: &LoadError<E>) -> Value

@@ -1,10 +1,12 @@
 from collections.abc import Callable
-from typing import Literal, Protocol, TypeAlias, TypedDict, cast
+from typing import Literal, TypeAlias, TypedDict
 
 from litellm.proxy.types_utils.utils import (
     get_instance_fn,
     validate_custom_validate_return_type,
 )
+
+FAILURES = (ImportError, AttributeError, ValueError, TypeError, NameError)
 
 Fixture: TypeAlias = Literal["literal_true", "bool_annotation", "no_annotation", "none_argument"]
 Validator: TypeAlias = Callable[[], bool] | Callable[[], None]
@@ -24,11 +26,6 @@ class ReturnInput(TypedDict):
 Input: TypeAlias = LoadInput | ReturnInput
 
 
-class Loaded(Protocol):
-    __module__: str
-    __qualname__: str
-
-
 class FailureResult(TypedDict):
     ok: Literal[False]
     type: str
@@ -37,8 +34,6 @@ class FailureResult(TypedDict):
 
 class LoadedResult(TypedDict):
     ok: Literal[True]
-    module: str
-    qualname: str
 
 
 class CheckedResult(TypedDict):
@@ -76,28 +71,20 @@ def failure(error: Exception) -> FailureResult:
 
 def load_result(value: str, config_file_path: str | None) -> Result:
     try:
-        loaded = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L9
-            Loaded, get_instance_fn(value, config_file_path=config_file_path)
-        )
-    except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L9-L66
+        get_instance_fn(value, config_file_path=config_file_path)
+    except FAILURES as error:
         return failure(error)
-    described: LoadedResult = {
-        "ok": True,
-        "module": loaded.__module__,
-        "qualname": loaded.__qualname__,
-    }
-    return described
+    loaded: LoadedResult = {"ok": True}
+    return loaded
 
 
 def check_return(name: Fixture) -> Result:
     function = fixture_function(name)
     try:
-        checked = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L200-L212
-            "Callable[[], bool] | None", validate_custom_validate_return_type(function)
-        )
-    except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L200-L212
+        validate_custom_validate_return_type(function)
+    except FAILURES as error:
         return failure(error)
-    if checked is None:
+    if name == "none_argument":
         none_result: CheckedResult = {"ok": True, "result": "none"}
         return none_result
     function_result: CheckedResult = {"ok": True, "result": "function"}
