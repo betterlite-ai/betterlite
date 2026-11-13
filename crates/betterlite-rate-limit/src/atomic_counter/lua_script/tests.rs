@@ -14,14 +14,16 @@ fn lua_script_checks_every_descriptor_before_writing_any_counter() {
     let validation = script
         .find("return { 1, i, current_counter, limit }")
         .expect("the over-limit reply");
+    let second_pass = script.find("-- Pass 2").expect("the second pass");
     let delete = script.find("redis.call('DEL'").expect("the sibling reset");
     let set = script.find("redis.call('SET'").expect("the window reset");
     let increment = script
         .find("redis.call('INCRBY'")
         .expect("the counter increment");
-    assert!(validation < delete);
-    assert!(validation < set);
-    assert!(validation < increment);
+    assert!(validation < second_pass);
+    assert!(second_pass < delete);
+    assert!(second_pass < set);
+    assert!(second_pass < increment);
 }
 
 #[test]
@@ -39,9 +41,17 @@ fn lua_script_reads_four_arguments_for_each_counter() {
 fn lua_script_returns_a_window_start_after_each_counter() {
     let script = CHECK_AND_INCREMENT_BY_N_SCRIPT;
     assert!(script.contains("local results = { 0 }"));
-    assert!(script.contains("table.insert(results, increment)"));
-    assert!(script.contains("table.insert(results, new_counter)"));
-    assert!(script.contains("table.insert(results, active_window_start)"));
+    let reset_counter = script
+        .find("table.insert(results, increment)")
+        .expect("the counter of a reset window");
+    let new_counter = script
+        .find("table.insert(results, new_counter)")
+        .expect("the counter of an active window");
+    let window_start = script
+        .find("table.insert(results, active_window_start)")
+        .expect("the window start");
+    assert!(reset_counter < new_counter);
+    assert!(new_counter < window_start);
 }
 
 #[test]
