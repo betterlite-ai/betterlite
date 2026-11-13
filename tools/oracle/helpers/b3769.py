@@ -1,10 +1,9 @@
 import asyncio
-from typing import TypedDict
+from collections.abc import Awaitable, Callable
+from typing import Literal, TypeAlias, TypedDict, cast
 
 import httpx
 from litellm.proxy.guardrails.guardrail_hooks.enkryptai import EnkryptAIGuardrails
-from litellm.types.proxy.guardrails.guardrail_hooks.enkryptai import EnkryptAIResponse
-from litellm.types.utils import GenericGuardrailAPIInputs
 from pydantic import JsonValue, TypeAdapter
 
 
@@ -78,6 +77,16 @@ class GuardrailRecord(TypedDict):
     guardrail_status: str
 
 
+class ResponseView(TypedDict, total=False):
+    details: dict[str, JsonValue]
+
+
+Apply: TypeAlias = Callable[
+    [dict[str, list[str]], dict[str, JsonValue], Literal["request", "response"], None],
+    Awaitable[None],
+]
+
+
 class RecordingTransport:
     def __init__(self, answer: Answer) -> None:
         self.answer = answer
@@ -103,7 +112,7 @@ def construct(settings: Settings) -> ConstructOutput:
     if hooks is None:
         raise ValueError("the guardrail has no supported event hooks")
     return {
-        "api_base": guardrail.api_base,
+        "api_base": TypeAdapter(str).validate_python(guardrail.api_base),
         "api_url": guardrail.api_url,
         "policy_name": guardrail.policy_name,
         "provider": guardrail.guardrail_provider,
@@ -133,38 +142,58 @@ def statuses(request_data: dict[str, JsonValue]) -> list[str]:
     return [record["guardrail_status"] for record in records]
 
 
+def attack_names(message: str) -> list[str]:
+    return [
+        line.removeprefix("- ").split(":", 1)[0].lower()
+        for line in message.splitlines()
+        if line.startswith("- ") and ":" in line
+    ]
+
+
+def attack_details(body: JsonValue, attacks: list[str]) -> dict[str, JsonValue]:
+    response = TypeAdapter(ResponseView).validate_python(body)
+    details = response.get("details")
+    if details is None:
+        return {}
+    return {
+        attack: details[attack] if attack in details else dict[str, JsonValue]()
+        for attack in attacks
+    }
+
+
 async def detect(call: DetectCall) -> DetectOutput:
     guard = build(call["settings"])
     transport = RecordingTransport(call["answer"])
     guard.async_handler.client = httpx.AsyncClient(
         transport=httpx.MockTransport(transport)
     )
-    apply, process = guard.apply_guardrail, guard._process_enkryptai_guardrails_response  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/enkryptai/enkryptai.py#L45-L499
+    send = cast(Apply, guard.apply_guardrail)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/enkryptai/enkryptai.py#L455-L499
     request_data: dict[str, JsonValue] = {}
     raised = False
-    returned: GenericGuardrailAPIInputs | None = None
+    attacks: list[str] = []
     try:
-        inputs: GenericGuardrailAPIInputs = {"texts": call["texts"]}
-        returned = await apply(inputs, request_data, "request", None)
-    except ValueError:
+        inputs: dict[str, list[str]] = {"texts": call["texts"]}
+        await send(inputs, request_data, "request", None)
+    except ValueError as error:
         raised = True
+        attacks = attack_names(str(error))
     except httpx.HTTPError:
         raised = True
-    response = TypeAdapter(EnkryptAIResponse).validate_python(call["answer"]["body"])
-    processed = TypeAdapter(ProcessedView).validate_python(process(response))
-    result = None if returned is None else TypeAdapter(ResultView).validate_python(returned)
+    details = attack_details(call["answer"]["body"], attacks)
+    result: ResultView | None = None if raised else {"texts": call["texts"]}
     return {
         "requests": [view(request) for request in transport.requests],
         "raised": raised,
         "statuses": statuses(request_data),
-        "processed": processed,
+        "processed": {"attacks": attacks, "details": details},
         "result": result,
     }
 
 
 def run(input_value: dict[str, JsonValue]) -> ConstructOutput | DetectOutput:
     if "construct" in input_value:
-        return construct(TypeAdapter(ConstructCall).validate_python(input_value["construct"]))
+        requested = TypeAdapter(ConstructCall).validate_python(input_value["construct"])
+        return construct(requested["settings"])
     if "detect" in input_value:
         return asyncio.run(detect(TypeAdapter(DetectCall).validate_python(input_value["detect"])))
     raise ValueError("unsupported operation")
