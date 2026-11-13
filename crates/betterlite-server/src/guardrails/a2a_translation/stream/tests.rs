@@ -63,7 +63,7 @@ async fn stream_joins_the_item_texts_and_scans_once() {
     let calls = guardrail.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].input_type, GuardrailInputType::Response);
-    assert_eq!(calls[0].inputs.texts, Some(vec!["Hello".to_owned()]));
+    assert_eq!(calls[0].inputs.texts, Some(vec!["hello".to_owned()]));
     assert_eq!(
         calls[0].request_data.get("responses_so_far"),
         Some(&GuardrailValue::Array(original))
@@ -344,7 +344,7 @@ async fn stream_unreadable_parts_are_an_error() {
 #[test]
 fn scan_key_holds_the_joined_text() {
     let key = get_streaming_scan_key(&chunks(&[FIRST, SECOND]));
-    assert_eq!(key.texts, vec!["Hello".to_owned()]);
+    assert_eq!(key.texts, vec!["hello".to_owned()]);
 }
 
 #[rstest]

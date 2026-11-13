@@ -75,7 +75,7 @@ async fn input_sends_the_text_parts_with_the_structured_message_and_model() {
 
 #[tokio::test]
 async fn input_skips_empty_text_and_non_text_parts() {
-    let guardrail = FakeGuardrail::replying(&["only"]);
+    let guardrail = FakeGuardrail::replying(&["x", "y"]);
     let mut data = body(
         r#"{"params":{"message":{"role":"user","parts":[{"kind":"text","text":""},{"kind":"data"},{"kind":"text","text":"a"},{"text":"no kind"},{"kind":"text","text":7},{"kind":"text","text":"b"}]}}}"#,
     );
@@ -84,13 +84,14 @@ async fn input_skips_empty_text_and_non_text_parts() {
         .unwrap();
     assert_eq!(
         guardrail.calls()[0].inputs.texts,
-        Some(vec!["a".to_owned()])
+        Some(vec!["a".to_owned(), "b".to_owned()])
     );
     assert_eq!(
-        part_text(&data, 2),
-        &GuardrailValue::Text("only".to_owned())
+        data,
+        body(
+            r#"{"params":{"message":{"role":"user","parts":[{"kind":"text","text":""},{"kind":"data"},{"kind":"text","text":"x"},{"text":"no kind"},{"kind":"text","text":7},{"kind":"text","text":"y"}]}}}"#
+        )
     );
-    assert_eq!(part_text(&data, 5), &GuardrailValue::Text("b".to_owned()));
 }
 
 #[rstest]
