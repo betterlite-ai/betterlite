@@ -9,12 +9,12 @@ use super::dates;
 use super::wire::SourceKey;
 
 #[derive(Clone, Copy)]
-pub(super) enum JsonText {
+pub(in crate::commands) enum JsonText {
     Pretty,
     Generated,
 }
 
-pub(super) fn write_json(
+pub(in crate::commands) fn write_json(
     value: &JsonValue,
     text: JsonText,
     stdout: &mut dyn Write,
@@ -56,8 +56,9 @@ pub(super) fn write_dry_run_table(
         let created = match key.created_at.as_deref() {
             None => String::new(),
             Some(text) => dates::parse_created_at(text)
-                .map_err(|_source| KeysError::CreatedAt {
+                .map_err(|source| KeysError::CreatedAt {
                     value: text.to_owned(),
+                    source,
                 })?
                 .format("%Y-%m-%d %H:%M")
                 .to_string(),

@@ -418,7 +418,7 @@ fn import_names_created_at_when_the_dry_run_table_cannot_read_it() {
     let (result, _stdout, _stderr) = support::run(KeysCommand::Import(options), &fixture);
 
     let error = result.expect_err("a created_at that is not a date-time is an error");
-    let KeysError::CreatedAt { value } = &error else {
+    let KeysError::CreatedAt { value, .. } = &error else {
         panic!("expected a created_at error, got {error:?}");
     };
     assert_eq!(value, "yesterday");

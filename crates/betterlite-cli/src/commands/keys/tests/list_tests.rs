@@ -1,3 +1,5 @@
+use rstest::rstest;
+
 use crate::commands::tables::OutputFormat;
 use crate::commands::tests::support::{Answer, TestServer};
 

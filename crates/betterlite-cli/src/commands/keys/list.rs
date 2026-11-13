@@ -45,11 +45,11 @@ pub(super) fn list_keys(options: &ListKeys, ports: KeysPorts<'_>) -> Result<(), 
 }
 
 fn write_keys_table(page: KeyListPage, stdout: &mut dyn Write) {
-    let keys = page.keys.unwrap_or_default();
-    let total = page.total_count.unwrap_or_default();
-    let count = keys.len();
+    let count = page.keys.len();
+    let total = page.total_count;
     let _showing = writeln!(stdout, "Showing {count} keys out of {total}");
-    let rows = keys
+    let rows = page
+        .keys
         .into_iter()
         .map(|key| {
             vec![

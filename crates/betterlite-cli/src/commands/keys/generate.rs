@@ -1,15 +1,17 @@
+use std::collections::BTreeMap;
 use std::io::Write;
 
 use betterlite_config::sections::settings::JsonValue;
 use http::Method;
 use rust_decimal::Decimal;
+use serde::de::DeserializeOwned;
 use serde_json::Number;
 
 use super::api::ApiError;
 use super::client::KeysClient;
 use super::output;
 use super::wire::KeyGenerateBody;
-use super::{GenerateKey, KeysError, KeysPorts, json_string_list};
+use super::{GenerateKey, KeysError, KeysPorts, UsageError, split_commas};
 
 const GENERATE_PATH: &str = "/key/generate";
 
@@ -40,63 +42,56 @@ pub(super) fn generate_key(options: &GenerateKey, ports: KeysPorts<'_>) -> Resul
 }
 
 fn generate_body(options: &GenerateKey) -> Result<Vec<u8>, KeysError> {
+    let aliases: Option<BTreeMap<String, String>> = parse_object(
+        options.aliases.as_deref(),
+        "aliases",
+        "a JSON object of strings",
+    )?;
     let body = KeyGenerateBody {
-        models: json_string_list(options.models.as_deref()),
-        aliases: parse_object(options.aliases.as_deref(), "aliases", ObjectValues::Strings)?,
+        models: split_commas(options.models.as_deref())
+            .map(|parts| parts.into_iter().map(JsonValue::String).collect()),
+        aliases: aliases.map(|entries| {
+            entries
+                .into_iter()
+                .map(|(alias, model)| (alias, JsonValue::String(model)))
+                .collect()
+        }),
         spend: parse_spend(options.spend)?,
         duration: options.duration.clone(),
         key_alias: options.key_alias.clone(),
         team_id: options.team_id.clone(),
         user_id: options.user_id.clone(),
         budget_id: options.budget_id.clone(),
-        config: parse_object(options.config.as_deref(), "config", ObjectValues::Any)?,
+        config: parse_object(options.config.as_deref(), "config", "a JSON object")?,
     };
     serde_json::to_vec(&body).map_err(KeysError::Json)
 }
 
-fn parse_spend(spend: Option<Decimal>) -> Result<Option<Number>, KeysError> {
+fn parse_spend(spend: Option<Decimal>) -> Result<Option<Number>, UsageError> {
     let Some(spend) = spend else {
         return Ok(None);
     };
     let number = spend
         .to_string()
         .parse::<Number>()
-        .map_err(|_source| KeysError::Usage {
-            message: String::from("the --spend option is not a JSON number"),
-        })?;
+        .map_err(|source| UsageError::Spend { source })?;
     Ok(Some(number))
 }
 
-fn parse_json(text: &str) -> Result<JsonValue, KeysError> {
-    serde_json::from_str(text).map_err(|source| KeysError::Usage {
-        message: format!("Invalid JSON: {source}"),
-    })
-}
-
-fn parse_object(
+fn parse_object<T: DeserializeOwned>(
     text: Option<&str>,
     option: &'static str,
-    values: ObjectValues,
-) -> Result<Option<JsonValue>, KeysError> {
+    expected: &'static str,
+) -> Result<Option<T>, UsageError> {
     let Some(text) = text else {
         return Ok(None);
     };
-    let value = parse_json(text)?;
-    let Some(entries) = value.as_object() else {
-        return Err(KeysError::Usage {
-            message: format!("the --{option} option must hold a JSON object"),
-        });
-    };
-    if matches!(values, ObjectValues::Strings) && entries.values().any(|entry| !entry.is_string()) {
-        return Err(KeysError::Usage {
-            message: format!("the --{option} option must hold a JSON object of strings"),
-        });
-    }
-    Ok(Some(value))
-}
-
-#[derive(Clone, Copy)]
-enum ObjectValues {
-    Strings,
-    Any,
+    let value: JsonValue =
+        serde_json::from_str(text).map_err(|source| UsageError::InvalidJson { source })?;
+    let parsed = serde_json::from_value(value).map_err(|source| UsageError::OptionType {
+        option,
+        expected,
+        source,
+    })?;
+    Ok(Some(parsed))
 }

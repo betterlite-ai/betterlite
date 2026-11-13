@@ -48,10 +48,12 @@ pub enum EncryptionError {
     Json(#[source] serde_json::Error),
     #[error("the response from {url} is not a JSON object")]
     NotAnObject { url: String },
-    #[error("the report field of the response is not a JSON object")]
-    ReportNotObject,
-    #[error("the residual_legacy field of the report is not an integer")]
-    ResidualNotInteger,
+    #[error("the response field {field} is not valid: {source}")]
+    ReplyField {
+        field: String,
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 pub fn run_encryption_command(

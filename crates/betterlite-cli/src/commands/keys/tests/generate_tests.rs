@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 use crate::commands::tests::support::{Answer, TestServer};
 
 use super::super::api::ApiError;
-use super::super::{KeysCommand, KeysError};
+use super::super::{KeysCommand, KeysError, UsageError};
 use super::support::{Fixture, body_json, generate, pretty, value};
 
 #[test]
@@ -138,10 +138,10 @@ fn generate_rejects_invalid_json_before_any_request(#[case] aliases: &str, #[cas
     let (result, stdout, _stderr) = support::run(KeysCommand::Generate(options), &fixture);
 
     let error = result.expect_err("invalid JSON is a usage error");
-    let KeysError::Usage { message } = &error else {
+    let KeysError::Usage(UsageError::InvalidJson { .. }) = &error else {
         panic!("expected a usage error, got {error:?}");
     };
-    assert!(message.starts_with("Invalid JSON: "), "{message}");
+    assert!(error.to_string().starts_with("Invalid JSON: "), "{error}");
     assert!(stdout.is_empty(), "{stdout}");
     assert!(server.finish().is_empty());
 }
@@ -164,10 +164,11 @@ fn generate_rejects_json_of_another_type_by_option_name(
     let (result, _stdout, _stderr) = support::run(KeysCommand::Generate(options), &fixture);
 
     let error = result.expect_err("another JSON type is a usage error");
-    let KeysError::Usage { message } = &error else {
+    let KeysError::Usage(UsageError::OptionType { option: named, .. }) = &error else {
         panic!("expected a usage error, got {error:?}");
     };
-    assert!(message.contains(option), "{message}");
+    assert_eq!(*named, option);
+    assert!(error.to_string().contains(option), "{error}");
     assert!(server.finish().is_empty());
 }
 

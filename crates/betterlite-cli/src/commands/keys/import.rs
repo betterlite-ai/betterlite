@@ -1,11 +1,10 @@
 use std::io::Write;
 
-use betterlite_config::sections::settings::JsonValue;
 use chrono::NaiveDateTime;
 use http::Method;
 
 use super::api::ApiError;
-use super::client::KeysClient;
+use super::client::{JsonReply, KeysClient};
 use super::dates;
 use super::output;
 use super::wire::{KeyGenerateBody, SourceKey, SourcePage};
@@ -151,7 +150,7 @@ impl Import<'_> {
                         source: error.into_inner(),
                     }
                 })?;
-            let page_keys = parsed.keys.unwrap_or_default();
+            let page_keys = parsed.keys;
             if page_keys.is_empty() {
                 break;
             }
@@ -174,12 +173,7 @@ impl Import<'_> {
                 .key_alias
                 .clone()
                 .unwrap_or_else(|| String::from(MISSING_ALIAS));
-            let outcome = serde_json::to_vec(&destination_body(key))
-                .map_err(KeysError::Json)
-                .and_then(|body| {
-                    self.destination
-                        .send(Method::POST, GENERATE_PATH, &[], Some(body))
-                });
+            let outcome = self.import_one(key);
             match outcome {
                 Ok(reply) => {
                     let _generated =
@@ -194,6 +188,13 @@ impl Import<'_> {
             }
         }
         (imported, failed)
+    }
+
+    fn import_one(&self, key: SourceKey) -> Result<JsonReply, KeysError> {
+        let body = serde_json::to_vec(&destination_body(key)).map_err(KeysError::Json)?;
+        self.destination
+            .send(Method::POST, GENERATE_PATH, &[], Some(body))
+            .map_err(KeysError::Client)
     }
 }
 
@@ -212,8 +213,9 @@ fn filter_keys(keys: Vec<SourceKey>, since: NaiveDateTime) -> Result<Vec<SourceK
             continue;
         };
         let created =
-            dates::parse_created_at(created_at).map_err(|_source| KeysError::CreatedAt {
+            dates::parse_created_at(created_at).map_err(|source| KeysError::CreatedAt {
                 value: created_at.to_owned(),
+                source,
             })?;
         if created >= since {
             kept.push(key);
@@ -223,21 +225,15 @@ fn filter_keys(keys: Vec<SourceKey>, since: NaiveDateTime) -> Result<Vec<SourceK
 }
 
 fn destination_body(key: SourceKey) -> KeyGenerateBody {
-    let aliases = key
-        .aliases
-        .map(|entries| JsonValue::Object(entries.into_iter().collect()));
-    let config = key
-        .config
-        .map(|entries| JsonValue::Object(entries.into_iter().collect()));
     KeyGenerateBody {
-        models: key.models.map(JsonValue::Array),
-        aliases,
+        models: key.models,
+        aliases: key.aliases,
         spend: key.spend,
         duration: None,
         key_alias: key.key_alias,
         team_id: key.team_id,
         user_id: key.user_id,
         budget_id: key.budget_id,
-        config,
+        config: key.config,
     }
 }

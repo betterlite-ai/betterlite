@@ -185,11 +185,10 @@ fn migrate_rejects_a_report_that_is_not_an_object() {
     );
 
     let error = result.expect_err("a report that is not an object is an error");
-    assert!(
-        matches!(error, EncryptionError::ReportNotObject),
-        "{error:?}"
-    );
-    assert!(error.to_string().contains("report"), "{error}");
+    let EncryptionError::ReplyField { field, .. } = &error else {
+        panic!("expected a reply field error, got {error:?}");
+    };
+    assert_eq!(field, "report");
 }
 
 #[rstest]
@@ -205,11 +204,10 @@ fn migrate_rejects_a_residual_that_is_not_an_integer(#[case] body: &str) {
     );
 
     let error = result.expect_err("a residual that is not an integer is an error");
-    assert!(
-        matches!(error, EncryptionError::ResidualNotInteger),
-        "{error:?}"
-    );
-    assert!(error.to_string().contains("residual_legacy"), "{error}");
+    let EncryptionError::ReplyField { field, .. } = &error else {
+        panic!("expected a reply field error, got {error:?}");
+    };
+    assert_eq!(field, "report.residual_legacy");
 }
 
 #[test]

@@ -13,7 +13,7 @@ use crate::cli_context::CliContext;
 use super::Client;
 use super::tables::OutputFormat;
 
-pub(in crate::commands) mod api;
+pub mod api;
 mod client;
 mod dates;
 mod delete;
@@ -132,11 +132,32 @@ pub struct KeysPorts<'run> {
 }
 
 #[derive(Debug, thiserror::Error)]
+pub enum UsageError {
+    #[error("Invalid JSON: {source}")]
+    InvalidJson {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the --{option} option must hold {expected}")]
+    OptionType {
+        option: &'static str,
+        expected: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the --spend option is not a JSON number")]
+    Spend {
+        #[source]
+        source: serde_json::Error,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
 pub enum KeysError {
     #[error("the command was aborted")]
     Aborted,
-    #[error("{message}")]
-    Usage { message: String },
+    #[error(transparent)]
+    Usage(#[from] UsageError),
     #[error("the response from {url} is not a JSON object")]
     NotAnObject { url: String },
     #[error("the response field {field} is not valid: {source}")]
@@ -154,8 +175,12 @@ pub enum KeysError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the created_at value '{value}' is not a date-time")]
-    CreatedAt { value: String },
+    #[error("the created_at value '{value}' is not a date-time: {source}")]
+    CreatedAt {
+        value: String,
+        #[source]
+        source: chrono::ParseError,
+    },
     #[error("the page number overflowed")]
     PageOverflow,
     #[error("cannot encode the JSON text")]
@@ -180,12 +205,6 @@ pub(super) fn split_commas(text: Option<&str>) -> Option<Vec<String>> {
         .map(|part| part.trim().to_owned())
         .collect();
     Some(parts)
-}
-
-pub(super) fn json_string_list(text: Option<&str>) -> Option<JsonValue> {
-    let parts = split_commas(text)?;
-    let values = parts.into_iter().map(JsonValue::String).collect();
-    Some(JsonValue::Array(values))
 }
 
 mod tests;
