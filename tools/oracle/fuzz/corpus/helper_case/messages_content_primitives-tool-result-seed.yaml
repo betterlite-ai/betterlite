@@ -1,0 +1,12 @@
+kind: helper
+name: messages-content-primitives-tool-result-seed
+call:
+  messages_content_primitives:
+    operation: tool_result_content
+    raw_content:
+      - a
+      - type: text
+        text: 7
+env: {}
+compare:
+  ignore: []

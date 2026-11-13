@@ -26,6 +26,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "cache_ttl"
+path = "fuzz_targets/cache_ttl.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "embedding_data_url"
 path = "fuzz_targets/embedding_data_url.rs"
 test = false
