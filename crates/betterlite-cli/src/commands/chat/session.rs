@@ -152,23 +152,20 @@ impl Session<'_> {
     }
 
     fn save(&mut self, input: &str) -> Result<(), ChatError> {
-        let Some(filename) = conversation_filename(input) else {
-            self.terminal.write_line(SAVE_USAGE)?;
+        let Some(filename) = self.filename_or_usage(input, SAVE_USAGE)? else {
             return Ok(());
         };
-        match self.store.save(&filename, &self.messages) {
-            Ok(()) => self
+        if let Err(error) = self.store.save(&filename, &self.messages) {
+            return self
                 .terminal
-                .write_line(&format!("Conversation saved to {filename}")),
-            Err(error) => self
-                .terminal
-                .write_line(&format!("Error saving conversation: {error}")),
+                .write_line(&format!("Error saving conversation: {error}"));
         }
+        self.terminal
+            .write_line(&format!("Conversation saved to {filename}"))
     }
 
     fn load(&mut self, input: &str) -> Result<(), ChatError> {
-        let Some(filename) = conversation_filename(input) else {
-            self.terminal.write_line(LOAD_USAGE)?;
+        let Some(filename) = self.filename_or_usage(input, LOAD_USAGE)? else {
             return Ok(());
         };
         match self.store.load(&filename) {
@@ -177,19 +174,26 @@ impl Session<'_> {
                 self.terminal
                     .write_line(&format!("Conversation loaded from {filename}"))
             }
-            Err(ConversationError::NotFound) => {
-                self.terminal
-                    .write_line(&format!("File not found: {filename}"))?;
-                self.fallback();
-                Ok(())
-            }
-            Err(error) => {
-                self.terminal
-                    .write_line(&format!("Error loading conversation: {error}"))?;
-                self.fallback();
-                Ok(())
-            }
+            Err(error) => self.report_load(&error, &filename),
         }
+    }
+
+    fn report_load(&mut self, error: &ConversationError, filename: &str) -> Result<(), ChatError> {
+        let text = match error {
+            ConversationError::NotFound => format!("File not found: {filename}"),
+            other => format!("Error loading conversation: {other}"),
+        };
+        self.terminal.write_line(&text)?;
+        self.fallback();
+        Ok(())
+    }
+
+    fn filename_or_usage(&mut self, input: &str, usage: &str) -> Result<Option<String>, ChatError> {
+        let Some(filename) = conversation_filename(input) else {
+            self.terminal.write_line(usage)?;
+            return Ok(None);
+        };
+        Ok(Some(filename))
     }
 
     fn switch_model(&mut self) -> Result<(), ChatError> {
