@@ -1,5 +1,3 @@
-// flags
-
 #[test]
 fn flag_default_applies_when_nothing_is_set() {
     let default = GuardrailValue::Boolean(false);

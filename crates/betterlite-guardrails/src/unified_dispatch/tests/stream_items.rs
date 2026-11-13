@@ -1,5 +1,3 @@
-// stream items
-
 #[test]
 fn stream_item_choices_are_read_from_the_array() {
     let item = chunk("hi");

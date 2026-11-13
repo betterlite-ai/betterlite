@@ -1,5 +1,3 @@
-// transform chunk
-
 #[test]
 fn transform_chunk_emits_only_the_new_text() {
     let mutated = text_map(&[(0, "Hello world")]);
