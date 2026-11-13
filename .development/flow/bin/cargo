@@ -1,6 +1,32 @@
 #!/usr/bin/env bash
 # next-slot.sh puts this folder first on PATH, so `cargo gate` in a task checkout runs the gate next-slot built once for that gate version, outside the sandbox
 real=${CARGO_HOME:-${HOME}/.cargo}/bin/cargo
+# stage 3: a dispatched agent builds nothing on this machine, since CI builds, lints and tests the pushed branch
+if [[ ${GATE_DISPATCHED:-} == 1 ]]; then
+  command=
+  for word in "$@"; do
+    [[ ${word} == [-+]* ]] && continue
+    command=${word}
+    break
+  done
+  listing=0
+  asking=0
+  # a version or help flag before -- builds nothing, and the gate's tools check asks cargo nextest, llvm-cov and mutants for their versions
+  for word in "$@"; do
+    [[ ${word} == -- ]] && break
+    [[ ${word} == --list ]] && listing=1
+    [[ ${word} == --version || ${word} == -V || ${word} == --help || ${word} == -h ]] && asking=1
+  done
+  case ${command} in
+    build | b | check | c | clippy | test | t | nextest | run | r | bench | doc | d | llvm-cov | rustc | rustdoc | fix | mutants)
+      if [[ ${asking} == 0 ]] && [[ ${command} != mutants || ${listing} == 0 ]]; then
+        printf 'cargo %s: a dispatched run builds nothing on this machine (stage 3). CI runs every check, clippy, the tests and mutants on the pull request, so commit your work and give your report. This refusal is final: never unset GATE_DISPATCHED or call cargo by its full path.\n' "${command}" >&2
+        exit 1
+      fi
+      ;;
+    *) ;;
+  esac
+fi
 if [[ ${1:-} == gate && -n ${GATE_SHARED_BUILDS:-} ]]; then
   tree=$(git rev-parse --verify --quiet HEAD:.development/gate) || exec "${real}" "$@"
   changes=$(git status --porcelain -- :/.development/gate) || exec "${real}" "$@"
