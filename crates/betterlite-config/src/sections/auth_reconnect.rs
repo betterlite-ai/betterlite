@@ -103,7 +103,7 @@ where
 
 // Python's max(lower, value): NaN and negative infinity select the lower bound, positive infinity stays
 fn lower_bounded(value: f64, minimum: f64) -> Duration {
-    let selected = if value > minimum { value } else { minimum };
+    let selected = value.max(minimum);
     if selected.is_finite() {
         Duration::try_from_secs_f64(selected).unwrap_or(Duration::MAX)
     } else {
