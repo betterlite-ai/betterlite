@@ -23,7 +23,10 @@ pub struct ImageConfig {
 
 #[must_use]
 pub fn supports_gemini_image_size(model: &str, catalog_supports: Option<bool>) -> bool {
-    catalog_supports.unwrap_or_else(|| !model.contains("2.5-flash"))
+    if let Some(supported) = catalog_supports {
+        return supported;
+    }
+    !model.contains("2.5-flash")
 }
 
 #[must_use]
@@ -35,7 +38,7 @@ pub fn is_gemini_image_model(model: &str) -> bool {
 }
 
 #[must_use]
-pub fn map_openai_size_to_gemini_image_config(
+pub fn map_size_to_image_config(
     size: &str,
     model: &str,
     image_size_support: Option<bool>,
@@ -53,9 +56,7 @@ pub fn map_openai_size_to_gemini_image_config(
     })
 }
 
-pub fn map_openai_image_params_to_gemini(
-    mapping: &ImageParamMapping<'_>,
-) -> Result<Object, GeminiImagePolicyError> {
+pub fn map_image_params(mapping: &ImageParamMapping<'_>) -> Result<Object, GeminiImagePolicyError> {
     let filtered: Vec<(&String, &Json)> = mapping
         .params
         .iter()
@@ -93,8 +94,7 @@ fn map_size(filtered: &[(&String, &Json)], mapping: &ImageParamMapping<'_>, mapp
     if mapping.optional_params.contains_key("size") {
         return;
     }
-    let Some(config) =
-        map_openai_size_to_gemini_image_config(size, mapping.model, mapping.image_size_support)
+    let Some(config) = map_size_to_image_config(size, mapping.model, mapping.image_size_support)
     else {
         return;
     };
@@ -125,8 +125,9 @@ fn map_explicit_image_config(
         return Ok(());
     };
     let parsed = match *raw {
-        Json::Text(text) if parse_string => serde_json::from_str::<Json>(text)
-            .map_err(|source| GeminiImagePolicyError::ImageConfigJson { source })?,
+        Json::Text(text) if parse_string => {
+            serde_json::from_str::<Json>(text).map_err(GeminiImagePolicyError::ImageConfigJson)?
+        }
         value => value.clone(),
     };
     if let Json::Object(config) = parsed {

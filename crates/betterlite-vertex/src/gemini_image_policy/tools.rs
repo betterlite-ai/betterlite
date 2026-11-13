@@ -1,20 +1,20 @@
 use betterlite_config::sections::vertex_schema_shaping::Settings;
 use betterlite_prompts::arguments::json::{Json, Object};
-use serde::Serialize;
 
 use super::error::GeminiImagePolicyError;
 use crate::gemini_tools::assembly::map_tools;
 use crate::gemini_tools::options::map_web_search_options;
 
-// LiteLLM's search-tool set, in its declaration order; url_context is absent from it
-const SEARCH_KEYS: [&str; 7] = [
+// LiteLLM's search-tool set, in the order its source lists the keys
+const SEARCH_KEYS: [&str; 8] = [
     "googleSearch",
     "googleSearchRetrieval",
     "enterpriseWebSearch",
-    "urlContext",
+    "url_context",
     "google_search",
     "google_search_retrieval",
     "enterprise_web_search",
+    "urlContext",
 ];
 
 pub fn map_gemini_image_tools_params(
@@ -26,7 +26,7 @@ pub fn map_gemini_image_tools_params(
     result.shift_remove("web_search_options");
     map_tools_param(non_default_params, &mut result, settings)?;
     add_web_search_tool(non_default_params, &mut result)?;
-    drop_search_tools_mixed_with_functions(&mut result);
+    drop_search_beside_functions(&mut result);
     dedupe_search_tools(&mut result);
     Ok(result)
 }
@@ -54,25 +54,17 @@ fn map_tools_param(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mapped = map_tools(&objects, include_server_side, None, settings)?;
-    let encoded = mapped
-        .tools
-        .iter()
-        .map(encode)
-        .collect::<Result<Vec<_>, _>>()?;
+    let encoded = serde_json::to_value(&mapped.tools)
+        .and_then(serde_json::from_value::<Vec<Json>>)
+        .map_err(GeminiImagePolicyError::Encode)?;
     add_tools(result, encoded)?;
-    if let Some(tool_config) = mapped.tool_config {
-        result.insert("toolConfig".to_owned(), encode(&tool_config)?);
+    if let Some(tool_config) = &mapped.tool_config {
+        let encoded = serde_json::to_value(tool_config)
+            .and_then(serde_json::from_value::<Json>)
+            .map_err(GeminiImagePolicyError::Encode)?;
+        result.insert("toolConfig".to_owned(), encoded);
     }
     Ok(())
-}
-
-fn encode<T>(value: &T) -> Result<Json, GeminiImagePolicyError>
-where
-    T: Serialize,
-{
-    let encoded =
-        serde_json::to_value(value).map_err(|source| GeminiImagePolicyError::Encode { source })?;
-    serde_json::from_value(encoded).map_err(|source| GeminiImagePolicyError::Encode { source })
 }
 
 fn add_tools(result: &mut Object, tools: Vec<Json>) -> Result<(), GeminiImagePolicyError> {
@@ -99,7 +91,10 @@ fn add_web_search_tool(
     {
         return Ok(());
     }
-    add_tools(result, vec![encode(&map_web_search_options(options))?])
+    let encoded = serde_json::to_value(map_web_search_options(options))
+        .and_then(serde_json::from_value::<Json>)
+        .map_err(GeminiImagePolicyError::Encode)?;
+    add_tools(result, vec![encoded])
 }
 
 fn is_search_tool(tool: &Json) -> bool {
@@ -119,7 +114,7 @@ fn has_function_declarations(tool: &Json) -> bool {
     )
 }
 
-fn drop_search_tools_mixed_with_functions(result: &mut Object) {
+fn drop_search_beside_functions(result: &mut Object) {
     let Some(Json::List(tools)) = result.get("tools") else {
         return;
     };

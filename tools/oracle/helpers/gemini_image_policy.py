@@ -36,7 +36,7 @@ class Input(TypedDict):
 def case_result(case: Case) -> JsonValue:
     catalog = case["catalog_supports_image_size"]
     if catalog is not None:
-        litellm.model_cost[case["model"]] = {"supports_image_size": catalog}
+        litellm.model_cost[case["model"]] = {"supports_image_size": catalog}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L563
     mapped = _ADAPTER.validate_python(
         map_openai_image_params_to_gemini(
             params=case["params"],

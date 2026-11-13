@@ -7,10 +7,7 @@ use crate::gemini_tools::error::GeminiToolsError;
 #[derive(Debug, Error)]
 pub enum GeminiImagePolicyError {
     #[error("`imageConfig` must be valid JSON when provided as a string.")]
-    ImageConfigJson {
-        #[source]
-        source: serde_json::Error,
-    },
+    ImageConfigJson(#[source] serde_json::Error),
     #[error("mapping the image tools failed")]
     Tools(#[from] GeminiToolsError),
     #[error("encoding a mapped image tool failed")]

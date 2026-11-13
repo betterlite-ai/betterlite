@@ -21,8 +21,8 @@ pub fn decode_image_options(bytes: &[u8]) -> Result<ImageOptions, GeminiImagePol
     if !trimmed.starts_with(['{', '[', '"']) {
         return Ok(ImageOptions::Size(trimmed.to_owned()));
     }
-    let decoded = serde_json::from_str::<Json>(trimmed)
-        .map_err(|source| GeminiImagePolicyError::OptionsJson { source })?;
+    let decoded =
+        serde_json::from_str::<Json>(trimmed).map_err(GeminiImagePolicyError::OptionsJson)?;
     match decoded {
         Json::Object(object) => Ok(ImageOptions::Config(object)),
         Json::Text(size) => Ok(ImageOptions::Size(size)),

@@ -1,38 +1,21 @@
 use betterlite_bedrock::image_models::sizing::parse_python_int;
 
-const ASPECT_RATIOS: [(&str, u64, u64); 14] = [
-    ("1:1", 1, 1),
-    ("1:4", 1, 4),
-    ("1:8", 1, 8),
-    ("2:3", 2, 3),
-    ("3:2", 3, 2),
-    ("3:4", 3, 4),
-    ("4:1", 4, 1),
-    ("4:3", 4, 3),
-    ("4:5", 4, 5),
-    ("5:4", 5, 4),
-    ("8:1", 8, 1),
-    ("9:16", 9, 16),
-    ("16:9", 16, 9),
-    ("21:9", 21, 9),
-];
-
-// LiteLLM lists four sizes per ratio; each is this base pair times 1, 2, 4 or 8
-const RATIO_SIZES: [(&str, u64, u64); 14] = [
-    ("1:1", 512, 512),
-    ("1:4", 256, 1024),
-    ("1:8", 192, 1536),
-    ("2:3", 424, 632),
-    ("3:2", 632, 424),
-    ("3:4", 448, 600),
-    ("4:1", 1024, 256),
-    ("4:3", 600, 448),
-    ("4:5", 464, 576),
-    ("5:4", 576, 464),
-    ("8:1", 1536, 192),
-    ("9:16", 384, 688),
-    ("16:9", 688, 384),
-    ("21:9", 792, 336),
+// name, ratio numerator and denominator, then the smallest listed size; LiteLLM lists that pair times 1, 2, 4 and 8
+const RATIOS: [(&str, u64, u64, u64, u64); 14] = [
+    ("1:1", 1, 1, 512, 512),
+    ("1:4", 1, 4, 256, 1024),
+    ("1:8", 1, 8, 192, 1536),
+    ("2:3", 2, 3, 424, 632),
+    ("3:2", 3, 2, 632, 424),
+    ("3:4", 3, 4, 448, 600),
+    ("4:1", 4, 1, 1024, 256),
+    ("4:3", 4, 3, 600, 448),
+    ("4:5", 4, 5, 464, 576),
+    ("5:4", 5, 4, 576, 464),
+    ("8:1", 8, 1, 1536, 192),
+    ("9:16", 9, 16, 384, 688),
+    ("16:9", 16, 9, 688, 384),
+    ("21:9", 21, 9, 792, 336),
 ];
 const SIZE_SCALES: [u64; 4] = [1, 2, 4, 8];
 
@@ -51,13 +34,12 @@ pub fn parse_dimensions(size: &str) -> Option<(u64, u64)> {
     if size == "auto" {
         return None;
     }
-    let (width_text, height_text) = size.to_lowercase().split_once('x')?;
-    Some((dimension(width_text)?, dimension(height_text)?))
-}
-
-fn dimension(text: &str) -> Option<u64> {
-    let value = u64::try_from(parse_python_int(text).ok()?).ok()?;
-    (value > 0 && value <= MAX_DIMENSION).then_some(value)
+    let lowered = size.to_lowercase();
+    let (width_text, height_text) = lowered.split_once('x')?;
+    let width = u64::try_from(parse_python_int(width_text).ok()?).ok()?;
+    let height = u64::try_from(parse_python_int(height_text).ok()?).ok()?;
+    let valid = 1..=MAX_DIMENSION;
+    (valid.contains(&width) && valid.contains(&height)).then_some((width, height))
 }
 
 #[must_use]
@@ -67,7 +49,7 @@ pub fn aspect_ratio(width: u64, height: u64) -> &'static str {
     }
     let requested = (u128::from(width), u128::from(height));
     let mut nearest: Option<(&'static str, (u128, u128))> = None;
-    for (ratio, numerator, denominator) in ASPECT_RATIOS {
+    for (ratio, numerator, denominator, _, _) in RATIOS {
         let distance = (
             scaled(numerator, requested.1),
             scaled(denominator, requested.0),
@@ -89,11 +71,11 @@ fn exact_ratio(width: u64, height: u64) -> Option<&'static str> {
         .iter()
         .find(|(known_width, known_height, _)| *known_width == width && *known_height == height)
     {
-        return Some(ratio);
+        return Some(*ratio);
     }
-    RATIO_SIZES
+    RATIOS
         .iter()
-        .find_map(|(ratio, base_width, base_height)| {
+        .find_map(|(ratio, _, _, base_width, base_height)| {
             SIZE_SCALES
                 .iter()
                 .any(|scale| {
@@ -112,13 +94,12 @@ fn scaled(factor: u64, dimension: u128) -> u128 {
 
 // compares |ln(left)| with |ln(right)| as exact rationals
 fn distance_is_closer(left: (u128, u128), right: (u128, u128)) -> bool {
+    let product = left.0.checked_mul(right.0).zip(left.1.checked_mul(right.1));
     match (left.0 >= left.1, right.0 >= right.1) {
         (true, true) => fraction_less(left, right),
         (false, false) => fraction_less(right, left),
-        (true, false) => fraction_product(left, right)
-            .is_some_and(|(numerator, denominator)| numerator < denominator),
-        (false, true) => fraction_product(left, right)
-            .is_some_and(|(numerator, denominator)| numerator > denominator),
+        (true, false) => product.is_some_and(|(numerator, denominator)| numerator < denominator),
+        (false, true) => product.is_some_and(|(numerator, denominator)| numerator > denominator),
     }
 }
 
@@ -127,10 +108,6 @@ fn fraction_less(left: (u128, u128), right: (u128, u128)) -> bool {
         .checked_mul(right.1)
         .zip(left.1.checked_mul(right.0))
         .is_some_and(|(left_cross, right_cross)| left_cross < right_cross)
-}
-
-fn fraction_product(left: (u128, u128), right: (u128, u128)) -> Option<(u128, u128)> {
-    left.0.checked_mul(right.0).zip(left.1.checked_mul(right.1))
 }
 
 #[must_use]

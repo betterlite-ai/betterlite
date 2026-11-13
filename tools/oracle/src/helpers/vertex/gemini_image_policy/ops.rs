@@ -2,16 +2,17 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::vertex_schema_shaping::{Raw, Settings};
+use betterlite_models::decisions::Json as ResponseJson;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_vertex::gemini_image_policy::error::GeminiImagePolicyError;
 use betterlite_vertex::gemini_image_policy::generation::{
-    get_gemini_image_generation_config, get_gemini_image_web_search_requests,
+    image_generation_config, image_web_search_requests,
 };
 use betterlite_vertex::gemini_image_policy::policy::{
-    ImageParamMapping, is_gemini_image_model, map_openai_image_params_to_gemini,
-    supports_gemini_image_size,
+    ImageParamMapping, is_gemini_image_model, map_image_params, supports_gemini_image_size,
 };
 use betterlite_vertex::gemini_image_policy::tools::map_gemini_image_tools_params;
+use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -34,7 +35,7 @@ struct Case {
     optional_params: Object,
     parse_image_config_string: bool,
     pre_mapped: Option<Object>,
-    response: Object,
+    response: IndexMap<String, ResponseJson>,
 }
 
 pub(super) fn run_cases(input: &Input) -> HelperResult {
@@ -56,7 +57,7 @@ fn case_value(case: &Case, settings: &Settings) -> Result<Value, Box<HelperError
         image_size_support: case.catalog_supports_image_size,
         parse_image_config_string: case.parse_image_config_string,
     };
-    let mut mapped = map_openai_image_params_to_gemini(&mapping).map_err(failure)?;
+    let mut mapped = map_image_params(&mapping).map_err(failure)?;
     if let Some(pre_mapped) = &case.pre_mapped {
         for (key, value) in pre_mapped {
             mapped.insert(key.clone(), value.clone());
@@ -68,23 +69,27 @@ fn case_value(case: &Case, settings: &Settings) -> Result<Value, Box<HelperError
         "is_image_model": is_gemini_image_model(&case.model),
         "mapped": mapped,
         "tools": tools,
-        "generation": get_gemini_image_generation_config(&case.model, &tools, case.catalog_supports_image_size),
-        "web_search_requests": get_gemini_image_web_search_requests(&case.response),
+        "generation": image_generation_config(&case.model, &tools, case.catalog_supports_image_size),
+        "web_search_requests": image_web_search_requests(&case.response),
     }))
 }
 
 fn failure(error: GeminiImagePolicyError) -> Box<HelperError> {
-    let unsupported = matches!(error, GeminiImagePolicyError::ImageConfigJson { .. });
+    let (class, status, message) = if matches!(error, GeminiImagePolicyError::ImageConfigJson(_)) {
+        (
+            "UnsupportedParamsError",
+            Some(400),
+            format!("litellm.UnsupportedParamsError: {error}"),
+        )
+    } else {
+        ("ValueError", None, error.to_string())
+    };
     Box::new(HelperError {
-        class: String::from(if unsupported {
-            "UnsupportedParamsError"
-        } else {
-            "ValueError"
-        }),
-        status: unsupported.then_some(400),
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
+        class: class.to_owned(),
+        status,
+        error_type: Some(None),
+        param: Some(None),
+        code: Some(None),
+        message,
     })
 }

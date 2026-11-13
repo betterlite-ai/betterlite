@@ -58,5 +58,17 @@ call:
             - urlContext: {}
             - {googleSearch: {}, urlContext: {}}
         response: {}
+      - model: gemini-b1334-image
+        catalog_supports_image_size: null
+        params: {}
+        supported_params: [n, size, tools, web_search_options]
+        optional_params: {}
+        parse_image_config_string: false
+        pre_mapped:
+          tools:
+            - url_context: {}
+            - url_context: {}
+            - urlContext: {}
+        response: {}
 env: {}
 compare: {ignore: []}
