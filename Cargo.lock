@@ -2451,6 +2451,7 @@ dependencies = [
  "betterlite",
  "betterlite-auth",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-core",
  "betterlite-db",
  "betterlite-guardrails",
