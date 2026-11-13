@@ -1,10 +1,12 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use betterlite_bedrock::signing::error::SigningError;
 use betterlite_bedrock::signing::request::AwsSignedRequest;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 
-use crate::bedrock_request::{_prepare_request, PrepareError, PrepareInput, RequestEnvironment};
+use crate::bedrock_request::{PrepareError, PrepareInput, RequestEnvironment, prepare_request};
 use crate::bedrock_transport::BedrockGuardrail;
 use crate::bedrock_transport::test_support::{aws_credentials, guardrail_with, signing_time};
 
@@ -13,7 +15,7 @@ fn prepare_with(
     extra_headers: &[(String, String)],
 ) -> Result<AwsSignedRequest, PrepareError> {
     let static_credentials = aws_credentials();
-    _prepare_request(
+    prepare_request(
         guardrail,
         PrepareInput {
             environment: RequestEnvironment::default(),
@@ -24,7 +26,7 @@ fn prepare_with(
             request_path: Some("/guardrail-checks/invoke"),
             now: signing_time(),
         },
-        &serde_json::json!({"source": "INPUT"}),
+        &BTreeMap::from([("source", "INPUT")]),
     )
 }
 
@@ -67,9 +69,29 @@ fn sigv4_override_keeps_the_other_extra_headers() {
 }
 
 #[test]
+fn sigv4_override_replaces_the_default_content_type_once() {
+    let guardrail = guardrail_with(OpaqueParams::default());
+    let extra = vec![(
+        "Content-Type".to_owned(),
+        "application/x-amz-json-1.1".to_owned(),
+    )];
+    let signed = prepare_with(&guardrail, &extra).expect("the signed request");
+    assert_eq!(
+        header(&signed, "Content-Type"),
+        Some("application/x-amz-json-1.1")
+    );
+    let content_types = signed
+        .headers
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+        .count();
+    assert_eq!(content_types, 1);
+}
+
+#[test]
 fn sigv4_override_requires_credentials() {
     let guardrail = guardrail_with(OpaqueParams::default());
-    let error = _prepare_request(
+    let error = prepare_request(
         &guardrail,
         PrepareInput {
             environment: RequestEnvironment::default(),
@@ -80,7 +102,7 @@ fn sigv4_override_requires_credentials() {
             request_path: Some("/guardrail-checks/invoke"),
             now: signing_time(),
         },
-        &serde_json::json!({"source": "INPUT"}),
+        &BTreeMap::from([("source", "INPUT")]),
     )
     .expect_err("the missing credentials");
     assert!(matches!(

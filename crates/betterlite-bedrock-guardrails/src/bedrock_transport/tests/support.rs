@@ -52,7 +52,7 @@ pub(crate) fn guardrail_init() -> BedrockGuardrailInit {
 pub(crate) fn guardrail_with(optional_params: OpaqueParams) -> BedrockGuardrail {
     let mut init = guardrail_init();
     init.optional_params = optional_params;
-    BedrockGuardrail::__init(init).expect("the test guardrail")
+    BedrockGuardrail::__init__(init).expect("the test guardrail")
 }
 
 pub(crate) fn aws_credentials() -> Credentials {
@@ -141,6 +141,7 @@ pub(crate) struct Sent {
     pub(crate) headers: Vec<(String, String)>,
     pub(crate) body: Vec<u8>,
     pub(crate) deadline: Duration,
+    pub(crate) sensitive_headers: Vec<String>,
 }
 
 #[derive(Clone, Default)]
@@ -198,12 +199,19 @@ impl GuardrailTransport for RecordingTransport {
                 )
             })
             .collect();
+        let sensitive_headers = request
+            .headers
+            .iter()
+            .filter(|(_, value)| value.is_sensitive())
+            .map(|(name, _)| name.to_string())
+            .collect();
         let sent = Sent {
             method: request.method.to_string(),
             url: request.url.to_string(),
             headers,
             body,
             deadline: request.deadline,
+            sensitive_headers,
         };
         self.sent
             .lock()

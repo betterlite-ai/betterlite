@@ -2,7 +2,7 @@
 
 use rstest::rstest;
 
-use crate::guardrail_error_response::_parse_error_response;
+use crate::guardrail_error_response::parse_error_response;
 
 const DEFAULT_MESSAGE: &str = "Bedrock guardrail request failed";
 
@@ -17,13 +17,13 @@ const DEFAULT_MESSAGE: &str = "Bedrock guardrail request failed";
 #[case::non_string_message(400, r#"{"message":42}"#, DEFAULT_MESSAGE)]
 #[case::nested_non_string_message(400, r#"{"error":{"message":42}}"#, DEFAULT_MESSAGE)]
 fn error_parsing(#[case] status: u16, #[case] body: &str, #[case] expected: &str) {
-    let (parsed_status, message) = _parse_error_response(status, body.as_bytes());
+    let (parsed_status, message) = parse_error_response(status, body.as_bytes());
     assert_eq!(parsed_status, status);
     assert_eq!(message, expected);
 }
 
 #[test]
 fn error_parsing_keeps_the_status_code() {
-    let (status, _message) = _parse_error_response(429, br#"{"message":"throttled"}"#);
+    let (status, _message) = parse_error_response(429, br#"{"message":"throttled"}"#);
     assert_eq!(status, 429);
 }

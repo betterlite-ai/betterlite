@@ -44,7 +44,7 @@ pub struct PrepareInput<'text> {
     pub now: SystemTime,
 }
 
-pub fn _prepare_request<T: Serialize>(
+pub fn prepare_request<T: Serialize>(
     guardrail: &BedrockGuardrail,
     input: PrepareInput<'_>,
     data: &T,

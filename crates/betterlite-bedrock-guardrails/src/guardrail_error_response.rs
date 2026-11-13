@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 const DEFAULT_MESSAGE: &str = "Bedrock guardrail request failed";
 
 #[must_use]
-pub fn _parse_error_response(status_code: u16, body: &[u8]) -> (u16, String) {
+pub fn parse_error_response(status_code: u16, body: &[u8]) -> (u16, String) {
     // an error body that is not UTF-8 takes the default message rather than a replacement-decoded one
     let Ok(text) = from_utf8(body) else {
         return (status_code, DEFAULT_MESSAGE.to_owned());

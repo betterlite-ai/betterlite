@@ -1,10 +1,12 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use betterlite_bedrock::signing::request::AwsSignedRequest;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use secrecy::SecretString;
 
-use crate::bedrock_request::{_prepare_request, PrepareInput, RequestEnvironment};
+use crate::bedrock_request::{PrepareInput, RequestEnvironment, prepare_request};
 use crate::bedrock_transport::BedrockGuardrail;
 use crate::bedrock_transport::test_support::{aws_credentials, guardrail_with, signing_time};
 
@@ -14,7 +16,7 @@ fn prepare(
     environment: RequestEnvironment<'_>,
 ) -> AwsSignedRequest {
     let static_credentials = aws_credentials();
-    _prepare_request(
+    prepare_request(
         guardrail,
         PrepareInput {
             environment,
@@ -25,7 +27,7 @@ fn prepare(
             request_path: Some("/guardrail-checks/invoke"),
             now: signing_time(),
         },
-        &serde_json::json!({"source": "INPUT"}),
+        &BTreeMap::from([("source", "INPUT")]),
     )
     .expect("the signed request")
 }

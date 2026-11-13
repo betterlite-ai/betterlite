@@ -10,7 +10,7 @@ use betterlite_config::sections::guardrail_translation::bedrock_streaming::{
 };
 
 use crate::constants::GUARDRAIL_NAME;
-use crate::guardrail_checks::{_normalize_checks, ChecksInput};
+use crate::guardrail_checks::{ChecksInput, normalize_checks};
 
 #[path = "bedrock_transport/apply_guardrail_path/tests.rs"]
 mod apply_guardrail_path;
@@ -48,11 +48,11 @@ mod transport_logging;
 #[derive(Debug, thiserror::Error)]
 pub enum BedrockGuardrailError {
     #[error(
-        "Bedrock guardrail accepts either guardrailIdentifier/guardrailVersion (ApplyGuardrail) or checks (InvokeGuardrailChecks), not both"
+        "Bedrock guardrail accepts either 'guardrailIdentifier'/'guardrailVersion' (ApplyGuardrail) or 'checks' (InvokeGuardrailChecks), not both."
     )]
     BothApiPaths,
     #[error(
-        "the checks block holds only unrecognized or empty keys {keys:?}; known keys are contentFilter, promptAttack and sensitiveInformation"
+        "BedrockGuardrail: 'checks' block contained only unrecognized or empty keys {keys:?}. Known keys: [\"contentFilter\", \"promptAttack\", \"sensitiveInformation\"]. Fix the guardrail config or remove the 'checks' block to use ApplyGuardrail mode."
     )]
     NoUsableChecks { keys: Vec<String> },
     #[error("the Bedrock streaming parameters do not decode")]
@@ -112,14 +112,14 @@ pub struct BedrockGuardrail {
 impl BedrockGuardrail {
     pub fn __init__(init: BedrockGuardrailInit) -> Result<Self, BedrockGuardrailError> {
         let streaming = streaming_params(&init)?;
-        let checks = _normalize_checks(init.checks)?;
+        let checks = normalize_checks(init.checks)?;
         if checks.is_some()
             && (init.guardrail_identifier.is_some() || init.guardrail_version.is_some())
         {
             return Err(BedrockGuardrailError::BothApiPaths);
         }
         let mut guardrail = Self::build(init, checks);
-        guardrail._set_streaming_params(streaming);
+        guardrail.set_streaming_params(streaming);
         warn_about_masking(&guardrail);
         log_initialized(&guardrail);
         Ok(guardrail)
@@ -153,7 +153,7 @@ impl BedrockGuardrail {
         }
     }
 
-    fn _set_streaming_params(&mut self, streaming: BedrockGuardrailStreamParams) {
+    fn set_streaming_params(&mut self, streaming: BedrockGuardrailStreamParams) {
         self.buffer_until_moderated = streaming.buffer_until_moderated;
         self.streaming_sampling_rate = streaming.streaming_sampling_rate;
         self.streaming_end_of_stream_only = streaming.streaming_end_of_stream_only;

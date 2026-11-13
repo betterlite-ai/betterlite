@@ -21,7 +21,7 @@ fn sample_checks() -> ChecksInput {
 
 #[test]
 fn init_sets_the_identity_and_streaming_defaults() {
-    let guardrail = BedrockGuardrail::__init(guardrail_init()).expect("the guardrail");
+    let guardrail = BedrockGuardrail::__init__(guardrail_init()).expect("the guardrail");
     assert_eq!(guardrail.guardrail_provider, "bedrock");
     assert_eq!(guardrail.guardrail_identifier.as_deref(), Some("gr-1"));
     assert_eq!(guardrail.guardrail_version.as_deref(), Some("1"));
@@ -61,7 +61,7 @@ fn init_sets_streaming_params_from_the_explicit_options() {
     init.streaming_sampling_rate = Some(SamplingRate(7));
     init.streaming_end_of_stream_only = Some(true);
     init.buffer_release_on_scan = Some(true);
-    let guardrail = BedrockGuardrail::__init(init).expect("the guardrail");
+    let guardrail = BedrockGuardrail::__init__(init).expect("the guardrail");
     assert!(!guardrail.buffer_until_moderated);
     assert_eq!(guardrail.streaming_sampling_rate, SamplingRate(7));
     assert!(guardrail.streaming_end_of_stream_only);
@@ -72,8 +72,12 @@ fn init_sets_streaming_params_from_the_explicit_options() {
 fn init_rejects_the_two_api_paths_together() {
     let mut init = guardrail_init();
     init.checks = Some(sample_checks());
-    let error = BedrockGuardrail::__init(init).expect_err("both API paths");
+    let error = BedrockGuardrail::__init__(init).expect_err("both API paths");
     assert!(matches!(error, BedrockGuardrailError::BothApiPaths));
+    assert_eq!(
+        error.to_string(),
+        "Bedrock guardrail accepts either 'guardrailIdentifier'/'guardrailVersion' (ApplyGuardrail) or 'checks' (InvokeGuardrailChecks), not both."
+    );
 }
 
 #[test]
@@ -82,7 +86,7 @@ fn init_accepts_checks_without_an_identifier() {
     init.guardrail_identifier = None;
     init.guardrail_version = None;
     init.checks = Some(sample_checks());
-    let guardrail = BedrockGuardrail::__init(init).expect("the guardrail");
+    let guardrail = BedrockGuardrail::__init__(init).expect("the guardrail");
     let normalized = guardrail.checks.expect("the normalized checks");
     assert!(normalized.contains_key("contentFilter"));
 }
@@ -95,16 +99,49 @@ fn init_warns_that_masking_does_nothing_in_checks_mode() {
     init.guardrail_version = None;
     init.checks = Some(sample_checks());
     init.mask_request_content = true;
-    BedrockGuardrail::__init(init).expect("the guardrail");
+    BedrockGuardrail::__init__(init).expect("the guardrail");
     let warnings = captured.warnings();
     assert_eq!(warnings.len(), 1);
     assert!(warnings[0].contains("mask_request_content"));
 }
 
 #[test]
+fn init_warns_that_response_masking_does_nothing_in_checks_mode() {
+    let (captured, _guard) = capture();
+    let mut init = guardrail_init();
+    init.guardrail_identifier = None;
+    init.guardrail_version = None;
+    init.checks = Some(sample_checks());
+    init.mask_response_content = true;
+    BedrockGuardrail::__init__(init).expect("the guardrail");
+    assert_eq!(captured.warnings().len(), 1);
+}
+
+#[test]
+fn init_does_not_warn_about_masking_without_checks() {
+    let (captured, _guard) = capture();
+    let mut init = guardrail_init();
+    init.mask_request_content = true;
+    init.mask_response_content = true;
+    BedrockGuardrail::__init__(init).expect("the guardrail");
+    assert!(captured.warnings().is_empty());
+}
+
+#[test]
+fn init_does_not_warn_when_checks_have_no_masking() {
+    let (captured, _guard) = capture();
+    let mut init = guardrail_init();
+    init.guardrail_identifier = None;
+    init.guardrail_version = None;
+    init.checks = Some(sample_checks());
+    BedrockGuardrail::__init__(init).expect("the guardrail");
+    assert!(captured.warnings().is_empty());
+}
+
+#[test]
 fn init_keeps_the_explicit_timeout() {
     let mut init = guardrail_init();
     init.timeout = Some(Duration::from_secs(30));
-    let guardrail = BedrockGuardrail::__init(init).expect("the guardrail");
+    let guardrail = BedrockGuardrail::__init__(init).expect("the guardrail");
     assert_eq!(guardrail.timeout, Some(Duration::from_secs(30)));
 }

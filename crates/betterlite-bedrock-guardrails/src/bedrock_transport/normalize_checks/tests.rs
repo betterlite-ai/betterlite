@@ -9,7 +9,7 @@ use betterlite_config::sections::guardrail_translation::bedrock_checks::{
 };
 
 use crate::bedrock_transport::test_support::capture;
-use crate::guardrail_checks::{_normalize_checks, ChecksInput};
+use crate::guardrail_checks::{ChecksInput, normalize_checks};
 
 fn model() -> BedrockChecksConfigModel {
     BedrockChecksConfigModel {
@@ -25,7 +25,7 @@ fn model() -> BedrockChecksConfigModel {
 
 #[test]
 fn normalize_checks_reads_a_model_into_the_wire_keys() {
-    let normalized = _normalize_checks(Some(ChecksInput::Model(model())))
+    let normalized = normalize_checks(Some(ChecksInput::Model(model())))
         .expect("normalized")
         .expect("checks");
     assert_eq!(
@@ -44,7 +44,7 @@ fn normalize_checks_drops_unknown_keys_and_warns() {
         ),
         ("unknownCheck".to_owned(), GuardrailValue::Boolean(true)),
     ]);
-    let normalized = _normalize_checks(Some(ChecksInput::Mapping(input)))
+    let normalized = normalize_checks(Some(ChecksInput::Mapping(input)))
         .expect("normalized")
         .expect("checks");
     assert!(normalized.contains_key("contentFilter"));
@@ -63,7 +63,7 @@ fn normalize_checks_drops_null_known_keys() {
             GuardrailValue::Object(BTreeMap::new()),
         ),
     ]);
-    let normalized = _normalize_checks(Some(ChecksInput::Mapping(input)))
+    let normalized = normalize_checks(Some(ChecksInput::Mapping(input)))
         .expect("normalized")
         .expect("checks");
     assert_eq!(
@@ -74,13 +74,13 @@ fn normalize_checks_drops_null_known_keys() {
 
 #[test]
 fn normalize_checks_without_checks_is_none() {
-    assert!(_normalize_checks(None).expect("normalized").is_none());
+    assert!(normalize_checks(None).expect("normalized").is_none());
 }
 
 #[test]
 fn normalize_checks_with_an_empty_mapping_is_none() {
     assert!(
-        _normalize_checks(Some(ChecksInput::Mapping(BTreeMap::new())))
+        normalize_checks(Some(ChecksInput::Mapping(BTreeMap::new())))
             .expect("normalized")
             .is_none()
     );

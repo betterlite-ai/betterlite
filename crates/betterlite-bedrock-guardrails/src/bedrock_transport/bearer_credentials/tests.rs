@@ -7,7 +7,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use secrecy::SecretString;
 
-use crate::bedrock_credentials::{_load_credentials, RegionEnvironment};
+use crate::bedrock_credentials::{RegionEnvironment, load_credentials};
 use crate::bedrock_transport::test_support::{RecordingCredentials, guardrail_with};
 
 #[tokio::test]
@@ -15,7 +15,7 @@ async fn bearer_credentials_are_none_and_skip_the_aws_source() {
     let guardrail = guardrail_with(OpaqueParams::default());
     let source = RecordingCredentials::failing(CredentialError::MissingCredentials);
     let token = SecretString::from("bearer-token".to_owned());
-    let (credentials, region) = _load_credentials(
+    let (credentials, region) = load_credentials(
         &guardrail,
         Some(&token),
         RegionEnvironment::default(),
@@ -37,7 +37,7 @@ async fn bearer_credentials_keep_the_configured_region() {
     let guardrail = guardrail_with(params);
     let source = RecordingCredentials::failing(CredentialError::MissingCredentials);
     let token = SecretString::from("bearer-token".to_owned());
-    let (credentials, region) = _load_credentials(
+    let (credentials, region) = load_credentials(
         &guardrail,
         Some(&token),
         RegionEnvironment::default(),

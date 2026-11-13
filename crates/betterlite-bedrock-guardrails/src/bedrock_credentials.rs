@@ -54,7 +54,7 @@ impl CredentialSource for AwsCredentialResolver<'_> {
     }
 }
 
-pub async fn _load_credentials<C: CredentialSource>(
+pub async fn load_credentials<C: CredentialSource>(
     guardrail: &BedrockGuardrail,
     bearer_token: Option<&SecretString>,
     environment: RegionEnvironment<'_>,

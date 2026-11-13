@@ -7,7 +7,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use secrecy::SecretString;
 
-use crate::bedrock_credentials::{_load_credentials, CredentialLoadError, RegionEnvironment};
+use crate::bedrock_credentials::{CredentialLoadError, RegionEnvironment, load_credentials};
 use crate::bedrock_transport::test_support::{RecordingCredentials, guardrail_with};
 
 fn params_with_region(region: &str) -> OpaqueParams {
@@ -21,7 +21,7 @@ async fn region_of(params: OpaqueParams, environment: RegionEnvironment<'_>) -> 
     let guardrail = guardrail_with(params);
     let source = RecordingCredentials::failing(CredentialError::MissingCredentials);
     let token = SecretString::from("token".to_owned());
-    let (_credentials, region) = _load_credentials(&guardrail, Some(&token), environment, &source)
+    let (_credentials, region) = load_credentials(&guardrail, Some(&token), environment, &source)
         .await
         .expect("the region");
     region
@@ -84,7 +84,7 @@ async fn region_resolution_defaults_to_us_west_2() {
 async fn region_resolution_rejects_an_invalid_region() {
     let guardrail = guardrail_with(params_with_region("EU_WEST"));
     let source = RecordingCredentials::failing(CredentialError::MissingCredentials);
-    let error = _load_credentials(&guardrail, None, RegionEnvironment::default(), &source)
+    let error = load_credentials(&guardrail, None, RegionEnvironment::default(), &source)
         .await
         .expect_err("the invalid region");
     assert!(matches!(error, CredentialLoadError::Endpoint(_)));

@@ -5,7 +5,7 @@ use betterlite_config::sections::guardrail_translation::BedrockChecksConfigModel
 use serde::Serialize;
 
 use crate::bedrock_transport::BedrockGuardrailError;
-use crate::constants::_BEDROCK_CHECKS_KNOWN_KEYS;
+use crate::constants::BEDROCK_CHECKS_KNOWN_KEYS;
 
 #[derive(Debug, Clone)]
 pub enum ChecksInput {
@@ -13,7 +13,7 @@ pub enum ChecksInput {
     Mapping(BTreeMap<String, GuardrailValue>),
 }
 
-pub fn _normalize_checks(
+pub fn normalize_checks(
     checks: Option<ChecksInput>,
 ) -> Result<Option<BTreeMap<String, GuardrailValue>>, BedrockGuardrailError> {
     let Some(input) = checks else {
@@ -25,17 +25,17 @@ pub fn _normalize_checks(
     };
     let unknown: Vec<String> = raw
         .keys()
-        .filter(|key| !_BEDROCK_CHECKS_KNOWN_KEYS.contains(&key.as_str()))
+        .filter(|key| !BEDROCK_CHECKS_KNOWN_KEYS.contains(&key.as_str()))
         .cloned()
         .collect();
     if !unknown.is_empty() {
         tracing::warn!(
-            "BedrockGuardrail: unrecognized check keys {unknown:?} are ignored; known keys are contentFilter, promptAttack and sensitiveInformation"
+            "BedrockGuardrail: unrecognized check key(s) {unknown:?} will be ignored; recognized keys will still be used for InvokeGuardrailChecks. Known keys: [\"contentFilter\", \"promptAttack\", \"sensitiveInformation\"]."
         );
     }
     let mut cleaned = BTreeMap::new();
     for (key, value) in &raw {
-        if _BEDROCK_CHECKS_KNOWN_KEYS.contains(&key.as_str())
+        if BEDROCK_CHECKS_KNOWN_KEYS.contains(&key.as_str())
             && !matches!(value, GuardrailValue::Null)
         {
             cleaned.insert(key.clone(), value.clone());

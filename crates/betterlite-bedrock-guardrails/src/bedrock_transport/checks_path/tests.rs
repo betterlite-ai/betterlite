@@ -1,16 +1,18 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use betterlite_bedrock::signing::request::AwsSignedRequest;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 
-use crate::bedrock_request::{_prepare_request, PrepareError, PrepareInput, RequestEnvironment};
+use crate::bedrock_request::{PrepareError, PrepareInput, RequestEnvironment, prepare_request};
 use crate::bedrock_transport::BedrockGuardrail;
 use crate::bedrock_transport::test_support::{aws_credentials, guardrail_with, signing_time};
-use crate::constants::_BEDROCK_CHECKS_PATH;
+use crate::constants::BEDROCK_CHECKS_PATH;
 
 fn prepare(guardrail: &BedrockGuardrail) -> Result<AwsSignedRequest, PrepareError> {
     let static_credentials = aws_credentials();
-    _prepare_request(
+    prepare_request(
         guardrail,
         PrepareInput {
             environment: RequestEnvironment::default(),
@@ -18,10 +20,10 @@ fn prepare(guardrail: &BedrockGuardrail) -> Result<AwsSignedRequest, PrepareErro
             region: "us-west-2",
             api_key: None,
             extra_headers: &[],
-            request_path: Some(_BEDROCK_CHECKS_PATH),
+            request_path: Some(BEDROCK_CHECKS_PATH),
             now: signing_time(),
         },
-        &serde_json::json!({"messages": []}),
+        &BTreeMap::from([("source", "INPUT")]),
     )
 }
 

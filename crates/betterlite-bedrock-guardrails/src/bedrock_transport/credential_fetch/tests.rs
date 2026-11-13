@@ -8,7 +8,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::bedrock_credentials::{_load_credentials, CredentialLoadError, RegionEnvironment};
+use crate::bedrock_credentials::{CredentialLoadError, RegionEnvironment, load_credentials};
 use crate::bedrock_transport::test_support::{
     RecordingCredentials, aws_credentials, guardrail_with,
 };
@@ -58,8 +58,8 @@ fn aws_parameters() -> OpaqueParams {
     ]))
 }
 
-fn secret(value: &Option<SecretString>) -> Option<String> {
-    value.as_ref().map(|secret| secret.expose_secret().clone())
+fn secret(value: Option<&SecretString>) -> Option<String> {
+    value.map(|secret| secret.expose_secret().clone())
 }
 
 fn first_call(source: &RecordingCredentials) -> (AwsSettings, String) {
@@ -73,7 +73,7 @@ async fn credential_fetch_passes_every_aws_setting() {
     let guardrail = guardrail_with(aws_parameters());
     let source = RecordingCredentials::replying(aws_credentials());
     let (resolved, region) =
-        _load_credentials(&guardrail, None, RegionEnvironment::default(), &source)
+        load_credentials(&guardrail, None, RegionEnvironment::default(), &source)
             .await
             .expect("the credentials");
     let resolved = resolved.expect("the resolved credentials");
@@ -86,16 +86,19 @@ async fn credential_fetch_passes_every_aws_setting() {
     assert_eq!(called_region, "eu-west-1");
     assert_eq!(settings.region_name.as_deref(), Some("eu-west-1"));
     assert_eq!(
-        secret(&settings.access_key_id),
+        secret(settings.access_key_id.as_ref()),
         Some("AKIAEXAMPLE".to_owned())
     );
     assert_eq!(
-        secret(&settings.secret_access_key),
+        secret(settings.secret_access_key.as_ref()),
         Some("secret".to_owned())
     );
-    assert_eq!(secret(&settings.session_token), Some("session".to_owned()));
     assert_eq!(
-        secret(&settings.web_identity_token),
+        secret(settings.session_token.as_ref()),
+        Some("session".to_owned())
+    );
+    assert_eq!(
+        secret(settings.web_identity_token.as_ref()),
         Some("web-identity".to_owned())
     );
     assert_eq!(settings.session_name.as_deref(), Some("session-name"));
@@ -117,7 +120,7 @@ async fn credential_fetch_uses_the_environment_region() {
         region_name: None,
         region: Some("us-east-2"),
     };
-    let (resolved, region) = _load_credentials(&guardrail, None, environment, &source)
+    let (resolved, region) = load_credentials(&guardrail, None, environment, &source)
         .await
         .expect("the credentials");
     let resolved = resolved.expect("the resolved credentials");
@@ -135,7 +138,7 @@ async fn credential_fetch_uses_the_environment_region() {
 async fn credential_fetch_propagates_a_resolution_failure() {
     let guardrail = guardrail_with(OpaqueParams::default());
     let source = RecordingCredentials::failing(CredentialError::MissingCredentials);
-    let error = _load_credentials(&guardrail, None, RegionEnvironment::default(), &source)
+    let error = load_credentials(&guardrail, None, RegionEnvironment::default(), &source)
         .await
         .expect_err("the credential error");
     assert!(matches!(error, CredentialLoadError::Credential(_)));
@@ -149,7 +152,7 @@ async fn credential_fetch_rejects_a_non_string_region() {
     )]));
     let guardrail = guardrail_with(params);
     let source = RecordingCredentials::replying(aws_credentials());
-    let error = _load_credentials(&guardrail, None, RegionEnvironment::default(), &source)
+    let error = load_credentials(&guardrail, None, RegionEnvironment::default(), &source)
         .await
         .expect_err("the region type error");
     assert!(matches!(
