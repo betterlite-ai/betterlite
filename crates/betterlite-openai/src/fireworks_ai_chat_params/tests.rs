@@ -13,7 +13,8 @@ use super::mapping::map_openai_params;
 use super::settings::{ContextLengthBehavior, FireworksChatSettings};
 use super::supported::supported_openai_params;
 use super::{
-    EFFORT_KWARG_KEYS, FireworksCapabilities, FireworksChatParamsError, NIM_VLLM_STRIP_PARAMS,
+    EFFORT_KWARG_KEYS, EXTRA_BODY_CONSUMED_PARAMS, FireworksCapabilities, FireworksChatParamsError,
+    NIM_VLLM_STRIP_PARAMS,
 };
 use crate::openai_base_config::Object;
 
@@ -218,6 +219,24 @@ async fn reasoning_capability_adds_the_three_params() {
         function_calling: false,
         tool_choice: false,
         reasoning: false,
+    };
+    let found = supported(&mut capabilities, &catalog, "reasoner").await;
+    assert_eq!(
+        found.get(found.len().saturating_sub(3)..),
+        Some(["reasoning_effort", "reasoning_history", "thinking"].as_slice())
+    );
+}
+
+#[tokio::test]
+async fn exact_reasoning_false_falls_through_to_the_predicate() {
+    let catalog = model_catalog(&[(
+        "fireworks_ai/accounts/fireworks/models/reasoner",
+        r#"{"supports_function_calling":false,"supports_reasoning":false}"#,
+    )]);
+    let mut capabilities = TestCapabilities {
+        function_calling: false,
+        tool_choice: false,
+        reasoning: true,
     };
     let found = supported(&mut capabilities, &catalog, "reasoner").await;
     assert_eq!(
@@ -535,12 +554,64 @@ async fn config_drops_null_settings() {
     );
 }
 
+const PINNED_STRIP_PARAMS: [&str; 16] = [
+    "add_generation_prompt",
+    "add_special_tokens",
+    "allowed_token_ids",
+    "bad_words",
+    "best_of",
+    "continue_final_message",
+    "detokenize",
+    "guided_decoding_backend",
+    "guided_regex",
+    "include_reasoning",
+    "include_stop_str_in_output",
+    "nvext",
+    "skip_special_tokens",
+    "spaces_between_special_tokens",
+    "stop_token_ids",
+    "use_beam_search",
+];
+
+const TRANSLATED_KEYS: [&str; 5] = [
+    "chat_template_kwargs",
+    "guided_choice",
+    "guided_grammar",
+    "guided_json",
+    "truncate_prompt_tokens",
+];
+
 #[test]
 fn constants_match_the_pinned_lists() {
-    assert_eq!(EFFORT_KWARG_KEYS.len(), 4);
-    assert_eq!(NIM_VLLM_STRIP_PARAMS.len(), 16);
-    assert!(NIM_VLLM_STRIP_PARAMS.contains(&"nvext"));
-    assert!(!NIM_VLLM_STRIP_PARAMS.contains(&"guided_json"));
+    assert_eq!(
+        EFFORT_KWARG_KEYS,
+        [
+            "enable_thinking",
+            "thinking",
+            "reasoning_budget",
+            "low_effort"
+        ]
+    );
+    assert_eq!(NIM_VLLM_STRIP_PARAMS, PINNED_STRIP_PARAMS);
+    let mut consumed: Vec<&str> = PINNED_STRIP_PARAMS.to_vec();
+    consumed.extend(TRANSLATED_KEYS);
+    consumed.sort_unstable();
+    assert_eq!(EXTRA_BODY_CONSUMED_PARAMS.to_vec(), consumed);
+}
+
+#[tokio::test]
+async fn every_strip_param_is_dropped() {
+    let mut capabilities = TestCapabilities::none();
+    let extra: Object = NIM_VLLM_STRIP_PARAMS
+        .iter()
+        .map(|name| ((*name).to_owned(), Value::Bool(true)))
+        .chain([(String::from("custom"), Value::Bool(true))])
+        .collect();
+    let optional = Object::from_iter([(String::from("extra_body"), Value::Object(extra))]);
+    assert_eq!(
+        extra_body(&mut capabilities, "m", &optional).await,
+        object(r#"{"extra_body":{"custom":true}}"#)
+    );
 }
 
 #[tokio::test]
@@ -614,7 +685,10 @@ async fn an_existing_prompt_truncate_len_consumes_truncate_prompt_tokens() {
 #[case::negative_budget(r#"{"reasoning_budget":-1}"#, None)]
 #[case::negative_float_budget(r#"{"reasoning_budget":-1.5}"#, None)]
 #[case::zero_budget(r#"{"reasoning_budget":0}"#, None)]
-#[case::huge_budget("18446744073709551615", Some("18446744073709551615"))]
+#[case::huge_budget(
+    r#"{"reasoning_budget":18446744073709551615}"#,
+    Some("18446744073709551615")
+)]
 #[case::bool_budget(r#"{"reasoning_budget":true}"#, None)]
 #[case::low_effort(r#"{"low_effort":true}"#, Some(r#""low""#))]
 #[case::low_effort_false(r#"{"low_effort":false}"#, None)]
