@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError, RwLock};
-use std::time::Duration;
+use std::time::{Duration, TryFromFloatSecsError};
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -85,7 +85,7 @@ pub enum GuardrailInitError {
     #[error("MCPJWTSigner option timeout has an invalid value")]
     InvalidTimeout {
         #[source]
-        source: std::time::TryFromFloatSecsError,
+        source: TryFromFloatSecsError,
     },
     #[error(transparent)]
     Signer(#[from] JwtSignerError),
