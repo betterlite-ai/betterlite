@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::Bytes;
@@ -11,7 +12,7 @@ use axum::routing::post;
 use betterlite_config::loader::ConfigError;
 use betterlite_config::sections::Section;
 use betterlite_config::sections::dynamoai_moderation::{
-    Configured, DEFAULT_API_BASE, Raw, Settings,
+    Configured, DEFAULT_API_BASE, DEFAULT_GUARDRAIL_TIMEOUT, Raw, Settings,
 };
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use reqwest::StatusCode;
@@ -39,6 +40,7 @@ fn configured(api_base: &str) -> Configured {
         api_base: api_base.to_owned(),
         policy_ids: Vec::new(),
         model_id: String::new(),
+        timeout: Duration::from_secs(30),
     }
 }
 
@@ -279,6 +281,35 @@ async fn dynamoai_guardrail_call_sends_policy_ids_and_model_id() {
     assert_eq!(body["modelId"], serde_json::json!("model-1"));
 }
 
+async fn delayed(body: String, delay: Duration) -> (String, Server) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let answer = move || {
+        let body = body.clone();
+        async move {
+            tokio::time::sleep(delay).await;
+            (StatusCode::OK, body)
+        }
+    };
+    let router = Router::new().route("/v1/moderation/analyze/", post(answer));
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    (base, server)
+}
+
+#[tokio::test]
+async fn dynamoai_guardrail_a_stalled_answer_times_out() {
+    let (base, _server) = delayed(
+        r#"{"finalAction":"NONE"}"#.to_owned(),
+        Duration::from_millis(500),
+    )
+    .await;
+    let mut instance = guardrail(&base);
+    instance.settings.timeout = Duration::from_millis(50);
+    let result = instance.call_moderation(&[user_message()]).await;
+    assert!(matches!(result, Err(DynamoAiError::Timeout { .. })));
+}
+
 #[tokio::test]
 async fn dynamoai_guardrail_http_error_is_reported() {
     let (base, _server) = answering(StatusCode::INTERNAL_SERVER_ERROR, "{}".to_owned()).await;
@@ -299,7 +330,7 @@ async fn dynamoai_guardrail_pre_call_blocks_on_a_block_policy() {
     let (base, _server) = answering(StatusCode::OK, body.to_owned()).await;
     let result = guardrail(&base)
         .async_pre_call_hook(&RequestData {
-            messages: Some(vec![user_message()]),
+            messages: vec![user_message()],
         })
         .await;
     assert!(matches!(result, Err(DynamoAiError::Blocked { .. })));
@@ -311,7 +342,7 @@ async fn dynamoai_guardrail_pre_call_allows_a_block_action_without_a_block_polic
     let (base, _server) = answering(StatusCode::OK, body.to_owned()).await;
     let result = guardrail(&base)
         .async_pre_call_hook(&RequestData {
-            messages: Some(vec![user_message()]),
+            messages: vec![user_message()],
         })
         .await;
     assert!(matches!(result, Ok(GuardrailStatus::Intervened)));
@@ -335,9 +366,8 @@ async fn dynamoai_guardrail_during_call_blocks_on_a_block_policy() {
 async fn dynamoai_guardrail_hooks_skip_a_call_without_messages() {
     let instance = guardrail("http://127.0.0.1:1");
     let empty = RequestData {
-        messages: Some(Vec::new()),
+        messages: Vec::new(),
     };
-    let absent = RequestData { messages: None };
     assert!(matches!(
         instance.async_pre_call_hook(&empty).await,
         Ok(GuardrailStatus::Success)
@@ -532,6 +562,27 @@ fn dynamoai_config_empty_policy_ids_environment_is_an_empty_list() {
     .unwrap();
     assert!(settings.guardrails[0].policy_ids.is_empty());
     assert_eq!(settings.guardrails[0].model_id, "");
+}
+
+#[test]
+fn dynamoai_config_reads_the_timeout_in_seconds() {
+    let settings = convert(
+        &entry("dynamoai", r#","api_key":"param-key","timeout":2.5"#),
+        &BTreeMap::new(),
+    )
+    .unwrap();
+    assert_eq!(settings.guardrails[0].timeout, Duration::from_secs_f64(2.5));
+}
+
+#[test]
+fn dynamoai_config_defaults_the_timeout_when_absent() {
+    let settings = convert(
+        &entry("dynamoai", ""),
+        &env(&[("DYNAMOAI_API_KEY", "env-key")]),
+    )
+    .unwrap();
+    assert_eq!(settings.guardrails[0].timeout, DEFAULT_GUARDRAIL_TIMEOUT);
+    assert_eq!(DEFAULT_GUARDRAIL_TIMEOUT, Duration::from_secs(600));
 }
 
 #[test]

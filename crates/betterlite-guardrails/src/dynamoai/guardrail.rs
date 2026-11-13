@@ -48,6 +48,7 @@ impl DynamoAiGuardrail {
             .post(url)
             .headers(self.prepare_headers()?)
             .json(&payload)
+            .timeout(self.settings.timeout)
             .send()
             .await
             .map_err(request_error)?;

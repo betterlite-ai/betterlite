@@ -1,10 +1,16 @@
+use std::time::{Duration, TryFromFloatSecsError};
+
 use super::Section;
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::resolve::resolve_string;
+use crate::raw::RawNumber;
+use crate::resolve::{parse_float, resolve_number, resolve_string};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use serde::de::Error as DeserializeError;
 
 pub const DEFAULT_API_BASE: &str = "https://api.dynamo.ai";
+// LiteLLM leaves timeout unset, so the AsyncHTTPHandler default applies; its value is COMPLETION_HTTP_FALLBACK_SECONDS
+pub const DEFAULT_GUARDRAIL_TIMEOUT: Duration = Duration::from_secs(600);
 pub const API_KEY_VARIABLE: &str = "DYNAMOAI_API_KEY";
 pub const API_BASE_VARIABLE: &str = "DYNAMOAI_API_BASE";
 pub const POLICY_IDS_VARIABLE: &str = "DYNAMOAI_POLICY_IDS";
@@ -31,6 +37,7 @@ pub struct Parameters {
     pub api_base: Option<String>,
     pub policy_ids: Option<Vec<String>>,
     pub model_id: Option<String>,
+    pub timeout: Option<RawNumber>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -45,6 +52,7 @@ pub struct Configured {
     pub api_base: String,
     pub policy_ids: Vec<String>,
     pub model_id: String,
+    pub timeout: Duration,
 }
 
 impl Section for Raw {
@@ -103,13 +111,30 @@ impl Parameters {
             Some(value) => resolve_string(value, &format!("{prefix}.model_id"), lookup)?,
             None => lookup.lookup(MODEL_ID_VARIABLE).unwrap_or_default(),
         };
+        let timeout = match resolve_number(
+            self.timeout,
+            &format!("{prefix}.timeout"),
+            lookup,
+            parse_float,
+        )? {
+            Some(seconds) => Duration::try_from_secs_f64(seconds)
+                .map_err(|source| timeout_error(&format!("{prefix}.timeout"), &source))?,
+            None => DEFAULT_GUARDRAIL_TIMEOUT,
+        };
         Ok(Configured {
             guardrail_name: guardrail_name.to_owned(),
             api_key,
             api_base,
             policy_ids,
             model_id,
+            timeout,
         })
+    }
+}
+
+fn timeout_error(path: &str, source: &TryFromFloatSecsError) -> ConfigError {
+    ConfigError::Yaml {
+        source: <serde_saphyr::Error as DeserializeError>::custom(format!("{path}: {source}")),
     }
 }
 

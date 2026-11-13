@@ -88,6 +88,7 @@ fn run_call(call: &Call) -> HelperResult {
         api_base: call.api_base.clone(),
         policy_ids: call.policy_ids.clone(),
         model_id: call.model_id.clone(),
+        timeout: None,
     };
     let mut settings = match params.resolve("dynamoai", "guardrail", &call.env) {
         Ok(settings) => settings,
@@ -185,7 +186,7 @@ async fn run_mode(
     match call.mode {
         Mode::PreCall => guardrail
             .async_pre_call_hook(&RequestData {
-                messages: Some(call.messages.clone()),
+                messages: call.messages.clone(),
             })
             .await
             .map(Some),

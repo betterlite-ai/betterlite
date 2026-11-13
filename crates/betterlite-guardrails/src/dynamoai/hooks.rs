@@ -23,7 +23,7 @@ pub const SUPPORTED_EVENT_HOOKS: [EventHook; 3] = [
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RequestData {
-    pub messages: Option<Vec<GuardrailValue>>,
+    pub messages: Vec<GuardrailValue>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -50,14 +50,10 @@ impl DynamoAiGuardrail {
         &self,
         data: &RequestData,
     ) -> Result<GuardrailStatus, DynamoAiError> {
-        let Some(messages) = data
-            .messages
-            .as_deref()
-            .filter(|messages| !messages.is_empty())
-        else {
+        if data.messages.is_empty() {
             return Ok(GuardrailStatus::Success);
-        };
-        self.inspect_messages(messages).await
+        }
+        self.inspect_messages(&data.messages).await
     }
 
     pub async fn async_moderation_hook(
