@@ -1,0 +1,39 @@
+kind: helper
+name: responses-chat-output-output-order
+call:
+  responses_chat_output:
+    request_input: hi
+    responses_api_request:
+      tools:
+        - {type: function, name: f, parameters: {}}
+    chat_completion_response:
+      _hidden_params: {}
+      id: chat_c
+      created: 3
+      model: m
+      choices:
+        - finish_reason: tool_calls
+          message:
+            role: assistant
+            content: visible
+            reasoning_content: thinking first
+            tool_calls:
+              - {id: call_1, type: function, function: {name: f, arguments: '{}'}}
+              - {id: call_2, type: function, function: {name: g, arguments: '{"x": 1}'}}
+        - finish_reason: stop
+          message:
+            role: assistant
+            content: suppressed by image
+            images:
+              - {index: 0, type: image_url, image_url: {url: 'data:image/png;base64,QUJD'}}
+        - finish_reason: stop
+          message: {role: assistant, content: null}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/response/output/0/id
+      why: The reasoning id is a random UUID.
+    - pointer: /value/response/output/1/id
+      why: The message id is a random UUID.
+    - pointer: /value/response/output/2/id
+      why: The image id is a random UUID.

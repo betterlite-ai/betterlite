@@ -1,0 +1,27 @@
+kind: helper
+name: anthropic-tools-computer-hosted-tools
+call:
+  anthropic_tools:
+    calls:
+      - function: tools
+        tools:
+          - {type: computer_20241022, function: {parameters: {display_width_px: 0, display_height_px: 0, display_number: 2}}}
+          - {type: computer_20250124, function: {name: '', parameters: {display_width_px: 1, display_height_px: 2, display_number: null}}}
+          - {type: computer_20251124, function: {parameters: {display_width_px: 1024, display_height_px: 768}}}
+          - {type: web_search_20250305, name: search, max_uses: 5}
+          - {type: bash_20250124, function: {name: shell, description: run commands}}
+          - {type: text_editor_20250124, name: editor, function: {name: other}}
+          - {type: code_execution_20250825, name: ''}
+          - {type: web_fetch_20250910, name: fetcher, citations: {enabled: true}}
+          - {type: memory_20250818, name: memory}
+      - function: tools
+        tools:
+          - {type: computer_20250124, function: {}}
+      - function: tools
+        tools:
+          - {type: computer_20250124, function: {parameters: {display_width_px: 80}}}
+      - function: tools
+        tools:
+          - {type: web_search_20250305, maximum_uses: 1}
+env: {}
+compare: {ignore: []}
