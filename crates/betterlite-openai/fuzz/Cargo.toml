@@ -446,6 +446,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_response_input"
+path = "fuzz_targets/openai_response_input.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "openai_response_events"
 path = "fuzz_targets/openai_response_events.rs"
 test = false

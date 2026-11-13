@@ -2462,6 +2462,7 @@ dependencies = [
  "betterlite-ocr",
  "betterlite-oracle",
  "betterlite-oracle-helper-api",
+ "betterlite-redact",
  "betterlite-roi",
  "betterlite-semantic",
  "betterlite-server",
