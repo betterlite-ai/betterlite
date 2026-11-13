@@ -59,17 +59,16 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let answer = match input {
-            Input::ToolChoice { tool_choice } => to_value(choice_answer(tool_choice)?),
+            Input::ToolChoice { tool_choice } => to_value(
+                tool_choice_to_openai(tool_choice)
+                    .map_err(|error| failure(choice_class(&error), None, error.to_string()))?,
+            ),
             Input::Tools { tools, model } => to_value(tools_answer(tools, model.as_deref())?),
             Input::OutputFormat { output_format } => to_value(format_answer(output_format)?),
             Input::Request { request } => to_value(request_answer(request)?),
         };
         answer.map_err(|source| failure("SerializationError", None, source.to_string()))
     }
-}
-
-fn choice_answer(tool_choice: &Json) -> Result<Json, Box<HelperError>> {
-    tool_choice_to_openai(tool_choice).map_err(|error| tool_choice_failure(&error))
 }
 
 fn tools_answer(tools: &[Json], model: Option<&str>) -> Result<ToolsAnswer, Box<HelperError>> {
@@ -91,7 +90,8 @@ fn request_answer(request: &Object) -> Result<RequestAnswer, Box<HelperError>> {
         "messages".to_owned(),
         messages.unwrap_or_else(|| Json::List(Vec::new())),
     );
-    translate_tool_choice(request, &mut kwargs).map_err(|error| tool_choice_failure(&error))?;
+    translate_tool_choice(request, &mut kwargs)
+        .map_err(|error| failure(choice_class(&error), None, error.to_string()))?;
     let tool_name_mapping =
         translate_tools(request, &mut kwargs).map_err(|error| tools_failure(&error))?;
     translate_output_format(request, &mut kwargs).map_err(|error| format_failure(&error))?;
@@ -110,13 +110,12 @@ fn format_answer(output_format: &Json) -> Result<FormatAnswer, Box<HelperError>>
     })
 }
 
-fn tool_choice_failure(error: &ToolChoiceError) -> Box<HelperError> {
-    let class = match error {
+const fn choice_class(error: &ToolChoiceError) -> &'static str {
+    match error {
         ToolChoiceError::MissingType => "KeyError",
         ToolChoiceError::Unsupported => "ValueError",
         ToolChoiceError::Shape | ToolChoiceError::Name => "TypeError",
-    };
-    failure(class, None, error.to_string())
+    }
 }
 
 fn tools_failure(error: &ToolsError) -> Box<HelperError> {

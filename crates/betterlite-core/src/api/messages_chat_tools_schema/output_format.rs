@@ -25,7 +25,7 @@ pub fn output_format_to_openai(output_format: &Json) -> Result<Option<Json>, Out
         return Ok(None);
     };
     let mut copied = schema.clone();
-    add_additional_properties_false(&mut copied)?;
+    strict_object_schema(&mut copied)?;
     Ok(Some(Json::Object(response_format(copied))))
 }
 
@@ -43,7 +43,7 @@ fn response_format(schema: Json) -> Object {
     format
 }
 
-pub fn add_additional_properties_false(schema: &mut Json) -> Result<(), OutputFormatError> {
+pub fn strict_object_schema(schema: &mut Json) -> Result<(), OutputFormatError> {
     let Json::Object(fields) = schema else {
         return Ok(());
     };
@@ -66,7 +66,7 @@ fn close_object(fields: &mut Object) -> Result<(), OutputFormatError> {
         .map(|key| Json::Text(key.clone()))
         .collect();
     for property in properties.values_mut() {
-        add_additional_properties_false(property)?;
+        strict_object_schema(property)?;
     }
     fields.insert("additionalProperties".to_owned(), Json::Bool(false));
     fields.insert("required".to_owned(), Json::List(required));
@@ -75,7 +75,7 @@ fn close_object(fields: &mut Object) -> Result<(), OutputFormatError> {
 
 fn rewrite_nested_schemas(fields: &mut Object) -> Result<(), OutputFormatError> {
     if let Some(items) = fields.get_mut("items") {
-        add_additional_properties_false(items)?;
+        strict_object_schema(items)?;
     }
     for key in SCHEMA_UNION_KEYS {
         if let Some(value) = fields.get_mut(key) {
@@ -83,7 +83,7 @@ fn rewrite_nested_schemas(fields: &mut Object) -> Result<(), OutputFormatError> 
                 return Err(OutputFormatError::SubschemaList { key });
             };
             for subschema in subschemas.iter_mut() {
-                add_additional_properties_false(subschema)?;
+                strict_object_schema(subschema)?;
             }
         }
     }
@@ -93,7 +93,7 @@ fn rewrite_nested_schemas(fields: &mut Object) -> Result<(), OutputFormatError> 
                 return Err(OutputFormatError::Definitions { key });
             };
             for definition in definitions.values_mut() {
-                add_additional_properties_false(definition)?;
+                strict_object_schema(definition)?;
             }
         }
     }

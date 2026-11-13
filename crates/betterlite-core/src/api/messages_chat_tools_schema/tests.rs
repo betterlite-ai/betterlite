@@ -4,9 +4,7 @@ use betterlite_anthropic::feature_flags::FeatureFlagsError;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 
-use super::output_format::{
-    OutputFormatError, add_additional_properties_false, output_format_to_openai,
-};
+use super::output_format::{OutputFormatError, output_format_to_openai, strict_object_schema};
 use super::request::{translate_output_format, translate_tool_choice, translate_tools};
 use super::tool_choice::{ToolChoiceError, tool_choice_to_openai};
 use super::tools::{ToolsError, ToolsTranslation, tools_to_openai};
@@ -349,39 +347,28 @@ fn a_non_boolean_eager_flag_is_an_unsupported_parameter() {
 }
 
 #[rstest]
-#[case::claude(Some("anthropic/claude-3-opus"))]
-#[case::bare_claude(Some("claude-3-opus"))]
-#[case::gemini(Some("gemini/gemini-2.0-flash"))]
-#[case::bedrock_arn(Some("bedrock/arn:aws:bedrock:us-east-1:1:application-inference-profile/x"))]
-fn cache_control_is_copied_for_a_capable_model(#[case] model: Option<&str>) {
+#[case::claude(Some("anthropic/claude-3-opus"), Some(r#"{"type": "ephemeral"}"#))]
+#[case::bare_claude(Some("claude-3-opus"), Some(r#"{"type": "ephemeral"}"#))]
+#[case::gemini(Some("gemini/gemini-2.0-flash"), Some(r#"{"type": "ephemeral"}"#))]
+#[case::bedrock_arn(
+    Some("bedrock/arn:aws:bedrock:us-east-1:1:application-inference-profile/x"),
+    Some(r#"{"type": "ephemeral"}"#)
+)]
+#[case::openai(Some("gpt-4o"), None)]
+#[case::absent(None, None)]
+#[case::empty(Some(""), None)]
+fn cache_control_follows_the_target_model(
+    #[case] model: Option<&str>,
+    #[case] expected: Option<&str>,
+) {
     let input = r#"[{"name": "a", "cache_control": {"type": "ephemeral"}}]"#;
-    let answer = translated(input, model);
-    let Json::List(tools) = answer else {
+    let Json::List(tools) = translated(input, model) else {
         panic!("a tool list answers");
     };
     let Some(tool) = tools.first().and_then(Json::as_object) else {
         panic!("one tool answers");
     };
-    assert_eq!(
-        tool.get("cache_control"),
-        Some(&json(r#"{"type": "ephemeral"}"#))
-    );
-}
-
-#[rstest]
-#[case::openai(Some("gpt-4o"))]
-#[case::absent(None)]
-#[case::empty(Some(""))]
-fn cache_control_stays_off_for_another_model(#[case] model: Option<&str>) {
-    let input = r#"[{"name": "a", "cache_control": {"type": "ephemeral"}}]"#;
-    let answer = translated(input, model);
-    let Json::List(tools) = answer else {
-        panic!("a tool list answers");
-    };
-    let Some(tool) = tools.first().and_then(Json::as_object) else {
-        panic!("one tool answers");
-    };
-    assert_eq!(tool.get("cache_control"), None);
+    assert_eq!(tool.get("cache_control").cloned(), expected.map(json));
 }
 
 #[rstest]
@@ -502,24 +489,10 @@ fn nested_schemas_in_definitions_are_rewritten(#[case] key: &str) {
     let input = format!(
         r#"{{"type": "json_schema", "schema": {{"{key}": {{"named": {{"type": "object", "properties": {{"e": {{"type": "string"}}}}}}}}}}}}"#
     );
-    let answer = format_answer(&input);
-    let Some(Json::Object(response)) = answer
-        .as_object()
-        .and_then(|fields| fields.get("json_schema"))
-    else {
-        panic!("a json_schema answers");
-    };
-    let Some(Json::Object(schema)) = response.get("schema") else {
-        panic!("a schema answers");
-    };
-    let Some(Json::Object(definitions)) = schema.get(key) else {
-        panic!("a definitions object answers");
-    };
-    let Some(Json::Object(named)) = definitions.get("named") else {
-        panic!("the named schema answers");
-    };
-    assert_eq!(named.get("additionalProperties"), Some(&Json::Bool(false)));
-    assert_eq!(named.get("required"), Some(&json(r#"["e"]"#)));
+    let expected = format!(
+        r#"{{"type": "json_schema", "json_schema": {{"name": "structured_output", "strict": true, "schema": {{"{key}": {{"named": {{"type": "object", "properties": {{"e": {{"type": "string"}}}}, "required": ["e"], "additionalProperties": false}}}}}}}}}}"#
+    );
+    assert_eq!(format_answer(&input), json(&expected));
 }
 
 #[test]
@@ -595,7 +568,7 @@ fn the_callers_schema_is_not_rewritten() {
 #[test]
 fn the_schema_walker_rewrites_in_place() {
     let mut schema = json(r#"{"type": "object", "properties": {"x": {"type": "string"}}}"#);
-    add_additional_properties_false(&mut schema).expect("the schema rewrites");
+    strict_object_schema(&mut schema).expect("the schema rewrites");
     assert_eq!(
         schema,
         json(
