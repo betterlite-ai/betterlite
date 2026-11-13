@@ -56,6 +56,7 @@ pub(super) struct HelperFailure {
 type SourceItem = Result<TransportChunk, ReceiveError<HelperFailure>>;
 type SyncSources = IntoIter<SourceItem>;
 type Failure = DecodeError<HelperFailure, TokenCountFailure>;
+type Conversion = Result<ConvertedChunk, ConvertError<TokenCountFailure>>;
 
 pub(crate) struct Op;
 
@@ -119,66 +120,94 @@ fn sources(input: &Input) -> SyncSources {
 }
 
 fn sync_section(input: &Input) -> Result<Value, Box<HelperError>> {
+    let (items, errors) = sync_outcomes(input)?;
+    Ok(json!({ "items": items, "errors": errors }))
+}
+
+fn sync_outcomes(input: &Input) -> Result<(Vec<Value>, usize), Box<HelperError>> {
     let stream = ChunkStream {
         converter: converter(&input.ids)?,
         source: sources(input),
         source_ended: false,
     };
-    let mut items = Vec::new();
-    let mut errors = 0;
-    for outcome in stream {
-        match outcome {
-            Ok(chunk) => items.push(decoded_value(&chunk)),
-            Err(error) => errors = errors.saturating_add(count_error(&error)?),
-        }
-    }
-    Ok(json!({ "items": items, "errors": errors }))
+    record_outcomes(stream)
+}
+
+fn record_outcomes<I>(outcomes: I) -> Result<(Vec<Value>, usize), Box<HelperError>>
+where
+    I: IntoIterator<Item = Result<DecodedChunk, Failure>>,
+{
+    outcomes
+        .into_iter()
+        .try_fold((Vec::new(), 0), |(mut items, errors), outcome| {
+            let errors = match outcome {
+                Ok(chunk) => {
+                    items.push(decoded_value(&chunk));
+                    errors
+                }
+                Err(error) => errors.saturating_add(count_error(&error)?),
+            };
+            Ok::<(Vec<Value>, usize), Box<HelperError>>((items, errors))
+        })
 }
 
 fn async_section(input: &Input) -> Result<Value, Box<HelperError>> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .map_err(|error| failure(error.to_string()))?;
-    let stream = ChunkStream {
-        converter: converter(&input.ids)?,
-        source: stream::iter(sources(input)),
-        source_ended: false,
-    };
-    let (items, errors) = runtime.block_on(collect_async(stream))?;
+    let (items, errors) = async_outcomes(input)?;
     Ok(json!({ "items": items, "errors": errors }))
 }
 
-async fn collect_async(
-    mut stream: ChunkStream<stream::Iter<SyncSources>, TokenizerCounter>,
-) -> Result<(Vec<Value>, usize), Box<HelperError>> {
-    let mut items = Vec::new();
-    let mut errors = 0;
-    while let Some(outcome) = stream.next().await {
-        match outcome {
-            Ok(chunk) => items.push(decoded_value(&chunk)),
-            Err(error) => errors = errors.saturating_add(count_error(&error)?),
+fn async_outcomes(input: &Input) -> Result<(Vec<Value>, usize), Box<HelperError>> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .map_err(|error| failure(error.to_string()))?;
+    let chunks = stream::iter(sources(input));
+    let mut stream = ChunkStream {
+        converter: converter(&input.ids)?,
+        source: chunks,
+        source_ended: false,
+    };
+    let outcomes = runtime.block_on(async {
+        let mut outcomes = Vec::new();
+        while let Some(outcome) = stream.next().await {
+            outcomes.push(outcome);
         }
-    }
-    Ok((items, errors))
+        outcomes
+    });
+    record_outcomes(outcomes)
 }
 
 fn passthrough_section(input: &Input) -> Result<Value, Box<HelperError>> {
+    let conversions = passthrough_outcomes(input)?;
+    let (items, errors) = classify(conversions);
+    Ok(json!({ "items": items, "errors": errors }))
+}
+
+fn passthrough_outcomes(input: &Input) -> Result<Vec<Conversion>, Box<HelperError>> {
     let mut decoder = converter(&input.ids)?;
+    let mut conversions = Vec::new();
+    for step in &input.passthrough {
+        let conversion = convert_chunk_to_generic_chunk(&mut decoder, passthrough_chunk(step));
+        if let Err(ConvertError::Event(StreamEventError::Anthropic(native))) = &conversion {
+            return Err(native_error(native));
+        }
+        conversions.push(conversion);
+    }
+    Ok(conversions)
+}
+
+fn classify(conversions: Vec<Conversion>) -> (Vec<Value>, usize) {
     let mut items = Vec::new();
     let mut errors = 0;
-    for step in &input.passthrough {
-        match convert_chunk_to_generic_chunk(&mut decoder, passthrough_chunk(step)) {
+    for conversion in conversions {
+        match conversion {
             Ok(ConvertedChunk::Event(event)) => {
                 items.push(json!({ "event": event_value(&event) }));
             }
             Ok(ConvertedChunk::Default { id }) => items.push(json!({ "default": id })),
-            Err(ConvertError::Event(StreamEventError::Anthropic(native))) => {
-                return Err(native_error(&native));
-            }
             Err(_) => errors = errors.saturating_add(1),
         }
     }
-    Ok(json!({ "items": items, "errors": errors }))
+    (items, errors)
 }
 
 fn passthrough_chunk(step: &PassthroughStep) -> TransportChunk {

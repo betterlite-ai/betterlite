@@ -26,13 +26,13 @@ fn kinds(outcomes: &[Outcome]) -> Vec<&'static str> {
 }
 
 fn contents(outcomes: &[Outcome]) -> Vec<String> {
-    outcomes
-        .iter()
-        .filter_map(|outcome| match outcome {
-            Ok(DecodedChunk::Event(chunk)) => Some(chunk.choices[0].delta.content.clone()),
-            Ok(DecodedChunk::Generic(_)) | Err(_) => None,
-        })
-        .collect()
+    let mut contents = Vec::new();
+    for outcome in outcomes {
+        if let Ok(DecodedChunk::Event(chunk)) = outcome {
+            contents.push(chunk.choices[0].delta.content.clone());
+        }
+    }
+    contents
 }
 
 fn delta(label: &str) -> String {

@@ -90,12 +90,12 @@ pub(super) fn other_error(message: &str) -> Source {
 }
 
 pub(super) fn drive_sync(items: Vec<Source>) -> Vec<Outcome> {
-    let stream = ChunkStream {
+    ChunkStream {
         converter: converter(),
         source: items.into_iter(),
         source_ended: false,
-    };
-    stream.collect()
+    }
+    .collect()
 }
 
 pub(super) fn drive_async(items: Vec<Source>) -> Vec<Outcome> {
@@ -103,12 +103,16 @@ pub(super) fn drive_async(items: Vec<Source>) -> Vec<Outcome> {
         .build()
         .unwrap()
         .block_on(async {
-            let stream = ChunkStream {
+            let mut stream = ChunkStream {
                 converter: converter(),
                 source: stream::iter(items),
                 source_ended: false,
             };
-            stream.collect().await
+            let mut outcomes = Vec::new();
+            while let Some(outcome) = stream.next().await {
+                outcomes.push(outcome);
+            }
+            outcomes
         })
 }
 
