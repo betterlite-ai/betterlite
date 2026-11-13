@@ -127,9 +127,7 @@ impl ChirpBackend {
                 tracing::warn!(%error, "the Speech-to-Text link pump stopped");
             }
         }
-        if self.outbox.capacity() > 0 {
-            drop(self.outbox_sender.try_send(OutboxItem::Closed));
-        }
+        drop(self.outbox_sender.try_send(OutboxItem::Closed));
     }
 
     async fn send_command(&mut self, command: ChirpCommand) -> Result<(), ChirpBackendError> {
