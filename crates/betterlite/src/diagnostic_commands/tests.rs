@@ -159,8 +159,44 @@ fn config_validation_accepts_a_loadable_file() {
     assert!(err_writer.is_empty());
 }
 
+// counts taken from LiteLLM 1.105.1's --validate_config on the same files
 #[rstest]
-#[case::alias("router_settings:\n  model_group_alias:\n    gpt-4o: gpt-4\n")]
+#[case::visible(
+    "  model_group_alias:\n    gpt-4o: gpt-4\n    gpt-4-mini:\n      model: gpt-4\n      hidden: false\n",
+    "LiteLLM: config OK (6 models)\n"
+)]
+#[case::hidden(
+    "  model_group_alias:\n    gpt-4o:\n      model: gpt-4\n      hidden: true\n",
+    "LiteLLM: config OK (2 models)\n"
+)]
+#[case::unknown_group(
+    "  model_group_alias:\n    gpt-4o: gpt-5\n",
+    "LiteLLM: config OK (2 models)\n"
+)]
+fn config_validation_counts_each_deployment_a_visible_alias_reaches(
+    #[case] aliases: &str,
+    #[case] expected: &str,
+) {
+    let (_folder, path) = config_file(&format!(
+        "model_list:\n  - model_name: gpt-4\n    litellm_params:\n      model: openai/gpt-4\n  - model_name: gpt-4\n    litellm_params:\n      model: azure/gpt-4\nrouter_settings:\n{aliases}"
+    ));
+    let loader = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    };
+    let mut writer = Vec::new();
+    let mut err_writer = Vec::new();
+
+    config_validation_command(Some(&path), &loader, &mut writer, &mut err_writer)
+        .expect("the config loads");
+
+    assert_eq!(
+        String::from_utf8(writer).expect("writer output is valid utf8"),
+        expected
+    );
+    assert!(err_writer.is_empty());
+}
+
+#[rstest]
 #[case::organization_list(
     "model_list:\n  - model_name: gpt-4\n    litellm_params:\n      model: openai/gpt-4\n      organization: [org-a, org-b]\n"
 )]
