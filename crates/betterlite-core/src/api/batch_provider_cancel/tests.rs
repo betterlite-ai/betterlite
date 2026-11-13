@@ -13,10 +13,11 @@ use thiserror::Error;
 
 use super::async_invoke::{self, AsyncInvokeOutput, AsyncInvokeS3Output, AsyncInvokeStatus};
 use super::connection::{self, CancelParams, CancelTimeout, StructuredTimeout, TimeoutValue};
+use super::service::BatchProviderCancel;
 use super::{
-    AzureCancelCall, BatchCancelDispatch, BatchProviderCancel, BatchProviderCancelError,
-    BatchProviderCancelInput, BatchProviderCancelResult, BedrockCancelCall, CancelBatchCall,
-    CancelCall, CancelProvider, OpenAiCancelCall, VertexCancelCall, XaiCancelCall,
+    AzureCancelCall, BatchCancelDispatch, BatchProviderCancelError, BatchProviderCancelInput,
+    BatchProviderCancelResult, BedrockCancelCall, CancelBatchCall, CancelCall, CancelProvider,
+    OpenAiCancelCall, VertexCancelCall, XaiCancelCall,
 };
 use crate::api::api_boundaries::ApiLimits;
 
