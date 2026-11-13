@@ -76,10 +76,10 @@ class ScriptedLogger(WebSearchInterceptionLogger):
         self.searches: list[RecordedSearch] = []
 
     @override
-    async def _execute_search(
+    async def _execute_search(  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1523-L1528
         self,
         query: str,
-        kwargs: Mapping[str, object] | None = None,
+        kwargs: Mapping[str, JsonValue] | None = None,
         rich: RichWebSearchInput | None = None,
     ) -> tuple[str, SearchResponse | None]:
         del kwargs

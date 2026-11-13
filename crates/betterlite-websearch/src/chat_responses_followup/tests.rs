@@ -1,4 +1,17 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::absolute_paths,
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        clippy::disallowed_types,
+        clippy::needless_pass_by_value,
+        clippy::shadow_reuse,
+        clippy::too_many_lines,
+        reason = "the fixtures state the provider JSON LiteLLM hands the builders, and each test reads as one scenario"
+    )
+)]
 
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -151,9 +164,9 @@ fn messages_value(messages: &[FollowupMessage]) -> Value {
 }
 
 fn follows(searcher: &Arc<ScriptedSearch>) -> ChatResponsesFollowup {
-    ChatResponsesFollowup {
-        search: Arc::clone(searcher),
-    }
+    let shared = Arc::clone(searcher);
+    let search: Arc<dyn SearchExecutor> = shared;
+    ChatResponsesFollowup { search }
 }
 
 #[tokio::test]

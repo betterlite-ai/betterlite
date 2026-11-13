@@ -13,6 +13,7 @@ use serde_json::value::to_raw_value;
 
 use self::chat::FollowupRequest;
 use self::error::FollowupError;
+use self::rerun::ChatRerunRequest;
 use self::responses::ResponsesRequest;
 use self::search::SearchExecutor;
 use crate::call_transformation::wire::Call;
@@ -42,6 +43,30 @@ impl ChatResponsesFollowup {
         let request_patch =
             responses::build_responses_patch(self.search.as_ref(), tool_calls, request).await?;
         websearch_plan(request_patch, "responses")
+    }
+
+    pub async fn build_chat_rerun(
+        &self,
+        tool_calls: &[Call],
+        response_format: &str,
+        request: &FollowupRequest<'_>,
+    ) -> Result<ChatRerunRequest, FollowupError> {
+        let patch =
+            chat::build_chat_patch(self.search.as_ref(), tool_calls, response_format, request)
+                .await?;
+        // build_chat_patch always sets messages, so LiteLLM's missing-follow-up error has no path here
+        let messages = patch.messages.unwrap_or_default();
+        let mut params = request.optional_params.clone();
+        for (key, value) in &patch.optional_params {
+            params.insert(key.clone(), value.clone());
+        }
+        params.shift_remove("tool_choice");
+        Ok(ChatRerunRequest {
+            model: patch.model.unwrap_or_else(|| request.model.to_owned()),
+            messages,
+            params,
+            kwargs: patch.kwargs,
+        })
     }
 }
 

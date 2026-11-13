@@ -1,4 +1,12 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_methods,
+        clippy::disallowed_types,
+        reason = "the plan fixtures state the JSON LiteLLM's pydantic models dump, field for field"
+    )
+)]
 
 use rstest::rstest;
 use serde::Serialize;
@@ -96,8 +104,8 @@ fn plan_round_trips_a_full_value() {
             "model": "azure/gpt-4o",
             "messages": [{"role": "user", "content": "hi"}],
             "tools": null,
-            "max_tokens": 512,
-            "optional_params": {"temperature": 0.2},
+            "max_tokens": 512_i64,
+            "optional_params": {"temperature": 0.2_f64},
             "kwargs": {"litellm_call_id": "call-1"},
         },
         "response_override": {"id": "resp-1"},
@@ -137,7 +145,7 @@ fn followup_message_is_transparent() {
 #[rstest]
 #[case::string(json!({"query": "weather"}), Some("weather".to_owned()))]
 #[case::empty_string(json!({"query": ""}), Some(String::new()))]
-#[case::number(json!({"query": 3}), None)]
+#[case::number(json!({"query": 3_i32}), None)]
 #[case::null(json!({"query": null}), None)]
 #[case::object(json!({"query": {"text": "weather"}}), None)]
 #[case::missing(json!({"other": "weather"}), None)]

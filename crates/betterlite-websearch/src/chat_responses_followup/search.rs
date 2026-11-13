@@ -26,6 +26,32 @@ pub trait SearchExecutor: Send + Sync {
     ) -> SearchResult;
 }
 
+// the port carries a distinct method name because clippy::same_name_method refuses two execute_search methods in one crate
+#[async_trait]
+pub trait SearchExecutionPort: Send + Sync {
+    async fn run_search(
+        &self,
+        query: &str,
+        kwargs: &JsonMap,
+        rich: Option<RichWebSearchInput>,
+    ) -> SearchResult;
+}
+
+#[async_trait]
+impl<Host> SearchExecutor for Host
+where
+    Host: SearchExecutionPort + ?Sized,
+{
+    async fn execute_search(
+        &self,
+        query: &str,
+        kwargs: &JsonMap,
+        rich: Option<RichWebSearchInput>,
+    ) -> SearchResult {
+        self.run_search(query, kwargs, rich).await
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchSurface {
     Chat,
@@ -116,7 +142,7 @@ fn hook_kwargs(kwargs: &JsonMap) -> Result<SearchHookKwargs, SearchFailure> {
 }
 
 #[async_trait]
-impl<Search, Grants, Metadata, Capabilities> SearchExecutor
+impl<Search, Grants, Metadata, Capabilities> SearchExecutionPort
     for WebSearchExecution<Search, Grants, Metadata, Capabilities>
 where
     Search: SearchRunner,
@@ -125,7 +151,7 @@ where
     Metadata: SearchMetadataSource,
     Capabilities: ProviderCapabilities,
 {
-    async fn execute_search(
+    async fn run_search(
         &self,
         query: &str,
         kwargs: &JsonMap,

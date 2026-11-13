@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use async_trait::async_trait;
 use betterlite_context::agentic_loop_plan::{FollowupMessage, JsonMap};
 use betterlite_websearch::call_transformation::outcome::SearchResult;
-use betterlite_websearch::execution::search::unclassified;
 use betterlite_websearch::call_transformation::wire::{
     Call, CallFunction, CallKind, Input as ToolInput,
 };
@@ -12,10 +11,9 @@ use betterlite_websearch::chat_responses_followup::ChatResponsesFollowup;
 use betterlite_websearch::chat_responses_followup::chat::FollowupRequest;
 use betterlite_websearch::chat_responses_followup::error::FollowupError;
 use betterlite_websearch::chat_responses_followup::rerun::ChatRerunRequest;
-use betterlite_websearch::chat_responses_followup::responses::{
-    ResponsesInput, ResponsesRequest,
-};
+use betterlite_websearch::chat_responses_followup::responses::{ResponsesInput, ResponsesRequest};
 use betterlite_websearch::chat_responses_followup::search::SearchExecutor;
+use betterlite_websearch::execution::search::unclassified;
 use betterlite_websearch::records::RichWebSearchInput;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -24,14 +22,17 @@ use tokio::runtime::Builder;
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Operation {
-    BuildChatPlan,
-    BuildResponsesPlan,
-    BuildChatRerun,
+    #[serde(rename = "build_chat_plan")]
+    ChatPlan,
+    #[serde(rename = "build_responses_plan")]
+    ResponsesPlan,
+    #[serde(rename = "build_chat_rerun")]
+    ChatRerun,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Input {
+pub(crate) struct CaseInput {
     operation: Operation,
     model: String,
     #[serde(default)]
@@ -127,8 +128,11 @@ impl SearchExecutor for ScriptedSearch {
                 rich,
             });
         }
-        let mut scripts = self.scripts.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some(script) = scripts.pop_front() else {
+        let popped = {
+            let mut scripts = self.scripts.lock().unwrap_or_else(PoisonError::into_inner);
+            scripts.pop_front()
+        };
+        let Some(script) = popped else {
             return SearchResult::Failed(unclassified(
                 "the case scripts no search response".to_owned(),
             ));
@@ -167,7 +171,7 @@ impl ToolCall {
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
-    type Input = Input;
+    type Input = CaseInput;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let searcher = Arc::new(ScriptedSearch::new(&input.searches));
@@ -185,17 +189,17 @@ impl crate::helpers::Helper for Op {
 
 async fn run_operation(
     followup: &ChatResponsesFollowup,
-    input: &Input,
+    input: &CaseInput,
     calls: &[Call],
 ) -> Result<Value, FollowupError> {
     match input.operation {
-        Operation::BuildChatPlan => {
+        Operation::ChatPlan => {
             let format = input.response_format.as_deref().unwrap_or("openai");
             let request = chat_request(input);
             let plan = followup.build_chat_plan(calls, format, &request).await?;
             serde_json::to_value(plan).map_err(FollowupError::from)
         }
-        Operation::BuildResponsesPlan => {
+        Operation::ResponsesPlan => {
             let responses = input
                 .input
                 .clone()
@@ -209,7 +213,7 @@ async fn run_operation(
             let plan = followup.build_responses_plan(calls, &request).await?;
             serde_json::to_value(plan).map_err(FollowupError::from)
         }
-        Operation::BuildChatRerun => {
+        Operation::ChatRerun => {
             let format = input.response_format.as_deref().unwrap_or("openai");
             let request = chat_request(input);
             let rerun = followup.build_chat_rerun(calls, format, &request).await?;
@@ -218,7 +222,7 @@ async fn run_operation(
     }
 }
 
-fn chat_request(input: &Input) -> FollowupRequest<'_> {
+fn chat_request(input: &CaseInput) -> FollowupRequest<'_> {
     FollowupRequest {
         model: &input.model,
         messages: &input.messages,
@@ -230,7 +234,10 @@ fn chat_request(input: &Input) -> FollowupRequest<'_> {
 fn rerun_value(rerun: &ChatRerunRequest) -> Result<Value, FollowupError> {
     let mut value = serde_json::Map::new();
     value.insert("model".to_owned(), json!(rerun.model));
-    value.insert("messages".to_owned(), serde_json::to_value(&rerun.messages)?);
+    value.insert(
+        "messages".to_owned(),
+        serde_json::to_value(&rerun.messages)?,
+    );
     for (key, raw) in &rerun.params {
         value.insert(key.clone(), serde_json::from_str(raw.get())?);
     }
