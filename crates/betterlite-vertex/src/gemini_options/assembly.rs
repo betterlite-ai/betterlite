@@ -160,36 +160,43 @@ fn map_scalar(
         optional.insert(target.to_owned(), value.clone());
         return Ok(());
     }
-    map_control(param, value, optional)
+    match param {
+        "stop" => map_stop(value, optional),
+        "modalities" => map_modalities(value, optional),
+        "service_tier" => map_tier(value, optional),
+        "stream" => map_stream(value, optional),
+        _ => Ok(()),
+    }
 }
 
-fn map_control(param: &str, value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
-    match param {
-        "stop" => {
-            let sequences = match decode::<Stop>(value, param)? {
-                Stop::Single(text) => vec![Json::Text(text)],
-                Stop::Many(items) => items.into_iter().map(Json::Text).collect(),
-            };
-            optional.insert("stop_sequences".to_owned(), Json::List(sequences));
-        }
-        "modalities" => {
-            let requested: Vec<String> = decode(value, param)?;
-            let modalities = map_response_modalities(&requested);
-            optional.insert("responseModalities".to_owned(), encode(modalities)?);
-        }
-        "service_tier" => {
-            let tier: String = decode(value, param)?;
-            optional.insert(
-                "service_tier".to_owned(),
-                Json::Text(map_service_tier(&tier)),
-            );
-        }
-        "stream" => {
-            if decode::<bool>(value, param)? {
-                optional.insert("stream".to_owned(), Json::Bool(true));
-            }
-        }
-        _ => {}
+fn map_stop(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
+    let sequences = match decode::<Stop>(value, "stop")? {
+        Stop::Single(text) => vec![Json::Text(text)],
+        Stop::Many(items) => items.into_iter().map(Json::Text).collect(),
+    };
+    optional.insert("stop_sequences".to_owned(), Json::List(sequences));
+    Ok(())
+}
+
+fn map_modalities(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
+    let requested: Vec<String> = decode(value, "modalities")?;
+    let modalities = map_response_modalities(&requested);
+    optional.insert("responseModalities".to_owned(), encode(modalities)?);
+    Ok(())
+}
+
+fn map_tier(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
+    let tier: String = decode(value, "service_tier")?;
+    optional.insert(
+        "service_tier".to_owned(),
+        Json::Text(map_service_tier(&tier)),
+    );
+    Ok(())
+}
+
+fn map_stream(value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
+    if decode::<bool>(value, "stream")? {
+        optional.insert("stream".to_owned(), Json::Bool(true));
     }
     Ok(())
 }
