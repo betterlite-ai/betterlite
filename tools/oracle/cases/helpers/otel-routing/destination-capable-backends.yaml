@@ -1,0 +1,8 @@
+kind: helper
+name: destination-capable-backends
+call:
+  b3851:
+    function: destination_capable_backends
+env: {}
+compare:
+  ignore: []

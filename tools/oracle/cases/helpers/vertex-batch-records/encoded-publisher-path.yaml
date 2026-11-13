@@ -1,0 +1,20 @@
+kind: helper
+name: vertex-batch-records-encoded-publisher-path
+call:
+  vertex_batch_records:
+    operation: create
+    calls:
+      - data:
+          completion_window: "24h"
+          endpoint: "/v1/chat/completions"
+          input_file_id: "gs://bucket/endpoints/123/prefix%2Fpublishers%2Fgoogle%2Fmodels%2Fgemini-1.5-flash-001%2Ffile.jsonl"
+        vertex_project: null
+        vertex_location: null
+      - data:
+          input_file_id: "gs://bucket/publishers/google/models//endpoints/77/file.jsonl"
+        vertex_project: null
+        vertex_location: null
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/calls/0/job/displayName, why: "the display name carries a fresh uuid"}

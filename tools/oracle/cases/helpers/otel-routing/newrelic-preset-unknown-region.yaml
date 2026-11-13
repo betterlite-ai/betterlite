@@ -1,0 +1,15 @@
+kind: helper
+name: newrelic-preset-unknown-region
+call:
+  b3851:
+    function: newrelic_preset
+    environment:
+      NEW_RELIC_REGION: ap-southeast-2
+    base:
+      exporters: []
+      mapper_names: []
+      resource_attributes: {}
+env:
+  NEW_RELIC_REGION: ap-southeast-2
+compare:
+  ignore: []
