@@ -45,7 +45,7 @@ impl LakeraV2Guardrail {
             tracing::debug!("Lakera AI: not running guardrail. Guardrail is disabled.");
             return Ok(None);
         }
-        let inspection = scope::build_lakera_inspection_messages(data);
+        let inspection = scope::inspection_messages(data);
         if inspection.is_empty() {
             tracing::warn!("Lakera AI: not running guardrail. No inspectable text in data");
             return Ok(None);

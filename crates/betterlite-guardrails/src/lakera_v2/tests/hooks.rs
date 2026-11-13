@@ -316,7 +316,7 @@ fn update_refuses_the_escaped_template_and_keeps_the_instance() {
     );
     let params = update_params(r#", "advisory_system_message": "Watch out for {{reason}}""#);
     let error = guardrail
-        .update_in_memory_litellm_params(&params)
+        .update_params(&params)
         .expect_err("the template is invalid");
     assert_eq!(error.to_string(), ESCAPED_TEMPLATE_TEXT);
     assert_eq!(
@@ -333,9 +333,7 @@ fn update_applies_the_advisory_fields_and_the_new_mode() {
     let params = update_params(
         r#", "on_flagged": "inject_system_message", "advisory_system_message": "Why: {reason}", "payload": true, "breakdown": true"#,
     );
-    guardrail
-        .update_in_memory_litellm_params(&params)
-        .expect("a valid update");
+    guardrail.update_params(&params).expect("a valid update");
     assert_eq!(guardrail.on_flagged, LakeraOnFlagged::InjectSystemMessage);
     assert_eq!(
         guardrail.advisory_system_message.as_deref(),
@@ -354,7 +352,7 @@ fn update_rejects_a_wrong_typed_payload() {
     let mut guardrail = build("http://unused", LakeraOnFlagged::Block, None);
     let params = update_params(r#", "payload": "yes""#);
     let error = guardrail
-        .update_in_memory_litellm_params(&params)
+        .update_params(&params)
         .expect_err("payload must be a bool");
     assert!(
         matches!(&error, LakeraV2Error::InvalidParam { field, .. } if field == "payload"),

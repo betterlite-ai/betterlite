@@ -6,7 +6,7 @@ use betterlite_guardrails::lakera_pii::wire::BreakdownItem;
 use betterlite_guardrails::lakera_v2::advisory::{
     humanize_lakera_block_reasons, validate_advisory_config,
 };
-use betterlite_guardrails::lakera_v2::scope::build_lakera_inspection_messages;
+use betterlite_guardrails::lakera_v2::scope::inspection_messages;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -72,7 +72,7 @@ impl Helper for Op {
                 }
             }
             Input::BuildLakeraInspectionMessages { data } => {
-                json!({ "messages": build_lakera_inspection_messages(data) })
+                json!({ "messages": inspection_messages(data) })
             }
         };
         Ok(value)

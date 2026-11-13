@@ -32,7 +32,7 @@ use crate::lakera_v2::guardrail::{DEFAULT_API_BASE, LakeraV2Guardrail, SUPPORTED
 use crate::lakera_v2::hooks::{HookContext, HookOutcome};
 use crate::lakera_v2::scope::{
     COMBINED_REASON, MULTIMODAL_REASON, NO_PAYLOAD_REASON, NO_WRITE_BACK_REASON, NOT_A_LIST_REASON,
-    build_lakera_inspection_messages, unmaskable_reason,
+    inspection_messages, unmaskable_reason,
 };
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 
@@ -401,22 +401,19 @@ fn constructor_refuses_inject_without_payload_and_breakdown() {
     assert_eq!(null_payload.to_string(), PAYLOAD_TEXT);
 }
 
-#[test]
-fn constructor_accepts_a_valid_reason_template() {
-    for template in [
-        "Flagged for {reason}.",
-        "{reason:>30}",
-        "{{escaped}} {reason:.4}",
-        "{reason!s}",
-    ] {
-        validate_advisory_config(
-            LakeraOnFlagged::InjectSystemMessage,
-            Some(template),
-            Some(true),
-            Some(true),
-        )
-        .unwrap_or_else(|error| panic!("{template} was refused: {error}"));
-    }
+#[rstest]
+#[case::plain("Flagged for {reason}.")]
+#[case::width("{reason:>30}")]
+#[case::escaped_and_precision("{{escaped}} {reason:.4}")]
+#[case::str_conversion("{reason!s}")]
+fn constructor_accepts_a_valid_reason_template(#[case] template: &str) {
+    validate_advisory_config(
+        LakeraOnFlagged::InjectSystemMessage,
+        Some(template),
+        Some(true),
+        Some(true),
+    )
+    .unwrap_or_else(|error| panic!("{template} was refused: {error}"));
 }
 
 #[test]
@@ -634,7 +631,7 @@ fn inspection_messages_put_the_instructions_first() {
         "instructions".to_owned(),
         GuardrailValue::Text("Always answer in English.".to_owned()),
     );
-    let messages = build_lakera_inspection_messages(&data);
+    let messages = inspection_messages(&data);
     assert_eq!(messages.len(), 2);
     assert_eq!(messages[0].role, "system");
     assert_eq!(messages[0].content, "Always answer in English.");
@@ -649,7 +646,7 @@ fn inspection_messages_leave_out_empty_instructions() {
         "instructions".to_owned(),
         GuardrailValue::Text(String::new()),
     );
-    let messages = build_lakera_inspection_messages(&data);
+    let messages = inspection_messages(&data);
     assert_eq!(messages.len(), 1);
     assert_eq!(messages[0].role, "user");
 }

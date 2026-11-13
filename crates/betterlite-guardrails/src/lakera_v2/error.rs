@@ -23,7 +23,7 @@ pub enum LakeraV2Error {
     #[error(
         "on_flagged='inject_system_message' requires payload=True and breakdown=True: advisory mode masks any detected PII before appending the advisory note, and that masking can only happen when Lakera's response carries both the violation breakdown and the payload location data. Without them, PII would be forwarded to the model unredacted."
     )]
-    AdvisoryNeedsPayloadAndBreakdown,
+    AdvisoryNeedsFlags,
     #[error("the advisory_system_message template is not a valid str.format() string")]
     AdvisorySyntax {
         #[source]

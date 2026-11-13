@@ -10,7 +10,7 @@ use super::LakeraV2Guardrail;
 use super::construction::resolve_timeout;
 
 impl LakeraV2Guardrail {
-    pub fn update_in_memory_litellm_params(
+    pub fn update_params(
         &mut self,
         params: &LitellmParams,
     ) -> Result<(), LakeraV2Error> {

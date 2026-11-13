@@ -62,7 +62,7 @@ pub fn validate_advisory_config(
             .map_err(|source| LakeraV2Error::AdvisoryFormat { source })?;
     }
     if payload != Some(true) || breakdown != Some(true) {
-        return Err(LakeraV2Error::AdvisoryNeedsPayloadAndBreakdown);
+        return Err(LakeraV2Error::AdvisoryNeedsFlags);
     }
     Ok(())
 }

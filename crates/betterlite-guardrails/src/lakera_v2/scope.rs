@@ -26,9 +26,9 @@ pub const NO_WRITE_BACK_REASON: &str = "no write-back path for the redacted cont
 pub const NO_PAYLOAD_REASON: &str =
     "Lakera reported no locations to redact, so payload=true is likely off";
 
-// LiteLLM's _build_lakera_inspection_messages: instructions lead, then the shared inspection list
+// LiteLLM's _inspection_messages: instructions lead, then the shared inspection list
 #[must_use]
-pub fn build_lakera_inspection_messages(data: &Data) -> Vec<InspectionMessage> {
+pub fn inspection_messages(data: &Data) -> Vec<InspectionMessage> {
     let mut messages = Vec::new();
     if let Some(GuardrailValue::Text(instructions)) = data.get("instructions")
         && !instructions.is_empty()
@@ -43,7 +43,7 @@ pub fn build_lakera_inspection_messages(data: &Data) -> Vec<InspectionMessage> {
 }
 
 #[must_use]
-pub fn has_combined_messages_and_input(data: &Data) -> bool {
+pub fn has_combined_input(data: &Data) -> bool {
     matches!(data.get("messages"), Some(GuardrailValue::Array(_)))
         && data
             .get("input")
@@ -82,7 +82,7 @@ pub fn unmaskable_reason(
     if has_non_string_content(data) {
         return Some(MULTIMODAL_REASON);
     }
-    if has_combined_messages_and_input(data) {
+    if has_combined_input(data) {
         return Some(COMBINED_REASON);
     }
     if data.contains_key("messages")
@@ -170,7 +170,7 @@ pub fn message_value(message: &Message) -> Result<GuardrailValue, LakeraV2Error>
         .map_err(|source| LakeraV2Error::Json { source })
 }
 
-pub fn apply_redacted_back_preserving_fields(
+pub fn apply_redacted_back(
     data: &mut Data,
     redacted: &[Message],
     scope: ScopeFlags,
@@ -211,7 +211,7 @@ pub fn apply_redacted_back_preserving_fields(
     Ok(())
 }
 
-pub fn mask_unwritable_instructions_pii_in_place(
+pub fn mask_instructions_pii(
     data: &mut Data,
     inspected: &[Message],
     response: Option<&LakeraResponse>,
@@ -231,7 +231,7 @@ pub fn mask_unwritable_instructions_pii_in_place(
         GuardrailValue::Text(instructions),
     );
     let rest = redacted.get(1..).unwrap_or_default();
-    apply_redacted_back_preserving_fields(data, rest, scope)?;
+    apply_redacted_back(data, rest, scope)?;
     Ok(true)
 }
 

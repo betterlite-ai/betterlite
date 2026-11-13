@@ -37,7 +37,7 @@ impl LakeraV2Guardrail {
             });
         };
         let multimodal = has_non_string_content(data)
-            || scope::has_combined_messages_and_input(data)
+            || scope::has_combined_input(data)
             || scope::has_responses_instructions(data, context.scope);
         let (response, mut counts) = self
             .call_v2_guard(&messages, data, GuardrailEventHooks::PreCall, context)
@@ -118,7 +118,7 @@ impl LakeraV2Guardrail {
             );
             return Ok(());
         }
-        let masked = scope::mask_unwritable_instructions_pii_in_place(
+        let masked = scope::mask_instructions_pii(
             data,
             messages,
             Some(response),
@@ -148,6 +148,6 @@ fn mask_back(
     scope: ScopeFlags,
 ) -> Result<(), GuardrailFailure> {
     let redacted = mask_pii_in_messages(messages, Some(response), counts);
-    scope::apply_redacted_back_preserving_fields(data, &redacted, scope)?;
+    scope::apply_redacted_back(data, &redacted, scope)?;
     Ok(())
 }
