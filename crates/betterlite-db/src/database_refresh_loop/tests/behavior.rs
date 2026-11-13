@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 use secrecy::ExposeSecret as _;
 use tokio::sync::Notify;
@@ -25,7 +27,7 @@ use crate::database_refresh_loop::schedule::{
     token_refresh_not_needed,
 };
 use crate::database_tokens::endpoint::IAMEndpoint;
-use crate::database_tokens::expiry::TokenAuthKind::Rds;
+use crate::database_tokens::expiry::TokenAuthKind::{Azure, Rds};
 use crate::database_tokens::strategy::{DatabaseTokenAuth, RdsIamTokenAuth};
 
 #[test]
@@ -675,4 +677,26 @@ async fn stop_propagates_task_errors() {
     let outcome = setup.built.stop().await;
     assert!(outcome.is_err());
     assert!(!setup.built.has_task());
+}
+
+#[tokio::test]
+async fn out_of_range_entra_expiry_is_treated_as_expired() {
+    let payload = URL_SAFE_NO_PAD.encode(r#"{"exp":253402300801}"#);
+    let token = token_url(&format!("header.{payload}.signature"));
+    let query = RefreshQuery {
+        kind: Some(Azure),
+        token_url: Some(&token),
+        now: naive("2024-01-01T00:00:00"),
+    };
+    is_token_expired(&query).unwrap_err();
+    let setup = build_loop(LoopSpec {
+        token_auth: Some(Azure),
+        log_prefix: String::new(),
+        iam_endpoint: None,
+        initial_url: Some(token.clone()),
+        mint: MintOutcome::Token(EXPIRY_900.to_owned()),
+        on_replaced: None,
+    })
+    .await;
+    assert!(RefreshTrigger::token_expired(setup.built.port.as_ref()));
 }

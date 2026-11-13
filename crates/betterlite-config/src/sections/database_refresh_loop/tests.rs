@@ -82,6 +82,26 @@ fn explicit_reader_endpoint_wins() {
 }
 
 #[test]
+fn username_alias_resolves_user() {
+    let settings = load(&[
+        ("DATABASE_HOST", "db.example"),
+        ("DATABASE_USERNAME", "svc"),
+        ("DATABASE_NAME", "litellm"),
+    ]);
+    assert_eq!(settings.writer_endpoint().user.as_deref(), Some("svc"));
+}
+
+#[test]
+fn lowercase_name_resolves_user() {
+    let settings = load(&[
+        ("DATABASE_HOST", "db.example"),
+        ("database_user", "svc"),
+        ("DATABASE_NAME", "litellm"),
+    ]);
+    assert_eq!(settings.writer_endpoint().user.as_deref(), Some("svc"));
+}
+
+#[test]
 fn empty_reader_url_selects_no_reader() {
     let settings = load(&with_reader(""));
     assert_eq!(
