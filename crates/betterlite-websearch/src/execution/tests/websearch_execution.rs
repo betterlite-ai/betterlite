@@ -25,7 +25,7 @@ use crate::execution::rich_input::rich_search_input;
 use crate::execution::runner::{SearchCall, SearchRunner};
 use crate::execution::search::{DEFAULT_SEARCH_PROVIDER, unclassified};
 use crate::execution::short_circuit::ShortCircuitRequest;
-use crate::records::{SearchOutcome, WebSearchToolResultErrorCode};
+use crate::records::{RichWebSearchInput, SearchOutcome, WebSearchToolResultErrorCode};
 use crate::search_tool_access::authorization::{SearchToolAuthorizer, SearchToolGrants};
 use crate::search_tool_access::hook_kwargs::{ParentOtelSpan, SearchCaller, SearchHookKwargs};
 use crate::search_tool_access::search_metadata::{
@@ -770,6 +770,57 @@ async fn provider_supports_rich_search_follows_the_capability_port() {
     assert!(!search.provider_supports_rich_search(Some("perplexity")));
     assert!(!search.provider_supports_rich_search(Some("")));
     assert!(!search.provider_supports_rich_search(None));
+}
+
+#[tokio::test]
+async fn provider_supports_rich_search_never_asks_about_an_empty_provider() {
+    let capabilities = FakeCapabilities {
+        native_providers: Vec::new(),
+        rich_providers: vec![String::new(), "parallel_ai".to_owned()],
+    };
+    let search = execution(runner(search_response()), capabilities);
+    assert!(!search.provider_supports_rich_search(Some("")));
+    assert!(search.provider_supports_rich_search(Some("parallel_ai")));
+}
+
+#[tokio::test]
+async fn execute_search_keeps_the_query_string_for_an_empty_query_list() {
+    let capabilities = FakeCapabilities {
+        native_providers: Vec::new(),
+        rich_providers: vec!["parallel_ai".to_owned()],
+    };
+    let mut search = execution(runner(search_response()), capabilities);
+    search.search_tools = Some(vec![search_tool("main", "parallel_ai", "")]);
+    let rich = RichWebSearchInput {
+        objective: None,
+        search_queries: Some(Vec::new()),
+    };
+    search
+        .execute_search("rust", None, Some(&rich))
+        .await
+        .unwrap();
+    let calls = take(&mut *search.runner.calls.lock().unwrap());
+    assert_eq!(calls[0].query, SearchQuery::Single("rust".to_owned()));
+}
+
+#[tokio::test]
+async fn execute_search_skips_an_empty_objective() {
+    let capabilities = FakeCapabilities {
+        native_providers: Vec::new(),
+        rich_providers: vec!["parallel_ai".to_owned()],
+    };
+    let mut search = execution(runner(search_response()), capabilities);
+    search.search_tools = Some(vec![search_tool("main", "parallel_ai", "")]);
+    let rich = RichWebSearchInput {
+        objective: Some(String::new()),
+        search_queries: None,
+    };
+    search
+        .execute_search("rust", None, Some(&rich))
+        .await
+        .unwrap();
+    let calls = take(&mut *search.runner.calls.lock().unwrap());
+    assert!(!calls[0].params.contains_key("objective"));
 }
 
 fn input_json(source: &str) -> Input {
