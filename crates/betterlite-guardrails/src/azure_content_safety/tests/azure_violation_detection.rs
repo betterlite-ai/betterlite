@@ -1,6 +1,6 @@
 use reqwest::StatusCode;
 
-use super::support::{legacy, mock, threshold_map};
+use super::support::{legacy, mock, mock_body, threshold_map};
 use crate::azure_content_safety::error::{LegacyAzureContentSafetyError, VIOLATION_MESSAGE};
 use crate::azure_content_safety::legacy::LegacyAzureContentSafety;
 use crate::azure_content_safety::legacy_wire::{AnalyzeTextResponse, TextCategory};
@@ -150,4 +150,15 @@ fn keeps_the_last_severity_for_a_duplicated_category() {
     let result = hook.compute_result(&response);
     assert_eq!(result.get(&TextCategory::Hate).unwrap().severity, 6);
     assert!(result.get(&TextCategory::Hate).unwrap().filtered);
+}
+
+#[tokio::test]
+async fn rejects_a_response_larger_than_the_limit() {
+    let server = mock_body(200, " ".repeat(1_048_577)).await;
+    let hook = legacy(&server.base, None);
+    let error = hook.test_violation("hello", None).await.unwrap_err();
+    assert!(matches!(
+        error,
+        LegacyAzureContentSafetyError::ResponseTooLarge { limit } if limit == 1_048_576
+    ));
 }
