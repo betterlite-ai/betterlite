@@ -18,10 +18,6 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        match input {
-            Input::Transform(probes) => run::transform_values(probes),
-            Input::Environment(probes) => run::environment_values(probes),
-            Input::Reply(probes) => run::reply_values(probes),
-        }
+        run::values(input)
     }
 }

@@ -17,7 +17,8 @@ use http::HeaderMap;
 use secrecy::SecretString;
 use serde_json::{Map, Value, json};
 
-use super::input::{FileSpec, Probe, Reply};
+use super::Input;
+use super::input::{FileSpec, Probe};
 use crate::helpers::{HelperError, HelperResult};
 
 const NOW: i64 = 1_700_000_000;
@@ -145,102 +146,64 @@ fn error_value(error: &ImageEditError) -> Value {
     json!({"kind": kind, "status": error.status()})
 }
 
-struct Found {
-    family: &'static str,
-    data: Value,
-    files: Value,
-    url: Value,
-    headers: Value,
-    error: Value,
-}
-
-fn request_value(probe: &Probe) -> Result<Found, Box<HelperError>> {
-    let resolved = credentials(probe)?;
-    let family = select_image_edit_family(&probe.model);
-    let url = complete_url(&resolved.api_base).map_err(|error| failure(&error))?;
-    let headers =
-        validate_environment(&Headers::new(), &resolved).map_err(|error| failure(&error))?;
-    let request = ImageEditRequest {
+fn request_of(probe: &Probe) -> Result<ImageEditRequest, Box<HelperError>> {
+    Ok(ImageEditRequest {
         model: probe.model.clone(),
         prompt: probe.prompt.clone(),
         image: image_files(probe.image.as_ref())?,
         mask: image_files(probe.mask.as_ref())?,
         options: probe.options.clone(),
-    };
-    let mut found = Found {
-        family: family.name(),
-        data: Value::Null,
-        files: Value::Null,
-        url: Value::String(url.as_str().to_owned()),
-        headers: header_values(&headers),
-        error: Value::Null,
-    };
-    match transform_image_edit_request(family, &request) {
-        Ok(form) => {
-            found.data =
-                serde_json::to_value(&form.data).map_err(|error| invalid(error.to_string()))?;
-            found.files = files_value(&form.files);
-        }
-        Err(error) => {
-            found.url = Value::Null;
-            found.headers = Value::Null;
-            found.error = error_value(&error);
-        }
-    }
-    Ok(found)
+    })
 }
 
-fn reply_of(probe: &Probe) -> Result<&Reply, Box<HelperError>> {
-    probe
+fn transform_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
+    let family = select_image_edit_family(&probe.model);
+    let (data, files, error) = match transform_image_edit_request(family, &request_of(probe)?) {
+        Ok(form) => {
+            let data =
+                serde_json::to_value(&form.data).map_err(|error| invalid(error.to_string()))?;
+            (data, files_value(&form.files), Value::Null)
+        }
+        Err(error) => (Value::Null, Value::Null, error_value(&error)),
+    };
+    Ok(json!({
+        "family": family.name(),
+        "supported": SUPPORTED_OPENAI_PARAMS,
+        "data": data,
+        "files": files,
+        "error": error,
+    }))
+}
+
+fn environment_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
+    let resolved = credentials(probe)?;
+    let url = complete_url(&resolved.api_base).map_err(|error| failure(&error))?;
+    let headers =
+        validate_environment(&Headers::new(), &resolved).map_err(|error| failure(&error))?;
+    let family = select_image_edit_family(&probe.model);
+    Ok(match transform_image_edit_request(family, &request_of(probe)?) {
+        Ok(_) => json!({"url": url.as_str(), "headers": header_values(&headers), "error": null}),
+        Err(error) => json!({"url": null, "headers": null, "error": error_value(&error)}),
+    })
+}
+
+fn reply_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
+    let reply = probe
         .reply
         .as_ref()
-        .ok_or_else(|| invalid(String::from("a probe needs a reply")))
+        .ok_or_else(|| invalid(String::from("a probe needs a reply")))?;
+    let transformed = transform_image_edit_response(reply.status, reply.body.as_bytes(), NOW)
+        .map_err(|error| failure(&error))?;
+    serde_json::to_value(&transformed).map_err(|error| invalid(error.to_string()))
 }
 
-pub(crate) fn transform_values(probes: &[Probe]) -> HelperResult {
-    let values = probes
-        .iter()
-        .map(|probe| {
-            let found = request_value(probe)?;
-            Ok(json!({
-                "family": found.family,
-                "supported": SUPPORTED_OPENAI_PARAMS,
-                "data": found.data,
-                "files": found.files,
-                "error": found.error,
-            }))
-        })
-        .collect::<Result<Vec<_>, Box<HelperError>>>()?;
-    Ok(Value::Array(values))
-}
-
-pub(crate) fn environment_values(probes: &[Probe]) -> HelperResult {
-    let values = probes
-        .iter()
-        .map(|probe| {
-            let found = request_value(probe)?;
-            Ok(json!({
-                "url": found.url,
-                "headers": found.headers,
-                "error": found.error,
-            }))
-        })
-        .collect::<Result<Vec<_>, Box<HelperError>>>()?;
-    Ok(Value::Array(values))
-}
-
-pub(crate) fn reply_values(probes: &[Probe]) -> HelperResult {
-    let values = probes
-        .iter()
-        .map(|probe| {
-            let reply = reply_of(probe)?;
-            match transform_image_edit_response(reply.status, reply.body.as_bytes(), NOW) {
-                Ok(transformed) => {
-                    serde_json::to_value(&transformed).map_err(|error| invalid(error.to_string()))
-                }
-                Err(error) => Err(failure(&error)),
-            }
-        })
-        .collect::<Result<Vec<_>, Box<HelperError>>>()?;
+pub(crate) fn values(input: &Input) -> HelperResult {
+    let each: fn(&Probe) -> Result<Value, Box<HelperError>> = match input {
+        Input::Transform(_) => transform_value,
+        Input::Environment(_) => environment_value,
+        Input::Reply(_) => reply_value,
+    };
+    let (Input::Transform(probes) | Input::Environment(probes) | Input::Reply(probes)) = input;
+    let values = probes.iter().map(each).collect::<Result<Vec<_>, _>>()?;
     Ok(Value::Array(values))
 }
