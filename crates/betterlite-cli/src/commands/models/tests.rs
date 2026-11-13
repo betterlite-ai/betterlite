@@ -662,6 +662,42 @@ fn unix_reads_the_created_field_as_an_integer() {
     let (result, _stdout, _stderr) = run(list(OutputFormat::Table), &server);
 
     assert!(
+        matches!(
+            result,
+            Err(ModelsError::DateTime {
+                field: "created",
+                ..
+            })
+        ),
+        "{result:?}"
+    );
+    server.finish();
+}
+
+#[test]
+fn list_models_formats_an_iso_created_string() {
+    let server = TestServer::start(vec![Answer::json(
+        200,
+        r#"{"data":[{"id":"m1","created":"2024-01-02T03:04:05+02:00"}]}"#,
+    )]);
+
+    let (result, stdout, _stderr) = run(list(OutputFormat::Table), &server);
+
+    result.unwrap();
+    assert!(stdout.contains("2024-01-02 03:04"), "{stdout}");
+    server.finish();
+}
+
+#[test]
+fn list_models_rejects_a_created_of_another_type() {
+    let server = TestServer::start(vec![Answer::json(
+        200,
+        r#"{"data":[{"id":"m1","created":true}]}"#,
+    )]);
+
+    let (result, _stdout, _stderr) = run(list(OutputFormat::Table), &server);
+
+    assert!(
         matches!(result, Err(ModelsError::FieldType { field: "created" })),
         "{result:?}"
     );

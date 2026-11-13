@@ -54,3 +54,10 @@ deviations:
       betterlite's tables draw no rich markup, so the tags would reach the user as literal text;
       rendering them away keeps the sentence LiteLLM shows.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L407-L459
+  - what: >-
+      A string `created` in the model list is read as an RFC 3339 datetime only. LiteLLM turns a
+      string of digits into an integer first and prints it as a Unix timestamp.
+    why: >-
+      The field is declared as an integer, and docs/compatibility.md excludes reading a string into a
+      number. A digit string is an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/models.py#L136-L146

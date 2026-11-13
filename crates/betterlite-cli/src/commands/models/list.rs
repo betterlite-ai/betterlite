@@ -6,7 +6,7 @@ use serde::Deserialize;
 use crate::commands::Client;
 use crate::commands::tables::{OutputFormat, write_table};
 
-use super::format::format_timestamp;
+use super::format::{format_iso_datetime_str, format_timestamp};
 use super::response::{fetch_data, write_json};
 use super::value::cell_text;
 use super::{ListModels, ModelsError};
@@ -50,11 +50,14 @@ pub(super) fn list_models(
 
 fn list_row(model: &ListedModel) -> Result<Vec<String>, ModelsError> {
     let created = match model.created.as_ref() {
-        None | Some(JsonValue::Null) => None,
-        Some(JsonValue::Number(number)) => number
-            .as_i64()
-            .map(Some)
-            .ok_or(ModelsError::FieldType { field: "created" })?,
+        None | Some(JsonValue::Null) => String::new(),
+        Some(JsonValue::Number(number)) => {
+            let seconds = number
+                .as_i64()
+                .ok_or(ModelsError::FieldType { field: "created" })?;
+            format_timestamp(Some(seconds), "created")?
+        }
+        Some(JsonValue::Text(text)) => format_iso_datetime_str(Some(text), "created")?,
         Some(_) => return Err(ModelsError::FieldType { field: "created" }),
     };
     Ok(vec![
@@ -63,7 +66,7 @@ fn list_row(model: &ListedModel) -> Result<Vec<String>, ModelsError> {
             .object
             .as_ref()
             .map_or_else(|| String::from("model"), cell_text),
-        format_timestamp(created, "created")?,
+        created,
         model.owned_by.as_ref().map_or_else(String::new, cell_text),
     ])
 }
