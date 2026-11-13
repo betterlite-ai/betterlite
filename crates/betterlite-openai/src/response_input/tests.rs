@@ -361,6 +361,7 @@ fn assert_reasoning_fallbacks() {
             {"type": "reasoning", "id": "r4", "reasoning_content": "a-string"},
             {"type": "reasoning", "id": "r6", "summary": "not-a-list", "status": null, "content": null, "encrypted_content": null, "kept_null": null},
             {"type": "reasoning", "id": 7, "summary": []},
+            {"type": "reasoning", "id": 8, "reasoning_content": [{"type": "summary_text", "text": "x"}]},
             {"type": "reasoning", "id": "r8"},
             {"type": "reasoning", "id": "r9", "reasoning_content": null}
         ], "params": {}}"#,
@@ -368,6 +369,7 @@ fn assert_reasoning_fallbacks() {
             {"type": "reasoning", "id": "r4", "reasoning_content": "a-string"},
             {"type": "reasoning", "id": "r6", "summary": "not-a-list", "kept_null": null},
             {"type": "reasoning", "id": 7, "summary": []},
+            {"type": "reasoning", "id": 8, "reasoning_content": [{"type": "summary_text", "text": "x"}]},
             {"type": "reasoning", "id": "r8"},
             {"type": "reasoning", "id": "r9", "reasoning_content": null}
         ]}"#,
