@@ -2,6 +2,11 @@ kind: helper
 name: completions-chat-catalog-selection
 call:
   b202:
+    chat_models:
+      - gpt-4o
+    text_models:
+      - gpt-3.5-turbo-instruct
+      - babbage-002
     models:
       - gpt-4o
       - gpt-3.5-turbo-instruct

@@ -1,7 +1,5 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use betterlite_models::catalog::BundledCatalog;
-use betterlite_models::provider_model_sets::{ProviderModelSet, ProviderModelSets};
 use serde::Deserialize;
 
 use crate::helpers::{HelperError, HelperResult};
@@ -9,16 +7,18 @@ use crate::helpers::{HelperError, HelperResult};
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
+    chat_models: BTreeSet<String>,
+    text_models: BTreeSet<String>,
     models: Vec<String>,
 }
 
 pub(crate) struct Op;
 
-// main.py asks get_llm_provider for the model a request names, then switches a chat-catalog miss to text-completion-openai
+// main.py asks get_llm_provider for the model a request names, then switches an openai miss of the chat catalog to text-completion-openai
 fn selected_model(
     model: &str,
-    chat_models: &std::collections::BTreeSet<String>,
-    text_models: &std::collections::BTreeSet<String>,
+    chat_models: &BTreeSet<String>,
+    text_models: &BTreeSet<String>,
 ) -> (String, String) {
     match model.split_once('/') {
         Some((provider, name)) => (provider.to_owned(), name.to_owned()),
@@ -34,25 +34,13 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let mut sets = ProviderModelSets::default();
-        sets.add_known_models(&BundledCatalog::default().get());
-        let chat_models = sets
-            .sets
-            .get(&ProviderModelSet::OpenAiChatCompletion)
-            .cloned()
-            .unwrap_or_default();
-        let text_models = sets
-            .sets
-            .get(&ProviderModelSet::OpenAiTextCompletion)
-            .cloned()
-            .unwrap_or_default();
         let mut selected = BTreeMap::new();
         for model in &input.models {
-            let (provider, name) = selected_model(model, &chat_models, &text_models);
-            let target = if provider == "openai" && !chat_models.contains(&name) {
+            let (provider, name) = selected_model(model, &input.chat_models, &input.text_models);
+            let target = if provider == "openai" && !input.chat_models.contains(&name) {
                 format!("text-completion-openai/{name}")
             } else {
-                format!("{provider}/{name}")
+                model.clone()
             };
             selected.insert(model.clone(), target);
         }
