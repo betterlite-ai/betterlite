@@ -90,7 +90,7 @@ impl LakeraV2Guardrail {
         match self.on_flagged {
             LakeraOnFlagged::Monitor | LakeraOnFlagged::InjectSystemMessage => {
                 tracing::warn!(
-                    on_flagged = on_flagged_name(self.on_flagged),
+                    on_flagged = ?self.on_flagged,
                     "Lakera Guardrail: Post-call violation detected - allowing response"
                 );
             }
@@ -151,12 +151,4 @@ fn write_choice_content(
     };
     message.insert("content".to_owned(), GuardrailValue::Text(content));
     Ok(())
-}
-
-const fn on_flagged_name(flagged: LakeraOnFlagged) -> &'static str {
-    match flagged {
-        LakeraOnFlagged::Block => "block",
-        LakeraOnFlagged::Monitor => "monitor",
-        LakeraOnFlagged::InjectSystemMessage => "inject_system_message",
-    }
 }

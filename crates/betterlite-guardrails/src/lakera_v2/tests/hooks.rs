@@ -49,7 +49,10 @@ async fn pre_call_blocks_a_mixed_verdict_in_block_mode() {
             "Violated guardrail policy".to_owned()
         ))
     );
-    assert!(detail.get("lakera_guardrail_response").is_some());
+    let Some(GuardrailValue::Object(carried)) = detail.get("lakera_guardrail_response") else {
+        panic!("the Lakera answer is not carried: {detail:?}");
+    };
+    assert_eq!(carried.get("flagged"), Some(&GuardrailValue::Boolean(true)));
 }
 
 #[tokio::test]
@@ -200,6 +203,10 @@ async fn during_call_blocks_pii_in_advisory_mode() {
 }
 
 fn assistant_response() -> Data {
+    assistant_response_with(GuardrailValue::Null)
+}
+
+fn assistant_response_with(first_content: GuardrailValue) -> Data {
     let mut response = Data::new();
     response.insert(
         "choices".to_owned(),
@@ -211,7 +218,7 @@ fn assistant_response() -> Data {
                         "role".to_owned(),
                         GuardrailValue::Text("assistant".to_owned()),
                     ),
-                    ("content".to_owned(), GuardrailValue::Null),
+                    ("content".to_owned(), first_content),
                 ])),
             )])),
             GuardrailValue::Object(BTreeMap::from([(
@@ -369,4 +376,47 @@ fn timeout_is_resolved_from_the_configured_seconds() {
     let guardrail =
         LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env).expect("built");
     assert_eq!(guardrail.timeout, Some(Duration::from_millis(2500)));
+}
+
+#[tokio::test]
+async fn post_call_leaves_out_choices_with_an_empty_content() {
+    let server = serve(
+        200,
+        flagged(
+            PII_ONLY,
+            r#"[{"message_id":1,"start":6,"end":19,"detector_type":"pii/email"}]"#,
+        ),
+    )
+    .await;
+    let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    let mut data = chat_data();
+    let mut response = assistant_response_with(GuardrailValue::Text(String::new()));
+    run_hook(&guardrail, &mut data, Some(&mut response), Hook::Post)
+        .await
+        .expect("allowed");
+    assert_eq!(
+        choice_content(&response, 0),
+        Some(GuardrailValue::Text(String::new()))
+    );
+    assert_eq!(
+        choice_content(&response, 1),
+        Some(GuardrailValue::Text("email [MASKED EMAIL]".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn hooks_skip_a_guardrail_the_request_did_not_select() {
+    let server = serve(200, flagged(PII_ONLY, EMAIL_SPAN)).await;
+    let mut guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    guardrail.base.settings.default_on = false;
+    for hook in [Hook::Pre, Hook::During, Hook::Post] {
+        let mut data = chat_data();
+        let mut response = assistant_response();
+        let outcome = run_hook(&guardrail, &mut data, Some(&mut response), hook)
+            .await
+            .expect("not selected");
+        assert_eq!(outcome.applied_guardrail, None);
+        assert_eq!(data, chat_data());
+    }
+    assert!(server.captured().is_empty());
 }

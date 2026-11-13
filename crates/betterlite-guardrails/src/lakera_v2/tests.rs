@@ -302,6 +302,7 @@ fn constructor_applies_the_declared_defaults() {
     assert!(guardrail.flags.dev_info);
     assert_eq!(guardrail.on_flagged, LakeraOnFlagged::Block);
     assert!(guardrail.advisory_system_message.is_none());
+    assert!(guardrail.timeout.is_none());
 }
 
 #[test]
@@ -762,4 +763,5 @@ async fn call_v2_guard_records_a_failed_response() {
     assert_eq!(sink.records.lock().unwrap().len(), 1);
 }
 
+mod coverage;
 mod hooks;
