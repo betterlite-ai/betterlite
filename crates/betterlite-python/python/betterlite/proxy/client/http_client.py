@@ -1,11 +1,16 @@
 import urllib.parse
 from collections.abc import Mapping
+from typing import TypedDict, Unpack
 
 from betterlite.types.utils.values import JsonValue
 
 from ._transport import Request, send
 
 FORM_CONTENT_TYPE = "application/x-www-form-urlencoded"
+
+
+class RequestOptions(TypedDict, total=False):
+    params: dict[str, str]
 
 
 class HTTPClient:
@@ -22,18 +27,25 @@ class HTTPClient:
         data: Mapping[str, str] | list[tuple[str, str]] | bytes | None = None,
         json: JsonValue = None,
         headers: dict[str, str] | None = None,
-        params: dict[str, str] | None = None,
+        **options: Unpack[RequestOptions],
     ) -> JsonValue:
         url = f"{self._base_url}/{uri.lstrip('/')}"
         request_headers = {} if headers is None else dict(headers)
         if self._api_key:
             request_headers["Authorization"] = f"Bearer {self._api_key}"
         payload = _payload(data, request_headers)
+        unknown = [name for name in options if name != "params"]
+        if unknown:
+            names = ", ".join(unknown)
+            raise TypeError(f"request() got unexpected keyword arguments: {names}")
+        params: dict[str, str] = {}
+        if "params" in options:
+            params = options["params"]
         request = Request(
             method=method,
             url=url,
             headers=request_headers,
-            params={} if params is None else params,
+            params=params,
             json=json if payload is None else None,
             data=payload,
         )
