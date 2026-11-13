@@ -189,7 +189,7 @@ def prepare(root: Path, input_value: Input) -> Script:
     _ = importlib.reload(up_module)
     write_initial_files(root, input_value)
     script = Script(root, input_value)
-    up_module.verify_proxy_key = script.verify  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L653
+    up_module.verify_proxy_key = script.verify  # type: ignore[attr-defined, assignment]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/agents.py#L653
     up_module.login = script.login_command  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/up.py#L140
     signal.signal = script.signal
     return script

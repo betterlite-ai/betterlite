@@ -11,4 +11,4 @@ call:
     api_key: sk-live
     stop: sigint
 env: {}
-compare: {ignore: [{pointer: /snapshot/settings/statusLine, why: "the status line command embeds the runtime's own executable path"}]}
+compare: {ignore: [{pointer: /value/snapshot/settings/statusLine, why: "the status line command embeds the runtime's own executable path"}]}
