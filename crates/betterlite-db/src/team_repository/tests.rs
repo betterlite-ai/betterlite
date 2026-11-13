@@ -25,6 +25,8 @@ use tokio::time::timeout;
 use tokio_postgres::{Config, NoTls};
 
 const STORAGE: &str = include_str!("storage.sql");
+// the seed array plus these wraps is depth 65, one past the decoder's cap
+const DEPTH_WRAPS: usize = 64;
 const TEAM_ADVISORY_LOCK_SQL: &str = "SELECT pg_advisory_xact_lock(hashtext($1)) IS NULL AS locked";
 const SET_ROSTER_SQL: &str =
     r#"UPDATE "LiteLLM_TeamTable" SET members_with_roles = $1::TEXT::JSONB WHERE team_id = $2"#;
@@ -462,7 +464,7 @@ fn native_team_record_limits() {
         })
     ));
     // a stored string's own decode is bounded too, and its depth hides inside the record's quotes
-    let deep = (0..64).fold(JsonData::Array(vec![parse("0")]), |inner, _| {
+    let deep = (0..DEPTH_WRAPS).fold(JsonData::Array(vec![parse("0")]), |inner, _| {
         JsonData::Array(vec![inner])
     });
     assert!(matches!(
