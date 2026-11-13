@@ -90,6 +90,12 @@ fn a_blank_marker_is_rejected() {
 }
 
 #[test]
+fn a_blank_close_is_rejected() {
+    let source = markers("          - open: \"<open>\"\n            close: \"   \"\n");
+    assert!(settings(&source, &[]).is_err());
+}
+
+#[test]
 fn equal_markers_are_rejected_after_normalizing() {
     let source = markers("          - open: \"<same>\"\n            close: \" <SAME> \"\n");
     assert!(settings(&source, &[]).is_err());

@@ -196,22 +196,6 @@ pub fn json_content(message: &Json) -> Option<&Json> {
     fields.get("content")
 }
 
-#[must_use]
-pub fn json_last_human_ask_index(
-    messages: &[Json],
-    markers: &[MarkerPair<'_>],
-) -> Result<Option<usize>, ClassifierTextError> {
-    for (index, message) in messages.iter().enumerate().rev() {
-        if json_role(message) != Some("user") {
-            continue;
-        }
-        if !json_human_text(json_content(message), markers)?.is_empty() {
-            return Ok(Some(index));
-        }
-    }
-    Ok(None)
-}
-
 // one role name for a typed message and a raw one, so plan-mode scans a body's messages and typed ones alike
 #[must_use]
 pub const fn role_name(role: Role) -> &'static str {
