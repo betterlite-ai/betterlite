@@ -94,13 +94,17 @@ fn https_url_with_host(#[case] url: &str, #[case] expected: bool) {
     Some(ARCHIVE_SHA256_INVALID)
 )]
 fn plugin_https_source(#[case] source_json: &str, #[case] expected: Option<&str>) {
-    let result = validate_plugin_source(&source(source_json));
-    let produced = result
-        .as_ref()
+    let rejection = validate_plugin_source(&source(source_json))
         .err()
-        .map(|error| error.fields().detail.error);
-    assert_eq!(produced.as_deref(), expected);
-    assert_eq!(result.is_ok(), expected.is_none());
+        .map(|error| error.fields());
+    let message = rejection
+        .as_ref()
+        .map(|fields| fields.detail.error.as_str());
+    assert_eq!(message, expected);
+    assert_eq!(
+        rejection.map(|fields| fields.status_code),
+        expected.map(|_| 400)
+    );
 }
 
 #[rstest]
@@ -159,14 +163,13 @@ fn plugin_https_source(#[case] source_json: &str, #[case] expected: Option<&str>
 #[case::missing_source(r#"{"repo":"org/repo"}"#, Some(UNKNOWN_SOURCE))]
 #[case::capitalised_source(r#"{"source":"GitHub","repo":"org/repo"}"#, Some(UNKNOWN_SOURCE))]
 fn invalid_plugin_source(#[case] source_json: &str, #[case] expected: Option<&str>) {
-    let result = validate_plugin_source(&source(source_json));
-    let produced = result
-        .as_ref()
-        .err()
-        .map(|error| error.fields().detail.error);
-    assert_eq!(produced.as_deref(), expected);
-    let status = result.err().map(|error| error.fields().status_code);
-    assert_eq!(status, expected.map(|_| 400));
+    match validate_plugin_source(&source(source_json)) {
+        Ok(()) => assert!(expected.is_none(), "{source_json} was accepted"),
+        Err(error) => assert_eq!(
+            Some(error.fields().detail.error),
+            expected.map(str::to_owned)
+        ),
+    }
 }
 
 #[rstest]
@@ -184,9 +187,8 @@ fn skill_object_permission(
     #[case] team: Option<&[&str]>,
     #[case] expected: &[&str],
 ) {
-    let granted = granted_skills(&caller(None, key, team));
     let want: BTreeSet<String> = expected.iter().map(|name| (*name).to_owned()).collect();
-    assert_eq!(granted, want);
+    assert_eq!(granted_skills(&caller(None, key, team)), want);
 }
 
 #[rstest]
@@ -233,11 +235,14 @@ fn skill_visibility_where(
     #[case] key: Option<&[&str]>,
     #[case] expected: &str,
 ) {
-    let visibility = skill_visibility(Some(&caller(role, key, None)));
-    assert_eq!(
-        serde_json::to_string(&visibility.where_clause()).unwrap(),
-        expected
-    );
+    let input = ClaudePluginPolicyInput {
+        caller: Some(caller(role, key, None)),
+        plugins: Vec::new(),
+    };
+    let result = evaluate(&input);
+    assert!(result.visible.is_empty());
+    assert_eq!(result.visibility.sees_private, role == Some(ADMIN));
+    assert_eq!(serde_json::to_string(&result.filter).unwrap(), expected);
 }
 
 #[rstest]

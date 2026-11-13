@@ -49,75 +49,63 @@ pub fn is_https_url_with_host(text: &str) -> bool {
 
 pub fn validate_plugin_source(source: &PluginSource) -> Result<(), ClaudePluginPolicyError> {
     match source.source.as_deref() {
-        Some("github") => {
-            if source.repo.is_none() {
-                return Err(ClaudePluginPolicyError::InvalidSource {
-                    message: GITHUB_REPO_MISSING,
-                });
-            }
-        }
-        Some("url") => {
-            if source.url.is_none() {
-                return Err(ClaudePluginPolicyError::InvalidSource {
-                    message: URL_FIELD_MISSING,
-                });
-            }
-        }
-        Some("git-subdir") => return validate_git_subdir(source),
-        Some("archive") => return validate_archive(source),
-        _ => {
+        Some("github") => require_field(source.repo.is_some(), GITHUB_REPO_MISSING),
+        Some("url") => require_field(source.url.is_some(), URL_FIELD_MISSING),
+        Some("git-subdir" | "archive") => validate_variant_fields(source),
+        _ => Err(ClaudePluginPolicyError::InvalidSource {
+            message: UNKNOWN_SOURCE,
+        }),
+    }
+}
+
+fn require_field(present: bool, message: &'static str) -> Result<(), ClaudePluginPolicyError> {
+    if present {
+        return Ok(());
+    }
+    Err(ClaudePluginPolicyError::InvalidSource { message })
+}
+
+fn validate_variant_fields(source: &PluginSource) -> Result<(), ClaudePluginPolicyError> {
+    if source.source.as_deref() == Some("git-subdir") {
+        if source.url.as_deref().is_none_or(str::is_empty) {
             return Err(ClaudePluginPolicyError::InvalidSource {
-                message: UNKNOWN_SOURCE,
+                message: GIT_SUBDIR_URL_MISSING,
             });
         }
-    }
-    Ok(())
-}
-
-fn validate_git_subdir(source: &PluginSource) -> Result<(), ClaudePluginPolicyError> {
-    if source.url.as_deref().is_none_or(str::is_empty) {
-        return Err(ClaudePluginPolicyError::InvalidSource {
-            message: GIT_SUBDIR_URL_MISSING,
-        });
-    }
-    let Some(path) = source.path.as_deref().filter(|path| !path.is_empty()) else {
-        return Err(ClaudePluginPolicyError::InvalidSource {
-            message: GIT_SUBDIR_PATH_MISSING,
-        });
-    };
-    let pattern =
-        Regex::new(GIT_SUBDIR_PATH_PATTERN).map_err(|source| ClaudePluginPolicyError::Pattern {
-            message: PATTERN_INVALID,
-            source,
+        let Some(path) = source.path.as_deref().filter(|path| !path.is_empty()) else {
+            return Err(ClaudePluginPolicyError::InvalidSource {
+                message: GIT_SUBDIR_PATH_MISSING,
+            });
+        };
+        let pattern = Regex::new(GIT_SUBDIR_PATH_PATTERN).map_err(|source| {
+            ClaudePluginPolicyError::Pattern {
+                message: PATTERN_INVALID,
+                source,
+            }
         })?;
-    if !pattern.is_match(path) {
-        return Err(ClaudePluginPolicyError::InvalidSource {
-            message: GIT_SUBDIR_PATH_INVALID,
-        });
+        if !pattern.is_match(path) {
+            return Err(ClaudePluginPolicyError::InvalidSource {
+                message: GIT_SUBDIR_PATH_INVALID,
+            });
+        }
+        return Ok(());
     }
-    Ok(())
-}
-
-fn validate_archive(source: &PluginSource) -> Result<(), ClaudePluginPolicyError> {
     if !is_https_url_with_host(source.url.as_deref().unwrap_or_default()) {
         return Err(ClaudePluginPolicyError::InvalidSource {
             message: ARCHIVE_URL_INVALID,
         });
     }
-    let Some(sha256) = source.sha256.as_deref() else {
-        return Ok(());
-    };
     let pattern =
         Regex::new(SHA256_PATTERN).map_err(|source| ClaudePluginPolicyError::Pattern {
             message: PATTERN_INVALID,
             source,
         })?;
-    if !pattern.is_match(sha256) {
-        return Err(ClaudePluginPolicyError::InvalidSource {
+    match source.sha256.as_deref() {
+        Some(sha256) if !pattern.is_match(sha256) => Err(ClaudePluginPolicyError::InvalidSource {
             message: ARCHIVE_SHA256_INVALID,
-        });
+        }),
+        _ => Ok(()),
     }
-    Ok(())
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
