@@ -1,10 +1,11 @@
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
+use betterlite_config::sections::deployment_clients::Settings;
 use betterlite_error::rate_limit::{RateLimitCategory, RateLimitDimension};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_router::deployment_clients::clients::{CLIENT_TTL_SECONDS, CachedClients};
+use betterlite_router::deployment_clients::clients::CachedClients;
 use betterlite_router::deployment_clients::credentials::{
     ClientsideCredentials, dynamic_litellm_params, is_clientside_credential,
 };
@@ -230,7 +231,7 @@ fn limit_error(error: MaxParallelRequestsExceeded) -> LimitError {
 
 fn cached_outcome(input: &CachedInput) -> Vec<CachedObservation> {
     let clients = CachedClients::new(
-        Duration::from_secs(CLIENT_TTL_SECONDS),
+        Duration::from_secs(Settings::default().client_ttl_seconds),
         Arc::new(|| UNIX_EPOCH),
     );
     let source = LimitSource {

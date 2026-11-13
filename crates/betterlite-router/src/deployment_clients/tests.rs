@@ -7,12 +7,12 @@ use betterlite_error::rate_limit::{RateLimitCategory, RateLimitDimension};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use sha2::Digest as _;
 
 use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::deployment_clients::clients::{
-    CLIENT_TTL_SECONDS, CachedClients, ClientCredential, ClientDeployment, ClientKind, ClientLookup,
+    CachedClients, ClientCredential, ClientDeployment, ClientKind, ClientLookup,
 };
 use crate::deployment_clients::credentials::{
     ClientsideCredentials, clientside_deployment, dynamic_litellm_params, is_clientside_credential,
@@ -27,6 +27,8 @@ use crate::deployment_clients::lookup::{
 use crate::deployment_clients::mismatch::credential_mismatch_warning;
 use crate::deployment_clients::request::{DeploymentView, RequestContext, merged_tools};
 use crate::deployment_identity::spec::DeploymentSpec;
+
+const CLIENT_TTL_SECONDS: u64 = 3600;
 
 fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
@@ -368,20 +370,46 @@ fn deployment_clients_behaviors_a_clientside_deployment_gets_a_generated_id() {
         base_url: None,
     };
     let per_request = clientside_deployment(&configured, "gpt", &request).expect("deployment");
-    assert_eq!(per_request.model_name, "gpt");
+    let deployment = &per_request.deployment;
+    assert_eq!(deployment.model_name, "gpt");
     assert_eq!(
-        per_request.model_info.get("original_model_id"),
+        deployment.model_info.get("original_model_id"),
         Some(&text("d1"))
     );
-    let id = per_request.id().expect("a generated id");
+    let id = deployment.id().expect("a generated id");
     assert_ne!(id, "d1");
     let dynamic = dynamic_litellm_params(configured.litellm_params.clone(), &request);
     assert_eq!(
         id,
         crate::deployment_identity::stable_id::generate_model_id("gpt", &dynamic)
     );
+    assert!(!deployment.litellm_params.contains_key("api_key"));
+    assert!(!format!("{per_request:?}").contains("sk-caller"));
+    assert_eq!(
+        per_request
+            .api_key
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        Some("sk-caller")
+    );
     let repeated = clientside_deployment(&configured, "gpt", &request).expect("deployment");
-    assert_eq!(repeated.id(), Some(id));
+    assert_eq!(repeated.deployment.id(), Some(id));
+}
+
+#[test]
+fn deployment_clients_behaviors_a_request_without_a_key_keeps_the_configured_key() {
+    let configured = spec("gpt", "d1", &[("api_key", text("sk-config"))], &[]);
+    let request = ClientsideCredentials {
+        api_key: None,
+        api_base: Some(String::from("https://caller.example/v1")),
+        base_url: None,
+    };
+    let per_request = clientside_deployment(&configured, "gpt", &request).expect("deployment");
+    assert_eq!(
+        per_request.deployment.litellm_params.get("api_key"),
+        Some(&text("sk-config"))
+    );
+    assert!(per_request.api_key.is_none());
 }
 
 #[test]

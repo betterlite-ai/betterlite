@@ -3,12 +3,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use secrecy::{ExposeSecret as _, SecretString};
-use sha2::{Digest as _, Sha256};
 
+use super::credentials::credential_digest;
 use super::guard::{LimitSource, MaxParallelRequestsLimit, installable_limit};
-
-// RouterConfig.client_ttl: how long a cached client may serve before it is rebuilt
-pub const CLIENT_TTL_SECONDS: u64 = 3600;
 
 pub type ClientClock = Arc<dyn Fn() -> SystemTime + Send + Sync>;
 
@@ -138,9 +135,7 @@ impl CachedClients {
         deployment: &ClientDeployment<'_>,
     ) -> CachedClient {
         let credential = lookup.api_key.map_or(ClientCredential::Configured, |key| {
-            ClientCredential::Overridden(hex::encode(Sha256::digest(
-                key.expose_secret().as_bytes(),
-            )))
+            ClientCredential::Overridden(credential_digest(key.expose_secret()))
         });
         let now = (self.clock)();
         let key = kind.cache_key(lookup.model_id, lookup.stream);

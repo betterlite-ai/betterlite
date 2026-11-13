@@ -119,7 +119,15 @@ fn parse_integer<T>(text: &str, path: &str) -> Result<T, ConfigError>
 where
     T: std::str::FromStr<Err = std::num::ParseIntError>,
 {
-    text.trim()
+    let trimmed = text.trim();
+    let digits = trimmed.strip_prefix(['+', '-']).unwrap_or(trimmed);
+    // Python's int() takes single underscores between digits, as in tpm: 20_000
+    let plain = if digits.split('_').any(str::is_empty) {
+        trimmed.to_owned()
+    } else {
+        trimmed.replace('_', "")
+    };
+    plain
         .parse::<T>()
         .map_err(|source| ConfigError::InvalidInteger {
             path: path.to_owned(),

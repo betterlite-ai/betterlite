@@ -31,6 +31,8 @@ pub enum RequestError {
     },
     #[error("betterlite does not support the {name} request parameter yet")]
     Unsupported { name: String },
+    #[error("the {name} request parameter must be a string")]
+    FieldType { name: &'static str },
 }
 pub type MockChatBuilder =
     fn(&MockPlan<'_>, UsageDefaults, &str, &str, u64) -> Result<ChatResponse, MockError>;

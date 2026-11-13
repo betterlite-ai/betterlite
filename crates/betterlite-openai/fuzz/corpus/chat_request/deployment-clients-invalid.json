@@ -1,1 +1,1 @@
-{"model":"gpt-4","messages":[{"role":"user","content":"hi"}],"stream":"yes"}
+{"model":"gpt-4","messages":[{"role":"user","content":"hi"}],"api_key":5}

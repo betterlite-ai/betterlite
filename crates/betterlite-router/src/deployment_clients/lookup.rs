@@ -9,7 +9,7 @@ use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::deployment_identity::spec::DeploymentSpec;
 
 // CredentialLiteLLMParams, in its declared order, so a dump keeps the same fields LiteLLM's model keeps.
-const CREDENTIAL_FIELDS: &str = "api_key api_base api_version azure_ad_token tenant_id client_id client_secret azure_scope azure_username azure_password vertex_project vertex_location vertex_credentials region_name gcs_bucket_name bucket_name aws_access_key_id aws_secret_access_key aws_session_token aws_region_name aws_session_name aws_profile_name aws_role_name aws_web_identity_token aws_sts_endpoint aws_external_id aws_session_tags aws_bedrock_runtime_endpoint aws_bedrock_project_id s3_bucket_name s3_endpoint_url s3_region_name s3_access_key_id s3_secret_access_key s3_encryption_key_id s3_bucket_owner aws_batch_role_arn s3_output_bucket_name bedrock_tags watsonx_region_name litellm_credential_name";
+const CREDENTIAL_FIELDS: &str = "api_key api_base api_version azure_ad_token tenant_id client_id client_secret azure_scope azure_username azure_password vertex_project vertex_location vertex_credentials region_name gcs_bucket_name bucket_name aws_access_key_id aws_secret_access_key aws_session_token aws_region_name aws_session_name aws_profile_name aws_role_name aws_web_identity_token aws_sts_endpoint aws_external_id aws_session_tags aws_bedrock_runtime_endpoint aws_bedrock_project_id s3_bucket_name s3_endpoint_url s3_region_name s3_access_key_id s3_secret_access_key s3_encryption_key_id s3_bucket_owner aws_batch_role_arn s3_output_bucket_name bedrock_tags watsonx_region_name";
 
 // Fields pydantic validates as str | dict, or as a list, keep more than plain text.
 const TEXT_OR_OBJECT: [&str; 1] = ["vertex_credentials"];
@@ -175,8 +175,8 @@ pub fn provider_credentials(
     };
     let params = &deployment.litellm_params;
     let mut credentials = credential_params(params)?;
-    if let Some(Json::Text(name)) = credentials.get("litellm_credential_name").cloned() {
-        let values = stored.get(&name).filter(|values| !values.is_empty());
+    if let Some(Json::Text(name)) = params.get("litellm_credential_name") {
+        let values = stored.get(name).filter(|values| !values.is_empty());
         match values {
             Some(values) => {
                 credentials.extend(
@@ -190,7 +190,6 @@ pub fn provider_credentials(
                 "a deployment names a stored credential that the credential list does not hold"
             ),
         }
-        credentials.shift_remove("litellm_credential_name");
     }
     let model = match params.get("model") {
         Some(Json::Text(model)) => model.clone(),
