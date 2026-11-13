@@ -6,7 +6,8 @@ use pyo3::{Bound, Py, PyAny, PyErr, Python};
 use tracing::{debug, info};
 
 use crate::blocking_work::WorkError;
-use crate::instance_loader::{PythonFailure, module_spec};
+use crate::instance_loader::PythonFailure;
+use crate::instance_loader::local_file::module_spec;
 use crate::instance_ref::{RefError, RemoteModule, Storage};
 use crate::owned_temp::{OwnedTempDir, TempError};
 
