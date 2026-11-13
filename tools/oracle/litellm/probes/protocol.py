@@ -31,11 +31,6 @@ class Strict(BaseModel):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="forbid", strict=True, frozen=True)
 
 
-class Operation(Strict):
-    def run(self) -> Strict:
-        raise NotImplementedError
-
-
 class Clock(Strict):
     unix_millis: Millis
     monotonic_millis: Millis
@@ -79,6 +74,14 @@ class InjectedRandom(random.Random):
         return self.remaining.pop() / SAMPLE_LIMIT
 
 
+class Operation(Strict):
+    def run(self) -> Strict:
+        raise NotImplementedError
+
+    def run_with(self, _generator: InjectedRandom) -> Strict:
+        return self.run()
+
+
 @contextmanager
 def injected(clock: Clock, generator: InjectedRandom) -> Generator[None, None, None]:
     time.time, time.monotonic = clock.wall, clock.monotonic
@@ -104,9 +107,10 @@ def answer(data: bytes, operations: Mapping[str, type[Operation]]) -> Reply:
         operation = operation_type.model_validate(arguments)
     except ValidationError as error:
         raise ProbeError("invalid_request", str(error)) from error
-    with injected(request.clock, InjectedRandom(request.samples)), warnings.catch_warnings(record=True) as caught:
+    generator = InjectedRandom(request.samples)
+    with injected(request.clock, generator), warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        output = operation.run()
+        output = operation.run_with(generator)
     return Reply(output={name: output}, warnings=[str(warning.message) for warning in caught])
 
 
