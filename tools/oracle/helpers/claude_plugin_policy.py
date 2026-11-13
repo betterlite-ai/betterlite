@@ -66,7 +66,7 @@ def answer(call: Call) -> JsonValue:
         case "validate_source":
             return validate_answer(call)
         case "require_admin":
-            return admin_answer(call)
+            return {"ok": is_proxy_admin(caller_of(call["caller"])), "status": None, "value": None}
         case "visibility":
             return visibility_answer(call)
 
@@ -77,10 +77,6 @@ def validate_answer(call: ValidateCall) -> JsonValue:
     except HTTPException as error:
         return {"ok": False, "status": error.status_code, "value": None}
     return {"ok": True, "status": None, "value": None}
-
-
-def admin_answer(call: AdminCall) -> JsonValue:
-    return {"ok": is_proxy_admin(caller_of(call["caller"])), "status": None, "value": None}
 
 
 def visibility_answer(call: VisibilityCall) -> JsonValue:
