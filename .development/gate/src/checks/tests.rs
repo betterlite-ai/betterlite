@@ -236,7 +236,7 @@ fn a_new_run_without_a_result_or_an_error_is_unfinished() {
 }
 
 #[test]
-fn the_local_gate_keeps_lint_checks_and_leaves_tests_to_ci() {
+fn the_local_gate_builds_nothing_and_leaves_clippy_and_tests_to_ci() {
     let (_folder, mut development, mut task) = fixture();
     development.catalog.base.commands.extend([
         command("fmt", "true"),
@@ -249,7 +249,7 @@ fn the_local_gate_keeps_lint_checks_and_leaves_tests_to_ci() {
         command("helper-python", "true"),
     ]);
     let selection = selection::builtins_and(&development, &task, selection::lint).unwrap();
-    assert_eq!(selection.only, ["fmt", "clippy", "deny"]);
+    assert_eq!(selection.only, ["fmt", "deny"]);
 }
 
 fn count_runs(root: &Path) -> usize {

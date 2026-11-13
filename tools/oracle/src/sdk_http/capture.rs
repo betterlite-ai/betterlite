@@ -12,7 +12,10 @@ use super::error::SdkHttpError;
 use super::python::PythonSdk;
 use super::result::SdkResult;
 use super::{OracleLimits, SdkHttpCall, Side};
-use super::{anthropic_beta_config, embedding_executor, native, vector_query_embedding};
+use super::{
+    anthropic_beta_config, embedding_executor, messages_header_stream, native,
+    vector_query_embedding,
+};
 use crate::OracleError;
 use crate::compare::multipart::masked_boundary;
 use crate::mock::{MockProvider, ProviderRequest};
@@ -56,6 +59,9 @@ impl<'sdk> Sdk<'sdk> {
             }
             (Self::Native, SdkHttpCall::AnthropicBetaConfig(beta)) => {
                 run_until_stopped(anthropic_beta_config::send(beta, api_base, env), stop)
+            }
+            (Self::Native, SdkHttpCall::MessagesHeaderStream(stream)) => {
+                run_until_stopped(messages_header_stream::send(stream, api_base, env), stop)
             }
         }
     }
