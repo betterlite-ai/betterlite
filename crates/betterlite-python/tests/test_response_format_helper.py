@@ -39,9 +39,14 @@ class Nested(BaseModel):  # type: ignore[explicit-any]  # https://github.com/pyd
     value: int = Field(description="a value")
 
 
+class Leaf(BaseModel):  # type: ignore[explicit-any]  # https://github.com/pydantic/pydantic/blob/b2212c787fb5c73386dc770681ec49cd09da8e73/pydantic/main.py#L134
+    x: int
+
+
 class Child(BaseModel):  # type: ignore[explicit-any]  # https://github.com/pydantic/pydantic/blob/b2212c787fb5c73386dc770681ec49cd09da8e73/pydantic/main.py#L134
     name: str
     nested: Nested
+    zz: Leaf = Field(description="a leaf")
 
 
 class ResponseModel(BaseModel):  # type: ignore[explicit-any]  # https://github.com/pydantic/pydantic/blob/b2212c787fb5c73386dc770681ec49cd09da8e73/pydantic/main.py#L134

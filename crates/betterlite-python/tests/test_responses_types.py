@@ -186,6 +186,7 @@ LOG_CONTENT_VALUES: tuple[JsonValue, ...] = (
 )
 NON_LOG_VALUES: tuple[JsonValue, ...] = (None, "text", 5, [{"stdout": "out"}])
 INPUT_TOKENS = 36
+NEGATIVE_REQUESTS = -1
 TOTAL_TOKENS = 123
 CACHED_TEXT_TOKENS = 3
 TOTAL_COST = 0.25
@@ -589,6 +590,14 @@ def test_usage_classes() -> None:
     empty = ResponsesToolUsage()
     reference_empty = litellm_openai.ResponsesToolUsage()
     assert_same("tool_usage_empty", reference_empty, empty)
+    with pytest.raises(ValidationError):
+        WebSearchToolUsage(num_requests=NEGATIVE_REQUESTS)
+    with pytest.raises(PydanticValidationError):
+        litellm_openai.WebSearchToolUsage(num_requests=NEGATIVE_REQUESTS)
+    with pytest.raises(ValidationError):
+        ResponsesToolUsage(web_search={"num_requests": NEGATIVE_REQUESTS})
+    with pytest.raises(PydanticValidationError):
+        litellm_openai.ResponsesToolUsage(web_search={"num_requests": NEGATIVE_REQUESTS})  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1378
 
 
 def test_usage_frozen() -> None:

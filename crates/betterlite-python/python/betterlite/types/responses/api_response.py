@@ -80,6 +80,14 @@ class _FrozenObject(ResponseObject):
 class WebSearchToolUsage(_FrozenObject):
     num_requests: int
 
+    @field_validator("num_requests", mode="before")
+    def _non_negative(self, value: StoredValue) -> StoredValue:
+        match value:
+            case int() if value < 0:
+                raise ValueError("num_requests must not be negative")
+            case _other:
+                return value
+
 
 class ResponsesToolUsage(_FrozenObject):
     web_search: WebSearchToolUsage | None
