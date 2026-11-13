@@ -31,7 +31,7 @@ use self::support::{
     ControlledClock, ControlledExecutor, RefreshReply, expiring, loaded, network_error,
     reauthentication_error, snapshot,
 };
-use super::background::{RefreshJob, await_background_refresh, release_job};
+use super::background::{RefreshJob, RefreshLedger, await_background_refresh, release_job};
 use super::{ensure_access_token, get_access_token_async};
 
 const CREDENTIAL: &str = "credential-secret-value";
@@ -40,9 +40,9 @@ const WAIT: Duration = Duration::from_secs(10);
 
 struct Fixture {
     cache: Arc<CredentialCache>,
+    ledger: Arc<RefreshLedger>,
     clock: Arc<ControlledClock>,
     executor: Arc<ControlledExecutor>,
-    tasks: TaskTracker,
 }
 
 fn credentials() -> ConfiguredCredentials {
@@ -69,19 +69,17 @@ fn new_fixture(
     let clock_source: Arc<dyn CredentialClock> = clock_handle;
     let executor_handle = Arc::clone(&executor);
     let credential_executor: Arc<dyn CredentialExecutor> = executor_handle;
-    let tasks = TaskTracker::new();
-    let cache = CredentialCache::new(clock_source, credential_executor, tasks.clone());
+    let cache = CredentialCache::new(clock_source, credential_executor);
     Fixture {
         cache: Arc::new(cache),
+        ledger: Arc::new(RefreshLedger::new(TaskTracker::new())),
         clock,
         executor,
-        tasks,
     }
 }
 
 async fn drain(fixture: &Fixture) {
-    fixture.tasks.close();
-    fixture.tasks.wait().await;
+    fixture.ledger.shutdown().await;
 }
 
 fn staged(
@@ -144,11 +142,24 @@ async fn lookup(
     fixture: &Fixture,
     project: Option<&str>,
 ) -> Result<AccessToken, CredentialCacheError> {
-    get_access_token_async(&fixture.cache, Some(&credentials()), project).await
+    get_access_token_async(
+        &fixture.cache,
+        &fixture.ledger,
+        Some(&credentials()),
+        project,
+    )
+    .await
 }
 
-fn refreshing_identities(cache: &CredentialCache) -> Vec<CredentialKey> {
-    cache.refreshes.lock().unwrap().keys().cloned().collect()
+fn refreshing_identities(fixture: &Fixture) -> Vec<CredentialKey> {
+    fixture
+        .ledger
+        .jobs
+        .lock()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect()
 }
 
 fn cached_project(record: &CacheRecord) -> Option<String> {
@@ -229,7 +240,7 @@ async fn stale_returns_now() {
     let refreshed = fixture.cache.cached_record(&key).unwrap();
     assert_eq!(token_of(&refreshed), "token-fresh");
     assert!(!Arc::ptr_eq(refreshed.credential(), &stale));
-    assert!(refreshing_identities(&fixture.cache).is_empty());
+    assert!(refreshing_identities(&fixture).is_empty());
     assert_eq!(
         fixture.executor.refresh_targets()[0]
             .as_ref()
@@ -285,7 +296,7 @@ async fn failed_background_retry() {
     assert_eq!(first.token.expose_secret(), "token-stale");
     timeout(WAIT, started.notified()).await.unwrap();
     gate.notify_one();
-    await_background_refresh(&fixture.cache, &key).await;
+    await_background_refresh(&fixture.ledger, &key).await;
     assert_eq!(fixture.executor.refresh_count(), 1);
     assert_eq!(
         token_of(&fixture.cache.cached_record(&key).unwrap()),
@@ -293,7 +304,7 @@ async fn failed_background_retry() {
     );
     let second = lookup(&fixture, Some(PROJECT)).await.unwrap();
     assert_eq!(second.token.expose_secret(), "token-stale");
-    await_background_refresh(&fixture.cache, &key).await;
+    await_background_refresh(&fixture.ledger, &key).await;
     assert_eq!(fixture.executor.refresh_count(), 2);
     assert_eq!(
         token_of(&fixture.cache.cached_record(&key).unwrap()),
@@ -321,7 +332,7 @@ async fn replaced_handle_survives() {
     ));
     store_handle(&fixture.cache, &key, &replacement, Some(PROJECT));
     gate.notify_one();
-    await_background_refresh(&fixture.cache, &key).await;
+    await_background_refresh(&fixture.ledger, &key).await;
     let cached = fixture.cache.cached_record(&key).unwrap();
     assert_eq!(token_of(&cached), "token-kept");
     assert!(Arc::ptr_eq(cached.credential(), &replacement));
@@ -376,7 +387,12 @@ async fn gemini_skips_auth() {
     .unwrap();
     let asynchronous = ensure_access_token(
         VertexCapabilityProvider::Gemini,
-        get_access_token_async(&fixture.cache, Some(&configured), Some(PROJECT)),
+        get_access_token_async(
+            &fixture.cache,
+            &fixture.ledger,
+            Some(&configured),
+            Some(PROJECT),
+        ),
     )
     .await
     .unwrap();
@@ -413,11 +429,8 @@ async fn shutdown_drains_refresh() {
     assert_eq!(served.token.expose_secret(), "token-stale");
     timeout(WAIT, started.notified()).await.unwrap();
     let mut drains = JoinSet::new();
-    let draining = fixture.tasks.clone();
-    drains.spawn(async move {
-        draining.close();
-        draining.wait().await;
-    });
+    let draining = Arc::clone(&fixture.ledger);
+    drains.spawn(async move { draining.shutdown().await });
     yield_now().await;
     assert!(!drains.is_empty());
     gate.notify_one();
@@ -431,7 +444,7 @@ async fn shutdown_drains_refresh() {
         token_of(&fixture.cache.cached_record(&key).unwrap()),
         "token-fresh"
     );
-    assert!(refreshing_identities(&fixture.cache).is_empty());
+    assert!(refreshing_identities(&fixture).is_empty());
     store_project(&fixture.cache, &key, "token-late", TokenState::Stale);
     let late = lookup(&fixture, Some(PROJECT)).await.unwrap();
     assert_eq!(late.token.expose_secret(), "token-late");
@@ -452,6 +465,7 @@ async fn cancelled_waiter_releases_key() {
     let configured = credentials();
     let mut first = Box::pin(get_access_token_async(
         &fixture.cache,
+        &fixture.ledger,
         Some(&configured),
         Some(PROJECT),
     ));
@@ -459,6 +473,7 @@ async fn cancelled_waiter_releases_key() {
     timeout(WAIT, started.notified()).await.unwrap();
     let mut second = Box::pin(get_access_token_async(
         &fixture.cache,
+        &fixture.ledger,
         Some(&configured),
         Some(PROJECT),
     ));
@@ -498,6 +513,7 @@ async fn fresh_token_skips_the_lease() {
     let configured = credentials();
     let mut blocking = Box::pin(get_access_token_async(
         &fixture.cache,
+        &fixture.ledger,
         Some(&configured),
         Some(PROJECT),
     ));
@@ -506,6 +522,7 @@ async fn fresh_token_skips_the_lease() {
     store_project(&fixture.cache, &key, "token-fresh", TokenState::Fresh);
     let mut fast_lookup = Box::pin(get_access_token_async(
         &fixture.cache,
+        &fixture.ledger,
         Some(&configured),
         Some(PROJECT),
     ));
@@ -576,7 +593,12 @@ async fn vertex_wrappers_read_credentials() {
     assert!(matches!(synchronous, Err(CredentialCacheError::Load(_))));
     let asynchronous = ensure_access_token(
         VertexCapabilityProvider::VertexAiBeta,
-        get_access_token_async(&fixture.cache, Some(&configured), Some(PROJECT)),
+        get_access_token_async(
+            &fixture.cache,
+            &fixture.ledger,
+            Some(&configured),
+            Some(PROJECT),
+        ),
     )
     .await;
     assert!(matches!(asynchronous, Err(CredentialCacheError::Load(_))));
@@ -623,8 +645,7 @@ async fn injected_tracker_drains_refresh() {
     assert_eq!(served.token.expose_secret(), "token-stale");
     timeout(WAIT, started.notified()).await.unwrap();
     gate.notify_one();
-    fixture.tasks.close();
-    fixture.tasks.wait().await;
+    fixture.ledger.shutdown().await;
     assert_eq!(
         token_of(&fixture.cache.cached_record(&key).unwrap()),
         "token-fresh"

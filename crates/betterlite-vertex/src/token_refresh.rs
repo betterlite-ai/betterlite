@@ -1,4 +1,4 @@
-pub(crate) mod background;
+pub mod background;
 mod reauth;
 mod tests;
 
@@ -18,33 +18,36 @@ use crate::token_cache::probe::{
 use crate::token_cache::record::{CacheRecord, CredentialSnapshot, unpack_cached_credentials};
 use crate::token_cache::state::{TokenState, token_state};
 
-use self::background::{await_background_refresh, schedule_background_refresh};
+use self::background::{RefreshLedger, await_background_refresh, schedule_background_refresh};
 use self::reauth::reauthenticate_async;
 
 // LiteLLM's get_access_token_async: fresh returns now, stale serves now and refreshes in the background, invalid blocks
 pub async fn get_access_token_async(
     cache: &CredentialCache,
+    ledger: &RefreshLedger,
     credentials: Option<&ConfiguredCredentials>,
     project: Option<&str>,
 ) -> Result<AccessToken, CredentialCacheError> {
     let key = CredentialKey::new(credentials, project);
-    if let Some(access) = usable_or_scheduled(cache, &key, project) {
+    if let Some(access) = usable_or_scheduled(cache, ledger, &key, project) {
         return Ok(access);
     }
     // the lease covers the whole slow path so one caller refreshes and the rest read its result
     let _lease = cache.acquire_refresh_lease(&key).await?;
-    locked_access_token(cache, credentials, project, &key).await
+    locked_access_token(cache, ledger, credentials, project, &key).await
 }
 
-// a stale token is served as is; the refresh it needs runs once in the cache's tracker
+// a stale token is served as is; the refresh it needs runs once in the ledger that owns this cache's tracker
 fn usable_or_scheduled(
     cache: &CredentialCache,
+    ledger: &RefreshLedger,
     key: &CredentialKey,
     project: Option<&str>,
 ) -> Option<AccessToken> {
     let entry = usable_cached(cache, key, project)?;
     if entry.state == TokenState::Stale {
         schedule_background_refresh(
+            ledger,
             cache,
             entry.credential,
             key.to_owned(),
@@ -90,6 +93,7 @@ where
 
 async fn locked_access_token(
     cache: &CredentialCache,
+    ledger: &RefreshLedger,
     credentials: Option<&ConfiguredCredentials>,
     project: Option<&str>,
     key: &CredentialKey,
@@ -111,14 +115,18 @@ async fn locked_access_token(
         || resolved_project_alias(cache, key, &credential, credential_project.as_deref()),
         |named| Some(named.to_owned()),
     );
-    match token_state(&credential, cache.clock.now()) {
-        TokenState::Fresh => validate(&credential, resolved),
-        TokenState::Stale => match stale_access(cache, key, resolved.as_deref(), &record)? {
-            Some(access) => Ok(access),
-            None => invalid_access(cache, credentials, key, record, resolved).await,
-        },
-        TokenState::Invalid => invalid_access(cache, credentials, key, record, resolved).await,
+    let state = token_state(&credential, cache.clock.now());
+    if state == TokenState::Fresh {
+        return validate(&credential, resolved);
     }
+    if state == TokenState::Stale
+        && let Some(access) = stale_access(cache, ledger, key, resolved.as_deref(), &record)?
+    {
+        return Ok(access);
+    }
+    // INVALID, or a stale record without a token, drains the background refresh it would race
+    await_background_refresh(ledger, key).await;
+    invalid_access(cache, credentials, key, record, resolved).await
 }
 
 // LiteLLM's slow path always overwrites the resolved alias; the synchronous lookup only fills an absent one
@@ -144,6 +152,7 @@ fn resolved_project_alias(
 
 fn stale_access(
     cache: &CredentialCache,
+    ledger: &RefreshLedger,
     key: &CredentialKey,
     resolved: Option<&str>,
     record: &CacheRecord,
@@ -153,7 +162,7 @@ fn stale_access(
     let Some(token) = credential.token.clone() else {
         return Ok(None);
     };
-    schedule_background_refresh(cache, credential, key.clone(), credential_project);
+    schedule_background_refresh(ledger, cache, credential, key.clone(), credential_project);
     Ok(Some(AccessToken {
         token,
         project: project.to_owned(),
@@ -167,7 +176,6 @@ async fn invalid_access(
     record: CacheRecord,
     resolved: Option<String>,
 ) -> Result<AccessToken, CredentialCacheError> {
-    await_background_refresh(cache, key).await;
     let fresh = {
         let records = cache.records.lock().unwrap_or_else(PoisonError::into_inner);
         try_cached_token(&records, key, resolved.as_deref(), cache.clock.now())

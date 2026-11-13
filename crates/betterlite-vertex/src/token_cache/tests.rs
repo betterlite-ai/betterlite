@@ -19,7 +19,6 @@ use google_cloud_auth::errors::CredentialsError;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::Notify;
-use tokio_util::task::TaskTracker;
 
 use crate::credential_sources::error::CredentialSourceError;
 use crate::credential_sources::sdk::CredentialClock;
@@ -148,11 +147,7 @@ impl CredentialExecutor for FakeExecutor {
 }
 
 fn cache_with(executor: Arc<FakeExecutor>) -> CredentialCache {
-    CredentialCache::new(
-        Arc::new(FixedClock(SystemTime::UNIX_EPOCH)),
-        executor,
-        TaskTracker::new(),
-    )
+    CredentialCache::new(Arc::new(FixedClock(SystemTime::UNIX_EPOCH)), executor)
 }
 
 fn credential_text() -> ConfiguredCredentials {
