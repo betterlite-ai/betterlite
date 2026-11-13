@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
-use pyo3::exceptions::PyImportError;
+use pyo3::exceptions::PyModuleNotFoundError;
 use pyo3::types::PyAnyMethods as _;
 use pyo3::{Bound, Py, PyAny, PyErr, PyResult, Python};
 
@@ -44,8 +44,11 @@ pub enum LibraryError {
         module: String,
         install_hint: String,
     },
-    #[error("importing the library failed: {0}")]
-    Import(Box<PythonError>),
+    #[error("importing the library failed: {source}")]
+    Import {
+        #[source]
+        source: Box<PythonError>,
+    },
     #[error("{module} has no attribute {path:?}")]
     MissingAttribute {
         module: String,
@@ -173,11 +176,14 @@ fn import_error(
             install_hint: install_hint.to_owned(),
         };
     }
-    LibraryError::Import(Box::new(PythonError::from_pyerr(py, error)))
+    LibraryError::Import {
+        source: Box::new(PythonError::from_pyerr(py, error)),
+    }
 }
 
 fn missing_module(py: Python<'_>, module_name: &str, error: &PyErr) -> bool {
-    if !error.is_instance_of::<PyImportError>(py) {
+    // a package that fails inside its __init__ raises a plain ImportError, so only a missing module counts
+    if !error.is_instance_of::<PyModuleNotFoundError>(py) {
         return false;
     }
     error

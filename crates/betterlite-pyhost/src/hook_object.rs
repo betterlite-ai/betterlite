@@ -10,7 +10,7 @@ use crate::call_error::{CallError, PythonError};
 use crate::callable_handle::CallableHandle;
 use crate::host::PythonHost;
 use crate::instance_loader::LoadedObject;
-use crate::json_values::{JsonObject, JsonValue, from_object, to_object};
+use crate::json_values::{JsonObject, JsonValue};
 
 mod construct;
 mod kind;
@@ -88,29 +88,15 @@ impl HookObject {
         deadline: Duration,
         call: MethodCall<'_>,
     ) -> Result<JsonValue, HookError> {
-        let raw = host.attach(|py| {
-            let args = call
-                .args
-                .iter()
-                .map(|value| to_object(py, value).map(Bound::unbind))
-                .collect::<PyResult<Vec<_>>>()
-                .map_err(|error| HookError::Python(PythonError::from_pyerr(py, &error)))?;
-            let kwargs = call
-                .kwargs
-                .iter()
-                .map(|(name, value)| Ok((name.clone(), to_object(py, value)?.unbind())))
-                .collect::<PyResult<BTreeMap<_, _>>>()
-                .map_err(|error| HookError::Python(PythonError::from_pyerr(py, &error)))?;
-            Ok::<RawMethodCall<'_>, HookError>(RawMethodCall {
-                name: call.name,
-                args,
-                kwargs,
-            })
-        })?;
-        let value = self.call_method_raw(host, tracker, deadline, raw).await?;
-        host.attach(|py| from_object(value.bind(py)))
-            .map_err(CallError::Value)
-            .map_err(HookError::Call)
+        match self.method(host, call.name) {
+            Some(handle) => handle
+                .call(host, tracker, deadline, call.args, call.kwargs)
+                .await
+                .map_err(HookError::Call),
+            None => Err(HookError::NoSuchMethod {
+                name: call.name.to_owned(),
+            }),
+        }
     }
 
     pub async fn call_method_raw(
@@ -125,10 +111,7 @@ impl HookObject {
                 name: call.name.to_owned(),
             });
         };
-        handle
-            .call_raw(host, tracker, deadline, call.args, call.kwargs)
-            .await
-            .map_err(HookError::Call)
+        method::invoke_raw(handle, host, tracker, deadline, call).await
     }
 
     pub fn construct(

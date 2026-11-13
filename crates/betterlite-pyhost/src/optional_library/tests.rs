@@ -92,12 +92,38 @@ fn an_import_error_inside_an_installed_library_is_not_missing() {
             "pip install b8043-broken-library",
         )
         .unwrap_err();
-    let LibraryError::Import(source) = error else {
+    let LibraryError::Import { source } = error else {
         panic!("expected an import failure, got {error:?}");
     };
     assert_eq!(source.type_name, "ModuleNotFoundError");
     assert!(
         source.message.contains("b8043_absent_dependency"),
+        "got: {}",
+        source.message
+    );
+}
+
+#[test]
+fn an_import_error_from_an_installed_package_is_not_missing() {
+    let folder = tempfile::tempdir().unwrap();
+    let package = folder.path().join("b8043_installed_package");
+    fs::create_dir_all(&package).unwrap();
+    fs::write(package.join("__init__.py"), "from . import b8043_absent\n").unwrap();
+    let host = start_host(vec![folder.path().to_path_buf()]);
+    let library = OptionalLibrary::default();
+    let error = library
+        .import(
+            &host,
+            "b8043_installed_package",
+            "pip install b8043-installed-package",
+        )
+        .unwrap_err();
+    let LibraryError::Import { source } = error else {
+        panic!("expected an import failure, got {error:?}");
+    };
+    assert_eq!(source.type_name, "ImportError");
+    assert!(
+        source.message.contains("b8043_absent"),
         "got: {}",
         source.message
     );
