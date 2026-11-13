@@ -12,13 +12,13 @@ fn the_crc16_check_value_matches_the_standard_vector() {
 
 #[test]
 fn the_slot_mask_is_the_cluster_slot_count_minus_one() {
-    assert_eq!(REDIS_CLUSTER_SLOTS, 16384);
+    assert_eq!(REDIS_CLUSTER_SLOTS, 16_384);
     assert_eq!(SLOT_BITS, REDIS_CLUSTER_SLOTS - 1);
 }
 
 #[rstest]
-#[case::foo("foo", 12182)]
-#[case::bar("bar", 5061)]
+#[case::foo("foo", 12_182)]
+#[case::bar("bar", 5_061)]
 #[case::hello("hello", 866)]
 #[case::tagged("a{tag}b", 8338)]
 fn a_key_lands_on_the_slot_binascii_crc_hqx_gives(#[case] key: &str, #[case] slot: u16) {

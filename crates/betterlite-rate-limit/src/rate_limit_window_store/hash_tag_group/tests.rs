@@ -65,5 +65,5 @@ fn keys_with_the_same_slot_share_a_group_in_first_seen_order() {
 fn every_group_tag_is_the_slot_number() {
     let store = store_with(FakeCache::new(Some(RedisCacheKind::Cluster)));
     let groups = group_keys_by_hash_tag(&store, &key_list(&["foo"]));
-    assert_eq!(groups[0].0, format!("slot_{}", 12182));
+    assert_eq!(groups[0].0, format!("slot_{}", 12_182));
 }
