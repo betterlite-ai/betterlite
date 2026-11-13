@@ -1,0 +1,72 @@
+kind: helper
+name: messages-native-prepare-billing-and-cache-fields
+call:
+  messages_native_prepare:
+    function: transform
+    calls:
+      - request:
+          model: claude-sonnet-4-5
+          max_tokens: 16
+          system:
+            - type: text
+              text: base
+              cache_control:
+                type: ephemeral
+                scope: global
+                ttl: 1h
+          messages:
+            - role: user
+              content:
+                - type: text
+                  text: question
+                  cache_control:
+                    type: ephemeral
+                    scope: global
+                    ttl: 5m
+              cache_control:
+                type: ephemeral
+                scope: global
+          tools:
+            - name: lookup
+              cache_control:
+                type: ephemeral
+                scope: global
+        supports_mid_system: false
+      - request:
+          model: claude-sonnet-4-5
+          max_tokens: 16
+          system: "x-anthropic-billing-header: cc_version=1"
+          messages:
+            - role: user
+              content: question
+        supports_mid_system: false
+      - request:
+          model: claude-sonnet-4-5
+          max_tokens: 16
+          system:
+            - type: text
+              text: "x-anthropic-billing-header: a"
+          messages:
+            - role: user
+              content: question
+        supports_mid_system: false
+      - request:
+          model: claude-sonnet-4-5
+          max_tokens: 16
+          system:
+            - type: text
+              text: "x-anthropic-billing-header: a"
+            - type: text
+              text: keep
+            - type: image
+              source:
+                type: base64
+                media_type: image/png
+                data: AA==
+          messages:
+            - role: user
+              content: question
+        supports_mid_system: false
+env: {}
+compare:
+  ignore: []

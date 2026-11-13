@@ -1,0 +1,11 @@
+kind: helper
+name: tool-call-shapes-lenient
+call:
+  b3670:
+    function: tool_call_shapes
+    calls:
+      - {"id": "c1", "type": "function", "function": {"arguments": "a"}, "index": 0}
+      - {"id": "c2", "type": "function", "function": {"name": "f"}, "index": 1}
+      - {"id": "c3", "type": "function", "function": {}, "index": 2}
+env: {}
+compare: {ignore: []}

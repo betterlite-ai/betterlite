@@ -1,0 +1,9 @@
+kind: helper
+name: openai-response-events-seed-reply
+call:
+  openai_response_events:
+    created_at_conversion:
+      probes:
+        - {body: '{"id":"r","created_at":null,"output":[]}', status: 200, headers: {}, now: 1700000000}
+env: {}
+compare: {ignore: []}

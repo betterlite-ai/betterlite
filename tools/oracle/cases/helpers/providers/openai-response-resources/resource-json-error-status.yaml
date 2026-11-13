@@ -1,0 +1,15 @@
+kind: helper
+name: openai-response-resources-resource-json-error-status
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_resources:
+    resource_json_error_status:
+      probes:
+        - {endpoint: delete, body: 'not json', status: 400}
+        - {endpoint: get, body: '{"id":', status: 503}
+        - {endpoint: list, body: 'not json', status: 401}
+        - {endpoint: cancel, body: '{}x', status: 500}
+        - {endpoint: compact, body: '[]', status: 429, now: 1700000000}
+        - {endpoint: list, body: '[1,2,3]', status: 200}
+        - {endpoint: list, body: '{"data":[{"id":"item_1"}],"has_more":false}', status: 200}

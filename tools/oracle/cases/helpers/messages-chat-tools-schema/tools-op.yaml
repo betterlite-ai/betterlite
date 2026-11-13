@@ -1,0 +1,12 @@
+kind: helper
+name: messages-chat-tools-schema-tools-op
+call:
+  messages_chat_tools_schema:
+    operation: tools
+    model: gpt-4o
+    tools:
+      - {type: custom, name: lookup, input_schema: {type: object}, strict: false}
+      - {name: web_search}
+      - {googleSearch: {}}
+env: {}
+compare: {ignore: []}

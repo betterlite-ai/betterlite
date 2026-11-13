@@ -1,0 +1,10 @@
+task: B914
+deviations:
+  - what: >-
+      A chat tool call whose type is custom is cached under its id as a function
+      record with an empty name and null arguments, and it produces no output item.
+    why: >-
+      B913's tool-call cache record models function calls only, so there is no
+      field to carry the custom payload; the public Responses output still
+      matches LiteLLM, which also leaves custom-typed calls out of it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2151-L2160

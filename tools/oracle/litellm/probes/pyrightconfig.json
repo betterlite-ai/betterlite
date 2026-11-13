@@ -1,0 +1,8 @@
+{
+  "include": ["."],
+  "extraPaths": [".."],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportExplicitAny": "error",
+  "reportImplicitOverride": "error"
+}

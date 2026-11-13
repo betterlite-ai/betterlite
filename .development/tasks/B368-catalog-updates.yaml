@@ -19,6 +19,14 @@ description: 'Build DeploymentCatalog snapshots and add/upsert/delete mutations 
   Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B302 calls this service. add_deployment (L9775-L9806) calls the register_deployment_pricing that B9710 builds. This task hands the replay_deployment_pricing of B9710 to the set_live_deployment_replay of B5365, runs the provider-unresolved creations of B401 first and clears the group info cache of B846 afterwards.'
 scope:
   paths:
+  - "tools/oracle/litellm/probes/registry.py"
+  - "tools/oracle/litellm/probes/protocol.py"
+  - "tools/oracle/litellm/mypy.toml"
+  - "tools/oracle/helpers/b3663"
+  - "tools/oracle/litellm/probes/pyrightconfig.json"
+  - "tools/oracle/litellm/probes/__init__.py"
+  - "tools/oracle/litellm/probes"
+  - "tools/oracle/litellm"
   - crates/betterlite-router/src/catalog_updates.rs
   - crates/betterlite-router/src/catalog_updates/**
   - crates/betterlite-server/src/routing/catalog_updates.rs

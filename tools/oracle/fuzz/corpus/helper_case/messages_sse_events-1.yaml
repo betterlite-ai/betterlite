@@ -1,0 +1,8 @@
+kind: helper
+name: messages-sse-events-corpus
+call:
+  messages_sse_events:
+    action: raw_chunk_classifiers
+    raw_bytes: [101, 118, 101, 110, 116, 58, 32, 112, 105, 110, 103, 10, 10]
+env: {}
+compare: {ignore: []}

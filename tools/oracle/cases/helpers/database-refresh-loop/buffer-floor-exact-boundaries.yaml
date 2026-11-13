@@ -1,0 +1,40 @@
+kind: helper
+name: database-refresh-loop-buffer-floor-exact-boundaries
+call:
+  database_refresh_loop:
+    function: batch
+    calls:
+      - function: seconds_until_refresh
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:00:00"
+      - function: seconds_until_refresh
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:12:00"
+      - function: seconds_until_refresh
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:12:01"
+      - function: seconds_until_refresh
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:11:30"
+      - function: seconds_until_refresh
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:11:29.5"
+      - function: token_refresh_not_needed
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:12:00"
+      - function: token_refresh_not_needed
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:11:59.5"
+      - function: is_token_expired
+        auth: rds
+        url: "postgresql://u:t%3FX-Amz-Date%3D20240101T000000Z%26X-Amz-Expires%3D900@h:5432/d"
+        now: "2024-01-01T00:12:00"
+env: {}
+compare: {ignore: []}
