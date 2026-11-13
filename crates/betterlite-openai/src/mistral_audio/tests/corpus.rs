@@ -106,7 +106,7 @@ fn empty_transcription(bytes: &[u8]) -> bool {
 fn replays(path: &Path) -> bool {
     let bytes = fs::read(path).expect("the seed reads");
     match category(path).as_str() {
-        "speech-valid" | "speech-trailing-bits" => valid_audio(&bytes),
+        "speech-valid" | "speech-valid-extra" | "speech-trailing-bits" => valid_audio(&bytes),
         "speech-invalid-base64" | "speech-bad-padding" => bad_audio(&bytes),
         "speech-missing-audio" => missing_audio(&bytes),
         "speech-empty-audio" => empty_audio(&bytes),
