@@ -1,0 +1,24 @@
+kind: helper
+name: auth-limit-inputs-key-model-override
+call:
+  auth_limit_inputs:
+    function: key_model_limits
+    auth:
+      api_key: sk-oracle
+      metadata:
+        model_rpm_limit:
+          gpt-4: 10
+      model_max_budget:
+        gpt-4:
+          rpm_limit: 5
+      team_metadata:
+        model_rpm_limit:
+          gpt-4: 7
+    model_name: gpt-4
+    deployments:
+      - model_name: gpt-4
+        default_api_key_rpm_limit: 1
+        default_api_key_tpm_limit: 1
+env: {}
+compare:
+  ignore: []

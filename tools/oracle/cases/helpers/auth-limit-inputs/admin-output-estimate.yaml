@@ -1,0 +1,17 @@
+kind: helper
+name: auth-limit-inputs-admin-output-estimate
+call:
+  auth_limit_inputs:
+    function: enforce_output_estimates
+    request:
+      model_fields_set: [default_estimated_output_tokens]
+      estimate: 1
+    existing_metadata:
+      default_estimated_output_tokens: 2000
+    caller:
+      api_key: sk-admin
+      user_role: proxy_admin
+    entity: key
+env: {}
+compare:
+  ignore: []

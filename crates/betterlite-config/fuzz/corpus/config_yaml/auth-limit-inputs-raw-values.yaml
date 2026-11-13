@@ -1,0 +1,14 @@
+model_list:
+  - model_name: broken
+    litellm_params:
+      model: openai/broken
+      default_api_key_rpm_limit: not-a-number
+      default_api_key_tpm_limit: 1.5
+  - model_name: typed
+    litellm_params:
+      model: openai/typed
+      default_api_key_rpm_limit: true
+      default_api_key_tpm_limit: []
+  - model_name: absent
+    litellm_params:
+      model: openai/absent
