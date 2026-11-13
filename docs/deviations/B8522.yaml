@@ -1,0 +1,23 @@
+task: B8522
+deviations:
+  - what: The hooks return the applied guardrail name in their result instead of writing the applied-guardrails header themselves.
+    why: The header is added by the request dispatcher, so a guardrail never touches the response headers, as the task's own deviation section asks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L661-L666
+  - what: The HTTP client is a constructor argument rather than built inside the constructor.
+    why: Clients are built once by the caller; LiteLLM calls get_async_httpx_client inside LakeraAIGuardrail.__init__.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L284
+  - what: A guard call whose answer has no payload key records its response instead of raising KeyError.
+    why: LiteLLM pops payload unconditionally in the finally block, so a successful answer without that key (payload=false against an API that omits it) turns into an unhandled KeyError. Removing a missing key is the behavior a working setup expects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L416-L421
+  - what: The guard request and the guard answer are not written to the log at debug level.
+    why: LiteLLM logs both bodies, which carry the user's messages and the PII spans it found. betterlite logs that the guard ran without the content.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L398-L405
+  - what: A hot reload re-applies on_flagged, advisory_system_message, payload, breakdown, dev_info, the mode, the timeout and the skip flags, and keeps the live api_key, api_base, project_id and metadata.
+    why: LiteLLM's setattr loop copies every LitellmParams value including the connection fields; betterlite validates the prospective advisory state before writing anything, and leaves connection changes to the component that rebuilds the client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1466-L1470
+  - what: A template the format engine cannot parse or fully evaluate is refused with betterlite's own message, where LiteLLM lets Python's ValueError or AttributeError from str.format escape.
+    why: Python's Formatter messages name Python internals, and betterlite implements the format subset an advisory message needs (fields, conversions, fill, alignment, width, precision). Attribute access and negative indexes are refused instead of evaluated.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L333-L359
+  - what: A rendered advisory message is capped at 1 MiB and a format width at one million characters.
+    why: A configured template is an input like any other, and an unbounded width would allocate the whole width on every request; LiteLLM renders whatever the template asks for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/lakera_ai_v2.py#L361-L365

@@ -1,0 +1,11 @@
+kind: helper
+name: escaped-reason-template
+call:
+  b8522:
+    function: validate_advisory_config
+    on_flagged: inject_system_message
+    advisory_system_message: "Watch out for {{reason}}"
+    payload: true
+    breakdown: true
+env: {}
+compare: {ignore: []}
