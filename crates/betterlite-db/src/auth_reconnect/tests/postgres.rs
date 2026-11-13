@@ -262,6 +262,7 @@ async fn postgres_writer_read_only_probe() {
         .expect("the database turns read-only");
     drop(client);
     writer.close();
+    assert!(writer_select_one(&writer).await.is_err());
     let read_only = build_pool(url.expose_secret()).expect("the read-only pool builds");
     assert!(
         writer_is_read_only(&read_only)

@@ -714,3 +714,52 @@ async fn dead_engine_reads_the_engine_state() {
     assert!(recorded.contains(&Effect::Reap));
     assert!(!recorded.contains(&Effect::Probe));
 }
+
+#[tokio::test]
+async fn dead_forced_decline_clears_marker() {
+    let effects = fakes::effects();
+    let mut script = EngineScript::default();
+    script.recreates.push_back(RecreateOutcome::Value(false));
+    let engine = FakeEngine::new(script, Arc::clone(&effects));
+    let policy = AuthReconnect::new(
+        engine,
+        settings(),
+        ScriptedClock::from_seconds(&[1000.0]),
+        FakeLock::new(LockMode::Free, Arc::clone(&effects)),
+        ReconnectHistory {
+            engine_dead: true,
+            ..ReconnectHistory::default()
+        },
+    );
+    let url = SecretString::from(URL);
+    let declined = request("dead_declined", &url, true, true);
+    assert!(!policy.attempt_db_reconnect(&declined, None).await);
+    assert!(!policy.snapshot().engine_dead);
+    assert_eq!(policy.snapshot().consecutive_failures, 0);
+}
+
+#[rstest]
+#[case::dead_engine(true)]
+#[case::live_engine(false)]
+#[tokio::test]
+async fn unforced_false_replacement_succeeds(#[case] dead: bool) {
+    let effects = fakes::effects();
+    let mut script = EngineScript::default();
+    script.probes.push_back(ProbeOutcome::Value(true));
+    script.recreates.push_back(RecreateOutcome::Value(false));
+    let engine = FakeEngine::new(script, Arc::clone(&effects));
+    let policy = AuthReconnect::new(
+        engine,
+        settings(),
+        ScriptedClock::from_seconds(&[1000.0]),
+        FakeLock::new(LockMode::Free, Arc::clone(&effects)),
+        ReconnectHistory {
+            engine_dead: dead,
+            ..ReconnectHistory::default()
+        },
+    );
+    let url = SecretString::from(URL);
+    let attempt = request("unforced", &url, true, false);
+    assert!(policy.attempt_db_reconnect(&attempt, None).await);
+    assert_eq!(policy.snapshot().consecutive_failures, 0);
+}
