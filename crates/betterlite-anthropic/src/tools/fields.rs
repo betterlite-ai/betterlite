@@ -43,16 +43,22 @@ pub(super) fn function_fields(fields: &Object) -> Result<Option<&Object>, ToolsE
     }
 }
 
-pub(super) fn string_list(value: &Json) -> Result<Vec<String>, ToolsError> {
+pub(super) fn string_list(value: &Json, field: &'static str) -> Result<Vec<String>, ToolsError> {
     let Json::List(items) = value else {
-        return Err(ToolsError::AllowedCallers);
+        return Err(ToolsError::WrongType {
+            field,
+            expected: "a list of strings",
+        });
     };
     items
         .iter()
         .map(|item| {
             item.as_str()
                 .map(str::to_owned)
-                .ok_or(ToolsError::AllowedCallers)
+                .ok_or(ToolsError::WrongType {
+                    field,
+                    expected: "a list of strings",
+                })
         })
         .collect()
 }

@@ -9,7 +9,7 @@ pub(super) fn tool_configuration(fields: &Object) -> Result<Option<ToolConfigura
     match non_null(fields.get("allowed_tools")) {
         None => Ok(None),
         Some(value) => Ok(Some(ToolConfiguration {
-            allowed_tools: string_list(value)?,
+            allowed_tools: string_list(value, "allowed_tools")?,
         })),
     }
 }

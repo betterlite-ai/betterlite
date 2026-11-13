@@ -51,8 +51,6 @@ pub enum ToolsError {
     AdvisorModel,
     #[error("defer_loading must be a boolean")]
     DeferLoading,
-    #[error("allowed_callers must be a list of strings")]
-    AllowedCallers,
     #[error(transparent)]
     Eager(#[from] FeatureFlagsError),
     #[error(transparent)]
@@ -70,7 +68,6 @@ impl ToolsError {
             | Self::UnsupportedType(_)
             | Self::AdvisorModel
             | Self::DeferLoading
-            | Self::AllowedCallers
             | Self::Definitions(_) => None,
         }
     }

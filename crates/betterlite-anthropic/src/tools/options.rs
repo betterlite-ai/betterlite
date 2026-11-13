@@ -73,7 +73,7 @@ fn defer(tool: &Object, nested: Option<&Object>) -> Result<Option<bool>, ToolsEr
 
 fn callers(tool: &Object, nested: Option<&Object>) -> Result<Option<Vec<String>>, ToolsError> {
     top_or_nested(tool, nested, "allowed_callers")
-        .map(string_list)
+        .map(|value| string_list(value, "allowed_callers"))
         .transpose()
 }
 
