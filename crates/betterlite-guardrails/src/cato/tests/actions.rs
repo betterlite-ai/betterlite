@@ -197,6 +197,10 @@ async fn cato_guardrail_call_posts_the_analyze_messages_and_headers() {
         headers.get("content-type").map(String::as_str),
         Some("application/json")
     );
+    assert_eq!(
+        headers.get("user-agent").map(String::as_str),
+        Some(format!("litellm/{LITELLM_VERSION}").as_str())
+    );
     let posted: PostedBody = serde_json::from_str(body).expect("posted body");
     assert_eq!(
         posted.messages,
