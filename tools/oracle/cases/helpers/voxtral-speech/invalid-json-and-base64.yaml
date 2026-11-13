@@ -1,0 +1,12 @@
+kind: helper
+name: voxtral-speech-invalid-json-and-base64
+call:
+  voxtral_speech:
+    probes:
+      - {voice: null}
+      - {voice: {voice_id: null, id: null, name: null}}
+      - {voice: {name: ""}, kwargs: {voice_id: ""}}
+      - {voice: {voice_id: 7, id: "", name: " Echo "}}
+      - {voice: opus, kwargs: {voice_id: alloy}}
+env: {}
+compare: {ignore: []}
