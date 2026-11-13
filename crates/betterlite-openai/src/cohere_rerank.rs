@@ -185,10 +185,10 @@ pub fn get_error_class(
     cohere_error(status_code, error_message)
 }
 
-fn field<T: DeserializeOwned>(
-    params: &RerankParams,
-    name: &'static str,
-) -> Result<T, CohereRerankError> {
+fn field<T>(params: &RerankParams, name: &'static str) -> Result<T, CohereRerankError>
+where
+    T: DeserializeOwned,
+{
     serde_json::to_value(params.get(name))
         .and_then(serde_json::from_value)
         .map_err(|source| CohereRerankError::Field { name, source })
