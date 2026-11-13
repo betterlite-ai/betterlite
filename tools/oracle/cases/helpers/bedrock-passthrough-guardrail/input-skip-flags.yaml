@@ -1,0 +1,26 @@
+kind: helper
+name: bedrock-passthrough-input-skip-flags
+call:
+  b3678:
+    function: input_texts
+    endpoint: model/anthropic.claude-v2/converse
+    data:
+      data:
+        system:
+          - text: system text
+        messages:
+          - role: user
+            content:
+              - text: plain text
+              - toolUse:
+                  input: {q: tool input}
+              - toolResult:
+                  content:
+                    - text: tool result
+                      json: {j: tool json}
+              - text: beside the tools
+    skip_system: true
+    skip_tool: true
+    returned_texts: [R0, R1]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+task: B1407
+deviations:
+  - what: A float in an STT form value prints its exponent the Rust way (1e-5, 1e16) where Python's str() prints 1e-05 and 1e+16; floats between 1e-4 and 1e16 read the same on both sides.
+    why: Python's str() spelling is not ported (docs/compatibility.md), and xAI parses either spelling as the same number.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/audio_transcription/transformation.py#L50-L57

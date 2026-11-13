@@ -1,0 +1,12 @@
+kind: helper
+name: mcp-zero-tool-price-before-default
+call:
+  protocol_charge:
+    function: mcp
+    mcp:
+      response_cost: null
+      tool_name: search
+      default_cost_per_query: 0.5
+      tool_name_to_cost_per_query: {search: 0, lookup: 0.25}
+env: {}
+compare: {ignore: []}

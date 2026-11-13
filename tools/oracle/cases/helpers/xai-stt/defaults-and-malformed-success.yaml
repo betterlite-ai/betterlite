@@ -1,0 +1,13 @@
+kind: helper
+name: defaults-and-malformed-success
+call:
+  xai_stt:
+    env: {}
+    xai_key: null
+    steps:
+      - {step: reply, status: 200, headers: [], body: "{}"}
+      - {step: reply, status: 422, headers: [["x-a", "b"]], body: bad audio}
+      - {step: reply, status: 201, headers: [], body: not json}
+      - {step: reply, status: 200, headers: [], body: '{"text": 5}'}
+env: {}
+compare: {ignore: []}

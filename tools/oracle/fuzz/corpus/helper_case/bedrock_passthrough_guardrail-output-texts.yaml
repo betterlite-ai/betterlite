@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-passthrough-guardrail-output-texts-seed
+call:
+  b3678:
+    function: output_texts
+    endpoint: model/x/converse
+    response: {output: {message: {content: [{text: answer}]}}}
+    request_data: {model: m}
+env: {}
+compare: {ignore: []}

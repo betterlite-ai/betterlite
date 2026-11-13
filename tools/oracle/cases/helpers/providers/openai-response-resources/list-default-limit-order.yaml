@@ -1,0 +1,12 @@
+kind: helper
+name: openai-response-resources-list-default-limit-order
+env: {}
+compare: {ignore: []}
+call:
+  openai_response_resources:
+    list_default_limit_order:
+      probes:
+        - {endpoint: list, response_id: resp_1, api_base: https://api.openai.com/v1}
+        - {endpoint: list, response_id: resp_1, api_base: 'https://api.openai.com/v1/', limit: 5, order: asc}
+        - {endpoint: list, response_id: resp_2, api_base: https://api.openai.com/v1, after: '', before: '', limit: 0, order: desc}
+        - {endpoint: list, response_id: 'a/b', api_base: https://api.openai.com/v1, after: item_1, before: item_9}
