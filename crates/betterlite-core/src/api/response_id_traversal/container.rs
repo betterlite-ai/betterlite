@@ -25,17 +25,16 @@ pub fn encode_container_id(
     custom_llm_provider: Option<&str>,
     model_id: Option<&str>,
 ) {
-    // a mapping assignment cannot fail, so only an object's refusal to take the id is logged
     let item_is_mapping = matches!(item, Record::Dict(_));
     let encoded = item
         .field("container_id")
         .and_then(Record::as_text)
         .and_then(|container_id| maybe_encode(container_id, custom_llm_provider, model_id));
-    if let Some(wrapped) = encoded {
-        let written = item.set_text("container_id", wrapped);
-        if !item_is_mapping && written.is_err() {
-            tracing::debug!("Could not set container_id on streaming output item");
-        }
+    // a mapping assignment always succeeds, so only an object's refusal reaches this log
+    if let Some(wrapped) = encoded
+        && item.set_text("container_id", wrapped).is_err()
+    {
+        tracing::debug!("Could not set container_id on streaming output item");
     }
     // an object's nested attribute is walked whatever it holds; a mapping's nested call is one level only
     if let Some(nested) = item.field_mut("code_interpreter_call") {
