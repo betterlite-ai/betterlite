@@ -6,9 +6,7 @@ use betterlite_core::api::responses_to_chat_stream::records::{ChatChunk, ChunkFa
 use betterlite_core::api::responses_to_chat_stream::stream::{
     ParsedChatLine, get_model_response_iterator,
 };
-use betterlite_core::api::responses_to_chat_stream::translate::{
-    ToolCallIndices, translate_event,
-};
+use betterlite_core::api::responses_to_chat_stream::translate::{ToolCallIndices, translate_event};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
@@ -56,8 +54,7 @@ impl Helper for Op {
 }
 
 fn event_steps(events: &[Map<String, Value>]) -> HelperResult {
-    let mut iterator =
-        get_model_response_iterator(Some(false), FACTORY.identifier, FACTORY.clock);
+    let mut iterator = get_model_response_iterator(Some(false), FACTORY.identifier, FACTORY.clock);
     let mut steps = Vec::with_capacity(events.len());
     for event in events {
         let chunk = iterator
@@ -70,8 +67,7 @@ fn event_steps(events: &[Map<String, Value>]) -> HelperResult {
 
 // the Python side can only answer with a chunk, so a padding line is the helper's own error there too
 fn line_steps(lines: &[String]) -> HelperResult {
-    let mut iterator =
-        get_model_response_iterator(Some(false), FACTORY.identifier, FACTORY.clock);
+    let mut iterator = get_model_response_iterator(Some(false), FACTORY.identifier, FACTORY.clock);
     let mut steps = Vec::with_capacity(lines.len());
     for line in lines {
         match iterator
@@ -103,12 +99,8 @@ fn stateless_steps(
     let mut steps = Vec::with_capacity(events.len());
     for event in events {
         let indices = if shares_map { Some(&mut map) } else { None };
-        let chunk = translate_event(
-            &Value::Object(event.clone()),
-            indices,
-            FACTORY,
-        )
-        .map_err(|error| failure(&error))?;
+        let chunk = translate_event(&Value::Object(event.clone()), indices, FACTORY)
+            .map_err(|error| failure(&error))?;
         steps.push(rendered(&chunk)?);
     }
     Ok(json!({ "steps": steps }))

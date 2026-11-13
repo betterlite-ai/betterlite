@@ -30,7 +30,7 @@ EVENT = TypeAdapter(dict[str, object])
 
 class LineReader(ResponsesStream):
     def read(self, line: str) -> ModelResponseStream:
-        return MODEL.validate_python(self._handle_string_chunk(line))
+        return MODEL.validate_python(self._handle_string_chunk(line))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1342
 
 
 def run(input_value: Input) -> JsonValue:
