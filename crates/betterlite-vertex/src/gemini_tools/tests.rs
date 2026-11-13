@@ -279,6 +279,17 @@ fn maps_treat_null_coordinates_as_absent() {
     assert_eq!(mapped.tool_config, None);
 }
 
+#[test]
+fn maps_treat_a_null_language_code_as_absent() {
+    let input: Vec<Object> =
+        parse(r#"[{"googleMaps": {"latitude": 1, "longitude": 2, "languageCode": null}}]"#);
+    let mapped = mapped(&input);
+    assert_eq!(
+        as_json(&mapped.tool_config),
+        parse::<Json>(r#"{"retrievalConfig": {"latLng": {"latitude": 1, "longitude": 2}}}"#)
+    );
+}
+
 #[rstest]
 #[case::browser(
     r#"{"environment": "browser"}"#,
