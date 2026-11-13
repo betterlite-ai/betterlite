@@ -50,6 +50,17 @@ fn resolved(catalog: &ModelCatalog, model: &str) -> Option<Resolved> {
     .flatten()
 }
 
+// _supports_factory: an entry that leaves the flag absent falls back to the bare model-name entry (#20885)
+fn bare_supports_reasoning(catalog: &ModelCatalog, key: &str) -> bool {
+    let bare = key.rsplit('/').next().unwrap_or(key);
+    catalog
+        .lookup
+        .get(bare)
+        .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
+        .and_then(|entry| entry.fields.capabilities.reasoning.supports_reasoning)
+        == Some(true)
+}
+
 impl HealthCheckModelInfo for CatalogModelInfo<'_> {
     fn mode(&self, model: &str) -> Option<String> {
         resolved(self.catalog, model)?
@@ -59,7 +70,12 @@ impl HealthCheckModelInfo for CatalogModelInfo<'_> {
     }
 
     fn supports_reasoning(&self, model: &str) -> bool {
-        resolved(self.catalog, model).and_then(|info| info.capabilities.supports_reasoning)
-            == Some(true)
+        let Some(info) = resolved(self.catalog, model) else {
+            return false;
+        };
+        match info.capabilities.supports_reasoning {
+            Some(flag) => flag,
+            None => bare_supports_reasoning(self.catalog, &info.key),
+        }
     }
 }

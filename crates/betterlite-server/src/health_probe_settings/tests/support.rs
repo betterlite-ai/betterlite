@@ -14,7 +14,10 @@ pub(super) fn object(text: &str) -> JsonObject {
 
 pub(super) fn spec(model_name: &str, id: Option<&str>, model: &str) -> DeploymentSpec {
     let params = object(&format!(r#"{{"model":"{model}"}}"#));
-    let info = id.map_or_else(|| object("{}"), |id| object(&format!(r#"{{"id":"{id}"}}"#)));
+    let info = id.map_or_else(
+        || object("{}"),
+        |value| object(&format!(r#"{{"id":"{value}"}}"#)),
+    );
     DeploymentSpec {
         model_name: model_name.to_owned(),
         litellm_params: params,
@@ -42,10 +45,10 @@ pub(super) struct StubModels {
 
 impl StubModels {
     pub(super) fn with_mode(model: &str, mode: &str) -> Self {
-        let mut modes = BTreeMap::new();
-        modes.insert(model.to_owned(), mode.to_owned());
+        let mut by_model = BTreeMap::new();
+        by_model.insert(model.to_owned(), mode.to_owned());
         Self {
-            modes,
+            modes: by_model,
             reasoning: BTreeSet::new(),
         }
     }

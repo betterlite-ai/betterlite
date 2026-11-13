@@ -135,7 +135,7 @@ fn max_tokens_are_added_for_chat_style_routes_only(
     models
         .modes
         .insert("other-model".to_owned(), mode.to_owned());
-    let params = probe(r#"{}"#, r#"{"model":"other-model"}"#, &models);
+    let params = probe("{}", r#"{"model":"other-model"}"#, &models);
     assert_eq!(max_tokens(&params), expected);
 }
 

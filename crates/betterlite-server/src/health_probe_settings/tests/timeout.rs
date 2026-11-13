@@ -20,9 +20,9 @@ async fn a_task_over_the_limit_times_out() {
 async fn a_timeout_leaves_a_sibling_task_running() {
     let slow = run_with_timeout(sleep(Duration::from_secs(10)), Duration::from_secs(1));
     let fast = run_with_timeout(sleep(Duration::from_secs(2)), Duration::from_secs(5));
-    let (slow, fast) = tokio::join!(slow, fast);
-    assert_eq!(slow, Err(HealthCheckTimeout));
-    assert_eq!(fast, Ok(()));
+    let (timed_out, finished) = tokio::join!(slow, fast);
+    assert_eq!(timed_out, Err(HealthCheckTimeout));
+    assert_eq!(finished, Ok(()));
 }
 
 #[test]
