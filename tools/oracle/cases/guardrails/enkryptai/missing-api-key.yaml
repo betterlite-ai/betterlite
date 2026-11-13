@@ -1,0 +1,8 @@
+kind: helper
+name: missing-api-key
+call:
+  b3769:
+    construct:
+      settings: {api_base: "https://api.enkryptai.com"}
+env: {}
+compare: {ignore: []}
