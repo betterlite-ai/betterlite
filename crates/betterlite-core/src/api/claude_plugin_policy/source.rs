@@ -41,7 +41,7 @@ pub struct PluginSource {
 
 #[must_use]
 pub fn is_https_url_with_host(text: &str) -> bool {
-    // urlsplit reads a netloc only after "//", so "https:host" has no hostname there.
+    // urlsplit reads a netloc only between "//" and the next "/", where WHATWG skips extra slashes.
     let cleaned: String = text
         .trim_start_matches(|character: char| character <= ' ')
         .chars()
@@ -49,10 +49,11 @@ pub fn is_https_url_with_host(text: &str) -> bool {
         .collect();
     let has_authority = cleaned
         .get(..8)
-        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"));
-    has_authority
-        && Url::parse(text)
-            .is_ok_and(|parsed| parsed.scheme() == "https" && parsed.host_str().is_some())
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("https://"))
+        && cleaned
+            .get(8..)
+            .is_some_and(|authority| !authority.starts_with('/'));
+    has_authority && Url::parse(&cleaned).is_ok()
 }
 
 pub fn validate_plugin_source(source: &PluginSource) -> Result<(), ClaudePluginPolicyError> {
