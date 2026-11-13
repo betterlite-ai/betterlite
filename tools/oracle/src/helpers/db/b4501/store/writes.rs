@@ -1,7 +1,7 @@
 use betterlite_db::daily_spend_sql::bind::SqlBind;
 use serde_json::Value;
 
-use super::{StoredLens, StoredWorker, Store, text_argument};
+use super::{Store, StoredLens, StoredWorker, text_argument};
 
 impl Store {
     pub(super) fn execute(&mut self, query: &str, args: &[SqlBind]) -> u64 {
@@ -49,8 +49,7 @@ impl Store {
     }
 
     fn update_worker(&mut self, args: &[SqlBind]) -> u64 {
-        let (Some(data), Some(worker_id)) = (text_argument(args, 0), text_argument(args, 1))
-        else {
+        let (Some(data), Some(worker_id)) = (text_argument(args, 0), text_argument(args, 1)) else {
             return 0;
         };
         if let Ok(data) = serde_json::from_str::<Value>(data)

@@ -91,11 +91,7 @@ pub(crate) enum Call {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Transform {
     Unchanged,
-    SetRevision {
-        revision: i64,
-    },
-    DropJob {
-        job_id: String,
-    },
+    SetRevision { revision: i64 },
+    DropJob { job_id: String },
     Failing,
 }
