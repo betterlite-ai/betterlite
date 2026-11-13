@@ -294,12 +294,25 @@ fn container_truthiness() {
     assert_eq!(provider_fields(&empty_list), None);
 }
 
+fn container_float_truthiness() {
+    let mut converter = new_converter();
+    let float = chunk(
+        &mut converter,
+        r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","container":5.5}}"#,
+    );
+    assert_eq!(
+        provider_fields(&float).unwrap(),
+        parse(r#"{"container":5.5}"#)
+    );
+}
+
 pub(super) fn compaction_and_container_events() {
     compaction_starts();
     container_before_results();
     container_after_results();
     container_without_id();
     container_truthiness();
+    container_float_truthiness();
 }
 
 fn accumulated_complete_and_partial() {

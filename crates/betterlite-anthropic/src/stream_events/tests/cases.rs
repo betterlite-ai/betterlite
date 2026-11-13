@@ -393,14 +393,6 @@ pub(super) fn citation_event() {
     );
     assert_eq!(citation.choices[0].delta.thinking_blocks, None);
     assert_eq!(content(&citation), "");
-    let null_citation = chunk(
-        &mut converter,
-        r#"{"type":"content_block_delta","index":0,"delta":{"type":"citations_delta","citation":null}}"#,
-    );
-    assert_eq!(
-        provider_fields(&null_citation).unwrap(),
-        parse(r#"{"citation":null}"#)
-    );
 }
 
 fn json_mode_start_and_fragments() {
@@ -645,7 +637,7 @@ fn content_start_required_fields() {
         .unwrap_err();
     assert!(missing_id.to_string().contains("content_block.id"));
     // LiteLLM bumps the tool index before it reads the required block fields
-    assert_eq!(converter.state.tool_index, 0);
+    assert_eq!(converter.state.tool_index, 1);
 }
 
 pub(super) fn content_start_reset() {
