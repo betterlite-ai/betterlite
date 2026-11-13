@@ -4,18 +4,9 @@ call:
   deepinfra_policy:
     operation: error_extraction
     params:
-      cases:
-        - message: '{"detail": {"error": "boom"}}'
-          status_code: 422
-          headers: {retry-after: "2"}
-        - message: '{"detail": "slow down"}'
-          status_code: 400
-          headers: {}
-        - message: '{"message": "kept"}'
-          status_code: 500
-          headers: {}
-        - message: plain failure
-          status_code: 409
-          headers: {}
+      - {message: '{"detail": {"error": "boom"}}', status_code: 422, headers: {retry-after: "2"}}
+      - {message: '{"detail": "slow down"}', status_code: 400, headers: {}}
+      - {message: '{"message": "kept"}', status_code: 500, headers: {}}
+      - {message: plain failure, status_code: 409, headers: {}}
 env: {}
 compare: {ignore: []}

@@ -70,10 +70,10 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let environment_text = lookup
+        let text = lookup
             .lookup("MIN_NON_ZERO_TEMPERATURE")
             .unwrap_or_default();
-        let minimum = betterlite_env::number::<f64>("MIN_NON_ZERO_TEMPERATURE", &environment_text)?
+        let minimum = betterlite_env::number::<f64>("MIN_NON_ZERO_TEMPERATURE", &text)?
             .unwrap_or(DEFAULT_MINIMUM_TEMPERATURE);
         let environment_drop = betterlite_env::flag(
             "LITELLM_DROP_PARAMS",

@@ -14,11 +14,14 @@ use super::chat::{
     BASE_OPENAI_PARAMS, ChatTransform, DeepInfraChatSettings, MapRequest, map_openai_params,
     supported_openai_params, transform_request,
 };
+use super::rerank::error::{BaseLlmException, decode_deepinfra_error, get_error_class};
+use super::rerank::response::{
+    LoggingFailure, RerankDecodeError, RerankLogging, ResponseRequest, decode_deepinfra_rerank,
+    transform_rerank_response,
+};
 use super::rerank::{
-    BaseLlmException, EnvironmentRequest, Headers, LoggingFailure, MapRequest as RerankMapRequest,
-    Params, RerankDecodeError, RerankError, RerankLimits, RerankLogging, ResponseRequest,
-    SUPPORTED_RERANK_PARAMS, complete_url, decode_deepinfra_error, decode_deepinfra_rerank,
-    get_error_class, map_cohere_rerank_params, transform_rerank_request, transform_rerank_response,
+    EnvironmentRequest, Headers, MapRequest as RerankMapRequest, Params, RerankError, RerankLimits,
+    SUPPORTED_RERANK_PARAMS, complete_url, map_cohere_rerank_params, transform_rerank_request,
     validate_environment,
 };
 use crate::api::rerank_contracts::records::{RerankDocument, RerankResponse};
@@ -88,8 +91,9 @@ fn chat_transform(
 
 #[test]
 fn the_supported_list_is_the_pinned_list_with_reasoning_last() {
-    assert_eq!(supported_openai_params(false), BASE_OPENAI_PARAMS.to_vec());
-    let mut expected = BASE_OPENAI_PARAMS.to_vec();
+    let base: Vec<&str> = BASE_OPENAI_PARAMS.split_whitespace().collect();
+    assert_eq!(supported_openai_params(false), base);
+    let mut expected = base.clone();
     expected.push("reasoning_effort");
     assert_eq!(supported_openai_params(true), expected);
 }

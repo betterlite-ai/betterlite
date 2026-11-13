@@ -9,10 +9,10 @@ from litellm.llms.deepinfra.rerank.transformation import DeepinfraRerankConfig
 from litellm.types.rerank import RerankResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
-UNSUPPORTED_PARAMS_STATUS = 400
+UNSUPPORTED = 400
 
 
-class RerankFallbackError(Exception):
+class FallbackError(Exception):
     ...
 
 
@@ -28,7 +28,7 @@ class Recording:
 
     def post_call(self, original_response: str) -> None:
         if self.fail:
-            raise RerankFallbackError
+            raise FallbackError
         self.calls.append(original_response)
 
 
@@ -73,8 +73,6 @@ class RerankConfig(Protocol):
         logging_obj: LoggingLike,
     ) -> RerankResponse: ...
 
-    def get_supported_cohere_rerank_params(self, model: str) -> list[str]: ...
-
     def get_error_class(
         self, error_message: str, status_code: int, headers: dict[str, JsonValue]
     ) -> BaseLLMException: ...
@@ -97,7 +95,7 @@ MESSAGES: TypeAdapter[list[dict[str, JsonValue]]] = TypeAdapter(list[dict[str, J
 VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 
-class ChatMapCase(TypedDict):
+class ChatCase(TypedDict):
     model: str
     params: dict[str, JsonValue]
     optional_params: dict[str, JsonValue]
@@ -107,21 +105,13 @@ class ChatMapCase(TypedDict):
     minimum_temperature: float
 
 
-class ChatMapParams(TypedDict):
-    cases: list[ChatMapCase]
-
-
 class ToolCase(TypedDict):
     model: str
     messages: list[JsonValue]
     optional_params: dict[str, JsonValue]
 
 
-class ToolParams(TypedDict):
-    cases: list[ToolCase]
-
-
-class RerankRequestCase(TypedDict):
+class RequestCase(TypedDict):
     api_base: str | None
     model: str
     headers: dict[str, str]
@@ -132,28 +122,16 @@ class RerankRequestCase(TypedDict):
     non_default: dict[str, JsonValue]
 
 
-class RerankRequestParams(TypedDict):
-    cases: list[RerankRequestCase]
-
-
-class RerankResponseCase(TypedDict):
+class ResponseCase(TypedDict):
     model: str
     body: str
     fail_logging: bool
-
-
-class RerankResponseParams(TypedDict):
-    cases: list[RerankResponseCase]
 
 
 class ErrorCase(TypedDict):
     message: str
     status_code: int
     headers: dict[str, JsonValue]
-
-
-class ErrorParams(TypedDict):
-    cases: list[ErrorCase]
 
 
 class Input(TypedDict):
@@ -164,9 +142,8 @@ class Input(TypedDict):
 
 
 def chat_map(params: JsonValue) -> JsonValue:
-    parsed = TypeAdapter(ChatMapParams).validate_python(params)
     results: list[JsonValue] = []
-    for case in parsed["cases"]:
+    for case in TypeAdapter(list[ChatCase]).validate_python(params):
         try:
             mapped = CHAT.map_openai_params(
                 case["params"],
@@ -175,16 +152,15 @@ def chat_map(params: JsonValue) -> JsonValue:
                 drop_params=case["drop_params"],
             )
         except UnsupportedParamsError:
-            results.append({"ok": False, "status": UNSUPPORTED_PARAMS_STATUS})
+            results.append({"ok": False, "status": UNSUPPORTED})
             continue
         results.append({"ok": True, "mapped": mapped})
     return {"results": results}
 
 
 def tool_content(params: JsonValue) -> JsonValue:
-    parsed = TypeAdapter(ToolParams).validate_python(params)
     results: list[JsonValue] = []
-    for case in parsed["cases"]:
+    for case in TypeAdapter(list[ToolCase]).validate_python(params):
         body = CHAT.transform_request(
             model=case["model"],
             messages=MESSAGES.validate_python(case["messages"]),
@@ -197,9 +173,8 @@ def tool_content(params: JsonValue) -> JsonValue:
 
 
 def rerank_request(params: JsonValue) -> JsonValue:
-    parsed = TypeAdapter(RerankRequestParams).validate_python(params)
     results: list[JsonValue] = []
-    for case in parsed["cases"]:
+    for case in TypeAdapter(list[RequestCase]).validate_python(params):
         headers = RERANK.validate_environment(case["headers"], case["model"], case["api_key"])
         url = RERANK.get_complete_url(case["api_base"], case["model"], None)
         mapped = RERANK.map_cohere_rerank_params(
@@ -214,7 +189,7 @@ def rerank_request(params: JsonValue) -> JsonValue:
     return {"results": results}
 
 
-def response_case(case: RerankResponseCase) -> JsonValue:
+def response_case(case: ResponseCase) -> JsonValue:
     recording = Recording(fail=case["fail_logging"])
     raw = httpx.Response(
         status_code=200,
@@ -227,13 +202,12 @@ def response_case(case: RerankResponseCase) -> JsonValue:
         model_response=RerankResponse(),
         logging_obj=recording,
     )
-    dumped = VALUE.validate_json(transformed.model_dump_json())
-    return {"response": dumped, "calls": recording.calls}
+    return {"response": VALUE.validate_json(transformed.model_dump_json()), "calls": recording.calls}
 
 
 def rerank_response(params: JsonValue) -> JsonValue:
-    parsed = TypeAdapter(RerankResponseParams).validate_python(params)
-    return {"results": [response_case(case) for case in parsed["cases"]]}
+    parsed = TypeAdapter(list[ResponseCase]).validate_python(params)
+    return {"results": [response_case(case) for case in parsed]}
 
 
 def error_case(case: ErrorCase) -> JsonValue:
@@ -249,8 +223,8 @@ def error_case(case: ErrorCase) -> JsonValue:
 
 
 def error_extraction(params: JsonValue) -> JsonValue:
-    parsed = TypeAdapter(ErrorParams).validate_python(params)
-    return {"results": [error_case(case) for case in parsed["cases"]]}
+    parsed = TypeAdapter(list[ErrorCase]).validate_python(params)
+    return {"results": [error_case(case) for case in parsed]}
 
 
 HANDLERS: dict[str, Callable[[JsonValue], JsonValue]] = {
