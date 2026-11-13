@@ -110,7 +110,7 @@ pub fn append_generation_images(
     headers: &ImageHeaders,
     body: &[u8],
 ) -> Result<(), FalImageError> {
-    data.get_or_insert_with(Vec::new)
-        .extend(decode_fal_image_reply(status, headers, body)?);
+    let images = decode_fal_image_reply(status, headers, body)?;
+    data.get_or_insert_with(Vec::new).extend(images);
     Ok(())
 }

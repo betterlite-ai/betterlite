@@ -260,6 +260,9 @@ fn generation_keeps_existing_data_on_a_decode_error() {
     let error = append_generation_images(&mut data, 502, &headers(), b"{");
     assert!(error.is_err());
     assert_eq!(data, Some(vec![url_image("https://first.test/1.png")]));
+    let mut empty = None;
+    assert!(append_generation_images(&mut empty, 502, &headers(), b"{").is_err());
+    assert_eq!(empty, None);
 }
 
 #[test]
