@@ -83,23 +83,21 @@ pub fn content_text(content: &Content) -> String {
 
 #[must_use]
 pub fn reasoning_text(message: &Message) -> String {
-    if let Some(reasoning) = message
-        .reasoning_content
-        .as_deref()
-        .filter(|text| !text.is_empty())
+    if let Some(reasoning) = &message.reasoning_content
+        && !reasoning.is_empty()
     {
-        return reasoning.to_owned();
+        return reasoning.clone();
     }
-    match &message.content {
-        Content::Empty | Content::Text(_) => String::new(),
-        Content::Blocks(blocks) => blocks
-            .iter()
-            .filter_map(|block| match block {
-                ContentBlock::Reasoning(text) => Some(text.as_str()),
-                ContentBlock::Text(_) | ContentBlock::Other(_) => None,
-            })
-            .collect(),
+    let Content::Blocks(blocks) = &message.content else {
+        return String::new();
+    };
+    let mut reasoning = String::new();
+    for block in blocks {
+        if let ContentBlock::Reasoning(text) = block {
+            reasoning.push_str(text);
+        }
     }
+    reasoning
 }
 
 #[must_use]
@@ -132,15 +130,14 @@ pub fn tool_call_event(call: &ToolCall) -> Event {
 
 #[must_use]
 pub fn final_ai_text(messages: &[Message]) -> String {
-    messages
-        .iter()
-        .rev()
-        .find_map(|message| {
-            if message.kind != MessageKind::Ai {
-                return None;
-            }
-            let text = content_text(&message.content);
-            (!text.is_empty()).then_some(text)
-        })
-        .unwrap_or_default()
+    for message in messages.iter().rev() {
+        if message.kind != MessageKind::Ai {
+            continue;
+        }
+        let text = content_text(&message.content);
+        if !text.is_empty() {
+            return text;
+        }
+    }
+    String::new()
 }

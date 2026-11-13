@@ -4,6 +4,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::types::PermissionMode;
 
+const NORMALIZED_TO_NATIVE: [(&str, &str); 4] = [
+    ("read", "read_file"),
+    ("write", "write_file"),
+    ("edit", "edit_file"),
+    ("bash", "execute"),
+];
 pub const WRITE_TOOLS: [&str; 3] = ["write_file", "edit_file", "delete"];
 pub const EXECUTE_TOOLS: [&str; 1] = ["execute"];
 const APPROVAL_TOOLS: [&str; 4] = ["write_file", "edit_file", "delete", "execute"];
@@ -22,13 +28,10 @@ pub(crate) const BUILTIN_TOOLS: [&str; 10] = [
 
 #[must_use]
 pub fn native_tool_name(normalized: &str) -> &str {
-    match normalized {
-        "read" => "read_file",
-        "write" => "write_file",
-        "edit" => "edit_file",
-        "bash" => "execute",
-        other => other,
-    }
+    NORMALIZED_TO_NATIVE
+        .iter()
+        .find(|(key, _)| *key == normalized)
+        .map_or(normalized, |(_, native)| *native)
 }
 
 #[must_use]

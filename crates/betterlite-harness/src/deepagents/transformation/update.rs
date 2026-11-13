@@ -121,16 +121,19 @@ fn message_events(message: &Message, skip_tools: &BTreeSet<String>) -> Vec<Event
     }
 }
 
+fn node_messages<'entry>(node: &str, entry: &'entry UpdateEntry) -> &'entry [Message] {
+    match entry {
+        UpdateEntry::Messages(messages) if EVENT_NODES.contains(&node) => messages,
+        UpdateEntry::Messages(_) | UpdateEntry::Interrupts(_) | UpdateEntry::Other => &[],
+    }
+}
+
 #[must_use]
 pub fn update_events(update: &Update, skip_tools: &BTreeSet<String>) -> Vec<Event> {
     update
         .entries
         .iter()
-        .filter(|(node, _)| EVENT_NODES.contains(&node.as_str()))
-        .flat_map(|(_, entry)| match entry {
-            UpdateEntry::Messages(messages) => messages.as_slice(),
-            UpdateEntry::Interrupts(_) | UpdateEntry::Other => &[],
-        })
+        .flat_map(|(node, entry)| node_messages(node, entry))
         .flat_map(|message| message_events(message, skip_tools))
         .collect()
 }
