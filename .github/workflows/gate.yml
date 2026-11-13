@@ -269,6 +269,14 @@ jobs:
           key: oracle-answers-${{ github.sha }}
           restore-keys: oracle-answers-
 
+      # a task's own checks may run node (B9090's do), and the image has none; 24.19.0 is what LiteLLM's ui/litellm-dashboard/.nvmrc pins
+      - name: Set up Node
+        if: matrix.part == 'task'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24.19.0
+          package-manager-cache: false
+
       # lint and task split every check between them, so a check added to checks.yaml runs in task
       - name: Run the gate's ${{ matrix.part }} checks on the merged result
         if: github.event_name != 'pull_request' || needs.find.outputs.task != ''
