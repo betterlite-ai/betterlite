@@ -2,7 +2,8 @@ use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use betterlite_db::auth_reconnect::engine::EngineState;
-use betterlite_db::auth_reconnect::policy::{AuthReconnect, ReconnectHistory, ReconnectRequest};
+use betterlite_db::auth_reconnect::policy::AuthReconnect;
+use betterlite_db::auth_reconnect::request::{ReconnectHistory, ReconnectRequest};
 use betterlite_db::auth_reconnect::settings::ReconnectSettings;
 use betterlite_db::auth_reconnect::stale::StaleReadEngine;
 use secrecy::SecretString;
@@ -10,8 +11,10 @@ use serde::{Deserialize, Serialize};
 use tracing_subscriber::layer::SubscriberExt as _;
 
 mod fakes;
+mod scripted;
 
-use fakes::{Capture, Effect, FakeEngine, ScriptedClock, ScriptedLock};
+use fakes::{Effect, FakeEngine};
+use scripted::{Capture, ScriptedClock, ScriptedLock};
 
 pub(crate) struct Op;
 

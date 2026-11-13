@@ -14,7 +14,8 @@ use tracing_subscriber::layer::SubscriberExt as _;
 
 use super::engine::EngineState;
 use super::lock::TokioLock;
-use super::policy::{AuthReconnect, ReconnectHistory, ReconnectRequest};
+use super::policy::AuthReconnect;
+use super::request::{ReconnectHistory, ReconnectRequest};
 use super::settings::ReconnectSettings;
 use super::stale::StaleReadEngine;
 

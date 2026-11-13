@@ -1,65 +1,17 @@
-use std::error::Error;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-use secrecy::{ExposeSecret as _, SecretString};
 use tracing::{debug, error, info, warn};
 
 use super::clock::{ReconnectClock, SystemClock};
-use super::engine::{EngineState, ReconnectEngine};
+use super::engine::ReconnectEngine;
 use super::lock::{ReconnectLock, TokioLock};
+use super::request::{ReconnectError, ReconnectHistory, ReconnectRequest, ReconnectSnapshot};
 use super::settings::ReconnectSettings;
 use super::stale::StaleReadEngine;
-use crate::database_refresh::handle::PoolFuture;
 
-#[derive(Debug, thiserror::Error)]
-pub enum ReconnectError<EngineError>
-where
-    EngineError: Error + Send + Sync + 'static,
-{
-    #[error("DATABASE_URL not set")]
-    MissingDatabaseUrl,
-    #[error("the database reconnect timed out")]
-    Timeout,
-    #[error("the database replacement was declined by the generation guard")]
-    ForcedDecline,
-    #[error(transparent)]
-    Engine(EngineError),
-}
-
-pub struct ReconnectRequest<'request> {
-    pub reason: &'request str,
-    pub force: bool,
-    pub force_recreate: bool,
-    pub timeout: Option<Duration>,
-    pub lock_timeout: Option<Duration>,
-    pub database_url: Option<&'request SecretString>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ReconnectSnapshot {
-    pub consecutive_failures: u32,
-    pub engine_dead: bool,
-}
-
-pub struct ReconnectHistory<Handle> {
-    pub last_attempt: Option<Instant>,
-    pub consecutive_failures: u32,
-    pub engine_dead: bool,
-    pub failed_repairs: Vec<(Arc<Handle>, u64)>,
-}
-
-impl<Handle> Default for ReconnectHistory<Handle> {
-    fn default() -> Self {
-        Self {
-            last_attempt: None,
-            consecutive_failures: 0,
-            engine_dead: false,
-            failed_repairs: Vec::new(),
-        }
-    }
-}
+mod cycle;
 
 struct FailedRepair<Handle> {
     handle: Arc<Handle>,
@@ -237,13 +189,19 @@ where
         }
         warn!(reason = request.reason, "Attempting Prisma DB reconnect.");
         let outcome = self.run_cycle(request).await;
-        {
-            let mut last_attempt = self
-                .last_attempt
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            *last_attempt = Some(self.clock.now());
-        }
+        *self
+            .last_attempt
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(self.clock.now());
+        self.settle(request, stale, outcome)
+    }
+
+    fn settle(
+        &self,
+        request: &ReconnectRequest<'_>,
+        stale: Option<&StaleReadEngine<Engine::Handle>>,
+        outcome: Result<(), ReconnectError<Engine::Error>>,
+    ) -> bool {
         match outcome {
             Ok(()) => {
                 self.failures.store(0, Ordering::SeqCst);
@@ -272,115 +230,5 @@ where
                 false
             }
         }
-    }
-
-    async fn run_cycle(
-        &self,
-        request: &ReconnectRequest<'_>,
-    ) -> Result<(), ReconnectError<Engine::Error>> {
-        let limit = request.timeout.unwrap_or(self.settings.watchdog_timeout);
-        let expected_generation = self.engine.writer().generation;
-        let dead =
-            self.dead.load(Ordering::SeqCst) || self.engine.engine_state() == EngineState::Dead;
-        let cycle: PoolFuture<'_, (), ReconnectError<Engine::Error>> = if dead {
-            warn!("A database engine was confirmed dead; reconnecting.");
-            self.engine.reap();
-            self.engine.cleanup_watcher();
-            Box::pin(self.heavy(request, expected_generation))
-        } else {
-            debug!("Performing Prisma DB reconnect (engine alive or unknown).");
-            Box::pin(self.direct(request, expected_generation))
-        };
-        let outcome = if limit == Duration::MAX {
-            cycle.await
-        } else {
-            match tokio::time::timeout(limit, cycle).await {
-                Ok(outcome) => outcome,
-                Err(_elapsed) => Err(ReconnectError::Timeout),
-            }
-        };
-        if dead && outcome.is_ok() {
-            self.dead.store(false, Ordering::SeqCst);
-        }
-        outcome
-    }
-
-    async fn heavy(
-        &self,
-        request: &ReconnectRequest<'_>,
-        expected_generation: u64,
-    ) -> Result<(), ReconnectError<Engine::Error>> {
-        let Some(url) = request
-            .database_url
-            .filter(|url| !url.expose_secret().is_empty())
-        else {
-            error!("DATABASE_URL not set; cannot recreate the database pool.");
-            return Err(ReconnectError::MissingDatabaseUrl);
-        };
-        let recreated = self
-            .engine
-            .recreate(url, Some(expected_generation))
-            .await
-            .map_err(ReconnectError::Engine)?;
-        self.engine
-            .rearm_watcher()
-            .await
-            .map_err(ReconnectError::Engine)?;
-        if request.force_recreate && !recreated {
-            self.dead.store(false, Ordering::SeqCst);
-            return Err(ReconnectError::ForcedDecline);
-        }
-        Ok(())
-    }
-
-    async fn direct(
-        &self,
-        request: &ReconnectRequest<'_>,
-        expected_generation: u64,
-    ) -> Result<(), ReconnectError<Engine::Error>> {
-        let Some(url) = request
-            .database_url
-            .filter(|url| !url.expose_secret().is_empty())
-        else {
-            error!("DATABASE_URL not set; cannot reconnect the database pool.");
-            return Err(ReconnectError::MissingDatabaseUrl);
-        };
-        if !request.force_recreate {
-            match self.engine.writer_read_only().await {
-                Ok(true) => warn!(
-                    "The writer answers the probe with a read-only session; recreating the database pool."
-                ),
-                Ok(false) => {
-                    info!("The writer is healthy on the probe; skipping the recreate.");
-                    self.engine.mark_writer_recovered();
-                    self.engine
-                        .rearm_watcher()
-                        .await
-                        .map_err(ReconnectError::Engine)?;
-                    return Ok(());
-                }
-                Err(error) => {
-                    warn!(error = %error, "The writer probe failed; recreating the database pool.");
-                }
-            }
-        }
-        self.engine.cleanup_watcher();
-        let recreated = self
-            .engine
-            .recreate(url, Some(expected_generation))
-            .await
-            .map_err(ReconnectError::Engine)?;
-        self.engine
-            .rearm_watcher()
-            .await
-            .map_err(ReconnectError::Engine)?;
-        self.engine
-            .writer_select_one()
-            .await
-            .map_err(ReconnectError::Engine)?;
-        if request.force_recreate && !recreated {
-            return Err(ReconnectError::ForcedDecline);
-        }
-        Ok(())
     }
 }
