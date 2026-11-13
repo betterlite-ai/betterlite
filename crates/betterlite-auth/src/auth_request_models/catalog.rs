@@ -120,7 +120,6 @@ pub struct RequestModelResolver {
 }
 
 impl RequestModelResolver {
-    #[must_use]
     pub fn resolve(&self, request: &RequestSnapshot<'_>) -> Result<RequestedModels, CatalogError> {
         let collaborators = Collaborators {
             catalog: Some(self.catalog.as_ref()),

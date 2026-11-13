@@ -8,7 +8,7 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::Extension;
 use axum::http::{Request, StatusCode, header};
-use axum::routing::get;
+use axum::routing::post;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use betterlite_auth::auth_request_models::catalog::{
     CatalogError, Collaborators, DeploymentRecord, ModelCatalog, RequestModelResolver,
@@ -217,7 +217,7 @@ fn azure_request(
 async fn failure_stops_downstream() {
     let config = config_with_master_key("secret-master-key");
     let reached = Arc::new(AtomicBool::new(false));
-    let chat = Router::new().route("/azure/{model}/chat/completions", get(mark_reached));
+    let chat = Router::new().route("/azure/{model}/chat/completions", post(mark_reached));
     let application = routes::router(
         state_for(&config),
         Arc::new(AtomicBool::new(false)),

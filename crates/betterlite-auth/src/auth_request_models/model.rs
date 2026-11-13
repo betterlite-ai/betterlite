@@ -153,8 +153,10 @@ fn root_models_path(route: &str) -> Option<String> {
 }
 
 fn vertex_models_path(route: &str) -> Option<String> {
-    let (_head, remaining) = route.split_once("/models/")?;
-    model_until_colon(remaining).map(str::to_owned)
+    route.match_indices("/models/").find_map(|(index, marker)| {
+        let remaining = route.get(index.saturating_add(marker.len())..)?;
+        model_until_colon(remaining).map(str::to_owned)
+    })
 }
 
 fn strip_prefix_ignore_ascii_case<'text>(text: &'text str, prefix: &str) -> Option<&'text str> {

@@ -740,3 +740,84 @@ fn family_error_retains_partial() {
         ["partial"]
     );
 }
+
+#[test]
+fn prediction_other_team_denied() {
+    let body = object(
+        r#"{"current_deployment_id": "current-id", "candidate_deployment_id": "candidate-id"}"#,
+    );
+    let catalog = FakeCatalog {
+        deployments: vec![
+            deployment("current", None),
+            deployment("candidate", Some("other-team")),
+        ],
+        ..FakeCatalog::default()
+    };
+    assert_eq!(
+        cache_prediction_model_candidates(&body, Some(&catalog), Some("team")),
+        Ok(Vec::new())
+    );
+    assert_eq!(
+        cache_prediction_model_candidates(&body, Some(&catalog), None),
+        Ok(Vec::new())
+    );
+}
+
+#[test]
+fn bedrock_path_overrides_body() {
+    let body = object(r#"{"model": "body-model"}"#);
+    assert_eq!(
+        resolve("/bedrock/model/anthropic.claude-v2/invoke", &body, None),
+        RequestedModels::One("anthropic.claude-v2".to_owned())
+    );
+    assert_eq!(
+        resolve("/BEDROCK/model/anthropic.claude-v2/invoke", &body, None),
+        RequestedModels::One("anthropic.claude-v2".to_owned())
+    );
+    assert_eq!(
+        resolve("/bedrock/not-a-model-path", &body, None),
+        RequestedModels::One("body-model".to_owned())
+    );
+}
+
+#[test]
+fn vertex_later_models_segment_after_empty_one() {
+    assert_eq!(
+        resolve(
+            "/vertex_ai/models/:x/models/m:generate",
+            &JsonObject::new(),
+            None
+        ),
+        RequestedModels::One("m".to_owned())
+    );
+}
+
+#[test]
+fn custom_collision_still_checks() {
+    let body = object(r#"{"model": "body-model"}"#);
+    let path_params = BTreeSet::new();
+    let collaborators = Collaborators {
+        catalog: None,
+        decoders: &StubDecoders,
+    };
+    for (marker, expected) in [
+        (None, RequestedModels::One("body-model".to_owned())),
+        (Some(true), RequestedModels::None),
+    ] {
+        let request = RequestSnapshot {
+            route: "/v1/chat/completions",
+            body: &body,
+            headers: None,
+            query: None,
+            dispatch: DispatchContext {
+                endpoint_marker: marker,
+                path_params: &path_params,
+            },
+            team_id: None,
+        };
+        assert_eq!(
+            get_model_from_request(&request, &collaborators),
+            Ok(expected)
+        );
+    }
+}
