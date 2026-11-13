@@ -348,8 +348,8 @@ fn a_block_decision_raises_the_documented_message() {
         redacted_messages: None,
     };
     let error = wire::apply_decision(text_inputs(), response).unwrap_err();
-    assert!(error.blocked_content());
-    assert_eq!(error.status(), 400);
+    assert!(error.raised().blocked_content);
+    assert_eq!(error.raised().status, 400);
     assert_eq!(
         error.to_string(),
         "Blocked by PromptGuard: prompt_injection (confidence=0.9, event_id=evt-1)"

@@ -55,10 +55,21 @@ pub enum PromptGuardError {
     },
 }
 
+// LiteLLM raises every one of these as GuardrailRaisedException, whose default status is 400.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RaisedFailure {
+    pub status: u16,
+    pub blocked_content: bool,
+}
+
 impl PromptGuardError {
     #[must_use]
-    pub const fn status(&self) -> u16 {
+    pub const fn raised(&self) -> RaisedFailure {
         match self {
+            Self::Blocked { .. } => RaisedFailure {
+                status: 400,
+                blocked_content: true,
+            },
             Self::MissingCredentials
             | Self::Environment { .. }
             | Self::UnrepresentableTimeout { .. }
@@ -66,23 +77,10 @@ impl PromptGuardError {
             | Self::HttpStatus { .. }
             | Self::ResponseTooLarge { .. }
             | Self::ResponseJson { .. }
-            | Self::InvalidHeader { .. }
-            | Self::Blocked { .. } => 400,
-        }
-    }
-
-    #[must_use]
-    pub const fn blocked_content(&self) -> bool {
-        match self {
-            Self::Blocked { .. } => true,
-            Self::MissingCredentials
-            | Self::Environment { .. }
-            | Self::UnrepresentableTimeout { .. }
-            | Self::Request { .. }
-            | Self::HttpStatus { .. }
-            | Self::ResponseTooLarge { .. }
-            | Self::ResponseJson { .. }
-            | Self::InvalidHeader { .. } => false,
+            | Self::InvalidHeader { .. } => RaisedFailure {
+                status: 400,
+                blocked_content: false,
+            },
         }
     }
 }

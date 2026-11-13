@@ -104,9 +104,10 @@ fn build_output(
             );
         }
         Err(error) => {
+            let raised = error.raised();
             output.raised = Some(RaisedView {
-                status: error.status(),
-                blocked_content: error.blocked_content(),
+                status: raised.status,
+                blocked_content: raised.blocked_content,
             });
         }
     }
