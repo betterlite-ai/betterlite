@@ -113,6 +113,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vertex_batch_rows"
+path = "fuzz_targets/vertex_batch_rows.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vertex_gcs_id"
 path = "fuzz_targets/vertex_gcs_id.rs"
 test = false
