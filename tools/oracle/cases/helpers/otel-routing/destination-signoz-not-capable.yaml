@@ -1,0 +1,15 @@
+kind: helper
+name: destination-signoz-not-capable
+call:
+  b3851:
+    function: destination_for
+    environment: {}
+    allowed_hosts: [collector.example]
+    callback_name: signoz
+    params:
+      signoz_ingestion_endpoint: https://collector.example/v1/traces
+      signoz_ingestion_key: key-1
+    service_name: null
+env: {}
+compare:
+  ignore: []

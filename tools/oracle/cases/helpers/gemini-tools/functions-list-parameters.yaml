@@ -1,0 +1,28 @@
+kind: helper
+name: functions-list-parameters
+call:
+  gemini_tools:
+    call:
+      tools: []
+      functions:
+        - name: lookup
+          parameters:
+            type: object
+            $defs:
+              City:
+                type: string
+            properties:
+              city:
+                $ref: "#/$defs/City"
+              unit:
+                type:
+                  - string
+                  - "null"
+      web_search_options: null
+      tool_choice: null
+      service_tier: null
+      server_side_invocations: false
+      tool_config: null
+    settings: {}
+env: {}
+compare: {ignore: []}

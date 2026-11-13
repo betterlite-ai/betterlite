@@ -1,0 +1,13 @@
+kind: helper
+name: rewritten-item-converted-content
+call:
+  b3670:
+    function: rewritten_item
+    item:
+      type: message
+      role: user
+      content:
+        - {"type": "input_text", "text": "old"}
+    rewritten: {"role": "user", "content": "plain"}
+env: {}
+compare: {ignore: []}

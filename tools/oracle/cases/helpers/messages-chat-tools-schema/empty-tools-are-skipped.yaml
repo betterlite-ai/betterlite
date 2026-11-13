@@ -1,0 +1,11 @@
+kind: helper
+name: messages-chat-tools-schema-empty-tools-are-skipped
+call:
+  messages_chat_tools_schema:
+    operation: request
+    request:
+      model: gpt-4o
+      messages: []
+      tools: []
+env: {}
+compare: {ignore: []}
