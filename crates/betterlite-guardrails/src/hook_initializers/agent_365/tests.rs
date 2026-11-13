@@ -88,6 +88,53 @@ fn agent_365_resolves_missing_values_from_the_lookup() {
 }
 
 #[test]
+fn agent_365_prefers_the_params_over_the_lookup_and_api_key() {
+    let secrets = lookup(&[
+        ("AGENT365_CLIENT_ID", "env-client"),
+        ("AGENT365_CLIENT_SECRET", "env-secret"),
+    ]);
+    let (args, _) = initialize_agent_365(
+        &params(
+            r#"{"guardrail": "agent_365", "mode": "pre_mcp_call", "tenant_id": "t",
+                "client_id": "param-client", "client_secret": "from-param",
+                "api_key": "from-key"}"#,
+        ),
+        Some("name"),
+        &secrets,
+    )
+    .unwrap();
+    assert_eq!(args.client_id, "param-client");
+    assert_eq!(args.client_secret.expose_secret(), "from-param");
+}
+
+#[test]
+fn agent_365_treats_an_empty_lookup_value_as_unset() {
+    let error = initialize_agent_365(
+        &params(r#"{"guardrail": "agent_365", "mode": "pre_mcp_call"}"#),
+        Some("name"),
+        &lookup(&[("AGENT365_TENANT_ID", "")]),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Microsoft Agent 365: tenant_id is required"
+    );
+    let secret = initialize_agent_365(
+        &params(
+            r#"{"guardrail": "agent_365", "mode": "pre_mcp_call", "tenant_id": "t",
+                "client_id": "c"}"#,
+        ),
+        Some("name"),
+        &lookup(&[("AGENT365_CLIENT_SECRET", "")]),
+    )
+    .unwrap_err();
+    assert_eq!(
+        secret.to_string(),
+        "Microsoft Agent 365: client secret is required. Set client_secret, api_key, or AGENT365_CLIENT_SECRET"
+    );
+}
+
+#[test]
 fn agent_365_treats_an_empty_param_as_unset() {
     let secrets = lookup(&[
         ("AGENT365_TENANT_ID", "env-tenant"),
@@ -123,18 +170,30 @@ fn agent_365_defaults_the_request_timeout_only_when_it_is_none() {
 #[rstest]
 #[case::tenant(
     r#"{"guardrail": "agent_365", "mode": "pre_mcp_call"}"#,
+    Some("name"),
     "Microsoft Agent 365: tenant_id is required"
 )]
 #[case::client(
     r#"{"guardrail": "agent_365", "mode": "pre_mcp_call", "tenant_id": "t"}"#,
+    Some("name"),
     "Microsoft Agent 365: client_id is required"
 )]
 #[case::secret(
     r#"{"guardrail": "agent_365", "mode": "pre_mcp_call", "tenant_id": "t", "client_id": "c"}"#,
+    Some("name"),
     "Microsoft Agent 365: client secret is required. Set client_secret, api_key, or AGENT365_CLIENT_SECRET"
 )]
-fn agent_365_refuses_missing_values_in_litellm_order(#[case] json: &str, #[case] message: &str) {
-    let error = initialize_agent_365(&params(json), Some("name"), &lookup(&[])).unwrap_err();
+#[case::credentials_before_name(
+    r#"{"guardrail": "agent_365", "mode": "pre_mcp_call"}"#,
+    None,
+    "Microsoft Agent 365: tenant_id is required"
+)]
+fn agent_365_refuses_missing_values_in_litellm_order(
+    #[case] json: &str,
+    #[case] name: Option<&str>,
+    #[case] message: &str,
+) {
+    let error = initialize_agent_365(&params(json), name, &lookup(&[])).unwrap_err();
     assert_eq!(error.to_string(), message);
 }
 

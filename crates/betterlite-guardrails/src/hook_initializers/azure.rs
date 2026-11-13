@@ -33,10 +33,7 @@ pub fn initialize_azure(
 ) -> Result<AzureArgs, HookInitError> {
     let (api_key, api_base) = connection(params)?;
     let guardrail_name = required_name(guardrail_name, VENDOR)?;
-    let part = match params.guardrail.split('/').nth(1) {
-        Some(part) => part,
-        None => params.guardrail.as_str(),
-    };
+    let part = params.guardrail.split('/').nth(1);
     let default_on = params.base.fields.default_on.unwrap_or_default();
     let extras = params_extras(
         params,
@@ -54,10 +51,13 @@ pub fn initialize_azure(
         extras,
     };
     match part {
-        "prompt_shield" => Ok(AzureArgs::PromptShield(common)),
-        "text_moderations" => Ok(AzureArgs::TextModerations(common)),
-        _ => Err(HookInitError::AzureGuardrailNotValid {
+        Some("prompt_shield") => Ok(AzureArgs::PromptShield(common)),
+        Some("text_moderations") => Ok(AzureArgs::TextModerations(common)),
+        Some(part) => Err(HookInitError::AzureGuardrailNotValid {
             part: part.to_owned(),
+        }),
+        None => Err(HookInitError::AzureGuardrailNotValid {
+            part: params.guardrail.clone(),
         }),
     }
 }

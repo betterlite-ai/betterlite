@@ -18,7 +18,11 @@ pub enum HookInitError {
     #[error("{vendor}: {field} has an invalid value")]
     InvalidField { vendor: &'static str, field: String },
     #[error("{vendor}: the guardrail parameters could not be read")]
-    UnreadableParams { vendor: &'static str },
+    UnreadableParams {
+        vendor: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 mod tests;

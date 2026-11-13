@@ -1,10 +1,10 @@
-use betterlite_config::sections::guardrail_identity::item::GuardrailFlag;
+use betterlite_config::sections::guardrail_identity::item::{GuardrailFlag, GuardrailValue};
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::error::HookInitError;
-use super::{read, required_name, required_text};
+use super::{ParamMap, read, required_name, required_text};
 
 mod tests;
 
@@ -46,10 +46,10 @@ pub fn initialize_purview(
         })
         .ok_or(HookInitError::PurviewClientSecretRequired)?;
     let guardrail_name = required_name(guardrail_name, VENDOR)?;
-    let purview_app_name = read::<String>(extra, VENDOR, "purview_app_name")?
+    let purview_app_name = app_text(extra, "purview_app_name")?
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEFAULT_APP_NAME.to_owned());
-    let user_id_field = read::<String>(extra, VENDOR, "user_id_field")?
+    let user_id_field = app_text(extra, "user_id_field")?
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEFAULT_USER_ID_FIELD.to_owned());
     Ok(PurviewArgs {
@@ -63,4 +63,21 @@ pub fn initialize_purview(
         default_on: params.base.fields.default_on.unwrap_or_default(),
         timeout: params.base.fields.timeout,
     })
+}
+
+// LiteLLM str()s the two untyped extras, so a number reads as its text form
+fn app_text(map: &ParamMap, key: &str) -> Result<Option<String>, HookInitError> {
+    match map.get(key) {
+        None | Some(GuardrailValue::Null) => Ok(None),
+        Some(GuardrailValue::Text(text)) => Ok(Some(text.clone())),
+        Some(GuardrailValue::SignedInteger(number)) => Ok(Some(number.to_string())),
+        Some(GuardrailValue::UnsignedInteger(number)) => Ok(Some(number.to_string())),
+        Some(GuardrailValue::Decimal(number)) => Ok(Some(number.to_string())),
+        Some(GuardrailValue::Boolean(_) | GuardrailValue::Array(_) | GuardrailValue::Object(_)) => {
+            Err(HookInitError::InvalidField {
+                vendor: VENDOR,
+                field: key.to_owned(),
+            })
+        }
+    }
 }

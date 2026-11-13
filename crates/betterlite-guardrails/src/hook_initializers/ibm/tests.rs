@@ -95,22 +95,35 @@ fn ibm_treats_null_optional_entries_as_absent() {
 #[rstest]
 #[case::no_token(
     r#"{"guardrail": "ibm_guardrails", "mode": "pre_call"}"#,
+    Some("ibm-check"),
     "IBM Guardrails: auth_token is required"
 )]
 #[case::empty_token(
     r#"{"guardrail": "ibm_guardrails", "mode": "pre_call", "auth_token": ""}"#,
+    Some("ibm-check"),
     "IBM Guardrails: auth_token is required"
 )]
 #[case::no_url(
     r#"{"guardrail": "ibm_guardrails", "mode": "pre_call", "auth_token": "token"}"#,
+    Some("ibm-check"),
     "IBM Guardrails: base_url is required"
 )]
 #[case::no_detector(
     r#"{"guardrail": "ibm_guardrails", "mode": "pre_call", "auth_token": "token", "base_url": "https://ibm.example"}"#,
+    Some("ibm-check"),
     "IBM Guardrails: detector_id is required"
 )]
-fn ibm_refuses_missing_values_in_litellm_order(#[case] json: &str, #[case] message: &str) {
-    let error = initialize_ibm(&params(json), Some("ibm-check")).unwrap_err();
+#[case::credentials_before_name(
+    r#"{"guardrail": "ibm_guardrails", "mode": "pre_call"}"#,
+    None,
+    "IBM Guardrails: auth_token is required"
+)]
+fn ibm_refuses_missing_values_in_litellm_order(
+    #[case] json: &str,
+    #[case] name: Option<&str>,
+    #[case] message: &str,
+) {
+    let error = initialize_ibm(&params(json), name).unwrap_err();
     assert_eq!(error.to_string(), message);
 }
 

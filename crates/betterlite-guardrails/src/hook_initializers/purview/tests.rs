@@ -90,21 +90,62 @@ fn purview_defaults_the_app_name_and_user_field_for_absent_or_empty_values() {
     assert_eq!(named.user_id_field, "email");
 }
 
+#[test]
+fn purview_turns_numeric_app_names_into_text() {
+    let args = initialize_purview(
+        &params(&format!(
+            r#"{{{TENANT}, "api_key": "secret", "purview_app_name": 2024, "user_id_field": 7}}"#
+        )),
+        Some("name"),
+    )
+    .unwrap();
+    assert_eq!(args.purview_app_name, "2024");
+    assert_eq!(args.user_id_field, "7");
+    let decimal = initialize_purview(
+        &params(&format!(
+            r#"{{{TENANT}, "api_key": "secret", "purview_app_name": 2.5}}"#
+        )),
+        Some("name"),
+    )
+    .unwrap();
+    assert_eq!(decimal.purview_app_name, "2.5");
+    let huge = initialize_purview(
+        &params(&format!(
+            r#"{{{TENANT}, "api_key": "secret", "user_id_field": 18446744073709551615}}"#
+        )),
+        Some("name"),
+    )
+    .unwrap();
+    assert_eq!(huge.user_id_field, "18446744073709551615");
+}
+
 #[rstest]
 #[case::no_tenant(
     r#"{"guardrail": "microsoft_purview", "mode": "pre_call"}"#,
+    Some("name"),
     "Microsoft Purview: tenant_id is required"
 )]
 #[case::no_client(
     r#"{"guardrail": "microsoft_purview", "mode": "pre_call", "tenant_id": "tenant"}"#,
+    Some("name"),
     "Microsoft Purview: client_id is required"
 )]
 #[case::no_secret(
     r#"{"guardrail": "microsoft_purview", "mode": "pre_call", "tenant_id": "tenant", "client_id": "client"}"#,
+    Some("name"),
     "Microsoft Purview: client_secret (or api_key) is required"
 )]
-fn purview_refuses_missing_values_in_litellm_order(#[case] json: &str, #[case] message: &str) {
-    let error = initialize_purview(&params(json), Some("name")).unwrap_err();
+#[case::credentials_before_name(
+    r#"{"guardrail": "microsoft_purview", "mode": "pre_call"}"#,
+    None,
+    "Microsoft Purview: tenant_id is required"
+)]
+fn purview_refuses_missing_values_in_litellm_order(
+    #[case] json: &str,
+    #[case] name: Option<&str>,
+    #[case] message: &str,
+) {
+    let error = initialize_purview(&params(json), name).unwrap_err();
     assert_eq!(error.to_string(), message);
 }
 

@@ -119,7 +119,11 @@ fn credentials(
                 .clone()
                 .filter(|key| !key.expose_secret().is_empty())
         })
-        .or_else(|| lookup.get_secret_str(CLIENT_SECRET_ENV))
+        .or_else(|| {
+            lookup
+                .get_secret_str(CLIENT_SECRET_ENV)
+                .filter(|secret| !secret.expose_secret().is_empty())
+        })
         .ok_or(HookInitError::Agent365ClientSecretRequired)?;
     Ok((tenant_id, client_id, client_secret))
 }
@@ -136,5 +140,6 @@ fn text_or_secret(
             lookup
                 .get_secret_str(env)
                 .map(|secret| secret.expose_secret().to_owned())
+                .filter(|value| !value.is_empty())
         }))
 }

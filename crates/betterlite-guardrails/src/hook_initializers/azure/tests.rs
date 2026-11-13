@@ -65,6 +65,21 @@ fn azure_picks_the_variant_from_the_text_after_the_first_slash() {
     None,
     "Azure Content Safety: guardrail_name is required"
 )]
+#[case::missing_key_without_name(
+    r#"{"guardrail": "azure/prompt_shield", "mode": "pre_call"}"#,
+    None,
+    "Azure Content Safety: api_key is required"
+)]
+fn azure_refuses_missing_values_in_litellm_order(
+    #[case] json: &str,
+    #[case] name: Option<&str>,
+    #[case] message: &str,
+) {
+    let error = initialize_azure(&params(json), name).unwrap_err();
+    assert_eq!(error.to_string(), message);
+}
+
+#[rstest]
 #[case::unknown_part(
     r#"{"guardrail": "azure/other", "mode": "pre_call", "api_key": "key", "api_base": "https://azure.example"}"#,
     Some("name"),
@@ -75,7 +90,17 @@ fn azure_picks_the_variant_from_the_text_after_the_first_slash() {
     Some("name"),
     "Azure Content Safety: azure is not a valid guardrail"
 )]
-fn azure_refuses_missing_values_in_litellm_order(
+#[case::bare_part(
+    r#"{"guardrail": "prompt_shield", "mode": "pre_call", "api_key": "key", "api_base": "https://azure.example"}"#,
+    Some("name"),
+    "Azure Content Safety: prompt_shield is not a valid guardrail"
+)]
+#[case::unknown_part_without_name(
+    r#"{"guardrail": "azure/other", "mode": "pre_call", "api_key": "key", "api_base": "https://azure.example"}"#,
+    None,
+    "Azure Content Safety: guardrail_name is required"
+)]
+fn azure_refuses_an_unknown_guardrail(
     #[case] json: &str,
     #[case] name: Option<&str>,
     #[case] message: &str,

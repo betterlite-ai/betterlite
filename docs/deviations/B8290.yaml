@@ -9,7 +9,7 @@ deviations:
   - what: The Agent 365 ignored-override warning is returned as a list of names and logged by the caller. LiteLLM logs it inside the initializer.
     why: A pure function stays testable, and the log text is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/__init__.py#L43-L54
-  - what: "An Azure guardrail value with no slash is refused with \"Azure Content Safety: azure is not a valid guardrail\". LiteLLM indexes split(\"/\")[1] and raises IndexError, which aborts the config load."
+  - what: "An Azure guardrail value with no slash is refused with \"Azure Content Safety: <the whole value> is not a valid guardrail\" (after the guardrail_name check). LiteLLM indexes split(\"/\")[1] and raises IndexError, which aborts the config load."
     why: A crash on a malformed guardrail value tells the operator nothing; the refusal names the value and skips nothing else.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/__init__.py#L22
   - what: Model Armor's project_id is copied as the opaque config value (Option<GuardrailValue>) and the initializer never fails. LiteLLM's LitellmParams declares project_id as str | None, so pydantic refuses a non-string at config load.

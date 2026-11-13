@@ -14,6 +14,7 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::de::DeserializeOwned;
 
 use error::HookInitError;
 
@@ -25,9 +26,9 @@ fn params_dump(
     vendor: &'static str,
 ) -> Result<OpaqueParams, HookInitError> {
     let encoded = serde_json::to_value(params)
-        .map_err(|_source| HookInitError::UnreadableParams { vendor })?;
+        .map_err(|source| HookInitError::UnreadableParams { vendor, source })?;
     let mut dumped = serde_json::from_value::<OpaqueParams>(encoded)
-        .map_err(|_source| HookInitError::UnreadableParams { vendor })?;
+        .map_err(|source| HookInitError::UnreadableParams { vendor, source })?;
     dumped
         .0
         .retain(|_key, value| *value != GuardrailValue::Null);
@@ -38,9 +39,10 @@ fn mode_value(
     mode: &LitellmParamsMode,
     vendor: &'static str,
 ) -> Result<GuardrailValue, HookInitError> {
-    let encoded =
-        serde_json::to_value(mode).map_err(|_source| HookInitError::UnreadableParams { vendor })?;
-    serde_json::from_value(encoded).map_err(|_source| HookInitError::UnreadableParams { vendor })
+    let encoded = serde_json::to_value(mode)
+        .map_err(|source| HookInitError::UnreadableParams { vendor, source })?;
+    serde_json::from_value(encoded)
+        .map_err(|source| HookInitError::UnreadableParams { vendor, source })
 }
 
 // the kwargs dict LiteLLM spreads: the non-null dump with the explicit fields set over it
@@ -100,67 +102,24 @@ pub(crate) fn required_text(
     Ok(value)
 }
 
-// the declared type of each param LiteLLM reads; a wrong variant is an error naming the field
-pub(crate) trait ParamKind: Sized {
-    fn read(value: &GuardrailValue) -> Option<Self>;
-}
-
-impl ParamKind for String {
-    fn read(value: &GuardrailValue) -> Option<Self> {
-        match value {
-            GuardrailValue::Text(text) => Some(text.clone()),
-            _ => None,
-        }
-    }
-}
-
-impl ParamKind for GuardrailFlag {
-    fn read(value: &GuardrailValue) -> Option<Self> {
-        match value {
-            GuardrailValue::Boolean(flag) => Some(*flag),
-            _ => None,
-        }
-    }
-}
-
-impl ParamKind for f64 {
-    fn read(value: &GuardrailValue) -> Option<Self> {
-        match value {
-            GuardrailValue::SignedInteger(number) => serde_json::Number::from(*number).as_f64(),
-            GuardrailValue::UnsignedInteger(number) => serde_json::Number::from(*number).as_f64(),
-            GuardrailValue::Decimal(number) => Some(*number),
-            _ => None,
-        }
-    }
-}
-
-impl ParamKind for i64 {
-    fn read(value: &GuardrailValue) -> Option<Self> {
-        serde_json::to_value(value).ok()?.as_i64()
-    }
-}
-
-impl ParamKind for ParamMap {
-    fn read(value: &GuardrailValue) -> Option<Self> {
-        match value {
-            GuardrailValue::Object(map) => Some(map.clone()),
-            _ => None,
-        }
-    }
-}
-
-pub(crate) fn read<T: ParamKind>(
+// the declared type of the param; serde's own decoder refuses a value of another type
+pub(crate) fn read<T: DeserializeOwned>(
     map: &ParamMap,
     vendor: &'static str,
     key: &str,
 ) -> Result<Option<T>, HookInitError> {
-    match map.get(key) {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(value) => T::read(value)
-            .map(Some)
-            .ok_or_else(|| HookInitError::InvalidField {
-                vendor,
-                field: key.to_owned(),
-            }),
+    let Some(value) = map.get(key) else {
+        return Ok(None);
+    };
+    if *value == GuardrailValue::Null {
+        return Ok(None);
     }
+    let encoded = serde_json::to_value(value)
+        .map_err(|source| HookInitError::UnreadableParams { vendor, source })?;
+    serde_json::from_value(encoded)
+        .map(Some)
+        .map_err(|_wrong| HookInitError::InvalidField {
+            vendor,
+            field: key.to_owned(),
+        })
 }
