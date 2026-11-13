@@ -18,9 +18,9 @@ use crate::generic_guardrail_contracts::{GuardrailInputType, UnreachableFallback
 use crate::guardrail_base::contract::GuardrailContract;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
-use enforcement::{apply_replacements, blocked, has_selectable_input};
+use enforcement::{apply_replacements, blocked, has_selectable_input, unavailable};
 use error::AliceError;
-use json_safe::{CREDENTIAL_KEYS_TO_STRIP, safe_payload};
+use json_safe::CREDENTIAL_KEYS_TO_STRIP;
 use transport::{read_answer, verdict_from_body};
 use wire::{
     AliceVerdict, EvaluateRequest, VERDICT_ALLOW, VERDICT_BLOCK, VERDICT_DETECT, VERDICT_MASK,
@@ -116,12 +116,15 @@ impl AliceGuardrail {
                 serde_json::from_value::<GuardrailValue>(value)
                     .map_err(|source| AliceError::Payload { source })
             })?;
+        let mut seen = Vec::new();
         Ok(EvaluateRequest {
             input_type,
-            inputs: safe_payload(&inputs, &[]),
-            request_data: safe_payload(
+            inputs: json_safe::json_safe(&inputs, 0, &[], &mut seen),
+            request_data: json_safe::json_safe(
                 &GuardrailValue::Object(request_data.clone()),
+                0,
                 &CREDENTIAL_KEYS_TO_STRIP,
+                &mut seen,
             ),
         })
     }
@@ -194,23 +197,14 @@ impl AliceGuardrail {
         error: &AliceError,
         inputs: GuardrailApiInputs,
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
-        match self.unreachable_fallback {
-            UnreachableFallback::FailOpen => {
-                tracing::error!(
-                    error = %error,
-                    "Alice guardrail unreachable, allowing request per unreachable_fallback"
-                );
-                Ok(inputs)
-            }
-            UnreachableFallback::FailClosed => Err(GuardrailFailure::GuardrailRaised {
-                guardrail_name: Some(GUARDRAIL_NAME.to_owned()),
-                message: "Alice guardrail is unavailable and this request cannot be checked"
-                    .to_owned(),
-                wrap_default_message: false,
-                status_code: 400,
-                blocked_content: false,
-            }),
+        if self.unreachable_fallback == UnreachableFallback::FailOpen {
+            tracing::error!(
+                error = %error,
+                "Alice guardrail unreachable, allowing request per unreachable_fallback"
+            );
+            return Ok(inputs);
         }
+        Err(unavailable())
     }
 }
 

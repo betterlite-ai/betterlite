@@ -65,8 +65,8 @@ def capture(request: httpx.Request) -> dict[str, JsonValue]:
     body = TypeAdapter(JsonValue).validate_json(request.content)
     return {
         "path": request.url.path,
-        "af_api_key": request.headers.get("af-api-key"),
-        "content_type": request.headers.get("content-type"),
+        "af_api_key": request.headers["af-api-key"],
+        "content_type": request.headers["content-type"],
         "body": body,
     }
 
@@ -79,15 +79,23 @@ def alice_result(
     status: int | None,
     blocked_content: bool | None,
 ) -> dict[str, JsonValue]:
-    return TypeAdapter(dict[str, JsonValue]).validate_python(
-        {
-            "texts": texts,
-            "requests": handler.requests,
-            "raised": raised,
-            "status": status,
-            "blocked_content": blocked_content,
-        }
-    )
+    result: dict[str, JsonValue] = {}
+    result["texts"] = TypeAdapter(JsonValue).validate_python(texts)
+    result["requests"] = TypeAdapter(JsonValue).validate_python(handler.requests)
+    result["raised"] = raised
+    result["status"] = status
+    result["blocked_content"] = blocked_content
+    return result
+
+
+def vendor_call(
+    inputs: dict[str, JsonValue],
+    request_data: dict[str, JsonValue],
+    input_type: Literal["request", "response"],
+    guardrail: AliceGuardrail | None,
+    texts: list[str],
+) -> JsonValue:
+    return TypeAdapter(JsonValue).validate_python(dict(request_payload(inputs=inputs, request_data=request_data, input_type=input_type))) if guardrail is None and input_type == "request" else (None if guardrail is None else asyncio.run(guardrail.apply_guardrail(inputs={"texts": texts}, request_data=request_data, input_type=input_type)))  # type: ignore[misc, arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547  # noqa: E501
 
 
 def alice_apply(args: AliceApply) -> JsonValue:
@@ -106,7 +114,7 @@ def alice_apply(args: AliceApply) -> JsonValue:
             texts, handler, raised=False, status=None, blocked_content=None
         )
     try:
-        asyncio.run(guardrail.apply_guardrail(inputs={"texts": texts}, request_data=args["request_data"], input_type=args["input_type"]))  # type: ignore[misc, arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4536-L4547  # noqa: E501
+        vendor_call({}, args["request_data"], args["input_type"], guardrail, texts)
     except GuardrailRaisedException as error:
         return alice_result(
             [],
@@ -120,32 +128,25 @@ def alice_apply(args: AliceApply) -> JsonValue:
     )
 
 
-def conduct_request_payload(args: ConductRequestPayload) -> JsonValue:
+def conduct_inputs(args: ConductRequestPayload) -> dict[str, JsonValue]:
+    inputs: dict[str, JsonValue] = {}
     if args["structured_message_text"] is not None:
-        payload = request_payload(
-            inputs={
-                "structured_messages": [
-                    {"role": "user", "content": args["structured_message_text"]}
-                ]
-            },
-            request_data=args["request_data"],
-            input_type=args["input_type"],
-        )
+        message: dict[str, JsonValue] = {
+            "role": "user",
+            "content": args["structured_message_text"],
+        }
+        messages: list[JsonValue] = [message]
+        inputs["structured_messages"] = messages
     elif args["texts"] is not None:
-        payload = request_payload(
-            inputs={"texts": args["texts"]},
-            request_data=args["request_data"],
-            input_type=args["input_type"],
-        )
-    else:
-        payload = request_payload(
-            inputs={},
-            request_data=args["request_data"],
-            input_type=args["input_type"],
-        )
-    if payload is None:
-        return {"payload": None}
-    return {"payload": TypeAdapter(dict[str, JsonValue]).validate_python(dict(payload))}
+        inputs["texts"] = TypeAdapter(JsonValue).validate_python(args["texts"])
+    return inputs
+
+
+def conduct_request_payload(args: ConductRequestPayload) -> JsonValue:
+    payload = vendor_call(
+        conduct_inputs(args), args["request_data"], args["input_type"], None, []
+    )
+    return {"payload": payload}
 
 
 def run(input_value: Input) -> JsonValue:

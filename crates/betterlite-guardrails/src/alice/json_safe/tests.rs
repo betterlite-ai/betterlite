@@ -4,22 +4,18 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
-use super::{CREDENTIAL_KEYS_TO_STRIP, MAX_ITEMS, json_safe, safe_payload};
+use super::{CREDENTIAL_KEYS_TO_STRIP, MAX_ITEMS, json_safe};
 
 #[test]
 fn alice_guardrail_json_safe_drops_an_object_at_the_depth_limit() {
-    let mut value = GuardrailValue::Object(BTreeMap::from([(
+    let leaf = GuardrailValue::Object(BTreeMap::from([(
         "key".to_owned(),
         GuardrailValue::Text("leaf".to_owned()),
     )]));
-    for _ in 0..12 {
-        value = GuardrailValue::Object(BTreeMap::from([("key".to_owned(), value)]));
-    }
-    let mut expected = GuardrailValue::Null;
-    for _ in 0..12 {
-        expected = GuardrailValue::Object(BTreeMap::from([("key".to_owned(), expected)]));
-    }
-    assert_eq!(safe_payload(&value, &[]), expected);
+    assert_eq!(
+        safe(&wrapped_object(leaf, 12), &[]),
+        wrapped_object(GuardrailValue::Null, 12)
+    );
 }
 
 #[test]
@@ -28,7 +24,7 @@ fn alice_guardrail_json_safe_drops_a_container_at_the_depth_limit() {
         12,
         GuardrailValue::Array(vec![GuardrailValue::Text("leaf".to_owned())]),
     );
-    assert_eq!(safe_payload(&value, &[]), nested(12, GuardrailValue::Null));
+    assert_eq!(safe(&value, &[]), nested(12, GuardrailValue::Null));
 }
 
 #[test]
@@ -37,7 +33,7 @@ fn alice_guardrail_json_safe_keeps_a_container_just_inside_the_limit() {
         11,
         GuardrailValue::Array(vec![GuardrailValue::Text("leaf".to_owned())]),
     );
-    assert_eq!(safe_payload(&value, &[]), value);
+    assert_eq!(safe(&value, &[]), value);
 }
 
 #[test]
@@ -52,7 +48,7 @@ fn alice_guardrail_json_safe_caps_each_container_at_five_thousand_items() {
     let items = (0..5001)
         .map(GuardrailValue::SignedInteger)
         .collect::<Vec<_>>();
-    let kept = safe_payload(&GuardrailValue::Array(items), &[]);
+    let kept = safe(&GuardrailValue::Array(items), &[]);
     match kept {
         GuardrailValue::Array(values) => {
             assert_eq!(values.len(), MAX_ITEMS);
@@ -84,7 +80,7 @@ fn alice_guardrail_json_safe_strips_credential_keys_at_any_depth() {
             GuardrailValue::Text("dropped".to_owned()),
         ),
     ]));
-    let stripped = safe_payload(&value, &super::json_safe::CREDENTIAL_KEYS_TO_STRIP);
+    let stripped = safe(&value, &CREDENTIAL_KEYS_TO_STRIP);
     match stripped {
         GuardrailValue::Object(fields) => {
             assert!(fields.get("headers").is_none());
@@ -105,6 +101,19 @@ fn alice_guardrail_json_safe_strips_credential_keys_at_any_depth() {
         }
         other => panic!("expected an object, got {other:?}"),
     }
+}
+
+fn safe(value: &GuardrailValue, strip_keys: &[&str]) -> GuardrailValue {
+    let mut seen = Vec::new();
+    json_safe(value, 0, strip_keys, &mut seen)
+}
+
+fn wrapped_object(inner: GuardrailValue, depth: usize) -> GuardrailValue {
+    let mut value = inner;
+    for _ in 0..depth {
+        value = GuardrailValue::Object(BTreeMap::from([("key".to_owned(), value)]));
+    }
+    value
 }
 
 fn nested(depth: usize, leaf: GuardrailValue) -> GuardrailValue {

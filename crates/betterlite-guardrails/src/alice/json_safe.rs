@@ -12,11 +12,6 @@ pub(crate) const CREDENTIAL_KEYS_TO_STRIP: [&str; 5] = [
     "provider_specific_header",
 ];
 
-pub(crate) fn safe_payload(value: &GuardrailValue, strip_keys: &[&str]) -> GuardrailValue {
-    let mut seen = Vec::new();
-    json_safe(value, 0, strip_keys, &mut seen)
-}
-
 pub(crate) fn json_safe(
     value: &GuardrailValue,
     depth: usize,
