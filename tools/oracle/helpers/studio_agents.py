@@ -97,9 +97,7 @@ def request(call: Request) -> JsonValue:
         url, query = API.transform_list_request(call.get("api_base"), params)
     else:
         url, query = API.transform_list_versions_request(call["name"], call.get("api_base"), params)
-    pairs: list[JsonValue] = [
-        [name, str(value)] for name, value in OBJECT.validate_python(query).items()
-    ]
+    pairs: list[JsonValue] = [[name, str(value)] for name, value in query.items()]
     return {"url": url, "query": pairs}
 
 
