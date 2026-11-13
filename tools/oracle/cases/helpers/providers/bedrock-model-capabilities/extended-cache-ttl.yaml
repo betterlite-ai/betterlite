@@ -1,0 +1,27 @@
+kind: helper
+name: extended-cache-ttl
+call:
+  bedrock_model_capabilities:
+    function: extended_cache_ttl
+    model_cost:
+      priced: {cache_creation_input_token_cost_above_1hr: 0.000006}
+      zero: {cache_creation_input_token_cost_above_1hr: 0}
+      false_flag: {cache_creation_input_token_cost_above_1hr: false}
+      null_flag: {cache_creation_input_token_cost_above_1hr: null}
+      absent: {}
+      null_entry: null
+      malformed: 5
+      anthropic.claude-e-v1:0: {cache_creation_input_token_cost_above_1hr: 1}
+      us.anthropic.claude-e-v1:0: {}
+    models:
+      - priced
+      - zero
+      - false_flag
+      - null_flag
+      - absent
+      - null_entry
+      - malformed
+      - us.anthropic.claude-e-v1:0
+      - missing
+env: {}
+compare: {ignore: []}

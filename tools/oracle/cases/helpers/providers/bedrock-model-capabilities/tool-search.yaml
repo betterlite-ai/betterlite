@@ -1,0 +1,17 @@
+kind: helper
+name: tool-search
+call:
+  bedrock_model_capabilities:
+    function: tool_search
+    model_cost:
+      bedrock/claude-sonnet-4-5: {litellm_provider: bedrock, supports_tool_search: false}
+      bedrock/fixture-tool-search: {litellm_provider: bedrock, supports_tool_search: true}
+      bedrock/fixture-no-flag: {litellm_provider: bedrock, mode: chat}
+    models:
+      - claude-sonnet-4-5
+      - fixture-tool-search
+      - fixture-no-flag
+      - claude-sonnet-4-5-20990101
+      - mystery-model
+env: {}
+compare: {ignore: []}

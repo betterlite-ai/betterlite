@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-model-capabilities-cache-point-unknown-model
+call:
+  bedrock_model_capabilities:
+    function: cache_point_unknown_model
+    model_cost:
+      openai.gpt-5: {supports_prompt_caching: true}
+      cached: {supports_prompt_caching: true}
+      malformed: 5
+    models: [openai.gpt-5, cached, malformed, null, '']
+env: {}
+compare: {ignore: []}

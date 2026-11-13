@@ -1,0 +1,34 @@
+kind: helper
+name: parallel-tools
+call:
+  bedrock_model_capabilities:
+    function: parallel_tools
+    model_cost:
+      one: {supports_parallel_tool_use_config: true}
+      integer: {supports_parallel_tool_use_config: 1}
+      off: {supports_parallel_tool_use_config: false}
+      empty: {}
+      null_entry: null
+      false_entry: false
+      zero_entry: 0
+      malformed: 5
+      text_entry: ''
+      anthropic.claude-p-v1:0: {supports_parallel_tool_use_config: true}
+      us.anthropic.claude-p-v1:0: {}
+      us.anthropic.claude-q-v1:0: {supports_parallel_tool_use_config: true}
+      anthropic.claude-q-v1:0: 5
+    models:
+      - one
+      - integer
+      - off
+      - empty
+      - null_entry
+      - false_entry
+      - zero_entry
+      - malformed
+      - text_entry
+      - us.anthropic.claude-p-v1:0
+      - us.anthropic.claude-q-v1:0
+      - missing
+env: {}
+compare: {ignore: []}

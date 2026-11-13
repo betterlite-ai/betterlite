@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-model-capabilities-extended-cache-ttl
+call:
+  bedrock_model_capabilities:
+    function: extended_cache_ttl
+    model_cost:
+      priced: {cache_creation_input_token_cost_above_1hr: 0.000006}
+      zero: {cache_creation_input_token_cost_above_1hr: 0}
+      malformed: 5
+    models: [priced, zero, malformed, missing]
+env: {}
+compare: {ignore: []}
