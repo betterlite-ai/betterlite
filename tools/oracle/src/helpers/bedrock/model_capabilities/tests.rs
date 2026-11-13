@@ -16,27 +16,28 @@ const SEED_PREFIX: &str = "bedrock_model_capabilities";
 #[test]
 fn helper_seeds_select_bedrock_model_capabilities() {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
-    let mut seeds = Vec::new();
-    for entry in fs::read_dir(corpus).expect("the corpus folder is readable") {
-        let path = entry.expect("a corpus entry").path();
-        let prefixed = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.starts_with(SEED_PREFIX));
-        if !prefixed {
-            continue;
-        }
-        let source = fs::read_to_string(&path).expect("a seed is readable");
-        seeds.push((path, source));
-    }
+    let seeds: Vec<_> = fs::read_dir(corpus)
+        .expect("the corpus folder is readable")
+        .map(|entry| entry.expect("a corpus entry").path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(SEED_PREFIX))
+        })
+        .map(|path| {
+            let source = fs::read_to_string(&path).expect("a seed is readable");
+            (path, source)
+        })
+        .collect();
     assert!(!seeds.is_empty(), "no {SEED_PREFIX} seed exists");
-    for (path, source) in &seeds {
+    seeds.iter().for_each(|(path, source)| {
         let case: HelperCase = serde_saphyr::from_str(source).expect("a seed parses");
         validate_helper(path, &case).expect("a seed validates");
         assert_eq!(case.call.operation, OPERATION);
-        let _: Input =
-            serde_json::from_value(case.call.input.clone()).expect("a seed names a capability");
-    }
+        serde_json::from_value::<Input>(case.call.input.clone())
+            .map(drop)
+            .expect("a seed names a capability");
+    });
 }
 
 #[test]

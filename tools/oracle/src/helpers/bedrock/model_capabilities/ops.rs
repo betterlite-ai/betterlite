@@ -1,11 +1,10 @@
 use std::collections::BTreeSet;
 use std::fmt::Display;
 
-use betterlite_bedrock::bedrock_model_capabilities::CapabilityError;
 use betterlite_bedrock::bedrock_model_capabilities::cache_policy::{
-    accepts_cache_points, is_claude_4_5_on_bedrock, supports_parallel_tool_use_config,
+    accepts_cache_points, is_claude_4_5_on_bedrock, supports_parallel_tools,
 };
-use betterlite_bedrock::bedrock_model_capabilities::effort::normalize_bedrock_opus_output_config_effort;
+use betterlite_bedrock::bedrock_model_capabilities::effort::normalize_opus_effort;
 use betterlite_bedrock::bedrock_model_capabilities::endpoints::supports_openai_responses;
 use betterlite_bedrock::bedrock_model_capabilities::mantle::mantle_messages_url;
 use betterlite_bedrock::bedrock_model_capabilities::strict_tools::converse_supports_strict_tools;
@@ -15,7 +14,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_metadata_resolution::dynamic::NoDynamicMetadata;
 use serde_json::{Value, json};
-use tokio::runtime::{Builder, Runtime};
+use tokio::runtime::Builder;
 
 use super::fixture::{CachedModelInfo, Fixture};
 use super::input::{EffortCase, Input, MantleCase};
@@ -33,14 +32,6 @@ fn failure<E: Display>(error: E) -> Box<HelperError> {
         code: None,
         message: error.to_string(),
     })
-}
-
-fn runtime() -> Result<Runtime, Box<HelperError>> {
-    Builder::new_current_thread().build().map_err(failure)
-}
-
-fn raised_or(result: Result<bool, CapabilityError>) -> Value {
-    result.map_or_else(|_| json!({"raised": true}), |answer| json!(answer))
 }
 
 fn mantle_api_base(region: &str, cases: &[MantleCase]) -> HelperResult {
@@ -65,7 +56,10 @@ fn mantle_api_base(region: &str, cases: &[MantleCase]) -> HelperResult {
 fn native_responses(model_cost: &ParamMap, models: &[Option<String>]) -> HelperResult {
     let results: Vec<Value> = models
         .iter()
-        .map(|model| raised_or(supports_openai_responses(model.as_deref(), model_cost)))
+        .map(|model| {
+            supports_openai_responses(model.as_deref(), model_cost)
+                .map_or_else(|_| json!({"raised": true}), |answer| json!(answer))
+        })
         .collect();
     Ok(json!({ "results": results }))
 }
@@ -73,7 +67,10 @@ fn native_responses(model_cost: &ParamMap, models: &[Option<String>]) -> HelperR
 fn cache_points(model_cost: &ParamMap, models: &[Option<String>]) -> HelperResult {
     let results: Vec<Value> = models
         .iter()
-        .map(|model| raised_or(accepts_cache_points(model.as_deref(), model_cost)))
+        .map(|model| {
+            accepts_cache_points(model.as_deref(), model_cost)
+                .map_or_else(|_| json!({"raised": true}), |answer| json!(answer))
+        })
         .collect();
     Ok(json!({ "results": results }))
 }
@@ -81,7 +78,10 @@ fn cache_points(model_cost: &ParamMap, models: &[Option<String>]) -> HelperResul
 fn parallel_tools(model_cost: &ParamMap, models: &[String]) -> HelperResult {
     let results: Vec<Value> = models
         .iter()
-        .map(|model| raised_or(supports_parallel_tool_use_config(model, model_cost)))
+        .map(|model| {
+            supports_parallel_tools(model, model_cost)
+                .map_or_else(|_| json!({"raised": true}), |answer| json!(answer))
+        })
         .collect();
     Ok(json!({ "results": results }))
 }
@@ -89,7 +89,10 @@ fn parallel_tools(model_cost: &ParamMap, models: &[String]) -> HelperResult {
 fn extended_cache_ttl(model_cost: &ParamMap, models: &[String]) -> HelperResult {
     let results: Vec<Value> = models
         .iter()
-        .map(|model| raised_or(is_claude_4_5_on_bedrock(model, model_cost)))
+        .map(|model| {
+            is_claude_4_5_on_bedrock(model, model_cost)
+                .map_or_else(|_| json!({"raised": true}), |answer| json!(answer))
+        })
         .collect();
     Ok(json!({ "results": results }))
 }
@@ -102,7 +105,7 @@ fn strict_tools(model_cost: &ParamMap, models: &[String]) -> HelperResult {
         resolution: &resolution,
         capabilities: BTreeSet::new(),
     };
-    let runtime = runtime()?;
+    let runtime = Builder::new_current_thread().build().map_err(failure)?;
     let mut results = Vec::with_capacity(models.len());
     for model in models {
         results.push(json!(runtime.block_on(converse_supports_strict_tools(
@@ -122,11 +125,11 @@ fn effort_ceiling(model_cost: &ParamMap, cases: &[EffortCase]) -> HelperResult {
         resolution: &resolution,
         capabilities: BTreeSet::new(),
     };
-    let runtime = runtime()?;
+    let runtime = Builder::new_current_thread().build().map_err(failure)?;
     let mut results = Vec::with_capacity(cases.len());
     for case in cases {
         let mut output_config = case.output_config.clone();
-        let outcome = runtime.block_on(normalize_bedrock_opus_output_config_effort(
+        let outcome = runtime.block_on(normalize_opus_effort(
             &case.model,
             &mut output_config,
             &lookup,
@@ -146,7 +149,7 @@ fn tool_search(model_cost: &ParamMap, models: &[String]) -> HelperResult {
     let dynamic = NoDynamicMetadata;
     let mut keys = ModelCostKeys::default();
     let catalogs = fixture.catalogs();
-    let runtime = runtime()?;
+    let runtime = Builder::new_current_thread().build().map_err(failure)?;
     let mut results = Vec::with_capacity(models.len());
     for model in models {
         let mut environment = fixture.capability_environment(&resolution, &mut keys, &dynamic);

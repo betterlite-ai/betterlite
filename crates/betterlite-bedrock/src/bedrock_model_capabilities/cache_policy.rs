@@ -42,12 +42,12 @@ pub fn accepts_cache_points(
     Ok(false)
 }
 
-pub fn supports_parallel_tool_use_config(
+pub fn supports_parallel_tools(
     model: &str,
     model_cost: &ParamMap,
 ) -> Result<bool, CapabilityError> {
     for candidate in [model.to_owned(), get_bedrock_base_model(model)] {
-        let Some(fields) = truthy_entry(model_cost.get(&candidate), &candidate)? else {
+        let Some(fields) = present_entry(model_cost.get(&candidate), &candidate)? else {
             continue;
         };
         if matches!(fields.get(PARALLEL_TOOL_FLAG), Some(ParamValue::Bool(true))) {
@@ -62,7 +62,7 @@ pub fn is_claude_4_5_on_bedrock(
     model_cost: &ParamMap,
 ) -> Result<bool, CapabilityError> {
     for candidate in [model.to_owned(), get_bedrock_base_model(model)] {
-        let Some(fields) = truthy_entry(model_cost.get(&candidate), &candidate)? else {
+        let Some(fields) = present_entry(model_cost.get(&candidate), &candidate)? else {
             continue;
         };
         if fields
@@ -75,14 +75,14 @@ pub fn is_claude_4_5_on_bedrock(
     Ok(false)
 }
 
-// Python's `(entry or {})`, where a truthy non-object fails on the .get that follows
-fn truthy_entry<'map>(
+// Python's `(entry or {})`, where a present non-object fails on the .get that follows
+fn present_entry<'map>(
     entry: Option<&'map ParamValue>,
     model: &str,
 ) -> Result<Option<&'map IndexMap<String, ParamValue>>, CapabilityError> {
     match entry {
         None => Ok(None),
-        Some(value) if !is_truthy(value) => Ok(None),
+        Some(value) if !counts_as_present(value) => Ok(None),
         Some(ParamValue::Mapping(fields)) => Ok(Some(fields)),
         Some(_) => Err(CapabilityError::MalformedEntry {
             model: model.to_owned(),
@@ -90,7 +90,7 @@ fn truthy_entry<'map>(
     }
 }
 
-fn is_truthy(value: &ParamValue) -> bool {
+fn counts_as_present(value: &ParamValue) -> bool {
     match value {
         ParamValue::Null => false,
         ParamValue::Bool(flag) => *flag,

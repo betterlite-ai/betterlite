@@ -42,7 +42,7 @@ impl Effort {
     }
 }
 
-pub async fn normalize_bedrock_opus_output_config_effort<Lookup: ModelInfoLookup>(
+pub async fn normalize_opus_effort<Lookup: ModelInfoLookup>(
     model: &str,
     output_config: &mut ParamValue,
     lookup: &Lookup,

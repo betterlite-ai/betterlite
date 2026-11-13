@@ -2,9 +2,9 @@ use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 
 use super::super::CapabilityError;
 use super::super::cache_policy::{
-    accepts_cache_points, is_claude_4_5_on_bedrock, supports_parallel_tool_use_config,
+    accepts_cache_points, is_claude_4_5_on_bedrock, supports_parallel_tools,
 };
-use super::super::effort::normalize_bedrock_opus_output_config_effort;
+use super::super::effort::normalize_opus_effort;
 use super::super::endpoints::supports_openai_responses;
 use super::super::mantle::mantle_messages_url;
 use super::super::strict_tools::converse_supports_strict_tools;
@@ -434,7 +434,7 @@ pub(super) fn effort_ceiling() {
     let runtime = runtime();
     let normalize = |model: &str, config: &str| {
         let mut output_config = value(config);
-        let result = runtime.block_on(normalize_bedrock_opus_output_config_effort(
+        let result = runtime.block_on(normalize_opus_effort(
             model,
             &mut output_config,
             &answers,
@@ -523,63 +523,45 @@ pub(super) fn parallel_tools() {
             "us.anthropic.claude-q-v1:0": {"supports_parallel_tool_use_config": true},
             "anthropic.claude-q-v1:0": 5
         }"#);
+    assert_eq!(outcome(supports_parallel_tools("one", &cost)), "true");
     assert_eq!(
-        outcome(supports_parallel_tool_use_config("one", &cost)),
-        "true"
-    );
-    assert_eq!(
-        outcome(supports_parallel_tool_use_config("integer", &cost)),
+        outcome(supports_parallel_tools("integer", &cost)),
         "false",
         "an integer one is not a boolean true"
     );
+    assert_eq!(outcome(supports_parallel_tools("off", &cost)), "false");
+    assert_eq!(outcome(supports_parallel_tools("empty", &cost)), "false");
     assert_eq!(
-        outcome(supports_parallel_tool_use_config("off", &cost)),
+        outcome(supports_parallel_tools("null_entry", &cost)),
         "false"
     );
     assert_eq!(
-        outcome(supports_parallel_tool_use_config("empty", &cost)),
+        outcome(supports_parallel_tools("false_entry", &cost)),
         "false"
     );
     assert_eq!(
-        outcome(supports_parallel_tool_use_config("null_entry", &cost)),
+        outcome(supports_parallel_tools("zero_entry", &cost)),
         "false"
     );
     assert_eq!(
-        outcome(supports_parallel_tool_use_config("false_entry", &cost)),
-        "false"
-    );
-    assert_eq!(
-        outcome(supports_parallel_tool_use_config("zero_entry", &cost)),
-        "false"
-    );
-    assert_eq!(
-        outcome(supports_parallel_tool_use_config("malformed", &cost)),
+        outcome(supports_parallel_tools("malformed", &cost)),
         "malformed"
     );
     assert_eq!(
-        outcome(supports_parallel_tool_use_config("text_entry", &cost)),
+        outcome(supports_parallel_tools("text_entry", &cost)),
         "false"
     );
     assert_eq!(
-        outcome(supports_parallel_tool_use_config(
-            "us.anthropic.claude-p-v1:0",
-            &cost
-        )),
+        outcome(supports_parallel_tools("us.anthropic.claude-p-v1:0", &cost)),
         "true",
         "the base model entry enables it"
     );
     assert_eq!(
-        outcome(supports_parallel_tool_use_config(
-            "us.anthropic.claude-q-v1:0",
-            &cost
-        )),
+        outcome(supports_parallel_tools("us.anthropic.claude-q-v1:0", &cost)),
         "true",
         "a true entry short-circuits before a malformed base entry"
     );
-    assert_eq!(
-        outcome(supports_parallel_tool_use_config("missing", &cost)),
-        "false"
-    );
+    assert_eq!(outcome(supports_parallel_tools("missing", &cost)), "false");
 }
 
 pub(super) fn extended_cache_ttl() {
