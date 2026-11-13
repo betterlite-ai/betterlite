@@ -299,3 +299,55 @@ async fn translated_google_messages_reach_the_counter() {
     .await;
     assert_eq!(total, 9);
 }
+
+#[tokio::test]
+async fn rerank_text_completion_and_embedding_requests_do_not_forward_messages() {
+    for call_type in ["rerank", "text_completion", "embedding"] {
+        let data = request(
+            r#"{"messages":[{"role":"user","content":"hi"}],"input":"x","prompt":"p","query":"q"}"#,
+        );
+        let counter = recording_counter(Some(5));
+        let _total = estimate_precise_input_tokens(
+            &no_translation(),
+            &FixedResponses {
+                messages: Vec::new(),
+            },
+            &counter,
+            &estimate_with(&data, Some(call_type), None),
+        )
+        .await;
+        assert_eq!(first_count(&counter).messages, None, "{call_type}");
+    }
+}
+
+#[tokio::test]
+async fn without_a_call_type_a_null_prompt_falls_back_to_the_input() {
+    let data = request(r#"{"prompt":null,"input":"fallback"}"#);
+    let counter = recording_counter(Some(5));
+    let _total = estimate_precise_input_tokens(
+        &no_translation(),
+        &FixedResponses {
+            messages: Vec::new(),
+        },
+        &counter,
+        &estimate_with(&data, None, None),
+    )
+    .await;
+    assert_eq!(first_count(&counter).text, Some(value(r#""fallback""#)));
+}
+
+#[tokio::test]
+async fn a_chat_prompt_wins_over_the_input() {
+    let data = request(r#"{"prompt":"first","input":"second"}"#);
+    let counter = recording_counter(Some(5));
+    let _total = estimate_precise_input_tokens(
+        &no_translation(),
+        &FixedResponses {
+            messages: Vec::new(),
+        },
+        &counter,
+        &estimate_with(&data, Some("completion"), None),
+    )
+    .await;
+    assert_eq!(first_count(&counter).text, Some(value(r#""first""#)));
+}

@@ -122,15 +122,10 @@ pub async fn estimate_precise_input_tokens(
         request.call_type,
     );
     let audio_tokens = estimate_audio_content_tokens(counted.messages.as_deref());
-    let stripped = counted
-        .messages
-        .as_deref()
-        .filter(|_| audio_tokens > 0)
-        .map(strip_audio_content_blocks);
-    let countable = stripped.as_ref().or(counted.messages.as_deref());
+    let stripped = counted.messages.as_deref().map(strip_audio_content_blocks);
     if let Some(tokens) = counter_tokens(
         counter,
-        countable,
+        stripped.as_ref(),
         counted.text.as_deref(),
         data,
         request.model,

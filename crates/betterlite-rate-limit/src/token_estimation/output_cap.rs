@@ -194,11 +194,8 @@ pub fn apply_implicit_output_cap(
     } else {
         "max_tokens"
     };
-    let replace = match data.get(field) {
-        None | Some(Json::Null) => true,
-        Some(existing) => parse_output_cap_value(existing).is_some_and(|cap| effective_cap < cap),
-    };
-    if replace {
+    // an existing numeric cap would have been an explicit cap above, so only absent or null fields are written
+    if matches!(data.get(field), None | Some(Json::Null)) {
         data.insert(field.to_owned(), Json::Number(Number::from(effective_cap)));
     }
 }

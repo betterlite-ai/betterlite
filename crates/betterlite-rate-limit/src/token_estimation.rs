@@ -42,6 +42,8 @@ mod no_max_tokens_floor;
 mod parse_output_cap;
 #[path = "token_estimation/tests/precise_input.rs"]
 mod precise_input;
+#[path = "token_estimation/tests/precise_input_counter.rs"]
+mod precise_input_counter;
 #[path = "token_estimation/tests/pretokenized.rs"]
 mod pretokenized;
 #[path = "token_estimation/tests/rerank_text.rs"]

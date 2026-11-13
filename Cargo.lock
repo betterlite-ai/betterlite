@@ -2797,6 +2797,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
