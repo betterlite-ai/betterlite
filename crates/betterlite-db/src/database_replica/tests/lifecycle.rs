@@ -137,7 +137,7 @@ async fn writer_only_is_connected() {
 #[tokio::test]
 async fn disconnect_attempts_both() {
     let fixture = Fixture::new();
-    fixture.writer().script_disconnect(Step::Fail);
+    fixture.writer().fail_disconnect_with(FakeError::Disconnect);
     let error = fixture
         .routing
         .disconnect(None)
