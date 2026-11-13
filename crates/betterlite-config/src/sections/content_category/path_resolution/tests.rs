@@ -4,7 +4,7 @@ use crate::loader::ConfigLoader;
 use rstest::rstest;
 use std::{collections::BTreeMap, env, fs, path::Path, slice};
 
-use super::paths::{CategoryPathError, resolve_category_file_path};
+use super::paths::{CategoryPathError, assert_within_data_roots, resolve_category_file_path};
 
 #[test]
 fn path_resolution_jails_and_resolves_relative_paths() {
@@ -66,6 +66,27 @@ fn symlinks_cannot_escape_roots(#[case] name: &str, #[case] absolute: bool) {
     let alias = temp.path().join("alias");
     symlink(&root, &alias).unwrap();
     super::paths::assert_within_data_roots(&root.join("missing.yaml"), &[alias]).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn unresolvable_roots_fall_through_to_the_next_root() {
+    use std::os::unix::fs::symlink;
+    let temp = tempfile::tempdir().unwrap();
+    let looping = temp.path().join("loop_root");
+    let working = temp.path().join("working");
+    fs::create_dir_all(working.join("categories")).unwrap();
+    symlink("loop_root", &looping).unwrap();
+    fs::write(working.join("categories/a.yaml"), "keywords: []").unwrap();
+    let found = resolve_category_file_path(
+        Path::new("categories/a.yaml"),
+        &[looping.clone(), working.clone()],
+        &working,
+        false,
+    )
+    .unwrap();
+    assert_eq!(found, working.join("categories/a.yaml"));
+    assert_within_data_roots(&working.join("categories/a.yaml"), &[looping, working]).unwrap();
 }
 
 #[rstest]

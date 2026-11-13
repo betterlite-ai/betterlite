@@ -12,6 +12,32 @@ fn file_formats_apply_yaml_defaults_and_json_mappings() {
 }
 
 #[rstest]
+#[case::null_entry(r#"[{"match":"kill","severity":3}, null]"#, "high")]
+#[case::string_entry(r#"["skip me", {"match":"kill"}]"#, "medium")]
+#[case::number_entry(r#"[7, {"match":"kill"}]"#, "medium")]
+#[case::array_severity(r#"[{"match":"kill","severity":[3]}]"#, "medium")]
+#[case::object_severity(r#"[{"match":"kill","severity":{"level":3}}]"#, "medium")]
+#[case::single_object(r#"{"match":"kill","severity":1}"#, "low")]
+fn file_json_skips_non_objects_and_defaults_odd_severities(
+    #[case] body: &str,
+    #[case] expected: &str,
+) {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("harm_toxic_abuse.json");
+    fs::write(&path, body).unwrap();
+    let category = load_category_file(&path).unwrap();
+    assert_eq!(category.keywords.len(), 1, "{body}");
+    assert_eq!(
+        category.keywords[0].get("keyword").map(String::as_str),
+        Some("kill")
+    );
+    assert_eq!(
+        category.keywords[0].get("severity").map(String::as_str),
+        Some(expected)
+    );
+}
+
+#[rstest]
 #[case::low(Some("1"), "low")]
 #[case::medium(Some("2"), "medium")]
 #[case::high_three(Some("3"), "high")]

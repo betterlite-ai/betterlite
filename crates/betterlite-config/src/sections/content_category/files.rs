@@ -102,10 +102,13 @@ fn read_text(path: &Path) -> Result<String, CategoryFileError> {
     })
 }
 
-fn json_keywords(entries: Vec<JsonEntry>) -> Vec<BTreeMap<String, String>> {
+fn json_keywords(entries: Vec<JsonItem>) -> Vec<BTreeMap<String, String>> {
     let mut seen = BTreeSet::new();
     let mut keywords = Vec::new();
-    for entry in entries {
+    for item in entries {
+        let JsonItem::Entry(entry) = item else {
+            continue;
+        };
         for phrase in entry
             .match_phrases
             .unwrap_or_default()
@@ -138,8 +141,15 @@ fn category_name(path: &Path) -> String {
 #[derive(serde::Deserialize)]
 #[serde(untagged)]
 enum JsonEntries {
-    Many(Vec<JsonEntry>),
-    One(JsonEntry),
+    Many(Vec<JsonItem>),
+    One(JsonItem),
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum JsonItem {
+    Entry(JsonEntry),
+    Other(serde::de::IgnoredAny),
 }
 
 #[derive(serde::Deserialize)]
@@ -147,28 +157,19 @@ struct JsonEntry {
     #[serde(rename = "match")]
     match_phrases: Option<String>,
     severity: Option<JsonSeverity>,
-    _id: Option<String>,
-    _tags: Option<Vec<String>>,
 }
 
 #[derive(serde::Deserialize)]
 #[serde(untagged)]
 enum JsonSeverity {
     Number(serde_json::Number),
-    Text(String),
+    Other(serde::de::IgnoredAny),
 }
 
 fn severity_name(severity: Option<&JsonSeverity>) -> &'static str {
     match severity {
         Some(JsonSeverity::Number(number)) if number.as_i64() == Some(1) => "low",
         Some(JsonSeverity::Number(number)) if matches!(number.as_i64(), Some(3 | 4)) => "high",
-        Some(JsonSeverity::Text(value)) => {
-            tracing::debug!(
-                severity = value,
-                "non-integer category severity defaults to medium"
-            );
-            "medium"
-        }
-        None | Some(JsonSeverity::Number(_)) => "medium",
+        _ => "medium",
     }
 }

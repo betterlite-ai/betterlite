@@ -18,7 +18,10 @@ pub enum CategoryPathError {
 pub fn assert_within_data_roots(path: &Path, roots: &[PathBuf]) -> Result<(), CategoryPathError> {
     let normalized = resolve_real(path)?;
     for root in roots {
-        if normalized.starts_with(resolve_real(root)?) {
+        let Ok(resolved_root) = resolve_real(root) else {
+            continue;
+        };
+        if normalized.starts_with(resolved_root) {
             return Ok(());
         }
     }
@@ -53,7 +56,7 @@ pub fn resolve_category_file_path(
                 continue;
             };
             let suffix: PathBuf = suffix_parts.iter().collect();
-            let Some(candidate) = joined_candidate(root, &suffix, allow_external)? else {
+            let Some(candidate) = joined_candidate(root, &suffix, allow_external) else {
                 continue;
             };
             if candidate.exists() {
@@ -69,17 +72,13 @@ pub fn resolve_category_file_path(
     Ok(file_path.to_path_buf())
 }
 
-fn joined_candidate(
-    root: &Path,
-    suffix: &Path,
-    allow_external: bool,
-) -> Result<Option<PathBuf>, CategoryPathError> {
+fn joined_candidate(root: &Path, suffix: &Path, allow_external: bool) -> Option<PathBuf> {
     if allow_external {
-        return Ok(Some(root.join(suffix)));
+        return Some(root.join(suffix));
     }
-    let base = resolve_real(root)?;
-    let candidate = resolve_real(&base.join(suffix))?;
-    Ok(candidate.starts_with(&base).then_some(candidate))
+    let base = resolve_real(root).ok()?;
+    let candidate = resolve_real(&base.join(suffix)).ok()?;
+    candidate.starts_with(&base).then_some(candidate)
 }
 
 fn resolve_real(path: &Path) -> Result<PathBuf, CategoryPathError> {
