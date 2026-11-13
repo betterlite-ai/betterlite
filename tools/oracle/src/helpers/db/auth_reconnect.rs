@@ -223,10 +223,9 @@ fn run_scenario(
     };
     let database_url = scenario.database_url.clone().map(SecretString::from);
     let policy = AuthReconnect::new(engine.clone(), settings, clock, lock, history);
-    let stale = scenario
-        .stale
-        .as_ref()
-        .and_then(|stale| StaleReadEngine::observe(&engine.observation(stale.target, stale.generation)));
+    let stale = scenario.stale.as_ref().and_then(|stale| {
+        StaleReadEngine::observe(&engine.observation(stale.target, stale.generation))
+    });
     let request = ReconnectRequest {
         reason: &scenario.request.reason,
         force: scenario.request.force,

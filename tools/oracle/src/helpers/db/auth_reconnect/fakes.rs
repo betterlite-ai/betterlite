@@ -276,9 +276,7 @@ pub(super) struct ScriptedClock {
 }
 
 impl ScriptedClock {
-    pub(super) fn from_values(
-        values: &[f64],
-    ) -> Result<Self, Box<crate::helpers::HelperError>> {
+    pub(super) fn from_values(values: &[f64]) -> Result<Self, Box<crate::helpers::HelperError>> {
         let mut offsets = VecDeque::new();
         for value in values {
             let offset = Duration::try_from_secs_f64(*value).map_err(|_error| {
@@ -307,10 +305,7 @@ impl ScriptedClock {
 
 impl ReconnectClock for ScriptedClock {
     fn now(&self) -> Instant {
-        let mut script = self
-            .script
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut script = self.script.lock().unwrap_or_else(PoisonError::into_inner);
         let fallback = script.fallback;
         self.base + script.offsets.pop_front().unwrap_or(fallback)
     }
@@ -359,13 +354,11 @@ impl ReconnectLock for ScriptedLock {
                     effects: Arc::clone(&self.shared.effects),
                 })),
                 LockMode::Busy => Ok(None),
-                LockMode::Error => Err(FakeError(
-                    self.shared
-                        .script
-                        .error
-                        .clone()
-                        .unwrap_or_else(|| "the reconnect lock is unavailable".to_owned()),
-                )),
+                LockMode::Error => {
+                    Err(FakeError(self.shared.script.error.clone().unwrap_or_else(
+                        || "the reconnect lock is unavailable".to_owned(),
+                    )))
+                }
             }
         })
     }
