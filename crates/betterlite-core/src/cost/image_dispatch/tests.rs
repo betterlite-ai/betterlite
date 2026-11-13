@@ -313,6 +313,17 @@ fn size_prefers_the_explicit_value_then_the_response_then_a_valid_option_then_th
 }
 
 #[test]
+fn an_explicit_or_returned_size_bypasses_the_option_pattern() {
+    let response = billing(1, Some("auto"), None);
+    let mut explicit = call(None, &response);
+    explicit.size = Some("not a size");
+    assert_eq!(run(&explicit).1[0].size.as_deref(), Some("not a size"));
+
+    let from_response = call(None, &response);
+    assert_eq!(run(&from_response).1[0].size.as_deref(), Some("auto"));
+}
+
+#[test]
 fn an_empty_size_or_quality_falls_through_to_the_next_source() {
     let options = params(&[("quality", text("hd"))]);
     let response = billing(1, Some(""), Some(""));
