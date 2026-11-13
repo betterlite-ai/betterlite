@@ -87,16 +87,14 @@ fn is_decimal_number(text: &str) -> bool {
     for character in text.chars() {
         match character {
             '0'..='9' => digits = digits.saturating_add(1),
-            '.' => {
-                dots = dots.saturating_add(1);
-                if dots > 1 {
-                    return false;
-                }
-            }
+            '.' => dots = dots.saturating_add(1),
             _ => return false,
         }
     }
     if digits == 0 {
+        return false;
+    }
+    if dots > 1 {
         return false;
     }
     match text.split_once('.') {
