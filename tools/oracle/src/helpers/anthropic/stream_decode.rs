@@ -139,7 +139,7 @@ where
 {
     outcomes
         .into_iter()
-        .try_fold((Vec::new(), 0), |(mut items, errors), outcome| {
+        .try_fold((Vec::new(), 0usize), |(mut items, errors), outcome| {
             let errors = match outcome {
                 Ok(chunk) => {
                     items.push(decoded_value(&chunk));
@@ -197,7 +197,7 @@ fn passthrough_outcomes(input: &Input) -> Result<Vec<Conversion>, Box<HelperErro
 
 fn classify(conversions: Vec<Conversion>) -> (Vec<Value>, usize) {
     let mut items = Vec::new();
-    let mut errors = 0;
+    let mut errors: usize = 0;
     for conversion in conversions {
         match conversion {
             Ok(ConvertedChunk::Event(event)) => {
