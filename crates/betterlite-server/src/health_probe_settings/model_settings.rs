@@ -24,70 +24,69 @@ pub enum HealthSettingsError {
     },
 }
 
+trait FieldValue: Sized {
+    const EXPECTED: &'static str;
+
+    fn from_json(value: &Json) -> Option<Self>;
+}
+
+impl FieldValue for i64 {
+    const EXPECTED: &'static str = "an integer";
+
+    fn from_json(value: &Json) -> Option<Self> {
+        match value {
+            Json::Number(number) => number.as_i64(),
+            // int() reads a numeric string, so a quoted limit in YAML still counts
+            Json::Text(text) => text.trim().parse().ok(),
+            Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_) => None,
+        }
+    }
+}
+
+impl FieldValue for bool {
+    const EXPECTED: &'static str = "a boolean";
+
+    fn from_json(value: &Json) -> Option<Self> {
+        match value {
+            Json::Bool(flag) => Some(*flag),
+            Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
+        }
+    }
+}
+
+impl FieldValue for String {
+    const EXPECTED: &'static str = "a string";
+
+    fn from_json(value: &Json) -> Option<Self> {
+        match value {
+            Json::Text(text) => Some(text.clone()),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+        }
+    }
+}
+
+fn field_value<T>(
+    model_info: &JsonObject,
+    field: &'static str,
+) -> Result<Option<T>, HealthSettingsError>
+where
+    T: FieldValue,
+{
+    match model_info.get(field) {
+        None | Some(Json::Null) => Ok(None),
+        Some(value) => T::from_json(value)
+            .map(Some)
+            .ok_or(HealthSettingsError::Invalid {
+                field,
+                expected: T::EXPECTED,
+            }),
+    }
+}
+
 fn declared_mode(model_info: &JsonObject) -> Option<String> {
     match model_info.get("mode") {
         Some(Json::Text(mode)) => Some(mode.clone()),
         _ => None,
-    }
-}
-
-fn integer_field(
-    model_info: &JsonObject,
-    field: &'static str,
-) -> Result<Option<i64>, HealthSettingsError> {
-    match model_info.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Number(number)) => {
-            number
-                .as_i64()
-                .map(Some)
-                .ok_or(HealthSettingsError::Invalid {
-                    field,
-                    expected: "an integer",
-                })
-        }
-        // int() reads a numeric string, so a quoted limit in YAML still counts
-        Some(Json::Text(text)) => {
-            text.trim()
-                .parse::<i64>()
-                .map(Some)
-                .map_err(|_source| HealthSettingsError::Invalid {
-                    field,
-                    expected: "an integer",
-                })
-        }
-        Some(_) => Err(HealthSettingsError::Invalid {
-            field,
-            expected: "an integer",
-        }),
-    }
-}
-
-fn bool_field(
-    model_info: &JsonObject,
-    field: &'static str,
-) -> Result<Option<bool>, HealthSettingsError> {
-    match model_info.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Bool(value)) => Ok(Some(*value)),
-        Some(_) => Err(HealthSettingsError::Invalid {
-            field,
-            expected: "a boolean",
-        }),
-    }
-}
-
-fn text_field(
-    model_info: &JsonObject,
-    field: &'static str,
-) -> Result<Option<String>, HealthSettingsError> {
-    match model_info.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.clone())),
-        Some(_) => Err(HealthSettingsError::Invalid {
-            field,
-            expected: "a string",
-        }),
     }
 }
 
@@ -113,16 +112,16 @@ impl ModelHealthSettings {
     pub fn parse(model_info: &JsonObject) -> Result<Self, HealthSettingsError> {
         Ok(Self {
             mode: declared_mode(model_info),
-            max_tokens: integer_field(model_info, "health_check_max_tokens")?,
-            max_tokens_reasoning: integer_field(model_info, "health_check_max_tokens_reasoning")?,
-            max_tokens_non_reasoning: integer_field(
+            max_tokens: field_value(model_info, "health_check_max_tokens")?,
+            max_tokens_reasoning: field_value(model_info, "health_check_max_tokens_reasoning")?,
+            max_tokens_non_reasoning: field_value(
                 model_info,
                 "health_check_max_tokens_non_reasoning",
             )?,
-            supports_max_tokens: bool_field(model_info, "health_check_supports_max_tokens")?,
+            supports_max_tokens: field_value(model_info, "health_check_supports_max_tokens")?,
             reasoning_effort: value_field(model_info, "health_check_reasoning_effort"),
-            model: text_field(model_info, "health_check_model")?,
-            voice: text_field(model_info, "health_check_voice")?,
+            model: field_value(model_info, "health_check_model")?,
+            voice: field_value(model_info, "health_check_voice")?,
             params: params_field(model_info),
         })
     }

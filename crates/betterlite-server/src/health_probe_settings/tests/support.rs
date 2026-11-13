@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use betterlite_config::sections::health_probe_policy::Settings as ProbePolicy;
-use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 
@@ -14,12 +13,8 @@ pub(super) fn object(text: &str) -> JsonObject {
 }
 
 pub(super) fn spec(model_name: &str, id: Option<&str>, model: &str) -> DeploymentSpec {
-    let mut params = JsonObject::new();
-    params.insert("model".to_owned(), Json::Text(model.to_owned()));
-    let mut info = JsonObject::new();
-    if let Some(id) = id {
-        info.insert("id".to_owned(), Json::Text(id.to_owned()));
-    }
+    let params = object(&format!(r#"{{"model":"{model}"}}"#));
+    let info = id.map_or_else(|| object("{}"), |id| object(&format!(r#"{{"id":"{id}"}}"#)));
     DeploymentSpec {
         model_name: model_name.to_owned(),
         litellm_params: params,
@@ -28,22 +23,15 @@ pub(super) fn spec(model_name: &str, id: Option<&str>, model: &str) -> Deploymen
     }
 }
 
-pub(super) fn team_spec(
-    model_name: &str,
-    id: &str,
-    model: &str,
+pub(super) fn with_team(
+    mut deployment: DeploymentSpec,
     team: &str,
     public: &str,
 ) -> DeploymentSpec {
-    let mut built = spec(model_name, Some(id), model);
-    built
-        .model_info
-        .insert("team_id".to_owned(), Json::Text(team.to_owned()));
-    built.model_info.insert(
-        "team_public_model_name".to_owned(),
-        Json::Text(public.to_owned()),
-    );
-    built
+    deployment.model_info.extend(object(&format!(
+        r#"{{"team_id":"{team}","team_public_model_name":"{public}"}}"#
+    )));
+    deployment
 }
 
 #[derive(Default)]

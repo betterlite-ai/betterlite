@@ -7,7 +7,7 @@ use crate::health_probe_settings::targeting::{
     deployments_targeted_by_name, filter_deployments_by_id, filter_to_model_groups,
     health_check_eligible, narrow_to_target,
 };
-use crate::health_probe_settings::tests::support::{spec, team_spec};
+use crate::health_probe_settings::tests::support::{spec, with_team};
 
 fn ids(deployments: &[DeploymentSpec]) -> Vec<String> {
     deployments
@@ -114,7 +114,11 @@ fn only_a_boolean_true_flag_disables_a_deployment() {
 #[test]
 fn a_teams_own_public_copy_wins() {
     let list = vec![
-        team_spec("internal", Some("own"), "openai/gpt-4o", "team-a", "shared"),
+        with_team(
+            spec("internal", Some("own"), "openai/gpt-4o"),
+            "team-a",
+            "shared",
+        ),
         spec("shared", Some("plain"), "openai/gpt-4o"),
     ];
     assert_eq!(
@@ -130,10 +134,8 @@ fn a_teams_own_public_copy_wins() {
 #[test]
 fn deployments_named_the_model_come_after_own_copies() {
     let list = vec![
-        team_spec(
-            "internal",
-            Some("own"),
-            "openai/gpt-4o",
+        with_team(
+            spec("internal", Some("own"), "openai/gpt-4o"),
             "team-a",
             "other-name",
         ),
@@ -151,10 +153,8 @@ fn deployments_named_the_model_come_after_own_copies() {
 
 #[test]
 fn another_teams_public_name_is_not_reachable_by_a_team() {
-    let list = vec![team_spec(
-        "internal",
-        Some("own"),
-        "openai/gpt-4o",
+    let list = vec![with_team(
+        spec("internal", Some("own"), "openai/gpt-4o"),
         "team-a",
         "shared",
     )];
@@ -163,10 +163,8 @@ fn another_teams_public_name_is_not_reachable_by_a_team() {
 
 #[test]
 fn a_caller_without_a_team_reaches_a_public_name() {
-    let list = vec![team_spec(
-        "internal",
-        Some("own"),
-        "openai/gpt-4o",
+    let list = vec![with_team(
+        spec("internal", Some("own"), "openai/gpt-4o"),
         "team-a",
         "shared",
     )];
