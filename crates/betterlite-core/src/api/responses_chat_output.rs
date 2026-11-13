@@ -47,7 +47,7 @@ where
 {
     let mut items = reasoning::reasoning_items(&chat.choices, &mut uuid)?;
     items.extend(messages::message_items(&chat.choices, &mut uuid));
-    let tool_records = choice_records(&chat.choices);
+    let tool_records: Vec<ChoiceRecord> = chat.choices.iter().map(choice_record).collect();
     let request_tools = request.tools.as_deref().unwrap_or_default();
     let tools = tool_outputs(&tool_records, request_tools, limits)?;
     items.extend(tools.items.into_iter().map(OutputItem::Tool));
@@ -191,10 +191,6 @@ fn response_usage(raw_usage: Option<&Json>) -> Result<ResponseApiUsage, ChatOutp
         numeric_extras,
     };
     Ok(usage_details(Some(&typed)))
-}
-
-fn choice_records(choices: &[ChatChoice]) -> Vec<ChoiceRecord> {
-    choices.iter().map(choice_record).collect()
 }
 
 fn choice_record(choice: &ChatChoice) -> ChoiceRecord {
