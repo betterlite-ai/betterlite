@@ -9,14 +9,12 @@ use rstest::rstest;
 use serde_json::Value;
 
 use crate::api::batch_records::WireDecodeLimits;
+use crate::files::records::{FileDeleted, FileObject};
 use crate::files::records::{FileKind, FileStatus, FilesPurpose};
 use crate::xai_batches::error::XaiBatchesError;
 use crate::xai_files::error::XaiFilesError;
 use crate::xai_files::records::{XaiFile, XaiFileDeleted, XaiFileList, decode_xai_upload_reply};
-use crate::xai_files::reply::{
-    decode_file_deleted, decode_file_list, decode_file_object, decode_next_page, to_file_deleted,
-    to_file_list, to_file_object,
-};
+use crate::xai_files::reply::{decode_file_reply, to_file_deleted, to_file_list, to_file_object};
 use crate::xai_files::request::{
     FilesTarget, SUPPORTED_OPENAI_PARAMS, create_upload, files_url, map_openai_params, next_page,
 };
@@ -49,6 +47,31 @@ fn response(status: u16, body: &[u8]) -> UpstreamResponse {
 
 fn direct(content: &[u8]) -> FileData {
     FileData::Direct(FileBody::Bytes(content.to_vec()))
+}
+
+fn decode_file_object(
+    reply: &UpstreamResponse,
+    limits: &WireDecodeLimits,
+    now: i64,
+) -> Result<FileObject, XaiFilesError> {
+    decode_file_reply(reply, limits, |file: XaiFile| to_file_object(&file, now))
+}
+
+fn decode_file_list(
+    reply: &UpstreamResponse,
+    limits: &WireDecodeLimits,
+    now: i64,
+) -> Result<Vec<FileObject>, XaiFilesError> {
+    decode_file_reply(reply, limits, |page: XaiFileList| to_file_list(&page, now))
+}
+
+fn decode_file_deleted(
+    reply: &UpstreamResponse,
+    limits: &WireDecodeLimits,
+) -> Result<FileDeleted, XaiFilesError> {
+    decode_file_reply(reply, limits, |deleted: XaiFileDeleted| {
+        to_file_deleted(&deleted)
+    })
 }
 
 #[test]
@@ -233,7 +256,9 @@ fn the_cursor_advances_only_with_a_token_and_a_file(#[case] body: &[u8], #[case]
 #[test]
 fn the_next_page_reads_the_body_without_a_status_check() {
     let reply = response(400, br#"{"data":[{"id":"a"}],"pagination_token":"tok"}"#);
-    let page = decode_next_page(&reply, &limits(), "https://api.x.ai/v1/files").unwrap();
+    let page = decode_xai_upload_reply::<XaiFileList>(&reply.body, &limits())
+        .map(|page| next_page(&page, "https://api.x.ai/v1/files"))
+        .unwrap();
     assert!(page.is_some());
 }
 

@@ -162,8 +162,7 @@ fn file_value(form: &SttForm) -> Value {
 
 fn mapped_fixture() -> Result<Map<String, Value>, Box<crate::helpers::HelperError>> {
     let mut optional: Map<String, Value> =
-        serde_json::from_str(r#"{"response_format":"json","language":"fr"}"#)
-            .or_config_error()?;
+        serde_json::from_str(r#"{"response_format":"json","language":"fr"}"#).or_config_error()?;
     map_openai_params(
         &[
             ("language".to_owned(), json!("en")),

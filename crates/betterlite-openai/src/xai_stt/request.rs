@@ -46,35 +46,42 @@ pub struct SttForm {
 impl FormScalar {
     // Python's str() spelling of a list member, where a bool capitalizes and a float keeps its repr
     #[must_use]
-    pub fn python_text(&self) -> String {
+    pub fn member_text(&self) -> String {
         match self {
             Self::Bool(true) => "True".to_owned(),
             Self::Bool(false) => "False".to_owned(),
             Self::Integer(value) => value.to_string(),
-            Self::Float(value) => python_float(*value),
+            Self::Float(value) => float_text(*value),
             Self::Text(text) => text.clone(),
             Self::Null => "None".to_owned(),
+        }
+    }
+
+    // a scalar bool reaches the form in lowercase; every other scalar uses its Python str() spelling
+    #[must_use]
+    pub fn form_text(&self) -> String {
+        if let Self::Bool(flag) = self {
+            flag.to_string()
+        } else {
+            self.member_text()
         }
     }
 }
 
 impl FormValue {
-    // a scalar bool reaches the form in lowercase; every other value uses its Python str() spelling
     #[must_use]
     pub fn form_text(&self) -> FormText {
         match self {
-            Self::Scalar(FormScalar::Bool(true)) => FormText::Scalar("true".to_owned()),
-            Self::Scalar(FormScalar::Bool(false)) => FormText::Scalar("false".to_owned()),
-            Self::Scalar(scalar) => FormText::Scalar(scalar.python_text()),
             Self::List(items) => {
-                FormText::Repeated(items.iter().map(FormScalar::python_text).collect())
+                FormText::Repeated(items.iter().map(FormScalar::member_text).collect())
             }
+            Self::Scalar(scalar) => FormText::Scalar(scalar.form_text()),
         }
     }
 }
 
 // Python prints a float in fixed notation for magnitudes in [1e-4, 1e16) and in scientific notation outside it
-fn python_float(value: f64) -> String {
+fn float_text(value: f64) -> String {
     let magnitude = value.abs();
     if magnitude != 0.0_f64 && !(1e-4_f64..1e16_f64).contains(&magnitude) {
         let scientific = format!("{value:e}");

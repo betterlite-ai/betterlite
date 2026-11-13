@@ -3,9 +3,14 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::xai_identity::Settings;
 use betterlite_openai::xai_batches::transformation::get_xai_auth_headers;
 use betterlite_openai::xai_files::error::XaiFilesError;
-use betterlite_openai::xai_files::reply::{decode_file_list, decode_next_page};
+use betterlite_openai::xai_files::records::{
+    XaiFile, XaiFileDeleted, XaiFileList, decode_xai_upload_reply,
+};
+use betterlite_openai::xai_files::reply::{
+    decode_file_reply, to_file_deleted, to_file_list, to_file_object,
+};
 use betterlite_openai::xai_files::request::{
-    FilesTarget, SUPPORTED_OPENAI_PARAMS, files_url, map_openai_params,
+    FilesTarget, SUPPORTED_OPENAI_PARAMS, files_url, map_openai_params, next_page,
 };
 use http::header::{AUTHORIZATION, HeaderMap};
 use secrecy::SecretString;
@@ -14,7 +19,7 @@ use serde_json::{Map, Value, json};
 
 use crate::helpers::OrHelperError as _;
 
-use views::{content_call, deleted_value, failure, file_value, limits, upstream};
+use views::{content_call, failure, limits, upstream, value};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -117,12 +122,16 @@ fn upload_call(
         ],
         false,
     );
+    let response = upstream(call.reply.status, call.reply.body.as_bytes(), &[]);
+    let file = value(decode_file_reply(&response, &limits(), |file: XaiFile| {
+        to_file_object(&file, call.now)
+    }))?;
     Ok(json!({
         "supported": SUPPORTED_OPENAI_PARAMS,
         "mapped": serde_json::to_value(&mapped).or_config_error()?,
         "url": url,
         "authorization": headers.get(AUTHORIZATION).and_then(|value| value.to_str().ok()),
-        "file": file_value(&call.reply, call.now)?,
+        "file": file,
     }))
 }
 
@@ -148,10 +157,22 @@ fn file_call(
     call: &FileCall,
     settings: &Settings,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
+    let delete = target(call, false, settings)?;
+    let content = target(call, true, settings)?;
+    let response = upstream(
+        call.delete_reply.status,
+        call.delete_reply.body.as_bytes(),
+        &[],
+    );
+    let deleted = value(decode_file_reply(
+        &response,
+        &limits(),
+        |deleted: XaiFileDeleted| to_file_deleted(&deleted),
+    ))?;
     Ok(json!({
-        "delete": target(call, false, settings)?,
-        "content": target(call, true, settings)?,
-        "deleted": deleted_value(&call.delete_reply)?,
+        "delete": delete,
+        "content": content,
+        "deleted": deleted,
         "content_reply": content_call(&call.content_reply),
     }))
 }
@@ -168,7 +189,9 @@ fn list_call(
     .map_err(|error| failure(&error))?;
     let response = upstream(call.reply.status, call.reply.body.as_bytes(), &[]);
     let mut entry = views::empty_list(&url);
-    match decode_next_page(&response, &limits(), &url) {
+    match decode_xai_upload_reply::<XaiFileList>(&response.body, &limits())
+        .map(|page| next_page(&page, &url))
+    {
         Ok(Some(page)) => {
             entry.insert(
                 "next".to_owned(),
@@ -180,14 +203,14 @@ fn list_call(
             entry.insert("raised".to_owned(), json!("page"));
         }
     }
-    match decode_file_list(&response, &limits(), call.now) {
+    match decode_file_reply(&response, &limits(), |page: XaiFileList| {
+        to_file_list(&page, call.now)
+    }) {
         Ok(files) => {
-            let values = files
-                .iter()
-                .map(serde_json::to_value)
-                .collect::<Result<Vec<_>, _>>()
-                .or_config_error()?;
-            entry.insert("files".to_owned(), Value::Array(values));
+            entry.insert(
+                "files".to_owned(),
+                serde_json::to_value(&files).or_config_error()?,
+            );
         }
         Err(error) if error.status_code().is_some() => return Err(failure(&error)),
         Err(_) => {

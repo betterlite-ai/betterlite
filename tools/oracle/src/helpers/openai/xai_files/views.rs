@@ -2,13 +2,12 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_openai::api::batch_records::WireDecodeLimits;
 use betterlite_openai::files::records::BinaryContent;
 use betterlite_openai::xai_files::error::XaiFilesError;
-use betterlite_openai::xai_files::reply::{decode_file_deleted, decode_file_object};
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Map, Value, json};
 
 use crate::helpers::OrHelperError as _;
 
-use super::{ContentSpec, Reply};
+use super::ContentSpec;
 
 pub(super) const fn limits() -> WireDecodeLimits {
     WireDecodeLimits {
@@ -47,22 +46,14 @@ pub(super) fn upstream(status: u16, body: &[u8], headers: &[(String, String)]) -
     }
 }
 
-pub(super) fn file_value(
-    reply: &Reply,
-    now: i64,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let response = upstream(reply.status, reply.body.as_bytes(), &[]);
-    match decode_file_object(&response, &limits(), now) {
-        Ok(file) => serde_json::to_value(&file).or_config_error(),
-        Err(error) if error.status_code().is_some() => Err(failure(&error)),
-        Err(_) => Ok(json!({"raised": "reply"})),
-    }
-}
-
-pub(super) fn deleted_value(reply: &Reply) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let response = upstream(reply.status, reply.body.as_bytes(), &[]);
-    match decode_file_deleted(&response, &limits()) {
-        Ok(deleted) => serde_json::to_value(&deleted).or_config_error(),
+pub(super) fn value<T>(
+    result: Result<T, XaiFilesError>,
+) -> Result<Value, Box<crate::helpers::HelperError>>
+where
+    T: serde::Serialize,
+{
+    match result {
+        Ok(value) => serde_json::to_value(&value).or_config_error(),
         Err(error) if error.status_code().is_some() => Err(failure(&error)),
         Err(_) => Ok(json!({"raised": "reply"})),
     }
