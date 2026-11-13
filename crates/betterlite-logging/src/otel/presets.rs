@@ -71,20 +71,13 @@ pub fn dynamic_otlp_endpoint(
     dynamic_params: &StandardCallbackDynamicParams,
     allowed_hosts: &[AllowedDestination],
 ) -> Option<String> {
-    let values = non_empty_params(dynamic_params)?;
+    let parameters = dynamic_params_map(dynamic_params);
+    let values = (!parameters.is_empty()).then_some(parameters)?;
     match callback_name.unwrap_or_default() {
         "newrelic" => Some(newrelic_dynamic_endpoint(&values)),
         "signoz" => signoz_dynamic_endpoint(&values, allowed_hosts),
         _ => None,
     }
-}
-
-fn non_empty_params(params: &StandardCallbackDynamicParams) -> Option<BTreeMap<String, String>> {
-    let values = dynamic_params_map(params);
-    if values.is_empty() {
-        return None;
-    }
-    Some(values)
 }
 
 // Project routing takes trusted key/team config, never the client-supplied dynamic parameters

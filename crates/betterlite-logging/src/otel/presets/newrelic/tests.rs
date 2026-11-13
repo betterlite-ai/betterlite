@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error as _;
 
+use betterlite_env::EnvError;
 use rstest::rstest;
 
 use super::{
@@ -154,9 +156,7 @@ fn preset_keeps_the_base_capture_mode_when_the_flag_is_unset() {
 }
 
 #[rstest]
-#[case::word("sometimes")]
 #[case::empty("")]
-#[case::number("2")]
 #[case::padded(" true ")]
 fn preset_rejects_an_unparsable_record_content_flag(#[case] value: &str) {
     let error = build(
@@ -172,6 +172,43 @@ fn preset_rejects_an_unparsable_record_content_flag(#[case] value: &str) {
         ),
         "unexpected error {error:?}"
     );
+}
+
+#[rstest]
+#[case::word("sometimes")]
+#[case::number("2")]
+fn preset_rejects_a_flag_the_bool_parser_cannot_read(#[case] value: &str) {
+    let error = build(
+        &[("NEW_RELIC_AI_MONITORING_RECORD_CONTENT_ENABLED", value)],
+        CaptureMessageContent::NoContent,
+    )
+    .expect_err("an unparsable flag fails the preset");
+    assert!(
+        matches!(
+            &error,
+            PresetError::Newrelic(NewrelicPresetError::RecordContentEnvironment(_))
+        ),
+        "unexpected error {error:?}"
+    );
+}
+
+#[test]
+fn record_content_error_keeps_the_parser_cause() {
+    let error = build(
+        &[(
+            "NEW_RELIC_AI_MONITORING_RECORD_CONTENT_ENABLED",
+            "sometimes",
+        )],
+        CaptureMessageContent::NoContent,
+    )
+    .expect_err("an unparsable flag fails the preset");
+    let source = error
+        .source()
+        .expect("the parse error is kept as the source");
+    assert!(matches!(
+        source.downcast_ref::<EnvError>(),
+        Some(EnvError::Bool { name }) if name == "NEW_RELIC_AI_MONITORING_RECORD_CONTENT_ENABLED"
+    ));
 }
 
 #[rstest]

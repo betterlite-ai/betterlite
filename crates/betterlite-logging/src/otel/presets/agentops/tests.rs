@@ -457,6 +457,36 @@ async fn a_stalled_token_fetch_times_out_and_is_not_retried() {
     );
 }
 
+#[tokio::test]
+async fn the_export_ignores_the_otlp_header_environment() {
+    let fake = Arc::new(FakeClient::new(AuthAnswer::Token(TOKEN)));
+    let factory: ExporterFactory = agentops_exporter_factory(&clients(&fake));
+    let sink = temp_env::with_vars(
+        [
+            ("OTEL_EXPORTER_OTLP_HEADERS", Some("x-otlp-env=1")),
+            (
+                "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+                Some("x-otlp-traces-env=1"),
+            ),
+        ],
+        || factory(&spec(Some("https://collector.example/custom/traces"))),
+    )
+    .expect("the agentops exporter builds");
+    sink.export(vec![span()]).await.expect("the export runs");
+
+    let exports = fake.exports();
+    assert_eq!(exports.len(), 1);
+    let export = &exports[0];
+    assert!(export.header("x-otlp-env").is_none());
+    assert!(export.header("x-otlp-traces-env").is_none());
+    assert_eq!(
+        export.header("content-type"),
+        Some("application/x-protobuf")
+    );
+    let bearer = format!("Bearer {TOKEN}");
+    assert_eq!(export.header("authorization"), Some(bearer.as_str()));
+}
+
 #[test]
 fn the_factory_records_the_expected_kind() {
     assert_eq!(AGENTOPS_EXPORTER_KIND, "agentops");

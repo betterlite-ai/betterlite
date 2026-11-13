@@ -9,7 +9,7 @@ deviations:
     why: A Rust export is already async and off the request path, and a second client would skip the TLS and proxy policy of the first.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/agentops.py#L120-L133
   - what: >-
-      The AgentOps exporter does not read OTEL_EXPORTER_OTLP_HEADERS, OTEL_EXPORTER_OTLP_TIMEOUT or the certificate variables. LiteLLM builds the stock Python OTLPSpanExporter, which reads them.
+      The AgentOps exporter does not read OTEL_EXPORTER_OTLP_HEADERS, OTEL_EXPORTER_OTLP_TRACES_HEADERS, OTEL_EXPORTER_OTLP_TIMEOUT or the certificate variables. LiteLLM builds the stock Python OTLPSpanExporter, which reads them. The exporter pins the timeout to 10 seconds, and its HTTP client rebuilds each request's header map from Content-Type and Content-Encoding before adding Authorization, so the Rust OTLP builder's own environment header merge reaches no request.
     why: Rule `no reading the environment outside the config crate`; B3842 makes the same choice for the certificate variables.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/agentops.py#L102-L117
   - what: >-

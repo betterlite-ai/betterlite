@@ -18,6 +18,8 @@ const DEFAULT_REGION: &str = "us";
 pub enum NewrelicPresetError {
     #[error("NEW_RELIC_AI_MONITORING_RECORD_CONTENT_ENABLED must be a bool, got {value:?}")]
     RecordContent { value: String },
+    #[error("NEW_RELIC_AI_MONITORING_RECORD_CONTENT_ENABLED must be a bool")]
+    RecordContentEnvironment(#[from] betterlite_env::EnvError),
 }
 
 // The table is a fixed region-to-endpoint map, so team config can never redirect telemetry to an arbitrary host
@@ -80,13 +82,12 @@ fn record_content(value: &str) -> Result<bool, NewrelicPresetError> {
     match value.to_ascii_lowercase().as_str() {
         "t" | "y" => Ok(true),
         "f" | "n" => Ok(false),
-        other => flag(RECORD_CONTENT_ENV, other)
-            .map_err(|_source| NewrelicPresetError::RecordContent {
+        // The shared parser cannot express an empty value as absent here: pydantic rejects it as a bool
+        other => {
+            flag(RECORD_CONTENT_ENV, other)?.ok_or_else(|| NewrelicPresetError::RecordContent {
                 value: value.to_owned(),
-            })?
-            .ok_or_else(|| NewrelicPresetError::RecordContent {
-                value: value.to_owned(),
-            }),
+            })
+        }
     }
 }
 

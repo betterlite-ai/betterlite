@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::loader::EnvironmentLookup;
-use http::header::{AUTHORIZATION, CONNECTION, CONTENT_TYPE, HeaderValue};
-use http::{Method, StatusCode};
+use http::header::{AUTHORIZATION, CONNECTION, CONTENT_ENCODING, CONTENT_TYPE, HeaderValue};
+use http::{HeaderMap, Method, StatusCode};
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_otlp::{Protocol, SpanExporter, WithExportConfig as _, WithHttpConfig as _};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -25,6 +25,8 @@ const AGENTOPS_AUTH_ENDPOINT: &str = "https://api.agentops.ai/v3/auth/token";
 const API_KEY_OPTION: &str = "api_key";
 const FAILURE_PREFIX: &str = "AgentOps JWT fetch failed";
 const TOKEN_TIMEOUT: Duration = Duration::from_secs(10);
+// Fixed rather than left to the library: its fallback reads OTEL_EXPORTER_OTLP_TIMEOUT from the environment
+const EXPORT_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct AgentopsPreset;
 
@@ -92,9 +94,11 @@ fn build_exporter(client: &Arc<dyn HttpClient>, spec: &ExporterSpec) -> ExportRe
         api_key,
         token: OnceCell::new(),
     };
+    // The timeout is pinned so the builder never falls back to OTEL_EXPORTER_OTLP_TIMEOUT
     let mut builder = SpanExporter::builder()
         .with_http()
         .with_protocol(Protocol::HttpBinary)
+        .with_timeout(EXPORT_TIMEOUT)
         .with_shared_http_client(Arc::new(auth));
     // The spec's endpoint is used exactly as given; only an env/default endpoint gains /v1/traces
     if let Some(endpoint) = spec
@@ -116,14 +120,25 @@ struct AgentopsAuthClient {
 
 #[async_trait]
 impl HttpClient for AgentopsAuthClient {
-    async fn send_bytes(&self, mut request: Request<Bytes>) -> Result<Response<Bytes>, HttpError> {
+    async fn send_bytes(&self, request: Request<Bytes>) -> Result<Response<Bytes>, HttpError> {
         let cached = self.token.get_or_init(|| self.fetch_token()).await;
+        let (mut parts, body) = request.into_parts();
+        // The library merges OTEL_EXPORTER_OTLP_*_HEADERS into the request itself, so only the transport headers survive
+        let mut headers = HeaderMap::new();
+        for name in [CONTENT_TYPE, CONTENT_ENCODING] {
+            if let Some(value) = parts.headers.get(&name) {
+                headers.insert(name, value.clone());
+            }
+        }
         if let Some(token) = cached
             && let Ok(value) = HeaderValue::from_str(&format!("Bearer {}", token.expose_secret()))
         {
-            request.headers_mut().insert(AUTHORIZATION, value);
+            headers.insert(AUTHORIZATION, value);
         }
-        self.inner.send_bytes(request).await
+        parts.headers = headers;
+        self.inner
+            .send_bytes(Request::from_parts(parts, body))
+            .await
     }
 }
 
