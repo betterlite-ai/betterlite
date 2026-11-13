@@ -305,6 +305,24 @@ fn write_back_keeps_the_unreturned_texts_and_warns() {
 }
 
 #[test]
+fn write_back_logs_no_warning_when_every_text_is_returned() {
+    let mut body = value(r#"{"messages": [{"content": [{"text": "one"}, {"text": "two"}]}]}"#);
+    let holders = collect_request_texts(&body, SkipFlags::default());
+    let paths: Vec<TextPath> = holders.into_iter().map(|(path, _)| path).collect();
+    let records = Arc::new(Mutex::new(String::new()));
+    let capture = Capture(Arc::clone(&records));
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(capture)
+        .with_ansi(false)
+        .finish();
+    with_default(subscriber, || {
+        write_back_texts(&mut body, &paths, &["ONE".to_owned(), "TWO".to_owned()]);
+    });
+    let logged = records.lock().expect("not poisoned").clone();
+    assert!(!logged.contains("guardrail returned"));
+}
+
+#[test]
 fn write_back_drops_returned_texts_past_the_holders() {
     let mut body = value(r#"{"messages": [{"content": [{"text": "one"}]}]}"#);
     let holders = collect_request_texts(&body, SkipFlags::default());

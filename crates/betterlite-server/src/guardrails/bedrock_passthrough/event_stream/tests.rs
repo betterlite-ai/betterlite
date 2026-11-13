@@ -14,7 +14,9 @@ use bytes::BytesMut;
 
 use super::frames::{Frame, ParsedStream, parse_event_stream, rebuild_event_stream};
 use super::groups::{GroupKey, group_texts, redistribute};
-use super::hook::{EventStreamError, PostCallSuccessHook, de_anonymize_event_stream};
+use super::hook::{
+    EventStreamError, PostCallSuccessHook, de_anonymize_event_stream, value_type_name,
+};
 
 fn raw_frame(headers: &[(&str, &str)], payload: &[u8]) -> Vec<u8> {
     let mut message = Message::new(payload.to_vec());
@@ -377,6 +379,27 @@ fn a_frame_length_below_the_prelude_stops_the_walk() {
     let parsed = parse_event_stream(&body);
     assert!(parsed.frames.is_empty());
     assert_eq!(parsed.trailing, body);
+}
+
+#[test]
+fn value_type_name_names_each_json_kind() {
+    assert_eq!(value_type_name(&GuardrailValue::Null), "null");
+    assert_eq!(value_type_name(&GuardrailValue::Boolean(true)), "boolean");
+    assert_eq!(value_type_name(&GuardrailValue::SignedInteger(1)), "number");
+    assert_eq!(
+        value_type_name(&GuardrailValue::UnsignedInteger(1)),
+        "number"
+    );
+    assert_eq!(value_type_name(&GuardrailValue::Decimal(1.5)), "number");
+    assert_eq!(
+        value_type_name(&GuardrailValue::Text(String::new())),
+        "string"
+    );
+    assert_eq!(value_type_name(&GuardrailValue::Array(Vec::new())), "list");
+    assert_eq!(
+        value_type_name(&GuardrailValue::Object(BTreeMap::new())),
+        "dict"
+    );
 }
 
 #[tokio::test]

@@ -123,7 +123,7 @@ fn returned_texts(answer: &GuardrailValue, count: usize) -> Option<Vec<String>> 
     Some(texts)
 }
 
-const fn value_type_name(value: &GuardrailValue) -> &'static str {
+pub(super) const fn value_type_name(value: &GuardrailValue) -> &'static str {
     match value {
         GuardrailValue::Null => "null",
         GuardrailValue::Boolean(_) => "boolean",
