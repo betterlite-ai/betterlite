@@ -1,7 +1,7 @@
 id: B1409
 milestone: M3 providers
 title: Mistral message cleanup and distinct reply formats
-status: todo
+status: done
 depends_on: [B1408, B004, B503, B504, B218, B249, B171]
 file: tasks/B1409-mistral-chat.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/mistral.py"
 parent: B036
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1632
