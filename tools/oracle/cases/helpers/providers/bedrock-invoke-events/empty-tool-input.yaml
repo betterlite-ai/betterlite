@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-invoke-events-empty-tool-input
+call:
+  bedrock_invoke_events:
+    framed: []
+    fake: [{"response": {"choices": [{"message": {"content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "f", "arguments": ""}}]}, "finish_reason": "tool_calls"}], "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}, "json_mode": false, "steps": ["next"]}, {"response": {"choices": [{"message": {"content": "x"}, "finish_reason": "stop"}]}, "json_mode": null, "steps": ["next"]}, {"response": {"choices": [], "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}, "json_mode": null, "steps": ["next"]}]
+env: {}
+compare: {ignore: []}

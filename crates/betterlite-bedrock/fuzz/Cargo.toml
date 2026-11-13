@@ -94,6 +94,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_invoke_events"
+path = "fuzz_targets/bedrock_invoke_events.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_other_count_call"
 path = "fuzz_targets/bedrock_other_count_call.rs"
 test = false

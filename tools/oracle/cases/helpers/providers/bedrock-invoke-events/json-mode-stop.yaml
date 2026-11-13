@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-invoke-events-json-mode-stop
+call:
+  bedrock_invoke_events:
+    framed: []
+    fake: [{"response": {"choices": [{"message": {"content": "hi", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "json_tool_call", "arguments": "{}"}}]}, "finish_reason": "max_tokens"}], "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}, "json_mode": true, "steps": ["next", "next"]}, {"response": {"choices": [{"message": {"content": "hi"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}, "json_mode": null, "steps": ["anext", "anext"]}, {"response": {"choices": [{"message": {"content": "hi"}, "finish_reason": "weird"}], "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}, "json_mode": null, "steps": ["next"]}, {"response": {"choices": [{"message": {"content": "hi"}, "finish_reason": null}], "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}, "json_mode": null, "steps": ["next"]}]
+env: {}
+compare: {ignore: []}
