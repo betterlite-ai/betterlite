@@ -2,10 +2,11 @@ from typing import cast
 
 from litellm.llms.azure.common_utils import BaseAzureLLM
 from openai import AsyncAzureOpenAI, AzureOpenAI
+from pydantic import JsonValue as Json
 
 from azure_endpoints.fixtures import session
 from azure_endpoints.reports import cloudflare_report
-from azure_endpoints.sdk import STATE, CloudflareStep, Json, ProviderScript, SourceScripts
+from azure_endpoints.sdk import STATE, CloudflareStep, ProviderScript, SourceScripts
 
 
 def cloudflare_params(step: CloudflareStep) -> dict[str, str | None]:

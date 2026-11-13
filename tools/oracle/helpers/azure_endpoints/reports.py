@@ -4,6 +4,7 @@ from typing import NotRequired, TypedDict, cast
 import httpx
 import litellm
 from openai import AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, OpenAI
+from pydantic import JsonValue as Json
 
 from azure_endpoints.fixtures import IdentityParams
 from azure_endpoints.sdk import (
@@ -13,7 +14,6 @@ from azure_endpoints.sdk import (
     CloudflareStep,
     FixtureAsyncAzureOpenAI,
     FixtureAzureOpenAI,
-    Json,
     SuppliedStep,
 )
 

@@ -2,6 +2,7 @@ from collections.abc import Callable
 from typing import TypeAlias, cast
 
 from litellm.llms.azure.common_utils import BaseAzureLLM
+from pydantic import JsonValue as Json
 
 from azure_endpoints.cloudflare import cloudflare_step
 from azure_endpoints.dynamic import dynamic_step
@@ -15,7 +16,6 @@ from azure_endpoints.sdk import (
     Defaults,
     InitializeStep,
     Input,
-    Json,
     LiteLlmParams,
     ProviderScript,
     SourceScripts,

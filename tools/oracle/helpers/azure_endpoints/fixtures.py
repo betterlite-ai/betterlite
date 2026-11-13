@@ -8,6 +8,7 @@ import httpx
 import litellm
 from litellm.llms.azure import common_utils
 from litellm.llms.openai.common_utils import BaseOpenAILLM
+from pydantic import JsonValue as Json
 
 from azure_endpoints.sdk import (
     STATE,
@@ -17,7 +18,6 @@ from azure_endpoints.sdk import (
     FixtureAsyncOpenAI,
     FixtureAzureOpenAI,
     FixtureOpenAI,
-    Json,
     OtherClient,
     ProviderScript,
     RaiseScript,
