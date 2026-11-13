@@ -102,3 +102,10 @@ path = "fuzz_targets/managed_resource_rows.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "managed_batch_record"
+path = "fuzz_targets/managed_batch_record.rs"
+test = false
+doc = false
+bench = false
