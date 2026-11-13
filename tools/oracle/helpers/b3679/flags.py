@@ -45,7 +45,7 @@ class RedundantScanCall(TypedDict):
     scan_keys: list[ScanKeyInput | None]
 
 
-SCAN_LINES: Final = ("Processing streaming chunk", "Processing final streaming response")
+SCAN_LINE: Final = "Processing streaming chunk"
 
 
 class ScanCounter(logging.Handler):
@@ -55,7 +55,7 @@ class ScanCounter(logging.Handler):
 
     @override
     def emit(self, record: logging.LogRecord) -> None:
-        if record.getMessage().startswith(SCAN_LINES):
+        if record.getMessage().startswith(SCAN_LINE):
             self.scans += 1
 
 
@@ -67,7 +67,7 @@ async def source(chunks: list[ModelResponseStream]) -> AsyncIterator[ModelRespon
 async def drain(chunks: list[ModelResponseStream]) -> None:
     sampled = Hooks(streaming_sampling_rate=1)
     guardrail = CustomGuardrail(
-        guardrail_name="b3679", event_hook=GuardrailEventHooks.post_call
+        guardrail_name="b3679", event_hook=GuardrailEventHooks.post_call, default_on=True
     )
     auth = UserAPIKeyAuth(request_route="/chat/completions")
     request_data: dict[str, Json] = {}
