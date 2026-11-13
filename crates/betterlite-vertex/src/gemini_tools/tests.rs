@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+use std::fs;
+use std::sync::Arc;
+
 use betterlite_config::sections::vertex_schema_shaping::Settings;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
@@ -519,12 +522,12 @@ fn each_unknown_tool_logs_an_invalid_tool_warning() {
     let log = NamedTempFile::new().unwrap();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
-        .with_writer(std::sync::Arc::new(log.reopen().unwrap()))
+        .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
     with_default(subscriber, || {
         mapped(&tools(r#"[{"whatever": {}}, {"type": "mystery"}]"#))
     });
-    let logged = std::fs::read_to_string(log.path()).unwrap();
+    let logged = fs::read_to_string(log.path()).unwrap();
     assert_eq!(logged.matches("WARN").count(), 2);
     assert!(logged.contains("invalid tool"));
 }
