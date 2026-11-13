@@ -12,7 +12,7 @@ use secrecy::ExposeSecret as _;
 use serde::Serialize;
 use serde_json::json;
 
-use super::fakes::{RecordingPoster, build};
+use super::fakes::{Built, RecordingPoster, build};
 use super::{ConstructArgs, HookArg, OutputArgs, RequestArgs, StreamArgs, failure};
 
 #[derive(Serialize)]
@@ -31,21 +31,144 @@ struct Rejection {
     code: String,
 }
 
+struct Prepared {
+    built: Built,
+    runtime: tokio::runtime::Runtime,
+}
+
+fn prepare(
+    settings: &super::Settings,
+    environment: &BTreeMap<String, String>,
+    answer: &GuardrailValue,
+    status: u16,
+    frames: &[GuardrailValue],
+) -> Result<Prepared, Box<crate::helpers::HelperError>> {
+    let built = build(settings, environment, answer, status, frames)?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| failure("RuntimeError", error.to_string()))?;
+    Ok(Prepared { built, runtime })
+}
+
+impl Prepared {
+    fn request(
+        &self,
+        args: &RequestArgs,
+    ) -> Result<serde_json::Value, Box<crate::helpers::HelperError>> {
+        let mut data = args.request_data.clone();
+        let hook = match args.hook {
+            HookArg::PreCall => AimHook::PreCall,
+            HookArg::Moderation => AimHook::Moderation,
+        };
+        let outcome = self
+            .runtime
+            .block_on(self.built.guardrail.call_aim_guardrail(
+                &mut data,
+                hook,
+                args.key_alias.as_deref(),
+            ));
+        let blocked = match outcome {
+            Ok(()) => None,
+            Err(error) => match rejection(&error) {
+                Some(blocked) => Some(blocked),
+                None => return Err(failure("AimError", error.to_string())),
+            },
+        };
+        Ok(json!({
+            "request": recorded_request(&self.built.poster)?,
+            "request_data": data,
+            "blocked": blocked,
+        }))
+    }
+
+    fn output(
+        &self,
+        args: &OutputArgs,
+    ) -> Result<serde_json::Value, Box<crate::helpers::HelperError>> {
+        let verdict = self
+            .runtime
+            .block_on(self.built.guardrail.call_aim_guardrail_on_output(
+                &args.request_data,
+                &args.output,
+                args.key_alias.as_deref(),
+            ));
+        let output = match verdict {
+            Ok(AimOutput::Blocked { detection_message }) => {
+                json!({"detected": detection_message.is_some(), "redacted_output": null})
+            }
+            Ok(AimOutput::Redacted { output }) => {
+                json!({"detected": false, "redacted_output": output})
+            }
+            Ok(AimOutput::Unchanged) => json!({"detected": false, "redacted_output": args.output}),
+            Err(error) => match rejection(&error) {
+                Some(blocked) => json!({"detected": false, "rejected": blocked}),
+                None => return Err(failure("AimError", error.to_string())),
+            },
+        };
+        Ok(json!({
+            "request": recorded_request(&self.built.poster)?,
+            "output": output,
+        }))
+    }
+
+    fn stream(
+        &self,
+        args: &StreamArgs,
+    ) -> Result<serde_json::Value, Box<crate::helpers::HelperError>> {
+        let mut chunks = Vec::new();
+        for chunk in &args.chunks {
+            let text = serde_json::to_string(chunk)
+                .map_err(|error| failure("ValueError", error.to_string()))?;
+            chunks.push(AimStreamChunk(text));
+        }
+        self.runtime.block_on(async {
+            let call = AimStreamCall {
+                request_data: &args.request_data,
+                key_alias: args.key_alias.as_deref(),
+            };
+            let stream = self
+                .built
+                .guardrail
+                .inspect_output_stream(futures_util::stream::iter(chunks), call)
+                .await
+                .map_err(|error| failure("AimError", error.to_string()))?;
+            let mut stream = Box::pin(stream);
+            let mut contents = Vec::new();
+            let mut blocked = false;
+            while let Some(item) = stream.next().await {
+                match item {
+                    Ok(chunk) => contents.push(
+                        chunk
+                            .choices
+                            .first()
+                            .and_then(|choice| choice.delta.content.clone())
+                            .unwrap_or_default(),
+                    ),
+                    Err(AimError::StreamBlocked { .. }) => blocked = true,
+                    Err(error) => return Err(failure("AimError", error.to_string())),
+                }
+            }
+            Ok(json!({"chunks": contents, "blocked": blocked}))
+        })
+    }
+}
+
 pub(super) fn run_construct(args: &ConstructArgs) -> crate::helpers::HelperResult {
-    let built = match build(
+    let prepared = match prepare(
         &args.settings,
         &args.environment,
         &GuardrailValue::Null,
         200,
         &[],
     ) {
-        Ok(built) => built,
+        Ok(prepared) => prepared,
         Err(error) if error.class == "AimMissingSecrets" => {
             return Ok(json!({"missing_secrets": true}));
         }
         Err(error) => return Err(error),
     };
-    let guardrail = &built.guardrail;
+    let guardrail = &prepared.built.guardrail;
     Ok(json!({
         "api_key": guardrail.api_key.expose_secret(),
         "api_base": guardrail.api_base,
@@ -54,6 +177,39 @@ pub(super) fn run_construct(args: &ConstructArgs) -> crate::helpers::HelperResul
         "supported_event_hooks": serde_json::to_value(SUPPORTED_EVENT_HOOKS)
             .map_err(|error| failure("ValueError", error.to_string()))?,
     }))
+}
+
+pub(super) fn run_request(args: &RequestArgs) -> crate::helpers::HelperResult {
+    let prepared = prepare(
+        &args.settings,
+        &args.environment,
+        &args.answer,
+        args.answer_status,
+        &[],
+    )?;
+    prepared.request(args)
+}
+
+pub(super) fn run_output(args: &OutputArgs) -> crate::helpers::HelperResult {
+    let prepared = prepare(
+        &args.settings,
+        &args.environment,
+        &args.answer,
+        args.answer_status,
+        &[],
+    )?;
+    prepared.output(args)
+}
+
+pub(super) fn run_stream(args: &StreamArgs) -> crate::helpers::HelperResult {
+    let prepared = prepare(
+        &args.settings,
+        &args.environment,
+        &GuardrailValue::Null,
+        200,
+        &args.frames,
+    )?;
+    prepared.stream(args)
 }
 
 fn url_path(url: &str) -> String {
@@ -106,123 +262,4 @@ fn rejection(error: &AimError) -> Option<Rejection> {
         }),
         _ => None,
     }
-}
-
-fn runtime() -> Result<tokio::runtime::Runtime, Box<crate::helpers::HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| failure("RuntimeError", error.to_string()))
-}
-
-pub(super) fn run_request(args: &RequestArgs) -> crate::helpers::HelperResult {
-    let built = build(
-        &args.settings,
-        &args.environment,
-        &args.answer,
-        args.answer_status,
-        &[],
-    )?;
-    let hook = match args.hook {
-        HookArg::PreCall => AimHook::PreCall,
-        HookArg::Moderation => AimHook::Moderation,
-    };
-    let mut data = args.request_data.clone();
-    let runtime = runtime()?;
-    let outcome = runtime.block_on(built.guardrail.call_aim_guardrail(
-        &mut data,
-        hook,
-        args.key_alias.as_deref(),
-    ));
-    let blocked = match outcome {
-        Ok(()) => None,
-        Err(error) => match rejection(&error) {
-            Some(blocked) => Some(blocked),
-            None => return Err(failure("AimError", error.to_string())),
-        },
-    };
-    Ok(json!({
-        "request": recorded_request(&built.poster)?,
-        "request_data": data,
-        "blocked": blocked,
-    }))
-}
-
-pub(super) fn run_output(args: &OutputArgs) -> crate::helpers::HelperResult {
-    let built = build(
-        &args.settings,
-        &args.environment,
-        &args.answer,
-        args.answer_status,
-        &[],
-    )?;
-    let runtime = runtime()?;
-    let outcome = runtime.block_on(built.guardrail.call_aim_guardrail_on_output(
-        &args.request_data,
-        &args.output,
-        args.key_alias.as_deref(),
-    ));
-    let output = match outcome {
-        Ok(AimOutput::Unchanged) => json!({"detected": false, "redacted_output": args.output}),
-        Ok(AimOutput::Redacted { output }) => {
-            json!({"detected": false, "redacted_output": output})
-        }
-        Ok(AimOutput::Blocked { detection_message }) => {
-            json!({"detected": detection_message.is_some(), "redacted_output": null})
-        }
-        Err(error) => match rejection(&error) {
-            Some(blocked) => json!({"detected": false, "rejected": blocked}),
-            None => return Err(failure("AimError", error.to_string())),
-        },
-    };
-    Ok(json!({
-        "request": recorded_request(&built.poster)?,
-        "output": output,
-    }))
-}
-
-pub(super) fn run_stream(args: &StreamArgs) -> crate::helpers::HelperResult {
-    let built = build(
-        &args.settings,
-        &args.environment,
-        &GuardrailValue::Null,
-        200,
-        &args.frames,
-    )?;
-    let mut chunks = Vec::new();
-    for chunk in &args.chunks {
-        let text = serde_json::to_string(chunk)
-            .map_err(|error| failure("ValueError", error.to_string()))?;
-        chunks.push(AimStreamChunk(text));
-    }
-    let runtime = runtime()?;
-    let collected = runtime.block_on(async {
-        let call = AimStreamCall {
-            request_data: &args.request_data,
-            key_alias: args.key_alias.as_deref(),
-        };
-        let stream = built
-            .guardrail
-            .inspect_output_stream(futures_util::stream::iter(chunks), call)
-            .await
-            .map_err(|error| failure("AimError", error.to_string()))?;
-        let mut stream = Box::pin(stream);
-        let mut contents = Vec::new();
-        let mut blocked = false;
-        while let Some(item) = stream.next().await {
-            match item {
-                Ok(chunk) => contents.push(
-                    chunk
-                        .choices
-                        .first()
-                        .and_then(|choice| choice.delta.content.clone())
-                        .unwrap_or_default(),
-                ),
-                Err(AimError::StreamBlocked { .. }) => blocked = true,
-                Err(error) => return Err(failure("AimError", error.to_string())),
-            }
-        }
-        Ok(json!({"chunks": contents, "blocked": blocked}))
-    })?;
-    Ok(json!({"stream": collected}))
 }
