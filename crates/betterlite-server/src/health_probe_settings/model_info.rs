@@ -1,6 +1,7 @@
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::lookup::info::ModelQuery;
-use betterlite_models::lookup::resolve::{Resolved, find_info};
+use betterlite_models::lookup::provider_info::provider_info;
+use betterlite_models::lookup::resolve::{Resolved, find_info, split_model};
 use betterlite_models::metadata::identity::Mode;
 use betterlite_tokenizer::model_capabilities::BEDROCK_NAMES;
 
@@ -50,12 +51,17 @@ fn resolved(catalog: &ModelCatalog, model: &str) -> Option<Resolved> {
     .flatten()
 }
 
-// _supports_factory: an entry that leaves the flag absent falls back to the bare model-name entry (#20885)
-fn bare_supports_reasoning(catalog: &ModelCatalog, key: &str) -> bool {
-    let bare = key.rsplit('/').next().unwrap_or(key);
-    catalog
-        .lookup
-        .get(bare)
+// _get_model_cost_key: the exact key first, then the one that matches without case
+fn bare_supports_reasoning(catalog: &ModelCatalog, model: &str) -> bool {
+    let lowercase = model.to_lowercase();
+    let canonical = catalog.lookup.get(model).or_else(|| {
+        catalog
+            .lookup
+            .iter()
+            .find(|(key, _)| key.to_lowercase() == lowercase)
+            .map(|(_, canonical)| canonical)
+    });
+    canonical
         .and_then(|canonical| catalog.entries.get(canonical.as_ref()))
         .and_then(|entry| entry.fields.capabilities.reasoning.supports_reasoning)
         == Some(true)
@@ -69,13 +75,24 @@ impl HealthCheckModelInfo for CatalogModelInfo<'_> {
             .map(str::to_owned)
     }
 
+    // _supports_factory: get_llm_provider splits the route, then the entry, the bare entry and the provider info answer (#20885)
     fn supports_reasoning(&self, model: &str) -> bool {
-        let Some(info) = resolved(self.catalog, model) else {
-            return false;
+        let split = split_model(self.catalog, model);
+        let provider = split.provider.as_deref();
+        let query = ModelQuery {
+            model: &split.model,
+            provider,
+        };
+        let Some(info) = find_info(self.catalog, &BEDROCK_NAMES, &query)
+            .ok()
+            .flatten()
+        else {
+            return provider_info(self.catalog, &split.model, provider).supports_reasoning
+                == Some(true);
         };
         if let Some(flag) = info.capabilities.supports_reasoning {
             return flag;
         }
-        bare_supports_reasoning(self.catalog, &info.key)
+        bare_supports_reasoning(self.catalog, &split.model)
     }
 }

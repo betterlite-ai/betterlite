@@ -17,6 +17,21 @@ const CATALOG: &[u8] = br#"{
   "fixed-chat": {"litellm_provider": "openai", "mode": "chat", "supports_reasoning": true}
 }"#;
 
+const NESTED_CATALOG: &[u8] = br#"{
+  "vercel_ai_gateway/deepseek/deepseek-r1": {"litellm_provider": "vercel_ai_gateway", "mode": "chat"},
+  "deepseek/deepseek-r1": {"litellm_provider": "deepseek", "mode": "chat", "supports_reasoning": true},
+  "deepseek-r1": {"litellm_provider": "deepseek", "mode": "chat", "supports_reasoning": false},
+  "azure/eu/o1-2024-12-17": {"litellm_provider": "azure", "mode": "chat"},
+  "o1-2024-12-17": {"litellm_provider": "openai", "mode": "chat", "supports_reasoning": true},
+  "novita/minimax/minimax-m2.1": {"litellm_provider": "novita", "mode": "chat"},
+  "minimax/MiniMax-M2.1": {"litellm_provider": "minimax", "mode": "chat", "supports_reasoning": true},
+  "minimax-m2.1": {"litellm_provider": "minimax", "mode": "chat", "supports_reasoning": false}
+}"#;
+
+fn nested_catalog() -> ModelCatalog {
+    ModelCatalog::parse(NESTED_CATALOG, UnknownFields::Reject).unwrap()
+}
+
 fn catalog() -> ModelCatalog {
     ModelCatalog::parse(CATALOG, UnknownFields::Reject).unwrap()
 }
@@ -84,4 +99,25 @@ fn a_prefixed_non_reasoning_route_takes_the_default_limit() {
         &models,
     );
     assert_eq!(tokens, Some(16));
+}
+
+#[test]
+fn a_nested_route_reads_the_bare_entry_after_the_provider_prefix_only() {
+    let catalog = nested_catalog();
+    let info = CatalogModelInfo { catalog: &catalog };
+    assert!(info.supports_reasoning("vercel_ai_gateway/deepseek/deepseek-r1"));
+}
+
+#[test]
+fn a_nested_route_whose_remainder_is_unmapped_is_not_reasoning() {
+    let catalog = nested_catalog();
+    let info = CatalogModelInfo { catalog: &catalog };
+    assert!(!info.supports_reasoning("azure/eu/o1-2024-12-17"));
+}
+
+#[test]
+fn the_bare_entry_matches_without_case() {
+    let catalog = nested_catalog();
+    let info = CatalogModelInfo { catalog: &catalog };
+    assert!(info.supports_reasoning("novita/minimax/minimax-m2.1"));
 }
