@@ -37,7 +37,8 @@ impl ScriptedGuardrail {
 
     fn record(&self, inputs: &GuardrailApiInputs) {
         let mut seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
-        seen.texts.clone_from(&inputs.texts.clone().unwrap_or_default());
+        seen.texts
+            .clone_from(&inputs.texts.clone().unwrap_or_default());
         seen.model.clone_from(&inputs.model);
     }
 }
@@ -67,13 +68,7 @@ impl GuardrailContract for ScriptedGuardrail {
 pub(super) struct HookFailure;
 
 pub(super) struct ScriptedHook {
-    replace: BTreeMap<String, String>,
-}
-
-impl ScriptedHook {
-    pub(super) const fn new(replace: BTreeMap<String, String>) -> Self {
-        Self { replace }
-    }
+    pub(super) replace: BTreeMap<String, String>,
 }
 
 impl PostCallSuccessHook for ScriptedHook {

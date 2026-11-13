@@ -150,7 +150,9 @@ fn output_texts(input: &TextsResponse) -> HelperResult {
 
 fn stream(input: &StreamInput) -> HelperResult {
     let body = encode_stream(&input.frames, &input.trailing_hex)?;
-    let hook = ScriptedHook::new(input.replace.clone());
+    let hook = ScriptedHook {
+        replace: input.replace.clone(),
+    };
     let outcome = block_on(de_anonymize_event_stream(
         &body,
         &hook,
