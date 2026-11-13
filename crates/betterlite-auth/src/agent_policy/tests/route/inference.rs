@@ -227,6 +227,23 @@ fn route_inference_templated_path_uses_suffix_kind() {
     );
 }
 
+#[rstest]
+#[case::embeddings("/v1/embeddings", "completion")]
+#[case::image_edits("/v1/images/edits", "image_edit")]
+fn route_inference_query_model_fills_endpoint_for_every_fallback_suffix(
+    #[case] route: &str,
+    #[case] kind: &str,
+) {
+    let body = object("{}");
+    let mut input = request(route, &body);
+    input.query_model = Some("query-model");
+    let result = resolved(&input).unwrap();
+    assert_eq!(
+        model_of(&result),
+        format!(r#"{kind}|None|None|Some("query-model")"#)
+    );
+}
+
 #[test]
 fn route_inference_does_not_mutate_input() {
     let body = object(r#"{"model":"body-model"}"#);
