@@ -109,6 +109,15 @@ impl Scripted {
             .push(call);
     }
 
+    fn record_answer(
+        &self,
+        call: Value,
+    ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
+        self.record(call);
+        let reply = self.reply();
+        async move { reply }
+    }
+
     fn reply(&self) -> Result<BatchObject, ScriptFailure> {
         if let Some(message) = &self.script.error {
             return Err(ScriptFailure {
@@ -136,7 +145,7 @@ impl BatchCancelDispatch for Scripted {
         &self,
         call: OpenAiCancelCall<'_>,
     ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
-        self.record(json!({
+        self.record_answer(json!({
             "branch": "openai",
             "is_async": call.is_async,
             "request": recorded_request(call.request),
@@ -145,16 +154,14 @@ impl BatchCancelDispatch for Scripted {
             "organization": call.organization,
             "timeout": call.timeout,
             "max_retries": call.max_retries,
-        }));
-        let reply = self.reply();
-        async move { reply }
+        }))
     }
 
     fn azure(
         &self,
         call: AzureCancelCall<'_>,
     ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
-        self.record(json!({
+        self.record_answer(json!({
             "branch": "azure",
             "is_async": call.is_async,
             "request": recorded_request(call.request),
@@ -163,16 +170,14 @@ impl BatchCancelDispatch for Scripted {
             "api_version": call.api_version,
             "timeout": call.timeout,
             "max_retries": call.max_retries,
-        }));
-        let reply = self.reply();
-        async move { reply }
+        }))
     }
 
     fn vertex(
         &self,
         call: VertexCancelCall<'_>,
     ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
-        self.record(json!({
+        self.record_answer(json!({
             "branch": "vertex",
             "is_async": call.is_async,
             "batch_id": call.batch_id,
@@ -182,38 +187,32 @@ impl BatchCancelDispatch for Scripted {
             "vertex_credentials": call.vertex_credentials.map(|token| token.expose_secret()),
             "timeout": call.timeout,
             "max_retries": call.max_retries,
-        }));
-        let reply = self.reply();
-        async move { reply }
+        }))
     }
 
     fn xai(
         &self,
         call: XaiCancelCall<'_>,
     ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
-        self.record(json!({
+        self.record_answer(json!({
             "branch": "xai",
             "is_async": call.is_async,
             "batch_id": call.batch_id,
             "api_base": call.api_base,
             "api_key": call.api_key.map(|key| key.expose_secret()),
             "timeout": call.timeout,
-        }));
-        let reply = self.reply();
-        async move { reply }
+        }))
     }
 
     fn bedrock(
         &self,
         call: BedrockCancelCall<'_>,
     ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
-        self.record(json!({
+        self.record_answer(json!({
             "branch": "bedrock",
             "batch_id": call.batch_id,
             "params": call.params,
-        }));
-        let reply = self.reply();
-        async move { reply }
+        }))
     }
 }
 
