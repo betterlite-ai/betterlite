@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::future::Future;
 
 use deadpool_postgres::Client;
+use secrecy::SecretString;
 use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
 
@@ -110,7 +111,7 @@ fn decode_row(record: &Row, column: &SecretColumn) -> Result<SecretRow, Migratio
         let raw: Option<String> = record
             .try_get(1)
             .map_err(|source| invalid_row(column, source))?;
-        raw.map(|text| MigrationJson::String(SecretText(secrecy::SecretString::from(text))))
+        raw.map(|text| MigrationJson::String(SecretText(SecretString::from(text))))
     };
     Ok(SecretRow { primary_key, value })
 }
