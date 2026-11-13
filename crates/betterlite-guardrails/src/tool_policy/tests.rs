@@ -23,7 +23,7 @@ use crate::guardrail_base::contract::GuardrailContract as _;
 use crate::guardrail_base::error::GuardrailBaseError;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
-use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
+use crate::guardrail_base::settings::GuardrailSettings;
 
 type PolicyCall = (Vec<String>, Option<String>, Option<String>);
 
@@ -190,32 +190,10 @@ fn key_list(detail: &IndexMap<String, GuardrailValue>) -> Vec<&str> {
 }
 
 fn plain_settings() -> GuardrailSettings {
-    GuardrailSettings {
-        guardrail_name: None,
-        supported_event_hooks: None,
-        event_hook: None,
-        default_on: false,
-        mask_request_content: false,
-        mask_response_content: false,
-        violation_message_template: None,
-        end_session_after_n_fails: None,
-        on_violation: None,
-        realtime_violation_message: None,
-        on_sensitive_data: None,
-        sensitive_data_route_to_model: None,
-        sticky_session_routing: true,
-        run_in_parallel: false,
-        scan_raw_request: false,
-        only_scan_new_messages: false,
-        timeout: None,
-        switches: GuardrailSwitches {
-            use_native_during_call_hook: false,
-            use_native_lifecycle_hooks: false,
-            records_own_information: false,
-            uses_apply_guardrail_interface: false,
-            deny_text_on_error: false,
-        },
-    }
+    super::initialized_settings(
+        &params(r#"{"guardrail": "tool_policy", "mode": "pre_call"}"#),
+        "tool_policy",
+    )
 }
 
 #[tokio::test]
@@ -629,8 +607,18 @@ async fn trust_sources_are_listed_once_in_first_seen_order() {
     );
 }
 
+#[rstest]
+#[case::unknown_call_id(
+    r#"{"messages": [{"role": "tool", "tool_call_id": "unknown", "content": "data"}]}"#
+)]
+#[case::missing_call_id(
+    r#"{"messages": [{"role": "assistant", "tool_calls": [{"id": "c1", "function": {"name": "writer"}}]},
+                     {"role": "tool", "content": "data"},
+                     {"role": "user", "tool_call_id": "c1", "content": "not a tool message"},
+                     "not-a-message"]}"#
+)]
 #[tokio::test]
-async fn trust_unknown_call_id_is_ignored() {
+async fn trust_unknown_or_missing_call_ids_are_ignored(#[case] request_data: &str) {
     let guardrail = guardrail(
         store(true, &[("reader", "trusted")], &[]),
         static_names(&[]),
@@ -639,27 +627,7 @@ async fn trust_unknown_call_id_is_ignored() {
     let outcome = apply(
         &guardrail,
         inputs.clone(),
-        r#"{"messages": [{"role": "tool", "tool_call_id": "unknown", "content": "data"}]}"#,
-        GuardrailInputType::Response,
-    )
-    .await;
-    assert_eq!(outcome.unwrap(), inputs);
-}
-
-#[tokio::test]
-async fn trust_missing_call_id_is_ignored() {
-    let guardrail = guardrail(
-        store(true, &[("reader", "trusted")], &[]),
-        static_names(&[]),
-    );
-    let inputs = reader_response();
-    let outcome = apply(
-        &guardrail,
-        inputs.clone(),
-        r#"{"messages": [{"role": "assistant", "tool_calls": [{"id": "c1", "function": {"name": "writer"}}]},
-                         {"role": "tool", "content": "data"},
-                         {"role": "user", "tool_call_id": "c1", "content": "not a tool message"},
-                         "not-a-message"]}"#,
+        request_data,
         GuardrailInputType::Response,
     )
     .await;
@@ -737,86 +705,59 @@ async fn trust_missing_or_null_messages_are_empty(#[case] request_data: &str) {
     assert_eq!(outcome.unwrap(), inputs);
 }
 
-#[test]
-fn ids_nested_auth_object_wins_over_flat_keys() {
-    let ids = permission_ids_from_data(&body(
-        r#"{"metadata": {"user_api_key_auth": {"object_permission_id": "key-id", "team_object_permission_id": "team-id"},
-                          "user_api_key_object_permission_id": "flat-key",
-                          "user_api_key_team_object_permission_id": "flat-team"}}"#,
-    ));
-    assert_eq!(ids, (Some("key-id".to_owned()), Some("team-id".to_owned())));
-}
-
-#[test]
-fn ids_flat_keys_are_read_when_the_auth_object_has_none() {
-    let ids = permission_ids_from_data(&body(
-        r#"{"metadata": {"user_api_key_auth": {},
-                          "user_api_key_object_permission_id": "flat-key",
-                          "user_api_key_team_object_permission_id": "flat-team"}}"#,
-    ));
+#[rstest]
+#[case::nested_auth_wins(
+    r#"{"metadata": {"user_api_key_auth": {"object_permission_id": "key-id", "team_object_permission_id": "team-id"},
+                      "user_api_key_object_permission_id": "flat-key",
+                      "user_api_key_team_object_permission_id": "flat-team"}}"#,
+    (Some("key-id"), Some("team-id"))
+)]
+#[case::auth_without_ids_uses_flat(
+    r#"{"metadata": {"user_api_key_auth": {},
+                      "user_api_key_object_permission_id": "flat-key",
+                      "user_api_key_team_object_permission_id": "flat-team"}}"#,
+    (Some("flat-key"), Some("flat-team"))
+)]
+#[case::null_auth_ids_use_flat(
+    r#"{"metadata": {"user_api_key_auth": {"object_permission_id": null, "team_object_permission_id": null},
+                      "user_api_key_object_permission_id": "flat-key"}}"#,
+    (Some("flat-key"), None)
+)]
+#[case::litellm_metadata_first(
+    r#"{"litellm_metadata": {"user_api_key_object_permission_id": "first"},
+        "metadata": {"user_api_key_object_permission_id": "second"}}"#,
+    (Some("first"), None)
+)]
+#[case::empty_first_bucket_falls_to_second(
+    r#"{"litellm_metadata": {},
+        "metadata": {"user_api_key_team_object_permission_id": "team"}}"#,
+    (None, Some("team"))
+)]
+#[case::one_null_id_keeps_the_other_side(
+    r#"{"metadata": {"user_api_key_object_permission_id": null,
+                      "user_api_key_team_object_permission_id": "team"}}"#,
+    (None, Some("team"))
+)]
+#[case::trimmed_and_blank(
+    r#"{"metadata": {"user_api_key_object_permission_id": "  key \n",
+                      "user_api_key_team_object_permission_id": "   "}}"#,
+    (Some("key"), Some(""))
+)]
+#[case::numbers_become_text(
+    r#"{"metadata": {"user_api_key_object_permission_id": 7,
+                      "user_api_key_team_object_permission_id": 42}}"#,
+    (Some("7"), Some("42"))
+)]
+#[case::empty_body("{}", (None, None))]
+fn ids_read_the_first_bucket_that_names_one(
+    #[case] request_data: &str,
+    #[case] expected: (Option<&str>, Option<&str>),
+) {
+    let ids = permission_ids_from_data(&body(request_data));
     assert_eq!(
         ids,
-        (Some("flat-key".to_owned()), Some("flat-team".to_owned()))
+        (expected.0.map(str::to_owned), expected.1.map(str::to_owned))
     );
-}
-
-#[test]
-fn ids_flat_keys_are_read_when_both_auth_ids_are_null() {
-    let ids = permission_ids_from_data(&body(
-        r#"{"metadata": {"user_api_key_auth": {"object_permission_id": null, "team_object_permission_id": null},
-                          "user_api_key_object_permission_id": "flat-key"}}"#,
-    ));
-    assert_eq!(ids, (Some("flat-key".to_owned()), None));
-}
-
-#[test]
-fn ids_litellm_metadata_is_searched_before_metadata() {
-    let ids = permission_ids_from_data(&body(
-        r#"{"litellm_metadata": {"user_api_key_object_permission_id": "first"},
-            "metadata": {"user_api_key_object_permission_id": "second"}}"#,
-    ));
-    assert_eq!(ids, (Some("first".to_owned()), None));
-}
-
-#[test]
-fn ids_without_ids_in_the_first_bucket_fall_to_the_second() {
-    let ids = permission_ids_from_data(&body(
-        r#"{"litellm_metadata": {},
-            "metadata": {"user_api_key_team_object_permission_id": "team"}}"#,
-    ));
-    assert_eq!(ids, (None, Some("team".to_owned())));
-}
-
-#[test]
-fn ids_one_null_id_keeps_the_other_side() {
-    let ids = permission_ids_from_data(&body(
-        r#"{"metadata": {"user_api_key_object_permission_id": null,
-                          "user_api_key_team_object_permission_id": "team"}}"#,
-    ));
-    assert_eq!(ids, (None, Some("team".to_owned())));
-}
-
-#[test]
-fn ids_are_trimmed_and_a_blank_id_stays_empty() {
-    let ids = permission_ids_from_data(&body(
-        r#"{"metadata": {"user_api_key_object_permission_id": "  key \n",
-                          "user_api_key_team_object_permission_id": "   "}}"#,
-    ));
-    assert_eq!(ids, (Some("key".to_owned()), Some(String::new())));
-}
-
-#[test]
-fn ids_numbers_become_their_text() {
-    let ids = permission_ids_from_data(&body(
-        r#"{"metadata": {"user_api_key_object_permission_id": 7,
-                          "user_api_key_team_object_permission_id": 42}}"#,
-    ));
-    assert_eq!(ids, (Some("7".to_owned()), Some("42".to_owned())));
-}
-
-#[test]
-fn ids_empty_body_returns_none() {
-    assert_eq!(permission_ids_from_data(&body("{}")), (None, None));
 }
 
 #[rstest]
@@ -837,56 +778,38 @@ fn ids_empty_text_counts_as_missing(#[case] request_data: &str) {
     assert_eq!(permission_ids_from_data(&body(request_data)), (None, None));
 }
 
-#[test]
-fn ids_route_top_level_wins() {
-    assert_eq!(
-        request_route_from_data(&body(
-            r#"{"user_api_key_request_route": "/v1/chat/completions",
-                "metadata": {"user_api_key_request_route": "/v1/responses"}}"#
-        )),
-        Some("/v1/chat/completions".to_owned())
-    );
-}
-
-#[test]
-fn ids_route_from_metadata_before_litellm_metadata() {
-    assert_eq!(
-        request_route_from_data(&body(
-            r#"{"metadata": {"user_api_key_request_route": "/v1/chat/completions"},
-                "litellm_metadata": {"user_api_key_request_route": "/v1/responses"}}"#
-        )),
-        Some("/v1/chat/completions".to_owned())
-    );
-}
-
-#[test]
-fn ids_route_empty_metadata_falls_to_litellm_metadata() {
-    assert_eq!(
-        request_route_from_data(&body(
-            r#"{"metadata": {},
-                "litellm_metadata": {"user_api_key_request_route": "/v1/responses"}}"#
-        )),
-        Some("/v1/responses".to_owned())
-    );
-}
-
-#[test]
-fn ids_route_empty_top_level_falls_through() {
-    assert_eq!(
-        request_route_from_data(&body(
-            r#"{"user_api_key_request_route": "",
-                "litellm_metadata": {"user_api_key_request_route": "/v1/responses"}}"#
-        )),
-        Some("/v1/responses".to_owned())
-    );
-}
-
 #[rstest]
-#[case::absent("{}")]
-#[case::no_route_key(r#"{"metadata": {"other": 1}}"#)]
-#[case::route_not_text(r#"{"metadata": {"user_api_key_request_route": 7}}"#)]
-fn ids_route_is_none_without_a_text_route(#[case] request_data: &str) {
-    assert_eq!(request_route_from_data(&body(request_data)), None);
+#[case::top_level_wins(
+    r#"{"user_api_key_request_route": "/v1/chat/completions",
+        "metadata": {"user_api_key_request_route": "/v1/responses"}}"#,
+    Some("/v1/chat/completions")
+)]
+#[case::metadata_before_litellm_metadata(
+    r#"{"metadata": {"user_api_key_request_route": "/v1/chat/completions"},
+        "litellm_metadata": {"user_api_key_request_route": "/v1/responses"}}"#,
+    Some("/v1/chat/completions")
+)]
+#[case::empty_metadata_falls_to_litellm_metadata(
+    r#"{"metadata": {},
+        "litellm_metadata": {"user_api_key_request_route": "/v1/responses"}}"#,
+    Some("/v1/responses")
+)]
+#[case::empty_top_level_falls_through(
+    r#"{"user_api_key_request_route": "",
+        "litellm_metadata": {"user_api_key_request_route": "/v1/responses"}}"#,
+    Some("/v1/responses")
+)]
+#[case::absent("{}", None)]
+#[case::no_route_key(r#"{"metadata": {"other": 1}}"#, None)]
+#[case::route_not_text(r#"{"metadata": {"user_api_key_request_route": 7}}"#, None)]
+fn ids_route_is_the_first_non_empty_text_route(
+    #[case] request_data: &str,
+    #[case] expected: Option<&str>,
+) {
+    assert_eq!(
+        request_route_from_data(&body(request_data)),
+        expected.map(str::to_owned)
+    );
 }
 
 #[tokio::test]
@@ -974,38 +897,32 @@ fn initialized(
     )
 }
 
+#[rstest]
+#[case::default_name(None, DEFAULT_GUARDRAIL_NAME)]
+#[case::given_name(Some("team_tools"), "team_tools")]
 #[test]
-fn constructor_initialize_defaults_the_name() {
+fn constructor_initialize_names_the_guardrail(#[case] given: Option<&str>, #[case] expected: &str) {
     let guardrail = initialized(
-        None,
+        given,
         true,
         r#"{"guardrail": "tool_policy", "mode": "post_call"}"#,
     )
     .unwrap();
     assert_eq!(
-        guardrail.base.settings.guardrail_name,
-        Some(DEFAULT_GUARDRAIL_NAME.to_owned())
+        guardrail.base.settings.guardrail_name.as_deref(),
+        Some(expected)
     );
 }
 
+#[rstest]
+#[case::default_on_true(
+    r#"{"guardrail": "tool_policy", "mode": "post_call", "default_on": true}"#,
+    true
+)]
+#[case::default_on_absent(r#"{"guardrail": "tool_policy", "mode": "post_call"}"#, false)]
 #[test]
-fn constructor_initialize_keeps_the_given_name() {
-    let guardrail = initialized(
-        Some("team_tools"),
-        true,
-        r#"{"guardrail": "tool_policy", "mode": "post_call"}"#,
-    )
-    .unwrap();
-    assert_eq!(
-        guardrail.base.settings.guardrail_name,
-        Some("team_tools".to_owned())
-    );
-}
-
-#[test]
-fn constructor_initialize_reads_mode_and_default_on() {
-    let settings =
-        params(r#"{"guardrail": "tool_policy", "mode": "post_call", "default_on": true}"#);
+fn constructor_initialize_reads_mode_and_default_on(#[case] json: &str, #[case] expected: bool) {
+    let settings = params(json);
     let guardrail = initialize_tool_policy(
         &settings,
         None,
@@ -1015,18 +932,7 @@ fn constructor_initialize_reads_mode_and_default_on() {
     )
     .unwrap();
     assert_eq!(guardrail.base.settings.event_hook, Some(settings.mode));
-    assert!(guardrail.base.settings.default_on);
-}
-
-#[test]
-fn constructor_initialize_defaults_default_on_to_false() {
-    let guardrail = initialized(
-        None,
-        true,
-        r#"{"guardrail": "tool_policy", "mode": "post_call"}"#,
-    )
-    .unwrap();
-    assert!(!guardrail.base.settings.default_on);
+    assert_eq!(guardrail.base.settings.default_on, expected);
 }
 
 #[test]

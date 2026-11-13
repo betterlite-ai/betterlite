@@ -23,12 +23,11 @@ fn quoted_names(names: &[String]) -> String {
 }
 
 fn names_value(names: &[String]) -> GuardrailValue {
-    GuardrailValue::Array(
-        names
-            .iter()
-            .map(|name| GuardrailValue::Text(name.clone()))
-            .collect(),
-    )
+    let listed: Vec<GuardrailValue> = names
+        .iter()
+        .map(|name| GuardrailValue::Text(name.clone()))
+        .collect();
+    GuardrailValue::Array(listed)
 }
 
 fn detail(entries: &[(&str, GuardrailValue)]) -> IndexMap<String, GuardrailValue> {
