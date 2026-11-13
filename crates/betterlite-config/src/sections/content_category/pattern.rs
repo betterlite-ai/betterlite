@@ -37,10 +37,43 @@ impl Pattern {
     }
 }
 
-// Python's (?a) flag is Rust's (?-u): ASCII classes, boundaries and case folding, scoped the same way
+// Python's (?a) is Rust's (?-u): ASCII classes, ASCII boundaries and ASCII-only case folding
 fn translate_python_flags(source: &str) -> Result<String, PatternError> {
     if source.contains("(?-a") || source.contains("(?-u") {
         return Err(PatternError::UnsupportedFlags);
     }
-    Ok(source.replace("(?a", "(?-u"))
+    let flag_group = regex::Regex::new(r"\(\?([aiLmsux]+)(?:-([imsx]*))?([:)])")?;
+    Ok(flag_group
+        .replace_all(source, translate_flag_group)
+        .into_owned())
+}
+
+fn translate_flag_group(captures: &regex::Captures<'_>) -> String {
+    let enabled = &captures[1];
+    let disabled = captures.get(2).map_or("", |matched| matched.as_str());
+    let terminator = &captures[3];
+    let exclusive = enabled
+        .chars()
+        .filter(|character| matches!(character, 'a' | 'u' | 'L'))
+        .count();
+    if exclusive > 1 {
+        return captures[0].to_owned();
+    }
+    let mut translated = String::new();
+    let mut ascii = false;
+    for character in enabled.chars() {
+        match character {
+            'a' => ascii = true,
+            'u' => translated.push('u'),
+            other => translated.push(other),
+        }
+    }
+    let mut disables = String::from(disabled);
+    if ascii {
+        disables.push('u');
+    }
+    if disables.is_empty() {
+        return format!("(?{translated}{terminator}");
+    }
+    format!("(?{translated}-{disables}{terminator}")
 }
