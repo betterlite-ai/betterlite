@@ -103,9 +103,14 @@ impl EnkryptAiGuardrail {
         mut logging_obj: Option<&mut GuardrailLogTarget>,
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
         for text in inputs.texts.clone().unwrap_or_default() {
+            let started = (self.clock)();
+            let response = transport::send(self, &text).await;
+            let timing = Timing {
+                started,
+                finished: (self.clock)(),
+            };
             let detection = self
-                .detect(&text, request_data, logging_obj.as_deref_mut())
-                .await
+                .finish_response(response, request_data, logging_obj.as_deref_mut(), timing)
                 .map_err(|error| self.failure(error))?;
             if detection.processed.attacks.is_empty() {
                 continue;
@@ -115,21 +120,6 @@ impl EnkryptAiGuardrail {
             return Err(self.failure(EnkryptAiError::Detected { message }));
         }
         Ok(inputs)
-    }
-
-    async fn detect(
-        &self,
-        text: &str,
-        request_data: &mut BTreeMap<String, GuardrailValue>,
-        log_target: Option<&mut GuardrailLogTarget>,
-    ) -> Result<Detection, EnkryptAiError> {
-        let started = (self.clock)();
-        let response = transport::send(self, text).await;
-        let timing = Timing {
-            started,
-            finished: (self.clock)(),
-        };
-        self.finish_response(response, request_data, log_target, timing)
     }
 
     fn finish_response(
