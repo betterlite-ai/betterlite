@@ -1,0 +1,9 @@
+kind: helper
+name: normalize-config-none-input
+call:
+  b3601:
+    calls:
+      - function: normalize_config
+        config: null
+env: {}
+compare: {ignore: []}
