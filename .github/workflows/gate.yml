@@ -299,6 +299,8 @@ jobs:
               affected=$(cargo gate affected) || exit 1
               if [[ -z $affected ]]; then echo "the change affects no package"; exit 0; fi
               read -r -a packages <<< "$affected"
+              # the oracle library and its unit-test build need about 8 GB each, so they take turns on a 16 GB runner
+              export RUSTC_WRAPPER="$GITHUB_WORKSPACE/.github/scripts/oracle-rustc-turns.sh"
               # the tests use LiteLLM but not its dev tools, about 330 MB
               UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --partition "hash:${PART#tests-}/$TEST_SHARDS" "${packages[@]}" ;;
             task)
