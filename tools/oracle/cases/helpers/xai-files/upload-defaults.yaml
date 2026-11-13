@@ -1,0 +1,24 @@
+kind: helper
+name: upload-defaults
+call:
+  xai_files:
+    operation: upload
+    env: {}
+    xai_key: null
+    calls:
+      - api_base: null
+        api_key: sk-key
+        now: 1700000000
+        reply: {status: 200, body: '{"id": "file-1"}'}
+      - api_base: "https://proxy.example/v1/"
+        api_key: sk-key
+        now: 1700000100
+        reply:
+          status: 200
+          body: '{"id": "file-2", "bytes": 5, "created_at": 12, "filename": "f", "purpose": "assistants", "status": "processed", "expires_at": 5}'
+      - api_base: null
+        api_key: sk-key
+        now: 1700000200
+        reply: {status: 200, body: "not json"}
+env: {}
+compare: {ignore: []}

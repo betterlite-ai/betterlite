@@ -1,0 +1,14 @@
+kind: helper
+name: xai-files-list-seed
+call:
+  xai_files:
+    operation: list
+    env: {}
+    xai_key: null
+    calls:
+      - params_api_base: null
+        purpose: batch
+        now: 1
+        reply: {status: 200, body: '{"data": [{"id": "seed"}], "pagination_token": "next"}'}
+env: {}
+compare: {ignore: []}

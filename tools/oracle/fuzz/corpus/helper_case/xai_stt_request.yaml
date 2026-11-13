@@ -1,0 +1,16 @@
+kind: helper
+name: xai-stt-request-seed
+call:
+  xai_stt:
+    operation: request
+    env: {XAI_API_KEY: environment}
+    xai_key: null
+    calls:
+      - api_base: null
+        api_key: null
+        model: seed
+        audio: {filename: seed.wav, content: seed}
+        extra_body: {language: en}
+        options: {}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,22 @@
+kind: helper
+name: encoded-id-and-missing-content-id
+call:
+  xai_files:
+    operation: files
+    env: {}
+    xai_key: null
+    calls:
+      - params_api_base: null
+        file_id: "a/b c"
+        delete_reply: {status: 200, body: '{"id": "file-1"}'}
+        content_reply: {status: 500, headers: [["x-a", "b"]], body: [114, 97, 119]}
+      - params_api_base: "https://p.example/v1"
+        file_id: ".."
+        delete_reply: {status: 200, body: '{"id": "file-2", "deleted": false}'}
+        content_reply: {status: 206, headers: [], body: []}
+      - params_api_base: null
+        file_id: null
+        delete_reply: {status: 200, body: "not json"}
+        content_reply: {status: 200, headers: [], body: [1]}
+env: {}
+compare: {ignore: []}
