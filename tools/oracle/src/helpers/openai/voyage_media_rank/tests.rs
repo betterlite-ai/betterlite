@@ -50,8 +50,7 @@ fn successful_rerank_calls_log_the_post_call_and_keep_the_request() {
     assert_eq!(rerank[0]["request"]["value"]["top_k"], 3);
     assert_eq!(rerank[0]["request"]["value"]["return_documents"], false);
     assert_eq!(
-        rerank[0]["url"],
-        "https://example.test/v1/rerank",
+        rerank[0]["url"], "https://example.test/v1/rerank",
         "a trailing slash is trimmed before the suffix"
     );
     assert!(rerank[0]["request"]["value"].get("rank_fields").is_none());
