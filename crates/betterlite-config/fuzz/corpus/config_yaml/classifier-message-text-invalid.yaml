@@ -1,0 +1,8 @@
+model_list:
+  - model_name: classifier-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        reminder_markers:
+          - open: "<same>"
+            close: " <SAME> "
