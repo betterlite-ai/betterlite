@@ -65,30 +65,6 @@ pub(super) fn converter() -> StreamEventConverter<Counter> {
     }
 }
 
-pub(super) fn text(value: &str) -> TransportChunk {
-    TransportChunk::Text(value.to_owned())
-}
-
-pub(super) fn bytes(value: &[u8]) -> TransportChunk {
-    TransportChunk::Bytes(value.to_vec())
-}
-
-pub(super) fn value_error(message: &str) -> Source {
-    Err(ReceiveError::Value {
-        source: SourceFailure {
-            message: message.to_owned(),
-        },
-    })
-}
-
-pub(super) fn other_error(message: &str) -> Source {
-    Err(ReceiveError::Other {
-        source: SourceFailure {
-            message: message.to_owned(),
-        },
-    })
-}
-
 pub(super) fn drive_sync(items: Vec<Source>) -> Vec<Outcome> {
     ChunkStream {
         converter: converter(),
@@ -114,10 +90,6 @@ pub(super) fn drive_async(items: Vec<Source>) -> Vec<Outcome> {
             }
             outcomes
         })
-}
-
-pub(super) fn both_drivers(items: Vec<Source>) -> (Vec<Outcome>, Vec<Outcome>) {
-    (drive_sync(items.clone()), drive_async(items))
 }
 
 pub(super) fn convert(chunks: Vec<TransportChunk>) -> Vec<Conversion> {

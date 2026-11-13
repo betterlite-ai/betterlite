@@ -18,6 +18,12 @@ call:
         value: 'data: [1,2]{"type":"content_block_stop","index":0}'
       - function: text
         value: 'data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"d"}}'
+      - function: text
+        value: 'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a'
+      - function: text
+        value: 'data: b"}}'
+      - function: text
+        value: ' data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"x"}}'
     passthrough: []
 env: {}
 compare: {ignore: []}

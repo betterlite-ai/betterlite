@@ -16,7 +16,7 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use crate::helpers::{HelperError, HelperResult, OrHelperError};
 
 use deps::{FixedIds, TokenCountFailure, TokenizerCounter};
 
@@ -65,13 +65,13 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         // The sections run in the order the Python adapter evaluates them, so a native error aborts at the same point.
-        let sync = sync_section(input)?;
-        let asynchronous = async_section(input)?;
-        let passthrough = passthrough_section(input)?;
+        let (sync_items, sync_errors) = sync_outcomes(input)?;
+        let (async_items, async_errors) = async_outcomes(input)?;
+        let (passthrough_items, passthrough_errors) = classify(passthrough_outcomes(input)?);
         Ok(json!({
-            "sync": sync,
-            "async": asynchronous,
-            "passthrough": passthrough,
+            "sync": { "items": sync_items, "errors": sync_errors },
+            "async": { "items": async_items, "errors": async_errors },
+            "passthrough": { "items": passthrough_items, "errors": passthrough_errors },
         }))
     }
 }
@@ -119,11 +119,6 @@ fn sources(input: &Input) -> SyncSources {
         .into_iter()
 }
 
-fn sync_section(input: &Input) -> Result<Value, Box<HelperError>> {
-    let (items, errors) = sync_outcomes(input)?;
-    Ok(json!({ "items": items, "errors": errors }))
-}
-
 fn sync_outcomes(input: &Input) -> Result<(Vec<Value>, usize), Box<HelperError>> {
     let stream = ChunkStream {
         converter: converter(&input.ids)?,
@@ -151,15 +146,10 @@ where
         })
 }
 
-fn async_section(input: &Input) -> Result<Value, Box<HelperError>> {
-    let (items, errors) = async_outcomes(input)?;
-    Ok(json!({ "items": items, "errors": errors }))
-}
-
 fn async_outcomes(input: &Input) -> Result<(Vec<Value>, usize), Box<HelperError>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
-        .map_err(|error| failure(error.to_string()))?;
+        .or_value_error()?;
     let chunks = stream::iter(sources(input));
     let mut stream = ChunkStream {
         converter: converter(&input.ids)?,
@@ -174,12 +164,6 @@ fn async_outcomes(input: &Input) -> Result<(Vec<Value>, usize), Box<HelperError>
         outcomes
     });
     record_outcomes(outcomes)
-}
-
-fn passthrough_section(input: &Input) -> Result<Value, Box<HelperError>> {
-    let conversions = passthrough_outcomes(input)?;
-    let (items, errors) = classify(conversions);
-    Ok(json!({ "items": items, "errors": errors }))
 }
 
 fn passthrough_outcomes(input: &Input) -> Result<Vec<Conversion>, Box<HelperError>> {
@@ -268,16 +252,5 @@ fn generic_value(chunk: &GenericChunk) -> Value {
         "finish_reason": &chunk.finish_reason,
         "usage": &chunk.usage,
         "index": chunk.index,
-    })
-}
-
-fn failure(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "StreamDecode".to_owned(),
-        status: None,
-        error_type: Some(None),
-        param: Some(None),
-        code: Some(None),
-        message,
     })
 }

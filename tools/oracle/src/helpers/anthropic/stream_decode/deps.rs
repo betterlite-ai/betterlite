@@ -6,9 +6,7 @@ use betterlite_anthropic::usage::ReasoningTokenCounter;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::helpers::{HelperCall, HelperError, invoke};
-
-use super::failure;
+use crate::helpers::{HelperCall, HelperError, OrHelperError, invoke};
 
 pub(super) struct FixedIds {
     values: Mutex<VecDeque<Uuid>>,
@@ -20,7 +18,7 @@ impl FixedIds {
             .iter()
             .map(|value| Uuid::parse_str(value))
             .collect::<Result<VecDeque<Uuid>, _>>()
-            .map_err(|error| failure(error.to_string()))?;
+            .or_value_error()?;
         Ok(Self {
             values: Mutex::new(parsed),
         })
