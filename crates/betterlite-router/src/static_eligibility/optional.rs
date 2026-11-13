@@ -91,10 +91,17 @@ pub fn routing_strategy_pre_call_checks(
     deployment: &DeploymentSpec,
     checks: &[&dyn DeploymentPreCallCheck],
 ) -> Result<(), PreCallError> {
-    for check in checks {
-        check.check(deployment)?;
+    checks.iter().try_for_each(|check| check.check(deployment))
+}
+
+fn rate_limit(failure: &PreCallError) -> Option<(&str, u16)> {
+    match failure {
+        PreCallError::RateLimited {
+            deployment_id,
+            status,
+        } => Some((deployment_id.as_str(), *status)),
+        PreCallError::Failed { .. } => None,
     }
-    Ok(())
 }
 
 // async_routing_strategy_pre_call_checks: a rate limit records the cooldown before the same error goes up.
@@ -105,12 +112,8 @@ pub async fn async_routing_strategy_pre_call_checks(
 ) -> Result<(), PreCallError> {
     for check in checks {
         if let Err(failure) = check.async_check(deployment).await {
-            if let PreCallError::RateLimited {
-                deployment_id,
-                status,
-            } = &failure
-            {
-                cooldown.record_rate_limit(deployment_id, *status);
+            if let Some((deployment_id, status)) = rate_limit(&failure) {
+                cooldown.record_rate_limit(deployment_id, status);
             }
             return Err(failure);
         }

@@ -125,9 +125,15 @@ enum Behavior {
 #[case::pre_call_failure(Behavior::PreCallChecksPropagateTheFailure)]
 fn static_eligibility_behaviors(#[case] behavior: Behavior) {
     match behavior {
-        Behavior::EnvironmentAbsent => environment_absent(),
-        Behavior::EnvironmentListed => environment_listed(),
-        Behavior::EnvironmentUnlisted => environment_unlisted(),
+        Behavior::EnvironmentAbsent => environment_selection(&[("d1", "")], &["d1"], &[]),
+        Behavior::EnvironmentListed => environment_selection(&[("d1", LISTED)], &["d1"], &[]),
+        Behavior::EnvironmentUnlisted => environment_selection(
+            &[("kept", LISTED), ("dropped", UNLISTED)],
+            &["kept"],
+            &[Cause::Environment {
+                model_name: "gpt".to_owned(),
+            }],
+        ),
         Behavior::WebSearchDropsUnsupported => web_search_drops_unsupported(),
         Behavior::WebSearchOtherToolKeepsAll => web_search_other_tool_keeps_all(),
         Behavior::ContextKeepsWithinTheWindow => context_keeps_within(),
@@ -140,71 +146,45 @@ fn static_eligibility_behaviors(#[case] behavior: Behavior) {
         Behavior::ParamsSkipsWithoutResponseFormat => params_skips_without_response_format(),
         Behavior::ParamsSkipsWithDropParams => params_skips_with_drop_params(),
         Behavior::ParamsKeepsAnUnresolvedProvider => params_keeps_an_unresolved_provider(),
-        Behavior::OrderKeepsTheSmallestGroup => order_keeps_the_smallest_group(),
-        Behavior::OrderTakesTheTargetGroup => order_takes_the_target_group(),
-        Behavior::SingleDeploymentIsSelected => single_deployment_is_selected(),
-        Behavior::SingleBlockedDeploymentIsPaused => single_blocked_deployment_is_paused(),
+        Behavior::OrderKeepsTheSmallestGroup => order_selection(
+            &[
+                ("one", Some(2)),
+                ("two", Some(1)),
+                ("three", Some(1)),
+                ("none", None),
+            ],
+            None,
+            &["two", "three"],
+        ),
+        Behavior::OrderTakesTheTargetGroup => {
+            order_selection(&[("one", Some(2)), ("two", Some(1))], Some(2), &["one"])
+        }
+        Behavior::SingleDeploymentIsSelected => single_selection("live", "", true),
+        Behavior::SingleBlockedDeploymentIsPaused => {
+            single_selection("paused", r#"{"blocked":true}"#, false)
+        }
         Behavior::OptionalChecksUnionAndToggle => optional_checks_union_and_toggle(),
         Behavior::PreCallChecksPropagateTheFailure => pre_call_checks_propagate_the_failure(),
     }
 }
 
-fn environment_absent() {
-    let result = run(
-        pool(vec![spec("gpt", "d1", "openai/gpt-4o", "")]),
-        &RequestFacts::default(),
-        false,
-        &support(),
-    )
-    .unwrap();
-    assert_eq!(ids(&result.deployments), ["d1"]);
-    assert!(result.causes.is_empty());
-}
+const LISTED: &str = r#"{"supported_environments":["production"]}"#;
+const UNLISTED: &str = r#"{"supported_environments":["staging"]}"#;
 
-fn environment_listed() {
+fn environment_selection(rows: &[(&str, &str)], expected: &[&str], causes: &[Cause]) {
+    let deployments: Vec<DeploymentSpec> = rows
+        .iter()
+        .map(|(id, info)| spec("gpt", id, "openai/gpt-4o", info))
+        .collect();
     let result = run(
-        pool(vec![spec(
-            "gpt",
-            "d1",
-            "openai/gpt-4o",
-            r#"{"supported_environments":["production"]}"#,
-        )]),
+        pool(deployments),
         &RequestFacts::default(),
         false,
         &support(),
     )
     .unwrap();
-    assert_eq!(ids(&result.deployments), ["d1"]);
-}
-
-fn environment_unlisted() {
-    let result = run(
-        pool(vec![
-            spec(
-                "gpt",
-                "kept",
-                "openai/gpt-4o",
-                r#"{"supported_environments":["production"]}"#,
-            ),
-            spec(
-                "gpt",
-                "dropped",
-                "openai/gpt-4o",
-                r#"{"supported_environments":["staging"]}"#,
-            ),
-        ]),
-        &RequestFacts::default(),
-        false,
-        &support(),
-    )
-    .unwrap();
-    assert_eq!(ids(&result.deployments), ["kept"]);
-    assert_eq!(
-        result.causes,
-        [Cause::Environment {
-            model_name: "gpt".to_owned()
-        }]
-    );
+    assert_eq!(ids(&result.deployments), expected);
+    assert_eq!(result.causes, causes);
 }
 
 fn web_search_drops_unsupported() {
@@ -455,80 +435,39 @@ fn params_keeps_an_unresolved_provider() {
     assert_eq!(ids(&result.deployments), ["legacy"]);
 }
 
-fn order_keeps_the_smallest_group() {
-    let deployments = vec![
-        with_param(
-            spec("gpt", "one", "openai/gpt-4o", ""),
-            "order",
-            Json::Number(serde_json::Number::from(2)),
-        ),
-        with_param(
-            spec("gpt", "two", "openai/gpt-4o", ""),
-            "order",
-            Json::Number(serde_json::Number::from(1)),
-        ),
-        with_param(
-            spec("gpt", "three", "openai/gpt-4o", ""),
-            "order",
-            Json::Number(serde_json::Number::from(1)),
-        ),
-        spec("gpt", "none", "openai/gpt-4o", ""),
-    ];
-    let result = run(
-        pool(deployments),
-        &RequestFacts::default(),
-        false,
-        &support(),
-    )
-    .unwrap();
-    assert_eq!(ids(&result.deployments), ["two", "three"]);
-}
-
-fn order_takes_the_target_group() {
-    let deployments = vec![
-        with_param(
-            spec("gpt", "one", "openai/gpt-4o", ""),
-            "order",
-            Json::Number(serde_json::Number::from(2)),
-        ),
-        with_param(
-            spec("gpt", "two", "openai/gpt-4o", ""),
-            "order",
-            Json::Number(serde_json::Number::from(1)),
-        ),
-    ];
+fn order_selection(rows: &[(&str, Option<i64>)], target: Option<i64>, expected: &[&str]) {
+    let mut deployments = Vec::new();
+    for (id, order) in rows {
+        let deployment = spec("gpt", id, "openai/gpt-4o", "");
+        match order {
+            Some(value) => deployments.push(with_param(
+                deployment,
+                "order",
+                Json::Number(serde_json::Number::from(*value)),
+            )),
+            None => deployments.push(deployment),
+        }
+    }
     let facts = RequestFacts {
-        target_order: Some(2),
+        target_order: target,
         ..RequestFacts::default()
     };
     let result = run(pool(deployments), &facts, false, &support()).unwrap();
-    assert_eq!(ids(&result.deployments), ["one"]);
+    assert_eq!(ids(&result.deployments), expected);
 }
 
-fn single_deployment_is_selected() {
+fn single_selection(id: &str, info: &str, selected: bool) {
     let result = run(
-        Candidates::Single(Box::new(spec("gpt", "live", "openai/gpt-4o", ""))),
-        &RequestFacts::default(),
-        false,
-        &support(),
-    )
-    .unwrap();
-    assert_eq!(ids(&result.deployments), ["live"]);
-}
-
-fn single_blocked_deployment_is_paused() {
-    let result = run(
-        Candidates::Single(Box::new(spec(
-            "gpt",
-            "paused",
-            "openai/gpt-4o",
-            r#"{"blocked":true}"#,
-        ))),
+        Candidates::Single(Box::new(spec("gpt", id, "openai/gpt-4o", info))),
         &RequestFacts::default(),
         false,
         &support(),
     );
-    assert!(matches!(result, Err(EligibilityError::Blocked { model }) if model == MODEL));
+    if selected {
+        assert_eq!(ids(&result.unwrap().deployments), [id]);
+    } else {
+        assert!(matches!(result, Err(EligibilityError::Blocked { model }) if model == MODEL));
+    }
 }
 
 fn optional_checks_union_and_toggle() {

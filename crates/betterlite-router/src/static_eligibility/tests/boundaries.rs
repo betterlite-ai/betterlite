@@ -113,8 +113,21 @@ fn static_eligibility_boundaries(#[case] boundary: Boundary) {
         Boundary::ContextWithoutACountSkips => context_without_a_count_skips(),
         Boundary::OrderTargetWithoutAMatchEmpties => order_target_without_a_match_empties(),
         Boundary::OrderNegativeIsSmallest => order_negative_is_smallest(),
-        Boundary::OrderModelInfoWhenParamsHasNone => order_model_info_when_params_has_none(),
-        Boundary::OrderParamsWinsOverModelInfo => order_params_wins_over_model_info(),
+        Boundary::OrderModelInfoWhenParamsHasNone => order_source(
+            vec![
+                spec("gpt", "params", "openai/gpt-4o", ""),
+                spec("gpt", "info", "openai/gpt-4o", r#"{"order":1}"#),
+            ],
+            &["info"],
+        ),
+        Boundary::OrderParamsWinsOverModelInfo => order_source(
+            vec![with_param(
+                spec("gpt", "both", "openai/gpt-4o", r#"{"order":5}"#),
+                "order",
+                number(1),
+            )],
+            &["both"],
+        ),
         Boundary::EnvironmentNotAList => environment_not_a_list(),
         Boundary::EnvironmentUnset => environment_unset(),
         Boundary::EnvironmentUnknownValue => environment_unknown_value(),
@@ -122,8 +135,17 @@ fn static_eligibility_boundaries(#[case] boundary: Boundary) {
         Boundary::EnvironmentEmptyListIsInactive => environment_empty_list_is_inactive(),
         Boundary::EmptyPoolHasNoCauses => empty_pool_has_no_causes(),
         Boundary::WebSearchNonBooleanFlag => web_search_non_boolean_flag(),
-        Boundary::ParamsBaseModelFromModelInfo => params_base_model_from_model_info(),
-        Boundary::ParamsBaseModelFromParams => params_base_model_from_params(),
+        Boundary::ParamsBaseModelFromModelInfo => params_base_model(spec(
+            "gpt",
+            "azure",
+            "openai/gpt-4o",
+            r#"{"base_model":"gpt-4"}"#,
+        )),
+        Boundary::ParamsBaseModelFromParams => params_base_model(with_param(
+            spec("gpt", "azure", "openai/gpt-4o", ""),
+            "base_model",
+            Json::Text("gpt-4".to_owned()),
+        )),
         Boundary::ParamsWithoutASupportedList => params_without_a_supported_list(),
     }
 }
@@ -229,33 +251,15 @@ fn order_negative_is_smallest() {
     assert_eq!(ids(&result.deployments), ["negative"]);
 }
 
-fn order_model_info_when_params_has_none() {
+fn order_source(deployments: Vec<DeploymentSpec>, expected: &[&str]) {
     let result = run(
-        Candidates::Pool(vec![
-            spec("gpt", "params", "openai/gpt-4o", ""),
-            spec("gpt", "info", "openai/gpt-4o", r#"{"order":1}"#),
-        ]),
+        Candidates::Pool(deployments),
         &RequestFacts::default(),
         false,
         &supports(),
     )
     .unwrap();
-    assert_eq!(ids(&result.deployments), ["info"]);
-}
-
-fn order_params_wins_over_model_info() {
-    let result = run(
-        Candidates::Pool(vec![with_param(
-            spec("gpt", "both", "openai/gpt-4o", r#"{"order":5}"#),
-            "order",
-            number(1),
-        )]),
-        &RequestFacts::default(),
-        false,
-        &supports(),
-    )
-    .unwrap();
-    assert_eq!(ids(&result.deployments), ["both"]);
+    assert_eq!(ids(&result.deployments), expected);
 }
 
 fn environment_not_a_list() {
@@ -395,35 +399,7 @@ fn response_format_facts() -> RequestFacts {
     }
 }
 
-fn params_base_model_from_model_info() {
-    let dropped = eligible(
-        EligibilityInput {
-            model: MODEL,
-            candidates: Candidates::Pool(vec![spec(
-                "gpt",
-                "azure",
-                "openai/gpt-4o",
-                r#"{"base_model":"gpt-4"}"#,
-            )]),
-            facts: &response_format_facts(),
-            environment: Some("production"),
-            enable_pre_call_checks: true,
-        },
-        &EligibilityServices {
-            limits: &InfoLimits,
-            params: &ModelSupport,
-        },
-    )
-    .unwrap();
-    assert!(dropped.deployments.is_empty());
-}
-
-fn params_base_model_from_params() {
-    let deployment = with_param(
-        spec("gpt", "azure", "openai/gpt-4o", ""),
-        "base_model",
-        Json::Text("gpt-4".to_owned()),
-    );
+fn params_base_model(deployment: DeploymentSpec) {
     let dropped = eligible(
         EligibilityInput {
             model: MODEL,
