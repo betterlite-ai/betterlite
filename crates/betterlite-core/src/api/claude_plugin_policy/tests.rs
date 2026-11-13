@@ -305,8 +305,12 @@ fn the_error_envelope_names_the_error_key() {
     r#"{"name":"my-plugin","source":{"source":"github","repo":"org/repo"},"version":"1.0.0"}"#
 )]
 #[case::empty_fields_dropped(
-    r#"{"source":{"source":"github","repo":"org/repo"},"description":"","homepage":"","keywords":[]}"#,
-    r#"{"name":"my-plugin","source":{"source":"github","repo":"org/repo"},"version":"1.0.0"}"#
+    r#"{"source":{"source":"github","repo":"org/repo"},"version":"","description":"","homepage":"","keywords":[],"category":"","domain":"","namespace":""}"#,
+    r#"{"name":"my-plugin","source":{"source":"github","repo":"org/repo"}}"#
+)]
+#[case::every_option_kept(
+    r#"{"source":{"source":"github","repo":"org/repo"},"version":"2.0.0","description":"desc","homepage":"https://h","keywords":["k"],"category":"cat","domain":"dom","namespace":"ns"}"#,
+    r#"{"name":"my-plugin","source":{"source":"github","repo":"org/repo"},"version":"2.0.0","description":"desc","homepage":"https://h","keywords":["k"],"category":"cat","domain":"dom","namespace":"ns"}"#
 )]
 #[case::author_email_omitted(
     r#"{"source":{"source":"github","repo":"org/repo"},"version":"2.0.0","author":{"name":"Ada"},"keywords":["git"]}"#,
