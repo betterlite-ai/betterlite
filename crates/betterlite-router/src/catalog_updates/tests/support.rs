@@ -241,7 +241,11 @@ fn route(patterns: &PatternCatalog) -> String {
         .route("x/y", None)
         .unwrap_or_default()
         .into_iter()
-        .filter_map(|candidate| candidate.model_id)
+        .filter_map(|candidate| {
+            candidate
+                .model_id
+                .map(|id| format!("{id}@{}", candidate.model))
+        })
         .collect();
     ids.join("+")
 }

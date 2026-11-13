@@ -44,13 +44,7 @@ fn shifted(indices: &[usize], removed: usize) -> Vec<usize> {
     indices
         .iter()
         .filter(|index| **index != removed)
-        .map(|index| {
-            if *index > removed {
-                index.saturating_sub(1)
-            } else {
-                *index
-            }
-        })
+        .map(|index| index.saturating_sub(usize::from(index.cmp(&removed).is_gt())))
         .collect()
 }
 
@@ -124,9 +118,7 @@ impl DeploymentCatalog {
         self.models.get(index)?;
         let removed = self.models.remove(index);
         for position in self.id_index.values_mut() {
-            if *position > index {
-                *position = position.saturating_sub(1);
-            }
+            *position = position.saturating_sub(usize::from((*position).cmp(&index).is_gt()));
         }
         self.id_index.remove(model_id);
         for (name, indices) in take(&mut self.name_index) {

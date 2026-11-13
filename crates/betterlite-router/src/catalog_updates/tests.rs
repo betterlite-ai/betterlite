@@ -6,8 +6,15 @@ use support::{Show, Step, entry, observe, team_entry};
 mod support;
 
 const NO_INFO: &str = r#"{"model_name":"g","litellm_params":{"model":"openai/m"}}"#;
+const NUMBERED: &str =
+    r#"{"model_name":"g","litellm_params":{"model":"openai/m"},"model_info":{"id":7}}"#;
 const ORGANIZED: &str =
     r#"{"model_name":"g","litellm_params":{"model":"openai/m","organization":["o1","o2"]}}"#;
+
+fn oversized() -> String {
+    // a mebibyte of literal text is past the regex size limit, so the wildcard cannot compile
+    entry(&format!("{}*", "a".repeat(1 << 20)), "w", "openai/m")
+}
 
 fn first() -> String {
     entry("g", "a", "openai/m1")
@@ -52,10 +59,10 @@ fn second() -> String {
 #[case::team_needs_an_id(vec![Step::Set(vec![team_entry("g", "a", "", "pub")])], false, Show::Teams, "teams=[] public=[]")]
 #[case::team_needs_a_public_name(vec![Step::Set(vec![team_entry("g", "a", "t1", "")])], false, Show::Teams, "teams=[] public=[]")]
 #[case::added_team_model_is_indexed(vec![Step::Add(team_entry("g", "a", "t1", "pub"))], false, Show::Teams, "teams=[t1/pub:[0]] public=[pub]")]
-#[case::wildcard_goes_to_the_pattern_router(vec![Step::Set(vec![entry("x/*", "a", "openai/*")])], false, Show::Patterns, "defaults=[a] route=[a] teams=[] unresolved=[]")]
+#[case::wildcard_goes_to_the_pattern_router(vec![Step::Set(vec![entry("x/*", "a", "openai/*")])], false, Show::Patterns, "defaults=[a] route=[a@openai/y] teams=[] unresolved=[]")]
 #[case::wildcard_delete_leaves_the_default_ids(vec![Step::Set(vec![entry("x/*", "a", "openai/*")]), Step::Delete("a")], false, Show::Patterns, "defaults=[a] route=[] teams=[] unresolved=[]")]
 #[case::wildcard_with_an_empty_id_is_no_default(vec![Step::Set(vec![entry("x/*", "", "openai/*")])], false, Show::Patterns, "defaults=[] route=[] teams=[] unresolved=[]")]
-#[case::team_wildcard_goes_to_the_team_router(vec![Step::Set(vec![team_entry("g", "a", "t1", "x/*")])], false, Show::Patterns, "defaults=[] route=[] teams=[t1:a] unresolved=[]")]
+#[case::team_wildcard_goes_to_the_team_router(vec![Step::Set(vec![team_entry("g", "a", "t1", "x/*")])], false, Show::Patterns, "defaults=[] route=[] teams=[t1:a@openai/m] unresolved=[]")]
 #[case::team_wildcard_delete_drops_the_router(vec![Step::Set(vec![team_entry("g", "a", "t1", "x/*")]), Step::Delete("a")], false, Show::Patterns, "defaults=[] route=[] teams=[] unresolved=[]")]
 #[case::team_name_without_a_wildcard_has_no_router(vec![Step::Set(vec![team_entry("g", "a", "t1", "pub")])], false, Show::Patterns, "defaults=[] route=[] teams=[] unresolved=[]")]
 #[case::ignored_failures_are_skipped(vec![Step::Set(vec![first(), entry("unresolved1", "b", "openai/m"), entry("bad1", "c", "openai/m")])], true, Show::Models, "models=[g:a] ids(a:0) names(g:[0]) set=[bad1,g,unresolved1]")]
@@ -63,6 +70,7 @@ fn second() -> String {
 #[case::generated_id_is_the_hash(vec![Step::Inputs(vec![NO_INFO.to_owned()])], false, Show::Outcomes, concat!("inputs:g:\"", "508af05d92d9869c9c853f71a13190cb03fea305b1818633668d09f9958d6d6e", "\":-:-:-"))]
 #[case::declared_ids_are_listed_with_their_duplicates(vec![Step::Inputs(vec![first(), entry("h", "a", "openai/m"), second()])], false, Show::Outcomes, "inputs:g:\"a\":a:a:-|h:\"a\":a:a:-|g:\"b\":b:a:-")]
 #[case::each_organization_is_one_input(vec![Step::Inputs(vec![ORGANIZED.to_owned()])], false, Show::Outcomes, concat!("inputs:g:\"", "9eb2e7f5643a3582a5dd4db0cd151e84ebea96fc2631139a6f22e6b1f19d8d1e", "\":-:-:o1|g:\"", "9eb2e7f5643a3582a5dd4db0cd151e84ebea96fc2631139a6f22e6b1f19d8d1e", "\":-:-:o2"))]
+#[case::numeric_ids_are_declared(vec![Step::Inputs(vec![NUMBERED.to_owned()])], false, Show::Outcomes, "inputs:g:7:7::-")]
 #[tokio::test]
 async fn catalog_updates_behaviors(
     #[case] steps: Vec<Step>,
@@ -94,6 +102,8 @@ async fn catalog_updates_behaviors(
 #[case::delete_empties_the_published_catalog(vec![Step::Set(vec![first()]), Step::Hold, Step::Delete("a")], false, Show::Models, "models=[] ids() names() set=[]")]
 #[case::held_snapshot_survives_an_upsert(vec![Step::Set(vec![first()]), Step::Hold, Step::Upsert(entry("g", "a", "openai/m3"))], false, Show::Held, "models=[g:a] ids(a:0) names(g:[0]) set=[g]")]
 #[case::empty_organization_list_builds_nothing(vec![Step::Set(vec![r#"{"model_name":"g","litellm_params":{"model":"openai/m","organization":[]}}"#.to_owned()])], false, Show::Models, "models=[] ids() names() set=[g]")]
+#[case::ignored_pattern_failures_are_skipped(vec![Step::Set(vec![first(), oversized()])], true, Show::Outcomes, "set:ok")]
+#[case::pattern_failures_raise_without_ignore(vec![Step::Set(vec![first()]), Step::Set(vec![second(), oversized()])], false, Show::Models, "models=[g:a] ids(a:0) names(g:[0]) set=[g]")]
 #[tokio::test]
 async fn catalog_updates_boundaries(
     #[case] steps: Vec<Step>,
