@@ -102,18 +102,17 @@ impl ChirpBackend {
     }
 
     pub async fn recv(&mut self) -> Result<String, ChirpBackendError> {
-        loop {
-            if self.closed && self.outbox.is_empty() {
-                return Err(NORMAL_CLOSURE);
-            }
-            let Some(item) = self.outbox.recv().await else {
-                return Err(ChirpBackendError::QueueClosed);
-            };
-            match self.next_delivery(item)? {
-                Some(event) => return Ok(event),
-                None => {}
+        while !(self.closed && self.outbox.is_empty()) {
+            let item = self
+                .outbox
+                .recv()
+                .await
+                .ok_or(ChirpBackendError::QueueClosed)?;
+            if let Some(event) = self.next_delivery(item)? {
+                return Ok(event);
             }
         }
+        Err(NORMAL_CLOSURE)
     }
 
     pub async fn close(&mut self) {

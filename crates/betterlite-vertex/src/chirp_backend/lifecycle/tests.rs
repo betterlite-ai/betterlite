@@ -603,7 +603,13 @@ async fn a_stream_failure_closes_with_the_stream_failure_code() {
 async fn close_queues_the_closed_sentinel_after_buffered_events() {
     let mut harness = harness(Vec::new());
     harness.send_text(FINISH).await;
-    wait_for_outbox(&harness.backend, 1).await;
+    timeout(Duration::from_secs(5), async {
+        while harness.backend.outbox.len() < 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the outbox holds the buffered event");
     harness.backend.close().await;
     harness.backend.close().await;
     assert_eq!(harness.recv().await, r#"{"kind":"turn_finished"}"#);
@@ -627,7 +633,13 @@ async fn full_outbox_close() {
     for _ in 0..256 {
         harness.send_text(FINISH).await;
     }
-    wait_for_outbox(&harness.backend, 256).await;
+    timeout(Duration::from_secs(5), async {
+        while harness.backend.outbox.len() < 256 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the outbox fills up");
     harness.backend.close().await;
     for _ in 0..256 {
         assert_eq!(harness.recv().await, r#"{"kind":"turn_finished"}"#);
@@ -692,14 +704,4 @@ async fn no_task_leak() {
         baseline,
         "close joins every task the backend started"
     );
-}
-
-async fn wait_for_outbox(backend: &ChirpBackend, expected: usize) {
-    timeout(Duration::from_secs(5), async {
-        while backend.outbox.len() < expected {
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .expect("the outbox holds the expected events");
 }
