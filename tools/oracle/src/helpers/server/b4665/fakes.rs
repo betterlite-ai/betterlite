@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_server::mcp::outbound_credentials::token_exchanger::{
-    ExchangeTokenResponse, ExchangeHttpPost, ExchangeRejection,
+    ExchangeHttpPost, ExchangeRejection, ExchangeTokenResponse,
 };
 use betterlite_server::mcp::outbound_credentials::{
     InMemoryTokenCacheBackend, OAuthToken, TokenCacheBackend, TokenKey, WallClock,
