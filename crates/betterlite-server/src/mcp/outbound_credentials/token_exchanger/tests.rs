@@ -3,6 +3,8 @@
 mod caching;
 mod support;
 
+use std::sync::Arc;
+
 use betterlite_mcp::credential_contracts::auth_config::oauth::{
     DEFAULT_SUBJECT_TOKEN_TYPE, TokenExchangeProfile,
 };
@@ -268,12 +270,17 @@ fn cache_key_is_the_sha256_of_the_joined_material() {
 
 #[test]
 fn cache_key_treats_empty_and_absent_optionals_alike() {
-    let base = config();
-    let mut empty_endpoint = base.clone();
-    empty_endpoint.token_exchange_endpoint = Some(String::new());
+    let mut absent = config();
+    absent.token_exchange_endpoint = None;
+    absent.audience = None;
+    absent.client_id = None;
+    let mut empty = absent.clone();
+    empty.token_exchange_endpoint = Some(String::new());
+    empty.audience = Some(String::new());
+    empty.client_id = Some(String::new());
     assert_eq!(
-        cache_key::cache_key("jwt", "", &base),
-        cache_key::cache_key("jwt", "", &empty_endpoint)
+        cache_key::cache_key("jwt", "", &absent),
+        cache_key::cache_key("jwt", "", &empty)
     );
 }
 

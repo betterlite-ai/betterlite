@@ -1,9 +1,10 @@
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use super::super::super::refresh_store::InProcessRefreshCoordinator;
-use super::super::super::{InMemoryTokenCacheBackend, TokenCacheEntries, WallClock};
-use super::super::OboTokenExchanger;
+use super::super::super::{InMemoryTokenCacheBackend, TokenCacheEntries, TokenKey, WallClock};
+use super::super::{OboTokenExchanger, cache_key};
 use super::support::{
     ManualClock, RecordingPost, Scripted, TestExchanger, body, clock, config, exchanger, server,
     server_named,
