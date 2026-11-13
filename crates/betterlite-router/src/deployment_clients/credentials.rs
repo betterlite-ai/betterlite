@@ -1,7 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use secrecy::{ExposeSecret as _, SecretString};
-use sha2::{Digest as _, Sha256};
 
 use crate::deployment_identity::error::InvalidDeployment;
 use crate::deployment_identity::spec::DeploymentSpec;
@@ -15,12 +14,6 @@ pub struct ClientsideCredentials {
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
     pub base_url: Option<String>,
-}
-
-// A credential is identified by its SHA-256 hex; the text itself never leaves the type that holds it.
-#[must_use]
-pub fn credential_digest(text: &str) -> String {
-    hex::encode(Sha256::digest(text.as_bytes()))
 }
 
 // is_clientside_credential: presence alone, so an explicit null still counts the request as clientside
@@ -46,16 +39,14 @@ pub fn dynamic_litellm_params(
     litellm_params
 }
 
-// The per-request deployment of a clientside credential. The key stays a SecretString beside the spec, because
-// Debug on the spec would print a litellm_params entry; the caller hands both to the provider together.
+// The key stays a SecretString beside the spec, since Debug on the spec would print a litellm_params entry
 #[derive(Clone, Debug)]
 pub struct ClientsideDeployment {
     pub deployment: DeploymentSpec,
     pub api_key: Option<SecretString>,
 }
 
-// a per-request deployment under an id hashed from the dynamic params, as LiteLLM does; the caller registers
-// its pricing (B9710)
+// a per-request deployment under an id hashed from the dynamic params; the caller registers its pricing (B9710)
 pub fn clientside_deployment(
     deployment: &DeploymentSpec,
     model_group: &str,

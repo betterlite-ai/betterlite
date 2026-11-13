@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use betterlite_error::rate_limit::{RateLimitCategory, RateLimitDimension};
@@ -74,9 +75,9 @@ fn install_a_zero_cap_never_caps() {
 fn a_free_slot_is_granted_and_released_on_drop() {
     let limit = limit(1);
     let slot = limit.acquire().expect("a free slot");
-    assert_eq!(limit.in_flight(), 1);
+    assert_eq!(limit.in_flight.load(Ordering::SeqCst), 1);
     drop(slot);
-    assert_eq!(limit.in_flight(), 0);
+    assert_eq!(limit.in_flight.load(Ordering::SeqCst), 0);
 }
 
 #[test]
@@ -84,7 +85,7 @@ fn enter_and_exit_release_after_a_failure() {
     let limit = limit(1);
     let outcome = limit.with_slot(|| Err::<(), &str>("the provider failed"));
     assert_eq!(outcome, Ok(Err("the provider failed")));
-    assert_eq!(limit.in_flight(), 0);
+    assert_eq!(limit.in_flight.load(Ordering::SeqCst), 0);
     assert!(limit.acquire().is_ok());
 }
 

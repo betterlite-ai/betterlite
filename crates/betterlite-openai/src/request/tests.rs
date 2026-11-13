@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use crate::chat::{ChatRequest, RequestError};
@@ -91,11 +92,11 @@ fn a_non_string_api_key_is_refused_by_name() {
     assert!(error.to_string().contains("api_key"));
 }
 
-#[test]
-fn a_request_destination_stays_refused() {
-    for name in ["api_base", "base_url"] {
-        let body = format!(r#"{{"model":"m","messages":[],"{name}":"https://caller.example/v1"}}"#);
-        let error = ChatRequest::parse(body.as_bytes()).unwrap_err();
-        assert!(matches!(error, RequestError::Unsupported { name: refused } if refused == name));
-    }
+#[rstest]
+#[case("api_base")]
+#[case("base_url")]
+fn a_request_destination_stays_refused(#[case] name: &str) {
+    let body = format!(r#"{{"model":"m","messages":[],"{name}":"https://caller.example/v1"}}"#);
+    let error = ChatRequest::parse(body.as_bytes()).unwrap_err();
+    assert!(matches!(error, RequestError::Unsupported { name: refused } if refused == name));
 }

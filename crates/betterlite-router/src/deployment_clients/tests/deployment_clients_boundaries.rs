@@ -1,3 +1,4 @@
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
@@ -33,10 +34,13 @@ fn acquire_compares_against_the_cap(
     let acquired = limit.acquire();
     let granted_now = acquired.is_ok();
     assert_eq!(granted_now, granted);
-    assert_eq!(limit.in_flight(), in_flight + i64::from(granted_now));
+    assert_eq!(
+        limit.in_flight.load(Ordering::SeqCst),
+        in_flight + i64::from(granted_now)
+    );
     drop(acquired);
     drop(held);
-    assert_eq!(limit.in_flight(), 0);
+    assert_eq!(limit.in_flight.load(Ordering::SeqCst), 0);
 }
 
 #[rstest]
