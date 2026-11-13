@@ -111,6 +111,23 @@ fn synthetic_stream_order() {
 }
 
 #[test]
+fn raw_client_serves_the_call() {
+    let fixture = Fixture::new();
+    let call = fixture.call(MODEL, Some(ENDPOINT), false);
+    let run = run(
+        call,
+        Reply::Ok(VALID_REPLY),
+        Some(SuppliedClientKind::AsyncRaw),
+    );
+    assert_eq!(run.caller_requests.len(), 1);
+    assert!(run.pooled_requests.is_empty());
+    let Ok(GemmaReply::Response(response)) = run.result else {
+        panic!("a raw async client serves a non-streaming call");
+    };
+    assert_eq!(response.model, STRIPPED_MODEL);
+}
+
+#[test]
 fn upstream_201_rejection() {
     let fixture = Fixture::new();
     let call = fixture.call(MODEL, Some(ENDPOINT), false);
