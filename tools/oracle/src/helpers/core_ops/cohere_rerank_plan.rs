@@ -8,7 +8,7 @@ use betterlite_openai::cohere_rerank::{
 };
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
