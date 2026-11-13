@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use super::wire::{DynamoAiResponse, FinalAction, PolicyOutputs};
 
@@ -98,7 +99,7 @@ pub fn create_error_message(processed: &ProcessedResult) -> String {
         processed.violations_detected.len()
     );
     for policy_name in &processed.violations_detected {
-        message.push_str(&format!("- {}:\n", policy_name.to_uppercase()));
+        let _written = writeln!(message, "- {}:", policy_name.to_uppercase());
         if let Some(details) = processed.violation_details.get(policy_name) {
             push_detail(&mut message, "Action", Some(details.action.as_str()));
             push_detail(&mut message, "Method", details.method.as_deref());
@@ -113,6 +114,6 @@ pub fn create_error_message(processed: &ProcessedResult) -> String {
 
 fn push_detail(message: &mut String, label: &str, value: Option<&str>) {
     if let Some(value) = value.filter(|value| !value.is_empty()) {
-        message.push_str(&format!("  {label}: {value}\n"));
+        let _written = writeln!(message, "  {label}: {value}");
     }
 }
