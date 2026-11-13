@@ -104,17 +104,16 @@ fn chat_supported(models: &[String]) -> Vec<Vec<&'static str>> {
 }
 
 fn chat_map(cases: &[Case]) -> Vec<Params> {
-    let empty = Params::new();
-    cases
-        .iter()
-        .map(|case| {
-            NvidiaNimConfig::map_params(
-                &case.model,
-                case.non_default.as_ref().unwrap_or(&empty),
-                case.optional.clone().unwrap_or_default(),
-            )
-        })
-        .collect()
+    let mut mapped = Vec::with_capacity(cases.len());
+    for case in cases {
+        let requested = case.non_default.clone().unwrap_or_default();
+        mapped.push(NvidiaNimConfig::map_params(
+            &case.model,
+            &requested,
+            case.optional.clone().unwrap_or_default(),
+        ));
+    }
+    mapped
 }
 
 fn embedding_map(cases: &[Case]) -> Value {

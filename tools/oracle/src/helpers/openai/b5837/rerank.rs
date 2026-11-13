@@ -100,13 +100,13 @@ pub(crate) fn select(input: &Input) -> Value {
 }
 
 pub(crate) fn params(cases: &[Case], header_cases: &[Case]) -> Value {
-    let mapped: Vec<Value> = cases
-        .iter()
-        .map(|case| match mapped(case) {
+    let mut mapped = Vec::with_capacity(cases.len());
+    for case in cases {
+        mapped.push(match mapped(case) {
             Ok(found) => json!(found),
             Err(_) => Value::Null,
-        })
-        .collect();
+        });
+    }
     let found: Vec<Value> = header_cases
         .iter()
         .map(|case| {

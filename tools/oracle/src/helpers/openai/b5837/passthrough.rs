@@ -53,22 +53,17 @@ pub(crate) fn urls(cases: &[UrlCase]) -> Value {
 
 pub(crate) fn credentials(cases: &[Case]) -> Value {
     let config = NvidiaNimPassthroughConfig::default();
-    let headers: Vec<Value> = cases
-        .iter()
-        .map(|case| {
-            let api_key = case.api_key.as_ref().map(SecretString::from);
-            json!(validate_passthrough_environment(
-                case.headers.clone(),
-                api_key.as_ref()
-            ))
-        })
-        .collect();
-    let streaming: Vec<Value> = cases
-        .iter()
-        .map(|case| {
-            let request_data = json!({"stream": case.stream.clone().unwrap_or(Value::Null)});
-            json!(config.is_streaming_request(&case.endpoint, &super::object(request_data)))
-        })
-        .collect();
+    let mut headers = Vec::with_capacity(cases.len());
+    let mut streaming = Vec::with_capacity(cases.len());
+    for case in cases {
+        let api_key = case.api_key.as_ref().map(SecretString::from);
+        let merged = validate_passthrough_environment(case.headers.clone(), api_key.as_ref());
+        let request_data =
+            super::object(json!({"stream": case.stream.clone().unwrap_or(Value::Null)}));
+        headers.push(json!(merged));
+        streaming.push(json!(
+            config.is_streaming_request(&case.endpoint, &request_data)
+        ));
+    }
     json!({"headers": headers, "streaming": streaming})
 }

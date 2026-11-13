@@ -48,50 +48,37 @@ fn ranking() -> NvidiaNimRankingConfig {
     }
 }
 
-fn map_retrieval(
-    non_default: &mut Params,
-    documents: &[RerankDocument],
-    top_n: Option<i64>,
-) -> Params {
-    config()
-        .map_cohere_rerank_params(MapCohereRerankParams {
-            non_default_params: non_default,
-            model: "meta/llama",
-            drop_params: false,
-            query: "q",
-            documents,
-            custom_llm_provider: Some("nvidia_nim"),
-            top_n,
-            rank_fields: None,
-            return_documents: Some(true),
-            max_chunks_per_doc: None,
-            max_tokens_per_doc: None,
-            instruction: None,
-        })
-        .unwrap()
+#[derive(Clone, Copy)]
+enum Family {
+    Retrieval,
+    Ranking,
 }
 
-fn map_ranking(
+fn mapped(
+    family: Family,
     non_default: &mut Params,
     documents: &[RerankDocument],
     top_n: Option<i64>,
 ) -> Params {
-    ranking()
-        .map_cohere_rerank_params(MapCohereRerankParams {
-            non_default_params: non_default,
-            model: "ranking/meta/llama",
-            drop_params: false,
-            query: "q",
-            documents,
-            custom_llm_provider: Some("nvidia_nim"),
-            top_n,
-            rank_fields: None,
-            return_documents: Some(true),
-            max_chunks_per_doc: None,
-            max_tokens_per_doc: None,
-            instruction: None,
-        })
-        .unwrap()
+    let request = MapCohereRerankParams {
+        non_default_params: non_default,
+        model: "meta/llama",
+        drop_params: false,
+        query: "q",
+        documents,
+        custom_llm_provider: Some("nvidia_nim"),
+        top_n,
+        rank_fields: None,
+        return_documents: Some(true),
+        max_chunks_per_doc: None,
+        max_tokens_per_doc: None,
+        instruction: None,
+    };
+    match family {
+        Family::Retrieval => config().map_cohere_rerank_params(request),
+        Family::Ranking => ranking().map_cohere_rerank_params(request),
+    }
+    .unwrap()
 }
 
 fn request(
@@ -102,8 +89,8 @@ fn request(
     config.transform_rerank_request(model, optional, &Headers::new(), None)
 }
 
-fn response(
-    config: &NvidiaNimRerankConfig,
+fn transformed(
+    config: &dyn BaseRerankConfig<Error = NvidiaNimRerankError>,
     status: u16,
     body: &[u8],
     request_data: &Params,
@@ -130,31 +117,14 @@ fn response(
     )
 }
 
-fn ranking_response(
-    config: &NvidiaNimRankingConfig,
+fn response(
+    config: &NvidiaNimRerankConfig,
+    status: u16,
     body: &[u8],
     request_data: &Params,
     optional: &Params,
 ) -> Result<RerankResponse, NvidiaNimRerankError> {
-    let provider_response = RerankProviderResponse {
-        status_code: 200,
-        headers: Headers::new(),
-        body: body.to_vec(),
-    };
-    let mut logging = RerankLogging::default();
-    let litellm_params = Params::new();
-    config.transform_rerank_response(
-        RerankResponse::default(),
-        ResponseTransform {
-            model: "ranking/meta/llama",
-            raw_response: &provider_response,
-            logging: &mut logging,
-            api_key: None,
-            request_data,
-            optional_params: optional,
-            litellm_params: &litellm_params,
-        },
-    )
+    transformed(config, status, body, request_data, optional)
 }
 
 fn url(config: &NvidiaNimRerankConfig, api_base: Option<&str>, model: &str) -> String {
@@ -276,7 +246,7 @@ fn map_cohere_rerank_params_starts_from_the_query_and_documents() {
     let mut non_default = Params::new();
     let documents = documents(r#"["a", {"text": "b"}]"#);
     assert_eq!(
-        map_retrieval(&mut non_default, &documents, None),
+        mapped(Family::Retrieval, &mut non_default, &documents, None),
         params(r#"{"query": "q", "documents": ["a", {"text": "b"}]}"#)
     );
 }
@@ -286,11 +256,11 @@ fn map_cohere_rerank_params_maps_top_n_to_top_k() {
     let mut non_default = Params::new();
     let documents = documents(r#"["a"]"#);
     assert_eq!(
-        map_retrieval(&mut non_default, &documents, Some(3)),
+        mapped(Family::Retrieval, &mut non_default, &documents, Some(3)),
         params(r#"{"query": "q", "documents": ["a"], "top_k": 3}"#)
     );
     assert_eq!(
-        map_retrieval(&mut non_default, &documents, Some(0)),
+        mapped(Family::Retrieval, &mut non_default, &documents, Some(0)),
         params(r#"{"query": "q", "documents": ["a"], "top_k": 0}"#)
     );
 }
@@ -300,7 +270,7 @@ fn map_cohere_rerank_params_overlays_the_non_default_params() {
     let mut non_default = params(r#"{"query": "other", "documents": ["z"], "truncate": "END"}"#);
     let documents = documents(r#"["a"]"#);
     assert_eq!(
-        map_retrieval(&mut non_default, &documents, Some(3)),
+        mapped(Family::Retrieval, &mut non_default, &documents, Some(3)),
         params(r#"{"query": "other", "documents": ["z"], "truncate": "END", "top_k": 3}"#)
     );
 }
@@ -310,7 +280,7 @@ fn map_cohere_rerank_params_keeps_top_n_for_the_ranking_endpoint() {
     let mut non_default = params(r#"{"top_k": 9, "truncate": "END"}"#);
     let documents = documents(r#"["a"]"#);
     assert_eq!(
-        map_ranking(&mut non_default, &documents, Some(4)),
+        mapped(Family::Ranking, &mut non_default, &documents, Some(4)),
         params(r#"{"query": "q", "documents": ["a"], "truncate": "END", "top_n": 4}"#)
     );
 }
@@ -320,7 +290,7 @@ fn map_cohere_rerank_params_lets_the_named_top_n_replace_the_request_one() {
     let mut non_default = params(r#"{"top_n": 2}"#);
     let documents = documents(r#"["a"]"#);
     assert_eq!(
-        map_ranking(&mut non_default, &documents, Some(4)),
+        mapped(Family::Ranking, &mut non_default, &documents, Some(4)),
         params(r#"{"query": "q", "documents": ["a"], "top_n": 4}"#)
     );
 }
@@ -330,7 +300,7 @@ fn map_cohere_rerank_params_keeps_a_request_top_n_without_a_named_one() {
     let mut non_default = params(r#"{"top_n": 2}"#);
     let documents = documents(r#"["a"]"#);
     assert_eq!(
-        map_ranking(&mut non_default, &documents, None),
+        mapped(Family::Ranking, &mut non_default, &documents, None),
         params(r#"{"query": "q", "documents": ["a"], "top_n": 2}"#)
     );
 }
@@ -796,7 +766,7 @@ fn transform_rerank_response_reports_a_document_text_that_is_not_a_string() {
 }
 
 fn ranking_results(config: &NvidiaNimRankingConfig, body: &[u8], optional: &Params) -> Vec<i64> {
-    let response = ranking_response(config, body, &Params::new(), optional).unwrap();
+    let response = transformed(config, 200, body, &Params::new(), optional).unwrap();
     response
         .results
         .unwrap()
