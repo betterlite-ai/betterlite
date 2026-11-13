@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::cost_usage::server_tool_projection::ServerToolUse;
@@ -11,6 +11,7 @@ use betterlite_models::tool_fees::ports::ToolPricePolicy as _;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
+use super::error::FormulaError;
 use super::{GroundingFormulas, GroundingPricing, ProviderFormulas, SearchFormula};
 
 struct Recording {
@@ -33,14 +34,24 @@ impl GroundingFormulas for &Recording {
         formula: SearchFormula,
         _usage: &ToolUsage,
         _model_info: &ToolModelInfo,
-    ) -> Option<Decimal> {
-        self.web.lock().unwrap().push(formula);
-        Some(Decimal::new(5, 0))
+    ) -> Result<Decimal, FormulaError> {
+        self.web
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(formula);
+        Ok(Decimal::new(5, 0))
     }
 
-    fn google_maps(&self, requests: i64, _model_info: &ToolModelInfo) -> Option<Decimal> {
-        self.maps.lock().unwrap().push(requests);
-        Some(Decimal::new(9, 0))
+    fn google_maps(
+        &self,
+        requests: i64,
+        _model_info: &ToolModelInfo,
+    ) -> Result<Decimal, FormulaError> {
+        self.maps
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(requests);
+        Ok(Decimal::new(9, 0))
     }
 }
 

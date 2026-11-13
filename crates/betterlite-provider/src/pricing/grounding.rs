@@ -1,3 +1,4 @@
+pub mod error;
 mod tests;
 
 use betterlite_models::anthropic_pricing::search::web_search_cost as anthropic_web_search_cost;
@@ -9,6 +10,8 @@ use betterlite_models::tool_fees::model_info::{Rate, ToolModelInfo};
 use betterlite_models::tool_fees::ports::ToolPricePolicy;
 use rust_decimal::Decimal;
 
+use error::FormulaError;
+
 // The web-search formula a provider name selects in get_cost_for_web_search_request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchFormula {
@@ -19,16 +22,20 @@ pub enum SearchFormula {
     Groq,
 }
 
-// The arithmetic behind each routed formula; None means no formula is installed for it.
+// The arithmetic behind each routed formula; an error means no formula is installed for it or it failed.
 pub trait GroundingFormulas {
     fn web_search(
         &self,
         formula: SearchFormula,
         usage: &ToolUsage,
         model_info: &ToolModelInfo,
-    ) -> Option<Decimal>;
+    ) -> Result<Decimal, FormulaError>;
 
-    fn google_maps(&self, requests: i64, model_info: &ToolModelInfo) -> Option<Decimal>;
+    fn google_maps(
+        &self,
+        requests: i64,
+        model_info: &ToolModelInfo,
+    ) -> Result<Decimal, FormulaError>;
 }
 
 // model_key stands in for the "key" entry LiteLLM keeps in model info, which ToolModelInfo does not carry; only the Vertex route reads it.
@@ -66,7 +73,10 @@ where
             }
             _ => return None,
         };
-        self.formulas.web_search(formula, usage, model_info)
+        self.formulas
+            .web_search(formula, usage, model_info)
+            .inspect_err(|error| tracing::warn!(%error, "no web search price"))
+            .ok()
     }
 
     fn google_maps_cost(
@@ -78,11 +88,14 @@ where
         if provider != "gemini" && !provider.starts_with("vertex_ai") {
             return None;
         }
-        self.formulas.google_maps(requests, model_info)
+        self.formulas
+            .google_maps(requests, model_info)
+            .inspect_err(|error| tracing::warn!(%error, "no Google Maps price"))
+            .ok()
     }
 }
 
-// Only the Anthropic arithmetic exists in the tree; the other formulas stay unavailable and say so in the log.
+// Only the Anthropic arithmetic exists in the tree; the other formulas stay unavailable and say so.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ProviderFormulas;
 
@@ -92,13 +105,9 @@ impl GroundingFormulas for ProviderFormulas {
         formula: SearchFormula,
         usage: &ToolUsage,
         model_info: &ToolModelInfo,
-    ) -> Option<Decimal> {
+    ) -> Result<Decimal, FormulaError> {
         if formula != SearchFormula::Anthropic {
-            tracing::warn!(
-                ?formula,
-                "no web search formula is installed for this provider"
-            );
-            return None;
+            return Err(FormulaError::WebSearch(formula));
         }
         let medium = match model_info.search_context.medium {
             Rate::Value(rate) => Some(rate),
@@ -110,17 +119,15 @@ impl GroundingFormulas for ProviderFormulas {
             search_context_size_high: None,
         };
         let record = usage.server_tool_use.as_ref().map(ServerToolRecord::Parsed);
-        match anthropic_web_search_cost(Some(&PriceRecord::new()), Some(&pricing), record) {
-            Ok(cost) => Some(cost),
-            Err(error) => {
-                tracing::warn!(%error, "the Anthropic web search cost could not be computed");
-                None
-            }
-        }
+        anthropic_web_search_cost(Some(&PriceRecord::new()), Some(&pricing), record)
+            .map_err(|source| FormulaError::Anthropic { source })
     }
 
-    fn google_maps(&self, requests: i64, _model_info: &ToolModelInfo) -> Option<Decimal> {
-        tracing::warn!(requests, "no Google Maps grounding formula is installed");
-        None
+    fn google_maps(
+        &self,
+        _requests: i64,
+        _model_info: &ToolModelInfo,
+    ) -> Result<Decimal, FormulaError> {
+        Err(FormulaError::GoogleMaps)
     }
 }
