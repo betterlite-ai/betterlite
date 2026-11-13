@@ -1,13 +1,58 @@
 from copy import deepcopy
-from typing import cast
+from typing import Literal, TypeAlias, TypedDict
 from uuid import UUID
 
 import litellm.types.utils
 from litellm.llms.anthropic.chat.handler import ModelResponseIterator
 from litellm.llms.anthropic.common_utils import AnthropicError
-from pydantic import JsonValue
+from litellm.types.utils import ModelResponseStream
+from pydantic import JsonValue, TypeAdapter
 
-from anthropic_stream_events.records import Decoder, Dumpable, Input, Step
+
+class DeltaView(TypedDict):
+    content: str
+    provider_specific_fields: JsonValue | None
+    tool_calls: list[JsonValue] | None
+    thinking_blocks: list[JsonValue] | None
+    reasoning_content: str | None
+
+
+class ChoiceView(TypedDict):
+    index: int
+    finish_reason: str | None
+    delta: DeltaView
+
+
+class ChunkView(TypedDict):
+    id: str
+    model: str | None
+    choices: list[ChoiceView]
+    usage: JsonValue | None
+
+
+class ChunkStep(TypedDict):
+    function: Literal["chunk"]
+    chunk: dict[str, JsonValue]
+
+
+class AccumulatedStep(TypedDict):
+    function: Literal["accumulated"]
+    fragment: str
+    is_final: bool
+
+
+class StateStep(TypedDict):
+    function: Literal["state"]
+
+
+Step: TypeAlias = ChunkStep | AccumulatedStep | StateStep
+
+
+class Input(TypedDict):
+    json_mode: bool | None
+    tool_name_reverse_map: dict[str, str]
+    ids: list[str]
+    steps: list[Step]
 
 
 class FixedUuid:
@@ -18,47 +63,48 @@ class FixedUuid:
         return self.values.pop(0)
 
 
-def _iterator(input_value: Input) -> Decoder:
-    fixed = FixedUuid([UUID(value) for value in input_value["ids"]])
-    litellm.types.utils.uuid.uuid4 = fixed  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L122
-    created = ModelResponseIterator(
+def _iterator(input_value: Input) -> ModelResponseIterator:
+    litellm.types.utils.uuid.uuid4 = FixedUuid(  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L122
+        [UUID(value) for value in input_value["ids"]]
+    )
+    return ModelResponseIterator(
         None,
         sync_stream=False,
         json_mode=input_value["json_mode"],
         speed=None,
         tool_name_reverse_map=input_value["tool_name_reverse_map"],
     )
-    return cast(Decoder, created)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L546
 
 
-def _chunk_view(chunk: Dumpable) -> JsonValue:
-    dumped = cast(dict[str, JsonValue], chunk.model_dump())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2096
-    choice = cast(dict[str, JsonValue], cast(list[JsonValue], dumped["choices"])[0])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2006
-    delta = cast(dict[str, JsonValue], choice["delta"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1507
+def _chunk_view(chunk: ModelResponseStream) -> JsonValue:
+    view = TypeAdapter(ChunkView).validate_json(chunk.model_dump_json())
+    delta = view["choices"][0]["delta"]
     delta_view: dict[str, JsonValue] = {
         "content": delta["content"],
-        "provider_specific_fields": delta.get("provider_specific_fields"),
+        "provider_specific_fields": delta["provider_specific_fields"],
     }
-    for key in ("tool_calls", "thinking_blocks", "reasoning_content"):
-        value = delta.get(key)
-        if value is not None:
-            delta_view[key] = value
-    view: dict[str, JsonValue] = {
-        "id": dumped["id"],
-        "model": dumped.get("model"),
+    if delta["tool_calls"] is not None:
+        delta_view["tool_calls"] = delta["tool_calls"]
+    if delta["thinking_blocks"] is not None:
+        delta_view["thinking_blocks"] = delta["thinking_blocks"]
+    if delta["reasoning_content"] is not None:
+        delta_view["reasoning_content"] = delta["reasoning_content"]
+    return {
+        "id": view["id"],
+        "model": view["model"],
         "choices": [
             {
-                "index": choice["index"],
-                "finish_reason": choice.get("finish_reason"),
+                "index": view["choices"][0]["index"],
+                "finish_reason": view["choices"][0]["finish_reason"],
                 "delta": delta_view,
             }
         ],
-        "usage": dumped.get("usage"),
+        "usage": view["usage"],
     }
-    return deepcopy(view)
 
 
-def _state_view(iterator: Decoder) -> JsonValue:
+def _state_view(iterator: ModelResponseIterator) -> JsonValue:
+    server_inputs = iterator._server_tool_inputs  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L599
     view: dict[str, JsonValue] = {
         "current_content_block_type": iterator.current_content_block_type,
         "current_server_tool_id": iterator._current_server_tool_id,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L601
@@ -67,21 +113,24 @@ def _state_view(iterator: Decoder) -> JsonValue:
         "tool_index": iterator.tool_index,
         "served_model": iterator.served_model,
         "container_id": iterator._container_id,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L602
-        "server_tool_inputs": iterator._server_tool_inputs,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L599
+        "server_tool_inputs": TypeAdapter(JsonValue).validate_python(server_inputs),
     }
     return deepcopy(view)
 
 
-def _run_step(iterator: Decoder, step: Step) -> JsonValue:
+def _run_step(iterator: ModelResponseIterator, step: Step) -> JsonValue:
     try:
         match step["function"]:
             case "chunk":
-                return {"chunk": _chunk_view(iterator.chunk_parser(chunk=step["chunk"]))}
+                parsed = iterator.chunk_parser(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L811
+                    chunk=step["chunk"]
+                )
+                return {"chunk": _chunk_view(parsed)}
             case "accumulated":
-                chunk = iterator._handle_accumulated_json_chunk(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L1118
+                accumulated = iterator._handle_accumulated_json_chunk(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L1118
                     data_str=step["fragment"], is_final=step["is_final"]
                 )
-                return {"accumulated": None if chunk is None else _chunk_view(chunk)}
+                return {"accumulated": None if accumulated is None else _chunk_view(accumulated)}
             case "state":
                 return {"state": _state_view(iterator)}
     except AnthropicError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L309
