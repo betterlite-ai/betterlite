@@ -1,0 +1,10 @@
+kind: helper
+name: auth-request-models-http-path-model-overrides
+call:
+  auth_request_models:
+    steps:
+      - {route: "/openai/deployments/path-model/chat/completions", endpoint_marker: false, path_params: [], team_id: null, deployments: [], current_deployment_id: null, candidate_deployment_id: null}
+      - {route: "/openai/deployments/path-model/chat/completions", endpoint_marker: true, path_params: [], team_id: null, deployments: [], current_deployment_id: null, candidate_deployment_id: null}
+      - {route: "/v1beta/models/gemini:generateContent", endpoint_marker: null, path_params: [endpoint], team_id: null, deployments: [], current_deployment_id: null, candidate_deployment_id: null}
+env: {}
+compare: {ignore: []}

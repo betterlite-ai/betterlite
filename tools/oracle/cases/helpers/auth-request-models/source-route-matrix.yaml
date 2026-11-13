@@ -1,0 +1,11 @@
+kind: helper
+name: auth-request-models-source-route-matrix
+call:
+  auth_request_models:
+    steps:
+      - {route: "/files", endpoint_marker: false, path_params: [], team_id: null, deployments: [], current_deployment_id: null, candidate_deployment_id: null}
+      - {route: "/evals", endpoint_marker: false, path_params: [endpoint], team_id: null, deployments: [], current_deployment_id: null, candidate_deployment_id: null}
+      - {route: "/videos", endpoint_marker: null, path_params: [], team_id: null, deployments: [], current_deployment_id: null, candidate_deployment_id: null}
+      - {route: "/v1/vector_stores", endpoint_marker: true, path_params: [endpoint], team_id: null, deployments: [], current_deployment_id: null, candidate_deployment_id: null}
+env: {}
+compare: {ignore: []}

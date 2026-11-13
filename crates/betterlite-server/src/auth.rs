@@ -49,8 +49,18 @@ pub mod team_budget_admission;
 pub mod trusted_network;
 pub mod virtual_key_routes;
 
-use crate::auth::auth_identity::{INSTALLED_STAGES, StageInput, dispatch};
-use crate::error_body::authentication_error;
+use std::collections::BTreeSet;
+use std::sync::Arc;
+
+use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+
+use crate::auth::auth_identity::{
+    AuthBackend, AuthContext, INSTALLED_STAGES, StageInput, dispatch,
+};
+use crate::auth::auth_request_models::{CoreDecoders, RequestModelStageInput};
+use crate::error_body::{AuthenticationFailure, authentication_error};
 use axum::body::Body;
 use axum::extract::State;
 use axum::http::{HeaderMap, Request, header};
@@ -73,16 +83,72 @@ pub(crate) async fn authenticate(
         return next.run(request).await;
     };
     let presented_key = extract_key(request.headers());
+    let resolver = request
+        .extensions()
+        .get::<Arc<RequestModelResolver>>()
+        .map_or_else(default_resolver, Arc::clone);
+    let mut authenticated: Option<AuthContext> = None;
     for backend in INSTALLED_STAGES {
-        let input = StageInput::MasterKey(presented_key.clone());
-        match dispatch(*backend, &input, master_key) {
-            Ok(context) => {
-                request.extensions_mut().insert(context);
+        let input = match backend {
+            AuthBackend::MasterKey => StageInput::MasterKey(presented_key.clone()),
+            AuthBackend::AuthRequestModels => {
+                let Some(context) = authenticated.clone() else {
+                    return authentication_error(&AuthenticationFailure::Missing);
+                };
+                let stage = model_stage_input(&request, context, &resolver);
+                StageInput::AuthRequestModels(Box::new(stage))
             }
+        };
+        match dispatch(*backend, &input, master_key) {
+            Ok(context) => authenticated = Some(context),
             Err(failure) => return authentication_error(&failure),
         }
     }
+    if let Some(context) = authenticated {
+        request.extensions_mut().insert(context);
+    }
     next.run(request).await
+}
+fn default_resolver() -> Arc<RequestModelResolver> {
+    Arc::new(RequestModelResolver {
+        catalog: Arc::new(EmptyCatalog),
+        decoders: Arc::new(CoreDecoders),
+    })
+}
+fn model_stage_input(
+    request: &Request<Body>,
+    context: AuthContext,
+    resolver: &Arc<RequestModelResolver>,
+) -> RequestModelStageInput {
+    RequestModelStageInput {
+        context,
+        route: request.uri().path().to_owned(),
+        body: JsonObject::new(),
+        headers: Some(headers_json(request.headers())),
+        query: Some(query_json(request.uri().query())),
+        endpoint_marker: None,
+        path_params: BTreeSet::new(),
+        team_id: None,
+        resolver: Arc::clone(resolver),
+    }
+}
+fn headers_json(headers: &HeaderMap) -> JsonObject {
+    let mut object = JsonObject::new();
+    for (name, value) in headers {
+        let Ok(text) = value.to_str() else {
+            tracing::debug!(name = ?name, "the request header is not UTF-8 and auth ignores it");
+            continue;
+        };
+        object.insert(name.as_str().to_owned(), Json::Text(text.to_owned()));
+    }
+    object
+}
+fn query_json(query: Option<&str>) -> JsonObject {
+    let mut object = JsonObject::new();
+    for (name, value) in url::form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
+        object.insert(name.into_owned(), Json::Text(value.into_owned()));
+    }
+    object
 }
 fn extract_key(headers: &HeaderMap) -> Option<SecretString> {
     for name in [
