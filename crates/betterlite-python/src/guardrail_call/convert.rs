@@ -59,8 +59,11 @@ where
 }
 
 fn is_integer_literal(text: &str) -> bool {
-    let digits = text.strip_prefix('-').unwrap_or(text);
-    !digits.is_empty() && digits.chars().all(|digit| digit.is_ascii_digit())
+    text.strip_prefix('-')
+        .unwrap_or(text)
+        .chars()
+        .all(|digit| digit.is_ascii_digit())
+        && !text.is_empty()
 }
 
 fn number_from_text(text: &str) -> Result<Option<GuardrailValue>, CallError> {
