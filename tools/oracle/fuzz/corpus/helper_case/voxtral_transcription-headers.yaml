@@ -1,0 +1,12 @@
+kind: helper
+name: voxtral-transcription-missing-key-and-caller-headers
+call:
+  voxtral_transcription:
+    probes:
+      - {optional_params: {}, non_default_params: {}, headers: {Authorization: "Bearer mine", x: trace}, api_key: null, environment_api_key: null}
+      - {optional_params: {}, non_default_params: {}, headers: {authorization: lower}, api_key: explicit-key, environment_api_key: null}
+      - {optional_params: {}, non_default_params: {}, headers: {}, api_key: null, environment_api_key: environment-key}
+      - {optional_params: {}, non_default_params: {}, headers: {}, api_key: explicit-key, environment_api_key: environment-key}
+      - {optional_params: {}, non_default_params: {}, headers: {accept: text/plain}, api_key: explicit-key, environment_api_key: null}
+env: {}
+compare: {ignore: []}

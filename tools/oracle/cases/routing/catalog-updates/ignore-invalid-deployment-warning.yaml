@@ -1,0 +1,32 @@
+kind: probe
+name: ignore-invalid-deployment-warning
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      catalog_updates:
+        ignore_invalid_deployments: true
+        steps:
+          - action: set
+            models:
+              - {model_name: g, model: "openai/m1", id: a}
+              - {model_name: g, model: "bogus/x", id: b}
+              - {model_name: h, model: "openai/m3", id: c}
+          - action: add
+            model: {model_name: g, model: "bogus/y", id: d}
+          - action: add
+            model: {model_name: g, model: "openai/m4", id: e}
+          - action: delete
+            id: b
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      catalog_updates:
+        ignore_invalid_deployments: false
+        steps:
+          - action: add
+            model: {model_name: g, model: "bogus/y", id: d}
+          - action: add
+            model: {model_name: g, model: "openai/m4", id: e}
+compare:
+  ignore: []

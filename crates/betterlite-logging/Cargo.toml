@@ -16,6 +16,7 @@ betterlite-context = { path = "../betterlite-context" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
+betterlite-interactions = { path = "../betterlite-interactions" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-prometheus = { path = "../betterlite-prometheus" }
 betterlite-redact = { path = "../betterlite-redact" }
