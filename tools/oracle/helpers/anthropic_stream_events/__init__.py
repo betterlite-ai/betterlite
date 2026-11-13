@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, NotRequired, TypeAlias, TypedDict
 from uuid import UUID
 
 import litellm.types.utils
@@ -13,8 +13,8 @@ class DeltaView(TypedDict):
     content: str
     provider_specific_fields: JsonValue | None
     tool_calls: list[JsonValue] | None
-    thinking_blocks: list[JsonValue] | None
-    reasoning_content: str | None
+    thinking_blocks: NotRequired[list[JsonValue]]
+    reasoning_content: NotRequired[str]
 
 
 class ChoiceView(TypedDict):
@@ -85,9 +85,9 @@ def _chunk_view(chunk: ModelResponseStream) -> JsonValue:
     }
     if delta["tool_calls"] is not None:
         delta_view["tool_calls"] = delta["tool_calls"]
-    if delta["thinking_blocks"] is not None:
+    if "thinking_blocks" in delta:
         delta_view["thinking_blocks"] = delta["thinking_blocks"]
-    if delta["reasoning_content"] is not None:
+    if "reasoning_content" in delta:
         delta_view["reasoning_content"] = delta["reasoning_content"]
     return {
         "id": view["id"],
