@@ -22,7 +22,7 @@ pub(crate) fn without_cache_control(
         ResponsesInput::Items(items) => ResponsesInput::Items(
             items
                 .into_iter()
-                .map(|item| ResponsesItem(filter_value_from_dict(&item.0, "cache_control", 0)))
+                .map(|item| ResponsesItem(without_cache_marker(item.0)))
                 .collect(),
         ),
     };

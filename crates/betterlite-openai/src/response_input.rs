@@ -21,10 +21,10 @@ pub enum ResponsesInput {
     Items(Vec<ResponsesItem>),
 }
 
-// The Responses item union is provider-defined, so an item keeps every field it arrived with.
+// The Responses item union is provider-defined, so an item keeps every field it arrived with, and a non-object entry passes through as given.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct ResponsesItem(pub Object);
+pub struct ResponsesItem(pub Json);
 
 // A tool entry is a nested namespace record or any non-object value LiteLLM forwards unchanged.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,11 +74,8 @@ pub fn transform_responses_request(
 fn input_to_json(input: &ResponsesInput) -> Json {
     match input {
         ResponsesInput::Text(text) => Json::Text(text.clone()),
-        ResponsesInput::Items(items) => Json::List(
-            items
-                .iter()
-                .map(|item| Json::Object(item.0.clone()))
-                .collect(),
-        ),
+        ResponsesInput::Items(items) => {
+            Json::List(items.iter().map(|item| item.0.clone()).collect())
+        }
     }
 }

@@ -1,5 +1,5 @@
 use betterlite_models::identity::provider_id::ProviderId;
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Json;
 
 use super::reasoning::handle_reasoning_item;
 use super::{ResponsesInput, ResponsesItem};
@@ -16,9 +16,14 @@ pub(crate) fn validate_input(input: &ResponsesInput) -> ResponsesInput {
     )
 }
 
-fn validated_item(item: &Object) -> Object {
-    match item.get("type") {
-        Some(Json::Text(kind)) if kind == "reasoning" => handle_reasoning_item(item),
+fn validated_item(item: &Json) -> Json {
+    let Json::Object(fields) = item else {
+        return item.clone();
+    };
+    match fields.get("type") {
+        Some(Json::Text(kind)) if kind == "reasoning" => {
+            Json::Object(handle_reasoning_item(fields))
+        }
         _ => item.clone(),
     }
 }
@@ -37,18 +42,20 @@ pub(crate) fn without_foreign_item_ids(
 }
 
 fn without_foreign_item_id(item: ResponsesItem) -> ResponsesItem {
-    let prefix = match item.0.get("type") {
+    let Json::Object(mut fields) = item.0 else {
+        return item;
+    };
+    let prefix = match fields.get("type") {
         Some(Json::Text(kind)) if kind == "function_call" => "fc",
         Some(Json::Text(kind)) if kind == "custom_tool_call" => "ctc",
-        _ => return item,
+        _ => return ResponsesItem(Json::Object(fields)),
     };
-    let Some(Json::Text(id)) = item.0.get("id") else {
-        return item;
+    let Some(Json::Text(id)) = fields.get("id") else {
+        return ResponsesItem(Json::Object(fields));
     };
     if id.starts_with(prefix) {
-        return item;
+        return ResponsesItem(Json::Object(fields));
     }
-    let mut fields = item.0;
     fields.shift_remove("id");
-    ResponsesItem(fields)
+    ResponsesItem(Json::Object(fields))
 }

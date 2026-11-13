@@ -17,10 +17,14 @@ struct Probe {
     input: ResponsesInput,
     #[serde(default)]
     params: Object,
-    #[serde(default)]
-    provider: Option<ProviderId>,
+    #[serde(default = "default_provider")]
+    provider: ProviderId,
     #[serde(default)]
     model_info: Option<Object>,
+}
+
+const fn default_provider() -> ProviderId {
+    ProviderId::Openai
 }
 
 fn fixture(text: &str) -> Value {
@@ -36,7 +40,7 @@ fn run(case: &Probe) -> Result<Object, ResponseInputError> {
         &case.model,
         &case.input,
         &case.params,
-        case.provider.unwrap_or(ProviderId::Openai),
+        case.provider,
         case.model_info.as_ref(),
     )
 }
@@ -521,16 +525,16 @@ fn assert_overlay_tools_shape() {
 }
 
 #[rstest]
-#[case::case_1_string_schema_object(string_schema_object)]
-#[case::case_2_invalid_string_schema(invalid_string_schema)]
-#[case::case_3_recursive_tool_namespace(recursive_tool_namespace)]
-#[case::case_4_foreign_tool_item_id(foreign_tool_item_id)]
-#[case::case_5_cache_control_in_input_and_tools(cache_control_in_input_and_tools)]
-#[case::case_6_reasoning_summary_and_null(reasoning_summary_and_null)]
-#[case::case_7_gpt4_schema_combinators(gpt4_schema_combinators)]
-#[case::case_8_gpt5_keeps_combinators(gpt5_keeps_combinators)]
-#[case::case_9_base_model_gate(base_model_gate)]
-#[case::case_10_replay_body_overlay(replay_body_overlay)]
+#[case::string_schema_object(string_schema_object)]
+#[case::invalid_string_schema(invalid_string_schema)]
+#[case::recursive_tool_namespace(recursive_tool_namespace)]
+#[case::foreign_tool_item_id(foreign_tool_item_id)]
+#[case::cache_control_in_input_and_tools(cache_control_in_input_and_tools)]
+#[case::reasoning_summary_and_null(reasoning_summary_and_null)]
+#[case::gpt4_schema_combinators(gpt4_schema_combinators)]
+#[case::gpt5_keeps_combinators(gpt5_keeps_combinators)]
+#[case::base_model_gate(base_model_gate)]
+#[case::replay_body_overlay(replay_body_overlay)]
 fn response_input_cases(#[case] scenario: fn()) {
     scenario();
 }

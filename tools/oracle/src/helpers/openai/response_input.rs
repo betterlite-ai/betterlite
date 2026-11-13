@@ -15,10 +15,14 @@ pub(crate) struct Probe {
     pub(crate) input: ResponsesInput,
     #[serde(default)]
     pub(crate) params: Object,
-    #[serde(default)]
-    pub(crate) provider: Option<ProviderId>,
+    #[serde(default = "default_provider")]
+    pub(crate) provider: ProviderId,
     #[serde(default)]
     pub(crate) model_info: Option<Object>,
+}
+
+const fn default_provider() -> ProviderId {
+    ProviderId::Openai
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -46,7 +50,7 @@ fn body_of(probe: &Probe) -> Result<Object, Box<HelperError>> {
         &probe.model,
         &probe.input,
         &probe.params,
-        probe.provider.unwrap_or(ProviderId::Openai),
+        probe.provider,
         probe.model_info.as_ref(),
     )
     .map_err(|error| helper_error(&error))
