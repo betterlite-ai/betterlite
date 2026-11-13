@@ -95,9 +95,9 @@ pub fn without_repeated_version_prefix(
         .split('/')
         .next()
         .unwrap_or("");
-    let repeated = base_segments
-        .last()
-        .is_some_and(|last| *last == first_native_segment && is_version_segment(first_native_segment));
+    let repeated = base_segments.last().is_some_and(|last| {
+        *last == first_native_segment && is_version_segment(first_native_segment)
+    });
     let kept = if repeated {
         base_segments
             .get(..base_segments.len().saturating_sub(1))
@@ -112,9 +112,9 @@ pub fn without_repeated_version_prefix(
 }
 
 fn is_version_segment(segment: &str) -> bool {
-    segment
-        .strip_prefix('v')
-        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()))
+    segment.strip_prefix('v').is_some_and(|digits| {
+        !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 impl BasePassthroughConfig for NvidiaNimPassthroughConfig {

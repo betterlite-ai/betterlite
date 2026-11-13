@@ -45,7 +45,9 @@ pub fn map_params(
 fn extra_body_object(optional_params: &mut Object) -> Result<&mut Object, NvidiaNimEmbeddingError> {
     match optional_params.get_mut(EXTRA_BODY) {
         Some(Value::Object(fields)) => Ok(fields),
-        Some(Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_))
+        Some(
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_),
+        )
         | None => Err(NvidiaNimEmbeddingError::ExtraBodyNotObject),
     }
 }

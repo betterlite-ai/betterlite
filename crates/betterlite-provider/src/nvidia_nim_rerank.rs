@@ -19,9 +19,7 @@ const RANKING_PASSAGE_FIELDS: [&str; 2] = ["text", "image"];
 
 #[derive(Debug, Error)]
 pub enum NvidiaNimRerankError {
-    #[error(
-        "Nvidia NIM API key is required. Please set 'NVIDIA_NIM_API_KEY' in your environment"
-    )]
+    #[error("Nvidia NIM API key is required. Please set 'NVIDIA_NIM_API_KEY' in your environment")]
     MissingApiKey,
     #[error("query is required for Nvidia NIM rerank")]
     MissingQuery,
