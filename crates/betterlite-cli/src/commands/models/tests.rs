@@ -382,13 +382,13 @@ fn get_model_finds_a_model_by_name() {
     )]);
     let command = ModelsCommand::Get(GetModel {
         model_id: None,
-        model_name: Some(String::from("a")),
+        model_name: Some(String::from("b")),
     });
 
     let (result, stdout, _stderr) = run(command, &server);
 
     result.unwrap();
-    assert_eq!(stdout, "{\"model_name\":\"a\"}\n");
+    assert_eq!(stdout, "{\"model_name\":\"b\"}\n");
     server.finish();
 }
 
