@@ -1,7 +1,6 @@
 use betterlite_config::sections::vertex_schema_shaping::Settings as SchemaSettings;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Deserialize;
-use serde::de::DeserializeOwned;
 use serde_json::Number;
 
 use crate::gemini_format::response::apply_response_format;
@@ -76,28 +75,59 @@ fn map_param(
     if param == "tools" || param == "functions" {
         return tools::append(value, optional, context.schema);
     }
+    map_group(param, value, optional, context)?;
+    map_scalar(param, value, optional, context.model, warned)?;
+    Ok(0)
+}
+
+fn map_group(
+    param: &str,
+    value: &Json,
+    optional: &mut Object,
+    context: &OptionsContext<'_>,
+) -> Result<(), GeminiOptionsError> {
     if matches!(
         param,
         "tool_choice" | "parallel_tool_calls" | "web_search_options"
     ) {
-        tools::map(param, value, optional, context)?;
-    } else if param == "response_format" {
+        return tools::map(param, value, optional, context);
+    }
+    if matches!(param, "reasoning_effort" | "thinking") {
+        return thinking::map(param, value, optional, context);
+    }
+    if param == "response_format" {
         let format: Object = decode(value, param)?;
-        apply_response_format(&format, context.model, optional, context.schema)?;
-    } else if param == "audio" {
+        return apply_response_format(&format, context.model, optional, context.schema)
+            .map_err(GeminiOptionsError::Format);
+    }
+    if param == "audio" {
         let audio: AudioParam = decode(value, param)?;
         let speech = map_audio_params(&audio)?;
         optional.insert("speechConfig".to_owned(), Json::Object(speech));
-    } else if matches!(param, "reasoning_effort" | "thinking") {
-        thinking::map(param, value, optional, context)?;
-    } else if param == "include_server_side_tool_invocations" {
-        if decode::<bool>(value, param)? {
-            optional.insert(param.to_owned(), Json::Bool(true));
-        }
-    } else {
-        map_scalar(param, value, optional, context.model, warned)?;
+    } else if param == "include_server_side_tool_invocations" && decode::<bool>(value, param)? {
+        optional.insert(param.to_owned(), Json::Bool(true));
     }
-    Ok(0)
+    Ok(())
+}
+
+// LiteLLM renames these OpenAI names onto their Gemini fields and validates the JSON type
+const SCALARS: [(&str, &str, ScalarKind); 6] = [
+    ("n", "candidate_count", ScalarKind::Integer),
+    ("max_tokens", "max_output_tokens", ScalarKind::Integer),
+    (
+        "max_completion_tokens",
+        "max_output_tokens",
+        ScalarKind::Integer,
+    ),
+    ("seed", "seed", ScalarKind::Integer),
+    ("top_logprobs", "logprobs", ScalarKind::Integer),
+    ("logprobs", "responseLogprobs", ScalarKind::Boolean),
+];
+
+#[derive(Clone, Copy)]
+enum ScalarKind {
+    Integer,
+    Boolean,
 }
 
 fn map_scalar(
@@ -107,23 +137,34 @@ fn map_scalar(
     model: &str,
     warned: &mut bool,
 ) -> Result<(), GeminiOptionsError> {
-    match param {
-        "temperature" | "top_p" | "top_k" => {
-            check_sampling(model, param, value, warned)?;
+    if matches!(param, "temperature" | "top_p" | "top_k") {
+        check_sampling(model, param, value, warned)?;
+        optional.insert(param.to_owned(), value.clone());
+        return Ok(());
+    }
+    if matches!(param, "frequency_penalty" | "presence_penalty") {
+        decode::<f64>(value, param)?;
+        if supports_penalty_parameters(model) {
             optional.insert(param.to_owned(), value.clone());
         }
-        "n" => insert::<i64>(optional, "candidate_count", param, value)?,
-        "max_tokens" | "max_completion_tokens" => {
-            insert::<i64>(optional, "max_output_tokens", param, value)?;
+        return Ok(());
+    }
+    for (name, target, kind) in SCALARS {
+        if name != param {
+            continue;
         }
-        "seed" => insert::<i64>(optional, "seed", param, value)?,
-        "top_logprobs" => insert::<i64>(optional, "logprobs", param, value)?,
-        "logprobs" => insert::<bool>(optional, "responseLogprobs", param, value)?,
-        "stream" => {
-            if decode::<bool>(value, param)? {
-                optional.insert("stream".to_owned(), Json::Bool(true));
-            }
+        match kind {
+            ScalarKind::Integer => decode::<i64>(value, param)?,
+            ScalarKind::Boolean => decode::<bool>(value, param)?,
         }
+        optional.insert(target.to_owned(), value.clone());
+        return Ok(());
+    }
+    map_control(param, value, optional)
+}
+
+fn map_control(param: &str, value: &Json, optional: &mut Object) -> Result<(), GeminiOptionsError> {
+    match param {
         "stop" => {
             let sequences = match decode::<Stop>(value, param)? {
                 Stop::Single(text) => vec![Json::Text(text)],
@@ -143,28 +184,13 @@ fn map_scalar(
                 Json::Text(map_service_tier(&tier)),
             );
         }
-        "frequency_penalty" | "presence_penalty" => {
-            decode::<f64>(value, param)?;
-            if supports_penalty_parameters(model) {
-                optional.insert(param.to_owned(), value.clone());
+        "stream" => {
+            if decode::<bool>(value, param)? {
+                optional.insert("stream".to_owned(), Json::Bool(true));
             }
         }
         _ => {}
     }
-    Ok(())
-}
-
-fn insert<T>(
-    optional: &mut Object,
-    target: &str,
-    param: &str,
-    value: &Json,
-) -> Result<(), GeminiOptionsError>
-where
-    T: DeserializeOwned,
-{
-    decode::<T>(value, param)?;
-    optional.insert(target.to_owned(), value.clone());
     Ok(())
 }
 
