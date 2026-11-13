@@ -164,7 +164,11 @@ fn target_to_value(target: ModeTarget) -> GuardrailValue {
 }
 
 fn names_to_value(names: Vec<String>) -> GuardrailValue {
-    GuardrailValue::Array(names.into_iter().map(GuardrailValue::Text).collect())
+    let mut items = Vec::with_capacity(names.len());
+    for name in names {
+        items.push(GuardrailValue::Text(name));
+    }
+    GuardrailValue::Array(items)
 }
 
 fn mode_from_value(value: Option<GuardrailValue>) -> Result<Option<LitellmParamsMode>, CallError> {

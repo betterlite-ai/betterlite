@@ -112,7 +112,10 @@ pub(crate) fn read<T>(field: &'static str, text: &str) -> Result<T, CallError>
 where
     T: DeserializeOwned,
 {
-    serde_json::from_str(text).map_err(|source| CallError::Json { field, source })
+    match serde_json::from_str(text) {
+        Ok(value) => Ok(value),
+        Err(source) => Err(CallError::Json { field, source }),
+    }
 }
 
 pub(crate) fn write<T>(field: &'static str, value: &T) -> Result<String, CallError>
@@ -127,7 +130,9 @@ where
 
 pub(crate) fn suppressed_from_text(text: &str) -> Result<BTreeSet<String>, CallError> {
     let names: Vec<String> = read("suppressed guardrail names", text)?;
-    Ok(names.into_iter().collect())
+    let mut blocked = BTreeSet::new();
+    blocked.extend(names);
+    Ok(blocked)
 }
 
 pub(crate) fn text_context_from_text(text: &str) -> Result<Vec<(String, String)>, CallError> {
@@ -155,6 +160,6 @@ pub(crate) fn hook_from_name(name: &str) -> Result<GuardrailHookName, CallError>
 }
 
 pub(crate) fn settings_from_text(text: &str) -> Result<GuardrailSettings, CallError> {
-    let parsed: settings::SettingsJson = read("guardrail settings", text)?;
-    parsed.into_settings()
+    read::<settings::SettingsJson>("guardrail settings", text)
+        .and_then(settings::SettingsJson::into_settings)
 }
