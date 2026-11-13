@@ -1,0 +1,6 @@
+kind: helper
+name: caller-disable-ignored
+call:
+  b3665: {"function": "should_run_guardrail", "guardrail_name": "g", "event_hook": "pre_call", "default_on": true, "data": {"disable_global_guardrails": true, "opted_out_global_guardrails": ["g"], "metadata": {"disable_global_guardrails": true, "opted_out_global_guardrails": ["g"]}}, "event_type": "pre_call", "suppressed": []}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,48 @@
+{
+  "kind": "helper",
+  "name": "v2-store-scopes-validation",
+  "call": {
+    "b4656": {
+      "function": "store",
+      "kind": "v2",
+      "payloads": [
+        {
+          "access_token": "mixed",
+          "refresh_token": null,
+          "expires_at": null,
+          "scopes": [
+            "read",
+            2,
+            "write"
+          ],
+          "identity_binding_proof": null
+        },
+        {
+          "access_token": "string",
+          "refresh_token": null,
+          "expires_at": null,
+          "scopes": "read write",
+          "identity_binding_proof": null
+        },
+        {
+          "access_token": "empty",
+          "refresh_token": null,
+          "expires_at": null,
+          "scopes": [],
+          "identity_binding_proof": null
+        },
+        {
+          "access_token": "none",
+          "refresh_token": null,
+          "expires_at": null,
+          "scopes": null,
+          "identity_binding_proof": null
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

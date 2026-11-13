@@ -1,0 +1,23 @@
+{
+  "kind": "helper",
+  "name": "oauth-token-binding-proof",
+  "call": {
+    "b4656": {
+      "function": "token",
+      "token": {
+        "access_token": "access-secret",
+        "expires_at_ms": null,
+        "refresh_token": null,
+        "scopes": [
+          "read",
+          "write"
+        ],
+        "identity_binding_proof": "proof-value"
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
