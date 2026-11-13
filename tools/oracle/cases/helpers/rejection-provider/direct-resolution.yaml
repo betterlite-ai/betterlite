@@ -1,0 +1,13 @@
+kind: helper
+name: direct-resolution
+call:
+  rejection_provider:
+    model: anthropic/claude-3-5-sonnet
+    router: deployments
+    deployments:
+      - model_name: anthropic/claude-3-5-sonnet
+        litellm_params: {model: openai/gpt-4o-mini}
+    resolutions:
+      - {model: anthropic/claude-3-5-sonnet, outcome: success, resolved: claude-3-5-sonnet, provider: anthropic}
+env: {}
+compare: {ignore: []}

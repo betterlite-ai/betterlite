@@ -1,0 +1,27 @@
+kind: helper
+name: alias-scan
+call:
+  rejection_provider:
+    model: tpm-locked
+    router: deployments
+    deployments:
+      - not-a-deployment
+      - 7
+      - null
+      - {model_name: 7}
+      - {model_name: tpm-locked, litellm_params: openai/params-not-an-object}
+      - {model_name: tpm-locked}
+      - {model_name: tpm-locked, litellm_params: {}}
+      - {model_name: tpm-locked, litellm_params: {model: 3}}
+      - {model_name: tpm-locked, litellm_params: {model: ''}}
+      - {model_name: other, litellm_params: {model: openai/other}}
+      - {model_name: tpm-locked, litellm_params: {model: unknown/one}}
+      - {model_name: tpm-locked, litellm_params: {model: openai/anonymous}}
+      - {model_name: tpm-locked, litellm_params: {model: openai/gpt-4o-mini}}
+    resolutions:
+      - {model: tpm-locked, outcome: failure}
+      - {model: unknown/one, outcome: failure}
+      - {model: openai/anonymous, outcome: success, resolved: '', provider: ''}
+      - {model: openai/gpt-4o-mini, outcome: success, resolved: gpt-4o-mini, provider: openai}
+env: {}
+compare: {ignore: []}

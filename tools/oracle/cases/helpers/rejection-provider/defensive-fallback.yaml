@@ -1,0 +1,11 @@
+kind: helper
+name: defensive-fallback
+call:
+  rejection_provider:
+    model: tpm-locked
+    router: absent
+    deployments: []
+    resolutions:
+      - {model: tpm-locked, outcome: failure}
+env: {}
+compare: {ignore: []}
