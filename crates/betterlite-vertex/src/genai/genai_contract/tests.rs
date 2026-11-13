@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use super::config::{
     AuthTokenRequest, BaseGenerateContentConfig, EnvironmentRequest, GenerateContentRequest,
-    ResponseHeaders, ResponseTransform,
+    RequestHeaders, ResponseHeaders, ResponseTransform,
 };
 use super::records::{
     ContentListUnion, GenerateContentConfigDict, GenerateContentRequestDict,
@@ -72,7 +72,7 @@ impl BaseGenerateContentConfig for Fixture {
     fn auth_token_and_url(
         &self,
         request: &AuthTokenRequest<'_>,
-    ) -> Result<(ResponseHeaders, String), FixtureError> {
+    ) -> Result<(RequestHeaders, String), FixtureError> {
         let Some(api_base) = request.api_base else {
             return Err(FixtureError::Refused);
         };
