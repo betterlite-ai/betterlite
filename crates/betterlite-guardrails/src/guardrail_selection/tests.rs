@@ -356,36 +356,112 @@ fn admin_opt_out_outside_admin_metadata_counts_for_nothing(#[case] request: &str
 }
 
 #[rstest]
-#[case::matching_hook(Some(r#""pre_call""#), PRE, "{}", true)]
-#[case::no_hook(None, POST, "{}", true)]
-#[case::other_hook(Some(r#""pre_call""#), POST, "{}", false)]
-#[case::list_hook(Some(r#"["pre_call", "post_call"]"#), POST, "{}", true)]
+#[case::matching_hook(true, Some(r#""pre_call""#), PRE, "{}", true)]
+#[case::no_hook(true, None, POST, "{}", true)]
+#[case::other_hook(true, Some(r#""pre_call""#), POST, "{}", false)]
+#[case::list_hook(true, Some(r#"["pre_call", "post_call"]"#), POST, "{}", true)]
 #[case::empty_request_list_cannot_stop_it(
+    true,
     Some(r#""pre_call""#),
     PRE,
     r#"{"guardrails": []}"#,
     true
 )]
 #[case::other_request_list_cannot_stop_it(
+    true,
     Some(r#""pre_call""#),
     PRE,
     r#"{"guardrails": ["other"]}"#,
     true
 )]
-#[case::bad_request_list_is_never_read(Some(r#""pre_call""#), PRE, r#"{"guardrails": 5}"#, true)]
+#[case::bad_request_list_is_never_read(
+    true,
+    Some(r#""pre_call""#),
+    PRE,
+    r#"{"guardrails": 5}"#,
+    true
+)]
 #[case::logging_only_needs_a_matching_hook(
+    true,
     Some(r#""pre_call""#),
     LOGGING,
     r#"{"guardrails": ["g"]}"#,
     false
 )]
-fn gate_default_on_guardrail_follows_the_hook(
+#[case::not_requested(false, Some(r#""pre_call""#), PRE, "{}", false)]
+#[case::empty_list(false, Some(r#""pre_call""#), PRE, r#"{"guardrails": []}"#, false)]
+#[case::other_name(
+    false,
+    Some(r#""pre_call""#),
+    PRE,
+    r#"{"guardrails": ["other"]}"#,
+    false
+)]
+#[case::requested_by_text(false, Some(r#""pre_call""#), PRE, r#"{"guardrails": ["g"]}"#, true)]
+#[case::requested_by_object(
+    false,
+    Some(r#""pre_call""#),
+    PRE,
+    r#"{"guardrails": [{"g": {}}]}"#,
+    true
+)]
+#[case::requested_in_metadata(
+    false,
+    Some(r#""pre_call""#),
+    PRE,
+    r#"{"metadata": {"guardrails": ["g"]}}"#,
+    true
+)]
+#[case::requested_in_litellm_metadata(
+    false,
+    Some(r#""pre_call""#),
+    PRE,
+    r#"{"litellm_metadata": {"guardrails": ["g"]}}"#,
+    true
+)]
+#[case::root_list_hides_metadata_request(
+    false,
+    Some(r#""pre_call""#),
+    PRE,
+    r#"{"guardrails": [], "metadata": {"guardrails": ["g"]}}"#,
+    false
+)]
+#[case::requested_for_another_hook(
+    false,
+    Some(r#""pre_call""#),
+    POST,
+    r#"{"guardrails": ["g"]}"#,
+    false
+)]
+#[case::requested_list_hook(
+    false,
+    Some(r#"["pre_call", "post_call"]"#),
+    POST,
+    r#"{"guardrails": ["g"]}"#,
+    true
+)]
+#[case::logging_only_skips_the_request_check(false, Some(r#""logging_only""#), LOGGING, "{}", true)]
+#[case::logging_only_in_a_list(false, Some(r#"["pre_call", "logging_only"]"#), LOGGING, "{}", true)]
+#[case::logging_only_still_needs_the_hook(false, Some(r#""pre_call""#), LOGGING, "{}", false)]
+#[case::no_hook_runs_everywhere(false, None, POST, "{}", true)]
+#[case::no_hook_runs_on_logging(false, None, LOGGING, "{}", true)]
+#[case::no_hook_ignores_an_empty_request_list(false, None, PRE, r#"{"guardrails": []}"#, true)]
+#[case::no_hook_never_reads_a_bad_request_list(false, None, PRE, r#"{"guardrails": 5}"#, true)]
+#[case::logging_only_never_reads_a_bad_request_list(
+    false,
+    Some(r#""logging_only""#),
+    LOGGING,
+    r#"{"guardrails": 5}"#,
+    true
+)]
+fn gate_hook_and_request_decide_whether_it_runs(
+    #[case] default_on: bool,
     #[case] hook: Option<&str>,
     #[case] event: GuardrailEventHooks,
     #[case] request: &str,
     #[case] expected: bool,
 ) {
-    let base = guardrail(Some("g"), hook, true);
+    let base = guardrail(Some("g"), hook, default_on);
     assert_eq!(runs(&base, &data(request), event), Ok(expected));
 }
 
@@ -439,60 +515,6 @@ fn gate_default_on_guardrail_without_a_name_is_never_opted_out_by_name() {
         r#"{"metadata": {"user_api_key_metadata": {"opted_out_global_guardrails": ["", "None"]}}}"#,
     );
     assert_eq!(runs(&base, &request, PRE), Ok(true));
-}
-
-#[rstest]
-#[case::not_requested(Some(r#""pre_call""#), PRE, "{}", false)]
-#[case::empty_list(Some(r#""pre_call""#), PRE, r#"{"guardrails": []}"#, false)]
-#[case::other_name(Some(r#""pre_call""#), PRE, r#"{"guardrails": ["other"]}"#, false)]
-#[case::requested_by_text(Some(r#""pre_call""#), PRE, r#"{"guardrails": ["g"]}"#, true)]
-#[case::requested_by_object(Some(r#""pre_call""#), PRE, r#"{"guardrails": [{"g": {}}]}"#, true)]
-#[case::requested_in_metadata(
-    Some(r#""pre_call""#),
-    PRE,
-    r#"{"metadata": {"guardrails": ["g"]}}"#,
-    true
-)]
-#[case::requested_in_litellm_metadata(
-    Some(r#""pre_call""#),
-    PRE,
-    r#"{"litellm_metadata": {"guardrails": ["g"]}}"#,
-    true
-)]
-#[case::root_list_hides_metadata_request(
-    Some(r#""pre_call""#),
-    PRE,
-    r#"{"guardrails": [], "metadata": {"guardrails": ["g"]}}"#,
-    false
-)]
-#[case::requested_for_another_hook(Some(r#""pre_call""#), POST, r#"{"guardrails": ["g"]}"#, false)]
-#[case::requested_list_hook(
-    Some(r#"["pre_call", "post_call"]"#),
-    POST,
-    r#"{"guardrails": ["g"]}"#,
-    true
-)]
-#[case::logging_only_skips_the_request_check(Some(r#""logging_only""#), LOGGING, "{}", true)]
-#[case::logging_only_in_a_list(Some(r#"["pre_call", "logging_only"]"#), LOGGING, "{}", true)]
-#[case::logging_only_still_needs_the_hook(Some(r#""pre_call""#), LOGGING, "{}", false)]
-#[case::no_hook_runs_everywhere(None, POST, "{}", true)]
-#[case::no_hook_runs_on_logging(None, LOGGING, "{}", true)]
-#[case::no_hook_ignores_an_empty_request_list(None, PRE, r#"{"guardrails": []}"#, true)]
-#[case::no_hook_never_reads_a_bad_request_list(None, PRE, r#"{"guardrails": 5}"#, true)]
-#[case::logging_only_never_reads_a_bad_request_list(
-    Some(r#""logging_only""#),
-    LOGGING,
-    r#"{"guardrails": 5}"#,
-    true
-)]
-fn gate_requested_guardrail_needs_its_request_and_its_hook(
-    #[case] hook: Option<&str>,
-    #[case] event: GuardrailEventHooks,
-    #[case] request: &str,
-    #[case] expected: bool,
-) {
-    let base = guardrail(Some("g"), hook, false);
-    assert_eq!(runs(&base, &data(request), event), Ok(expected));
 }
 
 #[rstest]
