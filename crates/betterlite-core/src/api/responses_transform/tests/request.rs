@@ -58,30 +58,47 @@ fn extras_overwrite_mapped_parameters_and_keep_the_rest() {
         None,
         r#"{
             "system_instruction": "a",
+            "tools": [{"type": "google_search"}],
+            "generation_config": {"temperature": 0.1, "top_p": 0.25, "max_output_tokens": 128},
             "stream": true,
             "store": true,
-            "generation_config": {"temperature": 0.1}
+            "user": "ada"
         }"#,
         r#"{
             "model": "gpt-4o-mini",
             "system_instruction": "b",
+            "tools": [{"type": "code_execution"}],
             "stream": false,
             "temperature": 0.9,
+            "top_p": 0.5,
+            "max_output_tokens": 256,
             "store": null,
+            "user": "grace",
             "reasoning": {"effort": "low"}
         }"#,
     );
     assert_eq!(built.model, "gpt-4o-mini");
     assert_eq!(built.instructions.as_deref(), Some("b"));
+    assert_eq!(built.tools, Some(value(r#"[{"type": "code_execution"}]"#)));
     assert_eq!(built.stream, Some(false));
     assert_eq!(built.temperature, Some(number("0.9")));
+    assert_eq!(built.top_p, Some(number("0.5")));
+    assert_eq!(built.max_output_tokens, Some(256));
     assert_eq!(built.store, None);
+    assert_eq!(built.user.as_deref(), Some("grace"));
     assert_eq!(
         built.passthrough.get("reasoning"),
         Some(&value(r#"{"effort": "low"}"#))
     );
     assert!(!built.passthrough.contains_key("model"));
+    assert!(!built.passthrough.contains_key("system_instruction"));
+    assert!(!built.passthrough.contains_key("tools"));
+    assert!(!built.passthrough.contains_key("stream"));
+    assert!(!built.passthrough.contains_key("temperature"));
+    assert!(!built.passthrough.contains_key("top_p"));
+    assert!(!built.passthrough.contains_key("max_output_tokens"));
     assert!(!built.passthrough.contains_key("store"));
+    assert!(!built.passthrough.contains_key("user"));
 }
 
 #[test]
