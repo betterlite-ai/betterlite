@@ -40,6 +40,7 @@ fn batch_required_fields_fail(#[case] stored: &str) {
 #[case::false_value("false")]
 #[case::zero("0")]
 #[case::zero_float("0.0")]
+#[case::negative_zero("-0.0")]
 fn batch_missing_or_falsey_blob_returns_none(#[case] stored: &str) {
     assert!(
         decode_managed_batch_record::<BatchObject>(stored.as_bytes())
@@ -89,6 +90,17 @@ fn native_managed_batch_record_limits() {
     let deep = nested(64);
     assert!(matches!(
         decode_managed_batch_record::<BatchObject>(deep.as_bytes()),
+        Err(ManagedBatchRecordError::TooDeep { .. })
+    ));
+    let quoted_shallow = serde_json::to_string(&shallow).unwrap();
+    assert!(
+        decode_managed_batch_record::<BatchObject>(quoted_shallow.as_bytes())
+            .unwrap()
+            .is_some()
+    );
+    let quoted_deep = serde_json::to_string(&deep).unwrap();
+    assert!(matches!(
+        decode_managed_batch_record::<BatchObject>(quoted_deep.as_bytes()),
         Err(ManagedBatchRecordError::TooDeep { .. })
     ));
 }

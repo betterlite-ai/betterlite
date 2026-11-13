@@ -42,9 +42,6 @@ where
     }
     match stored {
         JsonData::String(inner) => {
-            if inner.len() > MAX_BATCH_BYTES {
-                return Err(ManagedBatchRecordError::TooLarge { len: inner.len() });
-            }
             check_depth(&inner).map_err(|source| ManagedBatchRecordError::TooDeep { source })?;
             serde_json::from_str(&inner)
                 .map(Some)
