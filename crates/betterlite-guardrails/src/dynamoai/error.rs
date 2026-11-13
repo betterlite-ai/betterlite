@@ -19,10 +19,3 @@ pub enum DynamoAiError {
     #[error("{message}")]
     Blocked { message: String },
 }
-
-impl DynamoAiError {
-    #[must_use]
-    pub const fn is_blocked(&self) -> bool {
-        matches!(self, Self::Blocked { .. })
-    }
-}

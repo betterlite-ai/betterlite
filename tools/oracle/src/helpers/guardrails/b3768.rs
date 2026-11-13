@@ -103,7 +103,7 @@ fn run_call(call: &Call) -> HelperResult {
                 raised: false,
                 error: Some("missing_api_key"),
             })
-            .map_err(json_error);
+            .map_err(|error| failure("ValueError", error.to_string()));
         }
         Err(error) => return Err(failure("ValueError", error.to_string())),
     };
@@ -120,7 +120,7 @@ fn run_call(call: &Call) -> HelperResult {
             raised: false,
             error: None,
         })
-        .map_err(json_error);
+        .map_err(|error| failure("ValueError", error.to_string()));
     }
     let client = base_builder()
         .build()
@@ -147,7 +147,9 @@ fn run_call(call: &Call) -> HelperResult {
         match &result {
             Ok(Some(status)) => (Some(status.as_str()), false),
             Ok(None) => (None, false),
-            Err(error) if error.is_blocked() => (Some(GuardrailStatus::Intervened.as_str()), true),
+            Err(DynamoAiError::Blocked { .. }) => {
+                (Some(GuardrailStatus::Intervened.as_str()), true)
+            }
             Err(_error) => (Some(GuardrailStatus::FailedToRespond.as_str()), true),
         }
     };
@@ -162,7 +164,7 @@ fn run_call(call: &Call) -> HelperResult {
         raised,
         error: None,
     })
-    .map_err(json_error)
+    .map_err(|error| failure("ValueError", error.to_string()))
 }
 
 fn event_hook_names() -> Vec<&'static str> {
@@ -216,10 +218,6 @@ fn build_runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
         .enable_all()
         .build()
         .map_err(|error| failure("RuntimeError", error.to_string()))
-}
-
-fn json_error(error: serde_json::Error) -> Box<HelperError> {
-    failure("ValueError", error.to_string())
 }
 
 fn failure(class: &str, message: String) -> Box<HelperError> {
