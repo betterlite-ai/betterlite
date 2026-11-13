@@ -128,10 +128,11 @@ fn sampling_logs_one_warning_and_an_info_below_one() {
         mapped(
             "gemini-3-pro-preview",
             r#"{"top_p": 0.9, "temperature": 0.2, "top_k": 5}"#,
-        )
+        );
+        mapped("gemini-3-pro-preview", r#"{"temperature": 1.0}"#);
     });
     let logged = fs::read_to_string(log.path()).unwrap();
-    assert_eq!(logged.matches("WARN").count(), 1, "{logged}");
+    assert_eq!(logged.matches("WARN").count(), 2, "{logged}");
     assert_eq!(logged.matches("INFO").count(), 1, "{logged}");
     assert!(logged.contains("planned for removal"), "{logged}");
 }
