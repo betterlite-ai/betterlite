@@ -9,6 +9,8 @@ from betterlite.types.utils import JsonValue
 
 NOTE = "This may be a false positive."
 LONG_VALUE = "x" * 512
+EMPTY = "{}"
+NAMED_GUARDRAIL = '{"guardrails": ["pii"]}'
 SCORE = 1.5
 CALL_TIMEOUT = 12.5
 UPDATED_TIMEOUT = 4.5
@@ -53,12 +55,8 @@ class TracedRecord(Record, total=False):
     guardrail_cost: float
 
 
-class Metadata(TypedDict):
-    standard_logging_guardrail_information: list[TracedRecord]
-
-
 class Recorded(TypedDict):
-    metadata: Metadata
+    metadata: dict[str, JsonValue]
 
 
 class AdvisoryData(TypedDict, total=False):
@@ -96,7 +94,9 @@ def record_context(hook: str = "pre_call") -> dict[str, JsonValue]:
 
 def first_record(data_json: str) -> TracedRecord:
     data = TypeAdapter(Recorded).validate_json(data_json)
-    entries = data["metadata"]["standard_logging_guardrail_information"]
+    entries = TypeAdapter(list[TracedRecord]).validate_python(
+        data["metadata"]["standard_logging_guardrail_information"]
+    )
     assert len(entries) == 1
     return entries[0]
 
@@ -137,7 +137,7 @@ def test_native_base_defaults() -> None:
     assert view["timeout"] is None
 
 
-def test_native_base_rejects_unparseable_settings() -> None:
+def test_native_base_rejects_unparsable_settings() -> None:
     with pytest.raises(_native.NativeGuardrailError) as raised:
         _native.NativeGuardrail("{", strict_modes=True)
     payload = TypeAdapter(ErrorPayload).validate_json(str(raised.value))
@@ -220,20 +220,18 @@ def test_native_select_event_hook_is_event_type() -> None:
 
 
 def test_native_select_gate() -> None:
-    empty = json.dumps({})
     default_on = build({"guardrail_name": "pii", "default_on": True, "event_hook": "pre_call"})
-    assert default_on.should_run_guardrail(empty, "pre_call", "[]") is True
-    assert default_on.should_run_guardrail(empty, "post_call", "[]") is False
-    assert default_on.should_run_guardrail(empty, "pre_call", '["pii"]') is False
+    assert default_on.should_run_guardrail(EMPTY, "pre_call", "[]") is True
+    assert default_on.should_run_guardrail(EMPTY, "post_call", "[]") is False
+    assert default_on.should_run_guardrail(EMPTY, "pre_call", '["pii"]') is False
     disabled: dict[str, JsonValue] = {
         "metadata": {"user_api_key_metadata": {"disable_global_guardrails": True}},
     }
     assert default_on.should_run_guardrail(json.dumps(disabled), "pre_call", "[]") is False
     requested = build({"guardrail_name": "pii", "event_hook": "pre_call"})
-    assert requested.should_run_guardrail(empty, "pre_call", "[]") is False
-    named = json.dumps({"guardrails": ["pii"]})
-    assert requested.should_run_guardrail(named, "pre_call", "[]") is True
-    assert build({"guardrail_name": "pii"}).should_run_guardrail(empty, "during_call", "[]") is True
+    assert requested.should_run_guardrail(EMPTY, "pre_call", "[]") is False
+    assert requested.should_run_guardrail(NAMED_GUARDRAIL, "pre_call", "[]") is True
+    assert build({"guardrail_name": "pii"}).should_run_guardrail(EMPTY, "during_call", "[]") is True
 
 
 def test_native_select_dynamic_request_body_params() -> None:
@@ -243,20 +241,20 @@ def test_native_select_dynamic_request_body_params() -> None:
         guardrail.dynamic_request_body_params(json.dumps(data))
     )
     assert params == {"threshold": 0.5}
-    empty = guardrail.dynamic_request_body_params(json.dumps({"guardrails": ["pii"]}))
+    empty = guardrail.dynamic_request_body_params(NAMED_GUARDRAIL)
     assert TypeAdapter(dict[str, JsonValue]).validate_json(empty) == {}
 
 
 def test_native_select_error_kind() -> None:
     tagged = build({"guardrail_name": "pii", "event_hook": {"tags": {"health": "pre_call"}}})
     with pytest.raises(_native.NativeGuardrailError) as raised:
-        tagged.should_run_guardrail(json.dumps({"guardrails": ["pii"]}), "pre_call", "[]")
+        tagged.should_run_guardrail(NAMED_GUARDRAIL, "pre_call", "[]")
     payload = TypeAdapter(ErrorPayload).validate_json(str(raised.value))
     assert payload["kind"] == "TagMode"
     assert payload["guardrail_name"] == "pii"
     requested = build({"guardrail_name": "pii", "event_hook": "pre_call"})
     with pytest.raises(_native.NativeGuardrailError) as raised:
-        requested.should_run_guardrail(json.dumps({"guardrails": "pii"}), "pre_call", "[]")
+        requested.should_run_guardrail('{"guardrails": "pii"}', "pre_call", "[]")
     payload = TypeAdapter(ErrorPayload).validate_json(str(raised.value))
     assert payload["kind"] == "RequestedNotList"
 
@@ -291,7 +289,7 @@ def test_native_records_add_record() -> None:
         "tracing_detail": {"guardrail_id": "g-1", "guardrail_cost": SCORE},
     }
     data_json, target_json = _native.add_guardrail_record(
-        json.dumps({"model": "gpt-4o"}),
+        '{"model": "gpt-4o"}',
         json.dumps(record_input),
         json.dumps(record_context()),
     )
@@ -311,36 +309,27 @@ def test_native_records_add_record() -> None:
 
 
 def test_native_records_summarize_response() -> None:
-    same = '{"messages": [{"role": "user", "content": "hi"}]}'
-    changed = '{"messages": [{"role": "user", "content": "**"}]}'
-    assert TypeAdapter(str).validate_json(
-        _native.summarize_guardrail_response(changed, same, "pre_call")
-    ) == "mask"
-    assert TypeAdapter(str).validate_json(
-        _native.summarize_guardrail_response(same, same, "pre_call")
-    ) == "allow"
-    assert TypeAdapter(dict[str, JsonValue]).validate_json(
-        _native.summarize_guardrail_response('{"verdict": "x"}', None, None)
-    ) == {"verdict": "x"}
-    assert TypeAdapter(dict[str, JsonValue]).validate_json(
-        _native.summarize_guardrail_response("null", None, None)
-    ) == {}
+    before = '{"messages": [{"role": "user", "content": "hi"}]}'
+    after = '{"messages": [{"role": "user", "content": "**"}]}'
+    masked = _native.summarize_guardrail_response(after, before, "pre_call")
+    allowed = _native.summarize_guardrail_response(before, before, "pre_call")
+    assert masked == '"mask"'
+    assert allowed == '"allow"'
+    assert _native.summarize_guardrail_response('{"verdict": "x"}', None, None) == '{"verdict":"x"}'
+    assert _native.summarize_guardrail_response("null", None, None) == "{}"
 
 
 def test_native_records_sync_log_target() -> None:
-    data: dict[str, JsonValue] = {
-        "metadata": {"standard_logging_guardrail_information": [{"guardrail_name": "pii"}]},
-    }
-    target: dict[str, JsonValue] = {
-        "litellm_params": {"metadata": {}},
-        "model_call_params": None,
-    }
-    text = _native.sync_log_target(json.dumps(data), json.dumps(target))
-    synced = TypeAdapter(LogTarget).validate_json(text)
-    entries = TypeAdapter(list[dict[str, JsonValue]]).validate_python(
+    entry: dict[str, JsonValue] = {"guardrail_name": "pii"}
+    data: dict[str, JsonValue] = {"metadata": {"standard_logging_guardrail_information": [entry]}}
+    target: dict[str, JsonValue] = {"litellm_params": {"metadata": {}}, "model_call_params": None}
+    synced = TypeAdapter(LogTarget).validate_json(
+        _native.sync_log_target(json.dumps(data), json.dumps(target))
+    )
+    copied = TypeAdapter(list[dict[str, JsonValue]]).validate_python(
         synced["litellm_params"]["metadata"]["standard_logging_guardrail_information"]
     )
-    assert entries == [{"guardrail_name": "pii"}]
+    assert copied == [entry]
     assert synced["model_call_params"] is None
 
 
@@ -349,7 +338,7 @@ def test_native_records_messages_for_call_type() -> None:
     messages = _native.messages_for_call_type("completion", json.dumps(chat))
     assert messages is not None
     assert TypeAdapter(list[JsonValue]).validate_json(messages) == chat["messages"]
-    responses = _native.messages_for_call_type("responses", json.dumps({"input": "hello"}))
+    responses = _native.messages_for_call_type("responses", '{"input": "hello"}')
     assert responses is not None
     assert TypeAdapter(list[JsonValue]).validate_json(responses) == [
         {"role": "user", "content": "hello"}
@@ -398,10 +387,10 @@ def test_native_records_invocation_records_own() -> None:
 def test_native_records_invocation_apply_guardrail() -> None:
     inputs: dict[str, JsonValue] = {"texts": ["hi"]}
     invocation = _native.NativeGuardrailInvocation.begin(
-        "apply_guardrail", json.dumps({}), json.dumps(inputs)
+        "apply_guardrail", EMPTY, json.dumps(inputs)
     )
     data_json, _ = invocation.finish_success(
-        json.dumps({}), json.dumps(inputs), json.dumps(record_context("during_call"))
+        EMPTY, json.dumps(inputs), json.dumps(record_context("during_call"))
     )
     record = first_record(data_json)
     assert record["guardrail_response"] == "allow"
