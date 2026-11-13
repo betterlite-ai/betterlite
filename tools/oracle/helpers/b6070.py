@@ -43,8 +43,6 @@ class EmbeddingConfig(Protocol):
 class RerankConfig(Protocol):
     def get_complete_url(self, api_base: str | None, model: str) -> str: ...
 
-    def get_supported_cohere_rerank_params(self, model: str) -> list[str]: ...
-
     def validate_environment(
         self,
         headers: dict[str, str],

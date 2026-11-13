@@ -11,10 +11,10 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::Number;
 
-use super::error::LookupFailed;
+use super::error::{FireworksCostError, LookupFailed};
 use super::{
-    FIREWORKS_AI_PROVIDER, FireworksCostError, FireworksPricingTiers, ModelInfoLookup,
-    cost_per_token, get_base_model_for_pricing,
+    FIREWORKS_AI_PROVIDER, FireworksPricingTiers, ModelInfoLookup, cost_per_token,
+    get_base_model_for_pricing,
 };
 
 fn number(text: &str) -> Scalar {

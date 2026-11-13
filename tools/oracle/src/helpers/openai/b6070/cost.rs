@@ -156,15 +156,10 @@ pub(super) struct CostCall {
     instant: DateTime<Utc>,
 }
 
-pub(super) struct CostAnswer {
-    pub(super) prompt_cost: String,
-    pub(super) completion_cost: String,
-}
-
 pub(super) fn answer(
     call: &CostCall,
     lookup: &ModelCostLookup,
-) -> Result<CostAnswer, Box<HelperError>> {
+) -> Result<(String, String), Box<HelperError>> {
     let usage = betterlite_models::cost_usage::CostUsage {
         prompt_tokens: call.usage.prompt_tokens,
         completion_tokens: call.usage.completion_tokens,
@@ -182,10 +177,10 @@ pub(super) fn answer(
         lookup,
     )
     .map_err(|error| cost_error(&error))?;
-    Ok(CostAnswer {
-        prompt_cost: prompt.normalize().to_string(),
-        completion_cost: completion.normalize().to_string(),
-    })
+    Ok((
+        prompt.normalize().to_string(),
+        completion.normalize().to_string(),
+    ))
 }
 
 fn cost_error(

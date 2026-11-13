@@ -15,10 +15,6 @@ use rust_decimal::Decimal;
 
 use error::{FireworksCostError, LookupFailed};
 
-pub const FIREWORKS_AI_4_B_ENV: &str = "FIREWORKS_AI_4_B";
-pub const FIREWORKS_AI_16_B_ENV: &str = "FIREWORKS_AI_16_B";
-pub const FIREWORKS_AI_56_B_MOE_ENV: &str = "FIREWORKS_AI_56_B_MOE";
-pub const FIREWORKS_AI_176_B_MOE_ENV: &str = "FIREWORKS_AI_176_B_MOE";
 pub const FIREWORKS_AI_PROVIDER: &str = "fireworks_ai";
 
 const MOE_PATTERN: &str = r"(\d+)x(\d+)b";
