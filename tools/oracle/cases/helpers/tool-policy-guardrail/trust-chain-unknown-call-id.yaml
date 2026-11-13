@@ -1,0 +1,6 @@
+kind: helper
+name: trust-chain-unknown-call-id
+call:
+  b3814: {"initialized": true, "input_policies": {"reader": "trusted"}, "output_policies": {"writer": "untrusted"}, "blocked_by_permission": {}, "inputs": {"tool_calls": [{"id": "call-9", "type": "function", "function": {"name": "reader"}}]}, "input_type": "response", "request_data": {"messages": [{"role": "assistant", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "writer"}}]}, {"role": "tool", "tool_call_id": "unknown", "content": "data"}, {"role": "tool", "content": "no id"}, {"role": "user", "tool_call_id": "c1", "content": "not a tool role"}]}}
+env: {}
+compare: {ignore: []}
