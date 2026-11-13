@@ -78,7 +78,11 @@ impl QualifireGuardrail {
         &self,
         check: &CheckRequest<'payload>,
     ) -> Result<Plan<'payload>, QualifireError> {
-        let messages = convert::api_messages(check.rows)?;
+        let messages = check
+            .rows
+            .iter()
+            .map(convert::api_message)
+            .collect::<Result<Vec<ApiMessage>, QualifireError>>()?;
         let tools = convert::api_tools(check.available_tools)?;
         let base = &self.settings.api_base;
         let (url, input) = match check.evaluation_id {

@@ -1,0 +1,11 @@
+task: B8213
+deviations:
+  - what: The initializer returns QualifireArgs and registers nothing.
+    why: B3682 owns the registry and the callback registration, as with B3681.
+    link: ""
+  - what: An in-memory update without api_base keeps the live api_base instead of clearing it to null.
+    why: LiteLLM's blind setattr copies api_base=None into the live instance, and the next request builds the URL "None/api/evaluation/evaluate". No working setup can rely on that broken URL, so the resolved base stays.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1466-L1470
+  - what: A failed on_flagged update reports an error that is betterlite's own, quoting the value with single quotes rather than Python's repr.
+    why: Error messages are betterlite's own words; repr text is outside the compatibility contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L109-L118

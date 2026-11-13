@@ -47,11 +47,7 @@ pub fn message_rows(messages: &[GuardrailMessage]) -> Vec<MessageRow> {
         .collect()
 }
 
-pub fn api_messages(rows: &[MessageRow]) -> Result<Vec<ApiMessage>, QualifireError> {
-    rows.iter().map(api_message).collect()
-}
-
-fn api_message(row: &MessageRow) -> Result<ApiMessage, QualifireError> {
+pub(super) fn api_message(row: &MessageRow) -> Result<ApiMessage, QualifireError> {
     Ok(ApiMessage {
         role: text_field(row, "role")?.unwrap_or_else(|| "user".to_owned()),
         content: content(row.get("content"))?,

@@ -129,6 +129,12 @@ fn payload_value(payload: &Payload<'_>) -> GuardrailValue {
     json(&serde_json::to_string(payload).unwrap())
 }
 
+fn converted_rows(rows: &[BTreeMap<String, GuardrailValue>]) -> Vec<ApiMessage> {
+    rows.iter()
+        .map(|row| convert::api_message(row).unwrap())
+        .collect()
+}
+
 #[test]
 fn settings_take_the_argument_first() {
     let mut args = args();
@@ -320,14 +326,14 @@ fn update_keeps_the_api_base_when_the_params_have_none() {
 fn messages_join_list_content_text_parts_with_newlines() {
     let content = json(r#"[{"type": "text", "text": "first"}, "second", {"type": "image_url"}]"#);
     let rows = convert::message_rows(&[message("user", content)]);
-    let converted = convert::api_messages(&rows).unwrap();
+    let converted = converted_rows(&rows);
     assert_eq!(converted[0].content, "first\nsecond");
 }
 
 #[test]
 fn messages_turn_other_content_into_json_text() {
     let rows = convert::message_rows(&[message("user", json("42"))]);
-    let converted = convert::api_messages(&rows).unwrap();
+    let converted = converted_rows(&rows);
     assert_eq!(converted[0].content, "42");
 }
 
@@ -337,7 +343,7 @@ fn messages_default_a_missing_content_to_an_empty_string() {
         role: "user".to_owned(),
         extra: BTreeMap::new(),
     }]);
-    let converted = convert::api_messages(&rows).unwrap();
+    let converted = converted_rows(&rows);
     assert_eq!(converted[0].content, "");
     assert_eq!(converted[0].role, "user");
 }
@@ -349,7 +355,7 @@ fn messages_copy_a_set_tool_call_id() {
         ("content".to_owned(), text("done")),
         ("tool_call_id".to_owned(), text("call-1")),
     ]);
-    let converted = convert::api_messages(&[row]).unwrap();
+    let converted = converted_rows(&[row]);
     assert_eq!(converted[0].tool_call_id.as_deref(), Some("call-1"));
 }
 
@@ -358,7 +364,7 @@ fn messages_parse_string_tool_call_arguments() {
     let row = row_from_json(
         r#"{"role": "assistant", "content": "", "tool_calls": [{"id": "call-1", "function": {"name": "lookup", "arguments": "{\"city\": \"Paris\"}"}}]}"#,
     );
-    let converted = convert::api_messages(&[row]).unwrap();
+    let converted = converted_rows(&[row]);
     let calls = converted[0].tool_calls.as_ref().unwrap();
     assert_eq!(
         calls[0],
@@ -375,7 +381,7 @@ fn messages_keep_a_failed_tool_call_argument_parse_as_an_empty_object() {
     let row = row_from_json(
         r#"{"role": "assistant", "content": "", "tool_calls": [{"id": "call-1", "function": {"name": "lookup", "arguments": "not json"}}]}"#,
     );
-    let converted = convert::api_messages(&[row]).unwrap();
+    let converted = converted_rows(&[row]);
     let calls = converted[0].tool_calls.as_ref().unwrap();
     assert_eq!(calls[0].arguments, BTreeMap::new());
 }
@@ -387,7 +393,7 @@ fn messages_keep_no_tool_calls_for_an_empty_list() {
         ("content".to_owned(), text("hi")),
         ("tool_calls".to_owned(), GuardrailValue::Array(Vec::new())),
     ]);
-    let converted = convert::api_messages(&[row]).unwrap();
+    let converted = converted_rows(&[row]);
     assert_eq!(converted[0].tool_calls, None);
 }
 
