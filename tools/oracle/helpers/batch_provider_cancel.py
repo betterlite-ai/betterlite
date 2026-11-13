@@ -1,18 +1,18 @@
 import asyncio
+import json
 import os
+import threading
 from collections.abc import Coroutine
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import ClassVar, Final, Literal, Protocol, TypedDict, cast
-from unittest.mock import patch
 
 import litellm
 from litellm.batches import main as batch_main
-from litellm.llms.bedrock.embed import embedding as bedrock_embedding
-from litellm.llms.bedrock.embed.embedding import BedrockEmbedding
 from litellm.types.utils import LiteLLMBatch
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import override
 
 WIRE: Final = TypeAdapter(JsonValue)
+SIGNING: Final = {"aws_access_key_id": "AKIDEXAMPLE", "aws_secret_access_key": "example"}
 
 Provider = Literal["openai", "azure", "vertex_ai", "bedrock", "litellm_proxy", "xai"]
 
@@ -30,7 +30,7 @@ class CancelFn(Protocol):
 
 
 class StatusFn(Protocol):
-    def __call__(self, batch_id: str, aws_region_name: str) -> LiteLLMBatch: ...
+    def __call__(self, batch_id: str, aws_region_name: str, **params: str) -> LiteLLMBatch: ...
 
 
 CANCEL, ASYNC_STATUS = cast(CancelFn, litellm.acancel_batch), cast(StatusFn, batch_main._handle_async_invoke_status)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L888 https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L1087
@@ -187,27 +187,32 @@ def status_fields(status: Status) -> dict[str, JsonValue]:
     return fields
 
 
-class ScriptedEmbedding(BedrockEmbedding):
-    answer: ClassVar[dict[str, JsonValue]] = {}
+class StatusServer(BaseHTTPRequestHandler):
+    body: ClassVar[bytes] = b""
 
-    @override
-    async def _get_async_invoke_status(
-        self,
-        invocation_arn: str,
-        aws_region_name: str,
-        logging_obj: JsonValue = None,
-        **_kwargs: JsonValue,
-    ) -> dict[str, JsonValue]:
-        del invocation_arn, aws_region_name, logging_obj, _kwargs
-        return self.answer
+    def do_GET(self) -> None:
+        self.send_response(200)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(self.body)))
+        self.end_headers()
+        self.wfile.write(self.body)
 
 
 def async_invoke(status: Status) -> JsonValue:
-    with (
-        patch.object(bedrock_embedding, "BedrockEmbedding", ScriptedEmbedding),
-        patch.object(ScriptedEmbedding, "answer", status_fields(status)),
-    ):
-        batch = ASYNC_STATUS(batch_id=status["invocationArn"], aws_region_name="us-east-1")
+    StatusServer.body = json.dumps(status_fields(status)).encode()
+    server = HTTPServer(("127.0.0.1", 0), StatusServer)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        batch = ASYNC_STATUS(
+            batch_id=status["invocationArn"],
+            aws_region_name="us-east-1",
+            aws_bedrock_runtime_endpoint=f"http://127.0.0.1:{server.server_port}",
+            **SIGNING,
+        )
+    finally:
+        server.shutdown()
+        thread.join()
     answer: dict[str, JsonValue] = {
         "batch": WIRE.validate_json(batch.model_dump_json()),
         "model": None,
