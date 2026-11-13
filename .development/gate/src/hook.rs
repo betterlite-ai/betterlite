@@ -12,6 +12,7 @@ use crate::checks;
 use crate::checks::Selection;
 use crate::dependencies::added_dependencies;
 use crate::development::Development;
+use crate::dispatch::ci_failures;
 use crate::error::GateError;
 use crate::facts::resolve_base;
 use crate::git::git;
@@ -122,6 +123,11 @@ fn check_report(
     let added = added_dependencies(&development.root, &base)?;
     let mut problems = report_problems(report, &task, &added);
     problems.extend(mutant_problems(&development.root, &base, report)?);
+    // CI can fail on the pushed head while a fix turn runs, and the review round only reads it after this turn
+    problems.extend(ci_failures::take(
+        &journal_dir(&development.root, task_id)?,
+        &development.root,
+    )?);
     if !problems.is_empty() {
         return block_counted(development, task_id, &problems);
     }
