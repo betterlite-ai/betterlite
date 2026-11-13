@@ -2,20 +2,22 @@ import base64
 import io
 import os
 import time
+from collections.abc import Coroutine
 from functools import partial
-from typing import Final, Protocol, TypedDict
+from typing import Final, NotRequired, Protocol
 
 import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.llms.base_llm.image_edit.transformation import BaseImageEditConfig
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.llms.openai.image_edit import get_openai_image_edit_config
 from litellm.types.router import GenericLiteLLMParams
-from litellm.types.utils import FileTypes
+from litellm.types.utils import FileTypes, ImageResponse
 from openai import BadRequestError
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import override
+from typing_extensions import TypedDict, Unpack, override
 
 litellm.suppress_debug_info = True
 time.time = partial(float, 1_700_000_000)
@@ -85,8 +87,35 @@ class Outcome(TypedDict):
     error: JsonValue
 
 
+Options = dict[str, JsonValue | list[FileTypes | None]]
+
+
 class ParamsConfig(Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
+
+
+class EditArguments(TypedDict, closed=True):
+    model: str
+    image: list[FileTypes | None] | None
+    prompt: str | None
+    image_edit_provider_config: BaseImageEditConfig
+    image_edit_optional_request_params: Options
+    custom_llm_provider: str
+    litellm_params: GenericLiteLLMParams
+    logging_obj: Logging
+    timeout: float
+    client: HTTPHandler
+    extra_headers: NotRequired[None]
+    extra_body: NotRequired[None]
+    _is_async: NotRequired[bool]
+    fake_stream: NotRequired[bool]
+    litellm_metadata: NotRequired[None]
+
+
+class EditHandler(Protocol):
+    def image_edit_handler(
+        self, **arguments: Unpack[EditArguments]
+    ) -> ImageResponse | Coroutine[object, object, ImageResponse]: ...
 
 
 class NamedBuffer(io.BufferedReader):
@@ -117,7 +146,7 @@ class Fixture:
 
 class Logger(Logging):
     def __init__(self) -> None:
-        self.seen: dict[str, object] = {}
+        self.seen: dict[str, str | None] = {}
 
     @override
     def pre_call(
@@ -208,20 +237,19 @@ def call_value(fixture: Fixture) -> Call:
             data[part["name"]] = base64.b64decode(part["content_base64"]).decode()
         else:
             files.append(part)
-    headers: dict[str, str] = {}
-    for name in HEADER_NAMES:
-        value = request.headers.get(name)
-        if value is not None:
-            headers[name] = value
+    headers = {name: request.headers[name] for name in HEADER_NAMES if name in request.headers}
     return Call(url=str(request.url), headers=headers, data=data, parts=files)
 
 
-def request_value(probe: Probe) -> Outcome:
+def supported_of(config: ParamsConfig, model: str) -> list[str]:
+    return config.get_supported_openai_params(model)
+
+
+def request_value(probe: Probe, handler: EditHandler) -> Outcome:
     config = get_openai_image_edit_config(probe["model"])
-    params: ParamsConfig = config
-    supported = params.get_supported_openai_params(probe["model"])
+    supported = supported_of(config, probe["model"])
     mask = files_value(probe["mask"])
-    options: dict[str, object] = dict(probe["options"])
+    options: Options = {**probe["options"]}
     if mask is not None:
         options["mask"] = mask
     apply_globals(probe["globals"])
@@ -230,7 +258,7 @@ def request_value(probe: Probe) -> Outcome:
     os.environ.clear()
     os.environ.update(probe["environment"])
     try:
-        BaseLLMHTTPHandler().image_edit_handler(
+        handler.image_edit_handler(
             model=probe["model"],
             image=files_value(probe["image"]),
             prompt=probe["prompt"],
@@ -247,9 +275,7 @@ def request_value(probe: Probe) -> Outcome:
             family=FAMILIES[type(config).__name__],
             supported=supported,
             call=None,
-            error=JSON.validate_python(
-                {"kind": "bad_request", "status": failure.status_code}
-            ),
+            error={"kind": "bad_request", "status": failure.status_code},
         )
     return Outcome(
         family=FAMILIES[type(config).__name__],
@@ -260,7 +286,7 @@ def request_value(probe: Probe) -> Outcome:
 
 
 def transform_value(probe: Probe) -> JsonValue:
-    found = request_value(probe)
+    found = request_value(probe, BaseLLMHTTPHandler())
     call = found["call"]
     value: dict[str, JsonValue] = {
         "family": found["family"],
@@ -290,10 +316,12 @@ def reply_value(probe: Probe) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    if "transform" in input_value:
-        transforms: list[JsonValue] = [
-            transform_value(probe) for probe in input_value["transform"]
-        ]
+    transform = input_value.get("transform")
+    if transform is not None:
+        transforms: list[JsonValue] = [transform_value(probe) for probe in transform]
         return JSON.validate_python(transforms)
-    replies: list[JsonValue] = [reply_value(probe) for probe in input_value["reply"]]
+    reply = input_value.get("reply")
+    if reply is None:
+        raise ValueError("the input names neither transform nor reply")
+    replies: list[JsonValue] = [reply_value(probe) for probe in reply]
     return JSON.validate_python(replies)

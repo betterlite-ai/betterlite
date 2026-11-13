@@ -5,8 +5,7 @@ use crate::compatible_wire::error::OpenAiLikeError;
 use crate::image_generation::decode::decode_image_reply;
 use crate::image_generation::reply::ImageGenerationReply;
 
-// transform_image_edit_response only wraps a body that is not JSON; a JSON body of the wrong shape
-// leaves the decoder's own error to the caller
+// only a body that is not JSON is wrapped; a JSON body of the wrong shape keeps the decoder's own error
 pub fn transform_image_edit_response(
     status: u16,
     body: &[u8],

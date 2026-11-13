@@ -161,41 +161,37 @@ pub(crate) fn values(input: &Input) -> HelperResult {
         Input::Transform(probes) => probes
             .iter()
             .map(|probe| {
-                let family = select_image_edit_family(&probe.model);
-                let (data, files, error) =
-                    match transform_image_edit_request(family, &request_of(probe)?) {
-                        Ok(form) => {
-                            let data = serde_json::to_value(&form.data)
-                                .map_err(|error| invalid(error.to_string()))?;
-                            (data, files_value(&form.files), Value::Null)
-                        }
-                        Err(error) => (Value::Null, Value::Null, error_value(&error)),
-                    };
-                Ok(json!({
-                    "family": family.name(),
-                    "supported": SUPPORTED_OPENAI_PARAMS,
-                    "data": data,
-                    "files": files,
-                    "error": error,
-                }))
-            })
-            .collect::<Result<Vec<_>, Box<HelperError>>>()?,
-        Input::Environment(probes) => probes
-            .iter()
-            .map(|probe| {
                 let resolved = credentials(probe)?;
                 let url = complete_url(&resolved.api_base).map_err(|error| failure(&error))?;
                 let headers = validate_environment(&Headers::new(), &resolved)
                     .map_err(|error| failure(&error))?;
                 let family = select_image_edit_family(&probe.model);
-                Ok(match transform_image_edit_request(family, &request_of(probe)?) {
-                    Ok(_) => json!({
-                        "url": url.as_str(),
-                        "headers": header_values(&headers),
-                        "error": null,
-                    }),
-                    Err(error) => json!({"url": null, "headers": null, "error": error_value(&error)}),
-                })
+                let (url, headers, data, files, error) =
+                    match transform_image_edit_request(family, &request_of(probe)?) {
+                        Ok(form) => {
+                            let data = serde_json::to_value(&form.data)
+                                .map_err(|error| invalid(error.to_string()))?;
+                            let url = Value::String(url.as_str().to_owned());
+                            let files = files_value(&form.files);
+                            (url, header_values(&headers), data, files, Value::Null)
+                        }
+                        Err(error) => (
+                            Value::Null,
+                            Value::Null,
+                            Value::Null,
+                            Value::Null,
+                            error_value(&error),
+                        ),
+                    };
+                Ok(json!({
+                    "family": family.name(),
+                    "supported": SUPPORTED_OPENAI_PARAMS,
+                    "url": url,
+                    "headers": headers,
+                    "data": data,
+                    "files": files,
+                    "error": error,
+                }))
             })
             .collect::<Result<Vec<_>, Box<HelperError>>>()?,
         Input::Reply(probes) => probes

@@ -8,7 +8,6 @@ use crate::helpers::HelperResult;
 #[serde(deny_unknown_fields, rename_all = "snake_case")]
 pub(crate) enum Input {
     Transform(Vec<input::Probe>),
-    Environment(Vec<input::Probe>),
     Reply(Vec<input::Probe>),
 }
 
