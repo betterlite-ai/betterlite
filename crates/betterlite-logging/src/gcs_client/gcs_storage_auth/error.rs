@@ -36,6 +36,8 @@ where
     Token(#[source] Auth::Error),
     #[error("the GCS request failed")]
     Transport(#[source] GcsMockError<Http::Error>),
+    #[error("the GCS upload was refused with status {status}")]
+    Status { status: u16 },
     #[error("the GCS response body is not valid JSON")]
     Response(#[source] serde_json::Error),
     #[error("the GCS logging payload could not be serialized")]

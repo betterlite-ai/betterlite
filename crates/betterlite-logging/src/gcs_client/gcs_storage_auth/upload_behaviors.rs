@@ -51,6 +51,11 @@ where
         .send(request)
         .await
         .map_err(GcsClientError::Transport)?;
+    if !(200..300).contains(&response.status) {
+        return Err(GcsClientError::Status {
+            status: response.status,
+        });
+    }
     if response.status != 200 {
         tracing::error!(status = response.status, "GCS Bucket logging error");
     }

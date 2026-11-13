@@ -144,20 +144,31 @@ async fn the_parsed_response_is_returned() {
 }
 
 #[tokio::test]
-async fn a_non_200_upload_still_returns_the_parsed_response() {
-    let harness = harness_with(RecordingClient::responding(
-        500,
-        "{\"error\":{\"code\":500}}",
-    ));
+async fn a_non_success_status_is_an_error() {
+    for status in [199, 300, 403, 500] {
+        let harness = harness_with(RecordingClient::responding(
+            status,
+            "{\"error\":{\"code\":500}}",
+        ));
+        let base = harness.build(None);
+        let payload = GcsLoggingPayload::Text("body".to_owned());
+        let result = log_json_data_on_gcs(&base, &headers(&[]), "bucket", "object", &payload).await;
+        assert!(matches!(result, Err(GcsClientError::Status { status: got }) if got == status));
+    }
+}
+
+#[tokio::test]
+async fn a_201_upload_still_returns_the_parsed_response() {
+    let harness = harness_with(RecordingClient::responding(201, "{\"name\":\"stored\"}"));
     let base = harness.build(None);
     let payload = GcsLoggingPayload::Text("body".to_owned());
     let response = log_json_data_on_gcs(&base, &headers(&[]), "bucket", "object", &payload)
         .await
-        .expect("the fake client answers");
+        .expect("a 2xx response is parsed");
     let Json::Object(fields) = response else {
         panic!("the response is a JSON object");
     };
-    assert!(fields.contains_key("error"));
+    assert!(fields.contains_key("name"));
 }
 
 #[tokio::test]
