@@ -5,9 +5,11 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::decode::decode_litellm_params;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::Guardrail;
-use betterlite_guardrails::block_code_execution::initializer::CallbackRegistry;
+use betterlite_guardrails::block_code_execution::initializer::{
+    CallbackRegistry, InitializerError,
+};
 use betterlite_guardrails::block_code_execution::lifecycle::{
-    BlockCodeExecutionGuardrail, BlockCodeExecutionParams,
+    BlockCodeExecutionError, BlockCodeExecutionGuardrail, BlockCodeExecutionParams,
 };
 use betterlite_guardrails::block_code_execution::registration::ApplyGuardrailError;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
@@ -102,6 +104,20 @@ pub fn apply_capturing(
     };
     let outcome = guardrail.apply_guardrail(inputs, &mut context, input_type);
     (outcome, sink.records())
+}
+
+pub fn constructor_error<T>(result: Result<T, BlockCodeExecutionError>) -> BlockCodeExecutionError {
+    match result {
+        Ok(_) => panic!("expected a constructor error"),
+        Err(error) => error,
+    }
+}
+
+pub fn initializer_error<T>(result: Result<T, InitializerError>) -> InitializerError {
+    match result {
+        Ok(_) => panic!("expected an initializer error"),
+        Err(error) => error,
+    }
 }
 
 pub fn guardrail_entry(name: &str, params: LitellmParams) -> Guardrail {

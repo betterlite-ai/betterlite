@@ -8,7 +8,7 @@ use betterlite_guardrails::block_code_execution::lifecycle::{
 use betterlite_guardrails::guardrail_base::error::GuardrailBaseError;
 use rstest::rstest;
 
-use crate::block_code_execution::support::{guardrail, params};
+use crate::block_code_execution::support::{constructor_error, guardrail, params};
 
 #[test]
 fn defaults_match_the_documented_guardrail() {
@@ -84,7 +84,7 @@ fn event_hook_normalizes_to_the_parent_mode(
 fn an_unknown_hook_name_is_rejected_even_when_modes_are_not_strict(#[case] strict: bool) {
     let mut configured = params();
     configured.event_hook = Some(EventHookSelection::One("nope".to_owned()));
-    let error = BlockCodeExecutionGuardrail::new(configured, strict).expect_err("bad hook");
+    let error = constructor_error(BlockCodeExecutionGuardrail::new(configured, strict));
     assert!(matches!(
         error,
         BlockCodeExecutionError::Base(GuardrailBaseError::UnknownEventHook { hook }) if hook == "nope"

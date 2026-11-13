@@ -107,7 +107,7 @@ pub fn initialize_guardrail(
     if guardrail.guardrail_name.is_empty() {
         return Err(InitializerError::MissingGuardrailName);
     }
-    let instance = BlockCodeExecutionGuardrail::new(
+    let configured = BlockCodeExecutionGuardrail::new(
         BlockCodeExecutionParams {
             guardrail_name: Some(guardrail.guardrail_name.clone()),
             blocked_languages: blocked_languages(params)?,
@@ -117,14 +117,15 @@ pub fn initialize_guardrail(
                 params,
                 ParamKey::DetectExecutionIntent,
                 DEFAULT_EXECUTION_INTENT,
+                None,
             )?,
             event_hook: Some(event_hook(params)?),
-            default_on: read_flag(params, ParamKey::DefaultOn, false)?,
+            default_on: read_flag(params, ParamKey::DefaultOn, false, Some(false))?,
             clock: SystemTime::now,
         },
         strict_modes,
     )?;
-    let instance = Arc::new(instance);
+    let instance = Arc::new(configured);
     registry.add_litellm_callback(Arc::clone(&instance));
     Ok(instance)
 }
@@ -159,7 +160,10 @@ fn blocked_languages(params: &LitellmParams) -> Result<Option<Vec<String>>, Init
 
 fn action(params: &LitellmParams) -> Result<BlockCodeAction, InitializerError> {
     match get_param(params, ParamKey::Action) {
-        None | Some(GuardrailValue::Null) => Ok(DEFAULT_ACTION),
+        None => Ok(DEFAULT_ACTION),
+        Some(GuardrailValue::Null) => Err(InitializerError::InvalidParam {
+            field: ParamKey::Action.name().to_owned(),
+        }),
         Some(value) => decode(ParamKey::Action, &value),
     }
 }
@@ -176,14 +180,18 @@ fn confidence_threshold(params: &LitellmParams) -> Result<f64, InitializerError>
         })
 }
 
-// LiteLLM's config model declares confidence_threshold with ge=0.0 and le=1.0, so this check happens where it enters
+// LiteLLM's config model declares confidence_threshold with ge=0.0 and le=1.0 and a non-optional float, so this check happens where it enters
 fn threshold_number(value: &GuardrailValue) -> Result<f64, InitializerError> {
     match value {
-        GuardrailValue::Null => Ok(DEFAULT_CONFIDENCE_THRESHOLD),
+        GuardrailValue::Null => Err(InitializerError::InvalidParam {
+            field: ParamKey::ConfidenceThreshold.name().to_owned(),
+        }),
         GuardrailValue::Text(text) => {
             match betterlite_env::number::<f64>("confidence_threshold", text) {
                 Ok(Some(number)) => Ok(number),
-                Ok(None) => Ok(DEFAULT_CONFIDENCE_THRESHOLD),
+                Ok(None) => Err(InitializerError::InvalidParam {
+                    field: ParamKey::ConfidenceThreshold.name().to_owned(),
+                }),
                 Err(_not_a_number) => Err(InitializerError::InvalidParam {
                     field: ParamKey::ConfidenceThreshold.name().to_owned(),
                 }),
@@ -201,24 +209,27 @@ fn threshold_number(value: &GuardrailValue) -> Result<f64, InitializerError> {
     }
 }
 
-// LiteLLM's bool(_get_param(...)) reads with a default: an absent or null key takes the fallback
+// an absent key takes its default; a null is invalid where LiteLLM's field is not optional, and default_on allows one
 fn read_flag(
     params: &LitellmParams,
     key: ParamKey,
-    fallback: bool,
+    absent_default: bool,
+    null_default: Option<bool>,
 ) -> Result<bool, InitializerError> {
-    let Some(value) = get_param(params, key) else {
-        return Ok(fallback);
-    };
-    match value {
-        GuardrailValue::Null => Ok(fallback),
-        GuardrailValue::Boolean(value) => Ok(value),
-        GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Array(_)
-        | GuardrailValue::Object(_) => Err(InitializerError::InvalidParam {
+    match get_param(params, key) {
+        None => Ok(absent_default),
+        Some(GuardrailValue::Null) => null_default.ok_or(InitializerError::InvalidParam {
+            field: key.name().to_owned(),
+        }),
+        Some(GuardrailValue::Boolean(flag)) => Ok(flag),
+        Some(
+            GuardrailValue::SignedInteger(_)
+            | GuardrailValue::UnsignedInteger(_)
+            | GuardrailValue::Decimal(_)
+            | GuardrailValue::Text(_)
+            | GuardrailValue::Array(_)
+            | GuardrailValue::Object(_),
+        ) => Err(InitializerError::InvalidParam {
             field: key.name().to_owned(),
         }),
     }

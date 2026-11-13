@@ -17,6 +17,7 @@ use crate::block_code_execution::support::{
 #[test]
 fn a_successful_scan_records_the_detection_list() {
     let mut configured = params();
+    configured.guardrail_name = Some("mine".to_owned());
     configured.blocked_languages = Some(vec!["python".to_owned()]);
     let built = guardrail(configured);
     let mut data = request_data();
@@ -63,10 +64,8 @@ fn a_successful_scan_records_the_detection_list() {
         record.tracing_detail.detection_method.as_deref(),
         Some(DETECTION_METHOD)
     );
-    assert_eq!(
-        record.tracing_detail.guardrail_id.as_deref(),
-        Some("block_code_execution")
-    );
+    assert_eq!(record.guardrail_name.as_deref(), Some("mine"));
+    assert_eq!(record.tracing_detail.guardrail_id.as_deref(), Some("mine"));
     assert_eq!(
         record.tracing_detail.confidence_score.map(f64::to_bits),
         Some(0.0_f64.to_bits())
@@ -119,7 +118,7 @@ fn the_confidence_score_is_the_maximum_across_detections() {
     let mut data = request_data();
     let (_outcome, records) = apply_capturing(
         &built,
-        inputs(&["```text\nb\n```\n```python\na\n```"]),
+        inputs(&["```python\na\n```\n```text\nb\n```"]),
         &mut data,
         GuardrailInputType::Response,
     );

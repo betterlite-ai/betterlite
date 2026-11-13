@@ -11,15 +11,17 @@ use betterlite_guardrails::block_code_execution::initializer::{
 };
 use rstest::rstest;
 
-use crate::block_code_execution::support::{FakeRegistry, guardrail_entry, litellm_params};
+use crate::block_code_execution::support::{
+    FakeRegistry, guardrail_entry, initializer_error, litellm_params,
+};
 
 #[test]
 fn an_empty_name_is_rejected() {
     let params = litellm_params(r#"{"guardrail": "block_code_execution", "mode": "pre_call"}"#);
     let entry = guardrail_entry("", params);
     let mut registry = FakeRegistry::default();
-    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
-        .expect_err("a name is required");
+    let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
+    let error = initializer_error(outcome);
     assert!(matches!(error, InitializerError::MissingGuardrailName));
     assert_eq!(
         error.to_string(),
@@ -108,8 +110,8 @@ fn a_tagged_mode_is_rejected() {
     );
     let entry = guardrail_entry("mine", params);
     let mut registry = FakeRegistry::default();
-    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
-        .expect_err("a tagged mode names no event hook");
+    let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
+    let error = initializer_error(outcome);
     assert!(matches!(
         error,
         InitializerError::InvalidParam { ref field } if field == "mode"
@@ -123,8 +125,8 @@ fn a_non_boolean_intent_flag_is_rejected() {
     );
     let entry = guardrail_entry("mine", params);
     let mut registry = FakeRegistry::default();
-    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
-        .expect_err("a string is not a boolean");
+    let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
+    let error = initializer_error(outcome);
     assert!(matches!(
         error,
         InitializerError::InvalidParam { ref field } if field == "detect_execution_intent"
@@ -138,8 +140,8 @@ fn a_non_list_blocked_languages_is_rejected() {
     );
     let entry = guardrail_entry("mine", params);
     let mut registry = FakeRegistry::default();
-    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
-        .expect_err("a string is not a list");
+    let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
+    let error = initializer_error(outcome);
     assert!(matches!(
         error,
         InitializerError::InvalidParam { ref field } if field == "blocked_languages"
@@ -170,8 +172,8 @@ fn an_out_of_range_confidence_threshold_is_rejected(#[case] threshold: &str) {
     ));
     let entry = guardrail_entry("mine", params);
     let mut registry = FakeRegistry::default();
-    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
-        .expect_err("a value outside 0.0..=1.0 fails the config load");
+    let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
+    let error = initializer_error(outcome);
     assert!(matches!(
         error,
         InitializerError::InvalidParam { ref field } if field == "confidence_threshold"
@@ -197,12 +199,59 @@ fn a_not_a_number_confidence_threshold_is_rejected() {
     let params = LitellmParams::try_from(OpaqueParams(fields)).expect("params");
     let entry = guardrail_entry("mine", params);
     let mut registry = FakeRegistry::default();
-    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
-        .expect_err("NaN is outside 0.0..=1.0");
+    let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
+    let error = initializer_error(outcome);
     assert!(matches!(
         error,
         InitializerError::InvalidParam { ref field } if field == "confidence_threshold"
     ));
+}
+
+#[rstest]
+#[case::action_null("action")]
+#[case::threshold_null("confidence_threshold")]
+#[case::intent_null("detect_execution_intent")]
+fn a_null_for_a_required_parameter_is_rejected(#[case] key: &str) {
+    let params = litellm_params(&format!(
+        r#"{{"guardrail": "block_code_execution", "mode": "pre_call", "{key}": null}}"#
+    ));
+    let entry = guardrail_entry("mine", params);
+    let mut registry = FakeRegistry::default();
+    let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
+    let error = initializer_error(outcome);
+    assert!(matches!(
+        error,
+        InitializerError::InvalidParam { ref field } if field == key
+    ));
+}
+
+#[test]
+fn an_empty_confidence_threshold_is_rejected() {
+    let params = litellm_params(
+        r#"{"guardrail": "block_code_execution", "mode": "pre_call", "confidence_threshold": ""}"#,
+    );
+    let entry = guardrail_entry("mine", params);
+    let mut registry = FakeRegistry::default();
+    let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
+    let error = initializer_error(outcome);
+    assert!(matches!(
+        error,
+        InitializerError::InvalidParam { ref field } if field == "confidence_threshold"
+    ));
+}
+
+#[test]
+fn a_null_blocked_languages_and_default_on_keep_their_defaults() {
+    let params = litellm_params(
+        r#"{"guardrail": "block_code_execution", "mode": "pre_call", "blocked_languages": null, "default_on": null}"#,
+    );
+    let entry = guardrail_entry("mine", params);
+    let mut registry = FakeRegistry::default();
+    let instance = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
+        .expect("nulls on optional fields take the defaults");
+    assert!(instance.blocked_languages.is_none());
+    assert!(instance.block_all);
+    assert!(!instance.base.settings.default_on);
 }
 
 #[test]
@@ -212,8 +261,8 @@ fn an_unreadable_confidence_threshold_is_rejected() {
     );
     let entry = guardrail_entry("mine", params);
     let mut registry = FakeRegistry::default();
-    let error = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry)
-        .expect_err("a word is not a number");
+    let outcome = initialize_guardrail(&entry.litellm_params, &entry, true, &mut registry);
+    let error = initializer_error(outcome);
     assert!(matches!(
         error,
         InitializerError::InvalidParam { ref field } if field == "confidence_threshold"

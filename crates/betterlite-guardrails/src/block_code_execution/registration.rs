@@ -72,9 +72,9 @@ impl BlockCodeExecutionGuardrail {
         };
         let recorded = add_guardrail_record(context, invocation_record(&invocation));
         match (outcome, recorded) {
-            (Ok(inputs), Ok(())) => Ok(inputs),
+            (Ok(processed), Ok(())) => Ok(processed),
             (Err(failure), Ok(())) => Err(ApplyGuardrailError::Guardrail(failure)),
-            (_outcome, Err(error)) => Err(ApplyGuardrailError::Record(error)),
+            (_result, Err(error)) => Err(ApplyGuardrailError::Record(error)),
         }
     }
 

@@ -29,7 +29,9 @@ fn a_code_block_message_names_the_language(#[case] language: &str) {
 
 #[test]
 fn a_response_block_is_a_400_with_the_detail_object() {
-    let built = guardrail(params());
+    let mut configured = params();
+    configured.guardrail_name = Some("mine".to_owned());
+    let built = guardrail(configured);
     let failure = built.block_failure("python", GuardrailInputType::Response, &request_data());
     let GuardrailFailure::HttpObject { status, detail } = failure else {
         panic!("a response block must be an object failure");
@@ -43,7 +45,7 @@ fn a_response_block_is_a_400_with_the_detail_object() {
     );
     assert_eq!(
         detail.get("guardrail"),
-        Some(&GuardrailValue::Text("block_code_execution".to_owned()))
+        Some(&GuardrailValue::Text("mine".to_owned()))
     );
     assert_eq!(
         detail.get("language"),
