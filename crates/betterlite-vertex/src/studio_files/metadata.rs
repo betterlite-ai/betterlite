@@ -8,8 +8,8 @@ use crate::provider_metadata::timestamp::{LocalTimeContext, decode_vertex_timest
 
 pub const METADATA_BODY_LIMIT: usize = 1024 * 1024;
 
-// CPython's %z shape, ASCII digits only: [+-]HH[:]MM([:]SS(.ffffff)?)? with minutes and seconds 00-59.
-const UTC_OFFSET_PATTERN: &str = r"^[+-][0-9]{2}:?[0-5][0-9](:?[0-5][0-9](\.[0-9]{1,6})?)?$";
+// CPython's %z shape, ASCII digits only. Colons are all or nothing: strptime raises when the minute and second groups disagree.
+const UTC_OFFSET_PATTERN: &str = r"^[+-][0-9]{2}(:[0-5][0-9](:[0-5][0-9](\.[0-9]{1,6})?)?|[0-5][0-9]([0-5][0-9](\.[0-9]{1,6})?)?)$";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]

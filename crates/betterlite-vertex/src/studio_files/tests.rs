@@ -381,6 +381,7 @@ fn create_plan_names_the_file(#[case] filename: Option<&str>, #[case] expected: 
 #[case::plus_is_encoded("https://h/v1beta/files/a+b", "files/a%2Bb")]
 #[case::uppercase_scheme_is_not_a_url("HTTP://h/files/abc", "files/HTTP%3A%2F%2Fh%2Ffiles%2Fabc")]
 #[case::non_ascii("\u{e9}", "files/%C3%A9")]
+#[case::url_with_dot_segment("https://h/files/../x", "files/..%2Fx")]
 fn normalize_file_id_encodes_one_segment(#[case] input: &str, #[case] expected: &str) {
     assert_eq!(normalize_file_id(input).expect("the id encodes"), expected);
 }
@@ -392,7 +393,6 @@ fn normalize_file_id_encodes_one_segment(#[case] input: &str, #[case] expected: 
 #[case::host_with_slash("https://h/")]
 #[case::dot(".")]
 #[case::dot_dot("..")]
-#[case::url_with_dot_segment("https://h/files/../x")]
 fn normalize_file_id_rejects_unusable_ids(#[case] input: &str) {
     assert!(normalize_file_id(input).is_err(), "{input}");
 }
@@ -495,6 +495,8 @@ fn create_reply_takes_the_uri_as_the_file_id() {
 #[case::compact_offset("2024-01-02T03:04:05.1-0800", 1_704_164_645)]
 #[case::offset_with_seconds("2024-01-02T03:04:05.1+05:30:15", 1_704_164_645)]
 #[case::offset_with_fraction("2024-01-02T03:04:05.1+05:30:15.5", 1_704_164_645)]
+#[case::compact_offset_with_seconds("2024-01-02T03:04:05.1+053015", 1_704_164_645)]
+#[case::compact_offset_with_fraction("2024-01-02T03:04:05.1+053015.5", 1_704_164_645)]
 #[case::single_digit_fields("2024-1-2T3:4:5.1+00:00", 1_704_164_645)]
 #[case::lowercase_separator("2024-01-02t03:04:05.1+00:00", 1_704_164_645)]
 #[case::fraction_truncates("2024-01-02T03:04:05.999999+00:00", 1_704_164_645)]
@@ -513,6 +515,8 @@ fn create_reply_parses_fractional_timestamps(#[case] created: &str, #[case] expe
 #[case::two_digit_offset("2024-01-02T03:04:05.1+05")]
 #[case::lowercase_zulu("2024-01-02T03:04:05.1z")]
 #[case::bad_minute("2024-01-02T03:04:05.1+05:60")]
+#[case::colon_minutes_compact_seconds("2024-01-02T03:04:05.1+05:3015")]
+#[case::compact_minutes_colon_seconds("2024-01-02T03:04:05.1+0530:15")]
 #[case::date_without_time("2024-01-02")]
 #[case::impossible_date("2024-02-30T03:04:05.1Z")]
 fn create_reply_rejects_malformed_timestamps(#[case] created: &str) {
