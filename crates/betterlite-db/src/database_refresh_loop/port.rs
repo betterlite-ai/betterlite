@@ -15,7 +15,9 @@ use crate::database_url_policy::url_codec::UrlSplitError;
 use super::clock::RefreshClock;
 use super::endpoint::{WriterEndpoint, WriterEndpointError};
 use super::minting::{TokenMinter, assemble_refresh_url};
-use super::schedule::{self, RefreshSchedule, is_token_expired, token_refresh_not_needed};
+use super::schedule::{
+    self, RefreshQuery, RefreshSchedule, is_token_expired, token_refresh_not_needed,
+};
 
 pub type RefreshGeneration<P, M, C> = PoolGeneration<P, RefreshPort<P, M, C>, C>;
 
@@ -138,8 +140,12 @@ where
 
     pub(crate) fn schedule(&self) -> Result<RefreshSchedule, ExpiryError> {
         let current = self.url.snapshot();
-        let text = current.as_ref().map(ExposeSecret::expose_secret);
-        schedule::seconds_until_refresh(self.auth_kind, text, self.clock.now().naive_utc())
+        let query = RefreshQuery {
+            kind: self.auth_kind,
+            token_url: current.as_ref().map(ExposeSecret::expose_secret),
+            now: self.clock.now().naive_utc(),
+        };
+        schedule::seconds_until_refresh(&query)
     }
 
     fn mint_and_publish(
@@ -175,9 +181,13 @@ where
         let prefix = generation.options.log_prefix.as_str();
         let label = generation.token_label();
         let current = self.url.snapshot();
-        let text = current.as_ref().map(ExposeSecret::expose_secret);
-        let fresh = token_refresh_not_needed(self.auth_kind, text, self.clock.now().naive_utc())
-            .map_err(|source| RefreshError::Expiry { source })?;
+        let query = RefreshQuery {
+            kind: self.auth_kind,
+            token_url: current.as_ref().map(ExposeSecret::expose_secret),
+            now: self.clock.now().naive_utc(),
+        };
+        let fresh =
+            token_refresh_not_needed(&query).map_err(|source| RefreshError::Expiry { source })?;
         if fresh {
             tracing::debug!("{prefix}{label} still fresh; skipping redundant refresh.");
             return Ok(());
@@ -214,9 +224,13 @@ where
 
     fn token_expired(&self) -> bool {
         let current = self.url.snapshot();
-        let text = current.as_ref().map(ExposeSecret::expose_secret);
+        let query = RefreshQuery {
+            kind: self.auth_kind,
+            token_url: current.as_ref().map(ExposeSecret::expose_secret),
+            now: self.clock.now().naive_utc(),
+        };
         // the port reports a bool, so an expiration outside the timestamp range counts as expired
-        is_token_expired(self.auth_kind, text, self.clock.now().naive_utc()).unwrap_or(true)
+        is_token_expired(&query).unwrap_or(true)
     }
 
     fn refresh(&self) -> RefreshFuture<'_, Self::Error> {

@@ -16,7 +16,8 @@ use crate::database_refresh::handle::PoolHandle as _;
 use crate::database_refresh::replacement::ReplacementError;
 use crate::database_refresh_loop::port::RefreshError;
 use crate::database_refresh_loop::schedule::{
-    FALLBACK_REFRESH_SECONDS, is_token_expired, seconds_until_refresh, token_refresh_not_needed,
+    FALLBACK_REFRESH_SECONDS, RefreshQuery, is_token_expired, seconds_until_refresh,
+    token_refresh_not_needed,
 };
 use crate::database_tokens::endpoint::IAMEndpoint;
 use crate::database_tokens::expiry::TokenAuthKind::Rds;
@@ -24,16 +25,28 @@ use crate::database_tokens::expiry::TokenAuthKind::Rds;
 #[test]
 fn expiry_buffer() {
     let url = token_url(EXPIRY_900);
-    let schedule = seconds_until_refresh(Some(Rds), Some(&url), naive("2024-01-01T00:00:00"))
-        .expect("the token parses");
+    let schedule = seconds_until_refresh(&RefreshQuery {
+        kind: Some(Rds),
+        token_url: Some(&url),
+        now: naive("2024-01-01T00:00:00"),
+    })
+    .expect("the token parses");
     assert_eq!(schedule.wait, Duration::from_mins(12));
 
-    let later = seconds_until_refresh(Some(Rds), Some(&url), naive("2024-01-01T00:11:00"))
-        .expect("the token parses");
+    let later = seconds_until_refresh(&RefreshQuery {
+        kind: Some(Rds),
+        token_url: Some(&url),
+        now: naive("2024-01-01T00:11:00"),
+    })
+    .expect("the token parses");
     assert_eq!(later.wait, Duration::from_mins(1));
 
-    let inside_floor = seconds_until_refresh(Some(Rds), Some(&url), naive("2024-01-01T00:11:50"))
-        .expect("the token parses");
+    let inside_floor = seconds_until_refresh(&RefreshQuery {
+        kind: Some(Rds),
+        token_url: Some(&url),
+        now: naive("2024-01-01T00:11:50"),
+    })
+    .expect("the token parses");
     assert_eq!(inside_floor.wait, Duration::from_secs(30));
 }
 
@@ -41,11 +54,11 @@ fn expiry_buffer() {
 fn unknown_expiry_fallback() {
     let (logs, subscriber) = capture_logs();
     let _guard = set_default(subscriber);
-    let schedule = seconds_until_refresh(
-        Some(Rds),
-        Some(UNPARSABLE_TOKEN_URL),
-        naive("2024-01-01T00:00:00"),
-    )
+    let schedule = seconds_until_refresh(&RefreshQuery {
+        kind: Some(Rds),
+        token_url: Some(UNPARSABLE_TOKEN_URL),
+        now: naive("2024-01-01T00:00:00"),
+    })
     .expect("an unreadable token falls back");
     assert_eq!(schedule.wait, Duration::from_secs(FALLBACK_REFRESH_SECONDS));
     assert!(logs.has(
@@ -53,14 +66,19 @@ fn unknown_expiry_fallback() {
         "Could not parse token expiration, using fallback interval of 600s"
     ));
 
-    let missing = seconds_until_refresh(Some(Rds), None, naive("2024-01-01T00:00:00"))
-        .expect("a missing URL falls back");
+    let missing = seconds_until_refresh(&RefreshQuery {
+        kind: Some(Rds),
+        token_url: None,
+        now: naive("2024-01-01T00:00:00"),
+    })
+    .expect("a missing URL falls back");
     assert_eq!(missing.wait, Duration::from_secs(600));
-    let disabled = seconds_until_refresh(
-        None,
-        Some(&token_url(EXPIRY_900)),
-        naive("2024-01-01T00:00:00"),
-    )
+    let disabled_url = token_url(EXPIRY_900);
+    let disabled = seconds_until_refresh(&RefreshQuery {
+        kind: None,
+        token_url: Some(&disabled_url),
+        now: naive("2024-01-01T00:00:00"),
+    })
     .expect("a disabled strategy falls back");
     assert_eq!(disabled.wait, Duration::from_secs(600));
     assert_eq!(logs.count("using fallback interval of 600s"), 3);
@@ -71,11 +89,11 @@ fn expired_and_unreadable_tokens() {
     let (logs, subscriber) = capture_logs();
     let _guard = set_default(subscriber);
     assert!(
-        is_token_expired(
-            Some(Rds),
-            Some(UNPARSABLE_TOKEN_URL),
-            naive("2024-01-01T00:00:00")
-        )
+        is_token_expired(&RefreshQuery {
+            kind: Some(Rds),
+            token_url: Some(UNPARSABLE_TOKEN_URL),
+            now: naive("2024-01-01T00:00:00"),
+        })
         .expect("an unreadable token is expired")
     );
     assert!(logs.has(
@@ -83,15 +101,20 @@ fn expired_and_unreadable_tokens() {
         "Could not parse token expiration, treating as expired"
     ));
     assert!(
-        is_token_expired(Some(Rds), None, naive("2024-01-01T00:00:00")).expect("no URL is expired")
+        is_token_expired(&RefreshQuery {
+            kind: Some(Rds),
+            token_url: None,
+            now: naive("2024-01-01T00:00:00"),
+        })
+        .expect("no URL is expired")
     );
     assert_eq!(logs.count("treating as expired"), 1);
     assert!(
-        !token_refresh_not_needed(
-            Some(Rds),
-            Some(UNPARSABLE_TOKEN_URL),
-            naive("2024-01-01T00:00:00")
-        )
+        !token_refresh_not_needed(&RefreshQuery {
+            kind: Some(Rds),
+            token_url: Some(UNPARSABLE_TOKEN_URL),
+            now: naive("2024-01-01T00:00:00"),
+        })
         .expect("an unreadable token is never fresh")
     );
 }
@@ -99,21 +122,34 @@ fn expired_and_unreadable_tokens() {
 #[test]
 fn cached_token_minimum_sleep() {
     let url = token_url(EXPIRY_100);
-    let first = seconds_until_refresh(Some(Rds), Some(&url), naive("2024-01-01T00:00:00"))
-        .expect("the token parses");
+    let first = seconds_until_refresh(&RefreshQuery {
+        kind: Some(Rds),
+        token_url: Some(&url),
+        now: naive("2024-01-01T00:00:00"),
+    })
+    .expect("the token parses");
     assert_eq!(first.wait, Duration::from_secs(30));
-    let second = seconds_until_refresh(Some(Rds), Some(&url), naive("2024-01-01T00:00:00"))
-        .expect("the token parses");
-    let third = seconds_until_refresh(Some(Rds), Some(&url), naive("2024-01-01T00:00:00"))
-        .expect("the token parses");
+    let second = seconds_until_refresh(&RefreshQuery {
+        kind: Some(Rds),
+        token_url: Some(&url),
+        now: naive("2024-01-01T00:00:00"),
+    })
+    .expect("the token parses");
+    let third = seconds_until_refresh(&RefreshQuery {
+        kind: Some(Rds),
+        token_url: Some(&url),
+        now: naive("2024-01-01T00:00:00"),
+    })
+    .expect("the token parses");
     assert_eq!(second.wait, first.wait);
     assert_eq!(third.wait, first.wait);
 
-    let just_over = seconds_until_refresh(
-        Some(Rds),
-        Some(&token_url(EXPIRY_900)),
-        naive("2024-01-01T00:11:29.5"),
-    )
+    let over_url = token_url(EXPIRY_900);
+    let just_over = seconds_until_refresh(&RefreshQuery {
+        kind: Some(Rds),
+        token_url: Some(&over_url),
+        now: naive("2024-01-01T00:11:29.5"),
+    })
     .expect("the token parses");
     assert_eq!(just_over.wait, Duration::new(30, 500_000_000));
 }

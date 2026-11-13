@@ -10,9 +10,17 @@ pub const TOKEN_REFRESH_BUFFER_SECONDS: i64 = 180;
 pub const FALLBACK_REFRESH_SECONDS: u64 = 600;
 pub const MIN_REFRESH_SLEEP_SECONDS: u64 = 30;
 
+const TOKEN_REFRESH_BUFFER: TimeDelta = TimeDelta::seconds(TOKEN_REFRESH_BUFFER_SECONDS);
+
 pub struct RefreshSchedule {
     pub seconds: f64,
     pub wait: Duration,
+}
+
+pub struct RefreshQuery<'url> {
+    pub kind: Option<TokenAuthKind>,
+    pub token_url: Option<&'url str>,
+    pub now: NaiveDateTime,
 }
 
 pub fn parse_expiration(
@@ -37,12 +45,8 @@ fn expiration_of(
     parse_expiration(kind, token.as_deref())
 }
 
-pub fn seconds_until_refresh(
-    kind: Option<TokenAuthKind>,
-    token_url: Option<&str>,
-    now: NaiveDateTime,
-) -> Result<RefreshSchedule, ExpiryError> {
-    let Some(expiration) = expiration_of(kind, token_url)? else {
+pub fn seconds_until_refresh(query: &RefreshQuery<'_>) -> Result<RefreshSchedule, ExpiryError> {
+    let Some(expiration) = expiration_of(query.kind, query.token_url)? else {
         tracing::debug!(
             "Could not parse token expiration, using fallback interval of {FALLBACK_REFRESH_SECONDS}s"
         );
@@ -52,13 +56,11 @@ pub fn seconds_until_refresh(
             wait,
         });
     };
-    let buffer =
-        TimeDelta::try_seconds(TOKEN_REFRESH_BUFFER_SECONDS).ok_or(ExpiryError::OutOfRange)?;
     let refresh_at = expiration
-        .checked_sub_signed(buffer)
+        .checked_sub_signed(TOKEN_REFRESH_BUFFER)
         .ok_or(ExpiryError::OutOfRange)?;
     let wait = refresh_at
-        .signed_duration_since(now)
+        .signed_duration_since(query.now)
         .to_std()
         .unwrap_or(Duration::ZERO)
         .max(Duration::from_secs(MIN_REFRESH_SLEEP_SECONDS));
@@ -68,30 +70,20 @@ pub fn seconds_until_refresh(
     })
 }
 
-pub fn is_token_expired(
-    kind: Option<TokenAuthKind>,
-    token_url: Option<&str>,
-    now: NaiveDateTime,
-) -> Result<bool, ExpiryError> {
-    let Some(url) = token_url else {
+pub fn is_token_expired(query: &RefreshQuery<'_>) -> Result<bool, ExpiryError> {
+    let Some(url) = query.token_url else {
         return Ok(true);
     };
-    let Some(expiration) = expiration_of(kind, Some(url))? else {
+    let Some(expiration) = expiration_of(query.kind, Some(url))? else {
         tracing::debug!("Could not parse token expiration, treating as expired");
         return Ok(true);
     };
-    Ok(now > expiration)
+    Ok(query.now > expiration)
 }
 
-pub fn token_refresh_not_needed(
-    kind: Option<TokenAuthKind>,
-    token_url: Option<&str>,
-    now: NaiveDateTime,
-) -> Result<bool, ExpiryError> {
-    let Some(expiration) = expiration_of(kind, token_url)? else {
+pub fn token_refresh_not_needed(query: &RefreshQuery<'_>) -> Result<bool, ExpiryError> {
+    let Some(expiration) = expiration_of(query.kind, query.token_url)? else {
         return Ok(false);
     };
-    let buffer =
-        TimeDelta::try_seconds(TOKEN_REFRESH_BUFFER_SECONDS).ok_or(ExpiryError::OutOfRange)?;
-    Ok(expiration.signed_duration_since(now) > buffer)
+    Ok(expiration.signed_duration_since(query.now) > TOKEN_REFRESH_BUFFER)
 }

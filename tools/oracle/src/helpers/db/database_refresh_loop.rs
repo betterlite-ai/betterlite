@@ -2,9 +2,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::database_refresh_loop::extraction::extract_refresh_password;
 use betterlite_db::database_refresh_loop::schedule::{
-    is_token_expired, parse_expiration, seconds_until_refresh, token_refresh_not_needed,
+    RefreshQuery, is_token_expired, parse_expiration, seconds_until_refresh,
+    token_refresh_not_needed,
 };
-use betterlite_db::database_tokens::expiry::TokenAuthKind;
+use betterlite_db::database_tokens::expiry::{ExpiryError, TokenAuthKind};
 use chrono::NaiveDateTime;
 use serde::Deserialize;
 use tracing::{Event, Subscriber};
@@ -157,26 +158,35 @@ fn expiration(auth: AuthKind, token: Option<&str>) -> HelperResult {
     }))
 }
 
-fn scheduled(auth: AuthKind, url: Option<&str>, now: &str) -> HelperResult {
+fn capture_clock<T>(
+    auth: AuthKind,
+    url: Option<&str>,
+    now: &str,
+    run: fn(&RefreshQuery<'_>) -> Result<T, ExpiryError>,
+) -> Result<(T, Vec<String>), Box<HelperError>> {
     let moment = parse_now(now)?;
-    let (outcome, log_levels) =
-        levels_for(|| seconds_until_refresh(auth.token_kind(), url, moment));
-    let schedule = outcome.map_err(|error| helper_error("OverflowError", error.to_string()))?;
+    let query = RefreshQuery {
+        kind: auth.token_kind(),
+        token_url: url,
+        now: moment,
+    };
+    let (outcome, log_levels) = levels_for(|| run(&query));
+    let value = outcome.map_err(|error| helper_error("OverflowError", error.to_string()))?;
+    Ok((value, log_levels))
+}
+
+fn scheduled(auth: AuthKind, url: Option<&str>, now: &str) -> HelperResult {
+    let (schedule, log_levels) = capture_clock(auth, url, now, seconds_until_refresh)?;
     Ok(serde_json::json!({"seconds": schedule.seconds, "log_levels": log_levels}))
 }
 
 fn expired(auth: AuthKind, url: Option<&str>, now: &str) -> HelperResult {
-    let moment = parse_now(now)?;
-    let (outcome, log_levels) = levels_for(|| is_token_expired(auth.token_kind(), url, moment));
-    let expired = outcome.map_err(|error| helper_error("OverflowError", error.to_string()))?;
+    let (expired, log_levels) = capture_clock(auth, url, now, is_token_expired)?;
     Ok(serde_json::json!({"expired": expired, "log_levels": log_levels}))
 }
 
 fn not_needed(auth: AuthKind, url: Option<&str>, now: &str) -> HelperResult {
-    let moment = parse_now(now)?;
-    let (outcome, log_levels) =
-        levels_for(|| token_refresh_not_needed(auth.token_kind(), url, moment));
-    let not_needed = outcome.map_err(|error| helper_error("OverflowError", error.to_string()))?;
+    let (not_needed, log_levels) = capture_clock(auth, url, now, token_refresh_not_needed)?;
     Ok(serde_json::json!({"not_needed": not_needed, "log_levels": log_levels}))
 }
 
