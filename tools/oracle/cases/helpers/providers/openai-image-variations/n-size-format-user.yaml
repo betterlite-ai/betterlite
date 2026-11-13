@@ -1,0 +1,17 @@
+kind: helper
+name: openai-image-variations-n-size-format-user
+call:
+  openai_image_variations:
+    function: n_size_format_user
+    probes:
+      - model: dall-e-2
+        existing_params: {n: 1, size: 256x256}
+        non_default_params: {n: 2, size: 512x512, response_format: b64_json, user: u1, style: vivid}
+      - model: dall-e-2
+        existing_params: {size: 1024x1024}
+        non_default_params: {}
+      - model: dall-e-2
+        existing_params: {}
+        non_default_params: {max_retries: 7}
+env: {}
+compare: {ignore: []}

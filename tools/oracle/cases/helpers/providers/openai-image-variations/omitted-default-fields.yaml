@@ -1,0 +1,36 @@
+kind: helper
+name: openai-image-variations-omitted-default-fields
+call:
+  openai_image_variations:
+    function: omitted_default_fields
+    probes:
+      - model: dall-e-2
+        image_filename: cat.png
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        organization: org-test
+        timeout: 30
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"url":"https://example.test/a.png"}]}'}
+      - model: dall-e-2
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        optional_params: {max_retries: 5}
+        timeout: 30
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+      - model: dall-e-2
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        client: sync
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+      - model: dall-e-2
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        client: async
+        async_call: true
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,33 @@
+kind: helper
+name: openai-image-variations-binary-file-descriptor
+call:
+  openai_image_variations:
+    function: binary_file_descriptor
+    probes:
+      - model: dall-e-2
+        image_filename: cat.png
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        client: sync
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: dall-e-2
+        image_filename: pic.webp
+        image_content: WEBP
+        image_content_type: image/webp
+        optional_params: {n: 2}
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+      - model: dall-e-2
+        image_content: RAW
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        client: async
+        async_call: true
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+env: {}
+compare: {ignore: []}

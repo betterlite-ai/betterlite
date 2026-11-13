@@ -1,0 +1,27 @@
+kind: helper
+name: openai-image-variations-provider-error
+call:
+  openai_image_variations:
+    function: provider_error
+    probes:
+      - model: dall-e-2
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        reply: {status: 429, headers: {x-request-id: req-429}, body: '{"error":{"message":"slow down"}}'}
+      - model: dall-e-2
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        failure: timeout
+      - model: dall-e-2
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        client: async
+        async_call: true
+        failure: failed
+env: {}
+compare: {ignore: []}

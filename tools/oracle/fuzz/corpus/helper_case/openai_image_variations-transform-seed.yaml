@@ -1,0 +1,12 @@
+kind: helper
+name: openai-image-variations-transform-seed
+call:
+  openai_image_variations:
+    function: variation_image_part
+    probes:
+      - model: dall-e-2
+        image_filename: cat.png
+        image_content: PNGDATA
+        optional_params: {n: 2, size: 512x512}
+env: {}
+compare: {ignore: []}

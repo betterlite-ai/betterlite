@@ -1,0 +1,22 @@
+kind: helper
+name: openai-image-variations-variation-reply-identity
+call:
+  openai_image_variations:
+    function: variation_reply_identity
+    probes:
+      - model: dall-e-2
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        reply: {status: 200, body: '{"created":7,"data":[{"b64_json":"YQ=="}],"quality":"medium","size":"1024x1024","usage":{"input_tokens":4,"input_tokens_details":{"image_tokens":1,"text_tokens":3},"output_tokens":8,"total_tokens":12}}'}
+      - model: dall-e-2
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        client: async
+        async_call: true
+        reply: {status: 200, body: '{"created":7,"data":[{"url":"https://example.test/a.png"}]}'}
+env: {}
+compare: {ignore: []}
