@@ -1,12 +1,11 @@
 import logging
-from typing import TypeAlias, TypedDict
+from typing import TypedDict
 
 from litellm.llms.vertex_ai.gemini.vertex_and_google_ai_studio_gemini import (
     VertexGeminiConfig,
 )
+from pydantic import JsonValue as Json
 from typing_extensions import override
-
-Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
 class Call(TypedDict):
