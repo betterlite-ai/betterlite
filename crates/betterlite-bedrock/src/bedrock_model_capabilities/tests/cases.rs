@@ -450,6 +450,18 @@ pub(super) fn effort_ceiling() {
         ),
         ("opus-xhigh", r#"{"key": "ceiling-xhigh"}"#),
         (
+            "info-low",
+            r#"{"bedrock_output_config_effort_ceiling": "low"}"#,
+        ),
+        (
+            "info-medium",
+            r#"{"bedrock_output_config_effort_ceiling": "medium"}"#,
+        ),
+        (
+            "info-high",
+            r#"{"bedrock_output_config_effort_ceiling": "high"}"#,
+        ),
+        (
             "opus-unknown",
             r#"{"bedrock_output_config_effort_ceiling": "ultra"}"#,
         ),
@@ -492,6 +504,29 @@ pub(super) fn effort_ceiling() {
         "opus-xhigh",
         r#"{"effort": "xhigh"}"#,
         r#"{"effort": "xhigh"}"#,
+    );
+    clamped("info-low", r#"{"effort": "xhigh"}"#, r#"{"effort": "low"}"#);
+    clamped("info-low", r#"{"effort": "high"}"#, r#"{"effort": "low"}"#);
+    clamped(
+        "info-low",
+        r#"{"effort": "medium"}"#,
+        r#"{"effort": "low"}"#,
+    );
+    clamped("info-low", r#"{"effort": "low"}"#, r#"{"effort": "low"}"#);
+    clamped(
+        "info-medium",
+        r#"{"effort": "xhigh"}"#,
+        r#"{"effort": "medium"}"#,
+    );
+    clamped(
+        "info-medium",
+        r#"{"effort": "high"}"#,
+        r#"{"effort": "medium"}"#,
+    );
+    clamped(
+        "info-high",
+        r#"{"effort": "xhigh"}"#,
+        r#"{"effort": "high"}"#,
     );
     clamped("opus", r#"{"effort": "ultra"}"#, r#"{"effort": "ultra"}"#);
     clamped("opus", r#"{"effort": null}"#, r#"{"effort": null}"#);
