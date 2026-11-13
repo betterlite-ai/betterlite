@@ -10,7 +10,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::decode::{ImageOptions, MAX_IMAGE_OPTIONS_BYTES, decode_image_options};
+use super::decode::{ImageOptions, decode_image_options};
 use super::error::GeminiImagePolicyError;
 use super::generation::{image_generation_config, image_web_search_requests};
 use super::policy::{
@@ -65,7 +65,8 @@ fn mapping<'params>(
 #[case::tall_four("2048x8192", "1:4")]
 #[case::tall_eight("192x1536", "1:8")]
 #[case::tall_two_three("424x632", "2:3")]
-#[case::wide_three_two("3392x5056", "3:2")]
+#[case::wide_three_two("5056x3392", "3:2")]
+#[case::tall_two_three_largest("3392x5056", "2:3")]
 #[case::tall_three_four("448x600", "3:4")]
 #[case::wide_four_one("1024x256", "4:1")]
 #[case::wide_four_three("600x448", "4:3")]
@@ -611,10 +612,10 @@ fn image_options_decode_json_configuration() {
 
 #[test]
 fn the_image_options_limit_covers_the_whole_limit() {
-    let at_the_limit = vec![b'a'; MAX_IMAGE_OPTIONS_BYTES];
+    let at_the_limit = vec![b'a'; 65_536];
     assert_eq!(
         decode_image_options(&at_the_limit).expect("size"),
-        ImageOptions::Size("a".repeat(MAX_IMAGE_OPTIONS_BYTES))
+        ImageOptions::Size("a".repeat(65_536))
     );
 }
 
@@ -632,7 +633,7 @@ fn malformed_image_options_are_rejected() {
         decode_image_options(&[0xff, 0xfe]),
         Err(GeminiImagePolicyError::OptionsNotUtf8(_))
     ));
-    let oversized = vec![b'a'; MAX_IMAGE_OPTIONS_BYTES.saturating_add(1)];
+    let oversized = vec![b'a'; 65_537];
     assert!(matches!(
         decode_image_options(&oversized),
         Err(GeminiImagePolicyError::OptionsTooLarge { .. })
