@@ -55,11 +55,13 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L637-L651
   - what: >-
       Request-body policies, guardrails, guardrail_config and include_guardrail_response are typed:
-      a value of another type is a 400 naming the field, where LiteLLM ignores it or coerces it.
+      a guardrail is a name or a {name: {extra_body: {...}}} object, the other fields take their
+      declared types, and a value of another type is a 400 naming the field, where LiteLLM passes it
+      through or coerces it.
     why: >-
       LiteLLM reads the fields out of an untyped request dict and skips or truth-tests what it does
       not expect; docs/compatibility.md rejects a value of the wrong type at the boundary instead.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3398-L3442
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L3212-L3219
   - what: A request-body policies list longer than ApiLimits.max_items is a 400 with code too_many_items.
     why: >-
       LiteLLM processes any length; the list is client input and betterlite caps every inbound list
