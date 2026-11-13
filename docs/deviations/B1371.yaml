@@ -1,0 +1,5 @@
+task: B1371
+deviations:
+  - what: A batch job response without a usable createTime, with a state outside Vertex's twelve job states, or with a null state returns a typed error naming the case instead of an unhandled ValueError or KeyError.
+    why: Vertex always sends createTime and one of the twelve states, so no working setup reaches this path; the source raises out of the transformation and becomes a 500 the caller cannot act on, while betterlite keeps the failure at the transformation with its cause.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/transformation.py#L184-L191
