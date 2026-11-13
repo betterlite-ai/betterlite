@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::RerankDocument;
 use betterlite_openai::dashscope_embedding::error::DashscopeError;
 use betterlite_openai::dashscope_embedding::identity::FamilyIdentity;
-use betterlite_openai::dashscope_embedding::reply::decode_dashscope_embedding_reply;
+use betterlite_openai::dashscope_embedding::reply::decode_dashscope_embedding;
 use betterlite_openai::dashscope_embedding::{
     DASHSCOPE_DEFAULT_BASE, DASHSCOPE_MISSING_KEY_MESSAGE, DashscopeEmbeddingConfig,
     map_openai_params,
@@ -11,9 +11,8 @@ use betterlite_provider::api::rerank_contracts::{
     BaseRerankConfig, EnvironmentRequest, Headers, MapCohereRerankParams, Params,
 };
 use betterlite_provider::dashscope_common::resolve_rerank_base;
-use betterlite_provider::dashscope_rerank::{
-    DashscopeRerankConfig, DashscopeRerankError, decode_dashscope_rerank_reply,
-};
+use betterlite_provider::dashscope_rerank::decode::decode_dashscope_rerank_reply;
+use betterlite_provider::dashscope_rerank::{DashscopeRerankConfig, DashscopeRerankError};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -116,12 +115,9 @@ fn embedding_params_and_url(input: &EmbeddingParamsAndUrlInput) -> HelperResult 
 }
 
 fn embedding_reply(input: &EmbeddingReplyInput) -> HelperResult {
-    let reply = decode_dashscope_embedding_reply(
-        input.body.as_bytes(),
-        input.status,
-        &input.request_model,
-    )
-    .map_err(|error| dashscope_failure(&error))?;
+    let reply =
+        decode_dashscope_embedding(input.body.as_bytes(), input.status, &input.request_model)
+            .map_err(|error| dashscope_failure(&error))?;
     Ok(json!({
         "response": serde_json::to_value(reply.response)?,
         "id": reply.id,
@@ -154,7 +150,9 @@ fn rerank_url_and_headers(input: &RerankUrlAndHeadersInput) -> HelperResult {
         optional_params: None,
         litellm_params: None,
     };
-    let headers = config.validate_environment(request).map_err(rerank_failure)?;
+    let headers = config
+        .validate_environment(request)
+        .map_err(rerank_failure)?;
     Ok(json!({
         "url": config.get_complete_url(input.api_base.as_deref(), "qwen3-rerank", None),
         "headers": serde_json::to_value(headers)?,

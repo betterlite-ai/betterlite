@@ -1,17 +1,65 @@
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, Protocol, TypedDict, runtime_checkable
 
 import httpx
-from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.dashscope.common_utils import resolve_dashscope_family_rerank_api_base
 from litellm.llms.dashscope.embed.transformation import DashScopeEmbeddingConfig
 from litellm.llms.dashscope.rerank.transformation import DashScopeRerankConfig
 from litellm.types.utils import EmbeddingResponse, RerankResponse
 from pydantic import JsonValue, TypeAdapter
 
-EMBEDDING = DashScopeEmbeddingConfig()
-RERANK = DashScopeRerankConfig()
 EMBEDDING_MODEL = "text-embedding-v4"
 RERANK_MODEL = "qwen3-rerank"
+
+
+class Recorder:
+    model_call_details: dict[str, JsonValue]
+
+    def __init__(self) -> None:
+        self.model_call_details = {}
+
+    def post_call(self, **values: JsonValue) -> None:
+        self.model_call_details["post_call"] = True
+        del values
+
+
+class Dumped(Protocol):
+    def model_dump_json(self) -> str: ...
+
+
+@runtime_checkable
+class EmbeddingConfig(Protocol):
+    def map_openai_params(self, **values: JsonValue) -> dict[str, JsonValue]: ...
+
+    def validate_environment(self, **values: JsonValue) -> dict[str, JsonValue]: ...
+
+    def get_complete_url(self, **values: JsonValue) -> str: ...
+
+    def transform_embedding_response(
+        self, *args: JsonValue | httpx.Response | Dumped | Recorder
+    ) -> Dumped: ...
+
+
+@runtime_checkable
+class RerankConfig(Protocol):
+    def validate_environment(self, **values: JsonValue) -> dict[str, JsonValue]: ...
+
+    def get_complete_url(self, **values: JsonValue) -> str: ...
+
+    def map_cohere_rerank_params(self, **values: JsonValue) -> dict[str, JsonValue]: ...
+
+    def transform_rerank_request(self, **values: JsonValue) -> dict[str, JsonValue]: ...
+
+    def transform_rerank_response(
+        self, *args: JsonValue | httpx.Response | Dumped | Recorder
+    ) -> Dumped: ...
+
+
+EMBEDDING: EmbeddingConfig = TypeAdapter(EmbeddingConfig).validate_python(
+    DashScopeEmbeddingConfig()
+)
+RERANK: RerankConfig = TypeAdapter(RerankConfig).validate_python(
+    DashScopeRerankConfig()
+)
 
 
 class EmbeddingParamsAndUrlInput(TypedDict):
@@ -53,10 +101,10 @@ class RerankRequestInput(TypedDict):
     function: Literal["rerank_request"]
     model: str
     query: str
-    documents: list[str | dict[str, JsonValue]]
+    documents: list[JsonValue]
     top_n: int | None
     return_documents: bool | None
-    rank_fields: list[str] | None
+    rank_fields: list[JsonValue] | None
 
 
 class RerankReplyInput(TypedDict):
@@ -107,38 +155,40 @@ def embedding_params_and_url(
     input_value: EmbeddingParamsAndUrlInput,
 ) -> dict[str, JsonValue]:
     mapped = EMBEDDING.map_openai_params(
-        dict(input_value["non_default_params"]),
-        dict(input_value["optional_params"]),
-        EMBEDDING_MODEL,
+        non_default_params=dict(input_value["non_default_params"]),
+        optional_params=dict(input_value["optional_params"]),
+        model=EMBEDDING_MODEL,
         drop_params=False,
     )
     headers = EMBEDDING.validate_environment(
-        dict(input_value["caller_headers"]),
-        EMBEDDING_MODEL,
-        [],
-        {},
-        {},
+        headers=dict(input_value["caller_headers"]),
+        model=EMBEDDING_MODEL,
+        messages=[],
+        optional_params={},
+        litellm_params={},
         api_key=input_value["api_key"],
+        api_base=input_value["api_base"],
     )
     url = EMBEDDING.get_complete_url(
-        input_value["api_base"], None, EMBEDDING_MODEL, {}, {}
+        api_base=input_value["api_base"],
+        api_key=None,
+        model=EMBEDDING_MODEL,
+        optional_params={},
+        litellm_params={},
     )
-    params = TypeAdapter(dict[str, JsonValue]).validate_python(mapped)
-    resolved = TypeAdapter(dict[str, str]).validate_python(headers)
-    return {"params": params, "url": url, "headers": resolved}
+    resolved = TypeAdapter(dict[str, JsonValue]).validate_python(headers)
+    return {"params": mapped, "url": url, "headers": resolved}
 
 
 def embedding_reply(input_value: EmbeddingReplyInput) -> dict[str, JsonValue]:
     raw_response = httpx.Response(
         input_value["status"], content=input_value["body"].encode()
     )
-    logging_obj = object.__new__(Logging)
-    logging_obj.model_call_details = {}
     result = EMBEDDING.transform_embedding_response(
         input_value["request_model"],
         raw_response,
         EmbeddingResponse(),
-        logging_obj,
+        Recorder(),
         None,
         {},
         {},
@@ -177,45 +227,51 @@ def rerank_url_and_headers(
     input_value: RerankUrlAndHeadersInput,
 ) -> dict[str, JsonValue]:
     headers = RERANK.validate_environment(
-        dict(input_value["caller_headers"]),
-        RERANK_MODEL,
+        headers=dict(input_value["caller_headers"]),
+        model=RERANK_MODEL,
         api_key=input_value["api_key"],
+        optional_params=None,
+        litellm_params=None,
     )
-    url = RERANK.get_complete_url(input_value["api_base"], RERANK_MODEL, None)
-    resolved = TypeAdapter(dict[str, str]).validate_python(headers)
+    url = RERANK.get_complete_url(
+        api_base=input_value["api_base"],
+        model=RERANK_MODEL,
+        optional_params=None,
+    )
+    resolved = TypeAdapter(dict[str, JsonValue]).validate_python(headers)
     return {"url": url, "headers": resolved}
 
 
 def rerank_request(input_value: RerankRequestInput) -> dict[str, JsonValue]:
     params = RERANK.map_cohere_rerank_params(
-        {},
-        input_value["model"],
-        False,
-        input_value["query"],
-        input_value["documents"],
+        non_default_params=None,
+        model=input_value["model"],
+        drop_params=False,
+        query=input_value["query"],
+        documents=input_value["documents"],
+        custom_llm_provider=None,
         top_n=input_value["top_n"],
         rank_fields=input_value["rank_fields"],
         return_documents=input_value["return_documents"],
     )
     body = RERANK.transform_rerank_request(
-        input_value["model"], dict(params), {}, None
+        model=input_value["model"],
+        optional_rerank_params=dict(params),
+        headers={},
+        litellm_params=None,
     )
-    mapped = TypeAdapter(dict[str, JsonValue]).validate_python(params)
-    request_body = TypeAdapter(dict[str, JsonValue]).validate_python(body)
-    return {"params": mapped, "body": request_body}
+    return {"params": params, "body": body}
 
 
 def rerank_reply(input_value: RerankReplyInput) -> dict[str, JsonValue]:
     raw_response = httpx.Response(
         input_value["status"], content=input_value["body"].encode()
     )
-    logging_obj = object.__new__(Logging)
-    logging_obj.model_call_details = {}
     result = RERANK.transform_rerank_response(
         RERANK_MODEL,
         raw_response,
         RerankResponse(),
-        logging_obj,
+        Recorder(),
         None,
         {},
         {},

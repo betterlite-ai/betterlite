@@ -10,7 +10,7 @@ use serde_json::Number;
 
 use super::error::get_error_class;
 use super::identity::{FamilyIdentity, FamilyKeyError, resolve_key};
-use super::reply::decode_dashscope_embedding_reply;
+use super::reply::decode_dashscope_embedding;
 use super::{
     DASHSCOPE_DEFAULT_BASE, DASHSCOPE_MISSING_KEY_MESSAGE, DashscopeEmbeddingConfig,
     map_openai_params, transform_embedding_request,
@@ -224,7 +224,7 @@ fn the_request_body_carries_the_options_that_are_set() {
 #[test]
 fn the_reply_decodes_the_data_model_and_usage() {
     let body = br#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.5,-1]}],"model":"text-embedding-v4","usage":{"prompt_tokens":9,"total_tokens":11},"id":"emb-1"}"#;
-    let reply = decode_dashscope_embedding_reply(body, 200, "requested-model").unwrap();
+    let reply = decode_dashscope_embedding(body, 200, "requested-model").unwrap();
     assert_eq!(reply.id.as_deref(), Some("emb-1"));
     assert_eq!(reply.response.object, "list");
     assert_eq!(reply.response.model, "text-embedding-v4");
@@ -242,7 +242,7 @@ fn the_reply_decodes_the_data_model_and_usage() {
 
 #[test]
 fn the_reply_defaults_the_missing_parts() {
-    let reply = decode_dashscope_embedding_reply(br#"{}"#, 200, "requested-model").unwrap();
+    let reply = decode_dashscope_embedding(br#"{}"#, 200, "requested-model").unwrap();
     assert_eq!(reply.id, None);
     assert!(reply.response.data.is_empty());
     assert_eq!(reply.response.model, "requested-model");
@@ -252,19 +252,16 @@ fn the_reply_defaults_the_missing_parts() {
 
 #[test]
 fn the_reply_defaults_the_total_to_the_prompt_tokens() {
-    let reply = decode_dashscope_embedding_reply(
-        br#"{"usage":{"prompt_tokens":4}}"#,
-        200,
-        "requested-model",
-    )
-    .unwrap();
+    let reply =
+        decode_dashscope_embedding(br#"{"usage":{"prompt_tokens":4}}"#, 200, "requested-model")
+            .unwrap();
     assert_eq!(reply.response.usage.prompt_tokens, 4);
     assert_eq!(reply.response.usage.total_tokens, 4);
 }
 
 #[test]
 fn the_reply_reports_a_non_json_body_with_the_reply_status() {
-    let error = decode_dashscope_embedding_reply(b"not json", 502, "model").unwrap_err();
+    let error = decode_dashscope_embedding(b"not json", 502, "model").unwrap_err();
     assert_eq!(error.status_code, 502);
     assert!(
         error
@@ -285,7 +282,7 @@ fn the_reply_reports_an_error_key_as_a_dashscope_error(
     #[case] body: &[u8],
     #[case] expected: &str,
 ) {
-    let error = decode_dashscope_embedding_reply(body, 400, "model").unwrap_err();
+    let error = decode_dashscope_embedding(body, 400, "model").unwrap_err();
     assert_eq!(error.status_code, 400);
     assert_eq!(error.message, expected);
 }
@@ -302,7 +299,7 @@ fn the_reply_reports_an_error_key_as_a_dashscope_error(
 #[case::a_token_count_that_is_negative(br#"{"usage":{"prompt_tokens":-1}}"#)]
 #[case::an_id_that_is_not_text(br#"{"id":7}"#)]
 fn the_reply_rejects_a_shape_the_records_cannot_hold(#[case] body: &[u8]) {
-    let error = decode_dashscope_embedding_reply(body, 200, "model").unwrap_err();
+    let error = decode_dashscope_embedding(body, 200, "model").unwrap_err();
     assert_eq!(error.status_code, 500);
     assert!(error.message.contains("wrong type"));
 }
@@ -327,6 +324,6 @@ fn replays_the_dashscope_embedding_reply_corpus(
     #[files("fuzz/corpus/dashscope_embedding_reply/*")] path: PathBuf,
 ) {
     let bytes = fs::read(path).expect("read corpus file");
-    let _decoded = decode_dashscope_embedding_reply(&bytes, 200, "text-embedding-v4");
-    let _failed = decode_dashscope_embedding_reply(&bytes, 500, "text-embedding-v4");
+    let _decoded = decode_dashscope_embedding(&bytes, 200, "text-embedding-v4");
+    let _failed = decode_dashscope_embedding(&bytes, 500, "text-embedding-v4");
 }

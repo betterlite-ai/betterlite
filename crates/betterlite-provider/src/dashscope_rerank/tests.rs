@@ -11,7 +11,8 @@ use secrecy::SecretString;
 use serde_json::Number;
 use uuid::Uuid;
 
-use super::{DashscopeRerankConfig, DashscopeRerankError, decode_dashscope_rerank_reply};
+use super::decode::decode_dashscope_rerank_reply;
+use super::{DashscopeRerankConfig, DashscopeRerankError};
 use crate::api::rerank_contracts::{
     BaseRerankConfig, EnvironmentRequest, Headers, MapCohereRerankParams, Params, RerankLogging,
     RerankProviderResponse, ResponseTransform,

@@ -12,7 +12,7 @@ pub fn resolve_rerank_base(
     env_value: &str,
     default_rerank_base: &str,
 ) -> String {
-    let remapped = rerank_base_for_chat_shaped_base(api_base);
+    let remapped = chat_shaped_rerank_base(api_base);
     match (api_base, remapped) {
         // a base that is not chat-shaped is the caller's own rerank route, even when it is empty
         (Some(base), None) => base.to_owned(),
@@ -22,7 +22,7 @@ pub fn resolve_rerank_base(
     }
 }
 
-fn rerank_base_for_chat_shaped_base(api_base: Option<&str>) -> Option<String> {
+fn chat_shaped_rerank_base(api_base: Option<&str>) -> Option<String> {
     let api_base = api_base?;
     let parsed = Url::parse(api_base).ok()?;
     let host = parsed.host_str()?.to_lowercase();

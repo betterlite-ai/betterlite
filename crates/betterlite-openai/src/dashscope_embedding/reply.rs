@@ -15,7 +15,7 @@ pub struct DashscopeEmbeddingReply {
     pub id: Option<String>,
 }
 
-pub fn decode_dashscope_embedding_reply(
+pub fn decode_dashscope_embedding(
     bytes: &[u8],
     status_code: u16,
     request_model: &str,
