@@ -25,14 +25,12 @@ pub struct ChatResponsesFollowup {
 impl ChatResponsesFollowup {
     pub async fn build_chat_plan(
         &self,
-        tool_calls: &[Call],
-        response_format: &str,
-        request: &FollowupRequest<'_>,
+        calls: &[Call],
+        format: &str,
+        followup: &FollowupRequest<'_>,
     ) -> Result<AgenticLoopPlan, FollowupError> {
-        let request_patch =
-            chat::build_chat_patch(self.search.as_ref(), tool_calls, response_format, request)
-                .await?;
-        websearch_plan(request_patch, response_format)
+        let patch = chat::build_chat_patch(self.search.as_ref(), calls, format, followup).await?;
+        websearch_plan(patch, format)
     }
 
     pub async fn build_responses_plan(
