@@ -1,0 +1,42 @@
+task: B8254
+deviations:
+  - what: >-
+      Each signer option is read from the decoded optional_params mapping first and then from the
+      litellm_params extras, and is decoded into the constructor's declared type. Python looks each
+      key up with getattr by name.
+    why: >-
+      betterlite's LitellmParams keeps undeclared keys in its extras map, so both lookups read that
+      map instead of attributes. A value of the wrong type is refused with the field's name rather
+      than reaching the signer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/__init__.py#L27-L34
+  - what: >-
+      The environment lookup and the outbound HTTP client the signer is built with are injected
+      through the callback registry port. LiteLLM's constructor reads os.environ and builds its own
+      httpx client.
+    why: >-
+      inject-dependencies: nothing reads the process environment outside the config crate, and the
+      four-argument initializer has no other place to take the two dependencies from. The wiring
+      passes the proxy's environment and its shared outbound client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/mcp_jwt_signer.py#L283-L330
+  - what: >-
+      The guardrail name, the event hook and default_on are not stored on the signer. Only the
+      timeout reaches its settings; the registry fills GuardrailSettings from the same entry.
+    why: >-
+      B3816's JwtSigner has no fields for the three values, and this task may not change that
+      module. LiteLLM keeps them on the CustomGuardrail base of the instance.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/__init__.py#L36-L39
+  - what: >-
+      A negative timeout, or one too large for a Duration, is refused at startup with the field's
+      name; LiteLLM passes it to httpx and fails when the first identity provider request is made.
+    why: >-
+      Rust builds the timeout as a Duration, which cannot hold a negative or overflowing value, and
+      a bad value should fail where it is read instead of on a later request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/__init__.py#L65
+  - what: >-
+      Signer options written under guardrails[].litellm_params in a YAML config are still refused
+      as unsupported keys before the initializer runs. They reach it only from a stored or
+      request-built guardrail, and otherwise come from the MCP_JWT_* environment variables.
+    why: >-
+      B3662's config view reads only the base and param keys, so any other key stays
+      ConfigError::Unsupported. Widening that key table is B3662's section, outside this task.
+    link: ""
