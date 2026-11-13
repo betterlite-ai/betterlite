@@ -1,0 +1,5 @@
+task: B1303
+deviations:
+  - what: A background refresh can run at the same time as a blocking refresh of the same credential handle. LiteLLM serializes every refresh_auth call on one VertexBase through a threading.RLock, so the two never overlap.
+    why: The background task runs outside the per-key lookup lease, the same way LiteLLM's background refresh runs without its async lock, and B1302 replaced the global RLock with a per-identity lease that only blocking lookups take. The INVALID path drains a background refresh before blocking on its own, which is the overlap LiteLLM's comment names, and the identity guard keeps the cache write correct in the other order. The injected executor owns the safety of its refresh future.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L368-L386

@@ -1,0 +1,5 @@
+kind: helper
+name: messages-content-primitives-tool-use-thought-signature
+call: {"messages_content_primitives": {"operation": "tool_use_signature", "content": {"provider_specific_fields": {"thought_signature": "sig"}}}}
+env: {}
+compare: {ignore: []}

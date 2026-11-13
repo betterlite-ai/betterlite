@@ -1,0 +1,9 @@
+kind: helper
+name: import-missing-module
+call:
+  b8042:
+    op: load
+    value: no_such_module.instance
+    config_file_path: null
+env: {}
+compare: {ignore: []}
