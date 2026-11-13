@@ -407,7 +407,7 @@ fn body_json(bytes: &[u8]) -> Json {
 
 #[test]
 fn execution_bodies_match_sdk_fixture() {
-    let Json::Object(cases) = json(include_str!("fixtures/sdk-requests.json")) else {
+    let Json::Object(cases) = json(include_str!("../fixtures/sdk-requests.json")) else {
         panic!("a fixture object");
     };
     assert_eq!(
