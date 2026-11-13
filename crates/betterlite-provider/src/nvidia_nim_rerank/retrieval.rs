@@ -135,7 +135,7 @@ impl BaseRerankConfig for NvidiaNimRerankConfig {
         let reply = match decode_nvidia_nim_rerank_reply(&request.raw_response.body) {
             Ok(reply) => reply,
             Err(NvidiaNimRerankError::ReplyNotJson { .. }) => {
-                return Err(BaseLlmException {
+                return Err(NvidiaNimRerankError::from(BaseLlmException {
                     status_code: request.raw_response.status_code,
                     message: std::str::from_utf8(&request.raw_response.body).map_or_else(
                         |_| "the rerank reply body is not valid UTF-8".to_owned(),
@@ -147,8 +147,7 @@ impl BaseRerankConfig for NvidiaNimRerankConfig {
                         .iter()
                         .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
                         .collect(),
-                }
-                .into());
+                }));
             }
             Err(error) => return Err(error),
         };

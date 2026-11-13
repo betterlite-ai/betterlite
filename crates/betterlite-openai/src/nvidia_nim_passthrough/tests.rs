@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::{
     NvidiaNimPassthroughConfig, NvidiaNimPassthroughError, validate_environment,
-    without_repeated_version_prefix,
+    version_deduplicated_root,
 };
 use crate::openai_base_config::{Headers, Object};
 use crate::passthrough::transformation::BasePassthroughConfig;
@@ -67,20 +67,20 @@ fn url_request<'call>(
 #[case::bare_v_is_not_a_version("https://h/v", "v/models", "https://h/v")]
 #[case::digits_only_after_v("https://h/v1x", "v1x/models", "https://h/v1x")]
 #[case::fragment_kept("https://h/v1#part", "v1/models", "https://h/#part")]
-fn without_repeated_version_prefix_drops_one_repeated_version(
+fn version_deduplicated_root_drops_one_repeated_version(
     #[case] api_base: &str,
     #[case] native_endpoint: &str,
     #[case] expected: &str,
 ) {
     assert_eq!(
-        without_repeated_version_prefix(api_base, native_endpoint).unwrap(),
+        version_deduplicated_root(api_base, native_endpoint).unwrap(),
         expected
     );
 }
 
 #[test]
-fn without_repeated_version_prefix_rejects_an_invalid_base() {
-    let error = without_repeated_version_prefix("not a url", "v1/models").unwrap_err();
+fn version_deduplicated_root_rejects_an_invalid_base() {
+    let error = version_deduplicated_root("not a url", "v1/models").unwrap_err();
     assert!(matches!(
         error,
         NvidiaNimPassthroughError::Passthrough(PassthroughError::InvalidUrl { .. })

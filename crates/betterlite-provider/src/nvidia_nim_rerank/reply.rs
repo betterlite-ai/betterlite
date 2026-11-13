@@ -40,7 +40,10 @@ pub struct NvidiaNimUsage {
 pub fn decode_nvidia_nim_rerank_reply(
     bytes: &[u8],
 ) -> Result<NvidiaNimRerankReply, NvidiaNimRerankError> {
-    serde_json::from_slice(bytes).map_err(NvidiaNimRerankError::from_json)
+    match serde_json::from_slice(bytes) {
+        Ok(reply) => Ok(reply),
+        Err(source) => Err(NvidiaNimRerankError::from_json(source)),
+    }
 }
 
 pub fn to_response(

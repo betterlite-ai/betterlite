@@ -11,18 +11,14 @@ use betterlite_provider::api::rerank_contracts::{
 use betterlite_provider::nvidia_nim_rerank::ranking::NvidiaNimRankingConfig;
 use betterlite_provider::nvidia_nim_rerank::retrieval::NvidiaNimRerankConfig;
 use betterlite_provider::nvidia_nim_rerank::{
-    NvidiaNimRerankError, NvidiaNimRerankSelection, select_nvidia_nim_rerank_config,
+    NvidiaNimRerankError, NvidiaNimRerankSelection, select_rerank_config,
 };
-
-fn fixed_id() -> Uuid {
-    Uuid::from_u128(7)
-}
 
 fn retrieval() -> NvidiaNimRerankConfig {
     NvidiaNimRerankConfig {
         env_api_key: None,
         global_api_key: None,
-        new_id: fixed_id,
+        new_id: || Uuid::from_u128(7),
     }
 }
 
@@ -83,14 +79,14 @@ pub(crate) fn select(input: &Input) -> Value {
     let selected: Vec<String> = input
         .models
         .iter()
-        .map(|model| url_of(&select_nvidia_nim_rerank_config(model), None, model))
+        .map(|model| url_of(&select_rerank_config(model), None, model))
         .collect();
     let urls: Vec<String> = input
         .urls
         .iter()
         .map(|case| {
             url_of(
-                &select_nvidia_nim_rerank_config(&case.model),
+                &select_rerank_config(&case.model),
                 case.api_base.as_deref(),
                 &case.model,
             )
@@ -161,7 +157,10 @@ pub(crate) fn request(cases: &[Case]) -> Value {
 }
 
 pub(crate) fn response(cases: &[Case]) -> Value {
-    let responses: Vec<Value> = cases.iter().map(one_response).collect();
+    let mut responses = Vec::with_capacity(cases.len());
+    for case in cases {
+        responses.push(one_response(case));
+    }
     json!({"responses": responses})
 }
 

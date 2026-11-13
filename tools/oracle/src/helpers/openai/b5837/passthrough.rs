@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 use super::{Case, UrlCase};
 use betterlite_openai::nvidia_nim_passthrough::{
-    NvidiaNimPassthroughConfig, validate_environment as validate_passthrough_environment,
+    NvidiaNimPassthroughConfig, validate_environment as merge_headers,
 };
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
@@ -57,7 +57,7 @@ pub(crate) fn credentials(cases: &[Case]) -> Value {
     let mut streaming = Vec::with_capacity(cases.len());
     for case in cases {
         let api_key = case.api_key.as_ref().map(SecretString::from);
-        let merged = validate_passthrough_environment(case.headers.clone(), api_key.as_ref());
+        let merged = merge_headers(case.headers.clone(), api_key.as_ref());
         let request_data =
             super::object(json!({"stream": case.stream.clone().unwrap_or(Value::Null)}));
         headers.push(json!(merged));

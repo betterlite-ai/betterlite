@@ -71,7 +71,7 @@ pub enum NvidiaNimRerankSelection {
 }
 
 #[must_use]
-pub fn select_nvidia_nim_rerank_config(model: &str) -> NvidiaNimRerankSelection {
+pub fn select_rerank_config(model: &str) -> NvidiaNimRerankSelection {
     if model.starts_with(RANKING_PREFIX) {
         NvidiaNimRerankSelection::Ranking(ranking::NvidiaNimRankingConfig::default())
     } else {

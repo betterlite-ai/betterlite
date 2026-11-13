@@ -78,7 +78,7 @@ pub fn validate_environment(headers: Headers, api_key: Option<&SecretString>) ->
     merged
 }
 
-pub fn without_repeated_version_prefix(
+pub fn version_deduplicated_root(
     api_base: &str,
     native_endpoint: &str,
 ) -> Result<String, NvidiaNimPassthroughError> {
@@ -137,7 +137,7 @@ impl BasePassthroughConfig for NvidiaNimPassthroughConfig {
             model_group_from(request.litellm_params),
         ];
         let native_endpoint = strip_leading_model_segment(request.target.endpoint, &names);
-        let root = without_repeated_version_prefix(base, &native_endpoint)?;
+        let root = version_deduplicated_root(base, &native_endpoint)?;
         let url = self.format_url(&native_endpoint, &root, request.request_query_params)?;
         Ok((url, root))
     }

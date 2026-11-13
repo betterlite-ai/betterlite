@@ -15,7 +15,7 @@ use uuid::Uuid;
 use super::ranking::NvidiaNimRankingConfig;
 use super::reply::decode_nvidia_nim_rerank_reply;
 use super::retrieval::NvidiaNimRerankConfig;
-use super::{NvidiaNimRerankError, NvidiaNimRerankSelection, select_nvidia_nim_rerank_config};
+use super::{NvidiaNimRerankError, NvidiaNimRerankSelection, select_rerank_config};
 use crate::api::rerank_contracts::{
     BaseRerankConfig, EnvironmentRequest, Headers, MapCohereRerankParams, Params, RerankLogging,
     RerankProviderResponse, ResponseTransform,
@@ -132,32 +132,31 @@ fn url(config: &NvidiaNimRerankConfig, api_base: Option<&str>, model: &str) -> S
 }
 
 #[test]
-fn select_nvidia_nim_rerank_config_reads_the_raw_ranking_prefix() {
+fn select_rerank_config_reads_the_raw_ranking_prefix() {
     assert!(matches!(
-        select_nvidia_nim_rerank_config("ranking/nvidia/llama"),
+        select_rerank_config("ranking/nvidia/llama"),
         NvidiaNimRerankSelection::Ranking(_)
     ));
     assert!(matches!(
-        select_nvidia_nim_rerank_config("nvidia/llama"),
+        select_rerank_config("nvidia/llama"),
         NvidiaNimRerankSelection::Retrieval(_)
     ));
     assert!(matches!(
-        select_nvidia_nim_rerank_config("nvidia_nim/ranking/nvidia/llama"),
+        select_rerank_config("nvidia_nim/ranking/nvidia/llama"),
         NvidiaNimRerankSelection::Retrieval(_)
     ));
 }
 
 #[test]
-fn select_nvidia_nim_rerank_config_returns_a_config_of_the_matching_family() {
-    let NvidiaNimRerankSelection::Ranking(selected) = select_nvidia_nim_rerank_config("ranking/x")
-    else {
+fn select_rerank_config_returns_a_config_of_the_matching_family() {
+    let NvidiaNimRerankSelection::Ranking(selected) = select_rerank_config("ranking/x") else {
         panic!("a ranking model selects the ranking config");
     };
     assert_eq!(
         selected.get_complete_url(None, "ranking/x", None),
         "https://ai.api.nvidia.com/v1/ranking"
     );
-    let NvidiaNimRerankSelection::Retrieval(selected) = select_nvidia_nim_rerank_config("x") else {
+    let NvidiaNimRerankSelection::Retrieval(selected) = select_rerank_config("x") else {
         panic!("any other model selects the retrieval config");
     };
     assert_eq!(
