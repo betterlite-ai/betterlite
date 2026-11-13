@@ -52,7 +52,8 @@ fn inputs() -> Vec<Input> {
     seeds()
         .iter()
         .map(|(_, case)| {
-            serde_json::from_value(case.call.input.clone()).expect("a compatible_image_record input")
+            serde_json::from_value(case.call.input.clone())
+                .expect("a compatible_image_record input")
         })
         .collect()
 }
@@ -69,9 +70,21 @@ fn hosts(input: &Input) -> Vec<Host> {
 fn helper_seeds_cover_both_hosts_and_functions() {
     let inputs = inputs();
     assert!(!inputs.is_empty());
-    assert!(inputs.iter().any(|input| matches!(input, Input::Options { .. })));
-    assert!(inputs.iter().any(|input| matches!(input, Input::Request { .. })));
-    assert!(inputs.iter().any(|input| matches!(input, Input::Price { .. })));
+    assert!(
+        inputs
+            .iter()
+            .any(|input| matches!(input, Input::Options { .. }))
+    );
+    assert!(
+        inputs
+            .iter()
+            .any(|input| matches!(input, Input::Request { .. }))
+    );
+    assert!(
+        inputs
+            .iter()
+            .any(|input| matches!(input, Input::Price { .. }))
+    );
     let hosts: Vec<Host> = inputs.iter().flat_map(hosts).collect();
     assert!(hosts.contains(&Host::Aiml));
     assert!(hosts.contains(&Host::CometApi));

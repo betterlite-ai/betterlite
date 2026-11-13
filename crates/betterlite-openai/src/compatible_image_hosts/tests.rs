@@ -290,40 +290,29 @@ fn flux_request_body_keeps_the_supplied_order() {
 }
 
 #[rstest]
-#[case::default(&[], None, "https://api.aimlapi.com/v1/images/generations")]
-#[case::environment(&[("AIML_API_BASE", "https://aiml.example")], None, "https://aiml.example/v1/images/generations")]
-#[case::explicit_wins(&[("AIML_API_BASE", "https://aiml.example")], Some("https://explicit.example"), "https://explicit.example/v1/images/generations")]
-#[case::trailing_slashes(&[], Some("https://explicit.example///"), "https://explicit.example/v1/images/generations")]
-#[case::strips_v1(&[], Some("https://explicit.example/v1"), "https://explicit.example/v1/images/generations")]
-#[case::strips_v1_after_slashes(&[], Some("https://explicit.example/v1/"), "https://explicit.example/v1/images/generations")]
-#[case::empty_explicit_falls_through(&[("AIML_API_BASE", "https://aiml.example")], Some(""), "https://aiml.example/v1/images/generations")]
-#[case::empty_environment_is_unset(&[("AIML_API_BASE", "")], None, "https://api.aimlapi.com/v1/images/generations")]
-fn aiml_url_resolution(
+#[case::aiml_default(Host::Aiml, &[], None, "https://api.aimlapi.com/v1/images/generations")]
+#[case::aiml_environment(Host::Aiml, &[("AIML_API_BASE", "https://aiml.example")], None, "https://aiml.example/v1/images/generations")]
+#[case::aiml_explicit_wins(Host::Aiml, &[("AIML_API_BASE", "https://aiml.example")], Some("https://explicit.example"), "https://explicit.example/v1/images/generations")]
+#[case::aiml_trailing_slashes(Host::Aiml, &[], Some("https://explicit.example///"), "https://explicit.example/v1/images/generations")]
+#[case::aiml_strips_v1(Host::Aiml, &[], Some("https://explicit.example/v1"), "https://explicit.example/v1/images/generations")]
+#[case::aiml_strips_v1_after_slashes(Host::Aiml, &[], Some("https://explicit.example/v1/"), "https://explicit.example/v1/images/generations")]
+#[case::aiml_empty_explicit(Host::Aiml, &[("AIML_API_BASE", "https://aiml.example")], Some(""), "https://aiml.example/v1/images/generations")]
+#[case::aiml_empty_environment(Host::Aiml, &[("AIML_API_BASE", "")], None, "https://api.aimlapi.com/v1/images/generations")]
+#[case::cometapi_default(Host::CometApi, &[], None, "https://api.cometapi.com/v1/images/generations")]
+#[case::cometapi_base_url_alias(Host::CometApi, &[("COMETAPI_BASE_URL", "https://comet.example")], None, "https://comet.example/v1/images/generations")]
+#[case::cometapi_api_base_alias(Host::CometApi, &[("COMETAPI_API_BASE", "https://alternate.example")], None, "https://alternate.example/v1/images/generations")]
+#[case::cometapi_first_alias_wins(Host::CometApi, &[("COMETAPI_BASE_URL", "https://first.example"), ("COMETAPI_API_BASE", "https://second.example")], None, "https://first.example/v1/images/generations")]
+#[case::cometapi_empty_first_alias(Host::CometApi, &[("COMETAPI_BASE_URL", ""), ("COMETAPI_API_BASE", "https://second.example")], None, "https://second.example/v1/images/generations")]
+#[case::cometapi_keeps_v1(Host::CometApi, &[], Some("https://explicit.example/v1"), "https://explicit.example/v1/v1/images/generations")]
+#[case::cometapi_trailing_slashes(Host::CometApi, &[], Some("https://explicit.example//"), "https://explicit.example/v1/images/generations")]
+fn complete_url_resolution(
+    #[case] host: Host,
     #[case] environment: &[(&str, &str)],
     #[case] api_base: Option<&str>,
     #[case] expected: &str,
 ) {
     assert_eq!(
-        complete_url(Host::Aiml, &settings(environment), api_base),
-        expected
-    );
-}
-
-#[rstest]
-#[case::default(&[], None, "https://api.cometapi.com/v1/images/generations")]
-#[case::base_url_alias(&[("COMETAPI_BASE_URL", "https://comet.example")], None, "https://comet.example/v1/images/generations")]
-#[case::api_base_alias(&[("COMETAPI_API_BASE", "https://alternate.example")], None, "https://alternate.example/v1/images/generations")]
-#[case::first_alias_wins(&[("COMETAPI_BASE_URL", "https://first.example"), ("COMETAPI_API_BASE", "https://second.example")], None, "https://first.example/v1/images/generations")]
-#[case::empty_first_alias(&[("COMETAPI_BASE_URL", ""), ("COMETAPI_API_BASE", "https://second.example")], None, "https://second.example/v1/images/generations")]
-#[case::keeps_v1(&[], Some("https://explicit.example/v1"), "https://explicit.example/v1/v1/images/generations")]
-#[case::trailing_slashes(&[], Some("https://explicit.example//"), "https://explicit.example/v1/images/generations")]
-fn cometapi_url_resolution(
-    #[case] environment: &[(&str, &str)],
-    #[case] api_base: Option<&str>,
-    #[case] expected: &str,
-) {
-    assert_eq!(
-        complete_url(Host::CometApi, &settings(environment), api_base),
+        complete_url(host, &settings(environment), api_base),
         expected
     );
 }
@@ -680,14 +669,8 @@ impl RecordingLookup {
     fn asked(&self) -> Vec<(String, Option<String>)> {
         self.asked.lock().expect("the recording lock").clone()
     }
-}
 
-impl PriceLookup for RecordingLookup {
-    fn effective_model_info(
-        &self,
-        model: &str,
-        custom_llm_provider: Option<&str>,
-    ) -> Option<PriceRecord> {
+    fn record(&self, model: &str, custom_llm_provider: Option<&str>) -> Option<PriceRecord> {
         self.asked
             .lock()
             .expect("the recording lock")
@@ -697,6 +680,16 @@ impl PriceLookup for RecordingLookup {
             |provider| format!("{provider}/{model}"),
         );
         self.entries.get(&key).cloned()
+    }
+}
+
+impl PriceLookup for RecordingLookup {
+    fn effective_model_info(
+        &self,
+        model: &str,
+        custom_llm_provider: Option<&str>,
+    ) -> Option<PriceRecord> {
+        self.record(model, custom_llm_provider)
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
@@ -708,7 +701,7 @@ impl PriceLookup for RecordingLookup {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel> {
-        self.effective_model_info(model, custom_llm_provider)
+        self.record(model, custom_llm_provider)
             .map(|record| PricedModel {
                 record,
                 tiered_pricing: Vec::new(),

@@ -129,11 +129,11 @@ fn request_value(call: &RequestCall) -> Value {
     };
     let url = complete_url(call.host, &settings, call.api_base.as_deref());
     let key = call.api_key.as_deref().map(SecretString::from);
-    let headers = match validate_environment(call.host, &settings, key.as_ref(), &ImageHeaders::new())
-    {
-        Ok(headers) => headers,
-        Err(_) => return failed(None),
-    };
+    let headers =
+        match validate_environment(call.host, &settings, key.as_ref(), &ImageHeaders::new()) {
+            Ok(headers) => headers,
+            Err(_) => return failed(None),
+        };
     let body = match request_body(call.host, &call.model, &call.prompt, &call.optional_params) {
         Ok(body) => body,
         Err(_) => return failed(None),
@@ -168,12 +168,7 @@ fn header(headers: &ImageHeaders, name: &str) -> Value {
 }
 
 fn reply_view(response: &ImageResponse) -> Value {
-    let data: Vec<Value> = response
-        .data
-        .iter()
-        .flatten()
-        .map(image_view)
-        .collect();
+    let data: Vec<Value> = response.data.iter().flatten().map(image_view).collect();
     json!({"data": data})
 }
 
@@ -223,15 +218,23 @@ struct FixtureLookup<'prices> {
     entries: &'prices BTreeMap<String, PriceRecord>,
 }
 
+impl FixtureLookup<'_> {
+    fn record(&self, model: &str, custom_llm_provider: Option<&str>) -> Option<PriceRecord> {
+        let key = custom_llm_provider.map_or_else(
+            || model.to_owned(),
+            |provider| format!("{provider}/{model}"),
+        );
+        self.entries.get(&key).cloned()
+    }
+}
+
 impl PriceLookup for FixtureLookup<'_> {
     fn effective_model_info(
         &self,
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
-        let key = custom_llm_provider
-            .map_or_else(|| model.to_owned(), |provider| format!("{provider}/{model}"));
-        self.entries.get(&key).cloned()
+        self.record(model, custom_llm_provider)
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
@@ -243,7 +246,7 @@ impl PriceLookup for FixtureLookup<'_> {
         model: &str,
         custom_llm_provider: Option<&str>,
     ) -> Option<PricedModel> {
-        self.effective_model_info(model, custom_llm_provider)
+        self.record(model, custom_llm_provider)
             .map(|record| PricedModel {
                 record,
                 tiered_pricing: Vec::new(),

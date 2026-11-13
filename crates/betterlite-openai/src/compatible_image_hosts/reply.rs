@@ -1,12 +1,24 @@
 use betterlite_config::sections::compatible_image_credentials::Host;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
 use super::error::CompatibleImageReplyError;
 use crate::api::image_contracts::records::{ImageData, ImageHttpResponse, ImageResponse};
 use crate::error::{ProviderError, ProviderErrorParts};
 
 pub const MAX_REPLY_BYTES: usize = TransportLimits::DEFAULT.body_bytes;
+
+type Fields = IndexMap<String, Json>;
+type Found = Option<(Option<String>, Option<String>)>;
+
+#[derive(Clone, Copy)]
+enum Layout {
+    Data,
+    Choice,
+    Named,
+    CometApi,
+}
 
 // neither host copies created, downloads a returned URL or runs post_call: only the data list changes
 pub fn decode_compatible_image_reply(
@@ -20,13 +32,15 @@ pub fn decode_compatible_image_reply(
             limit: MAX_REPLY_BYTES,
         });
     }
-    let Json::Object(fields) = parse_reply(reply)? else {
+    let Ok(Json::Object(fields)) =
+        serde_json::from_slice(&reply.body).map_err(|source| json_failure(reply, &source))
+    else {
         return Err(CompatibleImageReplyError::NotObject);
     };
     let mut data = model_response.data.unwrap_or_default();
     match host {
-        Host::Aiml => decode_aiml(&fields, &mut data)?,
-        Host::CometApi => decode_cometapi(&fields, &mut data)?,
+        Host::Aiml => aiml_reply(&fields, &mut data)?,
+        Host::CometApi => cometapi_reply(&fields, &mut data)?,
     }
     Ok(ImageResponse {
         data: Some(data),
@@ -34,40 +48,33 @@ pub fn decode_compatible_image_reply(
     })
 }
 
-// a body that is not JSON at all is B997's error with the reply's status and headers, before any shape is read
-fn parse_reply(reply: &ImageHttpResponse) -> Result<Json, CompatibleImageReplyError> {
-    serde_json::from_slice(&reply.body).map_err(|source| {
-        let error = ProviderError::from(ProviderErrorParts {
-            status_code: reply.status_code,
-            message: format!("the image generation reply is not JSON: {source}"),
-            headers: Some(
-                reply
-                    .headers
-                    .iter()
-                    .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect(),
-            ),
-            request: None,
-            response: None,
-            body: None,
-            status_code_is_synthesized: false,
-        });
-        CompatibleImageReplyError::Provider(Box::new(error))
-    })
+// a body that is not JSON is B997's error, carrying the reply's own status and headers
+fn json_failure(
+    reply: &ImageHttpResponse,
+    source: &serde_json::Error,
+) -> CompatibleImageReplyError {
+    let error = ProviderError::from(ProviderErrorParts {
+        status_code: reply.status_code,
+        message: format!("the image generation reply is not JSON: {source}"),
+        headers: Some(
+            reply
+                .headers
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect(),
+        ),
+        request: None,
+        response: None,
+        body: None,
+        status_code_is_synthesized: false,
+    });
+    CompatibleImageReplyError::Provider(Box::new(error))
 }
 
 // AIML picks exactly one layout: a list data field, else output.choices, else images
-fn decode_aiml(
-    fields: &indexmap::IndexMap<String, Json>,
-    data: &mut Vec<ImageData>,
-) -> Result<(), CompatibleImageReplyError> {
+fn aiml_reply(fields: &Fields, data: &mut Vec<ImageData>) -> Result<(), CompatibleImageReplyError> {
     if let Some(Json::List(items)) = fields.get("data") {
-        for item in items {
-            if let Some(image) = aiml_data_image(item)? {
-                data.push(image);
-            }
-        }
-        return Ok(());
+        return push_entries(items, Layout::Data, data);
     }
     if let Some(Json::Object(output)) = fields.get("output")
         && let Some(choices) = output.get("choices")
@@ -77,105 +84,20 @@ fn decode_aiml(
                 field: "output.choices",
             });
         };
-        for item in items {
-            if let Some(image) = aiml_choice_image(item)? {
-                data.push(image);
-            }
-        }
-        return Ok(());
+        return push_entries(items, Layout::Choice, data);
     }
     if let Some(images) = fields.get("images") {
         let Json::List(items) = images else {
             return Err(CompatibleImageReplyError::List { field: "images" });
         };
-        for item in items {
-            if let Some(image) = aiml_named_image(item)? {
-                data.push(image);
-            }
-        }
+        return push_entries(items, Layout::Named, data);
     }
     Ok(())
 }
 
-// a present url wins even when null; the base64 branch takes b64_json before image_base64 and keeps revised_prompt
-fn aiml_data_image(item: &Json) -> Result<Option<ImageData>, CompatibleImageReplyError> {
-    let Json::Object(image) = item else {
-        return Err(CompatibleImageReplyError::Object { field: "data" });
-    };
-    let revised_prompt = text_field(image.get("revised_prompt"), "revised_prompt")?;
-    if image.contains_key("url") {
-        let url = text_field(image.get("url"), "url")?;
-        return Ok(Some(ImageData {
-            b64_json: None,
-            revised_prompt,
-            url,
-        }));
-    }
-    if image.contains_key("b64_json") || image.contains_key("image_base64") {
-        let b64_json = text_field(image.get("b64_json"), "b64_json")?;
-        let image_base64 = text_field(image.get("image_base64"), "image_base64")?;
-        return Ok(Some(ImageData {
-            b64_json: base64_or_fallback(b64_json, image_base64),
-            revised_prompt,
-            url: None,
-        }));
-    }
-    Ok(None)
-}
-
-// a choice prefers a present image_base64 to url, and these two layouts never carry revised_prompt
-fn aiml_choice_image(item: &Json) -> Result<Option<ImageData>, CompatibleImageReplyError> {
-    let Json::Object(choice) = item else {
-        return Err(CompatibleImageReplyError::Object {
-            field: "output.choices",
-        });
-    };
-    if choice.contains_key("image_base64") {
-        let b64_json = text_field(choice.get("image_base64"), "image_base64")?;
-        return Ok(Some(ImageData {
-            b64_json,
-            revised_prompt: None,
-            url: None,
-        }));
-    }
-    if choice.contains_key("url") {
-        let url = text_field(choice.get("url"), "url")?;
-        return Ok(Some(ImageData {
-            b64_json: None,
-            revised_prompt: None,
-            url,
-        }));
-    }
-    Ok(None)
-}
-
-// the images layout prefers a present url to image_base64
-fn aiml_named_image(item: &Json) -> Result<Option<ImageData>, CompatibleImageReplyError> {
-    let Json::Object(image) = item else {
-        return Err(CompatibleImageReplyError::Object { field: "images" });
-    };
-    if image.contains_key("url") {
-        let url = text_field(image.get("url"), "url")?;
-        return Ok(Some(ImageData {
-            b64_json: None,
-            revised_prompt: None,
-            url,
-        }));
-    }
-    if image.contains_key("image_base64") {
-        let b64_json = text_field(image.get("image_base64"), "image_base64")?;
-        return Ok(Some(ImageData {
-            b64_json,
-            revised_prompt: None,
-            url: None,
-        }));
-    }
-    Ok(None)
-}
-
-// CometAPI reads any present data as a list and copies both nullable fields, dropping revised_prompt
-fn decode_cometapi(
-    fields: &indexmap::IndexMap<String, Json>,
+// CometAPI reads any present data as a list and copies both nullable fields for every entry
+fn cometapi_reply(
+    fields: &Fields,
     data: &mut Vec<ImageData>,
 ) -> Result<(), CompatibleImageReplyError> {
     let Some(value) = fields.get("data") else {
@@ -184,19 +106,80 @@ fn decode_cometapi(
     let Json::List(items) = value else {
         return Err(CompatibleImageReplyError::List { field: "data" });
     };
+    push_entries(items, Layout::CometApi, data)
+}
+
+fn push_entries(
+    items: &[Json],
+    layout: Layout,
+    data: &mut Vec<ImageData>,
+) -> Result<(), CompatibleImageReplyError> {
     for item in items {
-        let Json::Object(image) = item else {
-            return Err(CompatibleImageReplyError::Object { field: "data" });
-        };
-        let b64_json = text_field(image.get("b64_json"), "b64_json")?;
-        let url = text_field(image.get("url"), "url")?;
-        data.push(ImageData {
-            b64_json,
-            revised_prompt: None,
-            url,
-        });
+        if let Some(image) = entry_image(item, layout)? {
+            data.push(image);
+        }
     }
     Ok(())
+}
+
+fn entry_image(
+    item: &Json,
+    layout: Layout,
+) -> Result<Option<ImageData>, CompatibleImageReplyError> {
+    let Json::Object(image) = item else {
+        return Err(CompatibleImageReplyError::Object {
+            field: layout.field(),
+        });
+    };
+    let revised_prompt = match layout {
+        Layout::Data => text_field(image.get("revised_prompt"), "revised_prompt")?,
+        Layout::Choice | Layout::Named | Layout::CometApi => None,
+    };
+    let found = match layout {
+        Layout::Data => data_fields(image)?,
+        Layout::Choice => keyed(image, [("image_base64", false), ("url", true)])?,
+        Layout::Named => keyed(image, [("url", true), ("image_base64", false)])?,
+        Layout::CometApi => cometapi_fields(image)?,
+    };
+    Ok(found.map(|(url, b64_json)| ImageData {
+        b64_json,
+        revised_prompt,
+        url,
+    }))
+}
+
+// a data entry prefers a present url, then b64_json before image_base64 with Python's truthy fallback
+fn data_fields(image: &Fields) -> Result<Found, CompatibleImageReplyError> {
+    if image.contains_key("url") {
+        let url = text_field(image.get("url"), "url")?;
+        return Ok(Some((url, None)));
+    }
+    if !image.contains_key("b64_json") && !image.contains_key("image_base64") {
+        return Ok(None);
+    }
+    let b64_json = text_field(image.get("b64_json"), "b64_json")?;
+    let image_base64 = text_field(image.get("image_base64"), "image_base64")?;
+    Ok(Some((None, base64_or_fallback(b64_json, image_base64))))
+}
+
+fn cometapi_fields(image: &Fields) -> Result<Found, CompatibleImageReplyError> {
+    let b64_json = text_field(image.get("b64_json"), "b64_json")?;
+    let url = text_field(image.get("url"), "url")?;
+    Ok(Some((url, b64_json)))
+}
+
+// the first present key wins even when null, and the pair names which field that key fills
+fn keyed(
+    image: &Fields,
+    keys: [(&'static str, bool); 2],
+) -> Result<Found, CompatibleImageReplyError> {
+    for (name, is_url) in keys {
+        if image.contains_key(name) {
+            let value = text_field(image.get(name), name)?;
+            return Ok(Some(if is_url { (value, None) } else { (None, value) }));
+        }
+    }
+    Ok(None)
 }
 
 fn text_field(
@@ -217,5 +200,15 @@ fn base64_or_fallback(b64_json: Option<String>, image_base64: Option<String>) ->
     match b64_json {
         Some(text) if !text.is_empty() => Some(text),
         _ => image_base64,
+    }
+}
+
+impl Layout {
+    const fn field(self) -> &'static str {
+        match self {
+            Self::Data | Self::CometApi => "data",
+            Self::Choice => "output.choices",
+            Self::Named => "images",
+        }
     }
 }
