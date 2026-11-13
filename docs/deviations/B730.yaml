@@ -1,0 +1,5 @@
+task: B730
+deviations:
+  - what: Migration failure diagnostics redact key material, plaintext and ciphertext before the cause is truncated to 300 characters.
+    why: LiteLLM puts arbitrary exception text into operator warnings, so a secret carried in an error message would reach the logs; the typed cause keeps no value material, and the rendered text scrubs both keys before the bound applies.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/master_key_migration.py#L299-L304
