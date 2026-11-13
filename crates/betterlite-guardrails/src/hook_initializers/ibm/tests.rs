@@ -147,3 +147,23 @@ fn ibm_refuses_a_wrongly_typed_param_with_its_name() {
         "IBM Guardrails: auth_token has an invalid value"
     );
 }
+
+#[test]
+fn ibm_reads_integer_score_thresholds() {
+    let signed = initialize_ibm(
+        &params(&format!(
+            r#"{{{REQUIRED}, "optional_params": {{"score_threshold": 1}}}}"#
+        )),
+        Some("ibm-check"),
+    )
+    .unwrap();
+    assert_eq!(signed.score_threshold, Some(1.0));
+    let unsigned = initialize_ibm(
+        &params(&format!(
+            r#"{{{REQUIRED}, "optional_params": {{"score_threshold": 18446744073709551615}}}}"#
+        )),
+        Some("ibm-check"),
+    )
+    .unwrap();
+    assert!(unsigned.score_threshold.is_some());
+}
