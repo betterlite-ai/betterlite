@@ -27,6 +27,10 @@ scope:
     - crates/betterlite-cost/src/search.rs
     - crates/betterlite-cost/src/search/**
     - tools/oracle/cases/search/**
+    - tools/oracle/helpers/b3274.py
+    - tools/oracle/helpers/b3274/**
+    - tools/oracle/src/helpers/cost/b3274.rs
+    - tools/oracle/src/helpers/cost/b3274/**
   lint_tables: false
 
 references:
@@ -65,7 +69,8 @@ checks:
       why: oracle cases are missing or fail against the booted gateways
       run: test -d tools/oracle/cases/search && test "$(find tools/oracle/cases/search -name '*pricing*' -o -name '*cost*' | wc -l)" -gt 0
 
-oracle_cases: []
+oracle_cases:
+  - tools/oracle/cases/search
 
 deviations:
   - what: betterlite accepts optional_params as a typed mapping instead of parsing them directly from request parameters.
