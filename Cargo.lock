@@ -3351,8 +3351,10 @@ dependencies = [
 name = "betterlite-websearch"
 version = "0.1.0"
 dependencies = [
+ "betterlite-anthropic",
  "betterlite-error",
  "betterlite-openai",
+ "betterlite-prompts",
  "indexmap 2.14.2",
  "serde",
  "serde_json",

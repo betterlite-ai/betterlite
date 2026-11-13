@@ -1,0 +1,14 @@
+task: B8043
+deviations:
+  - what: The logger class kind() tests against is a dotted path the caller passes, not the CustomLogger class imported from litellm.
+    why: The wheel is named betterlite, so the base class lives at a different dotted path; the classification of an instance, a function, a class and anything else is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L99
+  - what: A missing optional library is a typed LibraryError::NotInstalled carrying the module and its install hint, where LiteLLM catches the ImportError at each call site and writes its own message, or lets it escape.
+    why: The hint is what the user needs, and the typed error lets the call site keep the status and message its own task ports.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/audio_transcription/audio_utils.py#L119-L143
+  - what: A method that does not exist on a loaded object is HookError::NoSuchMethod with the method name, not Python's AttributeError text.
+    why: The caller matches on the error instead of on a message, and the text never claims a Python attribute failed when the object is a hook.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_llm.py#L219-L231
+  - what: Walking an attribute path on an optional library reports a missing attribute as LibraryError::MissingAttribute naming the module and the path, where attribute access would raise AttributeError.
+    why: The caller names the library and the path it asked for, and the Python cause stays attached as the source.
+    link: ""
