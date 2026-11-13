@@ -89,3 +89,23 @@ fn an_empty_module_key_alone_is_kept() {
     let key = resolved(&[], "litellm_settings:\n  cohere_key: ''\n", None);
     assert_eq!(key.as_deref(), Some(""));
 }
+
+#[test]
+fn an_environment_reference_in_the_module_key_loads_the_variable() {
+    let key = resolved(
+        &[("MODULE_KEY", "from-env")],
+        "litellm_settings:\n  cohere_key: os.environ/MODULE_KEY\n",
+        None,
+    );
+    assert_eq!(key.as_deref(), Some("from-env"));
+}
+
+#[test]
+fn a_reference_to_an_unset_variable_fails_the_load() {
+    let error = settings(
+        &[],
+        "litellm_settings:\n  cohere_key: os.environ/MODULE_KEY\n",
+    )
+    .expect_err("the reference cannot resolve");
+    assert!(matches!(error, ConfigError::MissingEnvironment { .. }));
+}

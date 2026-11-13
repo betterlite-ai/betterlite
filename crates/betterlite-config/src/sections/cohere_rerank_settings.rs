@@ -2,6 +2,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::resolve_secret;
 use crate::sections::Section;
 
 #[derive(Debug, Default, Deserialize)]
@@ -12,7 +13,7 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct Params {
-    cohere_key: Option<String>,
+    cohere_key: Option<SecretString>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -48,7 +49,11 @@ impl Section for Raw {
         Ok(Settings {
             cohere_api_key: configured(lookup.lookup("COHERE_API_KEY")),
             co_api_key: configured(lookup.lookup("CO_API_KEY")),
-            cohere_key: self.litellm_settings.cohere_key.map(SecretString::from),
+            cohere_key: resolve_secret(
+                self.litellm_settings.cohere_key,
+                "litellm_settings.cohere_key",
+                lookup,
+            )?,
         })
     }
 }

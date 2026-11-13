@@ -212,7 +212,7 @@ async fn extra_result_positions_are_ignored() {
     let guardrail = ScriptedGuardrail::returning(Some(&["clean", "extra", "more"]));
     run_input(&mut data, &guardrail).await.unwrap();
     assert_eq!(data.get("query"), Some(&text("clean")));
-    assert_eq!(data.len(), 1);
+    assert_eq!(data.keys().collect::<Vec<_>>(), ["guardrail_seen", "query"]);
 }
 
 #[tokio::test]
