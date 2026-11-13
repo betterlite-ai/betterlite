@@ -188,9 +188,7 @@ async fn run_mode(
             .await
             .map(Some),
         Mode::DuringCall => guardrail
-            .async_moderation_hook(&RequestData {
-                messages: Some(call.messages.clone()),
-            })
+            .async_moderation_hook(&call.messages)
             .await
             .map(Some),
         Mode::PostCall => match guardrail

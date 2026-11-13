@@ -50,20 +50,24 @@ impl DynamoAiGuardrail {
         &self,
         data: &RequestData,
     ) -> Result<GuardrailStatus, DynamoAiError> {
-        match data.messages.as_deref() {
-            Some(messages) if !messages.is_empty() => self.inspect_messages(messages).await,
-            Some(_messages) | None => Ok(GuardrailStatus::Success),
-        }
+        let Some(messages) = data
+            .messages
+            .as_deref()
+            .filter(|messages| !messages.is_empty())
+        else {
+            return Ok(GuardrailStatus::Success);
+        };
+        self.inspect_messages(messages).await
     }
 
     pub async fn async_moderation_hook(
         &self,
-        data: &RequestData,
+        messages: &[GuardrailValue],
     ) -> Result<GuardrailStatus, DynamoAiError> {
-        match data.messages.as_deref() {
-            Some(messages) if !messages.is_empty() => self.inspect_messages(messages).await,
-            Some(_messages) | None => Ok(GuardrailStatus::Success),
+        if messages.is_empty() {
+            return Ok(GuardrailStatus::Success);
         }
+        self.inspect_messages(messages).await
     }
 
     pub async fn async_post_call_success_hook(

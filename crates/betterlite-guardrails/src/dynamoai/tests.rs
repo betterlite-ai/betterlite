@@ -322,9 +322,7 @@ async fn dynamoai_guardrail_during_call_blocks_on_a_block_policy() {
     let body = r#"{"finalAction":"BLOCK","appliedPolicies":[{"policy":{"name":"Toxicity"},"outputs":{"action":"BLOCK"}}]}"#;
     let (base, captured, _server) = capturing(body.to_owned()).await;
     let result = guardrail(&base)
-        .async_moderation_hook(&RequestData {
-            messages: Some(vec![user_message()]),
-        })
+        .async_moderation_hook(&[user_message()])
         .await;
     assert!(matches!(result, Err(DynamoAiError::Blocked { .. })));
     assert_eq!(
@@ -345,7 +343,7 @@ async fn dynamoai_guardrail_hooks_skip_a_call_without_messages() {
         Ok(GuardrailStatus::Success)
     ));
     assert!(matches!(
-        instance.async_moderation_hook(&absent).await,
+        instance.async_moderation_hook(&[]).await,
         Ok(GuardrailStatus::Success)
     ));
 }
