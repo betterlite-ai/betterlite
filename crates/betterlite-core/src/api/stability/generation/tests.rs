@@ -579,7 +579,7 @@ fn an_errors_key_with_a_null_value_still_fails() {
 }
 
 #[test]
-fn an_unparseable_reply_keeps_the_upstream_status() {
+fn an_unparsable_reply_keeps_the_upstream_status() {
     let error = decode_stability_image(&upstream(502, "not json"), &mut ImageResponse::default())
         .expect_err("the body is not JSON");
 
