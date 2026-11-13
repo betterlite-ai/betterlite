@@ -1,0 +1,6 @@
+kind: helper
+name: violation-template
+call:
+  b5471: {"function": "violation", "template": "{who} said no", "default": "fallback", "context": {"who": "pii"}}
+env: {}
+compare: {ignore: []}

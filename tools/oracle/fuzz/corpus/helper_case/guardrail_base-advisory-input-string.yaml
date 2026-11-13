@@ -1,0 +1,6 @@
+kind: helper
+name: advisory-input-string
+call:
+  b5471: {"function": "advisory", "data": {"input": "hello"}, "message": "careful"}
+env: {}
+compare: {ignore: []}
