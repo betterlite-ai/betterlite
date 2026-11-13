@@ -31,8 +31,7 @@ fn helper_seeds_select_xai_stt() {
     assert!(!seeds.is_empty());
     assert!(seeds.iter().all(|source| {
         let case: HelperCase = serde_saphyr::from_str(source).expect("helper seed");
-        validate_helper(Path::new("<helper>"), &case).is_ok()
-            && case.call.operation == "xai_stt"
+        validate_helper(Path::new("<helper>"), &case).is_ok() && case.call.operation == "xai_stt"
     }));
 }
 

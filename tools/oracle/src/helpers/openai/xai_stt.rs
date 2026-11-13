@@ -21,6 +21,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
+use crate::helpers::OrHelperError as _;
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
@@ -106,28 +108,6 @@ const fn limits() -> WireDecodeLimits {
     }
 }
 
-fn invalid(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: String::from("InvalidInput"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
-fn failure(error: &XaiSttError) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: String::from("XaiSttError"),
-        status: error.status_code(),
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
-}
-
 fn upstream(status: u16, body: &[u8], headers: &[(String, String)]) -> UpstreamResponse {
     let mut map = HeaderMap::new();
     for (name, value) in headers {
@@ -157,7 +137,7 @@ fn processed(spec: &AudioSpec) -> Result<ProcessedAudioFile, Box<crate::helpers:
             })
         },
     );
-    process_audio_file(file, &NoFiles).map_err(|error| invalid(error.to_string()))
+    process_audio_file(file, &NoFiles).or_config_error()
 }
 
 fn fields_value(form: &SttForm) -> Value {
@@ -181,10 +161,9 @@ fn file_value(form: &SttForm) -> Value {
 }
 
 fn mapped_fixture() -> Result<Map<String, Value>, Box<crate::helpers::HelperError>> {
-    let mut optional: Map<String, Value> = serde_json::from_str(
-        r#"{"response_format":"json","language":"fr"}"#,
-    )
-    .map_err(|error| invalid(error.to_string()))?;
+    let mut optional: Map<String, Value> =
+        serde_json::from_str(r#"{"response_format":"json","language":"fr"}"#)
+            .or_config_error()?;
     map_openai_params(
         &[
             ("language".to_owned(), json!("en")),
@@ -195,17 +174,13 @@ fn mapped_fixture() -> Result<Map<String, Value>, Box<crate::helpers::HelperErro
     Ok(optional)
 }
 
-fn request_call(
+fn base_answer(
     call: &RequestCall,
     settings: &Settings,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let key = call.api_key.as_deref().map(SecretString::from);
-    let optional = mapped_fixture()?;
-    let mut answer: Map<String, Value> = Map::from_iter([
-        (
-            "supported".to_owned(),
-            json!(SUPPORTED_OPENAI_PARAMS),
-        ),
+    optional: Map<String, Value>,
+) -> Map<String, Value> {
+    Map::from_iter([
+        ("supported".to_owned(), json!(SUPPORTED_OPENAI_PARAMS)),
         ("mapped".to_owned(), Value::Object(optional)),
         (
             "url".to_owned(),
@@ -215,18 +190,40 @@ fn request_call(
         ("raised".to_owned(), Value::Null),
         ("form".to_owned(), Value::Array(Vec::new())),
         ("file".to_owned(), Value::Null),
-    ]);
+    ])
+}
+
+fn request_call(
+    call: &RequestCall,
+    settings: &Settings,
+) -> Result<Value, Box<crate::helpers::HelperError>> {
+    let key = call.api_key.as_deref().map(SecretString::from);
+    let optional = mapped_fixture()?;
+    let mut answer = base_answer(call, settings, optional);
     let headers = match authorization_headers(HeaderMap::new(), key.as_ref(), settings) {
         Ok(headers) => headers,
         Err(XaiSttError::MissingApiKey) => {
             answer.insert("raised".to_owned(), json!("key"));
             return Ok(Value::Object(answer));
         }
-        Err(error) => return Err(failure(&error)),
+        Err(error) => {
+            return Err(Box::new(crate::helpers::HelperError {
+                class: String::from("XaiSttError"),
+                status: error.status_code(),
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            }));
+        }
     };
     answer.insert(
         "authorization".to_owned(),
-        json!(headers.get(AUTHORIZATION).and_then(|value| value.to_str().ok())),
+        json!(
+            headers
+                .get(AUTHORIZATION)
+                .and_then(|value| value.to_str().ok())
+        ),
     );
     let audio = processed(&call.audio)?;
     let extra_body: IndexMap<String, FormValue> = call.extra_body.clone().into_iter().collect();
@@ -240,9 +237,7 @@ fn request_call(
 fn reply_call(call: &ReplyCall) -> Result<Value, Box<crate::helpers::HelperError>> {
     let response = upstream(call.status, call.body.as_bytes(), &call.headers);
     match decode_xai_stt_reply(&response, &limits()) {
-        Ok(result) => {
-            serde_json::to_value(result).map_err(|error| invalid(error.to_string()))
-        }
+        Ok(result) => serde_json::to_value(result).or_config_error(),
         Err(error) => Ok(json!({"error": {"status": error.status_code()}})),
     }
 }

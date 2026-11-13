@@ -1,21 +1,20 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::xai_identity::Settings;
-use betterlite_http::proxy::UpstreamResponse;
-use betterlite_openai::api::batch_records::WireDecodeLimits;
-use betterlite_openai::files::records::BinaryContent;
 use betterlite_openai::xai_batches::transformation::get_xai_auth_headers;
 use betterlite_openai::xai_files::error::XaiFilesError;
-use betterlite_openai::xai_files::reply::{
-    decode_file_deleted, decode_file_list, decode_file_object, decode_next_page,
-};
+use betterlite_openai::xai_files::reply::{decode_file_list, decode_next_page};
 use betterlite_openai::xai_files::request::{
     FilesTarget, SUPPORTED_OPENAI_PARAMS, files_url, map_openai_params,
 };
-use http::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
+use http::header::{AUTHORIZATION, HeaderMap};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
+
+use crate::helpers::OrHelperError as _;
+
+use views::{content_call, deleted_value, failure, file_value, limits, upstream};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -98,79 +97,6 @@ fn settings(xai_key: Option<&str>, env: &BTreeMap<String, String>) -> Settings {
     }
 }
 
-const fn limits() -> WireDecodeLimits {
-    WireDecodeLimits {
-        max_json_bytes: 1 << 20,
-        max_event_bytes: 1 << 10,
-        max_items: 1000,
-    }
-}
-
-fn invalid(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: String::from("InvalidInput"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
-fn failure(error: &XaiFilesError) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: String::from("XaiFilesError"),
-        status: error.status_code(),
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
-}
-
-fn encoded<T>(value: &T) -> Result<Value, Box<crate::helpers::HelperError>>
-where
-    T: serde::Serialize,
-{
-    serde_json::to_value(value).map_err(|error| invalid(error.to_string()))
-}
-
-fn upstream(status: u16, body: &[u8], headers: &[(String, String)]) -> UpstreamResponse {
-    let mut map = HeaderMap::new();
-    for (name, value) in headers {
-        let Ok(header_name) = HeaderName::try_from(name.as_str()) else {
-            continue;
-        };
-        let Ok(header_value) = HeaderValue::try_from(value.as_str()) else {
-            continue;
-        };
-        map.insert(header_name, header_value);
-    }
-    UpstreamResponse {
-        status,
-        headers: map,
-        body: body.to_vec(),
-    }
-}
-
-fn file_value(reply: &Reply, now: i64) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let response = upstream(reply.status, reply.body.as_bytes(), &[]);
-    match decode_file_object(&response, &limits(), now) {
-        Ok(file) => encoded(&file),
-        Err(error) if error.status_code().is_some() => Err(failure(&error)),
-        Err(_) => Ok(json!({"raised": "reply"})),
-    }
-}
-
-fn deleted_value(reply: &Reply) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let response = upstream(reply.status, reply.body.as_bytes(), &[]);
-    match decode_file_deleted(&response, &limits()) {
-        Ok(deleted) => encoded(&deleted),
-        Err(error) if error.status_code().is_some() => Err(failure(&error)),
-        Err(_) => Ok(json!({"raised": "reply"})),
-    }
-}
-
 fn upload_call(
     call: &UploadCall,
     settings: &Settings,
@@ -180,10 +106,9 @@ fn upload_call(
         .map_err(|error| failure(&XaiFilesError::from(error)))?;
     let url = files_url(call.api_base.as_deref(), FilesTarget::Collection, settings)
         .map_err(|error| failure(&error))?;
-    let parsed: Map<String, Value> = serde_json::from_str(
-        r#"{"purpose":"batch","expires_after":{"anchor":"created_at"}}"#,
-    )
-    .map_err(|error| invalid(error.to_string()))?;
+    let parsed: Map<String, Value> =
+        serde_json::from_str(r#"{"purpose":"batch","expires_after":{"anchor":"created_at"}}"#)
+            .or_config_error()?;
     let mapped = map_openai_params(
         parsed,
         &[
@@ -194,7 +119,7 @@ fn upload_call(
     );
     Ok(json!({
         "supported": SUPPORTED_OPENAI_PARAMS,
-        "mapped": encoded(&mapped)?,
+        "mapped": serde_json::to_value(&mapped).or_config_error()?,
         "url": url,
         "authorization": headers.get(AUTHORIZATION).and_then(|value| value.to_str().ok()),
         "file": file_value(&call.reply, call.now)?,
@@ -217,20 +142,6 @@ fn target(
         Err(XaiFilesError::Path { .. }) => Ok(json!({"raised": "path"})),
         Err(error) => Err(failure(&error)),
     }
-}
-
-fn content_call(spec: &ContentSpec) -> Value {
-    let content = BinaryContent::from_response(upstream(spec.status, &spec.body, &spec.headers));
-    let watched: Map<String, Value> = content
-        .headers
-        .into_iter()
-        .map(|(name, value)| (name, Value::String(value)))
-        .collect();
-    json!({
-        "status": content.status,
-        "headers": Value::Object(watched),
-        "body": content.body,
-    })
 }
 
 fn file_call(
@@ -256,13 +167,7 @@ fn list_call(
     )
     .map_err(|error| failure(&error))?;
     let response = upstream(call.reply.status, call.reply.body.as_bytes(), &[]);
-    let mut entry: Map<String, Value> = Map::from_iter([
-        ("url".to_owned(), Value::String(url.clone())),
-        ("next".to_owned(), Value::Null),
-        ("raised".to_owned(), Value::Null),
-        ("files".to_owned(), Value::Array(Vec::new())),
-        ("raised_list".to_owned(), Value::Null),
-    ]);
+    let mut entry = views::empty_list(&url);
     match decode_next_page(&response, &limits(), &url) {
         Ok(Some(page)) => {
             entry.insert(
@@ -277,7 +182,11 @@ fn list_call(
     }
     match decode_file_list(&response, &limits(), call.now) {
         Ok(files) => {
-            let values = files.iter().map(encoded).collect::<Result<Vec<_>, _>>()?;
+            let values = files
+                .iter()
+                .map(serde_json::to_value)
+                .collect::<Result<Vec<_>, _>>()
+                .or_config_error()?;
             entry.insert("files".to_owned(), Value::Array(values));
         }
         Err(error) if error.status_code().is_some() => return Err(failure(&error)),
@@ -336,3 +245,4 @@ impl crate::helpers::Helper for Op {
 }
 
 mod tests;
+mod views;
