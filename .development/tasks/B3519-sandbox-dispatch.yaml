@@ -2,7 +2,7 @@ id: B3519
 title: Sandbox tool registry and public lifecycle dispatch
 description: >-
   Build the configured sandbox tool registry and three live public lifecycle entrypoints
-  over the concrete adapters (E2B from B3516 and OpenSandbox from B3518) in betterlite-core.
+  over the concrete adapters (E2B from B3516 and OpenSandbox from B3518) in betterlite-provider, beside them.
   Preserve warning-and-skip behavior for malformed registry entries, last-entry-wins name
   replacement, registry replacement semantics, internal-kwarg filtering and per-operation
   logging through Logging.update_from_kwargs with operation-specific model names. Registry
@@ -15,8 +15,8 @@ description: >-
   tests and fuzz the registry entry structure.
 scope:
   paths:
-  - crates/betterlite-core/src/skills/sandbox.rs
-  - crates/betterlite-core/src/skills/sandbox/**
+  - crates/betterlite-provider/src/sandbox_dispatch.rs
+  - crates/betterlite-provider/src/sandbox_dispatch/**
   - crates/betterlite-models/src/sandbox_dispatch.rs
   - tools/oracle/cases/sandbox/**
   - crates/betterlite-config/src/sections/sandbox_dispatch.rs
@@ -77,12 +77,12 @@ checks:
   - id: sandbox-registry-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::sandbox::(.*::)?sandbox_registry::/) -
+      cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^sandbox_dispatch::(.*::)?registry::/) -
       test(/replays_the_/)'
   - id: sandbox-lifecycle-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::sandbox::(.*::)?sandbox_dispatch::/) -
+      cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^sandbox_dispatch::(.*::)?lifecycle::/) -
       test(/replays_the_/)'
   - id: config-sandbox-loader
     why: the configured sandbox_tools section is not accepted
@@ -92,7 +92,7 @@ checks:
   - id: sandbox-provider-error
     why: unsupported provider strings do not raise ValueError or the test is missing
     run: >-
-      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::sandbox::(.*::)?sandbox_dispatch::.*unsupported_provider/)'
+      cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^sandbox_dispatch::(.*::)?lifecycle::.*unsupported_provider/)'
 oracle_cases:
 - tools/oracle/cases/sandbox/create-e2b.yaml
 - tools/oracle/cases/sandbox/create-opensandbox.yaml
