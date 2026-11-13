@@ -32,11 +32,11 @@ fn init_sets_the_identity_and_streaming_defaults() {
     );
     assert!(guardrail.use_native_during_call_hook);
     assert!(!guardrail.disable_exception_on_block);
-    assert!(!guardrail.contextual_grounding_from_messages);
-    assert!(guardrail.streaming_buffer_until_moderated);
+    assert!(!guardrail.contextual_grounding);
+    assert!(guardrail.buffer_until_moderated);
     assert_eq!(guardrail.streaming_sampling_rate, SamplingRate(5));
     assert!(!guardrail.streaming_end_of_stream_only);
-    assert!(!guardrail.streaming_buffer_release_on_scan);
+    assert!(!guardrail.buffer_release_on_scan);
     assert!(guardrail.checks.is_none());
 }
 
@@ -57,15 +57,15 @@ fn init_returns_the_five_native_event_hooks() {
 #[test]
 fn init_sets_streaming_params_from_the_explicit_options() {
     let mut init = guardrail_init();
-    init.streaming_buffer_until_moderated = Some(false);
+    init.buffer_until_moderated = Some(false);
     init.streaming_sampling_rate = Some(SamplingRate(7));
     init.streaming_end_of_stream_only = Some(true);
-    init.streaming_buffer_release_on_scan = Some(true);
+    init.buffer_release_on_scan = Some(true);
     let guardrail = BedrockGuardrail::__init(init).expect("the guardrail");
-    assert!(!guardrail.streaming_buffer_until_moderated);
+    assert!(!guardrail.buffer_until_moderated);
     assert_eq!(guardrail.streaming_sampling_rate, SamplingRate(7));
     assert!(guardrail.streaming_end_of_stream_only);
-    assert!(guardrail.streaming_buffer_release_on_scan);
+    assert!(guardrail.buffer_release_on_scan);
 }
 
 #[test]

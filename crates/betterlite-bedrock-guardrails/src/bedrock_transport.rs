@@ -71,14 +71,14 @@ pub struct BedrockGuardrailInit {
     pub prompt_attack_threshold: Option<ConfidenceThreshold>,
     pub pii_confidence_threshold: Option<ConfidenceThreshold>,
     pub chunk_budget_chars: u64,
-    pub contextual_grounding_from_messages: GuardrailFlag,
-    pub experimental_use_latest_role_message_only: GuardrailFlag,
+    pub contextual_grounding: GuardrailFlag,
+    pub latest_role_message_only: GuardrailFlag,
     pub mask_request_content: GuardrailFlag,
     pub mask_response_content: GuardrailFlag,
-    pub streaming_buffer_until_moderated: Option<GuardrailFlag>,
+    pub buffer_until_moderated: Option<GuardrailFlag>,
     pub streaming_sampling_rate: Option<SamplingRate>,
     pub streaming_end_of_stream_only: Option<GuardrailFlag>,
-    pub streaming_buffer_release_on_scan: Option<GuardrailFlag>,
+    pub buffer_release_on_scan: Option<GuardrailFlag>,
     pub optional_params: OpaqueParams,
     pub timeout: Option<Duration>,
 }
@@ -90,8 +90,8 @@ pub struct BedrockGuardrail {
     pub guardrail_version: Option<String>,
     pub guardrail_provider: &'static str,
     pub chunk_budget_chars: u64,
-    pub contextual_grounding_from_messages: GuardrailFlag,
-    pub experimental_use_latest_role_message_only: GuardrailFlag,
+    pub contextual_grounding: GuardrailFlag,
+    pub latest_role_message_only: GuardrailFlag,
     pub checks: Option<BTreeMap<String, GuardrailValue>>,
     pub content_filter_threshold: Option<ConfidenceThreshold>,
     pub prompt_attack_threshold: Option<ConfidenceThreshold>,
@@ -101,10 +101,10 @@ pub struct BedrockGuardrail {
     pub mask_request_content: GuardrailFlag,
     pub mask_response_content: GuardrailFlag,
     pub supported_event_hooks: Vec<GuardrailEventHooks>,
-    pub streaming_buffer_until_moderated: GuardrailFlag,
+    pub buffer_until_moderated: GuardrailFlag,
     pub streaming_sampling_rate: SamplingRate,
     pub streaming_end_of_stream_only: GuardrailFlag,
-    pub streaming_buffer_release_on_scan: GuardrailFlag,
+    pub buffer_release_on_scan: GuardrailFlag,
     pub use_native_during_call_hook: GuardrailFlag,
     pub timeout: Option<Duration>,
 }
@@ -133,9 +133,8 @@ impl BedrockGuardrail {
             guardrail_version: init.guardrail_version,
             guardrail_provider: GUARDRAIL_NAME,
             chunk_budget_chars: init.chunk_budget_chars,
-            contextual_grounding_from_messages: init.contextual_grounding_from_messages,
-            experimental_use_latest_role_message_only: init
-                .experimental_use_latest_role_message_only,
+            contextual_grounding: init.contextual_grounding,
+            latest_role_message_only: init.latest_role_message_only,
             checks,
             content_filter_threshold: init.content_filter_threshold,
             prompt_attack_threshold: init.prompt_attack_threshold,
@@ -145,20 +144,20 @@ impl BedrockGuardrail {
             mask_request_content: init.mask_request_content,
             mask_response_content: init.mask_response_content,
             supported_event_hooks: Self::get_supported_event_hooks(),
-            streaming_buffer_until_moderated: defaults.buffer_until_moderated,
+            buffer_until_moderated: defaults.buffer_until_moderated,
             streaming_sampling_rate: defaults.streaming_sampling_rate,
             streaming_end_of_stream_only: defaults.streaming_end_of_stream_only,
-            streaming_buffer_release_on_scan: defaults.buffer_release_on_scan,
+            buffer_release_on_scan: defaults.buffer_release_on_scan,
             use_native_during_call_hook: true,
             timeout: init.timeout,
         }
     }
 
     fn _set_streaming_params(&mut self, streaming: BedrockGuardrailStreamParams) {
-        self.streaming_buffer_until_moderated = streaming.buffer_until_moderated;
+        self.buffer_until_moderated = streaming.buffer_until_moderated;
         self.streaming_sampling_rate = streaming.streaming_sampling_rate;
         self.streaming_end_of_stream_only = streaming.streaming_end_of_stream_only;
-        self.streaming_buffer_release_on_scan = streaming.buffer_release_on_scan;
+        self.buffer_release_on_scan = streaming.buffer_release_on_scan;
     }
 
     // LiteLLM's list is GuardrailEventHooks::pre_call, GuardrailEventHooks::post_call and GuardrailEventHooks::during_call, then the two MCP hooks
@@ -181,8 +180,7 @@ fn streaming_params(
     insert_streaming_value(
         &mut extras,
         "streaming_buffer_until_moderated",
-        init.streaming_buffer_until_moderated
-            .map(GuardrailValue::Boolean),
+        init.buffer_until_moderated.map(GuardrailValue::Boolean),
     );
     insert_streaming_value(
         &mut extras,
@@ -199,8 +197,7 @@ fn streaming_params(
     insert_streaming_value(
         &mut extras,
         "streaming_buffer_release_on_scan",
-        init.streaming_buffer_release_on_scan
-            .map(GuardrailValue::Boolean),
+        init.buffer_release_on_scan.map(GuardrailValue::Boolean),
     );
     BedrockGuardrailStreamParams::from_extras(Some(&extras)).map_err(BedrockGuardrailError::from)
 }

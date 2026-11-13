@@ -6,7 +6,7 @@ use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use crate::bedrock_request::{_prepare_request, PrepareError, PrepareInput, RequestEnvironment};
 use crate::bedrock_transport::BedrockGuardrail;
 use crate::bedrock_transport::test_support::{aws_credentials, guardrail_with, signing_time};
-use crate::constants::_BEDROCK_INVOKE_GUARDRAIL_CHECKS_PATH;
+use crate::constants::_BEDROCK_CHECKS_PATH;
 
 fn prepare(guardrail: &BedrockGuardrail) -> Result<AwsSignedRequest, PrepareError> {
     let static_credentials = aws_credentials();
@@ -18,7 +18,7 @@ fn prepare(guardrail: &BedrockGuardrail) -> Result<AwsSignedRequest, PrepareErro
             region: "us-west-2",
             api_key: None,
             extra_headers: &[],
-            request_path: Some(_BEDROCK_INVOKE_GUARDRAIL_CHECKS_PATH),
+            request_path: Some(_BEDROCK_CHECKS_PATH),
             now: signing_time(),
         },
         &serde_json::json!({"messages": []}),

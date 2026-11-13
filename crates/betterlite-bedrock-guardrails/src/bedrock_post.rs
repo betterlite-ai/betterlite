@@ -13,7 +13,7 @@ use http::header::{
 use url::{ParseError, Url};
 
 use crate::bedrock_transport::BedrockGuardrail;
-use crate::guardrail_error_response::_parse_bedrock_guardrail_error_response;
+use crate::guardrail_error_response::_parse_error_response;
 
 pub const DEFAULT_GUARDRAIL_TIMEOUT: Duration = Duration::from_secs(600);
 
@@ -89,7 +89,7 @@ pub async fn _sign_and_post<T: GuardrailTransport, L: TransportLog>(
     if response.status < 400 {
         return Ok(response);
     }
-    let (status, detail) = _parse_bedrock_guardrail_error_response(response.status, &response.body);
+    let (status, detail) = _parse_error_response(response.status, &response.body);
     if log_transport_failure {
         log.guardrail_failed_to_respond(&detail);
     }
