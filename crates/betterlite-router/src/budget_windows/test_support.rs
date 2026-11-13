@@ -24,7 +24,7 @@ pub struct WindowObservation {
 pub struct MemoryEntry {
     pub start: Option<f64>,
     pub spend: Option<Decimal>,
-    pub ttl_seconds: Option<i64>,
+    pub ttl: Option<Duration>,
 }
 
 #[derive(Debug, Default)]
@@ -33,11 +33,11 @@ pub struct MemoryStore {
 }
 
 impl MemoryStore {
-    pub fn seed_start(&self, key: &str, start: f64, ttl_seconds: i64) {
+    pub fn seed_start(&self, key: &str, start: f64, ttl: Duration) {
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         let entry = entries.entry(key.to_owned()).or_default();
         entry.start = Some(start);
-        entry.ttl_seconds = Some(ttl_seconds);
+        entry.ttl = Some(ttl);
     }
 
     #[must_use]
@@ -77,7 +77,7 @@ impl BudgetWindowStore for MemoryStore {
             WindowWrite::Start(start) => entry.start = Some(start),
             WindowWrite::Spend(spend) => entry.spend = Some(spend),
         }
-        entry.ttl_seconds = ttl.map(|ttl| i64::try_from(ttl.as_secs()).unwrap_or(i64::MAX));
+        entry.ttl = ttl;
         Ok(())
     }
 }

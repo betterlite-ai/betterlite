@@ -132,15 +132,16 @@ where
                 )?,
                 period(entry.time_period, &format!("{path}.time_period"), lookup)?,
             ),
+            // BudgetConfig.__init__ moves budget_limit onto max_budget and time_period onto budget_duration
             Tier::Tag => (
                 resolve_number(
-                    entry.max_budget.or(entry.budget_limit),
+                    entry.budget_limit.or(entry.max_budget),
                     &format!("{path}.max_budget"),
                     lookup,
                     parse_money,
                 )?,
                 period(
-                    entry.budget_duration.or(entry.time_period),
+                    entry.time_period.or(entry.budget_duration),
                     &format!("{path}.budget_duration"),
                     lookup,
                 )?,

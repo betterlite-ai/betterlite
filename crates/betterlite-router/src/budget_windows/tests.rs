@@ -211,7 +211,7 @@ async fn start_window() {
         Some(MemoryEntry {
             start: Some(100.0),
             spend: None,
-            ttl_seconds: Some(60),
+            ttl: Some(Duration::from_secs(60)),
         })
     );
     let cached = get_or_set_budget_start_time(&store, &key, 500.0, None).await;
@@ -224,7 +224,7 @@ async fn start_window() {
     assert!(observed.started);
     assert!(observed.spend.is_none());
     let pushed = MemoryStore::default();
-    pushed.seed_start(&key, 0.0, 10);
+    pushed.seed_start(&key, 0.0, Duration::from_secs(10));
     let zero = get_or_set_budget_start_time(&pushed, &key, 500.0, None).await;
     assert!(zero.total_cmp(&0.0).is_eq());
     assert_eq!(
@@ -273,10 +273,7 @@ async fn reset_window() {
         },
     )
     .await;
-    assert_eq!(
-        entry(&untimed, "spend").and_then(|entry| entry.ttl_seconds),
-        None
-    );
+    assert_eq!(entry(&untimed, "spend").and_then(|entry| entry.ttl), None);
 }
 
 async fn provider_init() {
@@ -323,13 +320,22 @@ async fn provider_init() {
         Some(Decimal::ZERO)
     );
     assert_eq!(
-        entry(&untimed, &provider_keys("azure", &None).spend).and_then(|entry| entry.ttl_seconds),
+        entry(&untimed, &provider_keys("azure", &None).spend).and_then(|entry| entry.ttl),
         None
     );
 }
 
 fn registration() {
-    let mut windows = BudgetWindows::default();
+    let mut tags = IndexMap::new();
+    tags.insert(
+        "team".to_owned(),
+        TagBudget {
+            max_budget: Some(Decimal::from(5)),
+            period: Some(day()),
+        },
+    );
+    let mut windows = BudgetWindows::new(Some(provider_config()), Some(tags), &[]);
+    assert!(windows.deployment.as_ref().is_none());
     let incomplete = DeploymentLimits {
         model_id: Some("d1".to_owned()),
         max_budget: Some(Decimal::from(1)),
@@ -451,8 +457,8 @@ async fn zero_budgets() {
     let start = get_or_set_budget_start_time(&store, "start", 5.0, Some(Duration::ZERO)).await;
     assert!(start.total_cmp(&5.0).is_eq());
     assert_eq!(
-        entry(&store, "start").and_then(|entry| entry.ttl_seconds),
-        Some(0)
+        entry(&store, "start").and_then(|entry| entry.ttl),
+        Some(Duration::ZERO)
     );
 }
 

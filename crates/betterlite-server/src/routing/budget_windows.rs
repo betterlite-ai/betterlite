@@ -64,59 +64,39 @@ impl PeriodParser<'_> {
     }
 }
 
-// what one resolved config entry contributes to the router, before the tier wrapper is applied
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct ResolvedBudget {
-    limit: Option<Decimal>,
-    period: Option<BudgetPeriod>,
-}
-
 // the strings stay in betterlite-config; the router receives parsed seconds and keeps LiteLLM's configured text for the keys
 pub fn budget_windows(
     section: &config::Settings,
     model_ids: &[Option<&str>],
     parser: PeriodParser<'_>,
 ) -> Result<BudgetWindowsSettings, BudgetWindowsError> {
-    let provider_budget_config = tier_budgets(
-        section.provider_budget_config.as_ref(),
-        "router_settings.provider_budget_config",
-        parser,
-    )?
-    .map(|entries| {
-        entries
-            .into_iter()
-            .map(|(provider, budget)| {
-                (
-                    provider,
-                    ProviderBudget {
-                        budget_limit: budget.limit,
-                        period: budget.period,
-                    },
-                )
-            })
-            .collect()
-    });
-    let tag_budget_config = tier_budgets(
-        section.tag_budget_config.as_ref(),
-        "litellm_settings.tag_budget_config",
-        parser,
-    )?
-    .map(|entries| {
-        entries
-            .into_iter()
-            .map(|(tag, budget)| {
-                (
-                    tag,
-                    TagBudget {
-                        max_budget: budget.limit,
-                        period: budget.period,
-                    },
-                )
-            })
-            .collect()
-    });
-    let mut deployments = Vec::with_capacity(section.deployments.len());
-    for (index, budget) in section.deployments.iter().enumerate() {
+    Ok(BudgetWindowsSettings {
+        provider_budget_config: tier_budgets(
+            section.provider_budget_config.as_ref(),
+            "router_settings.provider_budget_config",
+            parser,
+            |budget_limit, period| ProviderBudget {
+                budget_limit,
+                period,
+            },
+        )?,
+        tag_budget_config: tier_budgets(
+            section.tag_budget_config.as_ref(),
+            "litellm_settings.tag_budget_config",
+            parser,
+            |max_budget, period| TagBudget { max_budget, period },
+        )?,
+        deployments: deployment_limits(&section.deployments, model_ids, parser)?,
+    })
+}
+
+fn deployment_limits(
+    section: &[config::DeploymentBudgetConfig],
+    model_ids: &[Option<&str>],
+    parser: PeriodParser<'_>,
+) -> Result<Vec<DeploymentLimits>, BudgetWindowsError> {
+    let mut deployments = Vec::with_capacity(section.len());
+    for (index, budget) in section.iter().enumerate() {
         let model_id = model_ids
             .get(index)
             .ok_or(BudgetWindowsError::MissingDeployment { index })?
@@ -132,18 +112,15 @@ pub fn budget_windows(
             period,
         });
     }
-    Ok(BudgetWindowsSettings {
-        provider_budget_config,
-        tag_budget_config,
-        deployments,
-    })
+    Ok(deployments)
 }
 
-fn tier_budgets(
+fn tier_budgets<Budget>(
     section: Option<&IndexMap<String, config::BudgetValues>>,
     prefix: &str,
     parser: PeriodParser<'_>,
-) -> Result<Option<IndexMap<String, ResolvedBudget>>, BudgetWindowsError> {
+    build: fn(Option<Decimal>, Option<BudgetPeriod>) -> Budget,
+) -> Result<Option<IndexMap<String, Budget>>, BudgetWindowsError> {
     let Some(section) = section else {
         return Ok(None);
     };
@@ -154,13 +131,7 @@ fn tier_budgets(
             &format!("{prefix}.{name}.budget_duration"),
             parser,
         )?;
-        resolved.insert(
-            name.clone(),
-            ResolvedBudget {
-                limit: budget.limit,
-                period,
-            },
-        );
+        resolved.insert(name.clone(), build(budget.limit, period));
     }
     Ok(Some(resolved))
 }
@@ -170,7 +141,7 @@ fn optional(
     path: &str,
     parser: PeriodParser<'_>,
 ) -> Result<Option<BudgetPeriod>, BudgetWindowsError> {
-    spec.map(|spec| parser.parse(spec))
+    spec.map(|text| parser.parse(text))
         .transpose()
         .map_err(|source| BudgetWindowsError::Duration {
             path: path.to_owned(),

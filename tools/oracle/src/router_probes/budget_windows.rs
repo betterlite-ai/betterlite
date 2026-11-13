@@ -9,6 +9,7 @@ use betterlite_router::budget_windows::test_support::MemoryStore;
 use betterlite_router::budget_windows::window::{
     NewWindow, get_or_set_budget_start_time, handle_new_budget_window,
 };
+use betterlite_server::routing::budget_windows::{PeriodParser, budget_windows};
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
@@ -47,10 +48,18 @@ pub struct Tag {
     pub budget_duration: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StepKind {
+    Build,
+    Start,
+    Reset,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Step {
-    pub kind: String,
+    pub kind: StepKind,
     #[serde(default)]
     pub model_id: Option<String>,
     #[serde(default)]
@@ -74,25 +83,12 @@ pub struct Output {
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct StepOutput {
-    pub kind: String,
+    pub kind: StepKind,
     pub should_init: Option<bool>,
     pub limiter: Option<bool>,
     pub tags: Option<Vec<String>>,
     pub window_started: Option<bool>,
     pub spend: Option<String>,
-}
-
-impl StepOutput {
-    fn empty(kind: &str) -> Self {
-        Self {
-            kind: kind.to_owned(),
-            should_init: None,
-            limiter: None,
-            tags: None,
-            window_started: None,
-            spend: None,
-        }
-    }
 }
 
 pub(crate) fn run(
@@ -118,10 +114,13 @@ async fn run_steps(input: &Input) -> Result<Output, String> {
         .collect();
     let now = DateTime::<Utc>::from_timestamp(0, 0).ok_or("the probe clock is out of range")?;
     let database = TimeZoneDatabase::default();
-    let resolved = betterlite_server::routing::budget_windows::budget_windows(
-        &section, &model_ids, now, None, &database,
-    )
-    .map_err(|error| error.to_string())?;
+    let parser = PeriodParser {
+        now,
+        timezone: None,
+        database: &database,
+    };
+    let resolved =
+        budget_windows(&section, &model_ids, parser).map_err(|error| error.to_string())?;
     let initialized = should_init_budget_limiter(
         resolved.provider_budget_config.as_ref(),
         resolved.tag_budget_config.as_ref(),
@@ -135,7 +134,12 @@ async fn run_steps(input: &Input) -> Result<Output, String> {
     let store = MemoryStore::default();
     let mut steps = Vec::with_capacity(input.steps.len());
     for step in &input.steps {
-        steps.push(run_step(step, &windows, &store, initialized).await?);
+        let output = match step.kind {
+            StepKind::Build => build_step(&windows, initialized),
+            StepKind::Start => start_step(step, &windows, &store).await?,
+            StepKind::Reset => reset_step(step, &store).await?,
+        };
+        steps.push(output);
     }
     Ok(Output { steps })
 }
@@ -178,44 +182,52 @@ fn money(value: &Option<String>) -> Result<Option<Decimal>, String> {
         .transpose()
 }
 
-async fn run_step(
-    step: &Step,
-    windows: &BudgetWindows,
-    store: &MemoryStore,
-    initialized: bool,
-) -> Result<StepOutput, String> {
-    match step.kind.as_str() {
-        "build" => Ok(build_step(step, windows, initialized)),
-        "start" => start_step(step, store).await,
-        "reset" => reset_step(step, store).await,
-        other => Err(format!("unknown budget window step {other}")),
+fn build_step(windows: &BudgetWindows, initialized: bool) -> StepOutput {
+    StepOutput {
+        kind: StepKind::Build,
+        should_init: Some(initialized),
+        limiter: Some(initialized),
+        tags: windows
+            .tag
+            .as_ref()
+            .map(|configs| configs.keys().cloned().collect()),
+        window_started: None,
+        spend: None,
     }
 }
 
-fn build_step(step: &Step, windows: &BudgetWindows, initialized: bool) -> StepOutput {
-    let mut output = StepOutput::empty(&step.kind);
-    output.should_init = Some(initialized);
-    output.limiter = Some(initialized);
-    output.tags = windows
-        .tag
-        .as_ref()
-        .map(|configs| configs.keys().cloned().collect());
-    output
-}
-
-async fn start_step(step: &Step, store: &MemoryStore) -> Result<StepOutput, String> {
+// LiteLLM's success event starts the window with the deployment's own duration as the ttl
+async fn start_step(
+    step: &Step,
+    windows: &BudgetWindows,
+    store: &MemoryStore,
+) -> Result<StepOutput, String> {
+    let model_id = step
+        .model_id
+        .as_deref()
+        .ok_or("the start step needs a model_id")?;
     let start_time_key = step
         .start_time_key
         .as_deref()
         .ok_or("the start step needs a start_time_key")?;
     let current_time = current_time(step)?;
-    let ttl_seconds = step.ttl_seconds.ok_or("the start step needs ttl_seconds")?;
-    let ttl = duration(ttl_seconds)?;
-    get_or_set_budget_start_time(store, start_time_key, current_time, Some(ttl)).await;
-    let mut output = StepOutput::empty(&step.kind);
-    let spend_key = step.spend_key.as_deref().unwrap_or(start_time_key);
-    output.window_started = Some(store.observe(start_time_key, spend_key).started);
-    Ok(output)
+    if let Some(budget) = windows.deployment_budget(model_id) {
+        get_or_set_budget_start_time(
+            store,
+            start_time_key,
+            current_time,
+            Some(budget.period.seconds),
+        )
+        .await;
+    }
+    Ok(StepOutput {
+        kind: StepKind::Start,
+        should_init: None,
+        limiter: None,
+        tags: None,
+        window_started: Some(store.observe(start_time_key, start_time_key).started),
+        spend: None,
+    })
 }
 
 async fn reset_step(step: &Step, store: &MemoryStore) -> Result<StepOutput, String> {
@@ -236,7 +248,7 @@ async fn reset_step(step: &Step, store: &MemoryStore) -> Result<StepOutput, Stri
             .ok_or("the reset step needs response_cost")?,
     )
     .map_err(|error| error.to_string())?;
-    store.seed_start(start_time_key, 0.0, ttl_seconds);
+    store.seed_start(start_time_key, 0.0, ttl);
     let keys = WindowKeys {
         spend: spend_key.to_owned(),
         start_time: start_time_key.to_owned(),
@@ -251,11 +263,15 @@ async fn reset_step(step: &Step, store: &MemoryStore) -> Result<StepOutput, Stri
         },
     )
     .await;
-    let mut output = StepOutput::empty(&step.kind);
     let observed = store.observe(start_time_key, spend_key);
-    output.spend = observed.spend.map(|spend| spend.normalize().to_string());
-    output.window_started = Some(observed.started);
-    Ok(output)
+    Ok(StepOutput {
+        kind: StepKind::Reset,
+        should_init: None,
+        limiter: None,
+        tags: None,
+        window_started: Some(observed.started),
+        spend: observed.spend.map(|spend| spend.normalize().to_string()),
+    })
 }
 
 fn current_time(step: &Step) -> Result<f64, String> {

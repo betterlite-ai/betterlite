@@ -73,6 +73,26 @@ fn empty_maps_stay_configured_and_empty_environment_is_unset() {
 }
 
 #[test]
+fn tag_aliases_win_over_the_declared_fields() {
+    let source = "litellm_settings:\n  tag_budget_config:\n    team:\n      max_budget: 5\n      budget_limit: 10\n      budget_duration: 1d\n      time_period: 7d\n    solo:\n      max_budget: 3\n      budget_duration: 2h\n";
+    let tags = settings(source, &[]).unwrap().tag_budget_config.unwrap();
+    assert_eq!(
+        tags.get("team"),
+        Some(&BudgetValues {
+            limit: Some(Decimal::from(10)),
+            duration: Some("7d".to_owned()),
+        })
+    );
+    assert_eq!(
+        tags.get("solo"),
+        Some(&BudgetValues {
+            limit: Some(Decimal::from(3)),
+            duration: Some("2h".to_owned()),
+        })
+    );
+}
+
+#[test]
 fn a_non_numeric_budget_names_its_path() {
     let source = "model_list:\n  - model_name: gpt\n    litellm_params:\n      model: openai/gpt-4o-mini\n      max_budget: ten\n";
     let message = settings(source, &[]).unwrap_err();
