@@ -2,6 +2,8 @@ use async_trait::async_trait;
 use betterlite_auth::auth_cache::AuthCache;
 use betterlite_auth::auth_cache::backend::AuthCacheTier;
 use betterlite_models::decisions::Json;
+use betterlite_redis::cache_primitives::decode::CachedValue;
+use betterlite_redis::redis_cache::RedisCache;
 use secrecy::SecretString;
 
 use super::PkceCacheShape;
@@ -20,24 +22,35 @@ pub enum PkceCacheEntry {
     UnexpectedShape(PkceCacheShape),
 }
 
+#[derive(Debug, Clone)]
+pub enum CacheRead {
+    Found(PkceCacheEntry),
+    Miss,
+}
+
 // A cache read failure is a miss and a delete failure is a warning, as both LiteLLM caches do
 #[async_trait]
 pub trait VerifierCache: Send + Sync {
     fn kind(&self) -> PkceCacheKind;
-    async fn read(&self, cache_key: &str) -> Option<PkceCacheEntry>;
+    async fn read(&self, cache_key: &str) -> CacheRead;
     async fn delete(&self, cache_key: &str);
 }
 
 #[async_trait]
 impl<T: AuthCacheTier> VerifierCache for AuthCache<T> {
-    pub(crate) fn kind(&self) -> PkceCacheKind {
+    fn kind(&self) -> PkceCacheKind {
         PkceCacheKind::UserCache
     }
 
-    async fn read(&self, cache_key: &str) -> Option<PkceCacheEntry> {
-        self.async_get(cache_key, false)
+    async fn read(&self, cache_key: &str) -> CacheRead {
+        match self
+            .async_get(cache_key, false)
             .await
             .and_then(|value| stored_entry(&value))
+        {
+            Some(entry) => CacheRead::Found(entry),
+            None => CacheRead::Miss,
+        }
     }
 
     async fn delete(&self, cache_key: &str) {
@@ -47,6 +60,56 @@ impl<T: AuthCacheTier> VerifierCache for AuthCache<T> {
                 "PKCE: failed to delete the verifier cache key (best-effort cleanup)"
             );
         }
+    }
+}
+
+#[async_trait]
+impl VerifierCache for RedisCache {
+    fn kind(&self) -> PkceCacheKind {
+        PkceCacheKind::RedisUsage
+    }
+
+    async fn read(&self, cache_key: &str) -> CacheRead {
+        match self.async_get_cache(cache_key).await {
+            Ok(Some(value)) => match stored_entry(&json_from_cached(value)) {
+                Some(entry) => CacheRead::Found(entry),
+                None => CacheRead::Miss,
+            },
+            Ok(None) => CacheRead::Miss,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "PKCE: the Redis usage cache read failed; treating it as a miss"
+                );
+                CacheRead::Miss
+            }
+        }
+    }
+
+    async fn delete(&self, cache_key: &str) {
+        if let Err(error) = self.admin.async_delete_cache(cache_key).await {
+            tracing::warn!(
+                %error,
+                "PKCE: failed to delete the verifier cache key (best-effort cleanup)"
+            );
+        }
+    }
+}
+
+// betterlite-cache's own CachedValue conversion is crate-private, so this reader maps the typed value itself
+fn json_from_cached(value: CachedValue) -> Json {
+    match value {
+        CachedValue::Null => Json::Null,
+        CachedValue::Boolean(flag) => Json::Bool(flag),
+        CachedValue::Number(number) => Json::Number(number),
+        CachedValue::Text(text) => Json::Text(text),
+        CachedValue::Array(items) => Json::List(items.into_iter().map(json_from_cached).collect()),
+        CachedValue::Object(fields) => Json::Object(
+            fields
+                .into_iter()
+                .map(|(key, entry)| (key, json_from_cached(entry)))
+                .collect(),
+        ),
     }
 }
 
@@ -84,7 +147,7 @@ where
     User: VerifierCache,
 {
     // LiteLLM reads the Redis usage cache when one is configured and the user cache otherwise
-    pub(crate) async fn read_verifier(&self, cache_key: &str) -> Option<PkceCacheEntry> {
+    pub(crate) async fn read_verifier(&self, cache_key: &str) -> CacheRead {
         match self.redis {
             Some(redis) => redis.read(cache_key).await,
             None => self.user.read(cache_key).await,

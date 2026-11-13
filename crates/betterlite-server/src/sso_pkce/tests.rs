@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+use std::error::Error as StdError;
 use std::fs;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -9,17 +11,31 @@ use betterlite_auth::auth_cache::{AuthCache, WriteOptions, gateway_cache};
 use betterlite_cache::backend::memory::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
 use betterlite_config::sso_pkce::PkceSettings;
+use betterlite_error::proxy_error_types::ProxyErrorTypes;
 use betterlite_models::decisions::Json;
+use betterlite_redis::cache_primitives::decode::CachedValue;
+use betterlite_redis::redis_cache::RedisCache;
+use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
+use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
+use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
+use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
+use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
+use betterlite_redis::redis_client_reuse::store::RedisClientStore;
+use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
+use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
+use betterlite_redis::redis_live_client::LiveClientFactory;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tempfile::NamedTempFile;
+use tokio::net::TcpListener;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt;
 
 use super::token_exchange::{TokenExchangeParameters, token_exchange_parameters};
 use super::verifier_cache::{
-    PkceCacheEntry, PkceCacheKind, PkceCaches, VerifierCache, stored_entry,
+    CacheRead, PkceCacheEntry, PkceCacheKind, PkceCaches, VerifierCache, json_from_cached,
+    stored_entry,
 };
 use super::{
     CODE_CHALLENGE_METHOD, GeneratedPkce, GenericSsoRedirectParams, OsEntropy, PkceCacheShape,
@@ -28,6 +44,7 @@ use super::{
 
 const VERIFIER_FOR_SEQUENCE: &str = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8";
 const CHALLENGE_FOR_SEQUENCE: &str = "6oZqdX5MOLq_qBJ8vppAnT4fk6AP8UiP9zX8-Rev_9A";
+const STATE_FOR_SEQUENCE: &str = "000102030405460788090a0b0c0d0e0f";
 
 fn settings(use_pkce: bool, strict_cache_miss: bool) -> PkceSettings {
     PkceSettings {
@@ -40,7 +57,7 @@ fn settings(use_pkce: bool, strict_cache_miss: bool) -> PkceSettings {
 struct SequenceEntropy;
 
 impl VerifierEntropy for SequenceEntropy {
-    fn fill_verifier(&self, bytes: &mut [u8; 32]) -> Result<(), getrandom::Error> {
+    fn fill(&self, bytes: &mut [u8]) -> Result<(), getrandom::Error> {
         for (index, byte) in bytes.iter_mut().enumerate() {
             *byte = u8::try_from(index).unwrap();
         }
@@ -51,7 +68,7 @@ impl VerifierEntropy for SequenceEntropy {
 struct BrokenEntropy;
 
 impl VerifierEntropy for BrokenEntropy {
-    fn fill_verifier(&self, _bytes: &mut [u8; 32]) -> Result<(), getrandom::Error> {
+    fn fill(&self, _bytes: &mut [u8]) -> Result<(), getrandom::Error> {
         Err(getrandom::Error::UNSUPPORTED)
     }
 }
@@ -96,17 +113,70 @@ impl VerifierCache for FakeCache {
         self.kind
     }
 
-    async fn read(&self, _cache_key: &str) -> Option<PkceCacheEntry> {
+    async fn read(&self, _cache_key: &str) -> CacheRead {
         self.reads.fetch_add(1, Ordering::SeqCst);
         if self.fails {
-            return None;
+            return CacheRead::Miss;
         }
-        self.entry.clone()
+        match self.entry.clone() {
+            Some(entry) => CacheRead::Found(entry),
+            None => CacheRead::Miss,
+        }
     }
 
     async fn delete(&self, cache_key: &str) {
         self.deletes.lock().unwrap().push(cache_key.to_owned());
     }
+}
+
+struct SilentHooks;
+
+impl ServiceHooks for SilentHooks {
+    fn success(&self, _event: &ServiceEvent) {}
+
+    fn failure(&self, _event: &ServiceEvent, _error: &(dyn StdError + Send + Sync)) {}
+}
+
+struct AllowGate;
+
+impl BreakerGate for AllowGate {
+    fn enter(&self, _name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
+        Ok(BreakerAdmission::from(1))
+    }
+
+    fn exit(&self, _admission: BreakerAdmission) {}
+
+    fn record_failure(&self, _error: &(dyn StdError + Send + Sync)) {}
+
+    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn StdError + Send + Sync)) {}
+}
+
+async fn unreachable_cache() -> RedisCache {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    drop(listener);
+    let overrides: RedisOverrides = serde_json::from_value(serde_json::json!({
+        "host": "127.0.0.1",
+        "port": port,
+        "socket_timeout": 0.05,
+        "socket_connect_timeout": 0.05,
+    }))
+    .unwrap();
+    let options = RedisCacheOptions {
+        overrides,
+        family: RedisCacheFamily::Standalone,
+        namespace: None,
+        default_ttl: 60,
+        redis_flush_size: None,
+        default_major_version: 7,
+        factory: Arc::new(LiveClientFactory::new(None)),
+        store: Arc::new(RedisClientStore::new()),
+        hooks: Arc::new(SilentHooks),
+        gate: Arc::new(AllowGate),
+    };
+    connect(options, &BTreeMap::<String, String>::new())
+        .await
+        .unwrap()
 }
 
 fn clock() -> Arc<dyn Fn() -> f64 + Send + Sync> {
@@ -170,10 +240,11 @@ fn generate_pkce_params_matches_the_rfc7636_vector() {
 fn generate_pkce_params_reports_a_broken_entropy_source() {
     let error = super::generate_pkce_params(&BrokenEntropy).unwrap_err();
     assert!(matches!(&error, PkceError::Entropy(_)));
-    assert_eq!(error.response().status, 500);
-    assert_eq!(error.response().error_type, "internal_server_error");
-    assert_eq!(error.response().param, None);
-    assert_eq!(error.response().code, "500");
+    let response = error.response();
+    assert_eq!(response.status, 500);
+    assert_eq!(response.error_type, ProxyErrorTypes::InternalServerError);
+    assert_eq!(response.param, None);
+    assert_eq!(response.code, "500");
 }
 
 #[test]
@@ -199,8 +270,7 @@ fn an_empty_cli_state_falls_through_to_the_configured_state() {
 
 #[test]
 fn a_missing_state_becomes_a_uuid_hex_value() {
-    let redirect =
-        generic_sso_redirect_params(None, &settings(false, false), &SequenceEntropy).unwrap();
+    let redirect = generic_sso_redirect_params(None, &settings(false, false), &OsEntropy).unwrap();
     assert_eq!(redirect.params.state.len(), 32);
     assert!(!redirect.params.state.contains('-'));
     assert!(
@@ -211,11 +281,18 @@ fn a_missing_state_becomes_a_uuid_hex_value() {
             .all(|character| character.is_ascii_hexdigit() && !character.is_ascii_uppercase())
     );
     assert!(uuid::Uuid::parse_str(&redirect.params.state).is_ok());
-    let other = generic_sso_redirect_params(None, &settings(false, false), &SequenceEntropy)
+    let other = generic_sso_redirect_params(None, &settings(false, false), &OsEntropy)
         .unwrap()
         .params
         .state;
     assert_ne!(redirect.params.state, other);
+}
+
+#[test]
+fn the_generated_state_comes_from_the_injected_entropy() {
+    let redirect =
+        generic_sso_redirect_params(None, &settings(false, false), &SequenceEntropy).unwrap();
+    assert_eq!(redirect.params.state, STATE_FOR_SEQUENCE);
 }
 
 #[test]
@@ -294,6 +371,32 @@ fn stored_entry_classifies_cached_values(#[case] value: Json, #[case] expected: 
     assert_eq!(actual.as_deref(), Some(expected));
 }
 
+#[rstest]
+#[case::null(CachedValue::Null, Json::Null)]
+#[case::boolean(CachedValue::Boolean(true), Json::Bool(true))]
+#[case::number(
+    CachedValue::Number(serde_json::Number::from(7_i64)),
+    Json::Number(serde_json::Number::from(7_i64))
+)]
+#[case::text(CachedValue::Text("text".to_owned()), Json::Text("text".to_owned()))]
+#[case::array(
+    CachedValue::Array(vec![CachedValue::Number(serde_json::Number::from(1_i64))]),
+    Json::List(vec![Json::Number(serde_json::Number::from(1_i64))])
+)]
+#[case::object(
+    CachedValue::Object(BTreeMap::from([(
+        "code_verifier".to_owned(),
+        CachedValue::Text("v".to_owned())
+    )])),
+    object("code_verifier", Json::Text("v".to_owned()))
+)]
+fn json_from_cached_preserves_each_cached_value(
+    #[case] cached: CachedValue,
+    #[case] expected: Json,
+) {
+    assert_eq!(json_from_cached(cached), expected);
+}
+
 fn verifier_of(parameters: &TokenExchangeParameters) -> Option<String> {
     parameters
         .verifier
@@ -365,6 +468,21 @@ async fn a_missing_state_only_warns_even_in_strict_mode() {
 }
 
 #[tokio::test]
+async fn pkce_disabled_without_a_state_does_not_warn() {
+    let (log, _guard) = capture_logs(tracing::Level::WARN);
+    let cache = FakeCache::returning(PkceCacheKind::UserCache, None);
+    let caches = PkceCaches {
+        redis: None::<&FakeCache>,
+        user: &cache,
+    };
+    let parameters = token_exchange_parameters(None, true, &settings(false, true), &caches)
+        .await
+        .unwrap();
+    assert!(parameters.verifier.is_none());
+    assert!(written(&log).is_empty());
+}
+
+#[tokio::test]
 async fn pkce_disabled_never_touches_the_cache() {
     let cache = FakeCache::returning(
         PkceCacheKind::UserCache,
@@ -395,10 +513,11 @@ async fn a_strict_cache_miss_returns_the_pkce_cache_miss_error() {
         .await
         .unwrap_err();
     assert!(matches!(&error, PkceError::MissingVerifier { .. }));
-    assert_eq!(error.response().status, 401);
-    assert_eq!(error.response().error_type, "auth_error");
-    assert_eq!(error.response().param, Some("PKCE_CACHE_MISS"));
-    assert_eq!(error.response().code, "401");
+    let response = error.response();
+    assert_eq!(response.status, 401);
+    assert_eq!(response.error_type, ProxyErrorTypes::AuthError);
+    assert_eq!(response.param, Some("PKCE_CACHE_MISS"));
+    assert_eq!(response.code, "401");
     assert!(cache.deletes().is_empty());
     assert!(written(&log).contains("no verifier was found in cache"));
 }
@@ -572,6 +691,24 @@ async fn a_failed_cache_read_is_a_miss() {
             .await
             .unwrap();
     assert!(parameters.verifier.is_none());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_unreachable_redis_usage_cache_reads_as_a_miss() {
+    let cache = unreachable_cache().await;
+    assert_eq!(cache.kind(), PkceCacheKind::RedisUsage);
+    assert!(matches!(
+        cache.read("pkce_verifier:state").await,
+        CacheRead::Miss
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_redis_usage_cache_delete_failure_only_warns() {
+    let (log, _guard) = capture_logs(tracing::Level::WARN);
+    let cache = unreachable_cache().await;
+    cache.delete("pkce_verifier:state").await;
+    assert!(written(&log).contains("best-effort cleanup"));
 }
 
 #[tokio::test]
