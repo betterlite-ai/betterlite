@@ -88,5 +88,5 @@ pitfalls:
   - max_tokens and max_completion_tokens overwrite the same field in input order rather than having a fixed winner.
   - The source has no actual default max_output_tokens=256 even though its class documentation suggests one.
   - The final search conflict pass is necessary when web_search_options and functions were mapped separately.
-budget: {max_changed_lines: 800, max_new_expects: 0}
+budget: {max_changed_lines: 1100, max_new_expects: 0}
 review_level: standard
