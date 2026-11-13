@@ -7,69 +7,40 @@ from typing import Literal, NotRequired, Protocol, TypedDict
 
 import httpx
 import litellm
+from litellm.litellm_core_utils.get_llm_provider_logic import get_llm_provider
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.xai.chat.transformation import (
     XAIChatCompletionStreamingHandler,
     XAIChatConfig,
 )
-from litellm.types.llms.openai import AllMessageValues
 from litellm.types.utils import ModelResponse, ModelResponseStream
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
-SupportedParams = Callable[[str], list[str]]
-MapParams = Callable[
-    [dict[str, JsonValue], dict[str, JsonValue], str, bool], dict[str, JsonValue]
-]
-TransformRequest = Callable[
-    [
-        str,
-        list[AllMessageValues],
-        dict[str, JsonValue],
-        dict[str, JsonValue],
-        dict[str, JsonValue],
-    ],
-    dict[str, JsonValue],
-]
-ValidateEnvironment = Callable[
-    [
-        dict[str, str],
-        str,
-        list[AllMessageValues],
-        dict[str, JsonValue],
-        dict[str, JsonValue],
-        str | None,
-        str | None,
-    ],
-    dict[str, JsonValue],
-]
-CompleteUrl = Callable[
-    [
-        str | None,
-        str | None,
-        str,
-        dict[str, JsonValue],
-        dict[str, JsonValue],
-        bool | None,
-    ],
-    str,
-]
-ChunkParser = Callable[[dict[str, JsonValue]], ModelResponseStream]
+Params = dict[str, JsonValue]
+Messages = list[JsonValue]
 
 
 class ChatConfig(Protocol):
-    get_supported_openai_params: SupportedParams
-    map_openai_params: MapParams
-    transform_request: TransformRequest
-    validate_environment: ValidateEnvironment
-    get_complete_url: CompleteUrl
-    transform_response: Callable[..., ModelResponse]
+    get_supported_openai_params: Callable[[str], list[str]]
+    map_openai_params: Callable[[Params, Params, str, bool], Params]
+    transform_request: Callable[[str, Messages, Params, Params, Params], Params]
+    validate_environment: Callable[
+        [dict[str, str], str, Messages, Params, Params, str | None, str | None],
+        Params,
+    ]
+    get_complete_url: Callable[[str | None, str | None, str, Params, Params, bool | None], str]
+    transform_response: Callable[
+        [str, httpx.Response, ModelResponse, Logging, Params, Messages, Params, Params, None],
+        ModelResponse,
+    ]
 
 
 class StreamingHandler(Protocol):
-    chunk_parser: ChunkParser
+    def chunk_parser(self, chunk: Params) -> ModelResponseStream: ...
 
 
-CONFIG: ChatConfig = XAIChatConfig()
+CONFIG: ChatConfig = XAIChatConfig()  # type: ignore[assignment]  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998-L1005
 
 
 class Settings(TypedDict):
@@ -96,7 +67,7 @@ class MapStep(TypedDict):
 class RequestStep(TypedDict):
     kind: Literal["request"]
     model: str
-    messages: list[AllMessageValues]
+    messages: list[JsonValue]
     optional_params: dict[str, JsonValue]
 
 
@@ -126,15 +97,7 @@ class ChunkStep(TypedDict):
     chunk: dict[str, JsonValue]
 
 
-Step = (
-    SupportedStep
-    | MapStep
-    | RequestStep
-    | EnvironmentStep
-    | UrlStep
-    | ReplyStep
-    | ChunkStep
-)
+Step = SupportedStep | MapStep | RequestStep | EnvironmentStep | UrlStep | ReplyStep | ChunkStep
 
 
 class Input(TypedDict):
@@ -201,6 +164,7 @@ class Warnings(logging.Handler):
         super().__init__(level=logging.WARNING)
         self.messages: list[str] = []
 
+    @override
     def emit(self, record: logging.LogRecord) -> None:
         self.messages.append(record.getMessage())
 
@@ -267,7 +231,7 @@ def environment_step(step: EnvironmentStep) -> JsonValue:
 
 
 def url_step(step: UrlStep) -> JsonValue:
-    _, _provider, api_key, api_base = litellm.get_llm_provider(
+    _, _provider, api_key, api_base = get_llm_provider(
         model="xai/grok-4",
         api_base=step["api_base"],
         api_key=step["api_key"],
@@ -308,7 +272,7 @@ def usage_view(usage: UsageView) -> dict[str, JsonValue]:
 def reply_step(step: ReplyStep) -> JsonValue:
     logging_obj = Logging(
         model="xai/grok-4",
-        messages=[],
+        messages=None,
         stream=False,
         call_type="completion",
         start_time=dt.datetime.now(dt.UTC),
@@ -316,15 +280,15 @@ def reply_step(step: ReplyStep) -> JsonValue:
         function_id="oracle-function",
     )
     transformed = CONFIG.transform_response(
-        model=step["model"],
-        raw_response=httpx.Response(200, content=step["body"]),
-        model_response=ModelResponse(),
-        logging_obj=logging_obj,
-        request_data={},
-        messages=[],
-        optional_params={},
-        litellm_params={},
-        encoding=None,
+        step["model"],
+        httpx.Response(200, content=step["body"]),
+        ModelResponse(),
+        logging_obj,
+        {},
+        [],
+        {},
+        {},
+        None,
     )
     view = TypeAdapter(ReplyView).validate_json(transformed.model_dump_json())
     choices: list[JsonValue] = [
@@ -337,14 +301,11 @@ def reply_step(step: ReplyStep) -> JsonValue:
     return {"choices": choices, "usage": usage_view(view["usage"])}
 
 
-def streaming_handler() -> StreamingHandler:
-    return XAIChatCompletionStreamingHandler(
+def chunk_step(step: ChunkStep) -> JsonValue:
+    handler: StreamingHandler = XAIChatCompletionStreamingHandler(
         streaming_response=iter(()), sync_stream=False
     )
-
-
-def chunk_step(step: ChunkStep) -> JsonValue:
-    parsed = streaming_handler().chunk_parser(dict(step["chunk"]))
+    parsed = handler.chunk_parser(dict(step["chunk"]))  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/chat/transformation.py#L408
     view = TypeAdapter(StreamView).validate_json(parsed.model_dump_json())
     choices: list[JsonValue] = [
         {"index": choice["index"], "finish_reason": choice.get("finish_reason")}
