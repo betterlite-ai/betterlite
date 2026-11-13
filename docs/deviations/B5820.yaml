@@ -1,0 +1,8 @@
+task: B5820
+deviations:
+  - what: An embeddings input array that starts with text but has a later element that is not text is rejected with EmbeddingsTranslationError before any guardrail call, where LiteLLM sends the mixed list to the guardrail as texts and the route answers 400.
+    why: GuardrailApiInputs.texts is a Vec<String>, and the declared type str | int | list[int] lists one kind per array; skipping the scan would let an unscanned element through, so betterlite refuses the input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/embeddings/guardrail_translation/handler.py#L124
+  - what: The response placed in the request data is a copy taken before the rewrite. LiteLLM stores the live object, so a guardrail that keeps request_data["response"] and reads it after the call sees the new text there in LiteLLM and the original text in betterlite.
+    why: Rust cannot hold a shared reference into the response while the handler writes to it, and the guardrail only reads the response during its own call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/guardrail_translation/handler.py#L161
