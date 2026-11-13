@@ -1,0 +1,9 @@
+task: B1410
+deviations:
+  - what: >-
+      A Voxtral speech or transcription reply larger than 16 MiB is refused, where LiteLLM
+      reads and decodes whatever the provider sent.
+    why: >-
+      The decoder reads JSON and Base64 bytes from a provider into memory, so an unbounded body
+      is a memory-exhaustion input; betterlite caps it and reports a 500 instead of reading it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/audio_speech/transformation.py#L152-L179
