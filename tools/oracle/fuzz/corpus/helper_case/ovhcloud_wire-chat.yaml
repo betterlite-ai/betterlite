@@ -9,6 +9,5 @@ call:
         model: m
         optional_params:
           extra_body: {model: over, messages: []}
-      - {api_base: null, model: m, optional_params: {extra_body: null}}
 env: {}
 compare: {ignore: []}

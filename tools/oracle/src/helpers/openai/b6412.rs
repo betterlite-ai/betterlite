@@ -225,11 +225,7 @@ pub(super) fn processed(call: &TranscriptionCall) -> Result<ProcessedAudioFile, 
 }
 
 pub(super) fn file_value(file: &ProcessedAudioFile) -> Value {
-    json!({
-        "filename": file.filename,
-        "content": String::from_utf8_lossy(&file.file_content),
-        "content_type": file.content_type,
-    })
+    json!([file.filename, file.content_type, file.file_content])
 }
 
 pub(super) fn fields_pairs(fields: &[(String, Value)]) -> Value {

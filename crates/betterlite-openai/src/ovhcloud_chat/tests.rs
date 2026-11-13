@@ -223,6 +223,27 @@ fn chunk_parser_reports_a_wrong_shape_without_inventing_a_status(
     assert_eq!(error.status_code, None);
 }
 
+#[rstest]
+#[case::id(json!({"id": 4, "created": 1, "model": "m", "choices": []}), "id")]
+#[case::created(json!({"id": "a", "created": "1", "model": "m", "choices": []}), "created")]
+#[case::model(json!({"id": "a", "created": 1, "model": 4, "choices": []}), "model")]
+#[case::choice(json!({"id": "a", "created": 1, "model": "m", "choices": [4]}), "choices")]
+#[case::delta(json!({"id": "a", "created": 1, "model": "m", "choices": [{"delta": 4}]}), "delta")]
+#[case::error(json!({"error": 4}), "error")]
+#[case::error_message(json!({"error": {"message": 4}}), "error.message")]
+#[case::error_code(json!({"error": {"message": "one", "code": "429"}}), "error.code")]
+fn chunk_parser_names_the_field_of_a_wrong_shape(
+    #[case] source: serde_json::Value,
+    #[case] field: &str,
+) {
+    let error = chunk_parser(&object(source)).expect_err("an error");
+    assert_eq!(
+        error.message,
+        format!("the OVHCloud stream chunk field {field} has an unexpected shape")
+    );
+    assert!(error.headers.is_empty());
+}
+
 #[test]
 fn chunk_parser_keeps_a_null_model_and_an_absent_usage() {
     let chunk = object(json!({"id": "a", "created": 1, "model": null, "choices": []}));

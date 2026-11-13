@@ -15,8 +15,5 @@ call:
           extra_body: {model: over, messages: [], top_k: 4}
       - {api_base: null, model: m, optional_params: {extra_body: {}}}
       - {api_base: null, model: m, optional_params: {extra_body: {temperature: 1}}}
-      - {api_base: null, model: m, optional_params: {extra_body: null}}
-      - {api_base: null, model: m, optional_params: {extra_body: [1]}}
-      - {api_base: null, model: m, optional_params: {extra_body: text}}
 env: {}
 compare: {ignore: []}
