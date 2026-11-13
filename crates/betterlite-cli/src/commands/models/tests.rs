@@ -738,36 +738,24 @@ fn import_models_ignores_api_errors_and_counts_the_attempt() {
 }
 
 #[rstest]
-#[case::empty("")]
-#[case::whitespace("  \n")]
-#[case::other_keys("general:\n  debug: true\n")]
-fn import_models_requires_a_model_list_key(#[case] text: &str) {
+#[case::empty("", true)]
+#[case::whitespace("  \n", true)]
+#[case::other_keys("general:\n  debug: true\n", true)]
+#[case::number("model_list: 7\n", false)]
+#[case::mapping("model_list: {}\n", false)]
+fn import_models_validates_the_model_list(#[case] text: &str, #[case] missing_key: bool) {
     let file = yaml(text);
     let server = TestServer::start(Vec::new());
 
     let (result, stdout, _stderr) = run(import(&file, true, None, None), &server);
 
-    assert!(
-        matches!(result, Err(ModelsError::MissingModelList)),
-        "{result:?}"
-    );
+    let matched = match &result {
+        Err(ModelsError::MissingModelList) => missing_key,
+        Err(ModelsError::ModelListNotList) => !missing_key,
+        Ok(()) | Err(_) => false,
+    };
+    assert!(matched, "{result:?}");
     assert!(stdout.is_empty(), "{stdout}");
-    server.finish();
-}
-
-#[rstest]
-#[case::number("model_list: 7\n")]
-#[case::mapping("model_list: {}\n")]
-fn import_models_requires_the_model_list_to_be_a_list(#[case] text: &str) {
-    let file = yaml(text);
-    let server = TestServer::start(Vec::new());
-
-    let (result, _stdout, _stderr) = run(import(&file, true, None, None), &server);
-
-    assert!(
-        matches!(result, Err(ModelsError::ModelListNotList)),
-        "{result:?}"
-    );
     server.finish();
 }
 

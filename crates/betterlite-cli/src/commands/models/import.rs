@@ -178,13 +178,23 @@ fn yaml_info<'model>(
     model: &'model ModelObject,
     index: usize,
 ) -> Result<ModelYamlInfo<'model>, ModelsError> {
-    let model_name = field_text(model, "model_name", index)?;
+    let Some(JsonValue::Text(model_name)) = model.get("model_name") else {
+        return Err(ModelsError::EntryField {
+            index,
+            field: "model_name",
+        });
+    };
     let model_params =
         field_object(model, "litellm_params", index)?.ok_or(ModelsError::EntryField {
             index,
             field: "litellm_params",
         })?;
-    let model_id = field_text(model_params, "model", index)?;
+    let Some(JsonValue::Text(model_id)) = model_params.get("model") else {
+        return Err(ModelsError::EntryField {
+            index,
+            field: "model",
+        });
+    };
     let model_info = field_object(model, "model_info", index)?;
     let access_groups = access_group_names(model_info, index)?;
     let provider = model_id
@@ -198,20 +208,6 @@ fn yaml_info<'model>(
         access_groups,
         provider,
     })
-}
-
-fn field_text<'model>(
-    object: &'model ModelObject,
-    field: &'static str,
-    index: usize,
-) -> Result<&'model str, ModelsError> {
-    object
-        .get(field)
-        .and_then(|value| match value {
-            JsonValue::Text(text) => Some(text),
-            _ => None,
-        })
-        .ok_or(ModelsError::EntryField { index, field })
 }
 
 fn field_object<'model>(
@@ -243,7 +239,11 @@ fn access_group_names<'model>(
         .iter()
         .map(|group| match group {
             JsonValue::Text(text) => Ok(text.as_str()),
-            _ => Err(ModelsError::EntryField {
+            JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::Array(_)
+            | JsonValue::Object(_) => Err(ModelsError::EntryField {
                 index,
                 field: "access_groups",
             }),

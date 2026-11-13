@@ -26,6 +26,11 @@ enum InfoColumn {
     OutputCost,
 }
 
+struct ColumnSpec {
+    header: &'static str,
+    field: &'static str,
+}
+
 impl InfoColumn {
     fn from_name(name: &str) -> Option<Self> {
         match name {
@@ -41,16 +46,40 @@ impl InfoColumn {
         }
     }
 
-    const fn header(self) -> &'static str {
+    const fn spec(self) -> ColumnSpec {
         match self {
-            Self::PublicModel => "Public Model",
-            Self::UpstreamModel => "Upstream Model",
-            Self::CredentialName => "Credential Name",
-            Self::CreatedAt => "Created At",
-            Self::UpdatedAt => "Updated At",
-            Self::Id => "ID",
-            Self::InputCost => "Input Cost",
-            Self::OutputCost => "Output Cost",
+            Self::PublicModel => ColumnSpec {
+                header: "Public Model",
+                field: "model_name",
+            },
+            Self::UpstreamModel => ColumnSpec {
+                header: "Upstream Model",
+                field: "model",
+            },
+            Self::CredentialName => ColumnSpec {
+                header: "Credential Name",
+                field: "litellm_credential_name",
+            },
+            Self::CreatedAt => ColumnSpec {
+                header: "Created At",
+                field: "created_at",
+            },
+            Self::UpdatedAt => ColumnSpec {
+                header: "Updated At",
+                field: "updated_at",
+            },
+            Self::Id => ColumnSpec {
+                header: "ID",
+                field: "id",
+            },
+            Self::InputCost => ColumnSpec {
+                header: "Input Cost",
+                field: "input_cost_per_token",
+            },
+            Self::OutputCost => ColumnSpec {
+                header: "Output Cost",
+                field: "output_cost_per_token",
+            },
         }
     }
 }
@@ -90,7 +119,7 @@ pub(super) fn get_models_info(
             path: INFO_PATH,
             source,
         })?;
-    let headers: Vec<&str> = columns.iter().map(|column| column.header()).collect();
+    let headers: Vec<&str> = columns.iter().map(|column| column.spec().header).collect();
     let rows = info_rows(&columns, &models)?;
     write_table(TITLE, &headers, rows, stdout);
     Ok(())
@@ -112,54 +141,33 @@ fn info_rows(columns: &[InfoColumn], models: &[InfoRow]) -> Result<Vec<Vec<Strin
 }
 
 fn info_cell(column: InfoColumn, model: &InfoRow) -> Result<String, ModelsError> {
+    let field = column.spec().field;
     match column {
         InfoColumn::PublicModel => Ok(model
             .model_name
             .as_ref()
             .map_or_else(String::new, cell_text)),
-        InfoColumn::UpstreamModel => {
+        InfoColumn::UpstreamModel | InfoColumn::CredentialName => {
             let params = object_value(model.litellm_params.as_ref(), "litellm_params")?;
             Ok(params
-                .and_then(|params| params.get("model"))
+                .and_then(|params| params.get(field))
                 .map_or_else(String::new, cell_text))
-        }
-        InfoColumn::CredentialName => {
-            let params = object_value(model.litellm_params.as_ref(), "litellm_params")?;
-            Ok(params
-                .and_then(|params| params.get("litellm_credential_name"))
-                .map_or_else(String::new, cell_text))
-        }
-        InfoColumn::CreatedAt => {
-            let info = object_value(model.model_info.as_ref(), "model_info")?;
-            let text = text_value(info.and_then(|info| info.get("created_at")), "created_at")?;
-            format_iso_datetime_str(text, "created_at")
-        }
-        InfoColumn::UpdatedAt => {
-            let info = object_value(model.model_info.as_ref(), "model_info")?;
-            let text = text_value(info.and_then(|info| info.get("updated_at")), "updated_at")?;
-            format_iso_datetime_str(text, "updated_at")
         }
         InfoColumn::Id => {
             let info = object_value(model.model_info.as_ref(), "model_info")?;
             Ok(info
-                .and_then(|info| info.get("id"))
+                .and_then(|info| info.get(field))
                 .map_or_else(String::new, cell_text))
         }
-        InfoColumn::InputCost => {
+        InfoColumn::CreatedAt | InfoColumn::UpdatedAt => {
             let info = object_value(model.model_info.as_ref(), "model_info")?;
-            let cost = cost_value(
-                info.and_then(|info| info.get("input_cost_per_token")),
-                "input_cost_per_token",
-            )?;
-            format_cost_per_1k_tokens(cost, "input_cost_per_token")
+            let text = text_value(info.and_then(|info| info.get(field)), field)?;
+            format_iso_datetime_str(text, field)
         }
-        InfoColumn::OutputCost => {
+        InfoColumn::InputCost | InfoColumn::OutputCost => {
             let info = object_value(model.model_info.as_ref(), "model_info")?;
-            let cost = cost_value(
-                info.and_then(|info| info.get("output_cost_per_token")),
-                "output_cost_per_token",
-            )?;
-            format_cost_per_1k_tokens(cost, "output_cost_per_token")
+            let cost = cost_value(info.and_then(|info| info.get(field)), field)?;
+            format_cost_per_1k_tokens(cost, field)
         }
     }
 }

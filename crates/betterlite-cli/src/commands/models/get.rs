@@ -55,7 +55,7 @@ fn matches_selector(options: &GetModel, candidate: &Candidate) -> bool {
     match (&options.model_id, &options.model_name) {
         (Some(model_id), None) => id_matches(candidate.model_info.as_ref(), model_id),
         (None, Some(model_name)) => text_matches(candidate.model_name.as_ref(), model_name),
-        _ => false,
+        (Some(_), Some(_)) | (None, None) => false,
     }
 }
 
@@ -74,11 +74,9 @@ fn text_matches(value: Option<&JsonValue>, expected: &str) -> bool {
 }
 
 fn selector(options: &GetModel) -> String {
-    if let Some(model_id) = &options.model_id {
-        format!("Model with id={model_id}")
-    } else if let Some(model_name) = &options.model_name {
-        format!("Model with model_name={model_name}")
-    } else {
-        String::from("Unknown error trying to find model")
+    match (&options.model_id, &options.model_name) {
+        (Some(model_id), _) => format!("Model with id={model_id}"),
+        (None, Some(model_name)) => format!("Model with model_name={model_name}"),
+        (None, None) => String::from("Unknown error trying to find model"),
     }
 }

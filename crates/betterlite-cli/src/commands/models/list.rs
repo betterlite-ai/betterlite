@@ -8,7 +8,7 @@ use crate::commands::tables::{OutputFormat, write_table};
 
 use super::format::format_timestamp;
 use super::response::{fetch_data, write_json};
-use super::value::{cell_text, integer_value};
+use super::value::cell_text;
 use super::{ListModels, ModelsError};
 
 const LIST_PATH: &str = "/models";
@@ -49,7 +49,14 @@ pub(super) fn list_models(
 }
 
 fn list_row(model: &ListedModel) -> Result<Vec<String>, ModelsError> {
-    let created = integer_value(model.created.as_ref(), "created")?;
+    let created = match model.created.as_ref() {
+        None | Some(JsonValue::Null) => None,
+        Some(JsonValue::Number(number)) => number
+            .as_i64()
+            .map(Some)
+            .ok_or(ModelsError::FieldType { field: "created" })?,
+        Some(_) => return Err(ModelsError::FieldType { field: "created" }),
+    };
     Ok(vec![
         model.id.as_ref().map_or_else(String::new, cell_text),
         model

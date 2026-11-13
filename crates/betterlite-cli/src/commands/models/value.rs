@@ -5,6 +5,9 @@ use rust_decimal::Decimal;
 use super::ModelsError;
 
 pub(super) type ModelObject = IndexMap<String, JsonValue>;
+type ObjectResult<'value> = Result<Option<&'value ModelObject>, ModelsError>;
+type TextResult<'value> = Result<Option<&'value str>, ModelsError>;
+type ValueResult<T> = Result<Option<T>, ModelsError>;
 
 pub(super) fn cell_text(value: &JsonValue) -> String {
     match value {
@@ -18,10 +21,7 @@ pub(super) fn cell_text(value: &JsonValue) -> String {
     }
 }
 
-pub(super) fn object_value(
-    value: Option<&JsonValue>,
-    field: &'static str,
-) -> Result<Option<&ModelObject>, ModelsError> {
+pub(super) fn object_value(value: Option<&JsonValue>, field: &'static str) -> ObjectResult<'_> {
     match value {
         None | Some(JsonValue::Null) => Ok(None),
         Some(JsonValue::Object(fields)) => Ok(Some(fields)),
@@ -29,10 +29,7 @@ pub(super) fn object_value(
     }
 }
 
-pub(super) fn text_value(
-    value: Option<&JsonValue>,
-    field: &'static str,
-) -> Result<Option<&str>, ModelsError> {
+pub(super) fn text_value(value: Option<&JsonValue>, field: &'static str) -> TextResult<'_> {
     match value {
         None | Some(JsonValue::Null) => Ok(None),
         Some(JsonValue::Text(text)) => Ok(Some(text)),
@@ -40,24 +37,7 @@ pub(super) fn text_value(
     }
 }
 
-pub(super) fn integer_value(
-    value: Option<&JsonValue>,
-    field: &'static str,
-) -> Result<Option<i64>, ModelsError> {
-    match value {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(JsonValue::Number(number)) => number
-            .as_i64()
-            .map(Some)
-            .ok_or(ModelsError::FieldType { field }),
-        Some(_) => Err(ModelsError::FieldType { field }),
-    }
-}
-
-pub(super) fn cost_value(
-    value: Option<&JsonValue>,
-    field: &'static str,
-) -> Result<Option<Decimal>, ModelsError> {
+pub(super) fn cost_value(value: Option<&JsonValue>, field: &'static str) -> ValueResult<Decimal> {
     match value {
         None | Some(JsonValue::Null) => Ok(None),
         Some(JsonValue::Number(number)) => number
