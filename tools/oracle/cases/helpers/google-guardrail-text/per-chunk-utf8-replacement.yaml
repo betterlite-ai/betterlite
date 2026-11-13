@@ -1,0 +1,25 @@
+kind: helper
+name: google-guardrail-text-per-chunk-utf8-replacement
+call:
+  google_guardrail_text:
+    calls:
+      - function: sse
+        chunks:
+          - kind: bytes
+            value:
+              [100, 97, 116, 97, 58, 32, 123, 34, 99, 97, 110, 100, 105, 100, 97, 116,
+               101, 115, 34, 58, 91, 123, 34, 99, 111, 110, 116, 101, 110, 116, 34, 58,
+               123, 34, 112, 97, 114, 116, 115, 34, 58, 91, 123, 34, 116, 101, 120, 116,
+               34, 58, 34, 99, 97, 102, 195]
+          - kind: bytes
+            value: [169, 34, 125, 93, 125, 125, 93, 125, 13, 10, 13, 10]
+      - function: sse
+        chunks:
+          - kind: text
+            value: "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"one\"}]}}]}\n"
+          - kind: bytes
+            value: [100, 97, 116, 97, 58, 32, 123, 34, 99, 97, 110]
+          - kind: text
+            value: "didates\":[{\"content\":{\"parts\":[{\"text\":\"two\"}]}}]}\n"
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,23 @@
+kind: helper
+name: google-guardrail-text-length-mismatch-no-write
+call:
+  google_guardrail_text:
+    calls:
+      - function: response
+        response:
+          candidates:
+            - content: {parts: [{text: a}]}
+            - content: {parts: [{text: b}]}
+        replacement: [only]
+      - function: response
+        response:
+          candidates: [{content: {parts: [{text: a}]}}]
+        replacement: []
+      - function: request
+        data:
+          contents:
+            - {parts: [{text: a}]}
+            - {parts: [{text: b}]}
+        replacement: [a, b, c]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: google-guardrail-text-split-sse-frame
+call:
+  google_guardrail_text:
+    calls:
+      - function: sse
+        chunks:
+          - {kind: text, value: "data: {\"cand"}
+          - {kind: text, value: "idates\":[{\"content\":{\"parts\":[{\"text\":\"hello\"}]}}]}\r\n\r\n"}
+      - function: sse
+        chunks:
+          - {kind: text, value: "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"x\"}]}}]}\r\n"}
+          - {kind: text, value: "data: [DONE]\r\ndata: \ndata: {oops}\ndata: [1,2]\ndata: null\n"}
+      - function: sse
+        chunks:
+          - {kind: text, value: "data:{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"no-space\"}]}}]}\n"}
+env: {}
+compare: {ignore: []}

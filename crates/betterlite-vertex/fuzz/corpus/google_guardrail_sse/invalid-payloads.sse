@@ -1,0 +1,6 @@
+data: 
+data: {oops}
+data: [1,2]
+data: null
+event: ping
+data: text

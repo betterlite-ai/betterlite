@@ -1,0 +1,17 @@
+kind: helper
+name: google-guardrail-text-stream-and-sse
+call:
+  google_guardrail_text:
+    calls:
+      - function: stream
+        frames:
+          - {candidates: [{content: {parts: [{text: obj}]}}]}
+          - "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"sse\"}]}}]}\n\n"
+        replacement: [changed]
+        request_data: {model: gemini-2.5-flash}
+      - function: sse
+        chunks:
+          - {kind: text, value: "data: {\"cand"}
+          - {kind: text, value: "idates\":[{\"content\":{\"parts\":[{\"text\":\"hello\"}]}}]}\r\n\r\n"}
+env: {}
+compare: {ignore: []}
