@@ -1,0 +1,5 @@
+task: B4837
+deviations:
+  - what: Unknown models in cost_per_token are logged once and their calls cost zero, with the log-once set kept per usage callback instead of LiteLLM's process-wide module set.
+    why: A process-wide set is global state, which the project forbids; LiteLLM's own handler builds one callback per turn, so betterlite logs at most once per turn per unpriced model instead of once per process.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepagents/harness/sandbox_backend.py#L509-L518
