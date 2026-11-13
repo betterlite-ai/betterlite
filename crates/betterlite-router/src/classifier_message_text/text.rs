@@ -4,7 +4,6 @@ use betterlite_openai::chat::{ContentPart, MessageContent};
 use crate::classifier_message_text::error::ClassifierTextError;
 use crate::classifier_message_text::markers::MarkerPair;
 
-#[must_use]
 pub fn message_text(content: Option<&MessageContent>) -> Result<String, ClassifierTextError> {
     match content {
         None => Ok(String::new()),
@@ -28,7 +27,6 @@ pub fn message_text(content: Option<&MessageContent>) -> Result<String, Classifi
     }
 }
 
-#[must_use]
 pub fn json_message_text(content: Option<&Json>) -> Result<String, ClassifierTextError> {
     let Some(content) = content else {
         return Ok(String::new());
@@ -59,7 +57,6 @@ pub fn json_message_text(content: Option<&Json>) -> Result<String, ClassifierTex
     }
 }
 
-#[must_use]
 pub fn human_text(
     content: Option<&MessageContent>,
     markers: &[MarkerPair<'_>],
@@ -68,7 +65,6 @@ pub fn human_text(
     Ok(strip_reminder_blocks(&text, markers))
 }
 
-#[must_use]
 pub fn json_human_text(
     content: Option<&Json>,
     markers: &[MarkerPair<'_>],

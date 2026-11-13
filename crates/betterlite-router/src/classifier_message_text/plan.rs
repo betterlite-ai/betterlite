@@ -42,7 +42,6 @@ impl PlanMessage<'_> {
     }
 }
 
-#[must_use]
 pub fn matched_plan_mode_sentinel(
     body: Option<&Json>,
     resolved_messages: Option<&[ChatMessage]>,

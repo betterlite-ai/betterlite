@@ -7,7 +7,6 @@ pub struct InlineImage {
     pub url: String,
 }
 
-#[must_use]
 pub fn inline_image_part(part: &ContentPart) -> Result<Option<InlineImage>, ClassifierTextError> {
     let Some(url) = image_url(part)? else {
         return Ok(None);

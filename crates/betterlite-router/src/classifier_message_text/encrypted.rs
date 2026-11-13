@@ -8,7 +8,6 @@ const AGENT_MESSAGE_TYPE: &str = "agent_message";
 const ENCRYPTED_CONTENT_TYPE: &str = "encrypted_content";
 const KEPT_CONTENT_TYPES: [&str; 2] = ["input_text", "encrypted_content"];
 
-#[must_use]
 pub fn encrypted_classifier_task<E, F>(
     input: Option<&Json>,
     has_messages: bool,

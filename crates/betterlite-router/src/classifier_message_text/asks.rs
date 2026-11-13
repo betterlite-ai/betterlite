@@ -19,7 +19,6 @@ pub struct SystemPrompt {
     pub message_index: usize,
 }
 
-#[must_use]
 pub fn human_asks_newest_first(
     messages: &[ChatMessage],
     markers: &[MarkerPair<'_>],
@@ -53,7 +52,6 @@ pub fn conversation_is_continuing(messages: Option<&[ChatMessage]>) -> bool {
     }
 }
 
-#[must_use]
 pub fn newest_turn_ask(
     messages: &[ChatMessage],
     markers: &[MarkerPair<'_>],
@@ -71,7 +69,6 @@ pub fn newest_turn_ask(
     Ok(None)
 }
 
-#[must_use]
 pub fn current_ask_and_system_prompt(
     messages: &[ChatMessage],
     markers: &[MarkerPair<'_>],
@@ -96,7 +93,6 @@ pub fn current_ask_and_system_prompt(
     Ok((current_ask, system_prompt))
 }
 
-#[must_use]
 pub fn last_human_ask_index(
     messages: &[ChatMessage],
     markers: &[MarkerPair<'_>],
@@ -112,7 +108,6 @@ pub fn last_human_ask_index(
     Ok(None)
 }
 
-#[must_use]
 pub fn is_reminder_only_turn(
     message: &ChatMessage,
     markers: &[MarkerPair<'_>],
@@ -132,7 +127,6 @@ pub fn is_reminder_only_turn(
     Ok(!text.trim().is_empty() && strip_reminder_blocks(&text, markers).is_empty())
 }
 
-#[must_use]
 pub fn newest_turn_is_human_ask(
     messages: Option<&[ChatMessage]>,
     markers: &[MarkerPair<'_>],
@@ -153,7 +147,6 @@ pub fn newest_turn_is_human_ask(
     Ok(last_human_ask_index(messages, markers)? == Some(newest_activity))
 }
 
-#[must_use]
 pub fn json_human_asks_newest_first(
     messages: &[Json],
     markers: &[MarkerPair<'_>],
