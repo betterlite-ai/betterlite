@@ -41,3 +41,4 @@ call:
             tools:
               - {type: function, name: f, parameters: {type: object, anyOf: [{type: string}], properties: {bad: {pattern: '('}, good: {pattern: '^a+$'}}}}
         - {endpoint: compact, model: gpt-4o, api_base: https://api.openai.com/v1, input: hi, params: {tools: null}}
+        - {endpoint: compact, model: gpt-4o, api_base: https://api.openai.com/v1, input: hi, params: {tools: [{type: function, name: f, parameters: 'not json'}]}}

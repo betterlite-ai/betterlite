@@ -575,6 +575,23 @@ pub(super) fn compact_replay_input() {
     replay_provider_gates();
     replay_schema_gate();
     replay_null_tools();
+    replay_invalid_tools();
+}
+
+fn replay_invalid_tools() {
+    let input = ResponsesInput::Text(String::from("hi"));
+    let options =
+        options_of(r#"{"tools":[{"type":"function","name":"f","parameters":"not json"}]}"#);
+    let request = CompactRequest {
+        model: "gpt-4o",
+        input: &input,
+        options: &options,
+        provider: ProviderId::Openai,
+        model_info: None,
+    };
+    let error = compact_request(&request, "https://api.openai.com/v1").unwrap_err();
+    assert!(matches!(error, ResponseResourceError::Input(_)));
+    assert_eq!(error.http_status(), Some(400));
 }
 
 fn replay_reasoning_and_tools() {
