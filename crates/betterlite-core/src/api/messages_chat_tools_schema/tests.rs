@@ -409,7 +409,7 @@ fn a_short_name_or_passed_through_tool_leaves_the_mapping_empty() {
 fn two_long_names_sharing_a_prefix_stay_apart() {
     let input = format!(
         r#"[{{"name": "{prefix}a"}}, {{"name": "{prefix}b"}}]"#,
-        prefix = "a".repeat(55)
+        prefix = "a".repeat(64)
     );
     let answer = name_mapping(&input);
     let Json::Object(entries) = answer else {
