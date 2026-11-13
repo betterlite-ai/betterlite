@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-passthrough-guardrail-input-returned-seed
+call:
+  b3678:
+    function: input_texts
+    endpoint: model/x/converse
+    data: {model: m, data: {system: [{text: s}], messages: [{content: [{text: t}]}]}}
+    skip_system: true
+    skip_tool: true
+    returned_texts: [one, two]
+env: {}
+compare: {ignore: []}
