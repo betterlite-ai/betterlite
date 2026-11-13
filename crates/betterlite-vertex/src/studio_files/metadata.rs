@@ -47,11 +47,14 @@ struct RetrieveMetadata {
     error: Option<Json>,
 }
 
-// The TypedDict declares sizeBytes as str and LiteLLM runs int() over it, so the text is parsed here.
-fn size_bytes(text: &str) -> Result<i64, StudioFilesError> {
-    text.trim()
-        .parse::<i64>()
-        .map_err(|source| StudioFilesError::SizeBytes { source })
+// Create requires every field the OpenAI object needs; retrieve defaults the optional ones.
+struct Fields {
+    uri: String,
+    size: Option<String>,
+    created: String,
+    name: String,
+    status: FileStatus,
+    details: Option<String>,
 }
 
 pub fn decode_studio_file_metadata(
@@ -65,77 +68,70 @@ pub fn decode_studio_file_metadata(
             limit: METADATA_BODY_LIMIT,
         });
     }
-    match shape {
-        MetadataShape::Create => create_object(bytes, local),
-        MetadataShape::Retrieve => {
-            let fields = retrieve_fields(bytes, local)?;
-            Ok(FileObject {
-                id: fields.id,
-                bytes: fields.bytes,
-                created_at: fields.created_at,
-                filename: fields.filename,
-                object: FileKind::File,
-                purpose: FilesPurpose::UserData,
-                status: Some(fields.status),
-                expires_at: None,
-                status_details: fields.status_details,
-            })
-        }
-    }
+    let fields = match shape {
+        MetadataShape::Create => create_fields(bytes)?,
+        MetadataShape::Retrieve => retrieve_fields(bytes)?,
+    };
+    object(fields, local)
 }
 
-struct Fields {
-    id: String,
-    bytes: i64,
-    created_at: i64,
-    filename: String,
-    status: FileStatus,
-    status_details: Option<String>,
-}
-
-// A create reply wraps the record in `{"file": ...}` and requires every field the OpenAI object needs.
-fn create_object(bytes: &[u8], local: &LocalTimeContext) -> Result<FileObject, StudioFilesError> {
-    let envelope: CreateEnvelope =
-        serde_json::from_slice(bytes).map_err(|source| StudioFilesError::Decode { source })?;
-    let metadata = envelope.file;
-    Ok(FileObject {
-        id: metadata.uri,
-        bytes: size_bytes(&metadata.size_bytes)?,
-        created_at: decode_created_at(&metadata.create_time, local)?,
-        filename: metadata.display_name,
-        object: FileKind::File,
-        purpose: FilesPurpose::UserData,
-        status: Some(FileStatus::Uploaded),
-        expires_at: None,
-        status_details: None,
+// A create reply wraps the record in `{"file": ...}`; its id is the provider uri.
+fn create_fields(bytes: &[u8]) -> Result<Fields, StudioFilesError> {
+    let metadata: CreateEnvelope = serde_json::from_slice(bytes)?;
+    Ok(Fields {
+        uri: metadata.file.uri,
+        size: Some(metadata.file.size_bytes),
+        created: metadata.file.create_time,
+        name: metadata.file.display_name,
+        status: FileStatus::Uploaded,
+        details: None,
     })
 }
 
 // A retrieve reply is the record itself; uri, displayName and sizeBytes fall back to empty.
-fn retrieve_fields(bytes: &[u8], local: &LocalTimeContext) -> Result<Fields, StudioFilesError> {
-    let metadata: RetrieveMetadata =
-        serde_json::from_slice(bytes).map_err(|source| StudioFilesError::Decode { source })?;
+fn retrieve_fields(bytes: &[u8]) -> Result<Fields, StudioFilesError> {
+    let metadata: RetrieveMetadata = serde_json::from_slice(bytes)?;
     let status = match metadata.state.as_deref() {
         Some("ACTIVE") => FileStatus::Processed,
         Some("FAILED") => FileStatus::Error,
         _ => FileStatus::Uploaded,
     };
-    let size = match metadata.size_bytes.as_deref() {
-        Some(text) => size_bytes(text)?,
-        None => 0,
-    };
     Ok(Fields {
-        id: metadata.uri.unwrap_or_default(),
-        bytes: size,
-        created_at: decode_created_at(&metadata.create_time, local)?,
-        filename: metadata.display_name.unwrap_or_default(),
+        uri: metadata.uri.unwrap_or_default(),
+        size: metadata.size_bytes,
+        created: metadata.create_time,
+        name: metadata.display_name.unwrap_or_default(),
         status,
-        status_details: if status == FileStatus::Error {
+        details: if status == FileStatus::Error {
             Some(error_details(metadata.error.as_ref())?)
         } else {
             None
         },
     })
+}
+
+fn object(fields: Fields, local: &LocalTimeContext) -> Result<FileObject, StudioFilesError> {
+    Ok(FileObject {
+        id: fields.uri,
+        bytes: match fields.size {
+            Some(text) => size_bytes(&text)?,
+            None => 0,
+        },
+        created_at: decode_created_at(&fields.created, local)?,
+        filename: fields.name,
+        object: FileKind::File,
+        purpose: FilesPurpose::UserData,
+        status: Some(fields.status),
+        expires_at: None,
+        status_details: fields.details,
+    })
+}
+
+// The TypedDict declares sizeBytes as str and LiteLLM runs int() over it, so the text is parsed here.
+fn size_bytes(text: &str) -> Result<i64, StudioFilesError> {
+    text.trim()
+        .parse::<i64>()
+        .map_err(|source| StudioFilesError::SizeBytes { source })
 }
 
 // LiteLLM replaces every Z with +00:00, parses the %z suffix, then mktime drops the offset it read.
@@ -147,28 +143,23 @@ fn decode_created_at(text: &str, local: &LocalTimeContext) -> Result<i64, Studio
         });
     }
     let replaced = text.replace('Z', "+00:00");
-    let (civil, offset) = split_fraction(&replaced)?;
-    if !valid_utc_offset(offset) {
-        return Err(StudioFilesError::TimestampFormat);
-    }
-    // struct_time holds whole seconds, so the fraction must parse and is then dropped.
-    let zoned = format!("{civil}.000000Z");
-    decode_vertex_timestamp(zoned.as_bytes(), local)
-        .map_err(|source| StudioFilesError::Timestamp { source })
-}
-
-fn split_fraction(text: &str) -> Result<(&str, &str), StudioFilesError> {
-    let Some((civil, fraction)) = text.split_once('.') else {
+    let Some((civil, tail)) = replaced.split_once('.') else {
         return Err(StudioFilesError::TimestampFormat);
     };
-    let digits = fraction.bytes().take_while(u8::is_ascii_digit).count();
+    let digits = tail.bytes().take_while(u8::is_ascii_digit).count();
     if !(1..=6).contains(&digits) {
         return Err(StudioFilesError::TimestampFormat);
     }
-    let Some((_fraction, offset)) = fraction.split_at_checked(digits) else {
+    let offset = tail
+        .get(digits..)
+        .ok_or(StudioFilesError::TimestampFormat)?;
+    if !valid_utc_offset(offset) {
         return Err(StudioFilesError::TimestampFormat);
-    };
-    Ok((civil, offset))
+    }
+    // struct_time holds whole seconds, so the fraction is parsed and then dropped.
+    let zoned = format!("{civil}.000000Z");
+    decode_vertex_timestamp(zoned.as_bytes(), local)
+        .map_err(|source| StudioFilesError::Timestamp { source })
 }
 
 // CPython's %z: [+-]HH[:]MM([:]SS(.ffffff)?)? with two-digit hours and 00-59 minutes and seconds.

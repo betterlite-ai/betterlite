@@ -14,7 +14,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use crate::helpers::{Helper, HelperResult, OrHelperError as _};
 
 mod tests;
 
@@ -84,7 +84,7 @@ impl Helper for Op {
     }
 }
 
-fn resolve(call: &Call) -> Result<Value, Box<HelperError>> {
+fn resolve(call: &Call) -> HelperResult {
     match call {
         Call::CreatePlan { now, file } => plan_view(*now, file),
         Call::Replies {
@@ -109,9 +109,15 @@ fn resolve(call: &Call) -> Result<Value, Box<HelperError>> {
     }
 }
 
-fn plan_view(now: i64, file: &FileInput) -> Result<Value, Box<HelperError>> {
-    let plan = create_file_plan(Some(&file_data(file)), "", now).or_value_error()?;
-    let (text, bytes) = plan_parts(&plan)?;
+fn plan_view(now: i64, file: &FileInput) -> HelperResult {
+    let supplied = FileData::Tuple4 {
+        filename: file.filename.clone(),
+        content: FileBody::Bytes(file.data.clone()),
+        content_type: file.content_type.clone(),
+        headers: file.headers.clone(),
+    };
+    let plan = create_file_plan(Some(&supplied), "", now).or_value_error()?;
+    let (text, bytes) = plan_parts(&plan).or_value_error()?;
     let initial: Value = serde_json::from_str(text).or_value_error()?;
     Ok(json!({
         "headers": plan.initial_request.headers,
@@ -121,11 +127,17 @@ fn plan_view(now: i64, file: &FileInput) -> Result<Value, Box<HelperError>> {
     }))
 }
 
-fn reply_views(
-    bodies: &[String],
-    timezone: &str,
-    shape: MetadataShape,
-) -> Result<Value, Box<HelperError>> {
+const fn plan_parts(plan: &TwoStepFileUploadConfig) -> Result<(&str, &[u8]), &'static str> {
+    let UploadData::Text(text) = &plan.initial_request.data else {
+        return Err("the start request does not carry metadata text");
+    };
+    let UploadData::Bytes(bytes) = &plan.upload_request.data else {
+        return Err("the upload request does not carry bytes");
+    };
+    Ok((text.as_str(), bytes.as_slice()))
+}
+
+fn reply_views(bodies: &[String], timezone: &str, shape: MetadataShape) -> HelperResult {
     let zone = TimeZone::get(timezone).or_value_error()?;
     let context = LocalTimeContext { zone };
     let mut files = Vec::with_capacity(bodies.len());
@@ -143,7 +155,7 @@ fn target_views(
     api_base: Option<&str>,
     environment: &BTreeMap<String, String>,
     delete: bool,
-) -> Result<Value, Box<HelperError>> {
+) -> HelperResult {
     let settings = settings(environment);
     let params = RequestParams {
         api_key: api_key.map(SecretString::from),
@@ -157,7 +169,7 @@ fn target_views(
     Ok(json!({ "targets": targets }))
 }
 
-fn delete_views(replies: &[DeleteReply]) -> Result<Value, Box<HelperError>> {
+fn delete_views(replies: &[DeleteReply]) -> HelperResult {
     let mut deleted = Vec::with_capacity(replies.len());
     for reply in replies {
         let result =
@@ -190,27 +202,6 @@ fn non_empty<'env>(environment: &'env BTreeMap<String, String>, name: &str) -> O
         .filter(|value| !value.is_empty())
 }
 
-fn file_data(file: &FileInput) -> FileData {
-    FileData::Tuple4 {
-        filename: file.filename.clone(),
-        content: FileBody::Bytes(file.data.clone()),
-        content_type: file.content_type.clone(),
-        headers: file.headers.clone(),
-    }
-}
-
-fn plan_parts(plan: &TwoStepFileUploadConfig) -> Result<(&str, &[u8]), Box<HelperError>> {
-    let UploadData::Text(text) = &plan.initial_request.data else {
-        return Err(value_error(
-            "the start request does not carry metadata text",
-        ));
-    };
-    let UploadData::Bytes(bytes) = &plan.upload_request.data else {
-        return Err(value_error("the upload request does not carry bytes"));
-    };
-    Ok((text.as_str(), bytes.as_slice()))
-}
-
 fn file_view(file: &FileObject) -> Value {
     json!({
         "id": file.id,
@@ -240,15 +231,4 @@ fn target_view(target: &FileTarget) -> Value {
         .map(|(name, value)| [name.as_str(), value.as_str()])
         .collect();
     json!({ "url": target.url, "query": query })
-}
-
-fn value_error(message: &str) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_owned(),
-    })
 }

@@ -21,10 +21,7 @@ pub enum StudioFilesError {
     #[error("the file reply is {size} bytes, over the {limit} byte limit")]
     ResponseTooLarge { size: usize, limit: usize },
     #[error("the file reply is not a Google AI Studio file record")]
-    Decode {
-        #[source]
-        source: serde_json::Error,
-    },
+    Decode(#[from] serde_json::Error),
     #[error("the file upload plan is not JSON")]
     Encode {
         #[source]

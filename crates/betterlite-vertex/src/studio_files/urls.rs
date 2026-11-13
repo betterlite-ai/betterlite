@@ -62,7 +62,9 @@ pub fn target(
     settings: &Settings,
     trim_base: bool,
 ) -> Result<FileTarget, StudioFilesError> {
-    require_key(params, settings)?;
+    if resolve_key(&[params.api_key.as_ref()], settings).is_none() {
+        return Err(StudioFilesError::MissingApiKey);
+    }
     let resolved = resolve_base(params.api_base.as_deref(), settings);
     let base = if trim_base {
         resolved.trim_end_matches('/')
@@ -106,12 +108,4 @@ fn deleted_id(url: Option<&str>) -> String {
     } else {
         format!("files/{id}")
     }
-}
-
-fn require_key(params: &RequestParams, settings: &Settings) -> Result<(), StudioFilesError> {
-    let candidates = [params.api_key.as_ref()];
-    if resolve_key(&candidates, settings).is_none() {
-        return Err(StudioFilesError::MissingApiKey);
-    }
-    Ok(())
 }
