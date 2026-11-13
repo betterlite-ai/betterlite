@@ -504,6 +504,28 @@ fn binary_skill_content() {
     ));
 }
 
+#[rstest]
+#[case::utc_whole_seconds("2026-01-01T00:00:00Z", Some("2026-01-01T00:00:00Z"))]
+#[case::fraction_with_offset(
+    "2026-01-01T00:00:00.5+02:00",
+    Some("2026-01-01T00:00:00.500000+02:00")
+)]
+#[case::naive_space_fraction("2026-01-01 03:04:05.25", Some("2026-01-01T03:04:05.250000"))]
+#[case::naive_space_whole("2026-01-01 03:04:05", Some("2026-01-01T03:04:05"))]
+#[case::naive_t_whole("2026-01-01T03:04:05", Some("2026-01-01T03:04:05"))]
+#[case::not_a_timestamp("yesterday", None)]
+fn row_timestamp_forms(#[case] stored: &str, #[case] expected: Option<&str>) {
+    let mut row = data(r#"{"skill_id":"s"}"#);
+    set_field(&mut row, "created_at", JsonData::String(stored.to_owned()));
+    match expected {
+        Some(text) => assert_eq!(
+            field_of(&dumped("skill", &row), "created_at"),
+            JsonData::String(text.to_owned())
+        ),
+        None => assert!(!accepts("skill", &row)),
+    }
+}
+
 #[test]
 fn independent_collection_defaults() {
     let mut first = mcp_server(&data(r#"{"server_id":"a","transport":"sse"}"#));

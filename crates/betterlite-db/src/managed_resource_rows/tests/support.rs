@@ -154,7 +154,9 @@ pub(crate) fn assert_secret_map_redacted() {
         ),
     );
     let decoded = decode_with(&stored, &right).unwrap();
-    assert!(!format!("{decoded:?}").contains(PLAINTEXT));
+    let printed = format!("{decoded:?}");
+    assert!(!printed.contains(PLAINTEXT));
+    assert!(printed.contains("SecretMapField([REDACTED])"));
 }
 
 pub(crate) fn assert_byte_and_depth_limits() {
