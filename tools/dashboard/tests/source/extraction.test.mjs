@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 
-import { extractArchive } from "../../source.mjs";
+import { extractArchive } from "../../source/tar.mjs";
 import { buildTar, createFixture, exists, hashBytes, paxRecord } from "./fixture.mjs";
 
 async function scratch(t) {

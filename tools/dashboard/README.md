@@ -2,6 +2,8 @@
 
 The dashboard is LiteLLM's Next.js application, kept as a verified build input instead of committed source. This tool fetches one pinned commit, verifies its archive and lockfile, extracts the MIT paths, applies the reviewed patches and publishes `target/dashboard/source`. B9091 builds that tree into the distributed sidecar; B9092 adds its branding through a patch here.
 
+`source.mjs` is the entry point and keeps the pin, protected-file and publication code. The modules under `source/` hold one job each: `git.mjs` runs Git with isolated configuration, timeouts and process groups, `tar.mjs` reads the verified archive and extracts the selected paths, `cache.mjs` owns the commit cache and archive verification, and `cli.mjs` holds the reproducibility comparison and the command line.
+
 ## Commands
 
     node tools/dashboard/source.mjs prepare

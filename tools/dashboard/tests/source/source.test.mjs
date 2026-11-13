@@ -7,7 +7,8 @@ import { test } from "node:test";
 
 import { fileURLToPath } from "node:url";
 
-import { compareTrees, prepare, verifyRepeat } from "../../source.mjs";
+import { compareTrees, verifyRepeat } from "../../source/cli.mjs";
+import { prepare } from "../../source.mjs";
 import { createFixture, exists, git, hashBytes, hashText, singleLinePatch, writePatchPair } from "./fixture.mjs";
 
 const SOURCE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../source.mjs");
