@@ -6,7 +6,6 @@ pub const DEFAULT_VOICE_NAME: &str = "en-US-Studio-O";
 pub const DEFAULT_AUDIO_ENCODING: &str = "LINEAR16";
 pub const DEFAULT_SPEAKING_RATE: &str = "1";
 
-// LiteLLM's VOICE_MAPPINGS: an OpenAI voice name becomes a Cloud TTS voice
 pub const VOICE_MAPPINGS: [(&str, &str); 6] = [
     ("alloy", "en-US-Studio-O"),
     ("echo", "en-US-Studio-M"),
@@ -16,7 +15,7 @@ pub const VOICE_MAPPINGS: [(&str, &str); 6] = [
     ("shimmer", "en-US-Wavenet-F"),
 ];
 
-// LiteLLM's FORMAT_MAPPINGS; the provider has no AAC, so that format asks for MP3
+// the provider has no AAC, so that format asks for MP3
 pub const FORMAT_MAPPINGS: [(&str, &str); 6] = [
     ("mp3", "MP3"),
     ("opus", "OGG_OPUS"),
@@ -34,36 +33,24 @@ pub enum SpeechVoice {
     Options(Object),
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpeechOptionalParams {
-    #[serde(default)]
     pub response_format: Option<String>,
-    #[serde(default)]
     pub speed: Option<i64>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SpeechKwargs {
-    #[serde(default)]
     pub audio_config: Option<SpeechAudioConfig>,
-    #[serde(default)]
     pub use_ssml: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpeechAudioConfig {
-    #[serde(
-        rename = "audioEncoding",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "audioEncoding", skip_serializing_if = "Option::is_none")]
     pub audio_encoding: Option<String>,
-    #[serde(
-        rename = "speakingRate",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "speakingRate", skip_serializing_if = "Option::is_none")]
     pub speaking_rate: Option<String>,
 }
 
@@ -83,20 +70,20 @@ pub fn map_openai_params(
     optional_params: &SpeechOptionalParams,
     kwargs: &SpeechKwargs,
 ) -> SpeechMapping {
-    let (mapped_voice, voice_dict) = map_voice(voice);
-    let audio_encoding = optional_params.response_format.as_deref().map_or_else(
+    let (voice, voice_dict) = map_voice(voice);
+    let encoding = optional_params.response_format.as_deref().map_or_else(
         || DEFAULT_AUDIO_ENCODING.to_owned(),
         |format| {
             FORMAT_MAPPINGS
                 .iter()
-                .find_map(|(name, encoding)| (*name == format).then_some(*encoding))
+                .find_map(|(name, mapped)| (*name == format).then_some(*mapped))
                 .map_or_else(|| format.to_owned(), str::to_owned)
         },
     );
     SpeechMapping {
-        voice: mapped_voice,
+        voice,
         voice_dict,
-        audio_encoding,
+        audio_encoding: encoding,
         speaking_rate: optional_params.speed.map(|speed| speed.to_string()),
         audio_config: kwargs.audio_config.clone(),
         use_ssml: kwargs.use_ssml,

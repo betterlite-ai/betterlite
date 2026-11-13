@@ -2,7 +2,7 @@ use betterlite_config::sections::vertex_credential_sources::credential_source::C
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::endpoint_target::region::DEFAULT_LOCATION;
 use crate::model_urls::base_url::validate_vertex_location;
@@ -17,27 +17,23 @@ use super::mapping::{
 
 pub const TTS_API_URL: &str = "https://texttospeech.googleapis.com/v1/text:synthesize";
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct SpeechInput {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ssml: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct SpeechVoiceSettings {
-    #[serde(
-        rename = "languageCode",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "languageCode", skip_serializing_if = "Option::is_none")]
     pub language_code: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct SpeechRequestBody {
     pub input: SpeechInput,
     pub voice: SpeechVoiceSettings,
@@ -89,26 +85,24 @@ pub fn validate_input(
     input: &SpeechInput,
     use_ssml: bool,
 ) -> Result<SpeechInput, VertexSpeechError> {
-    let mut text = input.text.clone();
-    let mut ssml = input.ssml.clone();
-    if use_ssml {
-        if let Some(value) = text.take() {
-            ssml = Some(value);
-        } else if ssml.is_none() {
-            return Err(VertexSpeechError::SsmlRequired);
-        }
-    } else if (text.is_some() || ssml.is_some())
-        && text.as_deref().unwrap_or_default().contains("<speak>")
-    {
-        ssml = text.take();
+    let (text, ssml) = match (input.text.as_deref(), input.ssml.as_deref()) {
+        (Some(value), _) if use_ssml => (None, Some(value)),
+        (None, None) if use_ssml => return Err(VertexSpeechError::SsmlRequired),
+        (Some(value), _) if value.contains("<speak>") => (None, Some(value)),
+        (text, ssml) => (text, ssml),
+    };
+    match (text, ssml) {
+        (None, None) => Err(VertexSpeechError::InputRequired),
+        (Some(_), Some(_)) => Err(VertexSpeechError::BothInputs),
+        (Some(value), None) => Ok(SpeechInput {
+            text: Some(value.to_owned()),
+            ssml: None,
+        }),
+        (None, Some(value)) => Ok(SpeechInput {
+            text: None,
+            ssml: Some(value.to_owned()),
+        }),
     }
-    if text.is_none() && ssml.is_none() {
-        return Err(VertexSpeechError::InputRequired);
-    }
-    if text.is_some() && ssml.is_some() {
-        return Err(VertexSpeechError::BothInputs);
-    }
-    Ok(SpeechInput { text, ssml })
 }
 
 pub async fn prepare_request(
@@ -174,7 +168,7 @@ fn voice_settings(call: &SpeechCall<'_>) -> Result<SpeechVoiceSettings, VertexSp
         .filter(|dict| !dict.is_empty())
         .or(call.mapping.voice_dict.as_ref());
     if let Some(dict) = chosen {
-        return voice_from_dict(dict);
+        return voice_record(dict);
     }
     let Some(name) = call.voice else {
         return Ok(SpeechVoiceSettings {
@@ -188,30 +182,27 @@ fn voice_settings(call: &SpeechCall<'_>) -> Result<SpeechVoiceSettings, VertexSp
     })
 }
 
-fn voice_from_dict(dict: &Object) -> Result<SpeechVoiceSettings, VertexSpeechError> {
+fn voice_record(dict: &Object) -> Result<SpeechVoiceSettings, VertexSpeechError> {
     let mut settings = SpeechVoiceSettings::default();
     for (field, value) in dict {
-        match field.as_str() {
-            "languageCode" => settings.language_code = optional_text(value, "languageCode")?,
-            "name" => settings.name = optional_text(value, "name")?,
+        let target = match field.as_str() {
+            "languageCode" => &mut settings.language_code,
+            "name" => &mut settings.name,
             unknown => {
                 return Err(VertexSpeechError::UnknownVoiceField {
                     field: unknown.to_owned(),
                 });
             }
-        }
+        };
+        *target = match value {
+            Json::Null => None,
+            Json::Text(text) => Some(text.clone()),
+            Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                return Err(VertexSpeechError::VoiceFieldType {
+                    field: field.clone(),
+                });
+            }
+        };
     }
     Ok(settings)
-}
-
-fn optional_text(value: &Json, field: &str) -> Result<Option<String>, VertexSpeechError> {
-    match value {
-        Json::Null => Ok(None),
-        Json::Text(text) => Ok(Some(text.clone())),
-        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(VertexSpeechError::VoiceFieldType {
-                field: field.to_owned(),
-            })
-        }
-    }
 }
