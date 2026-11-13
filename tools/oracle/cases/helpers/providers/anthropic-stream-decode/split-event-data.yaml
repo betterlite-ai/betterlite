@@ -1,0 +1,23 @@
+kind: helper
+name: anthropic-stream-decode-split-event-data
+call:
+  anthropic_stream_decode:
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - function: text
+        value: 'data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a"}}'
+      - function: text
+        value: 'data:   {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"b"}}'
+      - function: text
+        value: 'dataX{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"c"}}'
+      - function: text
+        value: 'data: {"type":"pi'
+      - function: text
+        value: 'data: ng"}{"type":"message_stop"}'
+      - function: text
+        value: 'data: [1,2]{"type":"content_block_stop","index":0}'
+      - function: text
+        value: 'data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"d"}}'
+    passthrough: []
+env: {}
+compare: {ignore: []}

@@ -51,6 +51,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "anthropic_stream_decode"
+path = "fuzz_targets/anthropic_stream_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "anthropic_stream_events"
 path = "fuzz_targets/anthropic_stream_events.rs"
 test = false

@@ -1,0 +1,15 @@
+kind: helper
+name: anthropic-stream-decode-errors
+call:
+  anthropic_stream_decode:
+    ids: ["01234567-89ab-4def-8123-456789abcdef"]
+    steps:
+      - function: text
+        value: 'data: {"type":"error","error":{"type":"rate_limit_error","message":"slow"}}'
+    passthrough:
+      - function: text
+        value: data: nope
+      - function: bytes
+        value: [255]
+env: {}
+compare: {ignore: []}
