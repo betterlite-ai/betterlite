@@ -69,26 +69,36 @@ impl RequestStashSlot {
     #[must_use]
     pub fn claim_for_call_id(&self, call_id: Option<&str>) -> Arc<RequestStash> {
         let stash = self.get_or_create();
-        if let Some(given) = call_id {
-            let mut state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.owner_litellm_call_id = Some(given.to_owned());
-        }
+        let Some(given) = call_id else {
+            return stash;
+        };
+        let mut state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.owner_litellm_call_id = Some(given.to_owned());
+        drop(state);
         stash
     }
 
     #[must_use]
     pub fn for_call(&self, call_id: Option<&str>) -> Option<Arc<RequestStash>> {
         let stash = self.get()?;
-        let owner = stash
+        let reachable = stash.answers_call(call_id);
+        reachable.then_some(stash)
+    }
+}
+
+impl RequestStash {
+    // an unowned stash answers every call, and so does a callback that brings no call id
+    #[must_use]
+    pub fn answers_call(&self, call_id: Option<&str>) -> bool {
+        let owner = self
             .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .owner_litellm_call_id
             .clone();
-        let reachable = match (owner.as_deref(), call_id) {
+        match (owner.as_deref(), call_id) {
             (None, _) | (_, None) => true,
             (Some(owner_id), Some(given)) => owner_id == given,
-        };
-        reachable.then_some(stash)
+        }
     }
 }
