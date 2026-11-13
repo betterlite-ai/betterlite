@@ -1,28 +1,19 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::studio_identity::Settings;
+use betterlite_models::decisions::Json;
 use betterlite_openai::api::file_type_records::{
     TwoStepFileUploadConfig, TwoStepFileUploadRequest, UploadData, UploadUrlLocation,
 };
 use betterlite_prompts::media_metadata::{ExtractedFileData, FileData, extract_file_data};
+use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde::Serialize;
 
 use super::error::StudioFilesError;
 use super::{RequestParams, resolve_base, resolve_key};
 use crate::studio_identity::{API_VERSION, Headers};
 
 const UPLOAD_URL_HEADER: &str = "X-Goog-Upload-URL";
-
-#[derive(Serialize)]
-struct InitialMetadata<'plan> {
-    file: InitialFile<'plan>,
-}
-
-#[derive(Serialize)]
-struct InitialFile<'plan> {
-    display_name: &'plan str,
-}
 
 // LiteLLM writes x-goog-api-key over the caller's map and leaves every other header as sent.
 pub fn validate_environment(
@@ -68,13 +59,15 @@ pub fn create_file_plan(
     } = extract_file_data(supplied)?;
     let length = content.len().to_string();
     let display_name = filename.unwrap_or_else(|| now_epoch.to_string());
-    let metadata = InitialMetadata {
-        file: InitialFile {
-            display_name: &display_name,
-        },
-    };
+    let body = Json::Object(IndexMap::from([(
+        "file".to_owned(),
+        Json::Object(IndexMap::from([(
+            "display_name".to_owned(),
+            Json::Text(display_name),
+        )])),
+    )]));
     let data =
-        serde_json::to_string(&metadata).map_err(|source| StudioFilesError::Encode { source })?;
+        serde_json::to_string(&body).map_err(|source| StudioFilesError::Encode { source })?;
     Ok(TwoStepFileUploadConfig {
         initial_request: TwoStepFileUploadRequest {
             method: "POST".to_owned(),
