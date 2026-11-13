@@ -23,7 +23,7 @@ impl NomaScanPolicy {
         match &response.aggregated_scan_result {
             None | Some(Some(GuardrailValue::Boolean(false))) => GuardrailStatus::Success,
             Some(Some(GuardrailValue::Boolean(true))) => GuardrailStatus::GuardrailIntervened,
-            Some(None) | Some(Some(_)) => GuardrailStatus::GuardrailFailedToRespond,
+            Some(None | Some(_)) => GuardrailStatus::GuardrailFailedToRespond,
         }
     }
 
@@ -53,7 +53,6 @@ impl NomaScanPolicy {
         sensitive_detected && !other_detected
     }
 
-    #[must_use]
     pub fn extract_anonymized_content(
         response: &ScanResponse,
         role: MessageRole,
@@ -92,7 +91,7 @@ impl NomaScanPolicy {
         }
         let safe = matches!(
             &response.aggregated_scan_result,
-            None | Some(None) | Some(Some(GuardrailValue::Boolean(false)))
+            None | Some(None | Some(GuardrailValue::Boolean(false)))
         );
         if safe {
             return Ok(true);
