@@ -40,15 +40,11 @@ class Guardrail(Protocol):
         inputs: Inputs,
         request_data: dict[str, JsonValue],
         input_type: Literal["request", "response"],
-    ) -> object: ...
+    ) -> Inputs: ...
 
 
 class ClientCache(Protocol):
-    def set_cache(self, key: str, value: object) -> None: ...
-
-
-def seed(cache: ClientCache, handler: AsyncHTTPHandler) -> None:
-    cache.set_cache(CLIENT_CACHE_KEY, handler)
+    def set_cache(self, key: str, value: AsyncHTTPHandler) -> None: ...
 
 
 class Settings(TypedDict):
@@ -107,10 +103,10 @@ def build(settings: Settings) -> Guardrail:
     )
 
 
-async def check(guardrail: Guardrail, handler: AsyncHTTPHandler, call: Call) -> object:
-    cache = LLMClientCache()
-    litellm.in_memory_llm_clients_cache = cache
-    seed(cache, handler)
+async def check(
+    guardrail: Guardrail, cache: ClientCache, handler: AsyncHTTPHandler, call: Call
+) -> Inputs:
+    cache.set_cache(CLIENT_CACHE_KEY, handler)
     return await guardrail.apply_guardrail(
         inputs=call["inputs"],
         request_data=call["request_data"],
@@ -135,8 +131,10 @@ def run(input_value: Call) -> JsonValue:
     instance = build(input_value["settings"])
     transport = httpx.MockTransport(Handler(input_value["answer"], captured))
     handler = AsyncHTTPHandler(transport=transport)
+    cache = LLMClientCache()
+    litellm.in_memory_llm_clients_cache = cache
     try:
-        result = asyncio.run(check(instance, handler, input_value))
+        result = asyncio.run(check(instance, cache, handler, input_value))
     except HTTPException as error:
         if error.status_code != BLOCK_STATUS:
             raise
