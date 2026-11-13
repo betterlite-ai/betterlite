@@ -4,7 +4,8 @@ use serde::de::DeserializeOwned;
 use tokio_postgres::Row;
 
 use super::RowDecodeError;
-use super::projection::{MAX_USER_JSON_DEPTH, decode_user_record};
+use super::projection::decode_user_record;
+use super::reporting::USER_COUNT_SQL;
 use crate::identity_rows::user::LiteLLMUserTable;
 use crate::postgres_store::diagnostics::DriverError;
 use crate::postgres_store::rows::{FindMany, Key, KeyAction, KeyColumn, Query, RowCodec, Table};
@@ -12,14 +13,14 @@ use crate::resource_rows::organization::OrganizationTable;
 use crate::resource_rows::project::ProjectTable;
 use crate::resource_rows::{convert, parse_data};
 
+// parse_data rejects a stored row deeper than 64, so convert rechecks at the same bound
+const STORED_ROW_DEPTH: usize = 64;
+
 const USER_BY_ID_SQL: &str =
     "SELECT row_to_json(entry)::text FROM \"LiteLLM_UserTable\" AS entry WHERE \"user_id\" = $1";
 const USER_DELETE_SQL: &str = "DELETE FROM \"LiteLLM_UserTable\" AS entry WHERE \"user_id\" = $1 RETURNING row_to_json(entry)::text";
 const USER_ALL_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_UserTable\" AS entry";
 const USER_MEMBERSHIP_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_UserTable\" AS entry WHERE entry.\"user_id\" = ANY($1::text[])";
-const USER_COUNT_SQL: &str = "SELECT count(*) FROM \"LiteLLM_UserTable\"";
-const USER_EMAIL_PAGE_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_UserTable\" AS entry WHERE LOWER(entry.\"user_email\") IN (SELECT LOWER(candidate) FROM unnest($1::text[]) AS candidate)";
-const USER_SCIM_DEACTIVATED_SQL: &str = "SELECT count(*) FROM \"LiteLLM_UserTable\" WHERE \"metadata\" -> 'scim_active' = 'false'::jsonb";
 // no caller builds a user create or update payload here; these statements keep the shared table contract total
 const USER_INSERT_SQL: &str =
     "INSERT INTO \"LiteLLM_UserTable\" AS entry DEFAULT VALUES RETURNING row_to_json(entry)::text";
@@ -53,8 +54,6 @@ pub struct StoredTable<M> {
     select_all_sql: &'static str,
     membership_sql: &'static str,
     count_all_sql: &'static str,
-    filtered_sql: &'static str,
-    filtered_count_sql: &'static str,
     decode_row: fn(&Row) -> Result<Option<M>, RowDecodeError>,
 }
 
@@ -66,11 +65,6 @@ impl<M> Clone for StoredTable<M> {
 
 impl<M> Copy for StoredTable<M> {}
 
-pub enum UserFilter {
-    EmailPage(Vec<String>),
-    ScimDeactivated,
-}
-
 pub const USER_TABLE: StoredTable<LiteLLMUserTable> = StoredTable {
     by_id_sql: USER_BY_ID_SQL,
     delete_by_id_sql: USER_DELETE_SQL,
@@ -79,8 +73,6 @@ pub const USER_TABLE: StoredTable<LiteLLMUserTable> = StoredTable {
     select_all_sql: USER_ALL_SQL,
     membership_sql: USER_MEMBERSHIP_SQL,
     count_all_sql: USER_COUNT_SQL,
-    filtered_sql: USER_EMAIL_PAGE_SQL,
-    filtered_count_sql: USER_SCIM_DEACTIVATED_SQL,
     decode_row: decode_user_row,
 };
 
@@ -92,8 +84,6 @@ pub const ORGANIZATION_TABLE: StoredTable<OrganizationTable> = StoredTable {
     select_all_sql: ORGANIZATION_ALL_SQL,
     membership_sql: ORGANIZATION_MEMBERSHIP_SQL,
     count_all_sql: ORGANIZATION_COUNT_SQL,
-    filtered_sql: ORGANIZATION_ALL_SQL,
-    filtered_count_sql: ORGANIZATION_COUNT_SQL,
     decode_row: decode_stored_row::<OrganizationTable>,
 };
 
@@ -105,8 +95,6 @@ pub const PROJECT_TABLE: StoredTable<ProjectTable> = StoredTable {
     select_all_sql: PROJECT_ALL_SQL,
     membership_sql: PROJECT_MEMBERSHIP_SQL,
     count_all_sql: PROJECT_COUNT_SQL,
-    filtered_sql: PROJECT_ALL_SQL,
-    filtered_count_sql: PROJECT_COUNT_SQL,
     decode_row: decode_stored_row::<ProjectTable>,
 };
 
@@ -121,7 +109,7 @@ impl<M> RowCodec for StoredTable<M> {
 
 impl<M> Table for StoredTable<M> {
     type Column = Infallible;
-    type Filter = UserFilter;
+    type Filter = Infallible;
     type Order = Infallible;
     type Data = ();
 
@@ -152,12 +140,11 @@ impl<M> Table for StoredTable<M> {
 
     fn list<'query>(
         &'query self,
-        options: FindMany<'query, UserFilter, Infallible>,
+        _options: FindMany<'query, Infallible, Infallible>,
     ) -> Query<'query> {
-        match options.filter {
-            Some([UserFilter::EmailPage(values)]) => page_query(self, values),
-            // the SCIM filter only feeds count(); a row list of it has no caller
-            _ => all_rows_query(self),
+        Query {
+            sql: self.select_all_sql,
+            parameters: Vec::new(),
         }
     }
 
@@ -168,11 +155,10 @@ impl<M> Table for StoredTable<M> {
         }
     }
 
-    fn count<'query>(&'query self, filter: Option<&'query [UserFilter]>) -> Query<'query> {
-        match filter {
-            Some([UserFilter::ScimDeactivated]) => deactivated_count_query(self),
-            // email pages only feed find_many(); a count of them has no caller
-            _ => total_count_query(self),
+    fn count<'query>(&'query self, _filter: Option<&'query [Infallible]>) -> Query<'query> {
+        Query {
+            sql: self.count_all_sql,
+            parameters: Vec::new(),
         }
     }
 
@@ -181,38 +167,7 @@ impl<M> Table for StoredTable<M> {
     }
 }
 
-fn page_query<'query, M>(
-    table: &'query StoredTable<M>,
-    values: &'query Vec<String>,
-) -> Query<'query> {
-    Query {
-        sql: table.filtered_sql,
-        parameters: vec![values],
-    }
-}
-
-fn all_rows_query<M>(table: &StoredTable<M>) -> Query<'_> {
-    Query {
-        sql: table.select_all_sql,
-        parameters: Vec::new(),
-    }
-}
-
-fn deactivated_count_query<M>(table: &StoredTable<M>) -> Query<'_> {
-    Query {
-        sql: table.filtered_count_sql,
-        parameters: Vec::new(),
-    }
-}
-
-fn total_count_query<M>(table: &StoredTable<M>) -> Query<'_> {
-    Query {
-        sql: table.count_all_sql,
-        parameters: Vec::new(),
-    }
-}
-
-fn decode_user_row(row: &Row) -> Result<Option<LiteLLMUserTable>, RowDecodeError> {
+pub(crate) fn decode_user_row(row: &Row) -> Result<Option<LiteLLMUserTable>, RowDecodeError> {
     let record: String = row.try_get(0).map_err(|source| RowDecodeError::Column {
         source: DriverError { driver: source },
     })?;
@@ -227,7 +182,7 @@ where
         source: DriverError { driver: source },
     })?;
     let record = parse_data(stored.as_bytes()).map_err(|source| RowDecodeError::Row { source })?;
-    convert(&record, MAX_USER_JSON_DEPTH)
+    convert(&record, STORED_ROW_DEPTH)
         .map(Some)
         .map_err(|source| RowDecodeError::Row { source })
 }

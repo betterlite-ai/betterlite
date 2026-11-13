@@ -5,20 +5,18 @@ pub mod reporting;
 pub mod tables;
 mod tests;
 
-use std::slice;
-
 use deadpool_postgres::GenericClient;
 
 use crate::identity_rows::user::{LiteLLMUserTable, ScimPlaceholder};
 use crate::postgres_store::diagnostics::DriverError;
 use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::repository::Repository;
-use crate::postgres_store::rows::{FindMany, Key, KeyAction, KeyColumn};
+use crate::postgres_store::rows::{Key, KeyAction, KeyColumn};
 use crate::resource_rows::ResourceRowsError;
 use crate::resource_rows::organization::OrganizationTable;
 use crate::resource_rows::project::ProjectTable;
 use projection::UserRecordError;
-use tables::{StoredTable, USER_TABLE, UserFilter};
+use tables::{StoredTable, USER_TABLE};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RowDecodeError {
@@ -64,13 +62,6 @@ impl<'database, C> UserRepository<'database, C> {
             self.db
         }
     }
-
-    fn repository(&self) -> Repository<'database, C, StoredTable<LiteLLMUserTable>> {
-        Repository {
-            client: self.client(),
-            table: USER_TABLE,
-        }
-    }
 }
 
 impl<C> UserRepository<'_, C>
@@ -89,19 +80,24 @@ where
         &self,
         user_emails: &[String],
     ) -> Result<Vec<LiteLLMUserTable>, DbError<RowDecodeError>> {
+        let pages = email::email_pages(user_emails);
+        if pages.is_empty() {
+            return Ok(Vec::new());
+        }
+        let client = self.client().ok_or(DbError::NoDbConnected)?;
         let mut users = Vec::new();
-        for page in email::email_pages(user_emails) {
-            let filter = UserFilter::EmailPage(page);
-            users.extend(
-                self.repository()
-                    .find_many(FindMany {
-                        filter: Some(slice::from_ref(&filter)),
-                        order: None,
-                        skip: None,
-                        take: None,
-                    })
-                    .await?,
-            );
+        for page in pages {
+            let rows = client
+                .query(email::EMAIL_PAGE_SQL, &[&page])
+                .await
+                .map_err(backend)?;
+            for row in &rows {
+                let user = tables::decode_user_row(row)
+                    .map_err(|source| DbError::InvalidRecord { source })?;
+                if let Some(user) = user {
+                    users.push(user);
+                }
+            }
         }
         Ok(users)
     }
@@ -124,12 +120,20 @@ where
     }
 
     pub async fn count_billable_users(&self) -> Result<i64, DbError<RowDecodeError>> {
-        let total = self.repository().count(None).await?;
-        let deactivated = self
-            .repository()
-            .count(Some(&[reporting::SCIM_DEACTIVATED]))
-            .await?;
-        Ok(total.saturating_sub(deactivated))
+        let client = self.client().ok_or(DbError::NoDbConnected)?;
+        let total: i64 = client
+            .query_one(reporting::USER_COUNT_SQL, &[])
+            .await
+            .map_err(backend)?
+            .try_get(0)
+            .map_err(backend)?;
+        let deactivated: i64 = client
+            .query_one(reporting::USER_SCIM_DEACTIVATED_SQL, &[])
+            .await
+            .map_err(backend)?
+            .try_get(0)
+            .map_err(backend)?;
+        Ok(total.saturating_sub(deactivated).max(0))
     }
 
     pub async fn backfill_null_user_email(

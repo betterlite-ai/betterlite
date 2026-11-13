@@ -2,10 +2,7 @@
 
 use super::email::{EMAIL_PAGE_SIZE, email_pages};
 use super::placeholders::PlaceholderError;
-use super::projection::{
-    MAX_USER_FIELD_BYTES, MAX_USER_JSON_DEPTH, UserRecordError, decode_user_record,
-    user_record_to_model,
-};
+use super::projection::{UserRecordError, decode_user_record, user_record_to_model};
 use super::tables::{ORGANIZATION_TABLE, PROJECT_TABLE, USER_TABLE};
 use super::{OrganizationRepository, ProjectRepository, RowDecodeError, UserRepository};
 use crate::budget_permission_rows::JsonData;
@@ -13,6 +10,7 @@ use crate::identity_rows::user::LiteLLMUserTable;
 use crate::postgres_store::errors::DbError;
 use crate::postgres_store::repository::Repository;
 use crate::postgres_store::rows::KeyColumn;
+use crate::resource_rows::ResourceRowsError;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Client, GenericClient, Manager, Pool};
@@ -23,6 +21,9 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tokio::time::timeout;
 use tokio_postgres::NoTls;
+
+const FIELD_BYTES: usize = 0x0010_0000;
+const FIELD_DEPTH: usize = 64;
 
 const READER_SEED: &str = r#"INSERT INTO "LiteLLM_UserTable" (user_id, user_alias)
     VALUES ('id-value', 'alias-value'), ('second-row', NULL)"#;
@@ -296,9 +297,9 @@ fn malformed_user_json_propagates(#[case] malformed: &str) {
     let invalid = record(vec![("user_id", text("u")), ("metadata", text(malformed))]);
     assert!(matches!(
         user_record_to_model(Some(&invalid)),
-        Err(UserRecordError::FieldJson {
+        Err(UserRecordError::Field {
             field: "metadata",
-            ..
+            source: ResourceRowsError::Json(_),
         })
     ));
     let truncated = record(vec![
@@ -307,9 +308,9 @@ fn malformed_user_json_propagates(#[case] malformed: &str) {
     ]);
     assert!(matches!(
         user_record_to_model(Some(&truncated)),
-        Err(UserRecordError::FieldJson {
+        Err(UserRecordError::Field {
             field: "model_spend",
-            ..
+            source: ResourceRowsError::Json(_),
         })
     ));
 }
@@ -384,17 +385,17 @@ fn decoded_user_retains_password_exclusion() {
 
 #[test]
 fn native_user_record_field_limits() {
-    let exact = format!(r#"{{"a": "{}"}}"#, "x".repeat(MAX_USER_FIELD_BYTES - 9));
-    assert_eq!(exact.len(), MAX_USER_FIELD_BYTES);
+    let exact = format!(r#"{{"a": "{}"}}"#, "x".repeat(FIELD_BYTES - 9));
+    assert_eq!(exact.len(), FIELD_BYTES);
     let accepted = record(vec![("user_id", text("u")), ("metadata", text(&exact))]);
     assert!(user_record_to_model(Some(&accepted)).unwrap().is_some());
-    let over = format!(r#"{{"a": "{}"}}"#, "x".repeat(MAX_USER_FIELD_BYTES - 8));
+    let over = format!(r#"{{"a": "{}"}}"#, "x".repeat(FIELD_BYTES - 8));
     let rejected = record(vec![("user_id", text("u")), ("metadata", text(&over))]);
     assert!(matches!(
         user_record_to_model(Some(&rejected)),
-        Err(UserRecordError::FieldTooLarge {
+        Err(UserRecordError::Field {
             field: "metadata",
-            ..
+            source: ResourceRowsError::TooLarge { .. },
         })
     ));
 }
@@ -403,19 +404,18 @@ fn native_user_record_field_limits() {
 fn native_user_record_field_depth_and_envelope_limits() {
     let deep = format!(
         "{}0{}",
-        "[".repeat(MAX_USER_JSON_DEPTH + 1),
-        "]".repeat(MAX_USER_JSON_DEPTH + 1)
+        "[".repeat(FIELD_DEPTH + 1),
+        "]".repeat(FIELD_DEPTH + 1)
     );
     let too_deep = record(vec![("user_id", text("u")), ("metadata", text(&deep))]);
     assert!(matches!(
         user_record_to_model(Some(&too_deep)),
-        Err(UserRecordError::FieldTooDeep { field: "metadata" })
+        Err(UserRecordError::Field {
+            field: "metadata",
+            source: ResourceRowsError::TooDeep,
+        })
     ));
-    let at_limit = format!(
-        "{}0{}",
-        "[".repeat(MAX_USER_JSON_DEPTH),
-        "]".repeat(MAX_USER_JSON_DEPTH)
-    );
+    let at_limit = format!("{}0{}", "[".repeat(FIELD_DEPTH), "]".repeat(FIELD_DEPTH));
     let accepted = record(vec![("user_id", text("u")), ("metadata", text(&at_limit))]);
     assert!(matches!(
         user_record_to_model(Some(&accepted)),
@@ -424,12 +424,16 @@ fn native_user_record_field_depth_and_envelope_limits() {
     let oversized = vec![b' '; 0x0010_0001];
     assert!(matches!(
         decode_user_record(&oversized),
-        Err(UserRecordError::Record { .. })
+        Err(UserRecordError::Record {
+            source: ResourceRowsError::TooLarge { .. },
+        })
     ));
     let deep_record = format!("{}0{}", "[".repeat(65), "]".repeat(65));
     assert!(matches!(
         decode_user_record(deep_record.as_bytes()),
-        Err(UserRecordError::Record { .. })
+        Err(UserRecordError::Record {
+            source: ResourceRowsError::TooDeep,
+        })
     ));
     let valid = br#"{"user_id": "u", "metadata": "{\"a\": 1}"}"#;
     assert_eq!(decode_user_record(valid).unwrap().unwrap().user_id, "u");
@@ -617,9 +621,9 @@ async fn missing_rows_and_errors_preserved() {
         decode_error,
         DbError::InvalidRecord {
             source: RowDecodeError::User {
-                source: UserRecordError::FieldJson {
+                source: UserRecordError::Field {
                     field: "metadata",
-                    ..
+                    source: ResourceRowsError::Json(_),
                 }
             }
         }
@@ -698,9 +702,9 @@ async fn email_later_page_error_no_partial_result() {
         error,
         DbError::InvalidRecord {
             source: RowDecodeError::User {
-                source: UserRecordError::FieldJson {
+                source: UserRecordError::Field {
                     field: "metadata",
-                    ..
+                    source: ResourceRowsError::Json(_),
                 }
             }
         }
